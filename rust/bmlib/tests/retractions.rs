@@ -367,6 +367,14 @@ fn the_exports_sentinels_are_not_identifiers() {
     assert_eq!(clean_identifier(Some("UNAVAILABLE")), None);
     // Padding is stripped before the comparison.
     assert_eq!(clean_identifier(Some("  0  ")), None);
+    // The export of 2026-10-21 writes an absent PubMed ID as "00000000", and
+    // a padded real PMID (one cell in that export) is not a sentinel.
+    assert_eq!(clean_identifier(Some("00000000")), None);
+    assert_eq!(clean_identifier(Some("000")), None);
+    assert_eq!(
+        clean_identifier(Some("00069063")).as_deref(),
+        Some("00069063")
+    );
     assert_eq!(clean_identifier(Some("")), None);
     assert_eq!(clean_identifier(Some("   ")), None);
     assert_eq!(clean_identifier(None), None);

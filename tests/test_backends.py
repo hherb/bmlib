@@ -27,6 +27,7 @@ PostgreSQL runs only when ``BMLIB_TEST_POSTGRESQL_DSN`` is set (see
 
 from __future__ import annotations
 
+import io
 import logging
 import sys
 import threading
@@ -61,6 +62,9 @@ from bmlib.publications.models import (
 )
 from bmlib.publications.retractions import (
     _UPSERT_CHUNK_ROWS,
+    RetractionImport,
+    _lock_retraction_notices,
+    import_retraction_watch_export,
     is_retracted,
     lookup_retractions,
     store_retraction_notices,
@@ -1616,6 +1620,260 @@ class TestRetractionStorage:
             assert not owns_commit(backend_conn)
 
         assert _count(backend_conn, "retraction_notices") == 1
+
+
+_EXPORT_HEADER = (
+    "Record ID,Title,Journal,RetractionDate,RetractionDOI,RetractionPubMedID,"
+    "OriginalPaperDOI,OriginalPaperPubMedID,RetractionNature,Reason\n"
+)
+
+
+def _export(*record_ids, nature="Retraction", header=_EXPORT_HEADER, pmid=None, rows=""):
+    """A Retraction Watch export with one notice per Record ID, newest first.
+
+    Each paper PMID is real unless *pmid* gives every row one, and *rows* is
+    appended after them, as the export's oldest records. ``"00000000"`` is the
+    export's padded "no PMID", as of 2026-10-21.
+    """
+    body = "".join(
+        f"{rid},A paper,J,3/9/2026 0:00,10.1/notice-{rid},00000000,10.1/paper-{rid},"
+        f"{10_000_000 + int(rid) if pmid is None else pmid},{nature},Rogue Editor;\n"
+        for rid in sorted(record_ids, key=int, reverse=True)
+    )
+    return io.BytesIO((header + body + rows).encode("utf-8"))
+
+
+# Record ID 1 up to its paper DOI, for a row appended as the export's oldest.
+_OLDEST_ROW_START = "1,A paper,J,3/9/2026 0:00,10.1/notice-1,00000000,"
+
+
+def _stored_ids(conn) -> set[str]:
+    return {row["record_id"] for row in fetch_all(conn, "SELECT record_id FROM retraction_notices")}
+
+
+class TestImportingAWholeExport:
+    """bmlib#509 and bmlib#510: one export replaces the stored table."""
+
+    def test_a_first_import_stores_every_notice_and_removes_nothing(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        result = import_retraction_watch_export(backend_conn, _export("1", "2", "3"))
+
+        assert result == RetractionImport(stored=3, removed=())
+        assert _stored_ids(backend_conn) == {"1", "2", "3"}
+
+    def test_a_record_the_new_export_dropped_is_removed(self, backend_conn):
+        # The shape measured for #510: a retraction that leaves the export
+        # stops flagging its paper, as it does in the apps' rebuilt index.
+        ensure_schema(backend_conn)
+        import_retraction_watch_export(backend_conn, _export(*map(str, range(1, 201))))
+
+        result = import_retraction_watch_export(
+            backend_conn, _export(*map(str, range(2, 202)), nature="Reinstatement")
+        )
+
+        assert result == RetractionImport(stored=200, removed=("1",))
+        assert lookup_retractions(backend_conn, doi="10.1/paper-1") == []
+        assert _stored_ids(backend_conn) == set(map(str, range(2, 202)))
+        # Kept records are refreshed, as store_retraction_notices refreshes them.
+        assert [n.nature for n in lookup_retractions(backend_conn, doi="10.1/paper-2")] == [
+            RetractionNature.REINSTATEMENT
+        ]
+
+    def test_removing_one_percent_is_allowed_and_more_is_refused(self, backend_conn):
+        ensure_schema(backend_conn)
+        everything = [str(i) for i in range(1, 101)]
+        import_retraction_watch_export(backend_conn, _export(*everything))
+
+        assert import_retraction_watch_export(backend_conn, _export(*everything[1:])).removed == (
+            "1",
+        )
+        import_retraction_watch_export(backend_conn, _export(*everything[1:], "101"))
+        with pytest.raises(ValueError, match="no longer carries 2 of the 100 stored notices"):
+            import_retraction_watch_export(backend_conn, _export(*everything[3:], "101"))
+        assert _stored_ids(backend_conn) == set(everything[1:]) | {"101"}
+
+    def test_a_truncated_download_is_refused_and_writes_nothing(self, backend_conn):
+        # The export is newest first, so a truncation loses the oldest records;
+        # the newer ones it still holds must not be written either.
+        ensure_schema(backend_conn)
+        import_retraction_watch_export(backend_conn, _export(*map(str, range(1, 101))))
+
+        with pytest.raises(ValueError, match="probably truncated"):
+            import_retraction_watch_export(
+                backend_conn, _export(*map(str, range(60, 121)), nature="Reinstatement")
+            )
+
+        assert _stored_ids(backend_conn) == set(map(str, range(1, 101)))
+        assert is_retracted(lookup_retractions(backend_conn, doi="10.1/paper-60"))
+
+    def test_a_large_removal_is_allowed_when_asked_for(self, backend_conn):
+        ensure_schema(backend_conn)
+        import_retraction_watch_export(backend_conn, _export("1", "2", "3"))
+
+        result = import_retraction_watch_export(
+            backend_conn, _export("3"), allow_large_removal=True
+        )
+
+        assert result == RetractionImport(stored=1, removed=("1", "2"))
+        assert _stored_ids(backend_conn) == {"3"}
+
+    @pytest.mark.parametrize(
+        ("header", "pmid", "missing"),
+        [
+            (_EXPORT_HEADER.replace("OriginalPaperPubMedID", "PaperPMID"), None, "a paper PMID"),
+            (_EXPORT_HEADER, "00000000", "a paper PMID"),
+            # Not ASCII digits, so a lookup by PMID cannot find any of them.
+            (_EXPORT_HEADER, "PMC12345", "a paper PMID"),
+            (_EXPORT_HEADER.replace("OriginalPaperDOI", "PaperDOI"), None, "a paper DOI"),
+            (
+                _EXPORT_HEADER.replace("RetractionNature", "Retraction Nature"),
+                None,
+                "a RetractionNature this version recognises",
+            ),
+        ],
+    )
+    def test_an_export_with_nothing_usable_in_a_column_is_refused(
+        self, backend_conn, header, pmid, missing
+    ):
+        ensure_schema(backend_conn)
+        import_retraction_watch_export(backend_conn, _export("1"))
+
+        with pytest.raises(ValueError, match=f"carries {missing}: a renamed column"):
+            import_retraction_watch_export(
+                backend_conn, _export("1", "2", header=header, pmid=pmid)
+            )
+
+        assert _stored_ids(backend_conn) == {"1"}
+
+    @pytest.mark.parametrize(
+        "oldest_row",
+        [
+            f"{_OLDEST_ROW_START}Unavailable,10000001,Retraction,R;\n",
+            f"{_OLDEST_ROW_START}10.1/paper-1,00000000,Retraction,R;\n",
+            f"{_OLDEST_ROW_START}10.1/paper-1,10000001,Withdrawn,R;\n",
+        ],
+        ids=["no-doi", "no-pmid", "unknown-nature"],
+    )
+    def test_a_column_is_judged_over_the_whole_export_not_its_last_row(
+        self, backend_conn, oldest_row
+    ):
+        # The real export mixes rows lacking one identifier (about 46% carry no
+        # PMID) and runs newest first, so its last row is often one of them.
+        ensure_schema(backend_conn)
+
+        result = import_retraction_watch_export(backend_conn, _export("2", "3", rows=oldest_row))
+
+        assert result == RetractionImport(stored=3, removed=())
+
+    def test_an_export_with_no_usable_row_is_refused(self, backend_conn):
+        ensure_schema(backend_conn)
+        import_retraction_watch_export(backend_conn, _export("1"))
+        skipped = []
+        unusable = "2,A paper,J,3/9/2026 0:00,10.1/n,00000000,Unavailable,00000000,Retraction,R;\n"
+
+        with pytest.raises(ValueError, match="holds no usable row"):
+            import_retraction_watch_export(
+                backend_conn,
+                _export(rows=unusable),
+                on_skip=lambda line, why: skipped.append((line, why)),
+            )
+
+        assert skipped == [(2, "no usable DOI or PMID for the retracted paper")]
+        assert _stored_ids(backend_conn) == {"1"}
+
+    def test_a_download_cut_part_way_through_a_row_writes_nothing(self, backend_conn):
+        ensure_schema(backend_conn)
+        full = _export("1", "2", "3").getvalue()
+        import_retraction_watch_export(backend_conn, io.BytesIO(full))
+        # The oldest row is last; cut inside its paper DOI.
+        cut = full[: full.index(b"10.1/paper-1,") + len(b"10.1/pa")]
+
+        with pytest.raises(ValueError, match="fewer fields than the header"):
+            import_retraction_watch_export(backend_conn, io.BytesIO(cut))
+
+        [notice] = lookup_retractions(backend_conn, doi="10.1/paper-1")
+        assert notice.nature is RetractionNature.RETRACTION
+
+    def test_a_removal_is_warned_naming_the_records_sorted_as_text(self, backend_conn, caplog):
+        ensure_schema(backend_conn)
+        kept = [str(i) for i in range(11, 400)]
+        import_retraction_watch_export(backend_conn, _export("2", "3", "10", *kept))
+
+        with caplog.at_level(logging.INFO, logger="bmlib.publications.retractions"):
+            result = import_retraction_watch_export(backend_conn, _export(*kept))
+
+        assert result.removed == ("10", "2", "3")
+        assert caplog.record_tuples == [
+            (
+                "bmlib.publications.retractions",
+                logging.WARNING,
+                "Removed 3 retraction notice(s) the Retraction Watch export no longer carries"
+                " usably: 10, 2, 3",
+            )
+        ]
+
+    def test_notices_no_lookup_can_find_are_removed_without_counting(self, backend_conn, caplog):
+        # An older bmlib stored the padded export's "00000000" as the PMID of
+        # a notice carrying no DOI. The next import skips those rows, and
+        # clearing them out is not a truncated download.
+        ensure_schema(backend_conn)
+        everything = [str(i) for i in range(1, 101)]
+        import_retraction_watch_export(backend_conn, _export(*everything))
+        unfindable = [str(i) for i in range(1001, 1011)]
+        store_retraction_notices(
+            backend_conn,
+            [
+                RetractionNotice(record_id=r, nature=RetractionNature.RETRACTION, pmid="00000000")
+                for r in unfindable
+            ],
+        )
+
+        with caplog.at_level(logging.INFO, logger="bmlib.publications.retractions"):
+            result = import_retraction_watch_export(backend_conn, _export(*everything))
+
+        assert result.removed == tuple(unfindable)
+        assert caplog.messages == ["Removed 10 stored retraction notice(s) no lookup could find"]
+        assert _stored_ids(backend_conn) == set(everything)
+
+    def test_the_removal_share_is_of_the_notices_a_lookup_can_find(self, backend_conn):
+        ensure_schema(backend_conn)
+        everything = [str(i) for i in range(1, 101)]
+        import_retraction_watch_export(backend_conn, _export(*everything))
+        store_retraction_notices(
+            backend_conn,
+            [
+                RetractionNotice(record_id=str(r), nature=RetractionNature.RETRACTION)
+                for r in range(1001, 1101)
+            ],
+        )
+
+        # 2 of 100 findable is over 1%, though it is 1% of the 200 stored.
+        with pytest.raises(
+            ValueError, match="no longer carries 2 of the 100 stored notices a lookup can find"
+        ):
+            import_retraction_watch_export(backend_conn, _export(*everything[2:]))
+
+    def test_a_second_import_waits_for_the_lock(self, backend_conn_pair):
+        # On PostgreSQL only the lock stops it: an advisory lock blocks no
+        # write, so an import that skipped it would run beside the other.
+        first, second = backend_conn_pair
+        ensure_schema(first)
+        if is_sqlite(first):
+            first.execute("PRAGMA busy_timeout = 100")
+        else:
+            execute(first, "SET lock_timeout = '100ms'")
+            first.commit()
+        # Held by `second` until its transaction ends.
+        _lock_retraction_notices(second)
+
+        try:
+            with pytest.raises(Exception, match="database is locked|due to lock timeout"):
+                import_retraction_watch_export(first, _export("1"))
+        finally:
+            second.rollback()
+
+        assert _stored_ids(first) == set()
 
 
 # ---------------------------------------------------------------------------

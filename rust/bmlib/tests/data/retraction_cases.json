@@ -40,6 +40,20 @@
     }
   },
   {
+    "name": "clean/zero-eight-digits",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "00000000"
+    }
+  },
+  {
+    "name": "clean/padded-real-pmid",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "00069063"
+    }
+  },
+  {
     "name": "clean/unavailable-lower",
     "fn": "clean_identifier",
     "args": {
@@ -387,6 +401,18 @@
     }
   },
   {
+    "name": "parse/eight-digit-zero-pmid-not-stored",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "original_pmid": "00000000",
+          "original_doi": "10.1/paper"
+        }
+      ]
+    }
+  },
+  {
     "name": "parse/unavailable-doi-not-stored",
     "fn": "parse_rows",
     "args": {
@@ -424,6 +450,20 @@
     "fn": "parse",
     "args": {
       "csv": "Record ID,Title\n,,\n,,\n"
+    }
+  },
+  {
+    "name": "parse/short-row-refused",
+    "fn": "parse",
+    "args": {
+      "csv": "Record ID,OriginalPaperDOI,RetractionNature\n1,10.1/paper,Retraction\n2,10.1/pa\n"
+    }
+  },
+  {
+    "name": "parse/short-row-unterminated-quote-refused",
+    "fn": "parse",
+    "args": {
+      "csv": "Record ID,OriginalPaperDOI,RetractionNature\n1,10.1/paper,Retraction\n2,\"10.1/pa"
     }
   },
   {

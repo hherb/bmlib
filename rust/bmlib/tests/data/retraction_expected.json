@@ -77,6 +77,16 @@
     "value": null
   },
   {
+    "name": "clean/zero-eight-digits",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/padded-real-pmid",
+    "ok": true,
+    "value": "00069063"
+  },
+  {
     "name": "clean/unavailable-lower",
     "ok": true,
     "value": null
@@ -357,6 +367,31 @@
     }
   },
   {
+    "name": "parse/eight-digit-zero-pmid-not-stored",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "retraction",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": null,
+          "raw_nature": "Retraction",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
     "name": "parse/unavailable-doi-not-stored",
     "ok": true,
     "value": {
@@ -446,6 +481,20 @@
           "no Record ID"
         ]
       ]
+    }
+  },
+  {
+    "name": "parse/short-row-refused",
+    "ok": true,
+    "value": {
+      "__error": "the CSV row ending on line 3 has fewer fields than the header; the download is probably truncated -- fetch it again."
+    }
+  },
+  {
+    "name": "parse/short-row-unterminated-quote-refused",
+    "ok": true,
+    "value": {
+      "__error": "the CSV row ending on line 3 has fewer fields than the header; the download is probably truncated -- fetch it again."
     }
   },
   {

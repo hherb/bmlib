@@ -80,8 +80,12 @@ pub const ORIGINAL_DATE_COLUMNS: [&str; 2] = ["OriginalPaperDate", "Original Pap
 
 /// Values the export writes to mean "there is no identifier here".
 ///
-/// Only these two are listed — each was measured; adding an unmeasured guess is
-/// how the list stops being answerable to the data.
+/// Only these two literals are listed — each was measured; adding an unmeasured
+/// guess is how the list stops being answerable to the data. [`clean_identifier`]
+/// applies one structural rule beside them, reading any run of zeros as the
+/// sentinel: the export of 2026-10-21 writes an absent PubMed ID as
+/// `"00000000"` (33,800 of 73,329 paper PMIDs and 34,788 notice PMIDs), and
+/// there is no PMID 0 however it is padded.
 pub const ABSENT_IDENTIFIER_VALUES: [&str; 2] = ["0", "unavailable"];
 
 /// The US-first form the export actually uses, then its day-first twin, then
@@ -115,7 +119,10 @@ pub fn find_column<'a>(row: &'a [(String, String)], candidates: &[&str]) -> Opti
 #[must_use]
 pub fn clean_identifier(value: Option<&str>) -> Option<String> {
     let text = value?.trim();
-    if text.is_empty() || ABSENT_IDENTIFIER_VALUES.contains(&text.to_lowercase().as_str()) {
+    if text.is_empty()
+        || ABSENT_IDENTIFIER_VALUES.contains(&text.to_lowercase().as_str())
+        || text.bytes().all(|b| b == b'0')
+    {
         return None;
     }
     Some(text.to_string())
@@ -381,7 +388,7 @@ pub struct ParseOutcome {
 ///
 /// # Errors
 ///
-/// [`CsvError`] when the document is malformed or a record is wider than its
+/// [`CsvError`] when the document is malformed or a record is shorter than its
 /// header.
 pub fn parse_retraction_watch_csv(bytes: &[u8]) -> Result<ParseOutcome, CsvError> {
     let mut reader = Reader::from_bytes(bytes)?;

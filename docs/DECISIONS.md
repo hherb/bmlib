@@ -4925,7 +4925,46 @@ crossed the cap since planning.
 - **Two values measured against the live export, not reasoned about**: the
   `%m/%d/%Y` / `%d/%m/%Y` ambiguity resolves US-first (confirmed by same-file
   dates whose day exceeds 12), and `_ABSENT_IDENTIFIER_VALUES` holds exactly
-  `{"0", "unavailable"}` — a third sentinel needs its own measurement.
+  the literals `{"0", "unavailable"}` — a third literal needs its own
+  measurement.
+- **Any run of zeros is the `"0"`** (bmlib#510's session), one structural
+  rule beside those literals, measured for `"00000000"` and generalised: the
+  export of 2026-10-21 writes an absent PubMed ID as `"00000000"` (33,800 of
+  73,329 paper PMIDs, 34,788 notice PMIDs) and no bare `"0"` is left, so the
+  literal stored a bogus PMID on every one of them (unfindable,
+  `_canonical_pmid` stripping it to nothing, but returned as `notice.pmid`,
+  and a WARNING calling it "not ASCII digits"). Real PMIDs stay unpadded but
+  for one, `00069063`, which is kept. A rule over zeros rather than a third
+  literal, since there is no PMID 0 however it is padded; in Python and Rust
+  alike.
+- **A whole export replaces the table** (bmlib#510, the maintainer's choice,
+  2026-10-21). `import_retraction_watch_export()` deletes the stored notices
+  the new export no longer carries, as the apps' rebuilt `RetractionIndex`
+  does; `store_retraction_notices()` stays upsert-only for batch callers.
+  Measured, 2026-03 copy against the export of 2026-10-21: 6 of 69,318
+  records left — 4 re-keyed (same paper, same nature, a new Record ID) and 2
+  retractions dropped outright, neither DOI anywhere in the new file. The
+  import removes **every stored notice not among the export's usable rows**, so
+  a seventh, record 2558, goes too: still in the October export, but with its
+  DOI blanked to `unavailable` and its PMID to `00000000`, which the apps'
+  index cannot find either. **The removal is refused above 1% of the stored
+  notices a lookup can find** unless the caller passes
+  `allow_large_removal=True` (the maintainer's choice of guard): the export is
+  sorted by Record ID, newest first (73,328 of 73,328 adjacent pairs), so a
+  download truncated on a row boundary loses the oldest records, exactly what a
+  replace would then delete. 1% is about 107 times the seven-month churn (6 of
+  the 64,133 notices the March copy stores) and was **fixed before a monthly
+  series was measured** — do not cite it as measured, and measure consecutive
+  months before tightening it. A notice nothing could find counts on neither
+  side of the share: the first import over a table an older bmlib filled from
+  the padded export removes 2,913 such notices, and counted they would refuse
+  a complete export as truncated. A download cut part-way through a row is
+  refused structurally instead, as a row shorter than the header (0 short rows
+  in either measured export), since that row's Record ID is still carried and
+  no share can see it. It also refuses an export in which no notice carries a
+  findable DOI, none a PMID (bmlib#509, the Rust index build's rule) or none a
+  `RetractionNature` this version recognises; the check belongs to the whole
+  import, a batch with no PMID being ordinary for `store_retraction_notices()`.
 
 ## publications — retraction status from three sources (#504)
 
@@ -5040,10 +5079,11 @@ crossed the cap since planning.
   shape at the FFI or `from_dict` boundary (#507); a `CrossrefResult` did
   not carry its DOI, so a result filed under the wrong paper was not caught
   (#508, since fixed: a served result carries it, and one for another DOI
-  is no answer); Python's import path has no "a whole identifier column is missing"
-  refusal, which the Rust index build has (#509); and records Retraction
-  Watch drops between monthly exports stay in the desktop's table while the
-  app's index rebuilds without them (#510). No Record ID repeats in the
+  is no answer); Python's import path had no "a whole identifier column is missing"
+  refusal, which the Rust index build has (#509, since fixed by
+  `import_retraction_watch_export()`); and records Retraction Watch drops
+  between monthly exports stayed in the desktop's table while the app's
+  index rebuilds without them (#510, since fixed by the same function). No Record ID repeats in the
   2026-03 copy (0 of 69,318 rows), so the other half of that divergence has
   no population today.
 
