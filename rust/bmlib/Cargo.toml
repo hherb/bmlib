@@ -81,6 +81,14 @@ postgres = { version = "0.19", optional = true }
 # `ToSql`'s signature names `bytes::BytesMut`, so a hand-written implementation
 # for [`Value`] must name it too. Pulled in only with the backend.
 bytes = { version = "1", optional = true }
+# The embedder's inference engine (llama.cpp). **Pinned exactly**: the model
+# files' checksums and the cosine floors in the shared manifest were measured
+# against one llama.cpp commit, and a crate bump moves that commit. It compiles
+# llama.cpp from source, so it needs cmake and a C++ compiler.
+llama-cpp-2 = { version = "=0.1.159", optional = true }
+# SHA-256, for the model download's checksum. Its own crate: a wrong digest
+# would fail *silently* by accepting a corrupt multi-gigabyte file.
+sha2 = { version = "0.10", optional = true }
 
 [features]
 # `sqlite` and `http-ureq` are on by default, so a consumer depending on bmlib
@@ -105,6 +113,13 @@ pdf = ["dep:pdfium-render", "dep:pdfium-bundled"]
 # rewriter and the PostgreSQL DDL are always present; this adds the driver that
 # can actually run a statement against a server.
 postgres = ["dep:postgres", "dep:bytes"]
+# The in-process embedder: `bmlib::embed`'s model verification and `Embedder`.
+# Off by default, so a build that never embeds needs no C++ toolchain. The
+# constants and vector rules in `bmlib::embed` are always present; the download
+# additionally needs `http-ureq`.
+embed = ["dep:llama-cpp-2", "dep:sha2"]
+# `embed` with llama.cpp's Metal backend, for Apple GPUs.
+embed-metal = ["embed", "llama-cpp-2/metal"]
 
 [lints]
 workspace = true

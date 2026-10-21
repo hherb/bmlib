@@ -9,6 +9,16 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's embedder
+`embed`: the embedding constants (`EMBEDDING_DIM`, `QUERY_PREFIX`, `MAX_TOKENS`),
+the vector rules (`truncate_and_normalize`, `query_text`, `check_texts`) and the
+pinned model files (`ModelFile`, `ARCTIC_EMBED_L_V2_F16`, `ARCTIC_EMBED_L_V2_Q8_0`),
+held to Python's by the shared `tests/fixtures/embedding_contract.json`. With the
+new `embed` feature (and `embed-metal`): `verify_model` and `ModelError`, and with
+`http-ureq` too `download_model`, which streams to `<file>.part`, stops at the
+first byte past the pinned size, checks size and sha256, and renames only on a
+match.
+
 ### Added — follows Python's find_passage
 `citations::passage_match`: `find_passage`, which locates an (LLM-copied)
 quote in its source and returns the source's own wording for the span, with
