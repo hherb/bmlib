@@ -93,13 +93,19 @@ pub fn query_text(query: &str) -> String {
     format!("{QUERY_PREFIX}{query}")
 }
 
+/// Python's `str.strip()` whitespace: Unicode whitespace plus U+001C to U+001F,
+/// which `char::is_whitespace` omits.
+fn is_blank(c: char) -> bool {
+    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
+}
+
 /// Refuse empty or whitespace-only texts.
 ///
 /// # Errors
 ///
 /// [`EmptyText`] carrying the index of the first such text.
 pub fn check_texts(texts: &[&str]) -> Result<(), EmptyText> {
-    match texts.iter().position(|t| t.trim().is_empty()) {
+    match texts.iter().position(|t| t.chars().all(is_blank)) {
         Some(index) => Err(EmptyText { index }),
         None => Ok(()),
     }

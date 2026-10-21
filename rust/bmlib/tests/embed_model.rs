@@ -194,6 +194,18 @@ fn progress_reports_reach_size() {
 }
 
 #[test]
+fn panicking_progress_leaves_no_part_file() {
+    let server = serve(body(), false);
+    let tmp = tempdir("panic");
+    let m = model(&body());
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = download_model_from(&server.url, &m, &tmp, &mut |_, _| panic!("boom"));
+    }));
+    assert!(caught.is_err());
+    assert!(dir_is_empty(&tmp));
+}
+
+#[test]
 fn verify_model_size_mismatch() {
     let tmp = tempdir("verify");
     std::fs::write(tmp.join("m.gguf"), b"x").unwrap();

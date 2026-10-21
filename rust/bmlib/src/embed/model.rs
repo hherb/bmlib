@@ -187,10 +187,25 @@ mod download {
     use std::fs::File;
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
+    use std::sync::mpsc::RecvTimeoutError;
     use std::time::Duration;
 
-    /// Network timeout for the whole request.
-    const HTTP_TIMEOUT_SECONDS: u64 = 60;
+    /// Longest wait for a connection, the response headers or one body block.
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+    /// Removes the `.part` file on drop (an error or a panic), unless disarmed.
+    struct PartGuard<'a> {
+        path: &'a Path,
+        armed: bool,
+    }
+
+    impl Drop for PartGuard<'_> {
+        fn drop(&mut self) {
+            if self.armed {
+                let _ = std::fs::remove_file(self.path);
+            }
+        }
+    }
 
     /// Return the verified model file in `directory`, downloading it if needed.
     ///
@@ -234,12 +249,14 @@ mod download {
             }
         }
         let part = directory.join(format!("{}.part", model.file));
-        let result = fetch(url, model, &part, progress)
-            .and_then(|()| std::fs::rename(&part, &final_path).map_err(ModelError::from));
-        if result.is_err() {
-            let _ = std::fs::remove_file(&part);
-        }
-        result.map(|()| final_path)
+        let mut guard = PartGuard {
+            path: &part,
+            armed: true,
+        };
+        fetch(url, model, &part, progress)?;
+        std::fs::rename(&part, &final_path)?;
+        guard.armed = false;
+        Ok(final_path)
     }
 
     /// Stream `url` into `part`, failing as soon as more than `model.size`
@@ -251,8 +268,14 @@ mod download {
         progress: &mut dyn FnMut(u64, u64),
     ) -> Result<(), ModelError> {
         let config = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(HTTP_TIMEOUT_SECONDS)))
-            .user_agent(format!("bmlib/{}", env!("CARGO_PKG_VERSION")))
+            // ureq has no per-read body timeout (`timeout_recv_body` is a total
+            // budget), so these bound connecting and the headers, and the body
+            // loop below bounds each block: Python's idle `timeout=60`.
+            .timeout_resolve(Some(IDLE_TIMEOUT))
+            .timeout_connect(Some(IDLE_TIMEOUT))
+            .timeout_send_request(Some(IDLE_TIMEOUT))
+            .timeout_recv_response(Some(IDLE_TIMEOUT))
+            .user_agent(crate::http::default_user_agent())
             .build();
         let agent = ureq::Agent::new_with_config(config);
         let response = agent
@@ -260,18 +283,38 @@ mod download {
             .call()
             .map_err(|e| ModelError::Http(e.to_string()))?;
         let mut reader = response.into_body().into_reader();
+        // A thread reads, so the loop can give up on a stalled block.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<std::io::Result<Vec<u8>>>(1);
+        std::thread::spawn(move || loop {
+            let mut buf = vec![0u8; BLOCK_SIZE];
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.truncate(n);
+                    if tx.send(Ok(buf)).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    break;
+                }
+            }
+        });
         let mut out = File::create(part)?;
         let mut hasher = Sha256::new();
-        let mut block = vec![0u8; BLOCK_SIZE];
         let mut done: u64 = 0;
         loop {
-            let n = reader.read(&mut block)?;
-            if n == 0 {
-                break;
-            }
-            out.write_all(&block[..n])?;
-            hasher.update(&block[..n]);
-            done += n as u64;
+            let block = match rx.recv_timeout(IDLE_TIMEOUT) {
+                Ok(block) => block?,
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(ModelError::Http("download stalled".to_string()));
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+            out.write_all(&block)?;
+            hasher.update(&block);
+            done += block.len() as u64;
             if done > model.size {
                 return Err(ModelError::SizeMismatch {
                     expected: model.size,
