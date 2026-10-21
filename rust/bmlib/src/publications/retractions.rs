@@ -515,7 +515,11 @@ fn notice_values(notice: &RetractionNotice, now: &str) -> Vec<crate::db::Value> 
             .and_then(canonical_pmid)
             .or_else(|| normalize_pmid(notice.pmid.as_deref()))),
         opt(normalize_doi(notice.notice_doi.as_deref())),
-        opt(normalize_pmid(notice.notice_pmid.as_deref())),
+        opt(notice
+            .notice_pmid
+            .as_deref()
+            .and_then(canonical_pmid)
+            .or_else(|| normalize_pmid(notice.notice_pmid.as_deref()))),
         V::Text(notice.nature.as_str().to_string()),
         opt(notice.raw_nature.clone()),
         opt(notice.title.clone()),

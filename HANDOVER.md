@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-21 (**this session is #509 + #510**, branch
-`fix/retraction-import-509-510`, worktree `../bmlib-rwimport`). **0.11.0 is
-released** (`v0.11.0` on 8edd3d7, on PyPI). PR #519 (#518) merged before this
-session._
+_Last updated: 2026-10-21 (**this session is #523 + #522**, branch
+`fix/retraction-notice-pmid-523`, worktree `../bmlib-s523`). **0.11.0 is
+released** (`v0.11.0` on 8edd3d7, on PyPI). PR #521 (#509, #510) merged before
+this session._
 
 ## What 0.11.0 costs a downstream
 
@@ -26,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -36,39 +36,28 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #509 + #510, one export replaces the stored notices
+## This session: #523 + #522, PR #521's review findings
 
-`import_retraction_watch_export(conn, source, *, on_skip, allow_large_removal)`
-stores a whole Retraction Watch export in one transaction and **deletes the
-stored notices not among its usable rows** (#510, the maintainer's choice; the
-apps' rebuilt index already did). It refuses, writing nothing, a row shorter
-than the header (a download cut mid-row, Python and the Rust reader), an
-export with no usable row, one with no findable DOI, no PMID or no recognised
-nature anywhere (#509), and a removal above **1% of the notices a lookup can
-find** unless `allow_large_removal=True` — the export is sorted newest first,
-so a truncated download loses the oldest records. The 1% is the maintainer's,
-**fixed before a monthly series was measured**. Unfindable notices are removed
-uncounted (2,913 over a table an older bmlib filled from the October export,
-which would otherwise be refused), and two imports are serialised by a lock.
-Measured: 6 of 69,318 records left between the 2026-03 copy and the export of
-2026-10-21 (4 re-keyed, 2 retractions dropped outright); replayed, the import
-removes 7, the seventh (2558) still in the export with both identifiers
-blanked. **Measuring found a live format change**: the export now writes an
-absent PMID as `00000000` (33,800 of 73,329 paper PMIDs; real PMIDs stay
-unpadded but for one), which was stored as a PMID; any run of zeros is now the
-sentinel, in Python and the Rust reader (three oracle cases). The Rust desktop
-store's import follows in **#520**.
-Today's export is in the session scratchpad only; re-download it from
-`gitlab.com/crossref/retraction-watch-data` (`retraction_watch.csv`).
+Both small, both in Python *and* Rust. **#523**: `_notice_values` stores
+`notice_pmid` through `_canonical_pmid(...) or _normalize_pmid(...)` as it does
+the paper's `pmid`, and the Rust store's `notice_values` likewise; the oracle's
+`store/padded-pmid-is-canonicalised` case gained a padded `notice_pmid` in both
+case copies and `retraction_store_expected.json` was regenerated (two lines
+move). **#522**: `RetractionIndex::build` refuses an export whose notices are
+all `Other` beside its DOI/PMID refusal. Each fix was reverted to confirm its
+test fails. **#520** (the Rust desktop store's import) must take the nature
+rule too, as #522 says.
 
-**The two sessions before**: #518 (PR #519, a cited `<source>` normalised,
-`RENDERER_VERSION` 7, Swift/Kotlin hherb/bmlibrarian_lite#610) and #516 (PR
-#517, every `<label>` and the journal title normalised, `RENDERER_VERSION` 6,
-hherb/bmlibrarian_lite#609) are in `CHANGELOG.md` and `docs/DECISIONS.md`.
-#504 (PR #506, `retraction_status`) filed **#507** (ISO date shape at the
-boundary), still open; read `docs/DECISIONS.md`'s #504 section before changing
-the rule. The 2026-03 export copy is at
-`../biasbuster/dataset/retraction_watch_cache.csv`.
+**The session before** (PR #521, #509 + #510): `import_retraction_watch_export()`
+replaces the stored notices with one export, refusing a short row, a missing
+identifier or nature column, and a removal above 1% of the findable notices
+(the 1% fixed before a monthly series was measured); the export now writes an
+absent PMID as `00000000`, any run of zeros being the sentinel. Re-download
+the export from `gitlab.com/crossref/retraction-watch-data`
+(`retraction_watch.csv`); the 2026-03 copy is at
+`../biasbuster/dataset/retraction_watch_cache.csv`. #504 (PR #506) filed
+**#507**, still open; read `docs/DECISIONS.md`'s #504 section before changing
+the rule.
 
 ## The Rust port
 
@@ -96,13 +85,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,936 passing + 90 skipped** on this session's branch
+- **Tests: 6,949 passing + 101 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-21); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); this session ran
-  `test_backends.py` with it (175 passed + 1 skipped). Of the 90
-  default skips, 88 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
-  schema test, 1 `test_pymupdf_requires_dependency`.
+  `test_backends.py` with it (197 passed + 1 skipped). The default skips are
+  the PostgreSQL parameterisations, 1 a PostgreSQL-only schema test, and
+  `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
   once); set `BMLIB_TEST_POSTGRESQL_DSN="host=localhost port=5432
@@ -124,7 +113,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **Ninety-two open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-21: 94 with #520, less #509 and #510). **#507** is PR #506's (above); **#520** is this session's Rust follow. **#500** is the previous
+open --limit 300`, 2026-10-21: 94, less #522 and #523). **#507** is PR #506's (above); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and

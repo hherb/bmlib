@@ -1490,6 +1490,21 @@ class TestRetractionStorage:
         assert found[0].record_id == "rw-dated"
         assert is_retracted(found) is True
 
+    def test_a_padded_notice_pmid_is_stored_as_the_paper_pmid_is(self, backend_conn):
+        # bmlib#523: the export pads a PubMed ID now and then (00069063).
+        ensure_schema(backend_conn)
+        padded = _notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", pmid="0012345")
+        padded.notice_pmid = "007654321"
+        not_a_pmid = _notice("rw-2", RetractionNature.RETRACTION, "2020-05-01", pmid="0012345")
+        not_a_pmid.notice_pmid = " PMC99 "
+        store_retraction_notices(backend_conn, [padded, not_a_pmid])
+
+        found = {n.record_id: n for n in lookup_retractions(backend_conn, pmid="12345")}
+
+        assert (found["rw-1"].pmid, found["rw-1"].notice_pmid) == ("12345", "7654321")
+        # Not a PMID: kept as given, exactly as the paper's own column keeps one.
+        assert found["rw-2"].notice_pmid == "PMC99"
+
     def test_a_lookup_by_pmid_finds_a_notice_stored_without_a_doi(self, backend_conn):
         ensure_schema(backend_conn)
         store_retraction_notices(

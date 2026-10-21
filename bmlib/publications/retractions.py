@@ -607,7 +607,7 @@ def _notice_values(notice: RetractionNotice, now: str) -> tuple[Any, ...]:
         _normalize_doi(notice.doi),
         _canonical_pmid(notice.pmid) or _normalize_pmid(notice.pmid),
         _normalize_doi(notice.notice_doi),
-        _normalize_pmid(notice.notice_pmid),
+        _canonical_pmid(notice.notice_pmid) or _normalize_pmid(notice.notice_pmid),
         notice.nature.value,
         notice.raw_nature,
         notice.title,
@@ -784,7 +784,7 @@ def import_retraction_watch_export(
             this version recognises -- a renamed column, which would answer
             "no notices" for every lookup by the missing identifier, or "not
             retracted" for every paper, and read as consulted (bmlib#509; the
-            Rust index build refuses the first two); or if the removal exceeds
+            Rust index build refuses all three, bmlib#522); or if the removal exceeds
             the share above and *allow_large_removal* is not set. Nothing is
             written in any case.
     """

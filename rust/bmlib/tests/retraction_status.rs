@@ -296,6 +296,18 @@ fn an_export_missing_a_whole_identifier_column_is_refused() {
     }
 }
 
+#[test]
+fn an_export_whose_nature_column_reads_as_nothing_is_refused() {
+    // A renamed RetractionNature column: every notice is `Other` (#522).
+    let renamed = format!(
+        "{HEADER}1,A,1/1/2020 0:00,,10.5555/a,123,\n2,B,1/1/2020 0:00,,10.5555/b,124,Mystery\n"
+    );
+    let err = RetractionIndex::build(renamed.as_bytes(), "2026-10-18").unwrap_err();
+    assert!(err.contains("RetractionNature"), "{err}");
+    let one_known = format!("{renamed}3,C,1/1/2020 0:00,,10.5555/c,125,Retraction\n");
+    assert!(RetractionIndex::build(one_known.as_bytes(), "2026-10-18").is_ok());
+}
+
 /// An app may rebuild a Crossref result from its own storage; the rule
 /// normalises the guard's two sides itself.
 #[test]

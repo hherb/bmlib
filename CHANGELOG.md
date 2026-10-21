@@ -6,6 +6,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **A retraction notice's own PMID is stored without leading zeros, as the
+  paper's is** (#523, from PR #521's review). `notice_pmid` went through
+  whitespace stripping alone, so the export's occasional padding (its paper
+  column carries one padded real PMID, `00069063`) was stored padded and a
+  join on the column would miss. A value that is not ASCII digits is still
+  stored as given, as the paper column does. Python and the Rust store alike;
+  nothing reads the column for a verdict, so no answer moves, but a re-import
+  rewrites a padded value.
+- **The Rust `RetractionIndex::build` refuses an export in which no notice
+  carries a nature this version recognises** (#522, from PR #521's review):
+  a renamed `RetractionNature` column made every notice `Other`, and the
+  index answered "not retracted" for every paper while reading as consulted.
+  Python's import has refused it since #509; the Rust desktop store's import
+  takes the rule with #520.
+
 ### Added
 - **`import_retraction_watch_export()`: one export replaces the stored
   notices** (issues #509, #510). It parses and stores a whole Retraction Watch

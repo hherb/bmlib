@@ -4999,7 +4999,9 @@ crossed the cap since planning.
   (open shares build's rule rather than trusting the file), and a build in
   which no notice carries a paper DOI, or none a PMID — a renamed column,
   which would answer "no notices" for every lookup by the other identifier
-  (63,373 and 32,208 of the 2026-03 copy's 69,318 rows carry one). A
+  (63,373 and 32,208 of the 2026-03 copy's 69,318 rows carry one) — or none
+  a nature this version recognises, every notice then reading `Other` and
+  every paper "not retracted" (#522, Python's #509 rule). A
   download truncated on a row boundary cannot be told from a smaller export;
   the FFI README tells an app to compare `notice_count()` with the index it
   replaces.
