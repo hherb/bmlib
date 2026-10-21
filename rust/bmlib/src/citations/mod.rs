@@ -56,6 +56,7 @@ pub mod builder;
 pub mod formatter;
 pub mod models;
 pub mod parser;
+pub mod passage_match;
 mod sequence_matcher;
 
 pub use builder::{
@@ -76,3 +77,4 @@ pub use parser::{
     replace_all_citations_with_numbers, replace_citation_with_number, unique_document_ids,
     validate_marker, CITATION_PATTERN,
 };
+pub use passage_match::{fold_char, normalize_with_offsets, occurs_once};
