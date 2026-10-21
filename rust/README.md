@@ -60,12 +60,14 @@ rust/
     │   │   │                     character-class divergence
     │   │   ├── scoring_models.rs DimensionScore + AssessmentDetail
     │   │   └── mod.rs
-    │   ├── citations/  port of bmlib/citations/ (1,129 Python lines)
+    │   ├── citations/  port of bmlib/citations/ (1,795 Python lines)
     │   │   ├── builder.rs      build_references, format_document
     │   │   ├── formatter.rs    Vancouver / APA / Harvard / Chicago
     │   │   ├── models.rs       Citation, DocumentMetadata, CitationStyle
     │   │   ├── mod.rs
-    │   │   └── parser.rs       the [@id:N:Label] scanner (hand-rolled)
+    │   │   ├── parser.rs       the [@id:N:Label] scanner (hand-rolled)
+    │   │   ├── passage_match.rs  find_passage — an LLM's near-verbatim quote located in its source
+    │   │   └── sequence_matcher.rs  difflib.SequenceMatcher, crate-private
     │   └── db/         port of bmlib/db/ (787 Python lines)
     │       ├── backend.rs       dialects, placeholder rewriting
     │       ├── error.rs         DbError — backend + caller-abort
@@ -148,7 +150,7 @@ registry, and `.gitignore` covers it.
 | | Python | Rust | State |
 |---|---|---|---|
 | `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server, and a differential corpus (`tests/db_oracle.rs`, 37 cases) over splitting, dialect, values, tables, transactions and migrations |
-| `citations/` | 1,129 lines, 4 files | 5 files | **ported**, 14 named tests + 93 oracle cases |
+| `citations/` | 1,795 lines, 6 files | 7 files | **ported**, 68 named tests + 391 oracle cases (`find_passage` included) |
 | `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 20 named tests + 62 oracle cases. The rendering hooks (`format_item` / `format_consolidated_item`) are reached through `ItemRouting`; until round 46 nothing called them |
 | `fulltext/jats_text` | 1,816 (reader) | 1 file | **ported** — whitespace, locator joining, LaTeX deposits, formula spacing. 12 named tests + 74 oracle cases |
 | `fulltext/_parse_audit` | 345 lines | 1 file | **ported** — the unwind audit. 7 named tests + 42 oracle cases |

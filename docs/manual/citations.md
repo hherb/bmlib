@@ -154,7 +154,8 @@ if match.matched:
 ```
 
 - **Forgiven:** case, whitespace (including line breaks and paragraph breaks), typographic quotes and dashes, accents, compatibility forms (ligatures, superscripts, full-width characters), and invisible characters.
-- **Not forgiven:** a paraphrase, or a quote with an elided stretch (`first … last`), falls below the threshold and is rejected. A quote that occurs twice returns the first occurrence.
+- **Not forgiven:** a paraphrase falls below the threshold and is rejected. So is a quote with a long elided stretch (`first … last`, relative to the quote's length); a short elided stretch can still reach the threshold, and the span then includes the elided text. A quote that occurs twice returns the first occurrence.
+- **Known edge:** a quote that ends exactly on a relation symbol (e.g. `=`) can be reported as an exact match of its negated form (`≠`), because the span widens to the whole source character; the highlighted text shows the true `≠`.
 - **`similarity` 0.0** means no candidate location was found at all (the passage or the text is empty, the passage is too long to reach the threshold, or none of its fragments occur there), as opposed to a near miss, which reports its real similarity below `min_similarity`.
 - `exact` is true when the normalised quote occurs verbatim (similarity 1.0).
 

@@ -801,7 +801,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `db/`                | `test_db.py`, `test_migrations.py`, `test_backends.py`     |
 | `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py`, `test_json_extraction.py` |
 | `agents/`            | `test_agents.py`                                           |
-| `citations/`         | `test_citations_parser.py`, `test_citations_formatter.py`, `test_citations_builder.py` |
+| `citations/`         | `test_citations_parser.py`, `test_citations_formatter.py`, `test_citations_builder.py`, `test_passage_match.py`, `test_passage_match_contract.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
 | `templates/`         | `test_templates.py`                                        |

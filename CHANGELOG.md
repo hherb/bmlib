@@ -28,7 +28,7 @@ All notable changes to bmlib are documented here. The format is based on
 ### Added
 - **`bmlib.citations.find_passage` locates an LLM's near-verbatim quote in
   its source** and returns the source's own span (`PassageMatch`: similarity,
-  start, end, text, exact). Moved from bmlibrarian unchanged, with its tests
+  start, end, text, exact). Moved from bmlibrarian unchanged apart from the licence header and one import (`collections.abc.Callable`), with its tests
   and four more (a quote across a paragraph break, a repeated quote, an elided
   quote, information separators).
 - **`import_retraction_watch_export()`: one export replaces the stored

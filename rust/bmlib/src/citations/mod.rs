@@ -16,7 +16,7 @@
 
 //! Citation-marker parsing and reference building — pure functions, no I/O.
 //!
-//! A port of `bmlib/citations/` (1,129 Python lines across four files):
+//! A port of `bmlib/citations/` (1,795 Python lines across six files, `__init__.py` included):
 //!
 //! | Python | Here |
 //! |---|---|
@@ -24,6 +24,8 @@
 //! | `citations/parser.py` | [`parser`] |
 //! | `citations/formatter.py` | [`formatter`] |
 //! | `citations/builder.py` | [`builder`] |
+//! | `citations/passage_match.py` | [`passage_match`] |
+//! | (`difflib.SequenceMatcher`, which `passage_match` leans on) | `sequence_matcher` (crate-private) |
 //!
 //! Text carries `[@id:12345:Smith2023]` markers. [`build_references`] numbers
 //! the cited documents by order of first appearance, formats references in
@@ -38,7 +40,8 @@
 //! # The only dependency
 //!
 //! `serde`/`serde_json`, for the `to_dict`/`from_dict` pairs that Python
-//! writes by hand. The marker scanner is hand-rolled rather than a regex —
+//! writes by hand, and `unicode-normalization`, for `passage_match`'s NFKD
+//! folding. The marker scanner is hand-rolled rather than a regex —
 //! see [`parser`]'s module docs for why.
 //!
 //! # Kept, not tidied
