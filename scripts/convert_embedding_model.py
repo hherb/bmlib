@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """Reproducible GGUF conversion of arctic-embed-l-v2.0, with verification.
 
     python scripts/convert_embedding_model.py --llama-cpp <checkout> \
@@ -36,6 +37,8 @@ BASE_MODEL = "Snowflake/snowflake-arctic-embed-l-v2.0"
 BASE_REVISION = "ac6544c8a46e00af67e330e85a9028c66b8cfd9a"
 STEM = "snowflake-arctic-embed-l-v2.0"
 DIM = 256
+# llama-embedding splits -p on this (default "\n"); it must not occur in any text.
+SEPARATOR = "<|bmlib-sep|>"
 BLOCK = 1024 * 1024
 # Minimum cosine against the fp32 reference, by file suffix.
 TOLERANCE = {"F16": 0.999, "Q8_0": 0.998}
@@ -68,10 +71,12 @@ def cosine(a: list[float], b: list[float]) -> float:
 def parse_embedding(output: str, dim: int = DIM) -> list[float]:
     """First ``dim`` values of llama-embedding's JSON, L2-renormalised; ValueError if odd."""
     try:
-        vec = json.loads(output)["data"][0]["embedding"]
-        vec = [float(x) for x in vec]
+        data = json.loads(output)["data"]
+        vec = [float(x) for x in data[0]["embedding"]] if len(data) == 1 else []
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise ValueError(f"unrecognised llama-embedding output: {output[:200]!r}") from e
+    if len(data) != 1:
+        raise ValueError(f"expected 1 embedding, got {len(data)}")
     if len(vec) < dim:
         raise ValueError(f"embedding has {len(vec)} dims, need at least {dim}")
     vec = vec[:dim]
@@ -87,10 +92,12 @@ def verify(llama_cpp: Path, gguf: Path, reference: dict) -> float:
     lowest = 1.0
     for item in reference["items"]:
         text = ("query: " if item["kind"] == "query" else "") + item["text"]
+        if SEPARATOR in text:
+            raise ValueError(f"reference text contains the separator: {item['name']}")
         cmd = [
             str(llama_cpp / "build/bin/llama-embedding"), "-m", str(gguf),
             "--pooling", "cls", "--embd-normalize", "-1",
-            "--embd-output-format", "json", "-p", text,
+            "--embd-output-format", "json", "--embd-separator", SEPARATOR, "-p", text,
         ]  # fmt: skip
         out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
         lowest = min(lowest, cosine(parse_embedding(out), item["vector"]))

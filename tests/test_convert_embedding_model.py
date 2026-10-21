@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """Tests for ``scripts/convert_embedding_model.py`` (pure parts; no llama.cpp)."""
 
 from __future__ import annotations
@@ -95,3 +96,31 @@ def test_refuses_wrong_llama_cpp_commit(tmp_path, monkeypatch):
         conv.main(argv)
     assert e.value.code != 0
     assert len(calls) == 1 and "rev-parse" in calls[0]
+
+
+def test_parse_embedding_rejects_multiple_entries():
+    out = json.dumps({"data": [{"embedding": [1.0, 0.0]}, {"embedding": [0.0, 1.0]}]})
+    with pytest.raises(ValueError, match="expected 1"):
+        conv.parse_embedding(out, 2)
+
+
+def test_verify_passes_separator_and_prefixes_queries_only(tmp_path, monkeypatch):
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        out = json.dumps({"data": [{"embedding": [1.0] + [0.0] * 255}]})
+        return subprocess.CompletedProcess(cmd, 0, stdout=out)
+
+    monkeypatch.setattr(conv.subprocess, "run", fake_run)
+    ref = {
+        "items": [
+            {"name": "d", "kind": "document", "text": "a\nb", "vector": [1.0] + [0.0] * 255},
+            {"name": "q", "kind": "query", "text": "hi", "vector": [1.0] + [0.0] * 255},
+        ]
+    }
+    gguf = tmp_path / "m-F16.gguf"
+    assert conv.verify(tmp_path, gguf, ref) == pytest.approx(1.0)
+    prompts = [c[c.index("-p") + 1] for c in seen]
+    assert prompts == ["a\nb", "query: hi"]
+    assert all(c[c.index("--embd-separator") + 1] == conv.SEPARATOR for c in seen)
