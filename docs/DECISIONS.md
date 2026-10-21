@@ -6067,3 +6067,33 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
 
   Do not restore the end-strip for a cited name alone. Test:
   `tests/test_jats_parser.py::TestANoteIsNotPartOfATitle::test_a_wrapped_cited_source_is_whitespace_normalised`.
+
+## citations — `find_passage` in Python and Rust (#527)
+
+- **An exact match never starts or ends inside a word or one source
+  character.** Upstream accepted the first normalised occurrence, so `HR 0.9`
+  matched `HR 0.95`, `effective` matched `ineffective` and `=` matched `≠`,
+  each at similarity 1.0 with `exact=True`. An edge cuts when the characters
+  on either side come from one source character, when the one after it is a
+  combining mark, or when both are letters, digits or marks. The search then
+  goes on to the next occurrence and to the fuzzy search, which scores the
+  source's whole word. Over the oracle corpus this moves 13 of 224
+  `find_passage` cases, every one a quote that cuts something, including
+  `paper_length/exact`, whose 1,500-character slice starts mid-word. Test:
+  `tests/test_passage_match.py::TestExactMatchesCutNothing`.
+- **"Word character" is restated in Rust, not shared.** Python's is
+  `str.isalnum()` or general category M; Rust's is `is_alphanumeric()` or
+  `is_combining_mark()`, less U+1F150..=U+1F189. Over every code point a fold
+  can produce, those 52 negative circled and squared Latin letters are the only
+  difference: Rust counts them as Other_Alphabetic and Python does not. Do not
+  drop the exclusion. Test: the contract case
+  `symbol-letter-is-not-a-word-character` in `tests/fixtures/passage_match.json`.
+- **The edit bound is capped at `P + T` in both languages.** Candidate offsets
+  lie in `(-P, T)`, so a larger bound changes no result: the 18 capped
+  low-threshold oracle cases agree with the uncapped code. The cap also keeps a
+  subnormal threshold, whose quotient is infinite, from raising
+  `OverflowError` in Python. Rust used to cap at the call site while Python
+  raised. Test: `tests/test_passage_match.py::TestMaxEditPoints`.
+- **Kept for now:** a superscript digit folds to a plain one (#528), and a quote
+  whose seeds are all too common is rejected at 0.0 (#529). Both are open
+  issues, not settled choices.

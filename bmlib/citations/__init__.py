@@ -71,6 +71,13 @@ from bmlib.citations.parser import (
     unique_document_ids,
     validate_citation_marker,
 )
+from bmlib.citations.passage_match import (
+    PassageMatch,
+    find_passage,
+    fold_char,
+    normalize_with_offsets,
+    occurs_once,
+)
 
 __all__ = [
     "CITATION_PATTERN",
@@ -85,6 +92,7 @@ __all__ = [
     "DocumentMetadata",
     "FormattedReference",
     "HarvardFormatter",
+    "PassageMatch",
     "VancouverFormatter",
     "author_surname",
     "build_references",
@@ -97,8 +105,12 @@ __all__ = [
     "extract_label_from_citation",
     "find_adjacent_citations",
     "find_missing_documents",
+    "find_passage",
+    "fold_char",
     "format_citation_group",
     "format_document",
+    "normalize_with_offsets",
+    "occurs_once",
     "parse_citations",
     "replace_all_citations_with_numbers",
     "replace_citation_with_number",

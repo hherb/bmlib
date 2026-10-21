@@ -85,6 +85,7 @@ CORPORA: list[tuple[str, str | None, str]] = [
     ("dump_models.py", "model_cases.json", "model_expected.json"),
     ("dump_openalex.py", "openalex_cases.json", "openalex_expected.json"),
     ("dump_parse_audit.py", "parse_audit_cases.json", "parse_audit_expected.json"),
+    ("dump_passage_match.py", "passage_match_cases.json", "passage_match_expected.json"),
     ("dump_pdf_text.py", "pdf_text_cases.json", "pdf_text_expected.json"),
     ("dump_protocol.py", "protocol_cases.json", "protocol_expected.json"),
     ("dump_pubmed.py", "pubmed_cases.json", "pubmed_expected.json"),
@@ -107,6 +108,7 @@ CORPORA: list[tuple[str, str | None, str]] = [
     ("dump_retractions.py", "retraction_cases.json", "retraction_expected.json"),
     ("dump_schema.py", None, "schema_expected.json"),
     ("dump_segmenter.py", "segmenter_cases.json", "segmenter_expected.json"),
+    ("dump_sequence_matcher.py", "sequence_matcher_cases.json", "sequence_matcher_expected.json"),
     ("dump_service.py", "service_cases.json", "service_expected.json"),
     ("dump_storage.py", "storage_cases.json", "storage_expected.json"),
     ("dump_sync.py", "sync_cases.json", "sync_expected.json"),
@@ -122,11 +124,12 @@ TEST_COPY_NAMES: dict[str, str] = {"cases.json": "citations_cases.json"}
 
 
 def case_path(cases: str) -> Path:
-    """The case file the dumper reads: ``oracle/``, or ``tests/data/`` for `service`.
+    """The case file the dumper reads: ``oracle/``, or else ``tests/data/``.
 
     Most corpora keep two copies of their cases — one the dumper reads here and
-    one the Rust test ``include_str!``s — but `service` has no ``oracle/`` copy,
-    so its single file is the dumper's input too.
+    one the Rust test ``include_str!``s — but `service`, `passage_match` and
+    `sequence_matcher` have no ``oracle/`` copy, so their single file is the
+    dumper's input too.
     """
     candidate = ORACLE / cases
     return candidate if candidate.exists() else DATA / cases

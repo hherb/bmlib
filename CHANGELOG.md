@@ -26,6 +26,17 @@ All notable changes to bmlib are documented here. The format is based on
   import is to take the rule when #520 lands.
 
 ### Added
+- **`bmlib.citations.find_passage` locates an LLM's near-verbatim quote in
+  its source** and returns the source's own span (`PassageMatch`: similarity,
+  start, end, text, exact), with the normalisation helpers `fold_char`,
+  `normalize_with_offsets` and `occurs_once`. Moved from bmlibrarian, with its
+  tests and more, and held to the Rust port by the shared contract
+  `tests/fixtures/passage_match.json`. One behaviour differs from upstream: an
+  occurrence that starts or ends inside a word or inside one source character
+  is no longer an exact match (`HR 0.9` in `HR 0.95`, `effective` in
+  `ineffective`, `=` in `≠`, #527), so the search goes on to the next
+  occurrence and then to the fuzzy search. A `bool` threshold is refused, and
+  a vanishingly small one no longer raises `OverflowError`.
 - **`import_retraction_watch_export()`: one export replaces the stored
   notices** (issues #509, #510). It parses and stores a whole Retraction Watch
   export in one transaction and **deletes the stored notices the export no

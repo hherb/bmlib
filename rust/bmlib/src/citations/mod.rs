@@ -16,7 +16,7 @@
 
 //! Citation-marker parsing and reference building — pure functions, no I/O.
 //!
-//! A port of `bmlib/citations/` (1,129 Python lines across four files):
+//! A port of `bmlib/citations/` (1,795 Python lines across six files, `__init__.py` included):
 //!
 //! | Python | Here |
 //! |---|---|
@@ -24,6 +24,8 @@
 //! | `citations/parser.py` | [`parser`] |
 //! | `citations/formatter.py` | [`formatter`] |
 //! | `citations/builder.py` | [`builder`] |
+//! | `citations/passage_match.py` | [`passage_match`] |
+//! | (`difflib.SequenceMatcher`, which `passage_match` leans on) | `sequence_matcher` (crate-private) |
 //!
 //! Text carries `[@id:12345:Smith2023]` markers. [`build_references`] numbers
 //! the cited documents by order of first appearance, formats references in
@@ -35,10 +37,11 @@
 //! Metadata is a `HashMap<i64, DocumentMetadata>`. The upstream DB fetch was
 //! severed in the Python port, and stays severed here.
 //!
-//! # The only dependency
+//! # Dependencies
 //!
 //! `serde`/`serde_json`, for the `to_dict`/`from_dict` pairs that Python
-//! writes by hand. The marker scanner is hand-rolled rather than a regex —
+//! writes by hand, and `unicode-normalization`, for `passage_match`'s NFKD
+//! folding. The marker scanner is hand-rolled rather than a regex —
 //! see [`parser`]'s module docs for why.
 //!
 //! # Kept, not tidied
@@ -56,6 +59,8 @@ pub mod builder;
 pub mod formatter;
 pub mod models;
 pub mod parser;
+pub mod passage_match;
+mod sequence_matcher;
 
 pub use builder::{
     build_references, build_references_default, find_missing_documents, format_document,
@@ -74,4 +79,8 @@ pub use parser::{
     find_adjacent_citations, format_citation_group, marker_spans, parse_citations,
     replace_all_citations_with_numbers, replace_citation_with_number, unique_document_ids,
     validate_marker, CITATION_PATTERN,
+};
+pub use passage_match::{
+    find_passage, fold_char, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageMatch,
+    PassageSpan,
 };
