@@ -54,6 +54,9 @@ bmlib/
 │   ├── formatter.py         # Vancouver/APA/Harvard/Chicago + CitationFormatter facade
 │   ├── builder.py           # build_references, format_document, find_missing_documents
 │   └── passage_match.py     # find_passage — locate an LLM's near-verbatim quote, return the source's own span
+├── embed/                   # In-process embedder: constants, vector rules, verified model download (pure stdlib so far)
+│   ├── vectors.py           # EMBEDDING_DIM, truncate_and_normalize, query_text, check_texts
+│   └── model.py             # ModelFile, pinned arctic-embed-l-v2.0 GGUFs, verify_model, download_model
 ├── context_processor/       # Hierarchical map-reduce over oversized content
 │   ├── base.py              # IterativeContextProcessor ABC — batching, recursion, consolidation
 │   ├── data_types.py        # ProcessingConfig, ExtractionResult, ConsolidatedItem, Batch, ProcessingResult, ProgressInfo, strategy enums
@@ -808,6 +811,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py`, `test_json_extraction.py` |
 | `agents/`            | `test_agents.py`                                           |
 | `citations/`         | `test_citations_parser.py`, `test_citations_formatter.py`, `test_citations_builder.py`, `test_passage_match.py`, `test_passage_match_contract.py` |
+| `embed/`             | `test_embed_vectors.py` (shared `embedding_contract.json`), `test_embed_model.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
 | `templates/`         | `test_templates.py`                                        |

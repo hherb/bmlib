@@ -6,6 +6,13 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`bmlib.embed`: embedding constants, vector rules and a verified model
+  download.** `truncate_and_normalize`, `query_text`, `check_texts` (pinned by
+  the shared `embedding_contract.json`) and `download_model`, which streams the
+  pinned arctic-embed-l-v2.0 GGUF through a `.part` file and keeps nothing
+  that fails its size or sha256.
+
 ### Fixed
 - **A retraction notice's own PMID is stored without leading zeros, as the
   paper's is** (#523, from PR #521's review). `notice_pmid` went through
