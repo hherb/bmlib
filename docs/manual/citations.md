@@ -158,6 +158,17 @@ if match.matched:
 - **`similarity` 0.0** means no candidate location was found at all (the passage or the text is empty, the passage is too long to reach the threshold, or none of its fragments occur there), as opposed to a near miss, which reports its real similarity below `min_similarity`.
 - `exact` is true when the normalised quote occurs verbatim (similarity 1.0).
 
+This section applies to the Rust crate too: `bmlib::citations::find_passage` returns the same span and the same similarity as Python, held to it by the shared fixture `tests/fixtures/passage_match.json`. In Rust the span is `Option<PassageSpan>` (`start`, `end`, `text`) and its offsets are `char` indices (Unicode code points, as Python's string indices), not byte offsets; an invalid `min_similarity` (or NaN) is an `Err(InvalidSimilarity)`.
+
+```rust
+use bmlib::citations::find_passage;
+
+let found = find_passage(llm_quote, full_text, 0.95)?;
+if let Some(span) = &found.span {
+    println!("{} {} {} {}", span.start, span.end, span.text, found.exact);
+}
+```
+
 ## Differences from bmlibrarian
 
 The port is output-faithful to upstream's code, with six defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.

@@ -9,6 +9,16 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's find_passage
+`citations::passage_match`: `find_passage`, which locates an (LLM-copied)
+quote in its source and returns the source's own wording for the span, with
+`PassageMatch`, `PassageSpan`, `InvalidSimilarity`, `fits_text` and
+`max_edit_points`, beside the normalisation (`fold_char`,
+`normalize_with_offsets`, `occurs_once`). A port of Python's, operation for
+operation — the same span and the same `f64` similarity — held to it by the
+shared `tests/fixtures/passage_match.json`. Spans are `char` (code-point)
+indices, as in Python; a threshold outside `(0, 1]`, or NaN, is an `Err`.
+
 ### Added — follows Python's #504 (retraction status)
 `publications::retraction_status`: `retraction_status`, the Crossref request
 builder and response parser, and the evidence and verdict types, held to

@@ -77,4 +77,7 @@ pub use parser::{
     replace_all_citations_with_numbers, replace_citation_with_number, unique_document_ids,
     validate_marker, CITATION_PATTERN,
 };
-pub use passage_match::{fold_char, normalize_with_offsets, occurs_once};
+pub use passage_match::{
+    find_passage, fits_text, fold_char, max_edit_points, normalize_with_offsets, occurs_once,
+    InvalidSimilarity, PassageMatch, PassageSpan,
+};

@@ -23,9 +23,6 @@
 //! including float ratios, are bit-identical to CPython's. Ties break on the
 //! earliest `a` index, then the earliest `b` index.
 
-// Unused until `find_passage` (passage_match.rs) calls it.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 /// A run of `size` equal elements at `a[a..]` and `b[b..]`.
