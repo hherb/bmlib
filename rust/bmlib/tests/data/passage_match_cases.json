@@ -1,0 +1,2569 @@
+[
+ {
+  "name": "find_passage/folding_0",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Café au lait was served.",
+   "text": "Café au lait was served.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_1",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Café au lait was served.",
+   "text": "Café au lait was served.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_2",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The patient's \"dose\" was low.",
+   "text": "The patient’s “dose” was low.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_3",
+  "fn": "find_passage",
+  "args": {
+   "passage": "A dose-response effect was seen.",
+   "text": "A dose–response effect was seen.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_4",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Effects were seen - not large.",
+   "text": "Effects were seen — not large.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_5",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The final efficacy was shown.",
+   "text": "The ﬁnal eﬃcacy was shown.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_6",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Areas of 5 m2 were treated.",
+   "text": "Areas of 5 m² were treated.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_7",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The treatment was effective.",
+   "text": "The treat­ment was effec​tive.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_8",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The groups differed: A = B.",
+   "text": "The groups differed: A ≠ B.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_9",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The value x was in S.",
+   "text": "The value x was ∉ S.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/folding_10",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Doses of 10-3 M were used.",
+   "text": "Doses of 10⁻³ M were used.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/nfd_trailing_accent",
+  "fn": "find_passage",
+  "args": {
+   "passage": "served with café",
+   "text": "Served with café. Then tea.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/ligature_span",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The f",
+   "text": "The ﬁnal result.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/typography_kept",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Mortality fell from 12% to 8% - a \"marked\" drop.",
+   "text": "Background text here. Mortality fell from 12% to 8% — a “marked” drop. More text follows.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/fuzzy_folded",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The final efficacy was clearly shown here today.",
+   "text": "Intro. The ﬁnal eﬃcacy was shown here today. End.",
+   "min_similarity": 0.85
+  }
+ },
+ {
+  "name": "find_passage/nfd_end_of_text",
+  "fn": "find_passage",
+  "args": {
+   "passage": "served with café",
+   "text": "Served with café",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/verbatim",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/lowercase",
+  "fn": "find_passage",
+  "args": {
+   "passage": "background: atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/whitespace",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Type 2 diabetes can often be managed through lifestyle changes.",
+   "text": "Type 2 diabetes   can often be\n managed through lifestyle changes.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/single_edit",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard-ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/late_drift",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower  mortality;.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/punctuation",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Aspirin reduces the risk of heart attack in patients with cardiovascular disease; however it may increase bleeding risk.",
+   "text": "Aspirin reduces the risk of heart attack in patients with cardiovascular disease, however it may increase bleeding risk.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/from_source",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Patients were assigned to apixaban 5 mg twice-daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/dropped_word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/inserted_word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major clinical bleeding according to ISTH criteria.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/first_word_edit",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Backgruond: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/last_word_edit",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortalty.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/final_punct",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin;",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/mid_number",
+  "fn": "find_passage",
+  "args": {
+   "passage": "3% per ear; with apixaban",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/decoy_votes",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year i an unrelated ending about placebo recipients. Filler sentence about something else entirely. ResultQ: Over a median folloQ-up of 2.1 years, strQke or systemic emboliQm occurred in 1.27% pQr year in the apixabaQ group and 1.60% per Qear in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/unicode_whitespace",
+  "fn": "find_passage",
+  "args": {
+   "passage": "(p < 0.05) with apixaban.",
+   "text": "Mortality was lower (p < 0.05) with apixaban.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/edge_whitespace",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Aspirin reduces the risk of heart attack in patient.",
+   "text": "Intro.\n\nAspirin reduces the risk of heart attack in patients.\n\nOther.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/threshold_inclusive",
+  "fn": "find_passage",
+  "args": {
+   "passage": "abcdefghij klmnopqrZ",
+   "text": "xxxxx abcdefghij klmnopqrs yyyyy",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/threshold_just_above",
+  "fn": "find_passage",
+  "args": {
+   "passage": "abcdefghij klmnopqrZ",
+   "text": "xxxxx abcdefghij klmnopqrs yyyyy",
+   "min_similarity": 0.951
+  }
+ },
+ {
+  "name": "find_passage/fuzzy_not_exact",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard-ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/long_passage",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice-daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Majr bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "text": "Section 0. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 1. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 2. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 3. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 4. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 5. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 6. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 7. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 8. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 9. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/long_nonmatching",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/long_text",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard-ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Section 0. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 1. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 2. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 3. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 4. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 5. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 6. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 7. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 8. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Section 9. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/fabricated",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins are the most effective treatment for lowering cholesterol levels.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/paraphrase",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Liver transplantation with living related donors has recently been developed to address the insufficient number of liver grafts for children",
+   "text": "Liver transplantation with living related donor has been recently developed to compensate for the insufficient number of liver grafts for children.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/best_on_rejection",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Results: Over a median follow-up of 2.1 years, any thromboembolic event occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/degenerate_0",
+  "fn": "find_passage",
+  "args": {
+   "passage": "",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/degenerate_1",
+  "fn": "find_passage",
+  "args": {
+   "passage": "   ",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/degenerate_2",
+  "fn": "find_passage",
+  "args": {
+   "passage": "some passage",
+   "text": "",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/degenerate_3",
+  "fn": "find_passage",
+  "args": {
+   "passage": "ab",
+   "text": "xyz",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/too_long_for_text",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/paragraph_break",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Among patients aged 75 years or older, the hazard ratio was 0.91.",
+   "text": "Results\n\nAmong patients aged 75 years or older,\n\nthe hazard ratio was 0.91.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/first_occurrence",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The effect was null.",
+   "text": "Abstract. The effect was null. Discussion. The effect was null.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/elided",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Patients were randomly assigned to drug X or warfarin. … Major bleeding occurred in 3.1% versus 2.2% of patients.",
+   "text": "Patients were randomly assigned to drug X or warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 3.1% versus 2.2% of patients.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/info_separator",
+  "fn": "find_passage",
+  "args": {
+   "passage": "hazard ratio",
+   "text": "the hazard\u001eratio was low",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/exact-verbatim",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The hazard ratio was 0.91",
+   "text": "Patients received 10 mg daily. The hazard ratio was 0.91 overall.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/case-and-whitespace",
+  "fn": "find_passage",
+  "args": {
+   "passage": "the HAZARD   ratio\nwas 0.91",
+   "text": "Patients received 10 mg daily. The hazard ratio was 0.91 overall.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/curly-quotes-and-en-dash",
+  "fn": "find_passage",
+  "args": {
+   "passage": "He said \"no benefit\" - clearly",
+   "text": "Abstract: He said “no benefit” – clearly, in 2020.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/nfd-accent-at-end",
+  "fn": "find_passage",
+  "args": {
+   "passage": "in the cafe",
+   "text": "Results in the café were poor.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/ligature-fi",
+  "fn": "find_passage",
+  "args": {
+   "passage": "final outcome",
+   "text": "The ﬁnal outcome was clear.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/superscript-two",
+  "fn": "find_passage",
+  "args": {
+   "passage": "5 m2 was",
+   "text": "Area of 5 m² was measured.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/soft-hyphen-inside-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "hypertension group",
+   "text": "The hyper­tension group improved.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/negation-overlay-not-equal",
+  "fn": "find_passage",
+  "args": {
+   "passage": "a = b",
+   "text": "We found a ≠ b in all samples.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/one-typo-accepted",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The treatment reduced mortalty by twenty percent in the cohort.",
+   "text": "Intro sentence here. The treatment reduced mortality by twenty percent in the cohort. Next sentence follows.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/paraphrase-rejected",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Blood pressure fell markedly among elderly participants taking the drug.",
+   "text": "Results. The drug lowered blood pressure significantly in older adults. Adverse events were rare and mild in both arms.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/empty-passage",
+  "fn": "find_passage",
+  "args": {
+   "passage": "",
+   "text": "Some text.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/whitespace-only-passage",
+  "fn": "find_passage",
+  "args": {
+   "passage": " \n\t ",
+   "text": "Some text.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/empty-text",
+  "fn": "find_passage",
+  "args": {
+   "passage": "x",
+   "text": "",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/passage-longer-than-text",
+  "fn": "find_passage",
+  "args": {
+   "passage": "this is a much longer passage than the text",
+   "text": "short",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/non-bmp-before-match",
+  "fn": "find_passage",
+  "args": {
+   "passage": "the hazard ratio was 0.91",
+   "text": "𝛂 and 😀 then the hazard ratio was 0.91",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/across-paragraph-break",
+  "fn": "find_passage",
+  "args": {
+   "passage": "patients. The hazard ratio",
+   "text": "Methods\n\nWe enrolled 40 patients.\n\nThe hazard ratio was 0.91 overall.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/repeated-quote-first-occurrence",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The result was significant.",
+   "text": "Alpha. The result was significant. Beta. The result was significant. Gamma.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/elided-quote-rejected",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The trial enrolled 200 adults across 12 sites. … Participants were followed for two years.",
+   "text": "The trial enrolled 200 adults across 12 sites. In stratum 1 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 2 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 3 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 4 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 5 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 6 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 7 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 8 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 9 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 10 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 11 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 12 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 13 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 14 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 15 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 16 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 17 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 18 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. Participants were followed for two years.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/contract/information-separator-is-space",
+  "fn": "find_passage",
+  "args": {
+   "passage": "alpha beta",
+   "text": "See alpha\u001fbeta gamma.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "normalize_with_offsets/0",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The hazard ratio was 0.91"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/1",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Patients received 10 mg daily. The hazard ratio was 0.91 overall."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/2",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "the HAZARD   ratio\nwas 0.91"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/3",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "He said \"no benefit\" - clearly"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/4",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Abstract: He said “no benefit” – clearly, in 2020."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/5",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "in the cafe"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/6",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Results in the café were poor."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/7",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "final outcome"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/8",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The ﬁnal outcome was clear."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/9",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "5 m2 was"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/10",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Area of 5 m² was measured."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/11",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "hypertension group"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/12",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The hyper­tension group improved."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/13",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "a = b"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/14",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "We found a ≠ b in all samples."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/15",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The treatment reduced mortalty by twenty percent in the cohort."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/16",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Intro sentence here. The treatment reduced mortality by twenty percent in the cohort. Next sentence follows."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/17",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Blood pressure fell markedly among elderly participants taking the drug."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/18",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Results. The drug lowered blood pressure significantly in older adults. Adverse events were rare and mild in both arms."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/19",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": ""
+  }
+ },
+ {
+  "name": "normalize_with_offsets/20",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Some text."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/21",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": " \n\t "
+  }
+ },
+ {
+  "name": "normalize_with_offsets/22",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "x"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/23",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "this is a much longer passage than the text"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/24",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "short"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/25",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "the hazard ratio was 0.91"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/26",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "𝛂 and 😀 then the hazard ratio was 0.91"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/27",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "patients. The hazard ratio"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/28",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Methods\n\nWe enrolled 40 patients.\n\nThe hazard ratio was 0.91 overall."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/29",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The result was significant."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/30",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "Alpha. The result was significant. Beta. The result was significant. Gamma."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/31",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The trial enrolled 200 adults across 12 sites. … Participants were followed for two years."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/32",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "The trial enrolled 200 adults across 12 sites. In stratum 1 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 2 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 3 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 4 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 5 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 6 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 7 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 8 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 9 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 10 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 11 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 12 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 13 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 14 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 15 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 16 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 17 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. In stratum 18 the investigators recorded baseline blood pressure, renal function and adherence, and the clinical coordinators reviewed every visit with the data monitoring committee. Participants were followed for two years."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/33",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "alpha beta"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/34",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "See alpha\u001fbeta gamma."
+  }
+ },
+ {
+  "name": "normalize_with_offsets/35",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "  Foo \n\t Bar  "
+  }
+ },
+ {
+  "name": "normalize_with_offsets/36",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "A  B\nC"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/37",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "ﬁrst x"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/38",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "İstanbul"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/39",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "   "
+  }
+ },
+ {
+  "name": "normalize_with_offsets/40",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "éé 😀 x"
+  }
+ },
+ {
+  "name": "normalize_with_offsets/41",
+  "fn": "normalize_with_offsets",
+  "args": {
+   "text": "≠ ⁻³ ²"
+  }
+ },
+ {
+  "name": "occurs_once/0",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "stroke",
+   "text": "Aspirin reduced stroke."
+  }
+ },
+ {
+  "name": "occurs_once/1",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "stroke",
+   "text": "Stroke fell. Aspirin reduced stroke."
+  }
+ },
+ {
+  "name": "occurs_once/2",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "risk was higher",
+   "text": "Risk was\nhigher. The risk  was higher."
+  }
+ },
+ {
+  "name": "occurs_once/3",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "risk was higher",
+   "text": "Risk was hi­gher. Risk was higher."
+  }
+ },
+ {
+  "name": "occurs_once/4",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "aa",
+   "text": "aaa"
+  }
+ },
+ {
+  "name": "occurs_once/5",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "heart",
+   "text": "Aspirin reduced stroke."
+  }
+ },
+ {
+  "name": "occurs_once/6",
+  "fn": "occurs_once",
+  "args": {
+   "fragment": "​ ",
+   "text": "Aspirin reduced stroke."
+  }
+ },
+ {
+  "name": "max_edit_points/0.5/1",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 1,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/1/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 1,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/1/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 7,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/1/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 100,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/1/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 2000,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "max_edit_points/0.5/7",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 7,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/7/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 1,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/7/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 7,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/7/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 100,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/7/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 2000,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "max_edit_points/0.5/100",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 100,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/100/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 1,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/100/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 7,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/100/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 100,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/100/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 2000,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "max_edit_points/0.5/2000",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 2000,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/2000/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 1,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/2000/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 7,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/2000/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 100,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "fits_text/0.5/2000/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 2000,
+   "min_similarity": 0.5
+  }
+ },
+ {
+  "name": "max_edit_points/0.8/1",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 1,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/1/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 1,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/1/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 7,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/1/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 100,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/1/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 2000,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "max_edit_points/0.8/7",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 7,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/7/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 1,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/7/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 7,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/7/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 100,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/7/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 2000,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "max_edit_points/0.8/100",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 100,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/100/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 1,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/100/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 7,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/100/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 100,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/100/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 2000,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "max_edit_points/0.8/2000",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 2000,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/2000/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 1,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/2000/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 7,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/2000/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 100,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "fits_text/0.8/2000/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 2000,
+   "min_similarity": 0.8
+  }
+ },
+ {
+  "name": "max_edit_points/0.9/1",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 1,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/1/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 1,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/1/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 7,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/1/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 100,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/1/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 2000,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "max_edit_points/0.9/7",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 7,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/7/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 1,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/7/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 7,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/7/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 100,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/7/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 2000,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "max_edit_points/0.9/100",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 100,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/100/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 1,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/100/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 7,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/100/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 100,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/100/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 2000,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "max_edit_points/0.9/2000",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 2000,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/2000/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 1,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/2000/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 7,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/2000/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 100,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "fits_text/0.9/2000/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 2000,
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "max_edit_points/0.95/1",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 1,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/1/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 1,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/1/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 7,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/1/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 100,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/1/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 2000,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "max_edit_points/0.95/7",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 7,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/7/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 1,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/7/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 7,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/7/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 100,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/7/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 2000,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "max_edit_points/0.95/100",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 100,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/100/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 1,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/100/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 7,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/100/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 100,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/100/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 2000,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "max_edit_points/0.95/2000",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 2000,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/2000/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 1,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/2000/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 7,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/2000/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 100,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "fits_text/0.95/2000/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 2000,
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "max_edit_points/0.99/1",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 1,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/1/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 1,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/1/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 7,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/1/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 100,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/1/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 2000,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "max_edit_points/0.99/7",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 7,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/7/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 1,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/7/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 7,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/7/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 100,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/7/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 2000,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "max_edit_points/0.99/100",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 100,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/100/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 1,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/100/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 7,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/100/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 100,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/100/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 2000,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "max_edit_points/0.99/2000",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 2000,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/2000/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 1,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/2000/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 7,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/2000/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 100,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "fits_text/0.99/2000/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 2000,
+   "min_similarity": 0.99
+  }
+ },
+ {
+  "name": "max_edit_points/1.0/1",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 1,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/1/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 1,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/1/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 7,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/1/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 100,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/1/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 1,
+   "text_length": 2000,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "max_edit_points/1.0/7",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 7,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/7/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 1,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/7/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 7,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/7/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 100,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/7/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 7,
+   "text_length": 2000,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "max_edit_points/1.0/100",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 100,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/100/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 1,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/100/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 7,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/100/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 100,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/100/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 100,
+   "text_length": 2000,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "max_edit_points/1.0/2000",
+  "fn": "max_edit_points",
+  "args": {
+   "passage_length": 2000,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/2000/1",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 1,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/2000/7",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 7,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/2000/100",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 100,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "fits_text/1.0/2000/2000",
+  "fn": "fits_text",
+  "args": {
+   "passage_length": 2000,
+   "text_length": 2000,
+   "min_similarity": 1.0
+  }
+ },
+ {
+  "name": "find_passage/random_edit/00",
+  "fn": "find_passage",
+  "args": {
+   "passage": "to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Methods: We conducted  clinicala andomised controlpled trial in 1,204 pati",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/01",
+  "fn": "find_passage",
+  "args": {
+   "passage": "leeding occurred in 2.13% per year with apixaban versus w3.09% per year with warfarin. Patients were ass",
+   "text": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/02",
+  "fn": "find_passage",
+  "args": {
+   "passage": "apixaban was superior to warfarin in prevejnting stroke or systemic embolism, caused less bleeding and resulted in lower mortal clinicality. Major bleeding occurred in 2.13% per ye",
+   "text": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/03",
+  "fn": "find_passage",
+  "args": {
+   "passage": "in the warfarin group (hazard ratio 0.79; 95% CI s0.66 to 0",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/04",
+  "fn": "find_passage",
+  "args": {
+   "passage": "or systemic embolismoccurred in 1.27% per year in the  clinicalapixaban group and 1.60% per year in the warfarin group (haz",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/05",
+  "fn": "find_passage",
+  "args": {
+   "passage": "in 2.13% per year withmapixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, ap",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/06",
+  "fn": "find_passage",
+  "args": {
+   "passage": "mortality. Major bfeeding occurred in 2m13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% p",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/07",
+  "fn": "find_passage",
+  "args": {
+   "passage": "95% CI 0.66 so 0.95). Background: Atrial fibrillation is the most coamon sustaingd arrhythmia and is associated wit",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/08",
+  "fn": "find_passage",
+  "args": {
+   "passage": "centr clinicales in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixa clinicalban versus 3.09% per year with warfa",
+   "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/09",
+  "fn": "find_passage",
+  "args": {
+   "passage": "elderly patients with atrial fibrillation, apixaban was superioer to w",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/10",
+  "fn": "find_passage",
+  "args": {
+   "passage": "fibrillati clinicalon is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Patients were assigned to apixaban 5 mg twice daily or to warfarin with",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/11",
+  "fn": "find_passage",
+  "args": {
+   "passage": "in 1,204 patients aged 65 years or older across 14 centres pin Europe between 2015 and 2019. clinical Major bleeding occurred in 2.13y per year wit",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/12",
+  "fn": "find_passage",
+  "args": {
+   "passage": "aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embqolism; the primary safety outcome was m clinicalajo",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/13",
+  "fn": "find_passage",
+  "args": {
+   "passage": "in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. The primary outcome was stroke or systemic emboli clinicalsm; the primary saaety ou",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/14",
+  "fn": "find_passage",
+  "args": {
+   "passage": "stroke or systemic embolism oczcurred in 1.27% pe year in the apixaban group and 1.60% per year in the warfarin group (hazad ratio 0.79",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/15",
+  "fn": "find_passage",
+  "args": {
+   "passage": "lower mortality. P clinicalatients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 t clinicalo 3.0. Methods: We c",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/16",
+  "fn": "find_passage",
+  "args": {
+   "passage": "a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial idn 1,204 patients aged 65 years or older acr",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/17",
+  "fn": "find_passage",
+  "args": {
+   "passage": "(hazard ratio 0.79; 95% CI 0.66 to 0.95). Background: Atrial f clinicalibrillation is mthe most common sustained ar clinicalrhythmia and is associated with a fivefo",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/18",
+  "fn": "find_passage",
+  "args": {
+   "passage": "and 2019. The primary outcome was stroke or syste clinicalmhcoembolism; the primary safety outcome was major bleeding accor",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/19",
+  "fn": "find_passage",
+  "args": {
+   "passage": "1,2r04 patie clinicalnts aged 65 years or older across 14 clinical centres in Europe between 2015 and 2019. Major bleedi",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/20",
+  "fn": "find_passage",
+  "args": {
+   "passage": "patients wi cliicalth atrial fibrillati clinicalon, apixaban was superior ",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/21",
+  "fn": "find_passage",
+  "args": {
+   "passage": "apixaban versus 3.09% per syearwity warfarin. Patien",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/22",
+  "fn": "find_passage",
+  "args": {
+   "passage": "to ISTH criteria. Results: Over a median follow-up of 2. years, stroke or systemicembolism occurred in 1.27% per year in the apixaban group ",
+   "text": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/23",
+  "fn": "find_passage",
+  "args": {
+   "passage": "per year with warfarin. The primary outcome was strgoke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criter",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/24",
+  "fn": "find_passage",
+  "args": {
+   "passage": "or systemic embolism occurred in 1.27% per year in the apbixa",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/25",
+  "fn": "find_passage",
+  "args": {
+   "passage": "aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embolism; the primary safetyoutcome was major",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/26",
+  "fn": "find_passage",
+  "args": {
+   "passage": "stroke. Conclusions: In elderly patients with trial fibrillatinn, apixaban",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/27",
+  "fn": "find_passage",
+  "args": {
+   "passage": "was major bleeding accorwding to ISTH criteria. Conclusionsz In e",
+   "text": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/28",
+  "fn": "find_passage",
+  "args": {
+   "passage": "is associated with a fivefold increase in the risk of stroke. Mjor blee",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/29",
+  "fn": "find_passage",
+  "args": {
+   "passage": "or systemic embolism; the primary safety outcome was  clinicalmajor bleeding according to ISTH criteria clinical. Methods",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/30",
+  "fn": "find_passage",
+  "args": {
+   "passage": "systemic cembolism; thy primary safety outcome wasbmajor blee",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/31",
+  "fn": "find_passage",
+  "args": {
+   "passage": "3.09% per year with warfarin. Background: Atrial fibrillatio is the most common sustained arrhythmia and is associated uwitha fivefold increase in the risk of stroke. The primary outcome ",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/32",
+  "fn": "find_passage",
+  "args": {
+   "passage": "a randomised controlled trial in 1,204 ptients ag clinicaled 65 years or older across 14 centres inmEurope between 2015 and 2019.",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/33",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold inscreasse in the risk of stroke. The primary outcome was stroke or system",
+   "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/34",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Patients were assigned to apixyaban 5 mg twice daily or to warfarin with a target inter clinicalnational normlised rati",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/35",
+  "fn": "find_passage",
+  "args": {
+   "passage": "2.13% per year with apixaban versus 3.09% per year with warfarin. Bakkground: Atrial fibrillation is the most common sustained arrhythmi",
+   "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/36",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalisedm ratio of 2",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/37",
+  "fn": "find_passage",
+  "args": {
+   "passage": "apixaban 5 mg twice daily or to warfarin with a target iternational normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled tri",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/38",
+  "fn": "find_passage",
+  "args": {
+   "passage": "ISTH criteria. Patients were assigned to apixaban 5 mg twice dwaily or to warfarin wit clinicalh a target internation",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/39",
+  "fn": "find_passage",
+  "args": {
+   "passage": "of stroke. Patients were assigned to apixaba 5 mg twic",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/40",
+  "fn": "find_passage",
+  "args": {
+   "passage": "95% CI 0.66 to 0.95)x Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding ",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/41",
+  "fn": "find_passage",
+  "args": {
+   "passage": "a target internatioal normalised ratio of  clinical2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients",
+   "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/42",
+  "fn": "find_passage",
+  "args": {
+   "passage": "in preventing struoke or systemic embolism, cused less bleed",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/43",
+  "fn": "find_passage",
+  "args": {
+   "passage": "ISH criteria. Major bleeding occurred in 2.13% per year with apixaban versus 3 clinical.09% per year wit",
+   "text": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/44",
+  "fn": "find_passage",
+  "args": {
+   "passage": "0.66 to 0.95). Major bleeding occurred in 2.13%  clinicalper year with apixaban ",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/45",
+  "fn": "find_passage",
+  "args": {
+   "passage": "or tystemic embolism, caused less bleeding a",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/46",
+  "fn": "find_passage",
+  "args": {
+   "passage": "prima clinicalry outcome was stroke or systemic embolism; the primary safety outcome was major bleeing according to ISTH criteria. Conclusions: In ",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/47",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Paetients were assigned to apixaban 5 mg vtwice daily or to warfarin with a targ clinicalet international normalised rati",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/48",
+  "fn": "find_passage",
+  "args": {
+   "passage": "wcarfarin in prevent clinicaling stroke or systemic emb",
+   "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/49",
+  "fn": "find_passage",
+  "args": {
+   "passage": "fibrillation, apixaban was superir to warfarin in preventing stroke or systemic embolism, cause",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/50",
+  "fn": "find_passage",
+  "args": {
+   "passage": "outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to IS clinicalTH criteria.",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/51",
+  "fn": "find_passage",
+  "args": {
+   "passage": "patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resul clinicalted in lower mortality. Major bleeding occurredtin 2",
+   "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/52",
+  "fn": "find_passage",
+  "args": {
+   "passage": "follow-up of2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.9; 95% CI 0.66 to 0.95). The primary ou",
+   "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/53",
+  "fn": "find_passage",
+  "args": {
+   "passage": "outcome wa clinicals stroke or systemic embolism; the primary safety outco;e was major",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/54",
+  "fn": "find_passage",
+  "args": {
+   "passage": "0.66 to 0.95). Conclusionsp: In elderly patients with atrial fibrillation, apixaban was superior to warfrin in preventing stroke ",
+   "text": "The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/55",
+  "fn": "find_passage",
+  "args": {
+   "passage": "of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.6f0% per year in thewarfarin group (hazard ratio 0.c79; 95% CI 0.66 to 0.95). The primar",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/56",
+  "fn": "find_passage",
+  "args": {
+   "passage": "year in the apixaban group and 1.60% p clinicaleur year ine th",
+   "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/57",
+  "fn": "find_passage",
+  "args": {
+   "passage": "ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per yearuin the warfarin group (haza",
+   "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/58",
+  "fn": "find_passage",
+  "args": {
+   "passage": "to 0.95). Major bleeding occurred in 2.13% per year with apxixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained ",
+   "text": "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "find_passage/random_edit/59",
+  "fn": "find_passage",
+  "args": {
+   "passage": "atrial fibrillation, apixaban was superior to warfarinxin preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortali",
+   "text": "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria.",
+   "min_similarity": 0.95
+  }
+ }
+]
