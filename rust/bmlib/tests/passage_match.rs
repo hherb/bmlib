@@ -19,14 +19,16 @@
 //! The variant, negation and superscript folding tests are stated on
 //! `normalize_with_offsets`, which is what decides "exact"; the span-based
 //! folding tests and everything after them drive `find_passage`. Python's
-//! `TestPassageMatchInvariants` checks are carried by the types here (a span
-//! is all or nothing), and its non-string inputs cannot be expressed.
+//! `TestPassageMatchInvariants` has no counterpart: `PassageMatch` and
+//! `PassageSpan` are `#[non_exhaustive]`, so only `find_passage` builds them
+//! (and the property test checks every span it returns). Python's non-string
+//! inputs cannot be expressed, and `TestFitsText`/`TestMaxEditPoints` are unit
+//! tests in the crate, the two bounds being crate-private.
 
 use std::time::Instant;
 
 use bmlib::citations::passage_match::{
-    find_passage, fits_text, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageMatch,
-    PassageSpan,
+    find_passage, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageMatch, PassageSpan,
 };
 
 // The crate's difflib port is crate-private; the exhaustive search compiles
@@ -259,9 +261,11 @@ fn span_keeps_trailing_nfd_accent() {
 }
 
 #[test]
-fn span_does_not_split_a_ligature() {
+fn no_exact_match_ends_inside_a_ligature() {
+    // "The f" occurs in the folded "the final", but only by cutting "ﬁ".
     let m = find("The f", "The \u{fb01}nal result.", 0.95);
-    assert_eq!(matched_text(&m), Some("The \u{fb01}"));
+    assert!(!m.exact);
+    assert!(!m.matched());
 }
 
 #[test]
@@ -585,15 +589,7 @@ fn degenerate_inputs() {
     ];
     for (passage, text) in cases {
         let m = find(passage, text, 0.95);
-        assert_eq!(
-            m,
-            PassageMatch {
-                similarity: m.similarity,
-                span: None,
-                exact: false
-            },
-            "{passage:?} in {text:?}"
-        );
+        assert!(m.span.is_none() && !m.exact, "{passage:?} in {text:?}");
         assert!(!m.matched());
     }
 }
@@ -602,53 +598,76 @@ fn degenerate_inputs() {
 fn passage_too_long_for_text_is_rejected_without_search() {
     let m = find(&abstract_text(), SENTENCES[5], 0.95);
     assert_eq!(
-        m,
-        PassageMatch {
-            similarity: 0.0,
-            span: None,
-            exact: false
-        }
+        (m.similarity, m.span.is_none(), m.exact),
+        (0.0, true, false)
     );
 }
 
-// TestFitsText
+// TestExactMatchesCutNothing
 
 #[test]
-fn fits_text_bound() {
-    // P <= T(2-s)/s: at s=0.5, a 30-char passage fits a 10-char text.
-    assert!(fits_text(30, 10, 0.5));
-    assert!(!fits_text(31, 10, 0.5));
-    assert!(fits_text(10, 10, 1.0));
-    assert!(!fits_text(11, 10, 1.0));
+fn a_cut_occurrence_is_not_exact() {
+    let cases = [
+        ("HR 0.9", "The HR 0.95 (95% CI 0.8-1.1) held."),
+        ("5 mg daily", "Patients received 25 mg daily."),
+        (
+            "effective in reducing mortality",
+            "The drug was ineffective in reducing mortality.",
+        ),
+        ("typical presentation", "It was an atypical presentation."),
+        // Ends inside one source character: "≠" precomposed and decomposed.
+        (
+            "the difference was =",
+            "So the difference was \u{2260} 0 here.",
+        ),
+        (
+            "the difference was =",
+            "So the difference was =\u{338} 0 here.",
+        ),
+        // Starts inside one: "½" folds to "1⁄2".
+        ("2 dose was given", "A \u{bd} dose was given."),
+    ];
+    for (passage, text) in cases {
+        let m = find(passage, text, 0.95);
+        assert!(!m.exact, "{passage:?} in {text:?}");
+        assert!(m.similarity < 1.0, "{passage:?} in {text:?}");
+    }
 }
 
-// TestPassageMatchInvariants: partial spans are unrepresentable here.
+#[test]
+fn a_cut_occurrence_still_matches_fuzzily_where_close() {
+    let m = find(
+        "the difference was =",
+        "So the difference was \u{2260} 0.",
+        0.9,
+    );
+    assert!(m.matched() && !m.exact);
+    assert_eq!(matched_text(&m), Some("the difference was \u{2260}"));
+}
 
 #[test]
-fn consistent_values() {
-    let accepted = PassageMatch {
-        similarity: 0.97,
-        span: Some(PassageSpan {
-            start: 2,
-            end: 5,
-            text: "abc".into(),
-        }),
-        exact: false,
-    };
-    assert!(accepted.matched());
-    let rejected = PassageMatch {
-        similarity: 0.3,
-        span: None,
-        exact: false,
-    };
-    assert!(!rejected.matched());
+fn a_later_whole_word_occurrence_is_exact() {
+    let text = "It was ineffective at first, then effective at last.";
+    let m = find("effective at", text, 0.95);
+    assert!(m.exact);
+    assert_eq!(
+        (span(&m).start, span(&m).text.as_str()),
+        (34, "effective at")
+    );
+}
+
+#[test]
+fn punctuation_next_to_the_edge_cuts_nothing() {
+    let m = find("reduced mortality", "It (reduced mortality).", 0.95);
+    assert!(m.exact);
+    assert_eq!(matched_text(&m), Some("reduced mortality"));
 }
 
 // TestValidation
 
 #[test]
 fn threshold_out_of_range() {
-    for threshold in [0.0, -0.1, 1.01, f64::NAN] {
+    for threshold in [0.0, -0.1, 1.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let err = find_passage("abc", "abc", threshold).unwrap_err();
         assert!(err.0.to_bits() == threshold.to_bits(), "{threshold}");
     }
@@ -832,10 +851,11 @@ fn matches_exhaustive_search_on_random_edits() {
 
 #[test]
 fn tiny_threshold_does_not_overflow() {
-    // max_edit_points saturates for such thresholds; Python's big ints don't.
-    // Python: start 6, end 26, similarity 0.95 for each.
+    // The edit bound is capped at P + T in both languages, so even a
+    // subnormal threshold (an infinite quotient) is finite. Python: start 6,
+    // end 26, similarity 0.95 for each.
     let text = "xxxxx abcdefghij klmnopqrs yyyyy";
-    for threshold in [1e-300, 1e-17, 1e-5] {
+    for threshold in [5e-324, 1e-310, 1e-300, 1e-17, 1e-5] {
         let m = find("abcdefghij klmnopqrZ", text, threshold);
         let s = span(&m);
         assert_eq!((s.start, s.end), (6, 26), "{threshold}");

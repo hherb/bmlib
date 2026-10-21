@@ -135,11 +135,11 @@
     "name": "find_passage/ligature_span",
     "ok": true,
     "value": {
-      "end": 5,
-      "exact": true,
-      "similarity": 1.0,
-      "start": 0,
-      "text": "The ﬁ"
+      "end": null,
+      "exact": false,
+      "similarity": 0.75,
+      "start": null,
+      "text": null
     }
   },
   {
@@ -7374,11 +7374,11 @@
     "name": "find_passage/paper_length/exact",
     "ok": true,
     "value": {
-      "end": 31500,
-      "exact": true,
-      "similarity": 1.0,
-      "start": 30000,
-      "text": "ments() before publishing output  a placeholder in a reference list is visible, but it is still a placeholder. Locating quoted passages LLMs asked to quote a passage \"verbatim\" often change whitespace, case or a punctuation mark. find_passage() finds where the quote really is in the source and returns the source's own wording for that span, so you can store the original text instead of the model's copy. - Forgiven: case, whitespace (including line breaks and paragraph breaks), typographic quotes and dashes, accents, compatibility forms (ligatures, superscripts, full-width characters), and invisible characters. - Not forgiven: a paraphrase, or a quote with an elided stretch ( first  last ), falls below the threshold and is rejected. A quote that occurs twice returns the first occurrence. - similarity 0.0 means no candidate location was found at all (the passage or the text is empty, the passage is too long to reach the threshold, or none of its fragments occur there), as opposed to a near miss, which reports its real similarity below min_similarity . - exact is true when the normalised quote occurs verbatim (similarity 1.0). This section applies to the Rust crate too: bmlib::citations::find_passage returns the same span and the same similarity as Python, held to it by the shared fixture tests/fixtures/passage_match.json . In Rust the span is Option<PassageSpan ( start , end , text ) and its offsets are char indices (Unicode code points, as Python's string indices), not byte of"
+      "end": 31497,
+      "exact": false,
+      "similarity": 0.9963149078726968,
+      "start": 30008,
+      "text": "before publishing output  a placeholder in a reference list is visible, but it is still a placeholder. Locating quoted passages LLMs asked to quote a passage \"verbatim\" often change whitespace, case or a punctuation mark. find_passage() finds where the quote really is in the source and returns the source's own wording for that span, so you can store the original text instead of the model's copy. - Forgiven: case, whitespace (including line breaks and paragraph breaks), typographic quotes and dashes, accents, compatibility forms (ligatures, superscripts, full-width characters), and invisible characters. - Not forgiven: a paraphrase, or a quote with an elided stretch ( first  last ), falls below the threshold and is rejected. A quote that occurs twice returns the first occurrence. - similarity 0.0 means no candidate location was found at all (the passage or the text is empty, the passage is too long to reach the threshold, or none of its fragments occur there), as opposed to a near miss, which reports its real similarity below min_similarity . - exact is true when the normalised quote occurs verbatim (similarity 1.0). This section applies to the Rust crate too: bmlib::citations::find_passage returns the same span and the same similarity as Python, held to it by the shared fixture tests/fixtures/passage_match.json . In Rust the span is Option<PassageSpan ( start , end , text ) and its offsets are char indices (Unicode code points, as Python's string indices), not byte"
     }
   },
   {
@@ -7401,6 +7401,713 @@
       "similarity": 0.3454492585053795,
       "start": null,
       "text": null
+    }
+  },
+  {
+    "name": "max_edit_points/capped/20/32/0.1",
+    "ok": true,
+    "value": 52
+  },
+  {
+    "name": "max_edit_points/capped/20/32/1e-310",
+    "ok": true,
+    "value": 52
+  },
+  {
+    "name": "max_edit_points/capped/20/32/5e-324",
+    "ok": true,
+    "value": 52
+  },
+  {
+    "name": "max_edit_points/capped/1500/79947/0.01",
+    "ok": true,
+    "value": 81447
+  },
+  {
+    "name": "max_edit_points/capped/7/0/0.3",
+    "ok": true,
+    "value": 7
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/00",
+    "ok": true,
+    "value": {
+      "end": 825,
+      "exact": false,
+      "similarity": 0.8530465949820788,
+      "start": 695,
+      "text": "group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/01",
+    "ok": true,
+    "value": {
+      "end": 412,
+      "exact": false,
+      "similarity": 0.848780487804878,
+      "start": 225,
+      "text": "older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/02",
+    "ok": true,
+    "value": {
+      "end": 868,
+      "exact": false,
+      "similarity": 0.8707482993197279,
+      "start": 733,
+      "text": "to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/03",
+    "ok": true,
+    "value": {
+      "end": 400,
+      "exact": false,
+      "similarity": 0.6493506493506493,
+      "start": 328,
+      "text": "daily or to warfarin with a target international normalised ratio of 2.0"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/04",
+    "ok": true,
+    "value": {
+      "end": 894,
+      "exact": false,
+      "similarity": 0.7857142857142857,
+      "start": 806,
+      "text": "3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation,"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/05",
+    "ok": true,
+    "value": {
+      "end": 663,
+      "exact": false,
+      "similarity": 0.8223350253807107,
+      "start": 576,
+      "text": "years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/06",
+    "ok": true,
+    "value": {
+      "end": 159,
+      "exact": false,
+      "similarity": 0.8614457831325302,
+      "start": 0,
+      "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/07",
+    "ok": true,
+    "value": {
+      "end": 428,
+      "exact": false,
+      "similarity": 0.8620689655172413,
+      "start": 340,
+      "text": "warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/08",
+    "ok": true,
+    "value": {
+      "end": 544,
+      "exact": false,
+      "similarity": 0.8823529411764706,
+      "start": 493,
+      "text": "major bleeding according to ISTH criteria. Results:"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.3/09",
+    "ok": true,
+    "value": {
+      "end": 952,
+      "exact": false,
+      "similarity": 0.9057750759878419,
+      "start": 799,
+      "text": "versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/00",
+    "ok": true,
+    "value": {
+      "end": 465,
+      "exact": false,
+      "similarity": 0.8359550561797753,
+      "start": 272,
+      "text": "and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/01",
+    "ok": true,
+    "value": {
+      "end": 851,
+      "exact": false,
+      "similarity": 0.8943488943488943,
+      "start": 664,
+      "text": "1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/02",
+    "ok": true,
+    "value": {
+      "end": 266,
+      "exact": false,
+      "similarity": 0.9736842105263158,
+      "start": 115,
+      "text": "in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/03",
+    "ok": true,
+    "value": {
+      "end": 473,
+      "exact": false,
+      "similarity": 0.8048780487804879,
+      "start": 356,
+      "text": "target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/04",
+    "ok": true,
+    "value": {
+      "end": 894,
+      "exact": false,
+      "similarity": 0.9226190476190477,
+      "start": 733,
+      "text": "to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation,"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/05",
+    "ok": true,
+    "value": {
+      "end": 903,
+      "exact": false,
+      "similarity": 0.6494252873563219,
+      "start": 743,
+      "text": "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/06",
+    "ok": true,
+    "value": {
+      "end": 820,
+      "exact": false,
+      "similarity": 0.893491124260355,
+      "start": 664,
+      "text": "1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/07",
+    "ok": true,
+    "value": {
+      "end": 327,
+      "exact": false,
+      "similarity": 0.6330935251798561,
+      "start": 276,
+      "text": "2019. Patients were assigned to apixaban 5 mg twice"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/08",
+    "ok": true,
+    "value": {
+      "end": 96,
+      "exact": false,
+      "similarity": 0.8,
+      "start": 39,
+      "text": "most common sustained arrhythmia and is associated with a"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.5/09",
+    "ok": true,
+    "value": {
+      "end": 766,
+      "exact": false,
+      "similarity": 0.8160919540229885,
+      "start": 686,
+      "text": "warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/00",
+    "ok": true,
+    "value": {
+      "end": 903,
+      "exact": false,
+      "similarity": 0.8463251670378619,
+      "start": 709,
+      "text": "ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/01",
+    "ok": true,
+    "value": {
+      "end": 859,
+      "exact": false,
+      "similarity": 0.8407643312101911,
+      "start": 790,
+      "text": "apixaban versus 3.09% per year with warfarin. Conclusions: In elderly"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/02",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.5272727272727272,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/03",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.5512820512820513,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/04",
+    "ok": true,
+    "value": {
+      "end": 393,
+      "exact": false,
+      "similarity": 0.8542713567839196,
+      "start": 296,
+      "text": "assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/05",
+    "ok": true,
+    "value": {
+      "end": 149,
+      "exact": false,
+      "similarity": 0.7012987012987013,
+      "start": 61,
+      "text": "arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/06",
+    "ok": true,
+    "value": {
+      "end": 748,
+      "exact": false,
+      "similarity": 0.8987854251012146,
+      "start": 633,
+      "text": "year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/07",
+    "ok": true,
+    "value": {
+      "end": 266,
+      "exact": false,
+      "similarity": 0.8070175438596491,
+      "start": 190,
+      "text": "in 1,204 patients aged 65 years or older across 14 centres in Europe between"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/08",
+    "ok": true,
+    "value": {
+      "end": 221,
+      "exact": false,
+      "similarity": 0.8387096774193549,
+      "start": 127,
+      "text": "of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years"
+    }
+  },
+  {
+    "name": "find_passage/low_threshold/0.7/09",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.6964285714285714,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/paper_length/few_edits/0.7",
+    "ok": true,
+    "value": {
+      "end": 51499,
+      "exact": false,
+      "similarity": 0.9966599866399466,
+      "start": 50003,
+      "text": "Description ----------- ------ --------- ------------- conn Any (required) A DB-API connection. sql str (required) The SQL statement to execute repeatedly. params_seq Sequence[Sequence] (required) Sequence of parameter tuples. Example: --- fetch_one Execute a query and return the first row, or None if no rows match. Parameters: Parameter Type Default Description ----------- ------ --------- ------------- conn Any (required) A DB-API connection. sql str (required) The SQL query. params Sequence () Parameter values for placeholders. Returns: The first row (as sqlite3.Row or RealDictRow ), or None . Example: --- fetch_all Execute a query and return all rows. Parameters: Parameter Type Default Description ----------- ------ --------- ------------- conn Any (required) A DB-API connection. sql str (required) The SQL query. params Sequence () Parameter values for placeholders. Returns: List of rows. Empty list if no rows match. Example: --- fetch_scalar Execute a query and return the first column of the first row, or None . Convenient for COUNT( ) , MAX() , and similar single-value queries. \"First column\" means the first value on a dict-like row and row[0] otherwise. psycopg2's RealDictRow is a dict subclass keyed by column name, so row[0] is a KeyError there; sqlite3.Row is not a dict, so it keeps the index path. If neither works, None is returned rather than raising. Fixed in 0.6.0. This function previously read row[0] on every backend, so on PostgreSQL it raised KeyError into"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.2/00",
+    "ok": true,
+    "value": {
+      "end": 184,
+      "exact": false,
+      "similarity": 0.8264462809917356,
+      "start": 24,
+      "text": "ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.2/01",
+    "ok": true,
+    "value": {
+      "end": 206,
+      "exact": false,
+      "similarity": 0.9430379746835443,
+      "start": 55,
+      "text": "target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.2/02",
+    "ok": true,
+    "value": {
+      "end": 262,
+      "exact": false,
+      "similarity": 0.9047619047619048,
+      "start": 43,
+      "text": "international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years,"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.2/03",
+    "ok": true,
+    "value": {
+      "end": 198,
+      "exact": false,
+      "similarity": 0.8705882352941177,
+      "start": 42,
+      "text": "to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism;"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.2/04",
+    "ok": true,
+    "value": {
+      "end": 190,
+      "exact": false,
+      "similarity": 0.8481012658227848,
+      "start": 51,
+      "text": "of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.2/05",
+    "ok": true,
+    "value": {
+      "end": 183,
+      "exact": false,
+      "similarity": 0.8476454293628809,
+      "start": 26,
+      "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.3/00",
+    "ok": true,
+    "value": {
+      "end": 163,
+      "exact": false,
+      "similarity": 0.865979381443299,
+      "start": 35,
+      "text": "or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.3/01",
+    "ok": true,
+    "value": {
+      "end": 150,
+      "exact": false,
+      "similarity": 0.8153310104529616,
+      "start": 27,
+      "text": "primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.3/02",
+    "ok": true,
+    "value": {
+      "end": 184,
+      "exact": false,
+      "similarity": 0.8844884488448845,
+      "start": 41,
+      "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019."
+    }
+  },
+  {
+    "name": "find_passage/capped/0.3/03",
+    "ok": true,
+    "value": {
+      "end": 144,
+      "exact": false,
+      "similarity": 0.7615894039735099,
+      "start": 15,
+      "text": "ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.3/04",
+    "ok": true,
+    "value": {
+      "end": 233,
+      "exact": false,
+      "similarity": 0.8888888888888888,
+      "start": 46,
+      "text": "Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.3/05",
+    "ok": true,
+    "value": {
+      "end": 194,
+      "exact": false,
+      "similarity": 0.8811188811188811,
+      "start": 59,
+      "text": "follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.4/00",
+    "ok": true,
+    "value": {
+      "end": 217,
+      "exact": false,
+      "similarity": 0.8397790055248618,
+      "start": 57,
+      "text": "in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.4/01",
+    "ok": true,
+    "value": {
+      "end": 254,
+      "exact": false,
+      "similarity": 0.9197080291970803,
+      "start": 49,
+      "text": "international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.4/02",
+    "ok": true,
+    "value": {
+      "end": 184,
+      "exact": false,
+      "similarity": 0.7878787878787878,
+      "start": 27,
+      "text": "ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.4/03",
+    "ok": true,
+    "value": {
+      "end": 147,
+      "exact": false,
+      "similarity": 0.9032258064516129,
+      "start": 1,
+      "text": "1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.4/04",
+    "ok": true,
+    "value": {
+      "end": 236,
+      "exact": false,
+      "similarity": 0.8940092165898618,
+      "start": 35,
+      "text": "criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI"
+    }
+  },
+  {
+    "name": "find_passage/capped/0.4/05",
+    "ok": true,
+    "value": {
+      "end": 238,
+      "exact": false,
+      "similarity": 0.9619047619047619,
+      "start": 32,
+      "text": "between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the"
+    }
+  },
+  {
+    "name": "find_passage/cut/00",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.9230769230769231,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/cut/01",
+    "ok": true,
+    "value": {
+      "end": 11,
+      "exact": false,
+      "similarity": 0.9230769230769231,
+      "start": 4,
+      "text": "HR 0.95"
+    }
+  },
+  {
+    "name": "find_passage/cut/02",
+    "ok": true,
+    "value": {
+      "end": 47,
+      "exact": false,
+      "similarity": 0.9538461538461539,
+      "start": 13,
+      "text": "ineffective in reducing mortality."
+    }
+  },
+  {
+    "name": "find_passage/cut/03",
+    "ok": true,
+    "value": {
+      "end": 23,
+      "exact": false,
+      "similarity": 0.975609756097561,
+      "start": 3,
+      "text": "the difference was ≠"
+    }
+  },
+  {
+    "name": "find_passage/cut/04",
+    "ok": true,
+    "value": {
+      "end": 24,
+      "exact": false,
+      "similarity": 0.975609756097561,
+      "start": 3,
+      "text": "the difference was ≠"
+    }
+  },
+  {
+    "name": "find_passage/cut/05",
+    "ok": true,
+    "value": {
+      "end": 19,
+      "exact": false,
+      "similarity": 0.9142857142857143,
+      "start": 2,
+      "text": "½ dose was given."
+    }
+  },
+  {
+    "name": "find_passage/cut/06",
+    "ok": true,
+    "value": {
+      "end": 3,
+      "exact": false,
+      "similarity": 0.75,
+      "start": 0,
+      "text": "The"
+    }
+  },
+  {
+    "name": "find_passage/cut/07",
+    "ok": true,
+    "value": {
+      "end": 46,
+      "exact": true,
+      "similarity": 1.0,
+      "start": 34,
+      "text": "effective at"
+    }
+  },
+  {
+    "name": "find_passage/cut/08",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.0,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/cut/09",
+    "ok": true,
+    "value": {
+      "end": 14,
+      "exact": true,
+      "similarity": 1.0,
+      "start": 7,
+      "text": "The bar"
+    }
+  },
+  {
+    "name": "find_passage/cut/10",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.875,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/cut/11",
+    "ok": true,
+    "value": {
+      "end": null,
+      "exact": false,
+      "similarity": 0.8695652173913043,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "find_passage/cut/12",
+    "ok": true,
+    "value": {
+      "end": 17,
+      "exact": true,
+      "similarity": 1.0,
+      "start": 7,
+      "text": "bc def ghi"
     }
   }
 ]

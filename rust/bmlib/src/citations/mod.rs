@@ -37,7 +37,7 @@
 //! Metadata is a `HashMap<i64, DocumentMetadata>`. The upstream DB fetch was
 //! severed in the Python port, and stays severed here.
 //!
-//! # The only dependency
+//! # Dependencies
 //!
 //! `serde`/`serde_json`, for the `to_dict`/`from_dict` pairs that Python
 //! writes by hand, and `unicode-normalization`, for `passage_match`'s NFKD
@@ -81,6 +81,6 @@ pub use parser::{
     validate_marker, CITATION_PATTERN,
 };
 pub use passage_match::{
-    find_passage, fits_text, fold_char, max_edit_points, normalize_with_offsets, occurs_once,
-    InvalidSimilarity, PassageMatch, PassageSpan,
+    find_passage, fold_char, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageMatch,
+    PassageSpan,
 };

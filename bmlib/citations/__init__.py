@@ -74,9 +74,7 @@ from bmlib.citations.parser import (
 from bmlib.citations.passage_match import (
     PassageMatch,
     find_passage,
-    fits_text,
     fold_char,
-    max_edit_points,
     normalize_with_offsets,
     occurs_once,
 )
@@ -108,11 +106,9 @@ __all__ = [
     "find_adjacent_citations",
     "find_missing_documents",
     "find_passage",
-    "fits_text",
     "fold_char",
     "format_citation_group",
     "format_document",
-    "max_edit_points",
     "normalize_with_offsets",
     "occurs_once",
     "parse_citations",

@@ -25,6 +25,7 @@ and the performance bound that motivated the module (the old sliding-window
 matcher in CitationFinderAgent took ~30 s per citation on a 1 kB abstract).
 """
 
+import math
 import random
 import time
 from difflib import SequenceMatcher
@@ -33,8 +34,9 @@ import pytest
 
 from bmlib.citations.passage_match import (
     PassageMatch,
+    _fits_text,
+    _max_edit_points,
     find_passage,
-    fits_text,
     normalize_with_offsets,
     occurs_once,
 )
@@ -129,10 +131,11 @@ class TestUnicodeFolding:
         match = find_passage("served with caf\u00e9", text, min_similarity=0.95)
         assert match.text == "Served with cafe\u0301"
 
-    def test_span_does_not_split_a_ligature(self) -> None:
-        text = "The \ufb01nal result."
-        match = find_passage("The f", text, min_similarity=0.95)
-        assert match.text == "The \ufb01"
+    def test_no_exact_match_ends_inside_a_ligature(self) -> None:
+        # "The f" occurs in the folded "the final", but only by cutting "ﬁ".
+        match = find_passage("The f", "The \ufb01nal result.", min_similarity=0.95)
+        assert not match.exact
+        assert not match.matched
 
     def test_returned_text_keeps_source_typography(self) -> None:
         sentence = "Mortality fell from 12% to 8% \u2014 a \u201cmarked\u201d drop."
@@ -394,14 +397,32 @@ class TestRejection:
 
 
 class TestFitsText:
-    """fits_text() bounds the passage length that can reach the threshold."""
+    """_fits_text() bounds the passage length that can reach the threshold."""
 
     def test_bound(self) -> None:
         # P <= T(2-s)/s: at s=0.5, a 30-char passage fits a 10-char text.
-        assert fits_text(30, 10, 0.5)
-        assert not fits_text(31, 10, 0.5)
-        assert fits_text(10, 10, 1.0)
-        assert not fits_text(11, 10, 1.0)
+        assert _fits_text(30, 10, 0.5)
+        assert not _fits_text(31, 10, 0.5)
+        assert _fits_text(10, 10, 1.0)
+        assert not _fits_text(11, 10, 1.0)
+
+
+class TestMaxEditPoints:
+    """_max_edit_points() is 2P(1-s)/s, capped at P + T."""
+
+    def test_bound(self) -> None:
+        # 2 * 20 * 0.05 / 0.95 = 2.1..., floored.
+        assert _max_edit_points(20, 1000, 0.95) == 2
+        assert _max_edit_points(20, 1000, 1.0) == 0
+
+    def test_capped_at_passage_plus_text(self) -> None:
+        # 2 * 20 * 0.9 / 0.1 = 360, above P + T = 52.
+        assert _max_edit_points(20, 32, 0.1) == 52
+
+    def test_vanishing_threshold_does_not_overflow(self) -> None:
+        # The quotient is infinite here; uncapped, math.floor raised OverflowError.
+        assert _max_edit_points(20, 32, 1e-310) == 52
+        assert find_passage("abcdefgh", "xxxx abcdefgX yyyy", 1e-310).matched
 
 
 class TestPassageMatchInvariants:
@@ -417,6 +438,7 @@ class TestPassageMatchInvariants:
             {"similarity": 0.9, "start": 4, "end": 4, "text": ""},
             {"similarity": 0.9, "start": 0, "end": 4, "text": "abc"},
             {"similarity": 0.9, "exact": True},
+            {"similarity": 0.9, "start": 0, "end": 3, "text": "abc", "exact": True},
         ],
     )
     def test_inconsistent_values_raise(self, kwargs: dict) -> None:
@@ -499,10 +521,51 @@ def test_matches_exhaustive_search_on_random_edits() -> None:
             assert match.similarity >= best - PROPERTY_SCORE_TOLERANCE, passage
 
 
+class TestExactMatchesCutNothing:
+    """An exact match never starts or ends inside a word or a source character."""
+
+    @pytest.mark.parametrize(
+        ("passage", "text"),
+        [
+            ("HR 0.9", "The HR 0.95 (95% CI 0.8-1.1) held."),
+            ("5 mg daily", "Patients received 25 mg daily."),
+            ("effective in reducing mortality", "The drug was ineffective in reducing mortality."),
+            ("typical presentation", "It was an atypical presentation."),
+            # Ends inside one source character: "≠" precomposed and decomposed.
+            ("the difference was =", "So the difference was \u2260 0 here."),
+            ("the difference was =", "So the difference was =\u0338 0 here."),
+            # Starts inside one: "½" folds to "1⁄2".
+            ("2 dose was given", "A \u00bd dose was given."),
+        ],
+    )
+    def test_a_cut_occurrence_is_not_exact(self, passage: str, text: str) -> None:
+        match = find_passage(passage, text, min_similarity=0.95)
+        assert not match.exact
+        assert match.similarity < 1.0
+
+    def test_a_cut_occurrence_still_matches_fuzzily_where_close(self) -> None:
+        # Not exact, but one character from the source's own wording.
+        match = find_passage("the difference was =", "So the difference was \u2260 0.", 0.9)
+        assert match.matched and not match.exact
+        assert match.text == "the difference was \u2260"
+
+    def test_a_later_whole_word_occurrence_is_exact(self) -> None:
+        text = "It was ineffective at first, then effective at last."
+        match = find_passage("effective at", text, min_similarity=0.95)
+        assert match.exact
+        assert (match.start, match.text) == (34, "effective at")
+
+    def test_punctuation_next_to_the_edge_cuts_nothing(self) -> None:
+        match = find_passage("reduced mortality", "It (reduced mortality).", 0.95)
+        assert match.exact and match.text == "reduced mortality"
+
+
 class TestValidation:
     """Invalid arguments raise instead of silently matching."""
 
-    @pytest.mark.parametrize("threshold", [0.0, -0.1, 1.01])
+    @pytest.mark.parametrize(
+        "threshold", [0.0, -0.1, 1.01, math.nan, math.inf, -math.inf, True, False]
+    )
     def test_threshold_out_of_range(self, threshold: float) -> None:
         with pytest.raises(ValueError):
             find_passage("abc", "abc", min_similarity=threshold)

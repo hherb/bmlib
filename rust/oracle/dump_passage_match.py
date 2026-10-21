@@ -37,9 +37,9 @@ import sys
 import unicodedata
 
 from bmlib.citations.passage_match import (
+    _fits_text,
+    _max_edit_points,
     find_passage,
-    fits_text,
-    max_edit_points,
     normalize_with_offsets,
     occurs_once,
 )
@@ -79,9 +79,9 @@ def run(case: dict):
     if fn == "occurs_once":
         return occurs_once(args["fragment"], args["text"])
     if fn == "fits_text":
-        return fits_text(args["passage_length"], args["text_length"], args["min_similarity"])
+        return _fits_text(args["passage_length"], args["text_length"], args["min_similarity"])
     if fn == "max_edit_points":
-        return max_edit_points(args["passage_length"], args["min_similarity"])
+        return _max_edit_points(args["passage_length"], args["text_length"], args["min_similarity"])
     raise ValueError(f"unknown fn {fn!r}")
 
 

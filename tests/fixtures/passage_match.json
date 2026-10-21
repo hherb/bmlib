@@ -264,6 +264,158 @@
     "text": "alpha\u001fbeta",
     "similarity": 1.0
    }
+  },
+  {
+   "name": "cut-inside-a-number",
+   "passage": "HR 0.9",
+   "text": "The HR 0.95 (95% CI 0.8-1.1) held.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "similarity": 0.9230769230769231
+   }
+  },
+  {
+   "name": "cut-inside-a-word",
+   "passage": "effective in reducing mortality",
+   "text": "The drug was ineffective in reducing mortality.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 13,
+    "end": 47,
+    "text": "ineffective in reducing mortality.",
+    "similarity": 0.9538461538461539
+   }
+  },
+  {
+   "name": "negation-at-the-edge",
+   "passage": "the difference was =",
+   "text": "So the difference was ≠ 0 here.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 3,
+    "end": 23,
+    "text": "the difference was ≠",
+    "similarity": 0.975609756097561
+   }
+  },
+  {
+   "name": "negation-at-the-edge-nfd",
+   "passage": "the difference was =",
+   "text": "So the difference was ≠ 0 here.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 3,
+    "end": 24,
+    "text": "the difference was ≠",
+    "similarity": 0.975609756097561
+   }
+  },
+  {
+   "name": "cut-inside-a-source-character",
+   "passage": "2 dose was given",
+   "text": "A ½ dose was given.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "similarity": 0.9142857142857143
+   }
+  },
+  {
+   "name": "later-whole-word-occurrence",
+   "passage": "effective at",
+   "text": "It was ineffective at first, then effective at last.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": true,
+    "start": 34,
+    "end": 46,
+    "text": "effective at",
+    "similarity": 1.0
+   }
+  },
+  {
+   "name": "trailing-paragraph-break",
+   "passage": "the bar",
+   "text": "Intro. The bar\n\n",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": true,
+    "start": 7,
+    "end": 14,
+    "text": "The bar",
+    "similarity": 1.0
+   }
+  },
+  {
+   "name": "vanishing-threshold",
+   "passage": "abcdefgh",
+   "text": "xxxx abcdefgX yyyy",
+   "min_similarity": 1e-310,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 5,
+    "end": 13,
+    "text": "abcdefgX",
+    "similarity": 0.875
+   }
+  },
+  {
+   "name": "cut-after-a-combining-mark",
+   "passage": "ताब पढो",
+   "text": "किताब पढो ।",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null
+   }
+  },
+  {
+   "name": "cut-after-an-enclosing-mark",
+   "passage": "bc def ghi",
+   "text": "Grade a⃝bc def ghi.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null
+   }
+  },
+  {
+   "name": "symbol-letter-is-not-a-word-character",
+   "passage": "bc def ghi",
+   "text": "Grade 🅐bc def ghi.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": true,
+    "start": 7,
+    "end": 17,
+    "text": "bc def ghi",
+    "similarity": 1.0
+   }
   }
  ],
  "invalid_thresholds": [

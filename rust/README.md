@@ -60,7 +60,7 @@ rust/
     │   │   │                     character-class divergence
     │   │   ├── scoring_models.rs DimensionScore + AssessmentDetail
     │   │   └── mod.rs
-    │   ├── citations/  port of bmlib/citations/ (1,795 Python lines)
+    │   ├── citations/  port of bmlib/citations/ (1,870 Python lines)
     │   │   ├── builder.rs      build_references, format_document
     │   │   ├── formatter.rs    Vancouver / APA / Harvard / Chicago
     │   │   ├── models.rs       Citation, DocumentMetadata, CitationStyle
@@ -150,7 +150,7 @@ registry, and `.gitignore` covers it.
 | | Python | Rust | State |
 |---|---|---|---|
 | `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server, and a differential corpus (`tests/db_oracle.rs`, 37 cases) over splitting, dialect, values, tables, transactions and migrations |
-| `citations/` | 1,795 lines, 6 files | 7 files | **ported**, 68 named tests + 424 oracle cases (`find_passage` included) |
+| `citations/` | 1,870 lines, 6 files | 7 files | **ported**, 75 named tests + 561 oracle cases (`find_passage` and its `difflib` port included) |
 | `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 20 named tests + 62 oracle cases. The rendering hooks (`format_item` / `format_consolidated_item`) are reached through `ItemRouting`; until round 46 nothing called them |
 | `fulltext/jats_text` | 1,816 (reader) | 1 file | **ported** — whitespace, locator joining, LaTeX deposits, formula spacing. 12 named tests + 74 oracle cases |
 | `fulltext/_parse_audit` | 345 lines | 1 file | **ported** — the unwind audit. 7 named tests + 42 oracle cases |
@@ -272,6 +272,10 @@ reading of its tests. The citations half exists now:
 ```
 rust/oracle/dump_citations.py     runs cases through bmlib.citations -> JSON
 rust/oracle/cases.json            93 cases
+rust/oracle/dump_passage_match.py runs cases through bmlib.citations.passage_match
+  tests/data/passage_match_cases.json  398 cases (its single copy)
+rust/oracle/dump_sequence_matcher.py  difflib.SequenceMatcher, autojunk off
+  tests/data/sequence_matcher_cases.json  70 cases (its single copy)
 rust/oracle/dump_context.py       runs cases through bmlib.context_processor
 rust/oracle/context_cases.json    62 cases
 rust/oracle/dump_llm_processor.py the one part of that package that calls a model

@@ -21,7 +21,9 @@
 //! `tests/data/passage_match_expected.json` from the Python library) and by this
 //! test, which runs each case through the port and asserts the two
 //! `serde_json::Value`s are equal. `similarity` therefore compares as `f64` with
-//! `==`. Regenerate from the repository root:
+//! `==`. The `fits_text` and `max_edit_points` cases are crate-private bounds,
+//! run by `bounds_agree_with_python` in `src/citations/passage_match.rs`.
+//! Regenerate from the repository root:
 //!
 //! ```text
 //! .venv/bin/python rust/oracle/dump_passage_match.py \
@@ -29,9 +31,7 @@
 //!     > rust/bmlib/tests/data/passage_match_expected.json
 //! ```
 
-use bmlib::citations::{
-    find_passage, fits_text, max_edit_points, normalize_with_offsets, occurs_once,
-};
+use bmlib::citations::{find_passage, normalize_with_offsets, occurs_once};
 use serde_json::{json, Value};
 
 const CASES: &str = include_str!("data/passage_match_cases.json");
@@ -42,7 +42,6 @@ fn run(case: &Value) -> Value {
     let name = case["name"].as_str().unwrap_or_default();
     let args = &case["args"];
     let text = args["text"].as_str().unwrap_or_default();
-    let size = |key: &str| args[key].as_u64().expect("size argument") as usize;
     let similarity = args["min_similarity"].as_f64().unwrap_or_default();
 
     match case["fn"].as_str().unwrap_or_default() {
@@ -70,12 +69,6 @@ fn run(case: &Value) -> Value {
             args["fragment"].as_str().unwrap_or_default(),
             text
         )),
-        "fits_text" => json!(fits_text(
-            size("passage_length"),
-            size("text_length"),
-            similarity
-        )),
-        "max_edit_points" => json!(max_edit_points(size("passage_length"), similarity)),
         other => panic!("case {name:?}: unknown fn {other:?}"),
     }
 }
@@ -106,6 +99,10 @@ fn the_port_agrees_with_python_on_every_case() {
             "case {name:?} errored in Python: {}",
             want["error"]
         );
+        // The two crate-private bounds are checked by a unit test in the crate.
+        if matches!(case["fn"].as_str(), Some("fits_text" | "max_edit_points")) {
+            continue;
+        }
         let got = run(case);
         if got != want["value"] {
             failures.push(format!(

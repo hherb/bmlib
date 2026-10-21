@@ -33,7 +33,9 @@ exact span of the original.
 
 Search strategy:
 
-1. Exact substring match of the normalised passage (similarity 1.0).
+1. Exact substring match of the normalised passage (similarity 1.0), at the
+   first occurrence that neither starts nor ends inside a word or inside one
+   source character; "HR 0.9" is not an exact match in "HR 0.95".
 2. Size check: a passage longer than ``len(text) * (2-s)/s`` cannot reach
    threshold ``s`` against any window, so it is rejected without a search.
 3. Seed voting: the passage is cut into short non-overlapping seeds, each
@@ -55,8 +57,9 @@ Cost is dominated by step 4: per candidate location, one alignment plus a
 bounded number of window scores (independent of the passage length), each a
 ``SequenceMatcher`` comparison that costs quadratic or more in the passage
 length ``P``. The seed lookups are linear in the text length. Measured on
-prose: a sentence takes a few milliseconds, a 1 kB passage about 0.1 s, a
-2 kB passage up to about 2 s.
+prose in bmlibrarian, before the module moved here (no bmlib script re-derives
+it): a sentence takes a few milliseconds, a 1 kB passage about 0.1 s, a 2 kB
+passage up to about 2 s.
 """
 
 from __future__ import annotations
@@ -96,7 +99,8 @@ _TYPOGRAPHIC_FOLDS = str.maketrans(
         **dict.fromkeys("‘’‚‛′´`", "'"),
         **dict.fromkeys("“”„‟″«»", '"'),
         **dict.fromkeys("‐‑‒–—―−﹘﹣－", "-"),
-        **dict.fromkeys("­​‌‍⁠﻿", None),
+        # Soft hyphen, zero-width space/non-joiner/joiner, word joiner, BOM.
+        **dict.fromkeys("\u00ad\u200b\u200c\u200d\u2060\ufeff", None),
     }
 )
 # Combining overlays that negate their base character ("≠" is "=" + U+0338);
@@ -122,11 +126,10 @@ class PassageMatch:
         end: End index (exclusive) of the matched span, or None.
         text: ``original_text[start:end]`` when the match was accepted, else None.
         exact: True when the normalised passage occurs verbatim in the
-            normalised text (only case, whitespace, accents, typographic
+            normalised text, starting and ending on whole words and whole
+            source characters (only case, whitespace, accents, typographic
             variants, compatibility forms such as "²" vs "2", and invisible
-            characters differ). An exact span may start or end inside a
-            character that folds to several ("ﬁ"), so ``text`` can then hold
-            one more letter than the passage.
+            characters differ). Only ever set with similarity 1.0.
     """
 
     similarity: float
@@ -141,10 +144,13 @@ class PassageMatch:
         Raises:
             ValueError: If ``similarity`` is outside [0, 1], the span fields
                 are only partly set, the span is empty or inconsistent with
-                ``text``, or ``exact`` is set on a rejected match.
+                ``text``, or ``exact`` is set on a rejected match or with a
+                similarity below 1.0.
         """
         if not 0.0 <= self.similarity <= 1.0:
             raise ValueError(f"similarity must be in [0, 1], got {self.similarity}")
+        if self.exact and self.similarity != 1.0:
+            raise ValueError(f"an exact match has similarity 1.0, got {self.similarity}")
         span = (self.start, self.end, self.text)
         if all(field is None for field in span):
             if self.exact:
@@ -170,8 +176,8 @@ def fold_char(char: str) -> str:
     Typographic quotes and dashes become ASCII, compatibility characters
     are decomposed (NFKD: "ﬁ" -> "fi", "²" -> "2"), accents and other
     combining marks are dropped (so NFC and NFD spellings compare equal)
-    except negation overlays ("≠" stays distinct from "="), and the result
-    is lowercased.
+    except negation overlays ("≠" stays distinct from "="), whitespace NFKD
+    produces is dropped, and the result is lowercased.
 
     Args:
         char: A single character.
@@ -235,8 +241,10 @@ def occurs_once(fragment: str, text: str) -> bool:
 
     Compared the way :func:`find_passage` compares (both sides normalised by
     :func:`normalize_with_offsets`), so copies that differ only in case,
-    whitespace, invisible characters or typography count as the same text.
-    Overlapping occurrences count too.
+    whitespace, accents, compatibility forms, invisible characters or
+    typography count as the same text. Overlapping occurrences count too, and
+    so does an occurrence inside a longer word: this asks whether a fragment
+    is unambiguous, not whether :func:`find_passage` would match it.
 
     Args:
         fragment: Text to look for (e.g. a matched span of ``text``).
@@ -261,9 +269,15 @@ def occurs_once(fragment: str, text: str) -> bool:
 def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch:
     """Find the best-scoring span of ``text`` it can locate for ``passage``.
 
-    An exact match (after normalisation) is returned as the raw source span
-    and may start or end mid-word; a fuzzy match starts and ends on word
+    An exact match (after normalisation) is returned as the raw source span;
+    an occurrence that would start or end inside a word or inside one source
+    character is not exact, and the search moves on to the next occurrence
+    and then to the fuzzy search. A fuzzy match starts and ends on word
     boundaries (unless no boundary lies near an estimated edge).
+
+    Similarity 0.0 means no candidate location was found: either no fragment
+    of the passage occurs in the text, or every fragment that does occurs too
+    often (more than ``SEED_MAX_OCCURRENCES`` times) to locate it.
 
     Args:
         passage: Passage to locate (e.g. an LLM's "verbatim" quote).
@@ -276,11 +290,12 @@ def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch
 
     Raises:
         TypeError: If ``passage`` or ``text`` is not a string.
-        ValueError: If ``min_similarity`` is outside (0, 1].
+        ValueError: If ``min_similarity`` is outside (0, 1], NaN, or a bool.
     """
     if not isinstance(passage, str) or not isinstance(text, str):
         raise TypeError("passage and text must be strings")
-    if not 0.0 < min_similarity <= 1.0:
+    # A bool is an int, so True would otherwise pass as a threshold of 1.0.
+    if isinstance(min_similarity, bool) or not 0.0 < min_similarity <= 1.0:
         raise ValueError(f"min_similarity must be in (0, 1], got {min_similarity}")
 
     norm_passage, _ = normalize_with_offsets(passage)
@@ -288,13 +303,13 @@ def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch
     if not norm_passage or not norm_text:
         return PassageMatch(similarity=0.0)
 
-    exact_at = norm_text.find(norm_passage)
+    exact_at = _exact_at(norm_passage, norm_text, offsets)
     if exact_at >= 0:
         return _accepted(text, offsets, exact_at, exact_at + len(norm_passage), 1.0, exact=True)
-    if not fits_text(len(norm_passage), len(norm_text), min_similarity):
+    if not _fits_text(len(norm_passage), len(norm_text), min_similarity):
         return PassageMatch(similarity=0.0)
 
-    max_edits = max_edit_points(len(norm_passage), min_similarity)
+    max_edits = _max_edit_points(len(norm_passage), len(norm_text), min_similarity)
     matcher = SequenceMatcher(None, autojunk=False)
     matcher.set_seq2(norm_passage)
 
@@ -311,7 +326,66 @@ def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch
     return PassageMatch(similarity=best_similarity)
 
 
-def fits_text(passage_length: int, text_length: int, min_similarity: float) -> bool:
+def _exact_at(passage: str, text: str, offsets: list[int]) -> int:
+    """First occurrence of ``passage`` in ``text`` whose edges cut nothing.
+
+    An occurrence that starts or ends inside a word ("HR 0.9" in "HR 0.95",
+    "effective" in "ineffective") or inside one source character ("=" in
+    "≠", "f" in "ﬁ") does not say what the source says, so it is skipped.
+
+    Args:
+        passage: Normalised passage.
+        text: Normalised text.
+        offsets: Offset map of ``text`` from :func:`normalize_with_offsets`.
+
+    Returns:
+        The start of the first occurrence with clean edges, or -1.
+    """
+    at = text.find(passage)
+    while at >= 0:
+        if not _cuts(text, offsets, at) and not _cuts(text, offsets, at + len(passage)):
+            return at
+        at = text.find(passage, at + 1)
+    return -1
+
+
+def _cuts(text: str, offsets: list[int], index: int) -> bool:
+    """Whether a window edge at ``index`` of normalised ``text`` cuts into something.
+
+    It does when the characters either side come from one source character
+    (a multi-code-point fold such as "ﬁ" or "≠"), when the character after it
+    is a combining mark (which belongs to the character before), or when both
+    are word characters. An edge at either end of the text cuts nothing.
+
+    Args:
+        text: Normalised text.
+        offsets: Offset map of ``text`` from :func:`normalize_with_offsets`.
+        index: Edge position, between ``text[index - 1]`` and ``text[index]``.
+
+    Returns:
+        True if an exact match may not start or end there.
+    """
+    if index <= 0 or index >= len(text):
+        return False
+    before, after = text[index - 1], text[index]
+    return (
+        offsets[index - 1] == offsets[index]
+        or _is_mark(after)
+        or (_is_word_char(before) and _is_word_char(after))
+    )
+
+
+def _is_mark(char: str) -> bool:
+    """Whether ``char`` is a combining mark (general category M)."""
+    return unicodedata.category(char)[0] == "M"
+
+
+def _is_word_char(char: str) -> bool:
+    """Letters, digits and combining marks: what a word is made of."""
+    return char.isalnum() or _is_mark(char)
+
+
+def _fits_text(passage_length: int, text_length: int, min_similarity: float) -> bool:
     """Whether a passage this long could reach the threshold against the text.
 
     A window ``W`` of the text matches at most ``W`` characters, so
@@ -329,7 +403,7 @@ def fits_text(passage_length: int, text_length: int, min_similarity: float) -> b
     return passage_length * min_similarity <= text_length * (2 - min_similarity)
 
 
-def max_edit_points(passage_length: int, min_similarity: float) -> int:
+def _max_edit_points(passage_length: int, text_length: int, min_similarity: float) -> int:
     """Upper bound on edit points in a window scoring ``>= min_similarity``.
 
     With ``ratio = 2M / (P + W)`` and the longest admissible window
@@ -337,14 +411,20 @@ def max_edit_points(passage_length: int, min_similarity: float) -> int:
     ``(1-s)(P+W) = 2P(1-s)/s``. Each is at most one edit point, and the
     alignment offset can drift by at most that much along the window.
 
+    The bound is capped at ``P + T``: candidate offsets lie in ``(-P, T)``, so
+    a larger bound changes no result, and the cap keeps a vanishingly small
+    threshold (whose quotient is infinite) from overflowing ``math.floor``.
+
     Args:
         passage_length: Length of the normalised passage.
+        text_length: Length of the normalised text.
         min_similarity: Acceptance threshold in (0, 1].
 
     Returns:
         Non-negative bound on the number of edit points.
     """
-    return math.floor(2 * passage_length * (1 - min_similarity) / min_similarity)
+    bound = 2 * passage_length * (1 - min_similarity) / min_similarity
+    return math.floor(min(bound, passage_length + text_length))
 
 
 def _candidate_anchors(passage: str, text: str, max_edits: int) -> list[int]:
@@ -353,7 +433,7 @@ def _candidate_anchors(passage: str, text: str, max_edits: int) -> list[int]:
     Args:
         passage: Normalised passage.
         text: Normalised text.
-        max_edits: Bound from :func:`max_edit_points`; also the clustering radius.
+        max_edits: Bound from :func:`_max_edit_points`; also the clustering radius.
 
     Returns:
         Up to ``MAX_CANDIDATE_REGIONS`` offsets (possibly negative), strongest

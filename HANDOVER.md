@@ -121,8 +121,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-two open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-21: 94, less #522 and #523). **#507** is PR #506's (above); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous
+**Ninety-four open once PR #526 merges** (`gh issue list --state open
+--limit 300`, 2026-10-22: 95, less #527, which that PR closes). **#528** and
+**#529** are PR #526's review's, both `find_passage` decisions: a superscript
+digit makes different numbers match exactly (`10³` vs `103`), and a quote
+whose seeds are all too common is rejected at 0.0. **#507** is PR #506's (above); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and

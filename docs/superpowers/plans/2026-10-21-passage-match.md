@@ -10,7 +10,7 @@
 
 **Tech Stack:** Python ≥ 3.11 stdlib (`difflib`, `unicodedata`); Rust 1.85 / edition 2021, `unicode-normalization` 0.1 (already a dependency), `serde_json` in tests.
 
-**Spec:** `/Users/hherb/src/studyanalyzer/docs/superpowers/specs/2026-10-21-studyanalyzer-design.md` — §6.3 (citations), §7 item 2. Source being ported: `/Users/hherb/src/bmlibrarian/src/bmlibrarian/utils/passage_match.py` and `/Users/hherb/src/bmlibrarian/tests/test_passage_match.py` (72 tests once parametrised cases are expanded).
+**Spec:** `studyanalyzer/docs/superpowers/specs/2026-10-21-studyanalyzer-design.md` — §6.3 (citations), §7 item 2. Source being ported: bmlibrarian's `src/bmlibrarian/utils/passage_match.py` and `tests/test_passage_match.py` (72 tests once parametrised cases are expanded).
 
 ## Global Constraints
 
@@ -38,7 +38,7 @@
 ### Task 1: Python `bmlib.citations.passage_match`
 
 **Files:**
-- Create: `bmlib/citations/passage_match.py`: bmlibrarian's module verbatim, with only the header swapped to bmlib's.
+- Create: `bmlib/citations/passage_match.py`: bmlibrarian's module verbatim, with bmlib's licence header added. (As shipped, one import also changed, to `collections.abc.Callable`, and PR #526's review then changed the exact-match rule; see `docs/DECISIONS.md`.)
 - Create: `tests/test_passage_match.py`: bmlibrarian's test file, with only the import path changed. Then add the four Review Focus tests below.
 - Modify: `bmlib/citations/__init__.py`: export `PassageMatch`, `find_passage`, `occurs_once`, `normalize_with_offsets`, `fold_char`, `fits_text`, `max_edit_points` (add them to `__all__` if the module uses one).
 - Modify: `CLAUDE.md`: add `passage_match.py` to the `citations/` directory tree with the line "find_passage — locate an LLM's near-verbatim quote, return the source's own span".
@@ -362,7 +362,7 @@ git commit -m "feat(rust/citations): find_passage, held to Python by the shared 
 
 - [ ] **Step 1: Write the cases file.** It contains:
   - every `(passage, text, min_similarity)` used in `tests/test_passage_match.py`'s fuzzy, exact and rejection classes;
-  - 60 random-edit cases (`find_passage`, threshold 0.95). Produce these once with Python's `random.Random(20261017)` and bmlibrarian's `_random_edits` over `ABSTRACT`, and commit them as literal cases;
+  - 60 random-edit cases (`find_passage`, threshold 0.95; 90 shipped, 30 more at 0.9 and 0.85). Produce these once with Python's `random.Random(20261017)` and bmlibrarian's `_random_edits` over `ABSTRACT`, and commit them as literal cases;
   - `normalize_with_offsets` over the contract fixture's texts;
   - `fits_text` / `max_edit_points` at thresholds 0.5, 0.8, 0.9, 0.95, 0.99, 1.0 for lengths 1, 7, 100 and 2 000.
 

@@ -153,13 +153,13 @@ if match.matched:
     print(match.start, match.end, match.text, match.exact)
 ```
 
-- **Forgiven:** case, whitespace (including line breaks and paragraph breaks), typographic quotes and dashes, accents, compatibility forms (ligatures, superscripts, full-width characters), and invisible characters.
+- **Forgiven:** case, whitespace (including line breaks and paragraph breaks), typographic quotes and dashes, accents, compatibility forms (ligatures, superscripts, full-width characters), and invisible characters. A superscript or subscript digit compares equal to the plain digit, so `103` matches `10³` exactly; `text` shows the source's `10³`, but `exact` does not tell the two apart (#528).
 - **Not forgiven:** a paraphrase falls below the threshold and is rejected. So is a quote with a long elided stretch (`first … last`, relative to the quote's length); a short elided stretch can still reach the threshold, and the span then includes the elided text. A quote that occurs twice returns the first occurrence.
-- **Known edge:** a quote that ends exactly on a relation symbol (e.g. `=`) can be reported as an exact match of its negated form (`≠`), because the span widens to the whole source character; the highlighted text shows the true `≠`.
-- **`similarity` 0.0** means no candidate location was found at all (the passage or the text is empty, the passage is too long to reach the threshold, or none of its fragments occur there), as opposed to a near miss, which reports its real similarity below `min_similarity`.
-- `exact` is true when the normalised quote occurs verbatim (similarity 1.0).
+- **Whole words only, for an exact match:** an occurrence that starts or ends inside a word (`HR 0.9` in `HR 0.95`, `effective` in `ineffective`) or inside one source character (`=` in `≠`, `f` in `ﬁ`, `2` in `½`) is not exact. The search moves on to the next occurrence and then to the fuzzy search, which scores the source's whole word: `HR 0.9` against `HR 0.95` is 12/13 ≈ 0.92, rejected at 0.95, and a quote ending on `=` where the source has `≠` is accepted at 0.9 only as a fuzzy match whose `text` shows the `≠`.
+- **`similarity` 0.0** means no candidate location was found at all: the passage or the text is empty, the passage is too long to reach the threshold, none of its fragments occur there, or every fragment that does occur is too common (more than 64 times) to locate it. The last is a false reject when a window would have cleared the threshold (#529). A near miss reports its real similarity below `min_similarity`.
+- `exact` is true when the normalised quote occurs verbatim on whole words and whole source characters (similarity 1.0).
 
-This section applies to the Rust crate too: `bmlib::citations::find_passage` returns the same span and the same similarity as Python, held to it by the shared fixture `tests/fixtures/passage_match.json`. In Rust the span is `Option<PassageSpan>` (`start`, `end`, `text`) and its offsets are `char` indices (Unicode code points, as Python's string indices), not byte offsets; an invalid `min_similarity` (or NaN) is an `Err(InvalidSimilarity)`.
+This section applies to the Rust crate too: `bmlib::citations::find_passage` returns the same span and the same similarity as Python, held to it by the shared fixture `tests/fixtures/passage_match.json` and a differential oracle, for text whose code points both Unicode versions assign (Rust's tables are newer than Python's, and a character assigned since can fold differently). In Rust the span is `Option<PassageSpan>` (`start`, `end`, `text`) and its offsets are `char` indices (Unicode code points, as Python's string indices), not byte offsets; an invalid `min_similarity` (or NaN) is an `Err(InvalidSimilarity)`.
 
 ```rust
 use bmlib::citations::find_passage;
@@ -171,6 +171,8 @@ if let Some(span) = &found.span {
 ```
 
 ## Differences from bmlibrarian
+
+`find_passage` came from bmlibrarian's `utils/passage_match.py` with one behaviour change: upstream accepted an exact match that started or ended inside a word or inside one source character (`HR 0.9` in `HR 0.95`, `=` in `≠`), and bmlib does not (see above). The rest of this section is about the 2026-08 port of the citation markers and reference builder.
 
 The port is output-faithful to upstream's code, with six defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
 

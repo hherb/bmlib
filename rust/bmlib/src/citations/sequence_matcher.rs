@@ -241,4 +241,44 @@ mod tests {
         check("", "", &[(0, 0, 0)], 1.0, 1.0, 1.0);
         check("abc", "", &[(3, 0, 0)], 0.0, 0.0, 0.0);
     }
+
+    /// Every case of the differential oracle written by
+    /// `rust/oracle/dump_sequence_matcher.py` from CPython's difflib: repeats,
+    /// a popular element autojunk would drop, ties, astral characters.
+    #[test]
+    fn agrees_with_difflib_on_every_oracle_case() {
+        use serde_json::Value;
+        let cases: Value =
+            serde_json::from_str(include_str!("../../tests/data/sequence_matcher_cases.json"))
+                .expect("cases parse");
+        let expected: Value = serde_json::from_str(include_str!(
+            "../../tests/data/sequence_matcher_expected.json"
+        ))
+        .expect("expected parse");
+        let (cases, expected) = (cases.as_array().unwrap(), expected.as_array().unwrap());
+        assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
+        assert!(!cases.is_empty());
+        for (case, want) in cases.iter().zip(expected) {
+            assert_eq!(case["name"], want["name"], "the two files are out of step");
+            let want = &want["value"];
+            let blocks: Vec<(usize, usize, usize)> = want["blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| {
+                    let n = |i: usize| b[i].as_u64().unwrap() as usize;
+                    (n(0), n(1), n(2))
+                })
+                .collect();
+            let ratio = |key: &str| want[key].as_f64().unwrap();
+            check(
+                case["a"].as_str().unwrap(),
+                case["b"].as_str().unwrap(),
+                &blocks,
+                ratio("ratio"),
+                ratio("quick_ratio"),
+                ratio("real_quick_ratio"),
+            );
+        }
+    }
 }

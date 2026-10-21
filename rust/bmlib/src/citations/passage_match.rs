@@ -26,18 +26,25 @@
 //! Unicode code-point (`char`) indices, never bytes**, matching Python's
 //! string indices so the two implementations agree exactly.
 //!
-//! [`find_passage`] tries an exact match of the normalised passage first,
-//! rejects a passage too long to reach the threshold ([`fits_text`]), then
-//! lets short seeds of the passage vote for where it starts and refines a
-//! window around the best-supported locations on word boundaries. The
-//! similarity is `difflib.SequenceMatcher.ratio()`; the Python module's
-//! docstring has the full search strategy and cost.
+//! [`find_passage`] tries an exact match of the normalised passage first (at
+//! an occurrence that cuts no word and no source character), rejects a
+//! passage too long to reach the threshold, then lets short seeds of the
+//! passage vote for where it starts and refines a window around the
+//! best-supported locations on word boundaries. The similarity is
+//! `difflib.SequenceMatcher.ratio()`; the Python module's docstring has the
+//! full search strategy and cost.
+//!
+//! Rust's Unicode tables (the standard library's and `unicode-normalization`'s)
+//! are newer than Python's (15.1 in Python 3.13, older in 3.11 and 3.12), so
+//! the two agree on text whose code points both versions assign; a character
+//! assigned since can fold differently. The differential oracle refuses such
+//! characters.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use unicode_normalization::char::canonical_combining_class;
+use unicode_normalization::char::{canonical_combining_class, is_combining_mark};
 use unicode_normalization::UnicodeNormalization;
 
 use super::sequence_matcher::SequenceMatcher;
@@ -171,7 +178,11 @@ pub fn occurs_once(fragment: &str, text: &str) -> bool {
 }
 
 /// An accepted span of the original text, in `char` indices.
+///
+/// Built only by [`find_passage`] (`#[non_exhaustive]`), so `start < end`
+/// and `text` holds `end - start` characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PassageSpan {
     /// Start index in the original text.
     pub start: usize,
@@ -182,7 +193,11 @@ pub struct PassageSpan {
 }
 
 /// Result of [`find_passage`].
+///
+/// Built only by [`find_passage`] (`#[non_exhaustive]`), so the invariants
+/// Python's `PassageMatch.__post_init__` checks hold by construction.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct PassageMatch {
     /// Best similarity found, in `[0, 1]`: 1.0 for a passage found verbatim
     /// after normalisation; 0.0 when no candidate location was found at all
@@ -191,9 +206,9 @@ pub struct PassageMatch {
     pub similarity: f64,
     /// The matched span, or `None` when the match was rejected.
     pub span: Option<PassageSpan>,
-    /// The normalised passage occurs verbatim in the normalised text (only
-    /// set with a span). An exact span may start or end inside a character
-    /// that folds to several ("ﬁ"), so its text can hold one more letter.
+    /// The normalised passage occurs verbatim in the normalised text,
+    /// starting and ending on whole words and whole source characters. Only
+    /// ever set with a span and a similarity of 1.0.
     pub exact: bool,
 }
 
@@ -226,11 +241,16 @@ impl std::error::Error for InvalidSimilarity {}
 
 /// Find the best-scoring span of `text` it can locate for `passage`.
 ///
-/// An exact match (after normalisation) is returned as the raw source span
-/// and may start or end mid-word; a fuzzy match starts and ends on word
-/// boundaries (unless no boundary lies near an estimated edge). The match is
-/// accepted when the best similarity reaches `min_similarity`; its span then
-/// holds the original source wording.
+/// An exact match (after normalisation) is returned as the raw source span;
+/// an occurrence that would start or end inside a word ("HR 0.9" in
+/// "HR 0.95") or inside one source character ("=" in "≠") is not exact, and
+/// the search moves on to the next occurrence and then to the fuzzy search.
+/// A fuzzy match starts and ends on word boundaries (unless no boundary lies
+/// near an estimated edge). The match is accepted when the best similarity
+/// reaches `min_similarity`; its span then holds the original source wording.
+/// A similarity of 0.0 means no candidate location was found: no fragment of
+/// the passage occurs in the text, or every one that does occurs more than
+/// `SEED_MAX_OCCURRENCES` times.
 ///
 /// # Errors
 ///
@@ -250,7 +270,7 @@ pub fn find_passage(
         return Ok(PassageMatch::rejected(0.0));
     }
 
-    if let Some(at) = find_from(&norm_text, &norm_passage, 0) {
+    if let Some(at) = exact_at(&norm_passage, &norm_text, &offsets) {
         return Ok(accepted(
             text,
             &offsets,
@@ -264,10 +284,7 @@ pub fn find_passage(
         return Ok(PassageMatch::rejected(0.0));
     }
 
-    // Anchors lie in (-P, T), so a bound past P + T changes no result; the
-    // clamp keeps a tiny threshold's saturated bound from overflowing.
-    let max_edits = max_edit_points(norm_passage.len(), min_similarity)
-        .min(norm_passage.len() + norm_text.len());
+    let max_edits = max_edit_points(norm_passage.len(), norm_text.len(), min_similarity);
     let mut matcher = SequenceMatcher::new(&norm_passage);
 
     let (mut best_similarity, mut best_start, mut best_end) = (0.0, 0, 0);
@@ -298,12 +315,49 @@ pub fn find_passage(
     Ok(PassageMatch::rejected(best_similarity))
 }
 
+/// First occurrence of `passage` in `text` whose edges cut nothing (see
+/// [`cuts`]): an occurrence inside a word or one source character does not
+/// say what the source says.
+fn exact_at(passage: &[char], text: &[char], offsets: &[usize]) -> Option<usize> {
+    let mut found = find_from(text, passage, 0);
+    while let Some(at) = found {
+        if !cuts(text, offsets, at) && !cuts(text, offsets, at + passage.len()) {
+            return Some(at);
+        }
+        found = find_from(text, passage, at + 1);
+    }
+    None
+}
+
+/// Whether a window edge at `index` of normalised `text` cuts into something:
+/// the characters either side come from one source character ("ﬁ", "≠"),
+/// the one after it is a combining mark (it belongs to the one before), or
+/// both are word characters. An edge at either end of the text cuts nothing.
+fn cuts(text: &[char], offsets: &[usize], index: usize) -> bool {
+    if index == 0 || index >= text.len() {
+        return false;
+    }
+    let (before, after) = (text[index - 1], text[index]);
+    offsets[index - 1] == offsets[index]
+        || is_combining_mark(after)
+        || (is_word_char(before) && is_word_char(after))
+}
+
+/// Letters, digits and combining marks, as Python's `str.isalnum()` or
+/// general category M. Rust's `is_alphanumeric` also counts the negative
+/// circled and squared Latin letters (U+1F150..=U+1F189, Other_Alphabetic
+/// symbols no fold decomposes), which Python does not; every other code
+/// point of the folded alphabet agrees.
+fn is_word_char(c: char) -> bool {
+    is_combining_mark(c) || (c.is_alphanumeric() && !('\u{1f150}'..='\u{1f189}').contains(&c))
+}
+
 /// Whether a passage this long could reach the threshold against the text.
 ///
 /// A window `W` of the text matches at most `W` characters, so
 /// `ratio <= 2W / (P + W) <= 2T / (P + T)`; that bound reaches `s` only when
 /// `P <= T(2-s)/s`. Lengths are of the normalised strings.
-pub fn fits_text(passage_length: usize, text_length: usize, min_similarity: f64) -> bool {
+pub(crate) fn fits_text(passage_length: usize, text_length: usize, min_similarity: f64) -> bool {
     passage_length as f64 * min_similarity <= text_length as f64 * (2.0 - min_similarity)
 }
 
@@ -313,11 +367,18 @@ pub fn fits_text(passage_length: usize, text_length: usize, min_similarity: f64)
 /// `W = P(2-s)/s`, unmatched characters on both sides total at most
 /// `(1-s)(P+W) = 2P(1-s)/s`. Each is at most one edit point, and the
 /// alignment offset can drift by at most that much along the window.
-/// Saturates at `usize::MAX` for a vanishingly small threshold (Python's big
-/// integer grows instead, or raises once the quotient is infinite).
-pub fn max_edit_points(passage_length: usize, min_similarity: f64) -> usize {
+///
+/// Capped at `P + T`: candidate offsets lie in `(-P, T)`, so a larger bound
+/// changes no result, and the cap keeps a vanishingly small threshold (whose
+/// quotient is infinite) finite.
+pub(crate) fn max_edit_points(
+    passage_length: usize,
+    text_length: usize,
+    min_similarity: f64,
+) -> usize {
     // Python's order of operations, so the floor is bit-identical.
-    ((2 * passage_length) as f64 * (1.0 - min_similarity) / min_similarity).floor() as usize
+    let bound = (2 * passage_length) as f64 * (1.0 - min_similarity) / min_similarity;
+    bound.min((passage_length + text_length) as f64).floor() as usize
 }
 
 /// Python's `text.find(needle, from)` over chars (`needle` non-empty).
@@ -604,5 +665,70 @@ fn accepted(
             text: chars[original_start..original_end].iter().collect(),
         }),
         exact,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    // TestFitsText and TestMaxEditPoints, from tests/test_passage_match.py.
+
+    #[test]
+    fn fits_text_bound() {
+        // P <= T(2-s)/s: at s=0.5, a 30-char passage fits a 10-char text.
+        assert!(fits_text(30, 10, 0.5));
+        assert!(!fits_text(31, 10, 0.5));
+        assert!(fits_text(10, 10, 1.0));
+        assert!(!fits_text(11, 10, 1.0));
+    }
+
+    #[test]
+    fn max_edit_points_bound() {
+        assert_eq!(max_edit_points(20, 1000, 0.95), 2);
+        assert_eq!(max_edit_points(20, 1000, 1.0), 0);
+        // 2 * 20 * 0.9 / 0.1 = 360, above P + T = 52.
+        assert_eq!(max_edit_points(20, 32, 0.1), 52);
+        assert_eq!(max_edit_points(20, 32, 1e-310), 52);
+    }
+
+    /// The differential oracle's cases for the two crate-private bounds; the
+    /// integration test `tests/passage_match_oracle.rs` runs the rest.
+    #[test]
+    fn bounds_agree_with_python() {
+        let cases: Value =
+            serde_json::from_str(include_str!("../../tests/data/passage_match_cases.json"))
+                .expect("cases parse");
+        let expected: Value =
+            serde_json::from_str(include_str!("../../tests/data/passage_match_expected.json"))
+                .expect("expected parse");
+        let mut checked = 0;
+        for (case, want) in cases
+            .as_array()
+            .expect("a list")
+            .iter()
+            .zip(expected.as_array().expect("a list"))
+        {
+            let args = &case["args"];
+            let size = |key: &str| args[key].as_u64().expect("a size") as usize;
+            let similarity = || args["min_similarity"].as_f64().expect("a threshold");
+            let got = match case["fn"].as_str() {
+                Some("fits_text") => json!(fits_text(
+                    size("passage_length"),
+                    size("text_length"),
+                    similarity()
+                )),
+                Some("max_edit_points") => json!(max_edit_points(
+                    size("passage_length"),
+                    size("text_length"),
+                    similarity()
+                )),
+                _ => continue,
+            };
+            assert_eq!(got, want["value"], "case {}", case["name"]);
+            checked += 1;
+        }
+        assert!(checked > 0, "no bound cases in the corpus");
     }
 }
