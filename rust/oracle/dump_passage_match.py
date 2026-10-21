@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # bmlib — shared library for biomedical literature tools
 # Copyright (C) 2024-2026 Dr Horst Herb
 #
@@ -13,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Dump bmlib.citations.passage_match's behaviour as JSON, for the Rust port to be diffed against.
 
