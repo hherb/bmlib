@@ -12,15 +12,18 @@ All notable changes to bmlib are documented here. The format is based on
   whitespace stripping alone, so the export's occasional padding (its paper
   column carries one padded real PMID, `00069063`) was stored padded and a
   join on the column would miss. A value that is not ASCII digits is still
-  stored as given, as the paper column does. Python and the Rust store alike;
+  stored whitespace-stripped and not canonicalised, as the paper column
+  stores one. Python and the Rust store alike;
   nothing reads the column for a verdict, so no answer moves, but a re-import
   rewrites a padded value.
 - **The Rust `RetractionIndex::build` refuses an export in which no notice
   carries a nature this version recognises** (#522, from PR #521's review):
   a renamed `RetractionNature` column made every notice `Other`, and the
   index answered "not retracted" for every paper while reading as consulted.
-  Python's import has refused it since #509; the Rust desktop store's import
-  takes the rule with #520.
+  Python's import has refused it since #509, and now counts, as the Rust
+  build does, only a notice a lookup can find: an export whose one recognised
+  nature sat on an unfindable notice was imported. The Rust desktop store's
+  import is to take the rule when #520 lands.
 
 ### Added
 - **`import_retraction_watch_export()`: one export replaces the stored

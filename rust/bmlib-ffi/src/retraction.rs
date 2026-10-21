@@ -285,9 +285,10 @@ pub fn parse_crossref_retraction_response(
 /// # Errors
 ///
 /// The CSV is not UTF-8 or is malformed, `data_as_of` is blank, no row was
-/// usable, or no notice carries a paper DOI (or none a PMID): a renamed
-/// column. Keep the previous index, if any. A download truncated on a row
-/// boundary builds: compare `notice_count()` with the index it replaces.
+/// usable, or no notice carries a paper DOI, none a PMID, or none a
+/// `RetractionNature` this version recognises: a renamed column. Keep the
+/// previous index, if any. A download truncated on a row boundary builds:
+/// compare `notice_count()` with the index it replaces.
 #[uniffi::export]
 pub fn build_retraction_index(
     csv: Vec<u8>,

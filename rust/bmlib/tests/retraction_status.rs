@@ -304,7 +304,8 @@ fn an_export_whose_nature_column_reads_as_nothing_is_refused() {
     );
     let err = RetractionIndex::build(renamed.as_bytes(), "2026-10-18").unwrap_err();
     assert!(err.contains("RetractionNature"), "{err}");
-    let one_known = format!("{renamed}3,C,1/1/2020 0:00,,10.5555/c,125,Retraction\n");
+    // Not a Retraction, so the check is "recognised", not "retracted".
+    let one_known = format!("{renamed}3,C,1/1/2020 0:00,,10.5555/c,125,Correction\n");
     assert!(RetractionIndex::build(one_known.as_bytes(), "2026-10-18").is_ok());
 }
 

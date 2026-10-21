@@ -42,11 +42,20 @@ Both small, both in Python *and* Rust. **#523**: `_notice_values` stores
 `notice_pmid` through `_canonical_pmid(...) or _normalize_pmid(...)` as it does
 the paper's `pmid`, and the Rust store's `notice_values` likewise; the oracle's
 `store/padded-pmid-is-canonicalised` case gained a padded `notice_pmid` in both
-case copies and `retraction_store_expected.json` was regenerated (two lines
-move). **#522**: `RetractionIndex::build` refuses an export whose notices are
-all `Other` beside its DOI/PMID refusal. Each fix was reverted to confirm its
-test fails. **#520** (the Rust desktop store's import) must take the nature
-rule too, as #522 says.
+case copies and `retraction_store_expected.json` was regenerated. **#522**:
+`RetractionIndex::build` refuses an export whose notices are all `Other` beside
+its DOI/PMID refusal. Each fix was reverted to confirm its test fails. **#520**
+(the Rust desktop store's import) must take the nature rule too, as #522 says.
+
+PR #524's review: Python's nature flag counted a notice no lookup can find,
+where the Rust build counts only indexed ones, so an export whose one
+recognised nature sat on an unfindable notice imported in Python and was
+refused in Rust. Python now counts findable notices only
+(`test_a_recognised_nature_only_a_lookup_cannot_find_is_refused`). The oracle
+case gained a `" PMC99 "` notice PMID, pinning the Rust fallback (dropping
+`.or_else(normalize_pmid…)` passed every Rust test before); the FFI
+`build_retraction_index` doc names the nature refusal; the Rust control row is
+a `Correction`, so the check reads "recognised" and not "retracted".
 
 **The session before** (PR #521, #509 + #510): `import_retraction_watch_export()`
 replaces the stored notices with one export, refusing a short row, a missing

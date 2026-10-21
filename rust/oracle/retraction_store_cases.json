@@ -12897,6 +12897,12 @@
       "nature": "retraction",
       "pmid": "0012345",
       "notice_pmid": "007654321"
+     },
+     {
+      "record_id": "rw-2",
+      "nature": "retraction",
+      "pmid": "0012345",
+      "notice_pmid": " PMC99 "
      }
     ]
    },

@@ -1856,11 +1856,12 @@ writes nothing:
 - **No usable row**, which would answer "no notices" for every paper.
 - **A row shorter than the header**, which is what a download cut part-way
   through a row leaves (see [Malformed CSV](#parse_retraction_watch_csv)).
-- **No notice carries a findable paper DOI, none a PMID, or none a
+- **No notice carries a findable paper DOI, none a PMID, or no findable one a
   `RetractionNature` this version recognises** (bmlib#509): a renamed column,
   which would answer "no notices" for every lookup by the missing identifier,
-  or "not retracted" for every paper, while reading as consulted. The Rust
-  index build refuses all three (the third since bmlib#522).
+  or "not retracted" for every paper, while reading as consulted. A notice no
+  lookup can find answers nothing, so it does not count towards the third. The
+  Rust index build refuses the same three (the third since bmlib#522).
 - **The removal exceeds 1% of the stored notices a lookup can find**, unless
   `allow_large_removal=True`. The export is sorted by Record ID, newest first,
   so a download truncated on a row boundary loses the *oldest* records — the

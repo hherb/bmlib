@@ -1491,7 +1491,8 @@ class TestRetractionStorage:
         assert is_retracted(found) is True
 
     def test_a_padded_notice_pmid_is_stored_as_the_paper_pmid_is(self, backend_conn):
-        # bmlib#523: the export pads a PubMed ID now and then (00069063).
+        # bmlib#523: the export's paper column carries one padded real PMID
+        # (00069063); the notice's own PMID is held to the same rule.
         ensure_schema(backend_conn)
         padded = _notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", pmid="0012345")
         padded.notice_pmid = "007654321"
@@ -1502,7 +1503,7 @@ class TestRetractionStorage:
         found = {n.record_id: n for n in lookup_retractions(backend_conn, pmid="12345")}
 
         assert (found["rw-1"].pmid, found["rw-1"].notice_pmid) == ("12345", "7654321")
-        # Not a PMID: kept as given, exactly as the paper's own column keeps one.
+        # Not a PMID: stripped and not canonicalised, as the paper's column keeps one.
         assert found["rw-2"].notice_pmid == "PMC99"
 
     def test_a_lookup_by_pmid_finds_a_notice_stored_without_a_doi(self, backend_conn):
@@ -1780,6 +1781,19 @@ class TestImportingAWholeExport:
         result = import_retraction_watch_export(backend_conn, _export("2", "3", rows=oldest_row))
 
         assert result == RetractionImport(stored=3, removed=())
+
+    def test_a_recognised_nature_only_a_lookup_cannot_find_is_refused(self, backend_conn):
+        # bmlib#522: the one recognised nature is on a notice no lookup can
+        # find, so every findable notice reads "not retracted"; Rust refuses it.
+        ensure_schema(backend_conn)
+        unfindable = f"{_OLDEST_ROW_START}Unavailable,PMC99,Retraction,R;\n"
+
+        with pytest.raises(ValueError, match="carries a RetractionNature this version"):
+            import_retraction_watch_export(
+                backend_conn, _export("2", "3", nature="Withdrawn", rows=unfindable)
+            )
+
+        assert _stored_ids(backend_conn) == set()
 
     def test_an_export_with_no_usable_row_is_refused(self, backend_conn):
         ensure_schema(backend_conn)
