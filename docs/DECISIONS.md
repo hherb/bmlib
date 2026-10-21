@@ -1758,12 +1758,15 @@ marker in 88 / 628 / 98 articles. Five choices that look like omissions:
   whitespace either side of a removed note, and the whitespace between a
   pretty-printed `<fn>`'s children (which merges unmarked, `<fn>` taking no
   buffer), are one seam, kept as a single space where any stood and none
-  where none did. The cited `<source>` arm only strips its ends, so without
-  the rule `'J <xref>a</xref> Med'` stored `'J  Med'`; normalising that arm
-  instead would also move every source with a line break of its own, which
-  `main` keeps. Measured over the three artifacts, the rule moves no stored
-  value beyond what the plain cut moved. A title that is nothing but a marker
-  is now `''`, which is the title the document carries (none measured).
+  where none did. The cited `<source>` arm only stripped its ends then, so
+  without the rule `'J <xref>a</xref> Med'` stored `'J  Med'`; normalising
+  that arm instead would also have moved every source with a line break of
+  its own, which `main` kept. It normalises since #518 (below), which hides
+  the two-sided seam there; an own contributor's `<collab>`, which only
+  strips, still shows it. Measured over the three artifacts, the rule moves
+  no stored value beyond what the plain cut moved. A title that is nothing
+  but a marker is now `''`, which is the title the document carries (none
+  measured).
 - **The span stack is audited** (`misaligned_note_spans`, ERROR).
   `excess_text_buffers` reads `text_stack` alone, and a span list too many
   would hand every later title another buffer's offsets, cut without a word.
@@ -6002,6 +6005,23 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   Do not restore the no-break space as a typographic hint, in the model or the
   HTML. Test:
   `tests/test_jats_parser.py::TestAnExhibitsLabelComesFromItsOwnElement::test_a_wrapped_label_is_whitespace_normalised`.
-  The cited `<source>` arm, a citation's journal name, still only strips its
-  ends (PR #427's entry above), so the two journal names now follow different
-  rules: #518.
+  The cited `<source>` arm, a citation's journal name, follows the same rule
+  since #518 (next entry).
+
+## fulltext — a cited `<source>` is whitespace-normalised (#518)
+
+- **A citation's `<source>` stores the whitespace-normalised text, as the
+  article's own `<journal-title>` has since #516**, so one journal name reads
+  one way whether the article publishes in it or cites it. The maintainer's
+  choice on 2026-10-21, over keeping the end-strip PR #427's entry had kept as
+  a scope choice and over collapsing only runs that carry a line break.
+  Diffed against `main` with both checkouts in one process: `source` moves for
+  7,360 of 332,261 cited sources in 725 of 8,118 served
+  (`PMC10030002_PMC10040000.xml.gz`) articles and 33,705 of 4,910,118 in 3,971
+  of 97,909 archive (`PMC012xxxxxx`) ones, and no other field moves. Unlike
+  the labels, most of it is a genuine line break (5,351 served, 26,955 archive:
+  `'J Am Dent\nAssoc'`), then a no-break space (2,000 / 6,590), other Unicode
+  spaces (9 / 158) and a double space (0 / 2).
+
+  Do not restore the end-strip for a cited name alone. Test:
+  `tests/test_jats_parser.py::TestANoteIsNotPartOfATitle::test_a_wrapped_cited_source_is_whitespace_normalised`.

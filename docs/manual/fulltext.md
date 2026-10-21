@@ -447,7 +447,8 @@ whitespace-normalised, as a body section's is *(unreleased, #514)*.
 So is an exhibit's, a formula's, a reference's and a footnote's `<label>`, and
 the journal title: a no-break, thin or hair space the publisher put between
 `Figure` and `1` reads as a plain space, as it already did in a caption
-*(unreleased, #516)*.
+*(unreleased, #516)*. So is a cited `<source>`, the journal a reference names
+*(unreleased, #518)*.
 
 **An exhibit the publisher did not number is rendered without one** *(changed,
 0.11.0 — #162)*. `to_html()` used to fill a missing `<label>` with

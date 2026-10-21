@@ -594,5 +594,9 @@
  {
   "name": "inline/label-516/test_a_wrapped_label_is_whitespace_normalised",
   "xml": "<?xml version=\"1.0\"?>\n<article xmlns:mml=\"http://www.w3.org/1998/Math/MathML\">\n  <front>\n    <journal-meta><journal-title-group><journal-title>Journal of\n        Wrapped\u00a0Titles</journal-title></journal-title-group></journal-meta>\n    <article-meta><title-group><article-title>T</article-title></title-group>\n    </article-meta>\n  </front>\n  <body><sec><title>Results</title>\n    <fig id=\"f1\"><label>Figure\n      1.</label><caption><p>c</p></caption></fig>\n    <fig id=\"f2\"><label>Fig.\u200a2</label><caption><p>c</p></caption></fig>\n    <table-wrap id=\"t1\"><label>Table\u00a01</label>\n      <table><tbody><tr><td>12.3a</td></tr></tbody></table>\n      <table-wrap-foot><fn><label>a\u00a0b</label><p>A note.</p></fn></table-wrap-foot>\n    </table-wrap>\n    <disp-formula id=\"e1\"><label>Eq.\u00a0\n      (1)</label><mml:math><mml:mi>x</mml:mi></mml:math></disp-formula>\n  </sec></body>\n  <back><ref-list><ref id=\"r1\"><label>Arce et\u00a0al.\n      (1997)</label><mixed-citation>Arce A. 1997.</mixed-citation></ref></ref-list></back>\n</article>"
+ },
+ {
+  "name": "inline/cited-source-518/test_a_wrapped_cited_source_is_whitespace_normalised",
+  "xml": "<article><front><article-meta><title-group><article-title>T</article-title></title-group></article-meta></front><back><ref-list><ref id=\"r1\"><element-citation><source>J Am Dent\n      Assoc</source><year>2020</year></element-citation></ref><ref id=\"r2\"><mixed-citation><source>J\u00a0Clin Med</source>.</mixed-citation></ref><ref id=\"r3\"><mixed-citation><source>Int J Environ Res\u2009Public Health</source>.</mixed-citation></ref></ref-list></back></article>"
  }
 ]

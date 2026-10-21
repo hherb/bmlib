@@ -37,6 +37,18 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **A cited `<source>` is whitespace-normalised, as the article's own journal
+  title is** (#518, from PR #517's review). The arm stored the end-stripped
+  text, so a cited journal name wrapped in the deposit kept its newline
+  (`'J Am Dent\nAssoc'`) and a publisher's no-break or thin space stayed one,
+  where the same name as the article's `<journal-title>` is normalised since
+  #516. **Normalising it is the maintainer's choice** (`docs/DECISIONS.md`).
+  Diffed against `main` with both checkouts in one process, `source` moves for
+  7,360 references in 725 of 8,118 served articles and 33,705 in 3,971 of
+  97,909 archive articles, most of them a genuine line break (5,351 / 26,955),
+  and no other field moves; the HTML moves in 725 and 3,970. **`RENDERER_VERSION`
+  is 7.** The Rust reader follows in the same PR, with one oracle case (corpus
+  150).
 - **Every exhibit, formula, reference and footnote `<label>` and the journal
   title are whitespace-normalised** (#516, from PR #515's review, #514's class
   one arm family over). Those arms stored the end-stripped text, so a label

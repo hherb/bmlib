@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # version. Kept as a bare ``= <number>`` on its own line: that test finds the
 # assignment by its tokens and fails closed unless exactly one such
 # assignment exists.
-RENDERER_VERSION = 6
+RENDERER_VERSION = 7
 
 MAX_HEADING_LEVEL = 6
 
@@ -4309,8 +4309,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         spaces (``'J <xref>a</xref> Med'``) would otherwise leave two, and a
         pretty-printed ``<fn>`` leaves the whitespace between its children,
         which merges unmarked, ``<fn>`` taking no buffer of its own
-        (``'Src\\n  \\n Med'`` in a cited ``<source>``, which only strips its
-        ends). Text with no cut is returned unchanged.
+        (``'Src\\n  \\n Med'`` in a cited ``<source>``, which only stripped
+        its ends before #518; an own contributor's ``<collab>`` still only
+        strips). Text with no cut is returned unchanged.
         """
         # The spans are in order of their starts: each is appended at the end
         # of its buffer, and a note merging whole drops its own. A name's span
@@ -8553,7 +8554,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.title = title
         elif name == "source":
             if (cited := self._cited_reference()) is not None:
-                cited.source = self._without_notes(element_text).strip()
+                # Normalised as the article's own <journal-title> is (#518).
+                cited.source = _normalize_whitespace(self._without_notes(element_text))
         elif name == "year":
             if (cited := self._cited_reference()) is not None:
                 cited.year = text

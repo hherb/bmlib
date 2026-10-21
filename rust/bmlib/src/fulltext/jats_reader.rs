@@ -4061,7 +4061,8 @@ impl Handler {
         } else if name == "source" {
             if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
-                    reference.source = text;
+                    // Normalised as the article's own <journal-title> is (bmlib#518).
+                    reference.source = normalized_text;
                 }
             }
         } else if name == "year" {

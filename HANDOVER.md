@@ -1,8 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-21 (**this session fixes #516**, branch
-`fix/jats-label-journal-normalise-516`, worktree `../bmlib-516`). **0.11.0 is
-released** (`v0.11.0` on 8edd3d7, on PyPI). PR #515 (#514) merged before this
+_Last updated: 2026-10-21 (**this session is #518**, branch
+`fix/jats-cited-source-normalise-518`, worktree `../bmlib-518`). **0.11.0 is
+released** (`v0.11.0` on 8edd3d7, on PyPI). PR #517 (#516) merged before this
 session._
 
 ## What 0.11.0 costs a downstream
@@ -26,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -36,9 +36,21 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #516, every exhibit, formula, reference and footnote `<label>` and the journal title normalised
+## This session: #518, a cited `<source>` normalised
 
-The figure, table, formula, reference and footnote `<label>` arms and
+A citation's `<source>` stored the end-stripped text while the article's own
+`<journal-title>` normalises since #516; it now normalises too, **by the
+maintainer's choice** (`docs/DECISIONS.md`), in Python and the Rust reader
+(one oracle case, corpus 150). Measured first with the two-checkout
+comparator: only `source` moves, 7,360 references in 725 of 8,118 served and
+33,705 in 3,971 of 97,909 archive articles, most a genuine line break (5,351
+/ 26,955) where #516's move was mostly no-break spaces. With `<source>`
+normalising, the #427 seam rule's two-sided case is pinned only through a
+name arm (`test_a_roster_members_note_marker_goes_with_the_roster`;
+mutation-checked). `RENDERER_VERSION` 7. Swift and Kotlin:
+hherb/bmlibrarian_lite#610.
+
+**The session before (#516, PR #517)**: the figure, table, formula, reference and footnote `<label>` arms and
 `<journal-title>` stored the end-stripped text; they now normalise, in Python
 and in the Rust reader (one oracle case, corpus 149). Measured first with the
 two-checkout comparator: 99.6% of the move is a publisher's no-break space
@@ -46,16 +58,10 @@ two-checkout comparator: 99.6% of the move is a publisher's no-break space
 spaces **by the maintainer's choice** (recorded in `docs/DECISIONS.md`); 108
 labels were genuinely wrapped. Labels move in 797 of 8,118 served and 8,137
 of 97,909 archive articles (by HTML); journal title, footnote markers and
-formula labels in none. The formula arm is still observable (a standalone
-display formula prints its label in prose) and is tested; PR #517's review
-corrected the first claim that it was not, and the served label total
-(4,811, not 4,826). `RENDERER_VERSION` 6. Swift and Kotlin:
-hherb/bmlibrarian_lite#609.
-
-**The session before (#514, PR #515)**: an abstract section's title is
-normalised, `RENDERER_VERSION` 5; Swift/Kotlin hherb/bmlibrarian_lite#606.
-#498 (PR #513, a title-only abstract section kept by decision) is in
-`docs/DECISIONS.md`.
+formula labels in none. `RENDERER_VERSION` 6. Swift and Kotlin:
+hherb/bmlibrarian_lite#609. #514 (PR #515, an abstract title normalised) and
+#498 (PR #513, a title-only abstract section kept by decision) are in
+`CHANGELOG.md` and `docs/DECISIONS.md`.
 
 **The previous session (#504, PR #506)**: `bmlib.publications.retraction_status`
 plus its Rust port, `RetractionIndex` and FFI exports, held to
@@ -93,7 +99,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,923 passing + 81 skipped** on this session's branch
+- **Tests: 6,925 passing + 81 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-21); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -120,10 +126,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-21: 95, less #516). **#518** is PR #517's review's:
-a cited `<source>` only end-strips while the article's `<journal-title>` now
-normalises, a decision. **#507, #509 and #510** are PR #506's (above). **#500** is the previous
+**Ninety-three open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-21: 94, less #518). **#507, #509 and #510** are PR #506's (above). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
