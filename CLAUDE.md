@@ -52,7 +52,8 @@ bmlib/
 │   ├── models.py            # CitationStyle, Citation, DocumentMetadata, FormattedReference
 │   ├── parser.py            # [@id:N:Label] marker parsing/replacement as pure functions
 │   ├── formatter.py         # Vancouver/APA/Harvard/Chicago + CitationFormatter facade
-│   └── builder.py           # build_references, format_document, find_missing_documents
+│   ├── builder.py           # build_references, format_document, find_missing_documents
+│   └── passage_match.py     # find_passage — locate an LLM's near-verbatim quote, return the source's own span
 ├── context_processor/       # Hierarchical map-reduce over oversized content
 │   ├── base.py              # IterativeContextProcessor ABC — batching, recursion, consolidation
 │   ├── data_types.py        # ProcessingConfig, ExtractionResult, ConsolidatedItem, Batch, ProcessingResult, ProgressInfo, strategy enums

@@ -26,6 +26,11 @@ All notable changes to bmlib are documented here. The format is based on
   import is to take the rule when #520 lands.
 
 ### Added
+- **`bmlib.citations.find_passage` locates an LLM's near-verbatim quote in
+  its source** and returns the source's own span (`PassageMatch`: similarity,
+  start, end, text, exact). Moved from bmlibrarian unchanged, with its tests
+  and four more (a quote across a paragraph break, a repeated quote, an elided
+  quote, information separators).
 - **`import_retraction_watch_export()`: one export replaces the stored
   notices** (issues #509, #510). It parses and stores a whole Retraction Watch
   export in one transaction and **deletes the stored notices the export no

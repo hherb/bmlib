@@ -141,6 +141,23 @@ missing = find_missing_documents(text, metadata)   # one Citation per unresolved
 
 Check `find_missing_documents()` before publishing output — a placeholder in a reference list is visible, but it is still a placeholder.
 
+## Locating quoted passages
+
+LLMs asked to quote a passage "verbatim" often change whitespace, case or a punctuation mark. `find_passage()` finds where the quote really is in the source and returns the source's own wording for that span, so you can store the original text instead of the model's copy.
+
+```python
+from bmlib.citations import find_passage
+
+match = find_passage(llm_quote, full_text, min_similarity=0.95)
+if match.matched:
+    print(match.start, match.end, match.text, match.exact)
+```
+
+- **Forgiven:** case, whitespace (including line breaks and paragraph breaks), typographic quotes and dashes, accents, compatibility forms (ligatures, superscripts, full-width characters), and invisible characters.
+- **Not forgiven:** a paraphrase, or a quote with an elided stretch (`first … last`), falls below the threshold and is rejected. A quote that occurs twice returns the first occurrence.
+- **`similarity` 0.0** means no candidate location was found at all (the passage or the text is empty, the passage is too long to reach the threshold, or none of its fragments occur there), as opposed to a near miss, which reports its real similarity below `min_similarity`.
+- `exact` is true when the normalised quote occurs verbatim (similarity 1.0).
+
 ## Differences from bmlibrarian
 
 The port is output-faithful to upstream's code, with six defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
