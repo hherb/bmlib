@@ -87,7 +87,7 @@ jobs:
       # server the PostgreSQL half skips, so the dual-backend guarantee would
       # rest entirely on someone remembering to test by hand.
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: bmlib
           POSTGRES_PASSWORD: bmlib
@@ -266,7 +266,7 @@ jobs:
         # The same image the Python dual-backend tests use. The Rust suite
         # creates and drops a database per test, so it needs the service's
         # superuser rather than the pre-created `bmlib` role.
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:

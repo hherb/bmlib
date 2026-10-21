@@ -126,7 +126,7 @@ may `CREATE DATABASE`; the connection variables are documented at the top of
 **CI runs all three of the gated-off configurations** (`.github/workflows/ci.yml`,
 alongside the Python jobs): `rust-lint` for rustfmt and clippy in both feature
 sets, `rust-test` for the `default` and `pdf` matrices, and `rust-postgres` for
-the **whole** suite over a `postgres:16` service — not the live binary alone, so a
+the **whole** suite over a `postgres:18` service — not the live binary alone, so a
 dialect failure and a feature-gated build failure are told apart by the failing
 test's name. The two gates exist so a plain `cargo test` opens no socket; CI sets
 `BMLIB_PG_TESTS` and never `BMLIB_LIVE_TESTS`, because a server is something CI
@@ -487,7 +487,7 @@ correctly either way.
   `tests/postgres_live.rs` runs ten tests against an actual server — operations,
   booleans, `SERIAL` + `RETURNING id`, nested savepoints, migrations, the
   publications schema, child reparenting. The `rust-postgres` job in
-  `.github/workflows/ci.yml` runs it over a `postgres:16` service, so it *is* a
+  `.github/workflows/ci.yml` runs it over a `postgres:18` service, so it *is* a
   gate; the suite's own `BMLIB_PG_TESTS` gate is what keeps a plain `cargo test`
   from opening a socket. `tests/dialect.rs` keeps the same dialect-rule coverage
   ungated, through the simulated connection (`tests/common/pg_sim.rs`), for a
