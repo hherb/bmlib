@@ -91,8 +91,17 @@ def test_download_skips_verified_file(server: _Server, tmp_path: Path) -> None:
 
 def test_download_truncated_body_leaves_no_model(server: _Server, tmp_path: Path) -> None:
     server.truncate = True
-    with pytest.raises(Exception):  # noqa: B017 - IncompleteRead or ModelVerificationError
+    with pytest.raises(ModelVerificationError) as info:
         download_model(_model(server), tmp_path)
+    assert info.value.what == "size"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_download_oversized_body_fails_early(server: _Server, tmp_path: Path) -> None:
+    model = _model(server, BODY[: 1024 * 1024])  # server sends 3 MiB, 1 MiB expected
+    with pytest.raises(ModelVerificationError) as info:
+        download_model(model, tmp_path)
+    assert info.value.what == "size"
     assert list(tmp_path.iterdir()) == []
 
 

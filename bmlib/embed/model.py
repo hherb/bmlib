@@ -124,7 +124,8 @@ def download_model(
         The final path.
 
     Raises:
-        ModelVerificationError: If the downloaded bytes are not the pinned ones.
+        ModelVerificationError: If the downloaded bytes are not the pinned ones
+            (a body shorter or longer than the pinned size included).
         OSError: On a network or file-system failure (``URLError`` included).
     """
     directory.mkdir(parents=True, exist_ok=True)
@@ -148,6 +149,10 @@ def download_model(
                 out.write(block)
                 digest.update(block)
                 done += len(block)
+                if done > model.size:  # stop at the first excess block
+                    raise ModelVerificationError(
+                        part, "size", model.size, f"more than {model.size}"
+                    )
                 if progress is not None:
                     progress(done, model.size)
         _check(part, model, done, digest.hexdigest())
