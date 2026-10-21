@@ -16,6 +16,7 @@
 
 """In-process embedding: constants, vector rules and the verified model download."""
 
+from bmlib.embed.embedder import Embedder, EmbedError
 from bmlib.embed.model import (
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
@@ -37,6 +38,8 @@ __all__ = [
     "ARCTIC_EMBED_L_V2_F16",
     "ARCTIC_EMBED_L_V2_Q8_0",
     "EMBEDDING_DIM",
+    "EmbedError",
+    "Embedder",
     "MAX_TOKENS",
     "QUERY_PREFIX",
     "ModelFile",

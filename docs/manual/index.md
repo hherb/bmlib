@@ -45,6 +45,7 @@ bmlib is organised into ten modules, each with a focused responsibility:
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
 | [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching | [fulltext.md](fulltext.md) |
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building (pure stdlib) | [citations.md](citations.md) |
+| [`bmlib.embed`](embeddings.md) | In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download | [embeddings.md](embeddings.md) |
 
 ## Architecture Principles
 

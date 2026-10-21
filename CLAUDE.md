@@ -33,6 +33,7 @@ uv pip install -e ".[all,dev]"
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
 | fulltext       | httpx>=0.25           | `FullTextService` retrieval; nothing else in `fulltext/` needs it |
 | pdf            | pymupdf>=1.28.2       | PDF → text conversion in `fulltext/`   |
+| embed          | llama-cpp-python>=0.3 | `bmlib.embed.Embedder` (arctic-embed-l-v2.0 GGUF, in process) |
 | dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2 | Development and testing tools  |
 | all            | All runtime extras    | Everything except `dev`                |
 

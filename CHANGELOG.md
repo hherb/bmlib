@@ -7,6 +7,11 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`bmlib.embed.Embedder`: in-process embedding over llama-cpp-python** (new
+  `bmlib[embed]` extra). `embed_documents` / `embed_query` return 256-dimension
+  unit vectors, held to the shared reference vectors (cosine >= 0.999 on F16,
+  0.998 on Q8_0). Nothing is truncated silently: an empty or over-long text
+  raises `EmbedError` naming its index.
 - **`bmlib.embed`: embedding constants, vector rules and a verified model
   download.** `truncate_and_normalize`, `query_text`, `check_texts` (pinned by
   the shared `embedding_contract.json`) and `download_model`, which streams the

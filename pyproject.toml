@@ -70,6 +70,8 @@ fulltext = ["httpx>=0.25"]
 # `# type: ignore[import-untyped]` that switches off checking for the whole
 # of `pdf_converter.py`.
 pdf = ["pymupdf>=1.28.2"]
+# In-process embedding (bmlib.embed): compiles llama.cpp on install.
+embed = ["llama-cpp-python>=0.3"]
 # mypy is pinned for the same reason ruff is (see .github/workflows/ci.yml):
 # a release with new checks would otherwise fail CI on files a PR never
 # touched. `psycopg2` is the one extra shipping no `py.typed`, so
@@ -80,7 +82,7 @@ dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.0", "types-psycopg2"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`.
-all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf]"]
+all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf,embed]"]
 
 # Explicit discovery. Auto-discovery works today but is order-dependent in a
 # flat layout with tests/, docs/ and scripts/ beside the package; naming the
