@@ -27,6 +27,7 @@ from pathlib import Path
 
 from bmlib.embed.vectors import (
     MAX_TOKENS,
+    EmptyTextError,
     check_texts,
     query_text,
     truncate_and_normalize,
@@ -76,6 +77,13 @@ class Embedder:
             verbose=False,
         )
 
+    @staticmethod
+    def _check(texts: Sequence[str]) -> None:
+        try:
+            check_texts(texts)
+        except EmptyTextError as exc:
+            raise EmbedError(str(exc), exc.index) from exc
+
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed texts as documents (no prefix).
 
@@ -83,12 +91,9 @@ class Embedder:
             EmbedError: With ``index`` set, for an empty text or one longer
                 than ``MAX_TOKENS`` tokens.
         """
-        try:
-            check_texts(texts)
-        except ValueError as exc:
-            message = str(exc)
-            index = int(message.split()[3])
-            raise EmbedError(message, index) from exc
+        self._check(texts)
+        if not texts:
+            return []
         for i, text in enumerate(texts):
             tokens = len(self._llm.tokenize(text.encode(), add_bos=True, special=False))
             if tokens > MAX_TOKENS:
@@ -100,5 +105,5 @@ class Embedder:
 
     def embed_query(self, query: str) -> list[float]:
         """Embed a search query, with the model's query prefix."""
-        check_texts([query])  # the prefix would otherwise make an empty query look valid
+        self._check([query])  # the prefix would otherwise make an empty query look valid
         return self.embed_documents([query_text(query)])[0]

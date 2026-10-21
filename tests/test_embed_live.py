@@ -87,6 +87,13 @@ def test_empty_text_is_an_error(embedder: Embedder) -> None:
 
 
 @live
+def test_empty_query_is_an_error(embedder: Embedder) -> None:
+    with pytest.raises(EmbedError) as caught:
+        embedder.embed_query("   ")
+    assert caught.value.index == 0
+
+
+@live
 def test_vectors_are_unit_length(embedder: Embedder) -> None:
     for i, vec in enumerate(embedder.embed_documents(["aspirin", "insulin resistance"])):
         assert len(vec) == EMBEDDING_DIM, f"item {i}"

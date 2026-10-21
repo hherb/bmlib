@@ -56,12 +56,24 @@ def query_text(query: str) -> str:
     return QUERY_PREFIX + query
 
 
+class EmptyTextError(ValueError):
+    """A text was empty or whitespace-only.
+
+    Attributes:
+        index: Position of the first such text.
+    """
+
+    def __init__(self, index: int) -> None:
+        super().__init__(f"text at index {index} is empty or whitespace-only")
+        self.index = index
+
+
 def check_texts(texts: Sequence[str]) -> None:
     """Refuse empty or whitespace-only texts.
 
     Raises:
-        ValueError: Naming the index of the first such text.
+        EmptyTextError: A ValueError carrying the index of the first such text.
     """
     for index, text in enumerate(texts):
         if not text.strip():
-            raise ValueError(f"text at index {index} is empty or whitespace-only")
+            raise EmptyTextError(index)
