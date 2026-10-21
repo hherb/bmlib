@@ -81,7 +81,10 @@ pub const ORIGINAL_DATE_COLUMNS: [&str; 2] = ["OriginalPaperDate", "Original Pap
 /// Values the export writes to mean "there is no identifier here".
 ///
 /// Only these two are listed — each was measured; adding an unmeasured guess is
-/// how the list stops being answerable to the data.
+/// how the list stops being answerable to the data. [`clean_identifier`] also
+/// reads any run of zeros as the sentinel: the export of 2026-10-21 pads every
+/// PubMed ID cell to eight digits, so its `"0"` is `"00000000"` (33,800 of
+/// 73,329 paper PMIDs), and there is no PMID 0 however it is padded.
 pub const ABSENT_IDENTIFIER_VALUES: [&str; 2] = ["0", "unavailable"];
 
 /// The US-first form the export actually uses, then its day-first twin, then
@@ -115,7 +118,10 @@ pub fn find_column<'a>(row: &'a [(String, String)], candidates: &[&str]) -> Opti
 #[must_use]
 pub fn clean_identifier(value: Option<&str>) -> Option<String> {
     let text = value?.trim();
-    if text.is_empty() || ABSENT_IDENTIFIER_VALUES.contains(&text.to_lowercase().as_str()) {
+    if text.is_empty()
+        || ABSENT_IDENTIFIER_VALUES.contains(&text.to_lowercase().as_str())
+        || text.bytes().all(|b| b == b'0')
+    {
         return None;
     }
     Some(text.to_string())

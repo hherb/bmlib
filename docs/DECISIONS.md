@@ -4926,6 +4926,30 @@ crossed the cap since planning.
   `%m/%d/%Y` / `%d/%m/%Y` ambiguity resolves US-first (confirmed by same-file
   dates whose day exceeds 12), and `_ABSENT_IDENTIFIER_VALUES` holds exactly
   `{"0", "unavailable"}` — a third sentinel needs its own measurement.
+  **Any run of zeros is the `"0"`** (bmlib#510's session): the export of
+  2026-10-21 pads PubMed IDs to eight digits, its absent PMID is `"00000000"`
+  in 33,800 of 73,329 rows and no bare `"0"` is left, so the literal stored a
+  bogus PMID on every one of them (unfindable, `_canonical_pmid` stripping it
+  to nothing, but returned as `notice.pmid`, and a WARNING calling it "not
+  ASCII digits"). A rule over zeros rather than an eighth literal, since there
+  is no PMID 0 however it is padded; in Python and Rust alike.
+- **A whole export replaces the table** (bmlib#510, the maintainer's choice,
+  2026-10-21). `import_retraction_watch_export()` deletes the stored notices
+  the new export no longer carries, as the apps' rebuilt `RetractionIndex`
+  does; `store_retraction_notices()` stays upsert-only for batch callers.
+  Measured, 2026-03 copy against the export of 2026-10-21: 6 of 69,318
+  records left — 4 re-keyed (same paper, same nature, a new Record ID) and 2
+  retractions dropped outright, neither DOI anywhere in the new file. **The
+  removal is refused above 1% of the stored notices** unless the caller passes
+  `allow_large_removal=True` (the maintainer's choice of guard): the export is
+  sorted by Record ID, newest first (73,328 of 73,328 adjacent pairs), so a
+  download truncated on a row boundary loses the oldest records, exactly what a
+  replace would then delete. 1% is about 110 times the seven-month churn and
+  was **fixed before a monthly series was measured** — do not cite it as
+  measured, and measure consecutive months before tightening it. It also
+  refuses an export in which no notice carries a findable DOI, or none a PMID
+  (bmlib#509), the Rust index build's rule; the check belongs to the whole
+  import, a batch with no PMID being ordinary for `store_retraction_notices()`.
 
 ## publications — retraction status from three sources (#504)
 
@@ -5040,10 +5064,11 @@ crossed the cap since planning.
   shape at the FFI or `from_dict` boundary (#507); a `CrossrefResult` did
   not carry its DOI, so a result filed under the wrong paper was not caught
   (#508, since fixed: a served result carries it, and one for another DOI
-  is no answer); Python's import path has no "a whole identifier column is missing"
-  refusal, which the Rust index build has (#509); and records Retraction
-  Watch drops between monthly exports stay in the desktop's table while the
-  app's index rebuilds without them (#510). No Record ID repeats in the
+  is no answer); Python's import path had no "a whole identifier column is missing"
+  refusal, which the Rust index build has (#509, since fixed by
+  `import_retraction_watch_export()`); and records Retraction Watch drops
+  between monthly exports stayed in the desktop's table while the app's
+  index rebuilds without them (#510, since fixed by the same function). No Record ID repeats in the
   2026-03 copy (0 of 69,318 rows), so the other half of that divergence has
   no population today.
 

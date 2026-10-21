@@ -35,6 +35,7 @@ import io
 import json
 import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Any
@@ -79,6 +80,12 @@ _ORIGINAL_DATE_COLUMNS = ("OriginalPaperDate", "Original Paper Date")
 # PMID column that stores "0" for "absent" -- which is what 46.04% of this
 # very export writes -- would otherwise query for a paper that cannot exist
 # and read the empty result as "not retracted".
+#
+# The export of 2026-10-21 pads every PubMed ID cell to eight digits, so its
+# "0" is "00000000" (33,800 of 73,329 paper PMIDs, 34,788 notice PMIDs, and no
+# bare "0" left). :func:`_clean_identifier` therefore reads any run of zeros as
+# the sentinel -- there is no PMID 0 however it is padded -- where the literal
+# alone stored "00000000" as a PMID on 33,800 notices.
 _ABSENT_IDENTIFIER_VALUES = frozenset({"0", "unavailable"})
 
 # The US-first form the export actually uses, tried first, then its
@@ -117,7 +124,7 @@ def _clean_identifier(value: str | None) -> str | None:
     if value is None:
         return None
     text = value.strip()
-    if not text or text.lower() in _ABSENT_IDENTIFIER_VALUES:
+    if not text or text.lower() in _ABSENT_IDENTIFIER_VALUES or not text.strip("0"):
         return None
     return text
 
@@ -658,6 +665,116 @@ def store_retraction_notices(conn: Any, notices: Iterable[RetractionNotice]) -> 
             unfindable,
         )
     return count
+
+
+# The export is sorted by Record ID, newest first (73,328 of 73,328 adjacent
+# pairs on 2026-10-21), so a download truncated on a row boundary loses the
+# *oldest* records -- exactly the ones a replace would then delete. Between the
+# 2026-03 copy and the 2026-10-21 one 6 of 69,318 records left the export
+# (0.009%), so 1% is about 110 times the measured seven-month churn. The figure
+# was fixed before a monthly series was measured, by the maintainer's choice
+# (bmlib#510); do not cite it as measured.
+_MAX_REMOVED_SHARE = 0.01
+
+
+@dataclass(frozen=True)
+class RetractionImport:
+    """What :func:`import_retraction_watch_export` did to the stored table.
+
+    Attributes:
+        stored: Notices written, counted as :func:`store_retraction_notices`
+            counts them.
+        removed: Record IDs that were stored and that this export no longer
+            carries, now deleted, sorted.
+    """
+
+    stored: int
+    removed: tuple[str, ...]
+
+
+def import_retraction_watch_export(
+    conn: Any,
+    source: str | Path | IO[bytes],
+    *,
+    on_skip: Callable[[int, str], None] | None = None,
+    allow_large_removal: bool = False,
+) -> RetractionImport:
+    """Replace the stored notices with one whole Retraction Watch export.
+
+    Parses *source* with :func:`parse_retraction_watch_csv`, stores it with
+    :func:`store_retraction_notices`, and deletes every stored notice whose
+    Record ID the export no longer carries -- the behaviour of the apps'
+    ``RetractionIndex``, which is rebuilt from each export (bmlib#510). All of
+    it is one transaction, so a refusal below leaves the table as it was.
+
+    Use this for a monthly re-import; :func:`store_retraction_notices` stays
+    for a caller writing notices in batches, where a batch is not the export.
+
+    Args:
+        conn: A DB-API connection (SQLite or PostgreSQL).
+        source: As for :func:`parse_retraction_watch_csv`.
+        on_skip: As for :func:`parse_retraction_watch_csv`.
+        allow_large_removal: Permit removing more than 1% of the stored
+            notices, which is otherwise refused as a likely truncated download.
+
+    Returns:
+        A :class:`RetractionImport`.
+
+    Raises:
+        ValueError: As :func:`parse_retraction_watch_csv` does; if no row was
+            usable, or no notice carries a findable DOI, or none a PMID -- a
+            renamed column, which would answer "no notices" for every lookup by
+            the other identifier and read as consulted (bmlib#509, as the Rust
+            index build refuses); or if the removal exceeds the share above and
+            *allow_large_removal* is not set. Nothing is written in any case.
+    """
+    notices = parse_retraction_watch_csv(source, on_skip=on_skip)
+    record_ids: set[str] = set()
+    carried = {"DOI": False, "PMID": False}
+
+    def tracked() -> Iterator[RetractionNotice]:
+        for notice in notices:
+            record_ids.add(notice.record_id)
+            carried["DOI"] = carried["DOI"] or bool(_clean_identifier(_normalize_doi(notice.doi)))
+            carried["PMID"] = carried["PMID"] or _canonical_pmid(notice.pmid) is not None
+            yield notice
+
+    with transaction(conn):
+        previous = {
+            row["record_id"] for row in fetch_all(conn, "SELECT record_id FROM retraction_notices")
+        }
+        stored = store_retraction_notices(conn, tracked())
+        if not stored:
+            raise ValueError(
+                "the Retraction Watch export holds no usable row; nothing was imported"
+            )
+        for column, found in carried.items():
+            if not found:
+                raise ValueError(
+                    f"no notice in the Retraction Watch export carries a paper {column}:"
+                    " a renamed column? Nothing was imported."
+                )
+        removed = sorted(previous - record_ids)
+        if len(removed) > _MAX_REMOVED_SHARE * len(previous) and not allow_large_removal:
+            raise ValueError(
+                f"the Retraction Watch export no longer carries {len(removed)} of the"
+                f" {len(previous)} stored notices, more than {_MAX_REMOVED_SHARE:.0%};"
+                " the download is probably truncated. Nothing was imported. Pass"
+                " allow_large_removal=True if the removal is genuine."
+            )
+        if removed:
+            ph = placeholder(conn)
+            executemany(
+                conn,
+                f"DELETE FROM retraction_notices WHERE record_id = {ph}",
+                [(record_id,) for record_id in removed],
+            )
+    if removed:
+        logger.info(
+            "Removed %d retraction notice(s) the Retraction Watch export no longer carries",
+            len(removed),
+        )
+    return RetractionImport(stored=stored, removed=tuple(removed))
 
 
 def _row_to_notice_model(row: Mapping[str, Any]) -> RetractionNotice:

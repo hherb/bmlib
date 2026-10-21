@@ -40,6 +40,20 @@
     }
   },
   {
+    "name": "clean/zero-eight-digits",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "00000000"
+    }
+  },
+  {
+    "name": "clean/padded-real-pmid",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "00069063"
+    }
+  },
+  {
     "name": "clean/unavailable-lower",
     "fn": "clean_identifier",
     "args": {
@@ -381,6 +395,18 @@
       "rows": [
         {
           "original_pmid": "0",
+          "original_doi": "10.1/paper"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/eight-digit-zero-pmid-not-stored",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "original_pmid": "00000000",
           "original_doi": "10.1/paper"
         }
       ]

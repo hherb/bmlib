@@ -18,7 +18,7 @@ Requires `httpx` for HTTP requests to external APIs.
 | `schema` | `SCHEMA_SQL`, `ensure_schema()` | Table definitions |
 | `storage` | `store_publication()`, `get_publication_by_doi()`, `get_publication_by_pmid()`, `add_fulltext_source()` | De-duplicating writes and lookups |
 | `sync` | `sync()` | The sole orchestration entry point |
-| `retractions` | `parse_retraction_watch_csv()`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
+| `retractions` | `parse_retraction_watch_csv()`, `import_retraction_watch_export()`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
 | `retraction_status` | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()` | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status) |
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
@@ -72,6 +72,8 @@ from bmlib.publications import (
     RetractionNature,
     RetractionNotice,
     parse_retraction_watch_csv,
+    import_retraction_watch_export,
+    RetractionImport,
     store_retraction_notices,
     lookup_retractions,
     is_retracted,
@@ -1769,7 +1771,11 @@ are usable. Two sentinel values are recognised and treated as absent rather
 than as real identifiers, because neither is falsy and a plain truthiness
 check would collapse tens of thousands of unrelated rows onto one key:
 `OriginalPaperPubMedID` of `"0"` (46.04% of rows) and `OriginalPaperDOI` of
-`Unavailable` / `unavailable` in either casing (4.80% of rows).
+`Unavailable` / `unavailable` in either casing (4.80% of rows). **Any run of
+zeros counts as the `"0"`** *(unreleased)*: the export of 2026-10-21 pads
+every PubMed ID cell to eight digits, so its absent PMID is `"00000000"`
+(33,800 of 73,329 rows), which was stored as a PMID until bmlib#510's
+session measured it. A padded real PMID (`"00069063"`) is kept.
 
 **Example:**
 
@@ -1805,6 +1811,53 @@ called inside a caller's open `transaction(conn)` block it joins that block
 via a savepoint, as every other write in this module does.
 
 **Returns:** the number of notices written.
+
+For a monthly re-import use `import_retraction_watch_export()` below, which
+also removes what the new export dropped; this function never deletes, and
+stays for a caller writing notices in batches.
+
+### `import_retraction_watch_export`
+
+*(unreleased)*
+
+```python
+def import_retraction_watch_export(
+    conn: Any,
+    source: str | Path | IO[bytes],
+    *,
+    on_skip: Callable[[int, str], None] | None = None,
+    allow_large_removal: bool = False,
+) -> RetractionImport
+```
+
+Replace the stored notices with one whole export: parse it, store it with
+`store_retraction_notices()`, and **delete every stored notice whose Record ID
+the export no longer carries** (bmlib#510, the maintainer's choice). That is
+what the apps' `RetractionIndex` does, being rebuilt from each export, so a
+paper gets the same verdict on the desktop and in an app. Between the 2026-03
+copy and the export of 2026-10-21, 6 of 69,318 records left the export: 4
+re-keyed under a new Record ID (same paper, same nature) and 2 retractions
+dropped outright, which a store that never deletes kept flagging.
+
+Everything is one transaction, and each refusal below raises `ValueError` and
+writes nothing:
+
+- **No usable row**, which would answer "no notices" for every paper.
+- **No notice carries a findable paper DOI, or none a PMID** (bmlib#509): a
+  renamed column, which would answer "no notices" for every lookup by that
+  identifier while reading as consulted. The Rust index build refuses the same.
+- **The removal exceeds 1% of the stored notices**, unless
+  `allow_large_removal=True`. The export is sorted by Record ID, newest first,
+  so a download truncated on a row boundary loses the *oldest* records — the
+  ones a replace would then delete. 1% is about 110 times the measured
+  seven-month churn; it was fixed before a monthly series was measured.
+
+`on_skip` is passed to the parser. **Returns** a `RetractionImport`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stored` | `int` | Notices written, counted as `store_retraction_notices()` counts them. |
+| `removed` | `tuple[str, ...]` | Record IDs deleted because the export no longer carries them, sorted. Also logged at `INFO` with their count. |
 
 ### `lookup_retractions`
 
@@ -1863,18 +1916,20 @@ from bmlib.publications import (
     ensure_schema,
     is_retracted,
     lookup_retractions,
-    parse_retraction_watch_csv,
-    store_retraction_notices,
+    import_retraction_watch_export,
 )
 
 conn = connect_sqlite("literature.db")
 ensure_schema(conn)
 
 skipped = []
-notices = parse_retraction_watch_csv(
-    "retraction_watch.csv", on_skip=lambda n, why: skipped.append((n, why))
+result = import_retraction_watch_export(
+    conn, "retraction_watch.csv", on_skip=lambda n, why: skipped.append((n, why))
 )
-print(f"stored {store_retraction_notices(conn, notices)} notices, skipped {len(skipped)} rows")
+print(
+    f"stored {result.stored} notices, removed {len(result.removed)},"
+    f" skipped {len(skipped)} rows"
+)
 
 if is_retracted(lookup_retractions(conn, doi="10.1016/j.anbehav.2009.11.027")):
     print("retracted — do not cite as evidence")

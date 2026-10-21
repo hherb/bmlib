@@ -7,6 +7,22 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`import_retraction_watch_export()`: one export replaces the stored
+  notices** (issues #509, #510). It parses and stores a whole Retraction Watch
+  export in one transaction and **deletes the stored notices the export no
+  longer carries**, as the apps' rebuilt `RetractionIndex` does, so a paper
+  gets the same verdict on the desktop and in an app (the maintainer's
+  choice). Measured, 2026-03 copy against the export of 2026-10-21: 6 of
+  69,318 records left, 4 re-keyed and 2 retractions dropped outright, which
+  `store_retraction_notices()` never deleted. It refuses, writing nothing, an
+  export with no usable row, one in which no notice carries a findable DOI or
+  none a PMID (a renamed column, #509; the Rust index build's rule), and a
+  removal above 1% of the stored notices unless `allow_large_removal=True`,
+  since the export is sorted newest first and a truncated download loses the
+  oldest records. Returns `RetractionImport(stored, removed)`.
+  `store_retraction_notices()` is unchanged and stays for batch callers. The
+  Rust desktop store follows in #520.
+
 - **`bmlib.publications.retraction_status`: one four-state retraction
   verdict from three sources** (issue #504, for bmlibrarian_lite's three
   platforms). `retraction_status()` takes a paper's Retraction Watch evidence
@@ -37,6 +53,15 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **A padded zero PubMed ID is the export's "absent" sentinel, as `"0"` is.**
+  The Retraction Watch export of 2026-10-21 pads every PubMed ID cell to eight
+  digits, so its absent PMID is `"00000000"` (33,800 of 73,329 rows, no bare
+  `"0"` left), and the parser stored it as the notice's PMID — unfindable by a
+  lookup, but returned as `notice.pmid`, with a WARNING calling it "not ASCII
+  digits". Any run of zeros now reads as absent, in Python and the Rust reader
+  (three oracle cases); a padded real PMID is kept. A stored notice moves on
+  re-import; `lookup_retractions(pmid="000")` now refuses as "no usable
+  identifier" rather than "not a PMID".
 - **A cited `<source>` is whitespace-normalised, as the article's own journal
   title is** (#518, from PR #517's review). The arm stored the end-stripped
   text, so a cited journal name wrapped in the deposit kept its newline

@@ -40,6 +40,8 @@ from bmlib.publications.models import (
     SyncReport,
 )
 from bmlib.publications.retractions import (
+    RetractionImport,
+    import_retraction_watch_export,
     is_retracted,
     lookup_retractions,
     parse_retraction_watch_csv,
@@ -86,6 +88,8 @@ __all__ = [
     "RetractionNotice",
     "parse_retraction_watch_csv",
     "store_retraction_notices",
+    "import_retraction_watch_export",
+    "RetractionImport",
     "lookup_retractions",
     "is_retracted",
 ]
