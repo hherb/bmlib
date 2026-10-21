@@ -264,7 +264,10 @@ pub fn find_passage(
         return Ok(PassageMatch::rejected(0.0));
     }
 
-    let max_edits = max_edit_points(norm_passage.len(), min_similarity);
+    // Anchors lie in (-P, T), so a bound past P + T changes no result; the
+    // clamp keeps a tiny threshold's saturated bound from overflowing.
+    let max_edits = max_edit_points(norm_passage.len(), min_similarity)
+        .min(norm_passage.len() + norm_text.len());
     let mut matcher = SequenceMatcher::new(&norm_passage);
 
     let (mut best_similarity, mut best_start, mut best_end) = (0.0, 0, 0);
@@ -310,6 +313,8 @@ pub fn fits_text(passage_length: usize, text_length: usize, min_similarity: f64)
 /// `W = P(2-s)/s`, unmatched characters on both sides total at most
 /// `(1-s)(P+W) = 2P(1-s)/s`. Each is at most one edit point, and the
 /// alignment offset can drift by at most that much along the window.
+/// Saturates at `usize::MAX` for a vanishingly small threshold (Python's big
+/// integer grows instead, or raises once the quotient is infinite).
 pub fn max_edit_points(passage_length: usize, min_similarity: f64) -> usize {
     // Python's order of operations, so the floor is bit-identical.
     ((2 * passage_length) as f64 * (1.0 - min_similarity) / min_similarity).floor() as usize

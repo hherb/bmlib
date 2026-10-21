@@ -829,3 +829,16 @@ fn matches_exhaustive_search_on_random_edits() {
     }
     eprintln!("property test: {accepted} of {PROPERTY_TRIALS} accepted");
 }
+
+#[test]
+fn tiny_threshold_does_not_overflow() {
+    // max_edit_points saturates for such thresholds; Python's big ints don't.
+    // Python: start 6, end 26, similarity 0.95 for each.
+    let text = "xxxxx abcdefghij klmnopqrs yyyyy";
+    for threshold in [1e-300, 1e-17, 1e-5] {
+        let m = find("abcdefghij klmnopqrZ", text, threshold);
+        let s = span(&m);
+        assert_eq!((s.start, s.end), (6, 26), "{threshold}");
+        assert_eq!(m.similarity, 0.95, "{threshold}");
+    }
+}
