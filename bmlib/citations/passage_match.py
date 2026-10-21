@@ -91,12 +91,14 @@ _SPACE = " "
 # Typographic punctuation folded to ASCII before comparing (LLMs copy curly
 # quotes as straight ones and dashes as hyphens), and invisible characters
 # dropped. Other compatibility forms are handled by NFKD in fold_char().
-_TYPOGRAPHIC_FOLDS = str.maketrans({
-    **dict.fromkeys("‘’‚‛′´`", "'"),
-    **dict.fromkeys("“”„‟″«»", '"'),
-    **dict.fromkeys("‐‑‒–—―−﹘﹣－", "-"),
-    **dict.fromkeys("­​‌‍⁠﻿", None),
-})
+_TYPOGRAPHIC_FOLDS = str.maketrans(
+    {
+        **dict.fromkeys("‘’‚‛′´`", "'"),
+        **dict.fromkeys("“”„‟″«»", '"'),
+        **dict.fromkeys("‐‑‒–—―−﹘﹣－", "-"),
+        **dict.fromkeys("­​‌‍⁠﻿", None),
+    }
+)
 # Combining overlays that negate their base character ("≠" is "=" + U+0338);
 # kept so a negated relation never folds to its positive form.
 _NEGATION_MARKS = frozenset("\u0338\u20d2\u20e5")
@@ -180,11 +182,12 @@ def fold_char(char: str) -> str:
     """
     # Fold before NFKD ("´" would decompose to a bare accent) and after it
     # (NFKD turns "⁻" into U+2212 and "‴" into primes).
-    decomposed = unicodedata.normalize(
-        "NFKD", char.translate(_TYPOGRAPHIC_FOLDS)
-    ).translate(_TYPOGRAPHIC_FOLDS)
+    decomposed = unicodedata.normalize("NFKD", char.translate(_TYPOGRAPHIC_FOLDS)).translate(
+        _TYPOGRAPHIC_FOLDS
+    )
     return "".join(
-        code_point for code_point in decomposed
+        code_point
+        for code_point in decomposed
         if (code_point in _NEGATION_MARKS or not unicodedata.combining(code_point))
         and not code_point.isspace()
     ).lower()
@@ -287,9 +290,7 @@ def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch
 
     exact_at = norm_text.find(norm_passage)
     if exact_at >= 0:
-        return _accepted(
-            text, offsets, exact_at, exact_at + len(norm_passage), 1.0, exact=True
-        )
+        return _accepted(text, offsets, exact_at, exact_at + len(norm_passage), 1.0, exact=True)
     if not fits_text(len(norm_passage), len(norm_text), min_similarity):
         return PassageMatch(similarity=0.0)
 
@@ -361,7 +362,7 @@ def _candidate_anchors(passage: str, text: str, max_edits: int) -> list[int]:
     seed_length = max(SEED_MIN_LENGTH, len(passage) // (max_edits + 1))
     votes: Counter[int] = Counter()
     for seed_start in range(0, len(passage) - seed_length + 1, seed_length):
-        positions = _occurrences(text, passage[seed_start:seed_start + seed_length])
+        positions = _occurrences(text, passage[seed_start : seed_start + seed_length])
         for position in positions:
             votes[position - seed_start] += 1
     if not votes:
@@ -488,9 +489,7 @@ def _near_boundaries(
     """
     found: set[int] = set()
     for estimate in estimates:
-        found |= boundaries(
-            text, estimate - EDGE_SEARCH_MARGIN, estimate + EDGE_SEARCH_MARGIN
-        )
+        found |= boundaries(text, estimate - EDGE_SEARCH_MARGIN, estimate + EDGE_SEARCH_MARGIN)
     if not found:
         found = {min(max(estimate, lowest), highest) for estimate in estimates}
     return sorted(found)
@@ -545,9 +544,7 @@ def _edge_estimates(
     return (first_at - first.b, first_at), (last_end, last_end + unmatched_tail), aligned
 
 
-def _similarity(
-    matcher: SequenceMatcher, text: str, start: int, end: int, floor: float
-) -> float:
+def _similarity(matcher: SequenceMatcher, text: str, start: int, end: int, floor: float) -> float:
     """Ratio of the passage against ``text[start:end]``, pruned by upper bounds.
 
     Args:
@@ -571,7 +568,8 @@ def _word_starts(text: str, low: int, high: int) -> set[int]:
     """Indices in ``[low, high]`` where a word starts in normalised ``text``."""
     low, high = max(low, 0), min(high, len(text) - 1)
     return {
-        index for index in range(low, high + 1)
+        index
+        for index in range(low, high + 1)
         if text[index] != _SPACE and (index == 0 or text[index - 1] == _SPACE)
     }
 
@@ -580,7 +578,8 @@ def _word_ends(text: str, low: int, high: int) -> set[int]:
     """Exclusive indices in ``[low, high]`` where a word ends in normalised ``text``."""
     low, high = max(low, 1), min(high, len(text))
     return {
-        index for index in range(low, high + 1)
+        index
+        for index in range(low, high + 1)
         if text[index - 1] != _SPACE and (index == len(text) or text[index] == _SPACE)
     }
 

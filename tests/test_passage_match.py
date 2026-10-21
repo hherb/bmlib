@@ -51,8 +51,7 @@ SENTENCES = [
     "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism "
     "occurred in 1.27% per year in the apixaban group and 1.60% per year in the "
     "warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
-    "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year "
-    "with warfarin.",
+    "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin.",
     "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior "
     "to warfarin in preventing stroke or systemic embolism, caused less bleeding and "
     "resulted in lower mortality.",
@@ -109,7 +108,7 @@ class TestUnicodeFolding:
         [
             ("Caf\u00e9 au lait was served.", "Cafe\u0301 au lait was served."),  # NFC vs NFD
             ("Cafe\u0301 au lait was served.", "Caf\u00e9 au lait was served."),  # NFD vs NFC
-            ("The patient's \"dose\" was low.", "The patient\u2019s \u201cdose\u201d was low."),
+            ('The patient\'s "dose" was low.', "The patient\u2019s \u201cdose\u201d was low."),
             ("A dose-response effect was seen.", "A dose\u2013response effect was seen."),
             ("Effects were seen - not large.", "Effects were seen \u2014 not large."),
             ("The final efficacy was shown.", "The \ufb01nal e\ufb03cacy was shown."),
@@ -143,7 +142,6 @@ class TestUnicodeFolding:
         )
         assert match.text == sentence
 
-
     @pytest.mark.parametrize(
         ("passage", "text"),
         [
@@ -174,6 +172,7 @@ class TestUnicodeFolding:
         match = find_passage("served with caf\u00e9", text, min_similarity=0.95)
         assert match.text == text
 
+
 class TestExactMatch:
     """Passages present verbatim (modulo case/whitespace) score 1.0."""
 
@@ -182,7 +181,7 @@ class TestExactMatch:
         assert match.matched
         assert match.similarity == 1.0
         assert match.text == SENTENCES[4]
-        assert ABSTRACT[match.start:match.end] == SENTENCES[4]
+        assert ABSTRACT[match.start : match.end] == SENTENCES[4]
 
     def test_case_differences_return_original_case(self) -> None:
         match = find_passage(SENTENCES[0].lower(), ABSTRACT, min_similarity=0.95)
@@ -319,9 +318,7 @@ class TestFuzzyMatch:
 
     def test_long_passage_is_fast(self) -> None:
         # The whole ~1 kB abstract, with two edits, against a ~10 kB text.
-        text = " ".join(
-            f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS)
-        )
+        text = " ".join(f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS))
         passage = ABSTRACT.replace("twice daily", "twice-daily").replace("Major", "Majr")
         started = time.perf_counter()
         match = find_passage(passage, text, min_similarity=0.95)
@@ -338,9 +335,7 @@ class TestFuzzyMatch:
         assert elapsed < FUZZY_TIME_BUDGET_SECONDS
 
     def test_long_text_is_fast(self) -> None:
-        text = " ".join(
-            f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS)
-        )
+        text = " ".join(f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS))
         passage = SENTENCES[4].replace("hazard ratio", "hazard-ratio")
         started = time.perf_counter()
         match = find_passage(passage, text, min_similarity=0.95)
@@ -439,11 +434,13 @@ def _exhaustive_best(passage: str, text: str, min_similarity: float) -> float:
     norm_text, _ = normalize_with_offsets(text)
     length = len(norm_passage)
     starts = [
-        i for i in range(len(norm_text))
+        i
+        for i in range(len(norm_text))
         if norm_text[i] != " " and (i == 0 or norm_text[i - 1] == " ")
     ]
     ends = [
-        i for i in range(1, len(norm_text) + 1)
+        i
+        for i in range(1, len(norm_text) + 1)
         if norm_text[i - 1] != " " and (i == len(norm_text) or norm_text[i] == " ")
     ]
     shortest = length * min_similarity / (2 - min_similarity)
@@ -489,7 +486,7 @@ def test_matches_exhaustive_search_on_random_edits() -> None:
         text = " ".join(sentences[:4])
         word_starts = [0] + [i + 1 for i, char in enumerate(text) if char == " "]
         start = rng.choice(word_starts[:-10])
-        source = text[start:start + rng.randint(40, 200)]
+        source = text[start : start + rng.randint(40, 200)]
         passage = _random_edits(source, rng)
 
         best = _exhaustive_best(passage, text, PROPERTY_THRESHOLD)
@@ -497,7 +494,7 @@ def test_matches_exhaustive_search_on_random_edits() -> None:
 
         assert match.matched == (best >= PROPERTY_THRESHOLD), passage
         if match.matched:
-            assert text[match.start:match.end] == match.text
+            assert text[match.start : match.end] == match.text
             assert match.text == match.text.strip()
             assert match.similarity >= best - PROPERTY_SCORE_TOLERANCE, passage
 
