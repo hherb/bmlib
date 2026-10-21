@@ -76,10 +76,7 @@ mod verified {
     use std::path::Path;
 
     /// Read and hash block size.
-    #[cfg(feature = "http-ureq")]
     pub(super) const BLOCK_SIZE: usize = 1024 * 1024;
-    #[cfg(not(feature = "http-ureq"))]
-    const BLOCK_SIZE: usize = 1024 * 1024;
 
     /// Why a model file could not be verified or downloaded.
     #[derive(Debug)]
