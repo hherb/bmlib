@@ -21112,15 +21112,38 @@ class TestANoteIsNotPartOfATitle:
             ("Src <fn><label>a</label>\n<p>N</p></fn>Med", "Src Med"),
             # No whitespace either side: none is invented.
             ('Lancet<xref ref-type="fn" rid="f1">a</xref>Suppl', "LancetSuppl"),
-            # A source carrying no note keeps its own whitespace, as on main.
-            ("J\n  Med", "J\n  Med"),
         ],
     )
     def test_a_cut_leaves_at_most_one_space_at_its_seam(self, source, expected):
         """``'J  Med'`` and ``'Src\\n  \\n Med'`` before the seam rule (PR #427's review).
 
-        ``<source>`` only strips its ends, so a cut's whitespace showed there;
-        the title arm normalises and hid it.
+        ``<source>`` only stripped its ends then, so a cut's whitespace showed
+        there; it normalises since #518, as the title arm always did, which
+        hides the two-sided cases here. The one-sided and no-whitespace cases
+        still discriminate; the two-space half is pinned through a name arm,
+        which only strips, by
+        ``TestAMarkerIsNotPartOfAName::test_a_roster_members_note_marker_goes_with_the_roster``.
+        """
+        reference = _only_ref(
+            f'<ref id="r1"><mixed-citation><source>{source}</source>.</mixed-citation></ref>'
+        )
+
+        assert reference.source == expected
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            ("J Am Dent\n      Assoc", "J Am Dent Assoc"),
+            ("J\u00a0Clin Med", "J Clin Med"),
+            ("Int J Environ Res\u2009Public Health", "Int J Environ Res Public Health"),
+        ],
+    )
+    def test_a_wrapped_cited_source_is_whitespace_normalised(self, source, expected):
+        """A cited journal name follows the article's own ``<journal-title>`` (#518).
+
+        Both the wrap and the publisher's no-break and thin spaces are served
+        shapes; written as escapes so an editor cannot turn them into plain
+        spaces and leave the arm unpinned.
         """
         reference = _only_ref(
             f'<ref id="r1"><mixed-citation><source>{source}</source>.</mixed-citation></ref>'

@@ -7254,5 +7254,83 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "inline/cited-source-518/test_a_wrapped_cited_source_is_whitespace_normalised",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "J Am Dent Assoc. (2020)",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "J Am Dent Assoc",
+          "volume": "",
+          "year": "2020"
+        },
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "J Clin Med.",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "J Clin Med.",
+          "id": "r2",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "J Clin Med",
+          "volume": "",
+          "year": ""
+        },
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "Int J Environ Res Public Health.",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "Int J Environ Res Public Health.",
+          "id": "r3",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "Int J Environ Res Public Health",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "T",
+      "volume": "",
+      "year": ""
+    }
   }
 ]
