@@ -1795,7 +1795,7 @@ These are real and open, and each is a *measurement* rather than an implementati
 - **The PostgreSQL suite *is* a CI gate now**, and the difference from the line
   above is the whole argument: a server it may create databases on is something CI
   can *provide* deterministically — the `rust-postgres` job in `ci.yml` runs over a
-  `postgres:16` service and sets `BMLIB_PG_TESTS=1` — whereas NCBI's rate limiter is
+  `postgres:18` service and sets `BMLIB_PG_TESTS=1` — whereas NCBI's rate limiter is
   not. Run it the same way locally before a release that touches `db/` or
   `publications/`; it found three defects on its first run.
 - **`TransparencyResult::to_dict`/`from_dict` diverges from Python on

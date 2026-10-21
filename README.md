@@ -258,7 +258,7 @@ uv run pytest tests/ -v
 
 # The PostgreSQL half of tests/test_backends.py skips unless a DSN is set,
 # so a local green run can hide SQLite-only SQL. CI sets this against a
-# postgres:16 service and makes the skip a failure. The database must be one
+# postgres:18 service and makes the skip a failure. The database must be one
 # the tests may drop every table in.
 BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/pgrun port=5432 dbname=bmlib_test user=postgres" \
     uv run pytest tests/test_backends.py
