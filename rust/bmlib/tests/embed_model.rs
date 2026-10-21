@@ -116,12 +116,27 @@ fn download_truncated_body_leaves_no_model() {
     let server = serve(body(), true);
     let tmp = tempdir("truncated");
     let err = download(&server, &model(&body()), &tmp).unwrap_err();
-    // A connection cut short of its declared length is an Io error in ureq;
-    // either way no size-correct file may exist.
-    assert!(
-        matches!(err, ModelError::SizeMismatch { .. } | ModelError::Io(_)),
-        "{err}"
-    );
+    match err {
+        ModelError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
+        other => panic!("{other:?}"),
+    }
+    assert!(dir_is_empty(&tmp));
+}
+
+#[test]
+fn download_short_body_with_matching_length_is_size_mismatch() {
+    let full = body();
+    let server = serve(full[..full.len() / 2].to_vec(), false);
+    let tmp = tempdir("short");
+    match download(&server, &model(&full), &tmp).unwrap_err() {
+        ModelError::SizeMismatch { expected, actual } => {
+            assert_eq!(
+                (expected, actual),
+                (full.len() as u64, full.len() as u64 / 2)
+            );
+        }
+        other => panic!("{other:?}"),
+    }
     assert!(dir_is_empty(&tmp));
 }
 

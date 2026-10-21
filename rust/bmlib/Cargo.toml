@@ -86,6 +86,10 @@ bytes = { version = "1", optional = true }
 # against one llama.cpp commit, and a crate bump moves that commit. It compiles
 # llama.cpp from source, so it needs cmake and a C++ compiler.
 llama-cpp-2 = { version = "=0.1.159", optional = true }
+# Pinned to the same version as `llama-cpp-2`, which would otherwise accept a
+# newer -sys crate: 0.1.159 vendors llama.cpp 26394b4e6749a41c3633db040e0987500a5f7013,
+# the commit the GGUF files were converted with; 0.1.160 vendors a different one.
+llama-cpp-sys-2 = { version = "=0.1.159", optional = true }
 # SHA-256, for the model download's checksum. Its own crate: a wrong digest
 # would fail *silently* by accepting a corrupt multi-gigabyte file.
 sha2 = { version = "0.10", optional = true }
@@ -117,7 +121,7 @@ postgres = ["dep:postgres", "dep:bytes"]
 # Off by default, so a build that never embeds needs no C++ toolchain. The
 # constants and vector rules in `bmlib::embed` are always present; the download
 # additionally needs `http-ureq`.
-embed = ["dep:llama-cpp-2", "dep:sha2"]
+embed = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:sha2"]
 # `embed` with llama.cpp's Metal backend, for Apple GPUs.
 embed-metal = ["embed", "llama-cpp-2/metal"]
 
