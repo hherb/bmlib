@@ -1856,11 +1856,12 @@ writes nothing:
 - **No usable row**, which would answer "no notices" for every paper.
 - **A row shorter than the header**, which is what a download cut part-way
   through a row leaves (see [Malformed CSV](#parse_retraction_watch_csv)).
-- **No notice carries a findable paper DOI, none a PMID, or none a
+- **No notice carries a findable paper DOI, none a PMID, or no findable one a
   `RetractionNature` this version recognises** (bmlib#509): a renamed column,
   which would answer "no notices" for every lookup by the missing identifier,
-  or "not retracted" for every paper, while reading as consulted. The Rust
-  index build refuses the first two.
+  or "not retracted" for every paper, while reading as consulted. A notice no
+  lookup can find answers nothing, so it does not count towards the third. The
+  Rust index build refuses the same three (the third since bmlib#522).
 - **The removal exceeds 1% of the stored notices a lookup can find**, unless
   `allow_large_removal=True`. The export is sorted by Record ID, newest first,
   so a download truncated on a row boundary loses the *oldest* records — the
@@ -2166,7 +2167,7 @@ Only a source whose [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourcep
 | `doi` | `TEXT` | `TEXT` | The retracted paper's DOI. Indexed, not unique — a paper can carry more than one notice. |
 | `pmid` | `TEXT` | `TEXT` | The retracted paper's PMID. Indexed, not unique. |
 | `notice_doi` | `TEXT` | `TEXT` | The notice's own DOI. |
-| `notice_pmid` | `TEXT` | `TEXT` | The notice's own PMID. |
+| `notice_pmid` | `TEXT` | `TEXT` | The notice's own PMID, stored without leading zeros as `pmid` is (bmlib#523). |
 | `nature` | `TEXT` | `TEXT` | `NOT NULL` — the `RetractionNature` value. |
 | `raw_nature` | `TEXT` | `TEXT` | The export's original wording. |
 | `title` | `TEXT` | `TEXT` | |

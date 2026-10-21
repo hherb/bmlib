@@ -607,7 +607,7 @@ def _notice_values(notice: RetractionNotice, now: str) -> tuple[Any, ...]:
         _normalize_doi(notice.doi),
         _canonical_pmid(notice.pmid) or _normalize_pmid(notice.pmid),
         _normalize_doi(notice.notice_doi),
-        _normalize_pmid(notice.notice_pmid),
+        _canonical_pmid(notice.notice_pmid) or _normalize_pmid(notice.notice_pmid),
         notice.nature.value,
         notice.raw_nature,
         notice.title,
@@ -780,13 +780,13 @@ def import_retraction_watch_export(
     Raises:
         ValueError: As :func:`parse_retraction_watch_csv` does, including for a
             row shorter than the header; if no row was usable; if no notice
-            carries a findable DOI, none a PMID, or none a ``RetractionNature``
-            this version recognises -- a renamed column, which would answer
-            "no notices" for every lookup by the missing identifier, or "not
-            retracted" for every paper, and read as consulted (bmlib#509; the
-            Rust index build refuses the first two); or if the removal exceeds
-            the share above and *allow_large_removal* is not set. Nothing is
-            written in any case.
+            carries a findable DOI, none a PMID, or no findable one a
+            ``RetractionNature`` this version recognises -- a renamed column,
+            which would answer "no notices" for every lookup by the missing
+            identifier, or "not retracted" for every paper, and read as
+            consulted (bmlib#509; the Rust index build refuses the same three,
+            bmlib#522); or if the removal exceeds the share above and
+            *allow_large_removal* is not set. Nothing is written in any case.
     """
     notices = parse_retraction_watch_csv(source, on_skip=on_skip)
     record_ids: set[str] = set()
@@ -799,11 +799,15 @@ def import_retraction_watch_export(
     def tracked() -> Iterator[RetractionNotice]:
         for notice in notices:
             record_ids.add(notice.record_id)
-            if _clean_identifier(_normalize_doi(notice.doi)):
+            has_doi = bool(_clean_identifier(_normalize_doi(notice.doi)))
+            has_pmid = _canonical_pmid(notice.pmid) is not None
+            if has_doi:
                 carried["a paper DOI"] = True
-            if _canonical_pmid(notice.pmid) is not None:
+            if has_pmid:
                 carried["a paper PMID"] = True
-            if notice.nature is not RetractionNature.OTHER:
+            # Only a notice a lookup can find answers one, as the Rust build
+            # counts it (bmlib#522).
+            if (has_doi or has_pmid) and notice.nature is not RetractionNature.OTHER:
                 carried["a RetractionNature this version recognises"] = True
             yield notice
 

@@ -844,7 +844,9 @@ impl RetractionIndex {
     /// for every paper. Also when no notice carries a paper DOI, or none a
     /// PMID: a renamed column, which would answer "no notices" for every
     /// lookup by the other identifier (63,373 and 32,208 of the 2026-03
-    /// copy's 69,318 rows carry one). A truncated download that ends on a row
+    /// copy's 69,318 rows carry one), or when none carries a nature this
+    /// version recognises: every notice would be `Other`, answering "not
+    /// retracted" for every paper. A truncated download that ends on a row
     /// boundary cannot be told from a smaller export: compare
     /// [`RetractionIndex::len`] with the index it replaces.
     pub fn build(csv: &[u8], data_as_of: &str) -> Result<RetractionIndexBuild, String> {
@@ -881,6 +883,12 @@ impl RetractionIndex {
             for (column, carried) in [
                 ("paper DOI", entries.iter().any(|e| e.0.is_some())),
                 ("PMID", entries.iter().any(|e| e.1.is_some())),
+                // A renamed nature column makes every notice `Other`, which
+                // decides nothing: "not retracted" for every paper (#522).
+                (
+                    "RetractionNature this version recognises",
+                    entries.iter().any(|e| e.2 != RetractionKind::Other),
+                ),
             ] {
                 if !carried {
                     return Err(format!("no notice carries a {column}: a renamed column?"));

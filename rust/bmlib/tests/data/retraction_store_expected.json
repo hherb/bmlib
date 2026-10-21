@@ -421,7 +421,7 @@
   "value": [
    {
     "op": "store",
-    "processed": 1
+    "processed": 2
    },
    {
     "notices": [
@@ -430,7 +430,21 @@
       "journal": null,
       "nature": "retraction",
       "notice_doi": null,
-      "notice_pmid": null,
+      "notice_pmid": "PMC99",
+      "original_paper_date": null,
+      "pmid": "12345",
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-2",
+      "retraction_date": null,
+      "title": null
+     },
+     {
+      "doi": null,
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": "7654321",
       "original_paper_date": null,
       "pmid": "12345",
       "raw_nature": null,
@@ -449,7 +463,21 @@
       "journal": null,
       "nature": "retraction",
       "notice_doi": null,
-      "notice_pmid": null,
+      "notice_pmid": "PMC99",
+      "original_paper_date": null,
+      "pmid": "12345",
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-2",
+      "retraction_date": null,
+      "title": null
+     },
+     {
+      "doi": null,
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": "7654321",
       "original_paper_date": null,
       "pmid": "12345",
       "raw_nature": null,
