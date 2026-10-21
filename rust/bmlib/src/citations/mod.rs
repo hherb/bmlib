@@ -56,6 +56,7 @@ pub mod builder;
 pub mod formatter;
 pub mod models;
 pub mod parser;
+mod sequence_matcher;
 
 pub use builder::{
     build_references, build_references_default, find_missing_documents, format_document,
