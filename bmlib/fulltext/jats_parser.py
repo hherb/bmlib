@@ -4310,8 +4310,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         pretty-printed ``<fn>`` leaves the whitespace between its children,
         which merges unmarked, ``<fn>`` taking no buffer of its own
         (``'Src\\n  \\n Med'`` in a cited ``<source>``, which only stripped
-        its ends before #518; a name arm still only strips). Text with no cut
-        is returned unchanged.
+        its ends before #518; an own contributor's ``<collab>`` still only
+        strips). Text with no cut is returned unchanged.
         """
         # The spans are in order of their starts: each is appended at the end
         # of its buffer, and a note merging whole drops its own. A name's span

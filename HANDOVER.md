@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-21 (**this session fixes #518**, branch
+_Last updated: 2026-10-21 (**this session is #518**, branch
 `fix/jats-cited-source-normalise-518`, worktree `../bmlib-518`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PR #517 (#516) merged before this
 session._

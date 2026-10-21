@@ -21120,8 +21120,8 @@ class TestANoteIsNotPartOfATitle:
         ``<source>`` only stripped its ends then, so a cut's whitespace showed
         there; it normalises since #518, as the title arm always did, which
         hides the two-sided cases here. The one-sided and no-whitespace cases
-        still discriminate; the two-space half is pinned through a name arm,
-        which only strips, by
+        still discriminate; the two-space half is pinned through an own
+        contributor's ``<collab>``, which only strips, by
         ``TestAMarkerIsNotPartOfAName::test_a_roster_members_note_marker_goes_with_the_roster``.
         """
         reference = _only_ref(

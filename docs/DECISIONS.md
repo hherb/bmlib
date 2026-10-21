@@ -1762,9 +1762,11 @@ marker in 88 / 628 / 98 articles. Five choices that look like omissions:
   without the rule `'J <xref>a</xref> Med'` stored `'J  Med'`; normalising
   that arm instead would also have moved every source with a line break of
   its own, which `main` kept. It normalises since #518 (below), which hides
-  the two-sided seam there; a name arm, which only strips, still shows it. Measured over the three artifacts, the rule moves no stored
-  value beyond what the plain cut moved. A title that is nothing but a marker
-  is now `''`, which is the title the document carries (none measured).
+  the two-sided seam there; an own contributor's `<collab>`, which only
+  strips, still shows it. Measured over the three artifacts, the rule moves
+  no stored value beyond what the plain cut moved. A title that is nothing
+  but a marker is now `''`, which is the title the document carries (none
+  measured).
 - **The span stack is audited** (`misaligned_note_spans`, ERROR).
   `excess_text_buffers` reads `text_stack` alone, and a span list too many
   would hand every later title another buffer's offsets, cut without a word.
