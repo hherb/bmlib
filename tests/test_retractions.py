@@ -146,8 +146,8 @@ class TestIdentifierSentinels:
         assert _clean_identifier("0") is None
 
     def test_a_padded_zero_pubmed_id_is_not_an_identifier(self):
-        # The export of 2026-10-21 pads PubMed IDs to eight digits, so its
-        # sentinel is "00000000" (33,800 of 73,329 rows) and no bare "0" is left.
+        # The export of 2026-10-21 writes an absent PubMed ID as "00000000"
+        # (33,800 of 73,329 paper PMIDs) and no bare "0" is left.
         assert _clean_identifier("00000000") is None
         assert _clean_identifier("000") is None
         # A padded real PMID is not a sentinel (one such cell in that export).
@@ -475,6 +475,27 @@ class TestParsingTheExport:
 
         with pytest.raises(ValueError, match="Malformed Retraction Watch CSV after line 1"):
             list(parse_retraction_watch_csv(io.BytesIO(document)))
+
+    @pytest.mark.parametrize(
+        "tail",
+        [
+            # Cut inside the paper DOI: read through, "10.1/pa" was stored and
+            # the nature, never reached, read as OTHER.
+            "2,A paper,Subject,Inst,J,Pub,AU,Author,URL,Article,3/9/2026 0:00,"
+            "10.1/notice,0,5/6/2023 0:00,10.1/pa",
+            # Cut inside a quoted field, which a non-strict reader closes at EOF.
+            '2,"A pap',
+        ],
+    )
+    def test_a_download_cut_part_way_through_a_row_is_refused(self, tail):
+        document = _csv(_row(), tail)
+
+        with pytest.raises(
+            ValueError,
+            match="the CSV row ending on line 3 has fewer fields than the header;"
+            " the download is probably truncated",
+        ):
+            list(parse_retraction_watch_csv(document))
 
 
 class TestTheImportIsNotSilentlyWrong:

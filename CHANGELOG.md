@@ -14,12 +14,20 @@ All notable changes to bmlib are documented here. The format is based on
   gets the same verdict on the desktop and in an app (the maintainer's
   choice). Measured, 2026-03 copy against the export of 2026-10-21: 6 of
   69,318 records left, 4 re-keyed and 2 retractions dropped outright, which
-  `store_retraction_notices()` never deleted. It refuses, writing nothing, an
-  export with no usable row, one in which no notice carries a findable DOI or
-  none a PMID (a renamed column, #509; the Rust index build's rule), and a
-  removal above 1% of the stored notices unless `allow_large_removal=True`,
-  since the export is sorted newest first and a truncated download loses the
-  oldest records. Returns `RetractionImport(stored, removed)`.
+  `store_retraction_notices()` never deleted. A notice whose row the export
+  still carries but the parser now skips is removed too: replayed through this
+  function, the March copy and then the October export store 64,133 and 68,135
+  notices and remove 7 — the 6 that left, and record 2558, still in the export
+  with its DOI blanked to `unavailable` and its PMID to `00000000`. It refuses,
+  writing nothing, an export with no usable row; one in which no notice
+  carries a findable DOI, none a PMID, or none a `RetractionNature` this
+  version recognises (a renamed column, #509; the first two are the Rust index
+  build's rule); and a removal above 1% of the stored notices a lookup can
+  find unless `allow_large_removal=True`, since the export is sorted newest
+  first and a truncated download loses the oldest records. A notice nothing
+  could find is removed without counting. Two imports are serialised by a lock,
+  and a removal is logged at WARNING naming the records. Returns
+  `RetractionImport(stored, removed)`.
   `store_retraction_notices()` is unchanged and stays for batch callers. The
   Rust desktop store follows in #520.
 
@@ -53,15 +61,29 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **A download cut part-way through a row is refused, not stored.** The
+  reader filled a row shorter than its header with `None` (Python) or `""`
+  (Rust), so a truncated download replaced the oldest record's good notice
+  with one carrying a cut DOI and no nature, which no lookup found, at no
+  level. A short row now raises `ValueError`, in Python and the Rust reader
+  (two oracle cases); 0 of the 69,318 rows of the 2026-03 copy and 0 of the
+  73,329 of 2026-10-21 are short.
+
 - **A padded zero PubMed ID is the export's "absent" sentinel, as `"0"` is.**
-  The Retraction Watch export of 2026-10-21 pads every PubMed ID cell to eight
-  digits, so its absent PMID is `"00000000"` (33,800 of 73,329 rows, no bare
+  The Retraction Watch export of 2026-10-21 writes an absent PubMed ID as
+  `"00000000"` (33,800 of 73,329 paper PMIDs, 34,788 notice PMIDs, no bare
   `"0"` left), and the parser stored it as the notice's PMID — unfindable by a
   lookup, but returned as `notice.pmid`, with a WARNING calling it "not ASCII
   digits". Any run of zeros now reads as absent, in Python and the Rust reader
-  (three oracle cases); a padded real PMID is kept. A stored notice moves on
-  re-import; `lookup_retractions(pmid="000")` now refuses as "no usable
-  identifier" rather than "not a PMID".
+  (three oracle cases); a padded real PMID (`00069063`, the export's one) is
+  kept. On re-import a notice carrying a DOI has its stored PMID cleared. One
+  carrying nothing else was unfindable, and its row is now skipped:
+  `store_retraction_notices()` never touches it again, and
+  `import_retraction_watch_export()` removes it without counting it toward its
+  1% guard — 2,913 of the October export's rows, which over a table an older
+  bmlib filled from that export would otherwise have been refused as a
+  truncated download. `lookup_retractions(pmid="000")` now refuses as "no
+  usable identifier" rather than "not a PMID".
 - **A cited `<source>` is whitespace-normalised, as the article's own journal
   title is** (#518, from PR #517's review). The arm stored the end-stripped
   text, so a cited journal name wrapped in the deposit kept its newline

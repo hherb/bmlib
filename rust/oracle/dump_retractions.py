@@ -61,11 +61,15 @@ def csv_bytes(*rows, encoding="utf-8"):
 
 def parse(case_bytes):
     skipped = []
-    notices = list(
-        parse_retraction_watch_csv(
-            io.BytesIO(case_bytes), on_skip=lambda n, why: skipped.append([n, why])
+    try:
+        notices = list(
+            parse_retraction_watch_csv(
+                io.BytesIO(case_bytes), on_skip=lambda n, why: skipped.append([n, why])
+            )
         )
-    )
+    except ValueError as exc:
+        # The Rust harness renders a refused document as `{"__error": ...}`.
+        return {"__error": str(exc)}
     # Drop the created/updated stamps, which are wall-clock on both sides:
     # `RetractionNotice` has none, but `to_dict` carries the enum spelling.
     return {"notices": [n.to_dict() for n in notices], "skipped": skipped}

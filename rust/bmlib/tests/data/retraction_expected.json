@@ -484,6 +484,20 @@
     }
   },
   {
+    "name": "parse/short-row-refused",
+    "ok": true,
+    "value": {
+      "__error": "the CSV row ending on line 3 has fewer fields than the header; the download is probably truncated -- fetch it again."
+    }
+  },
+  {
+    "name": "parse/short-row-unterminated-quote-refused",
+    "ok": true,
+    "value": {
+      "__error": "the CSV row ending on line 3 has fewer fields than the header; the download is probably truncated -- fetch it again."
+    }
+  },
+  {
     "name": "parse/two-rows",
     "ok": true,
     "value": {

@@ -367,8 +367,8 @@ fn the_exports_sentinels_are_not_identifiers() {
     assert_eq!(clean_identifier(Some("UNAVAILABLE")), None);
     // Padding is stripped before the comparison.
     assert_eq!(clean_identifier(Some("  0  ")), None);
-    // The export of 2026-10-21 pads PubMed IDs to eight digits: its sentinel
-    // is "00000000", and a padded real PMID is not one.
+    // The export of 2026-10-21 writes an absent PubMed ID as "00000000", and
+    // a padded real PMID (one cell in that export) is not a sentinel.
     assert_eq!(clean_identifier(Some("00000000")), None);
     assert_eq!(clean_identifier(Some("000")), None);
     assert_eq!(

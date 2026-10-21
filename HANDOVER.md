@@ -40,18 +40,24 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 `import_retraction_watch_export(conn, source, *, on_skip, allow_large_removal)`
 stores a whole Retraction Watch export in one transaction and **deletes the
-notices it no longer carries** (#510, the maintainer's choice; the apps'
-rebuilt index already did). It refuses, writing nothing, an export with no
-usable row, one with no findable DOI or no PMID anywhere (#509, the Rust index
-build's rule), and a removal above **1%** unless `allow_large_removal=True` —
-the export is sorted newest first, so a truncated download loses the oldest
-records. The 1% is the maintainer's, **fixed before a monthly series was
-measured**. Measured: 6 of 69,318 records left between the 2026-03 copy and
-the export of 2026-10-21 (4 re-keyed, 2 retractions dropped outright).
-**Measuring found a live format change**: the export now pads PMIDs to eight
-digits, so its absent PMID `00000000` (33,800 of 73,329 rows) was stored as a
-PMID; any run of zeros is now the sentinel, in Python and the Rust reader
-(three oracle cases). The Rust desktop store's import follows in **#520**.
+stored notices not among its usable rows** (#510, the maintainer's choice; the
+apps' rebuilt index already did). It refuses, writing nothing, a row shorter
+than the header (a download cut mid-row, Python and the Rust reader), an
+export with no usable row, one with no findable DOI, no PMID or no recognised
+nature anywhere (#509), and a removal above **1% of the notices a lookup can
+find** unless `allow_large_removal=True` — the export is sorted newest first,
+so a truncated download loses the oldest records. The 1% is the maintainer's,
+**fixed before a monthly series was measured**. Unfindable notices are removed
+uncounted (2,913 over a table an older bmlib filled from the October export,
+which would otherwise be refused), and two imports are serialised by a lock.
+Measured: 6 of 69,318 records left between the 2026-03 copy and the export of
+2026-10-21 (4 re-keyed, 2 retractions dropped outright); replayed, the import
+removes 7, the seventh (2558) still in the export with both identifiers
+blanked. **Measuring found a live format change**: the export now writes an
+absent PMID as `00000000` (33,800 of 73,329 paper PMIDs; real PMIDs stay
+unpadded but for one), which was stored as a PMID; any run of zeros is now the
+sentinel, in Python and the Rust reader (three oracle cases). The Rust desktop
+store's import follows in **#520**.
 Today's export is in the session scratchpad only; re-download it from
 `gitlab.com/crossref/retraction-watch-data` (`retraction_watch.csv`).
 

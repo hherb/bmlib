@@ -453,6 +453,20 @@
     }
   },
   {
+    "name": "parse/short-row-refused",
+    "fn": "parse",
+    "args": {
+      "csv": "Record ID,OriginalPaperDOI,RetractionNature\n1,10.1/paper,Retraction\n2,10.1/pa\n"
+    }
+  },
+  {
+    "name": "parse/short-row-unterminated-quote-refused",
+    "fn": "parse",
+    "args": {
+      "csv": "Record ID,OriginalPaperDOI,RetractionNature\n1,10.1/paper,Retraction\n2,\"10.1/pa"
+    }
+  },
+  {
     "name": "parse/two-rows",
     "fn": "parse_rows",
     "args": {
