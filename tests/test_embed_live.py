@@ -76,7 +76,10 @@ def test_batch_keeps_input_order(embedder: Embedder) -> None:
     for k, vec in enumerate(got):
         item = items[k % len(items)]
         single = embedder.embed_documents([texts[k % len(items)]])[0]
-        assert _cosine(vec, single) > 0.9999, f"{item['name']}: batch differs from single"
+        # Batching moves the numerics a little on the CPU (min 0.99968 seen);
+        # another reference text is at most 0.795 away, so a swap is caught.
+        same = _cosine(vec, single)
+        assert same >= 0.999, f"{item['name']}: batch vs single cosine {same:.6f}"
         cos = _cosine(vec, item["vector"])
         assert cos >= floor, f"{item['name']}: cosine {cos:.6f} < {floor}"
 

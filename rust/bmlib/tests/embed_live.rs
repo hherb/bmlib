@@ -135,11 +135,11 @@ fn batch_keeps_input_order() {
     for (k, vec) in got.iter().enumerate() {
         let (name, _, _, want) = &items[k % items.len()];
         let single = embedder.embed_documents(&[twice[k]]).unwrap().remove(0);
-        assert!(
-            cosine(vec, &as_f64(&single)) > 0.9999,
-            "{name}: batch differs from single"
-        );
+        let same = cosine(vec, &as_f64(&single));
         let cos = cosine(vec, want);
+        // Batching moves the numerics a little on the CPU (min 0.99968 seen);
+        // another reference text is at most 0.795 away, so a swap is caught.
+        assert!(same >= 0.999, "{name}: batch vs single cosine {same:.6}");
         assert!(cos >= floor, "{name}: cosine {cos:.6} < {floor}");
     }
     assert!(embedder.embed_documents(&[]).unwrap().is_empty());
