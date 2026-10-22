@@ -31,23 +31,38 @@ MAX_TOKENS = 8192
 NORM_FLOOR = 1e-12
 
 
+class VectorError(ValueError):
+    """A model output cannot be made into an embedding.
+
+    It is too short, carries a non-finite value among the values kept, or
+    its kept values have a norm below :data:`NORM_FLOOR` (or past a float's
+    range). A healthy model produces none of these; a corrupt GGUF or a
+    backend fault can, and a NaN or zero vector stored silently would sit at
+    a fixed end of every cosine ranking.
+    """
+
+
 def truncate_and_normalize(vector: Sequence[float]) -> list[float]:
     """Keep the first :data:`EMBEDDING_DIM` values and scale them to unit length.
 
     Args:
-        vector: A model output of at least ``EMBEDDING_DIM`` values.
+        vector: A model output of at least ``EMBEDDING_DIM`` values. Values
+            past ``EMBEDDING_DIM`` are dropped unread.
 
     Returns:
-        The truncated, L2-normalised vector. A norm below :data:`NORM_FLOOR`
-        is replaced by it, so an all-zero head gives zeros.
+        The truncated, L2-normalised vector.
 
     Raises:
-        ValueError: If the vector is shorter than ``EMBEDDING_DIM``.
+        VectorError: If the vector is shorter than ``EMBEDDING_DIM``, a kept
+            value is NaN or infinite, or the kept values' norm is below
+            :data:`NORM_FLOOR` or overflows.
     """
     if len(vector) < EMBEDDING_DIM:
-        raise ValueError(f"vector has {len(vector)} values, need at least {EMBEDDING_DIM}")
+        raise VectorError(f"vector has {len(vector)} values, need at least {EMBEDDING_DIM}")
     head = [float(x) for x in vector[:EMBEDDING_DIM]]
-    norm = max(math.sqrt(sum(x * x for x in head)), NORM_FLOOR)
+    norm = math.sqrt(sum(x * x for x in head))
+    if not NORM_FLOOR <= norm < math.inf:  # a NaN or infinite value carries into the norm
+        raise VectorError(f"the kept values' norm is {norm}, which cannot be scaled to unit length")
     return [x / norm for x in head]
 
 

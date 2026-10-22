@@ -58,6 +58,13 @@ when no text is at fault).
 - A text over `MAX_TOKENS` (8192) tokens. It is refused, never cut short.
 - llama-cpp-python cannot be imported (the message says what was raised; it
   comes with `bmlib[embed]`).
+- A text whose model output is not an embedding: a NaN or infinite value
+  among the 256 kept, or a norm below `1e-12` (an all-zero head). A healthy
+  model produces neither, but a corrupt GGUF or a backend fault can, and such a
+  vector would sit at a fixed end of every cosine ranking, so it is refused
+  rather than stored. `EmbedError.__cause__` is the `VectorError` (a
+  `ValueError`) that `truncate_and_normalize` raised, which it also raises for
+  a vector shorter than 256. *(unreleased — #530)*
 - A missing or unloadable model file, or llama.cpp failing to decode a batch.
 
 Passing one `str` to `embed_documents` (instead of a list) is a `TypeError`.
@@ -111,6 +118,10 @@ Every failure, model loading included, is an `EmbedError`:
 
 - `EmptyText { index }`: an empty or whitespace-only text, or query.
 - `TooLong { index, tokens }`: a text over `MAX_TOKENS` tokens, refused, never cut short.
+- `Vector { index, error }`: the text's model output is not an embedding
+  (`VectorError::NotScalable`: a NaN or infinite kept value, or a norm below
+  `1e-12`). `truncate_and_normalize` returns `VectorError`, which also has
+  `TooShort { len }`. *(unreleased — #530)*
 - `Llama(message)`: the model file is missing or will not load, or llama.cpp fails.
 
 Drop the `Embedder` before the process exits. On Metal, llama.cpp aborts at

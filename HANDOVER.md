@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-21 (**this session is #523 + #522**, branch
-`fix/retraction-notice-pmid-523`, worktree `../bmlib-s523`). **0.11.0 is
-released** (`v0.11.0` on 8edd3d7, on PyPI). PR #521 (#509, #510) merged before
-this session._
+_Last updated: 2026-10-22 (**this session is #530**, branch
+`fix/embed-nonfinite-530`, worktree `../bmlib-s530`). **0.11.0 is released**
+(`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`) and #531 (the
+embedder) merged before this session._
 
 ## What 0.11.0 costs a downstream
 
@@ -26,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; its review filed #530 and #532), #526 (`find_passage`, #527), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -36,37 +36,29 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #523 + #522, PR #521's review findings
+## This session: #530, an embedding that is not one
 
-Both small, both in Python *and* Rust. **#523**: `_notice_values` stores
-`notice_pmid` through `_canonical_pmid(...) or _normalize_pmid(...)` as it does
-the paper's `pmid`, and the Rust store's `notice_values` likewise; the oracle's
-`store/padded-pmid-is-canonicalised` case gained a padded `notice_pmid` in both
-case copies and `retraction_store_expected.json` was regenerated. **#522**:
-`RetractionIndex::build` refuses an export whose notices are all `Other` beside
-its DOI/PMID refusal. Each fix was reverted to confirm its test fails. **#520**
-(the Rust desktop store's import) must take the nature rule too, as #522 says.
+`truncate_and_normalize` passed NaN and infinity through and turned an
+all-zero head into a zero "unit" vector, each silently. It now raises
+`VectorError` (a new `ValueError`, also for a too-short vector) and the
+`Embedder` wraps it as an `EmbedError` naming the text's index; Rust's
+`VectorTooShort` became `VectorError { TooShort, NotScalable }` and
+`EmbedError` gained `Vector { index, error }`. **One norm check does it all**:
+a mutant deleting a separate `isfinite` loop survived, a NaN or infinity
+carrying into the norm, so the loop went. The shared contract's all-zero case
+now expects an error (the maintainer's comment on #530 proposed it), six cases
+join it, and both readers parse `"NaN"`/`"Infinity"`/`"-Infinity"` strings.
+Python mutants all killed. **#532** (the two languages' error vocabularies)
+is still the maintainer's call, and has a comment: Rust's new `Vector`
+variant has no Python subclass, only `EmbedError.__cause__`.
 
-PR #524's review: Python's nature flag counted a notice no lookup can find,
-where the Rust build counts only indexed ones, so an export whose one
-recognised nature sat on an unfindable notice imported in Python and was
-refused in Rust. Python now counts findable notices only
-(`test_a_recognised_nature_only_a_lookup_cannot_find_is_refused`). The oracle
-case gained a `" PMC99 "` notice PMID, pinning the Rust fallback (dropping
-`.or_else(normalize_pmid…)` passed every Rust test before); the FFI
-`build_retraction_index` doc names the nature refusal; the Rust control row is
-a `Correction`, so the check reads "recognised" and not "retracted".
+Filed **#533**: the Rust `passage_match` timing tests (2 s wall clock) failed
+once under a full parallel debug `cargo test`, and pass at ~0.5 s alone.
 
-**The session before** (PR #521, #509 + #510): `import_retraction_watch_export()`
-replaces the stored notices with one export, refusing a short row, a missing
-identifier or nature column, and a removal above 1% of the findable notices
-(the 1% fixed before a monthly series was measured); the export now writes an
-absent PMID as `00000000`, any run of zeros being the sentinel. Re-download
-the export from `gitlab.com/crossref/retraction-watch-data`
-(`retraction_watch.csv`); the 2026-03 copy is at
-`../biasbuster/dataset/retraction_watch_cache.csv`. #504 (PR #506) filed
-**#507**, still open; read `docs/DECISIONS.md`'s #504 section before changing
-the rule.
+**The session before** (PR #524, #523 + #522): `notice_pmid` is stored
+canonical in Python and Rust; `RetractionIndex::build` refuses an all-`Other`
+export, and Python's nature flag counts findable notices only. **#520** (the
+Rust desktop store's import) must take that nature rule too.
 
 ## The Rust port
 
@@ -121,8 +113,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-four open once PR #526 merges** (`gh issue list --state open
---limit 300`, 2026-10-22: 95, less #527, which that PR closes). **#528** and
+**Ninety-five open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-22: 97, less #530). **#533** is this
+session's (a flaky timing test). **#532** is PR #531's (the
+embedder): Python's error types do not mirror Rust's — an API-shape decision,
+free while the embedder is unreleased. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#507** is PR #506's (above); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous

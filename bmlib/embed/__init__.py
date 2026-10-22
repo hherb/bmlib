@@ -31,6 +31,7 @@ from bmlib.embed.vectors import (
     MAX_TOKENS,
     QUERY_PREFIX,
     EmptyTextError,
+    VectorError,
     check_texts,
     query_text,
     truncate_and_normalize,
@@ -52,5 +53,6 @@ __all__ = [
     "download_model",
     "query_text",
     "truncate_and_normalize",
+    "VectorError",
     "verify_model",
 ]

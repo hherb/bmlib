@@ -33,7 +33,7 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{send_logs_to_tracing, LogOptions};
 
-use super::vectors::{check_texts, query_text, truncate_and_normalize, MAX_TOKENS};
+use super::vectors::{check_texts, query_text, truncate_and_normalize, VectorError, MAX_TOKENS};
 
 /// Layers offloaded to the GPU: more than the model has, so all of them. A
 /// build without a GPU backend ignores it.
@@ -57,6 +57,14 @@ pub enum EmbedError {
         /// How many tokens it has.
         tokens: usize,
     },
+    /// The model output for the text at `index` is not an embedding (NaN,
+    /// infinite or zero; see [`VectorError`]).
+    Vector {
+        /// Position of the text.
+        index: usize,
+        /// Why its output was refused.
+        error: VectorError,
+    },
     /// llama.cpp failed: the model would not load, or a batch would not decode.
     Llama(String),
 }
@@ -71,6 +79,7 @@ impl fmt::Display for EmbedError {
                 f,
                 "text at index {index} has {tokens} tokens, over the {MAX_TOKENS} limit"
             ),
+            Self::Vector { index, error } => write!(f, "text at index {index}: {error}"),
             Self::Llama(message) => write!(f, "llama.cpp: {message}"),
         }
     }
@@ -165,8 +174,9 @@ impl Embedder {
     /// # Errors
     ///
     /// [`EmbedError::EmptyText`] or [`EmbedError::TooLong`] for the first
-    /// offending text, before anything is embedded; [`EmbedError::Llama`] if
-    /// llama.cpp fails.
+    /// offending text, before anything is embedded; [`EmbedError::Vector`]
+    /// for a text whose model output is not an embedding;
+    /// [`EmbedError::Llama`] if llama.cpp fails.
     pub fn embed_documents(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         check_texts(texts).map_err(|e| EmbedError::EmptyText { index: e.index })?;
         if texts.is_empty() {
@@ -195,7 +205,7 @@ impl Embedder {
             ctx.decode(&mut batch).map_err(llama)?;
             for (seq, &i) in (0..).zip(&group) {
                 let raw = ctx.embeddings_seq_ith(seq).map_err(llama)?;
-                out[i] = truncate_and_normalize(raw).map_err(llama)?;
+                out[i] = embedding(i, raw)?;
             }
         }
         Ok(out)
@@ -217,6 +227,11 @@ impl Embedder {
 fn query_document(query: &str) -> Result<String, EmbedError> {
     check_texts(&[query]).map_err(|e| EmbedError::EmptyText { index: e.index })?;
     Ok(query_text(query))
+}
+
+/// Text `index`'s embedding from its raw model output `raw`.
+fn embedding(index: usize, raw: &[f32]) -> Result<Vec<f32>, EmbedError> {
+    truncate_and_normalize(raw).map_err(|error| EmbedError::Vector { index, error })
 }
 
 /// Refuse the first text of more than [`MAX_TOKENS`] tokens; `lens[i]` is text
@@ -255,7 +270,29 @@ fn pack(order: &[usize], lens: &[usize]) -> Vec<Vec<usize>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pack, query_document, refuse_too_long, EmbedError, MAX_SEQUENCES, MAX_TOKENS};
+    use super::{
+        embedding, pack, query_document, refuse_too_long, EmbedError, VectorError, MAX_SEQUENCES,
+        MAX_TOKENS,
+    };
+    use crate::embed::EMBEDDING_DIM;
+
+    #[test]
+    fn an_unusable_output_names_its_text() {
+        for bad in [f32::NAN, f32::INFINITY, 0.0] {
+            assert_eq!(
+                embedding(1, &[bad; EMBEDDING_DIM]),
+                Err(EmbedError::Vector {
+                    index: 1,
+                    error: VectorError::NotScalable
+                }),
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            embedding(0, &[1.0; EMBEDDING_DIM]).unwrap().len(),
+            EMBEDDING_DIM
+        );
+    }
 
     #[test]
     fn max_tokens_is_accepted_and_one_more_is_refused() {

@@ -39,6 +39,7 @@ from bmlib.embed import (
     MAX_TOKENS,
     Embedder,
     EmbedError,
+    VectorError,
     query_text,
     truncate_and_normalize,
 )
@@ -260,6 +261,19 @@ def test_a_decode_failure_is_an_embed_error(fake: tuple[Embedder, _FakeLlama]) -
     with pytest.raises(EmbedError, match="llama_decode returned -3") as caught:
         embedder.embed_documents(["a"])
     assert caught.value.index is None
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, 0.0], ids=["nan", "inf", "zero"])
+def test_an_unusable_output_is_an_embed_error_naming_its_text(
+    fake: tuple[Embedder, _FakeLlama], monkeypatch: pytest.MonkeyPatch, bad: float
+) -> None:
+    embedder, llm = fake
+    vectors = [_raw("a"), [bad] * EMBEDDING_DIM, _raw("c")]
+    monkeypatch.setattr(llm, "embed", lambda texts, normalize, truncate: vectors)
+    with pytest.raises(EmbedError, match="text at index 1: ") as caught:
+        embedder.embed_documents(["a", "b", "c"])
+    assert caught.value.index == 1
+    assert isinstance(caught.value.__cause__, VectorError)
 
 
 def test_leaving_a_with_block_frees_the_model(fake: tuple[Embedder, _FakeLlama]) -> None:

@@ -34,7 +34,11 @@ fn floats(v: &Value) -> Vec<f32> {
     v.as_array()
         .unwrap()
         .iter()
-        .map(|x| x.as_f64().unwrap() as f32)
+        // A non-finite value is written as a string, JSON having no literal for one.
+        .map(|x| match x.as_str() {
+            Some(s) => s.parse::<f32>().unwrap(),
+            None => x.as_f64().unwrap() as f32,
+        })
         .collect()
 }
 

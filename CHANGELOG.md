@@ -24,6 +24,21 @@ All notable changes to bmlib are documented here. The format is based on
   bare name and a malformed sha256.
 
 ### Fixed
+- **An embedding that is NaN, infinite or zero is refused, not stored** (#530,
+  from the embedder's own review; the embedder is unreleased, so nothing
+  stored moves). `truncate_and_normalize` passed a non-finite value through —
+  a NaN made every component NaN, an infinity a mix of 0 and NaN — and
+  replaced a norm below `1e-12` by `1e-12`, so an all-zero head came back as
+  a zero "unit" vector. Each would sit at a fixed end of every cosine ranking,
+  silently. It now raises `VectorError` (a `ValueError`, new, also raised for
+  a vector too short) for any of them, and `Embedder.embed_documents` turns it
+  into an `EmbedError` naming the text's index. One norm check catches all
+  three, a NaN or infinity carrying into the norm; Python also refuses a norm
+  that overflows a double. The shared contract's all-zero case now expects an
+  error, and six cases join it (NaN, `+inf`, `-inf` at the last kept
+  position, NaN in the dropped tail accepted, a norm either side of the
+  floor). The Rust port in the same PR: `VectorTooShort` becomes
+  `VectorError { TooShort, NotScalable }` and `EmbedError` gains `Vector`.
 - **A retraction notice's own PMID is stored without leading zeros, as the
   paper's is** (#523, from PR #521's review). `notice_pmid` went through
   whitespace stripping alone, so the export's occasional padding (its paper

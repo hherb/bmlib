@@ -29,6 +29,7 @@ from types import TracebackType
 from bmlib.embed.vectors import (
     MAX_TOKENS,
     EmptyTextError,
+    VectorError,
     check_texts,
     query_text,
     truncate_and_normalize,
@@ -123,8 +124,10 @@ class Embedder:
             TypeError: If ``texts`` is a single ``str`` (it would embed each
                 character).
             EmbedError: With ``index`` set, for an empty text or one longer
-                than ``MAX_TOKENS`` tokens, before anything is embedded;
-                without, if llama.cpp fails to decode.
+                than ``MAX_TOKENS`` tokens, before anything is embedded, or
+                for a text whose model output is unusable (NaN, infinite or
+                zero; see :class:`VectorError`); without, if llama.cpp fails
+                to decode.
         """
         if isinstance(texts, str):
             raise TypeError("embed_documents takes a sequence of texts, not a str")
@@ -141,7 +144,13 @@ class Embedder:
             raw = self._llm.embed(list(texts), normalize=False, truncate=False)
         except RuntimeError as exc:  # llama_decode failed
             raise EmbedError(f"llama.cpp: {exc}") from exc
-        return [truncate_and_normalize(vec) for vec in raw]
+        vectors = []
+        for i, vec in enumerate(raw):
+            try:
+                vectors.append(truncate_and_normalize(vec))
+            except VectorError as exc:
+                raise EmbedError(f"text at index {i}: {exc}", i) from exc
+        return vectors
 
     def embed_query(self, query: str) -> list[float]:
         """Embed a search query, with the model's query prefix.
