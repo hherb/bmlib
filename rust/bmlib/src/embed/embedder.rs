@@ -104,11 +104,22 @@ fn backend() -> Result<&'static LlamaBackend, EmbedError> {
 /// and a Tauri/tao event loop (which exits without dropping managed state).
 /// Keep it in an `Option` (e.g. `Mutex<Option<Embedder>>` in app state) and
 /// take it out on `RunEvent::ExitRequested` / `RunEvent::Exit`.
+///
+/// Flash attention is left to llama.cpp's AUTO policy, which enables it on
+/// CPU and Metal after a probe; a backend that fails the probe falls back to
+/// reserving the full non-causal attention matrix (about 4.5 GiB at 8192
+/// tokens).
 #[derive(Debug)]
 pub struct Embedder {
     backend: &'static LlamaBackend,
     model: LlamaModel,
 }
+
+// Tauri's managed state (`Mutex<Option<Embedder>>`) needs `Embedder: Send`.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<Embedder>();
+};
 
 impl Embedder {
     /// Load the GGUF model, with every layer on the GPU when llama.cpp was
@@ -176,8 +187,9 @@ impl Embedder {
         let mut order: Vec<usize> = (0..ids.len()).collect();
         order.sort_by_key(|&i| std::cmp::Reverse(ids[i].len()));
         let mut out = vec![Vec::new(); ids.len()];
+        let lens: Vec<usize> = ids.iter().map(Vec::len).collect();
         let mut batch = LlamaBatch::new(MAX_TOKENS, MAX_SEQUENCES as i32);
-        for group in pack(&order, &ids) {
+        for group in pack(&order, &lens) {
             batch.clear();
             for (seq, &i) in (0..).zip(&group) {
                 batch.add_sequence(&ids[i], seq, false).map_err(llama)?;
@@ -206,13 +218,14 @@ impl Embedder {
 }
 
 /// Greedy packing of the length-sorted `order` into batches of at most
-/// [`MAX_TOKENS`] tokens and [`MAX_SEQUENCES`] texts.
-fn pack(order: &[usize], ids: &[Vec<LlamaToken>]) -> Vec<Vec<usize>> {
+/// [`MAX_TOKENS`] tokens and [`MAX_SEQUENCES`] texts; `lens[i]` is text `i`'s
+/// token count.
+fn pack(order: &[usize], lens: &[usize]) -> Vec<Vec<usize>> {
     let mut batches = Vec::new();
     let mut cur = Vec::new();
     let mut used = 0;
     for &i in order {
-        let len = ids[i].len();
+        let len = lens[i];
         if !cur.is_empty() && (used + len > MAX_TOKENS || cur.len() == MAX_SEQUENCES) {
             batches.push(std::mem::take(&mut cur));
             used = 0;
@@ -224,4 +237,45 @@ fn pack(order: &[usize], ids: &[Vec<LlamaToken>]) -> Vec<Vec<usize>> {
         batches.push(cur);
     }
     batches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pack, MAX_SEQUENCES, MAX_TOKENS};
+
+    /// Packs `lens` as `embed_documents` does and checks every group.
+    fn packed(lens: &[usize]) -> Vec<Vec<usize>> {
+        let mut order: Vec<usize> = (0..lens.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(lens[i]));
+        let groups = pack(&order, lens);
+        for g in &groups {
+            assert!(!g.is_empty() && g.len() <= MAX_SEQUENCES, "{g:?}");
+            assert!(
+                g.iter().map(|&i| lens[i]).sum::<usize>() <= MAX_TOKENS,
+                "{g:?}"
+            );
+        }
+        // Each index once, in `order`'s sequence: results map back by index.
+        assert_eq!(groups.concat(), order);
+        groups
+    }
+
+    #[test]
+    fn pack_caps_texts_per_group() {
+        assert_eq!(packed(&[3; 40]).len(), 3); // 16 + 16 + 8
+    }
+
+    #[test]
+    fn pack_caps_tokens_per_group() {
+        assert_eq!(packed(&[3000; 5]).len(), 3); // 2 + 2 + 1
+    }
+
+    #[test]
+    fn pack_mixed_lengths_past_both_caps() {
+        let lens: Vec<usize> = (0..37)
+            .map(|i| [MAX_TOKENS, 5000, 900, 40, 7][i % 5])
+            .collect();
+        assert!(lens.iter().sum::<usize>() > MAX_TOKENS && lens.len() > MAX_SEQUENCES);
+        assert!(packed(&lens).len() > 2);
+    }
 }

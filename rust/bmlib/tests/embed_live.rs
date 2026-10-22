@@ -21,14 +21,17 @@
 //! file, so CI runs them without a model. Run them with:
 //!
 //! ```text
-//! BMLIB_EMBED_MODEL=/path/to/file.gguf cargo test -p bmlib --features embed --test embed_live
+//! BMLIB_EMBED_MODEL=/path/to/file.gguf cargo test -p bmlib --features embed --test embed_live -- --test-threads=1
 //! ```
+//!
+//! One thread: each test loads its own model, and several at once multiply
+//! the memory.
 
 #![cfg(feature = "embed")]
 
 use std::path::Path;
 
-use bmlib::embed::{EmbedError, Embedder, EMBEDDING_DIM};
+use bmlib::embed::{query_text, EmbedError, Embedder, EMBEDDING_DIM, MAX_TOKENS};
 use serde_json::Value;
 
 const REFERENCE: &str = include_str!("../../../tests/fixtures/embedding_reference.json");
@@ -107,22 +110,35 @@ fn reference_vectors_within_tolerance() {
     }
 }
 
-/// Rust only: the documents of mixed lengths in one call, so the length sort
-/// and batch packing run, and each result must still be its own text's.
+/// All 20 items, twice, in one call (past 16 texts, so the length sort and
+/// several batches run): each result must still be its own text's.
 #[test]
 fn batch_keeps_input_order() {
     let Some(mut embedder) = embedder() else {
         return;
     };
     let floor = floor();
-    let docs: Vec<_> = reference()
-        .into_iter()
-        .filter(|(_, kind, _, _)| kind == "document")
+    let items = reference();
+    let texts: Vec<String> = items
+        .iter()
+        .map(|(_, kind, text, _)| {
+            if kind == "query" {
+                query_text(text)
+            } else {
+                text.clone()
+            }
+        })
         .collect();
-    let texts: Vec<&str> = docs.iter().map(|(_, _, text, _)| text.as_str()).collect();
-    let got = embedder.embed_documents(&texts).unwrap();
-    assert_eq!(got.len(), docs.len());
-    for ((name, _, _, want), vec) in docs.iter().zip(&got) {
+    let twice: Vec<&str> = texts.iter().chain(&texts).map(String::as_str).collect();
+    let got = embedder.embed_documents(&twice).unwrap();
+    assert_eq!(got.len(), 2 * items.len());
+    for (k, vec) in got.iter().enumerate() {
+        let (name, _, _, want) = &items[k % items.len()];
+        let single = embedder.embed_documents(&[twice[k]]).unwrap().remove(0);
+        assert!(
+            cosine(vec, &as_f64(&single)) > 0.9999,
+            "{name}: batch differs from single"
+        );
         let cos = cosine(vec, want);
         assert!(cos >= floor, "{name}: cosine {cos:.6} < {floor}");
     }
@@ -154,7 +170,59 @@ fn overlong_text_is_an_error() {
     match embedder.embed_documents(&["short", &long_text]) {
         Err(EmbedError::TooLong { index, tokens }) => {
             assert_eq!(index, 1);
-            assert!(tokens > bmlib::embed::MAX_TOKENS, "{tokens}");
+            assert!(tokens > MAX_TOKENS, "{tokens}");
+        }
+        other => panic!("expected TooLong, got {other:?}"),
+    }
+}
+
+/// A text the model's tokenizer counts as exactly `count` tokens. The count
+/// is read off `TooLong` for two texts over the limit (tokens = a·words + b),
+/// then checked: the `count + 1` text must be refused with that exact count.
+fn text_of_tokens(embedder: &mut Embedder, count: usize) -> String {
+    let words = |n: usize| vec!["word"; n].join(" ");
+    let mut tokens = |n: usize| match embedder.embed_documents(&[&words(n)]) {
+        Err(EmbedError::TooLong { tokens, .. }) => tokens,
+        other => panic!("expected TooLong, got {other:?}"),
+    };
+    let (t1, t2) = (tokens(10_000), tokens(10_001));
+    let per_word = t2 - t1;
+    let fixed = t1 - per_word * 10_000;
+    assert_eq!(
+        (count - fixed) % per_word,
+        0,
+        "{count} tokens not reachable"
+    );
+    words((count - fixed) / per_word)
+}
+
+#[test]
+fn text_at_max_tokens_is_accepted() {
+    let Some(mut embedder) = embedder() else {
+        return;
+    };
+    let exact = text_of_tokens(&mut embedder, MAX_TOKENS);
+    let over = text_of_tokens(&mut embedder, MAX_TOKENS + 1);
+    // The arithmetic holds at the boundary: one word more is MAX_TOKENS + 1.
+    match embedder.embed_documents(&[&over]) {
+        Err(EmbedError::TooLong { tokens, .. }) => assert_eq!(tokens, MAX_TOKENS + 1),
+        other => panic!("expected TooLong, got {other:?}"),
+    }
+    assert_eq!(
+        embedder.embed_documents(&["short", &exact]).unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn text_one_over_max_tokens_is_an_error() {
+    let Some(mut embedder) = embedder() else {
+        return;
+    };
+    let over = text_of_tokens(&mut embedder, MAX_TOKENS + 1);
+    match embedder.embed_documents(&["short", &over]) {
+        Err(EmbedError::TooLong { index, tokens }) => {
+            assert_eq!((index, tokens), (1, MAX_TOKENS + 1));
         }
         other => panic!("expected TooLong, got {other:?}"),
     }
