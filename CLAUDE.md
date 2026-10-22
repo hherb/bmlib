@@ -33,9 +33,9 @@ uv pip install -e ".[all,dev]"
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
 | fulltext       | httpx>=0.25           | `FullTextService` retrieval; nothing else in `fulltext/` needs it |
 | pdf            | pymupdf>=1.28.2       | PDF → text conversion in `fulltext/`   |
-| embed          | llama-cpp-python>=0.3 | `bmlib.embed.Embedder` (arctic-embed-l-v2.0 GGUF, in process) |
+| embed          | llama-cpp-python>=0.3.36 | `bmlib.embed.Embedder` (arctic-embed-l-v2.0 GGUF, in process); compiles llama.cpp, so not in `all` |
 | dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2 | Development and testing tools  |
-| all            | All runtime extras    | Everything except `dev`                |
+| all            | All runtime extras but `embed` | Everything except `dev` and `embed` (ask for `.[all,embed]`) |
 
 ## Architecture
 
@@ -55,9 +55,10 @@ bmlib/
 │   ├── formatter.py         # Vancouver/APA/Harvard/Chicago + CitationFormatter facade
 │   ├── builder.py           # build_references, format_document, find_missing_documents
 │   └── passage_match.py     # find_passage — locate an LLM's near-verbatim quote, return the source's own span
-├── embed/                   # In-process embedder: constants, vector rules, verified model download (pure stdlib so far)
+├── embed/                   # In-process embedder: constants, vector rules, verified model download, Embedder
 │   ├── vectors.py           # EMBEDDING_DIM, truncate_and_normalize, query_text, check_texts
-│   └── model.py             # ModelFile, pinned arctic-embed-l-v2.0 GGUFs, verify_model, download_model
+│   ├── model.py             # ModelFile, pinned arctic-embed-l-v2.0 GGUFs, verify_model, download_model (cancellable)
+│   └── embedder.py          # Embedder, EmbedError — llama-cpp-python, imported lazily (`embed` extra)
 ├── context_processor/       # Hierarchical map-reduce over oversized content
 │   ├── base.py              # IterativeContextProcessor ABC — batching, recursion, consolidation
 │   ├── data_types.py        # ProcessingConfig, ExtractionResult, ConsolidatedItem, Batch, ProcessingResult, ProgressInfo, strategy enums
@@ -772,7 +773,9 @@ did before mypy was a declared dependency, silently resolving an isolated
 environment — and it reports the optional imports *and `jinja2`, a core
 dependency*, as missing stubs: 7 phantom errors on top of the real ones,
 which is how issue #81's opening count came to be 24 rather than 22.
-`uv pip install -e ".[all,dev]"` is what makes the command honest.
+`uv pip install -e ".[all,dev]"` is what makes the command honest. `embed`
+is outside `all`; its `llama_cpp` import carries a targeted ignore, so mypy
+passes with or without it.
 
 Two conventions the settings encode. `disallow_untyped_defs` is on because
 an unannotated function is otherwise skipped in silence, which would let
@@ -812,7 +815,8 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py`, `test_json_extraction.py` |
 | `agents/`            | `test_agents.py`                                           |
 | `citations/`         | `test_citations_parser.py`, `test_citations_formatter.py`, `test_citations_builder.py`, `test_passage_match.py`, `test_passage_match_contract.py` |
-| `embed/`             | `test_embed_vectors.py` (shared `embedding_contract.json`), `test_embed_model.py` |
+| `embed/`             | `test_embed_vectors.py` (shared `embedding_contract.json`), `test_embed_model.py`, `test_embed_live.py` (needs `BMLIB_EMBED_MODEL`, else skipped) |
+| `scripts/convert_embedding_model.py` | `test_convert_embedding_model.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
 | `templates/`         | `test_templates.py`                                        |

@@ -11,12 +11,15 @@ All notable changes to bmlib are documented here. The format is based on
   `bmlib[embed]` extra). `embed_documents` / `embed_query` return 256-dimension
   unit vectors, held to the shared reference vectors (cosine >= 0.999 on F16,
   0.998 on Q8_0). Nothing is truncated silently: an empty or over-long text
-  raises `EmbedError` naming its index.
+  raises `EmbedError` naming its index. **`embed` is not part of `all`**: it
+  compiles llama.cpp, so `bmlib[all]` stays installable without a C++
+  toolchain. Ask for it explicitly (`bmlib[all,embed]`).
 - **`bmlib.embed`: embedding constants, vector rules and a verified model
   download.** `truncate_and_normalize`, `query_text`, `check_texts` (pinned by
   the shared `embedding_contract.json`) and `download_model`, which streams the
   pinned arctic-embed-l-v2.0 GGUF through a `.part` file and keeps nothing
-  that fails its size or sha256.
+  that fails its size or sha256. A `progress` hook returning `False` cancels
+  it (`DownloadCancelled`).
 
 ### Fixed
 - **A retraction notice's own PMID is stored without leading zeros, as the

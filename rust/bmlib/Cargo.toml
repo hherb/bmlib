@@ -122,7 +122,9 @@ postgres = ["dep:postgres", "dep:bytes"]
 # constants and vector rules in `bmlib::embed` are always present; the download
 # additionally needs `http-ureq`.
 embed = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:sha2"]
-# `embed` with llama.cpp's Metal backend, for Apple GPUs.
+# `embed` with llama.cpp's Metal backend named explicitly. On macOS `embed`
+# already uses Metal (llama.cpp's default); a CPU-only build needs
+# `GGML_METAL=OFF` in the environment.
 embed-metal = ["embed", "llama-cpp-2/metal"]
 
 [lints]
