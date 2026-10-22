@@ -31,6 +31,7 @@ from bmlib.embed import (
     MAX_TOKENS,
     QUERY_PREFIX,
     EmptyTextError,
+    VectorError,
     check_texts,
     query_text,
     truncate_and_normalize,
@@ -57,15 +58,25 @@ def test_constants() -> None:
     assert (EMBEDDING_DIM, QUERY_PREFIX, MAX_TOKENS) == (256, "query: ", 8192)
 
 
+_ERROR_MESSAGES = {"too_short": "values, need at least", "not_scalable": "made unit length"}
+
+
 @pytest.mark.parametrize("case", CONTRACT["truncate_and_normalize"], ids=lambda c: c["name"])
 def test_truncate_and_normalize(case: dict) -> None:
+    vector = [float(x) for x in case["input"]]  # a non-finite value is written as a string
     if case["expected"] == "error":
-        with pytest.raises(ValueError):
-            truncate_and_normalize(case["input"])
+        with pytest.raises(VectorError, match=_ERROR_MESSAGES[case["error"]]):
+            truncate_and_normalize(vector)
         return
-    got = truncate_and_normalize(case["input"])
+    got = truncate_and_normalize(vector)
     assert len(got) == len(case["expected"]) == EMBEDDING_DIM
     assert all(math.isclose(g, e, abs_tol=TOLERANCE) for g, e in zip(got, case["expected"]))
+
+
+def test_a_norm_past_a_floats_range_is_refused() -> None:
+    # Only Python's doubles overflow the norm from finite values; Rust reads 1e200 as inf.
+    with pytest.raises(VectorError, match="norm is inf"):
+        truncate_and_normalize([1e200] * EMBEDDING_DIM)
 
 
 @pytest.mark.parametrize("case", CONTRACT["query_text"], ids=lambda c: c["name"])

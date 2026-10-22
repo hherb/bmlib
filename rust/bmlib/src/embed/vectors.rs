@@ -24,27 +24,41 @@ pub const EMBEDDING_DIM: usize = 256;
 pub const QUERY_PREFIX: &str = "query: ";
 /// Longest input, in tokens, the embedder accepts.
 pub const MAX_TOKENS: usize = 8192;
-/// A norm below this is treated as this, so an all-zero vector stays zeros.
+/// The smallest norm the kept values may have; below it the output is taken
+/// to have no direction to scale to unit length.
 const NORM_FLOOR: f64 = 1e-12;
 
-/// A model output had fewer than [`EMBEDDING_DIM`] values.
+/// A model output that cannot be made into an embedding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VectorTooShort {
-    /// How many values the vector had.
-    pub len: usize,
+pub enum VectorError {
+    /// The vector had fewer than [`EMBEDDING_DIM`] values.
+    TooShort {
+        /// How many values the vector had.
+        len: usize,
+    },
+    /// A kept value is NaN or infinite, or the kept values' norm is below
+    /// `1e-12`. A healthy model produces neither; a corrupt GGUF or a backend
+    /// fault can, and such a vector stored silently would sit at a fixed end of
+    /// every cosine ranking.
+    NotScalable,
 }
 
-impl fmt::Display for VectorTooShort {
+impl fmt::Display for VectorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "vector has {} values, need at least {EMBEDDING_DIM}",
-            self.len
-        )
+        match self {
+            Self::TooShort { len } => {
+                write!(f, "vector has {len} values, need at least {EMBEDDING_DIM}")
+            }
+            Self::NotScalable => write!(
+                f,
+                "a kept value is NaN or infinite, or their norm is below {NORM_FLOOR:e}, \
+                 so they cannot be scaled to unit length"
+            ),
+        }
     }
 }
 
-impl std::error::Error for VectorTooShort {}
+impl std::error::Error for VectorError {}
 
 /// A text was empty or whitespace-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,23 +81,29 @@ impl std::error::Error for EmptyText {}
 
 /// Keep the first [`EMBEDDING_DIM`] values and scale them to unit length.
 ///
-/// The norm is summed in `f64`, as Python does. A norm below `1e-12` is
-/// replaced by it, so an all-zero head gives zeros.
+/// The norm is summed in `f64`, as Python does. Values past
+/// [`EMBEDDING_DIM`] are dropped unread.
 ///
 /// # Errors
 ///
-/// [`VectorTooShort`] if `vector` has fewer than [`EMBEDDING_DIM`] values.
-pub fn truncate_and_normalize(vector: &[f32]) -> Result<Vec<f32>, VectorTooShort> {
+/// [`VectorError::TooShort`] if `vector` has fewer than [`EMBEDDING_DIM`]
+/// values; [`VectorError::NotScalable`] if a kept value is NaN or infinite or
+/// the kept values' norm is below `1e-12`.
+pub fn truncate_and_normalize(vector: &[f32]) -> Result<Vec<f32>, VectorError> {
     if vector.len() < EMBEDDING_DIM {
-        return Err(VectorTooShort { len: vector.len() });
+        return Err(VectorError::TooShort { len: vector.len() });
     }
     let head = &vector[..EMBEDDING_DIM];
     let norm = head
         .iter()
         .map(|&x| f64::from(x) * f64::from(x))
         .sum::<f64>()
-        .sqrt()
-        .max(NORM_FLOOR);
+        .sqrt();
+    // A NaN or infinite value carries into the norm; an f32's square cannot
+    // overflow an f64.
+    if !(norm.is_finite() && norm >= NORM_FLOOR) {
+        return Err(VectorError::NotScalable);
+    }
     Ok(head.iter().map(|&x| (f64::from(x) / norm) as f32).collect())
 }
 

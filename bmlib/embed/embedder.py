@@ -27,8 +27,10 @@ from pathlib import Path
 from types import TracebackType
 
 from bmlib.embed.vectors import (
+    EMBEDDING_DIM,
     MAX_TOKENS,
     EmptyTextError,
+    VectorError,
     check_texts,
     query_text,
     truncate_and_normalize,
@@ -64,7 +66,8 @@ class Embedder:
 
         Raises:
             EmbedError: If llama-cpp-python cannot be imported (it comes with
-                ``bmlib[embed]``), or llama.cpp cannot load the file.
+                ``bmlib[embed]``), llama.cpp cannot load the file, or the model
+                embeds to fewer than ``EMBEDDING_DIM`` values.
         """
         try:
             import llama_cpp  # type: ignore[import-not-found, unused-ignore]  # optional extra
@@ -93,6 +96,13 @@ class Embedder:
             )
         except (ValueError, RuntimeError) as exc:  # missing file, or llama.cpp refused it
             raise EmbedError(f"cannot load {model_path}: {exc}") from exc
+        # The output's width is the model's, so a narrow one would fail every text alike.
+        width = self._llm.n_embd()
+        if width < EMBEDDING_DIM:
+            self._llm.close()
+            raise EmbedError(
+                f"{model_path} embeds to {width} values, need at least {EMBEDDING_DIM}"
+            )
 
     def close(self) -> None:
         """Free the model. The embedder cannot be used afterwards."""
@@ -123,7 +133,9 @@ class Embedder:
             TypeError: If ``texts`` is a single ``str`` (it would embed each
                 character).
             EmbedError: With ``index`` set, for an empty text or one longer
-                than ``MAX_TOKENS`` tokens, before anything is embedded;
+                than ``MAX_TOKENS`` tokens, before anything is embedded, or
+                for a text whose model output is unusable (NaN, infinite or
+                zero; see :class:`VectorError`), the lowest such index;
                 without, if llama.cpp fails to decode.
         """
         if isinstance(texts, str):
@@ -139,9 +151,16 @@ class Embedder:
                 )
         try:
             raw = self._llm.embed(list(texts), normalize=False, truncate=False)
-        except RuntimeError as exc:  # llama_decode failed
+        # RuntimeError: llama_decode failed; ValueError: a NULL embedding pointer.
+        except (RuntimeError, ValueError) as exc:
             raise EmbedError(f"llama.cpp: {exc}") from exc
-        return [truncate_and_normalize(vec) for vec in raw]
+        vectors = []
+        for i, vec in enumerate(raw):
+            try:
+                vectors.append(truncate_and_normalize(vec))
+            except VectorError as exc:
+                raise EmbedError(f"text at index {i}: {exc}", i) from exc
+        return vectors
 
     def embed_query(self, query: str) -> list[float]:
         """Embed a search query, with the model's query prefix.

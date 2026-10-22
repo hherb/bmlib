@@ -33,7 +33,9 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{send_logs_to_tracing, LogOptions};
 
-use super::vectors::{check_texts, query_text, truncate_and_normalize, MAX_TOKENS};
+use super::vectors::{
+    check_texts, query_text, truncate_and_normalize, VectorError, EMBEDDING_DIM, MAX_TOKENS,
+};
 
 /// Layers offloaded to the GPU: more than the model has, so all of them. A
 /// build without a GPU backend ignores it.
@@ -57,6 +59,14 @@ pub enum EmbedError {
         /// How many tokens it has.
         tokens: usize,
     },
+    /// The model output for the text at `index` is not an embedding (NaN,
+    /// infinite or zero; see [`VectorError`]).
+    Vector {
+        /// Position of the text.
+        index: usize,
+        /// Why its output was refused.
+        error: VectorError,
+    },
     /// llama.cpp failed: the model would not load, or a batch would not decode.
     Llama(String),
 }
@@ -71,6 +81,7 @@ impl fmt::Display for EmbedError {
                 f,
                 "text at index {index} has {tokens} tokens, over the {MAX_TOKENS} limit"
             ),
+            Self::Vector { index, error } => write!(f, "text at index {index}: {error}"),
             Self::Llama(message) => write!(f, "llama.cpp: {message}"),
         }
     }
@@ -128,7 +139,8 @@ impl Embedder {
     ///
     /// # Errors
     ///
-    /// [`EmbedError::Llama`] if the file is missing or llama.cpp cannot load it.
+    /// [`EmbedError::Llama`] if the file is missing, llama.cpp cannot load it,
+    /// or the model embeds to fewer than [`EMBEDDING_DIM`] values.
     pub fn load(model_path: &Path) -> Result<Self, EmbedError> {
         // llama-cpp-2 only debug-asserts the path, so a missing file would panic.
         if !model_path.is_file() {
@@ -141,6 +153,7 @@ impl Embedder {
         let params = LlamaModelParams::default().with_n_gpu_layers(ALL_LAYERS_ON_GPU);
         let model = LlamaModel::load_from_file(backend, model_path, &params)
             .map_err(|e| EmbedError::Llama(format!("cannot load {}: {e}", model_path.display())))?;
+        refuse_narrow(model.n_embd_out())?;
         Ok(Self { backend, model })
     }
 
@@ -165,8 +178,9 @@ impl Embedder {
     /// # Errors
     ///
     /// [`EmbedError::EmptyText`] or [`EmbedError::TooLong`] for the first
-    /// offending text, before anything is embedded; [`EmbedError::Llama`] if
-    /// llama.cpp fails.
+    /// offending text, before anything is embedded; [`EmbedError::Vector`]
+    /// for the first text whose model output is not an embedding;
+    /// [`EmbedError::Llama`] if llama.cpp fails.
     pub fn embed_documents(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         check_texts(texts).map_err(|e| EmbedError::EmptyText { index: e.index })?;
         if texts.is_empty() {
@@ -182,7 +196,7 @@ impl Embedder {
         let mut ctx = self.context()?;
         let mut order: Vec<usize> = (0..ids.len()).collect();
         order.sort_by_key(|&i| std::cmp::Reverse(lens[i]));
-        let mut out = vec![Vec::new(); ids.len()];
+        let mut out = vec![Ok(Vec::new()); ids.len()];
         let mut batch = LlamaBatch::new(MAX_TOKENS, MAX_SEQUENCES as i32);
         for group in pack(&order, &lens) {
             batch.clear();
@@ -194,11 +208,10 @@ impl Embedder {
             ctx.clear_kv_cache();
             ctx.decode(&mut batch).map_err(llama)?;
             for (seq, &i) in (0..).zip(&group) {
-                let raw = ctx.embeddings_seq_ith(seq).map_err(llama)?;
-                out[i] = truncate_and_normalize(raw).map_err(llama)?;
+                out[i] = truncate_and_normalize(ctx.embeddings_seq_ith(seq).map_err(llama)?);
             }
         }
-        Ok(out)
+        embeddings(out)
     }
 
     /// Embed a search query, with the model's query prefix.
@@ -217,6 +230,27 @@ impl Embedder {
 fn query_document(query: &str) -> Result<String, EmbedError> {
     check_texts(&[query]).map_err(|e| EmbedError::EmptyText { index: e.index })?;
     Ok(query_text(query))
+}
+
+/// Every text's embedding, in input order, or the first text whose model
+/// output was refused (texts are decoded longest first, so not in that order).
+fn embeddings(results: Vec<Result<Vec<f32>, VectorError>>) -> Result<Vec<Vec<f32>>, EmbedError> {
+    results
+        .into_iter()
+        .enumerate()
+        .map(|(index, r)| r.map_err(|error| EmbedError::Vector { index, error }))
+        .collect()
+}
+
+/// Refuse a model whose output is narrower than [`EMBEDDING_DIM`]: the width is
+/// the model's, so it would fail every text alike.
+fn refuse_narrow(width: i32) -> Result<(), EmbedError> {
+    if usize::try_from(width).unwrap_or(0) < EMBEDDING_DIM {
+        return Err(EmbedError::Llama(format!(
+            "the model embeds to {width} values, need at least {EMBEDDING_DIM}"
+        )));
+    }
+    Ok(())
 }
 
 /// Refuse the first text of more than [`MAX_TOKENS`] tokens; `lens[i]` is text
@@ -255,7 +289,53 @@ fn pack(order: &[usize], lens: &[usize]) -> Vec<Vec<usize>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pack, query_document, refuse_too_long, EmbedError, MAX_SEQUENCES, MAX_TOKENS};
+    use super::{
+        embeddings, pack, query_document, refuse_narrow, refuse_too_long, truncate_and_normalize,
+        EmbedError, VectorError, EMBEDDING_DIM, MAX_SEQUENCES, MAX_TOKENS,
+    };
+
+    #[test]
+    fn an_unusable_output_names_the_first_such_text() {
+        for bad in [f32::NAN, f32::INFINITY, 0.0] {
+            let results = vec![
+                truncate_and_normalize(&[1.0; EMBEDDING_DIM]),
+                truncate_and_normalize(&[bad; EMBEDDING_DIM]),
+                truncate_and_normalize(&[bad; 1]),
+            ];
+            assert_eq!(
+                embeddings(results),
+                Err(EmbedError::Vector {
+                    index: 1,
+                    error: VectorError::NotScalable
+                }),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn embeddings_keep_input_order() {
+        let mut second = [0.0; EMBEDDING_DIM];
+        second[1] = 2.0;
+        let got = embeddings(vec![
+            truncate_and_normalize(&[3.0; EMBEDDING_DIM]),
+            truncate_and_normalize(&second),
+        ])
+        .unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0][0], got[1][0], got[1][1]), (0.0625, 0.0, 1.0));
+    }
+
+    #[test]
+    fn a_model_narrower_than_the_embedding_is_refused() {
+        assert!(refuse_narrow(EMBEDDING_DIM as i32).is_ok());
+        for width in [EMBEDDING_DIM as i32 - 1, 0, -1] {
+            assert!(
+                matches!(refuse_narrow(width), Err(EmbedError::Llama(m)) if m.contains("embeds to")),
+                "{width}"
+            );
+        }
+    }
 
     #[test]
     fn max_tokens_is_accepted_and_one_more_is_refused() {

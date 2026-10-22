@@ -11,7 +11,9 @@ The Python library is documented separately, in the repository's
 
 ### Added — follows Python's embedder
 `embed`: the embedding constants (`EMBEDDING_DIM`, `QUERY_PREFIX`, `MAX_TOKENS`),
-the vector rules (`truncate_and_normalize`, `query_text`, `check_texts`) and the
+the vector rules (`truncate_and_normalize`, which refuses a NaN or infinite
+kept value, or a norm below `1e-12`, with `VectorError::NotScalable` (#530), `query_text`,
+`check_texts`) and the
 pinned model files (`ModelFile`, `ARCTIC_EMBED_L_V2_F16`, `ARCTIC_EMBED_L_V2_Q8_0`),
 held to Python's by the shared `tests/fixtures/embedding_contract.json`. With the
 new `embed` feature (and `embed-metal`): `verify_model` and `ModelError`, and with
@@ -22,7 +24,7 @@ checks size and sha256, and renames only on a match. Its `progress` callback is
 temporary file and returns `ModelError::Cancelled`. `ModelFile::check` refuses
 a file that cannot be pinned (`ModelError::Invalid`).
 `Embedder` (feature `embed`), over llama-cpp-2: `load`, `embed_documents` and
-`embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Llama`). CLS pooling,
+`embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Vector`, `Llama`). CLS pooling,
 texts length-sorted and packed up to 8192 tokens and 16 per batch, results in
 input order. A text over `MAX_TOKENS` is refused, never cut short; a missing or
 unloadable model is an `EmbedError` too. Held to the reference vectors by
