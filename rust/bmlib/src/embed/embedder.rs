@@ -99,8 +99,11 @@ fn backend() -> Result<&'static LlamaBackend, EmbedError> {
 /// Embeds documents and queries to [`EMBEDDING_DIM`](super::EMBEDDING_DIM)-value
 /// unit vectors.
 ///
-/// Drop it before the process exits rather than keeping it in a `static`: on
-/// Metal, llama.cpp aborts at exit while a model is still loaded.
+/// Drop it before the process exits. On Metal, llama.cpp aborts at `exit()`
+/// while a model is loaded, and that covers `std::process::exit`, a `static`,
+/// and a Tauri/tao event loop (which exits without dropping managed state).
+/// Keep it in an `Option` (e.g. `Mutex<Option<Embedder>>` in app state) and
+/// take it out on `RunEvent::ExitRequested` / `RunEvent::Exit`.
 #[derive(Debug)]
 pub struct Embedder {
     backend: &'static LlamaBackend,

@@ -76,8 +76,11 @@ Every failure, model loading included, is an `EmbedError`:
 - `TooLong { index, tokens }`: a text over `MAX_TOKENS` tokens, refused, never cut short.
 - `Llama(message)`: the model file is missing or will not load, or llama.cpp fails.
 
-Drop the `Embedder` before the process exits (do not keep it in a `static`): on
-Metal, llama.cpp aborts at exit while a model is still loaded.
+Drop the `Embedder` before the process exits. On Metal, llama.cpp aborts at
+`exit()` while a model is loaded. That covers `std::process::exit`, an
+`Embedder` in a `static`, and a Tauri/tao event loop, which exits without
+dropping managed state. Keep it in an `Option` (e.g. `Mutex<Option<Embedder>>`
+in app state) and take it out on `RunEvent::ExitRequested` / `RunEvent::Exit`.
 
 Run the live tests with
 `BMLIB_EMBED_MODEL=/path/to/file.gguf cargo test -p bmlib --features embed --test embed_live`
