@@ -89,7 +89,7 @@ fn download(
     model: &ModelFile,
     dir: &Path,
 ) -> Result<std::path::PathBuf, ModelError> {
-    download_model_from(&server.url, model, dir, &mut |_, _| {})
+    download_model_from(&server.url, model, dir, &mut |_, _| true)
 }
 
 #[test]
@@ -187,7 +187,11 @@ fn progress_reports_reach_size() {
     let tmp = tempdir("progress");
     let mut seen: Vec<(u64, u64)> = Vec::new();
     let m = model(&body());
-    download_model_from(&server.url, &m, &tmp, &mut |d, t| seen.push((d, t))).unwrap();
+    download_model_from(&server.url, &m, &tmp, &mut |d, t| {
+        seen.push((d, t));
+        true
+    })
+    .unwrap();
     let size = body().len() as u64;
     assert_eq!(seen.last(), Some(&(size, size)));
     assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0));
@@ -202,6 +206,21 @@ fn panicking_progress_leaves_no_part_file() {
         let _ = download_model_from(&server.url, &m, &tmp, &mut |_, _| panic!("boom"));
     }));
     assert!(caught.is_err());
+    assert!(dir_is_empty(&tmp));
+}
+
+#[test]
+fn progress_false_cancels() {
+    let server = serve(body(), false);
+    let tmp = tempdir("cancel");
+    let mut calls = 0;
+    let err = download_model_from(&server.url, &model(&body()), &tmp, &mut |_, _| {
+        calls += 1;
+        false
+    })
+    .unwrap_err();
+    assert!(matches!(err, ModelError::Cancelled), "{err:?}");
+    assert_eq!(calls, 1);
     assert!(dir_is_empty(&tmp));
 }
 

@@ -80,6 +80,10 @@ class ModelVerificationError(Exception):
         self.actual = actual
 
 
+class DownloadCancelled(Exception):  # noqa: N818 - a cancel, not an error
+    """The caller's ``progress`` hook returned ``False``; nothing was kept."""
+
+
 def _check(path: Path, model: ModelFile, size: int, sha256: str) -> None:
     if size != model.size:
         raise ModelVerificationError(path, "size", model.size, size)
@@ -107,18 +111,23 @@ def verify_model(path: Path, model: ModelFile) -> None:
 def download_model(
     model: ModelFile,
     directory: Path,
-    progress: Callable[[int, int], None] | None = None,
+    progress: Callable[[int, int], bool | None] | None = None,
 ) -> Path:
     """Return the verified model file in ``directory``, downloading it if needed.
 
-    An already-verified file costs no network. A mismatched one is deleted and
-    fetched again. The download goes through ``<file>.part``, which is removed
-    on any failure.
+    An already-verified file costs no network, but it is re-hashed on every
+    call (about 1 s per GB), so call this once per launch. A mismatched one is
+    deleted and fetched again. The download goes through ``<file>.part``, which
+    is synced to disk before the rename and removed on any failure or cancel.
+    Run one call per ``directory`` at a time: concurrent calls share the
+    ``.part`` file.
 
     Args:
         model: The pinned file.
         directory: Where the file lives (created if missing).
         progress: Called as ``progress(done_bytes, model.size)`` per block.
+            Returning exactly ``False`` cancels the download; ``None`` or
+            ``True`` carries on.
 
     Returns:
         The final path.
@@ -127,6 +136,7 @@ def download_model(
         ModelVerificationError: If the downloaded bytes are not the pinned ones
             (a body shorter or longer than the pinned size included).
         OSError: On a network or file-system failure (``URLError`` included).
+        DownloadCancelled: If ``progress`` returned ``False``.
     """
     directory.mkdir(parents=True, exist_ok=True)
     final = directory / model.file
@@ -153,8 +163,10 @@ def download_model(
                     raise ModelVerificationError(
                         part, "size", model.size, f"more than {model.size}"
                     )
-                if progress is not None:
-                    progress(done, model.size)
+                if progress is not None and progress(done, model.size) is False:
+                    raise DownloadCancelled(f"download of {model.file} cancelled")
+            out.flush()
+            os.fsync(out.fileno())
         _check(part, model, done, digest.hexdigest())
         os.replace(part, final)
     except BaseException:

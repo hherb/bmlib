@@ -99,6 +99,8 @@ mod verified {
         },
         /// A network failure or a non-success status.
         Http(String),
+        /// The caller's `progress` hook returned `false`; nothing was kept.
+        Cancelled,
     }
 
     impl fmt::Display for ModelError {
@@ -112,6 +114,7 @@ mod verified {
                     write!(f, "model sha256 is {actual}, expected {expected}")
                 }
                 ModelError::Http(m) => write!(f, "model download failed: {m}"),
+                ModelError::Cancelled => write!(f, "model download cancelled"),
             }
         }
     }
@@ -209,18 +212,25 @@ mod download {
 
     /// Return the verified model file in `directory`, downloading it if needed.
     ///
-    /// An already-verified file costs no network. A mismatched one is deleted
-    /// and fetched again. The download goes through `<file>.part`, which is
-    /// removed on any failure.
+    /// An already-verified file costs no network, but it is re-hashed on
+    /// every call (about 1 s per GB), so call this once per launch. A
+    /// mismatched one is deleted and fetched again. The download goes through
+    /// `<file>.part`, which is synced to disk before the rename and removed on
+    /// any failure or cancel. Run one call per `directory` at a time:
+    /// concurrent calls share the `.part` file.
+    ///
+    /// `progress(done_bytes, model.size)` runs after each block; returning
+    /// `false` cancels the download.
     ///
     /// # Errors
     ///
     /// [`ModelError`]: a mismatch (a body longer or shorter than the pinned
-    /// size included), a file-system failure, or a network failure.
+    /// size included), a file-system failure, a network failure, or
+    /// [`ModelError::Cancelled`].
     pub fn download_model(
         model: &ModelFile,
         directory: &Path,
-        progress: &mut dyn FnMut(u64, u64),
+        progress: &mut dyn FnMut(u64, u64) -> bool,
     ) -> Result<PathBuf, ModelError> {
         download_model_from(&model.url(), model, directory, progress)
     }
@@ -235,7 +245,7 @@ mod download {
         url: &str,
         model: &ModelFile,
         directory: &Path,
-        progress: &mut dyn FnMut(u64, u64),
+        progress: &mut dyn FnMut(u64, u64) -> bool,
     ) -> Result<PathBuf, ModelError> {
         std::fs::create_dir_all(directory)?;
         let final_path = directory.join(model.file);
@@ -265,7 +275,7 @@ mod download {
         url: &str,
         model: &ModelFile,
         part: &Path,
-        progress: &mut dyn FnMut(u64, u64),
+        progress: &mut dyn FnMut(u64, u64) -> bool,
     ) -> Result<(), ModelError> {
         let config = ureq::Agent::config_builder()
             // ureq has no per-read body timeout (`timeout_recv_body` is a total
@@ -321,9 +331,11 @@ mod download {
                     actual: done,
                 });
             }
-            progress(done, model.size);
+            if !progress(done, model.size) {
+                return Err(ModelError::Cancelled);
+            }
         }
-        out.flush()?;
+        out.sync_all()?;
         check(model, done, &format!("{:x}", hasher.finalize()))
     }
 }

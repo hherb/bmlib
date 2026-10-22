@@ -27,7 +27,13 @@ from pathlib import Path
 
 import pytest
 
-from bmlib.embed import ModelFile, ModelVerificationError, download_model, verify_model
+from bmlib.embed import (
+    DownloadCancelled,
+    ModelFile,
+    ModelVerificationError,
+    download_model,
+    verify_model,
+)
 
 BODY = bytes(range(256)) * (3 * 1024 * 4)  # 3 MiB
 
@@ -125,6 +131,19 @@ def test_progress_reports_reach_size(server: _Server, tmp_path: Path) -> None:
     download_model(_model(server), tmp_path, lambda done, total: seen.append((done, total)))
     assert seen[-1] == (len(BODY), len(BODY))
     assert [d for d, _ in seen] == sorted(d for d, _ in seen)
+
+
+def test_progress_false_cancels(server: _Server, tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    def cancel(done: int, total: int) -> bool:
+        calls.append(done)
+        return False
+
+    with pytest.raises(DownloadCancelled):
+        download_model(_model(server), tmp_path, cancel)
+    assert len(calls) == 1
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_verify_model_size_mismatch(tmp_path: Path, server: _Server) -> None:

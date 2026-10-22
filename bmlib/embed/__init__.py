@@ -20,6 +20,7 @@ from bmlib.embed.embedder import Embedder, EmbedError
 from bmlib.embed.model import (
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
+    DownloadCancelled,
     ModelFile,
     ModelVerificationError,
     download_model,
@@ -38,6 +39,7 @@ from bmlib.embed.vectors import (
 __all__ = [
     "ARCTIC_EMBED_L_V2_F16",
     "ARCTIC_EMBED_L_V2_Q8_0",
+    "DownloadCancelled",
     "EMBEDDING_DIM",
     "EmbedError",
     "EmptyTextError",
