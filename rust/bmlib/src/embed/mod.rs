@@ -14,15 +14,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! In-process text embedding: the pinned model files, the pure vector rules and
-//! a verified download.
+//! In-process text embedding: the pinned model files, the pure vector rules, a
+//! verified download and the `Embedder` (feature `embed`).
 //!
 //! A port of `bmlib/embed` (Python). The vector rules are held to the shared
 //! `tests/fixtures/embedding_contract.json`; the model constants to
 //! `tests/fixtures/embedding_model_manifest.json`.
 
+#[cfg(feature = "embed")]
+mod embedder;
 mod model;
 mod vectors;
+
+#[cfg(feature = "embed")]
+pub use embedder::{EmbedError, Embedder};
 
 #[cfg(all(feature = "embed", feature = "http-ureq"))]
 pub use model::{download_model, download_model_from};

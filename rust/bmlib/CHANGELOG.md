@@ -18,6 +18,13 @@ new `embed` feature (and `embed-metal`): `verify_model` and `ModelError`, and wi
 `http-ureq` too `download_model`, which streams to `<file>.part`, stops at the
 first byte past the pinned size, checks size and sha256, and renames only on a
 match.
+`Embedder` (feature `embed`), over llama-cpp-2: `load`, `embed_documents` and
+`embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Llama`). CLS pooling,
+texts length-sorted and packed up to 8192 tokens and 16 per batch, results in
+input order. A text over `MAX_TOKENS` is refused, never cut short; a missing or
+unloadable model is an `EmbedError` too. Held to the reference vectors by
+`tests/embed_live.rs` (Python's live tests, same names and floors) when
+`BMLIB_EMBED_MODEL` is set; CI runs a `Rust test (embed)` job without a model.
 
 ### Added — follows Python's find_passage
 `citations::passage_match`: `find_passage`, which locates an (LLM-copied)

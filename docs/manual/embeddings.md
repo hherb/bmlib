@@ -37,11 +37,48 @@ query = embedder.embed_query("what treats malaria")
 
 ## Errors
 
-Everything raises `EmbedError`; its `.index` is the offending text's position.
+These raise `EmbedError`; its `.index` is the offending text's position (None
+when no text is at fault).
 
 - An empty or whitespace-only text.
 - A text over `MAX_TOKENS` (8192) tokens. It is refused, never cut short.
 - `bmlib[embed]` not installed.
 
+A missing or unloadable model file is not an `EmbedError`: llama-cpp-python
+raises its own `ValueError`.
+
 Vectors match the reference fixture at cosine >= 0.999 (F16) and >= 0.998 (Q8_0);
 run the live tests with `BMLIB_EMBED_MODEL=/path/to/file.gguf pytest tests/test_embed_live.py`.
+
+## Rust
+
+The same embedder is `bmlib::embed::Embedder`, over llama-cpp-2, behind the
+`embed` feature (which compiles llama.cpp, so it needs cmake and a C++ compiler).
+On Apple platforms llama.cpp builds with Metal either way; `embed-metal` adds
+the crate's `metal` feature.
+
+```rust
+use std::path::Path;
+use bmlib::embed::Embedder;
+
+let mut embedder = Embedder::load(Path::new("snowflake-arctic-embed-l-v2.0-Q8_0.gguf"))?;
+let docs = embedder.embed_documents(&["Aspirin lowers risk...", "Insulin resistance..."])?;
+let query = embedder.embed_query("what treats malaria")?;
+```
+
+`ModelFile`, `verify_model` and `download_model` (with the default `http-ureq`
+feature) mirror the Python ones; a failed check is a `ModelError`.
+
+The vectors are Python's: same prefix, same 256 values, same order as the input.
+Every failure, model loading included, is an `EmbedError`:
+
+- `EmptyText { index }`: an empty or whitespace-only text, or query.
+- `TooLong { index, tokens }`: a text over `MAX_TOKENS` tokens, refused, never cut short.
+- `Llama(message)`: the model file is missing or will not load, or llama.cpp fails.
+
+Drop the `Embedder` before the process exits (do not keep it in a `static`): on
+Metal, llama.cpp aborts at exit while a model is still loaded.
+
+Run the live tests with
+`BMLIB_EMBED_MODEL=/path/to/file.gguf cargo test -p bmlib --features embed --test embed_live`
+(in `rust/`), to the same tolerances.
