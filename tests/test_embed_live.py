@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from bmlib.embed import EMBEDDING_DIM, Embedder, EmbedError
+from bmlib.embed import EMBEDDING_DIM, MAX_TOKENS, Embedder, EmbedError, query_text
 
 MODEL = os.environ.get("BMLIB_EMBED_MODEL")
 REFERENCE = Path(__file__).parent / "fixtures" / "embedding_reference.json"
@@ -65,6 +65,23 @@ def test_reference_vectors_within_tolerance(embedder: Embedder) -> None:
 
 
 @live
+def test_batch_keeps_input_order(embedder: Embedder) -> None:
+    """All 20 items, twice, in one call: each is its own text's vector."""
+    assert MODEL
+    floor = 0.998 if "Q8_0" in MODEL else 0.999
+    items = json.loads(REFERENCE.read_text())["items"]
+    texts = [query_text(i["text"]) if i["kind"] == "query" else i["text"] for i in items]
+    got = embedder.embed_documents(texts + texts)
+    assert len(got) == 2 * len(items)
+    for k, vec in enumerate(got):
+        item = items[k % len(items)]
+        single = embedder.embed_documents([texts[k % len(items)]])[0]
+        assert _cosine(vec, single) > 0.9999, f"{item['name']}: batch differs from single"
+        cos = _cosine(vec, item["vector"])
+        assert cos >= floor, f"{item['name']}: cosine {cos:.6f} < {floor}"
+
+
+@live
 def test_query_is_prefixed_document(embedder: Embedder) -> None:
     query = embedder.embed_query("what treats malaria")
     prefixed = embedder.embed_documents(["query: what treats malaria"])[0]
@@ -76,6 +93,32 @@ def test_overlong_text_is_an_error(embedder: Embedder) -> None:
     long_text = "word " * 40_000
     with pytest.raises(EmbedError) as caught:
         embedder.embed_documents(["short", long_text])
+    assert caught.value.index == 1
+
+
+def _text_of_tokens(embedder: Embedder, count: int) -> str:
+    """A text the model's tokenizer counts as exactly ``count`` tokens."""
+
+    def tokens(text: str) -> int:
+        return len(embedder._llm.tokenize(text.encode(), add_bos=True, special=False))
+
+    per_word = tokens("word word") - tokens("word")
+    words = (count - tokens("word")) // per_word + 1
+    text = " ".join(["word"] * words)
+    assert tokens(text) == count, f"{tokens(text)} tokens, wanted {count}"
+    return text
+
+
+@live
+def test_text_at_max_tokens_is_accepted(embedder: Embedder) -> None:
+    got = embedder.embed_documents(["short", _text_of_tokens(embedder, MAX_TOKENS)])
+    assert len(got) == 2
+
+
+@live
+def test_text_one_over_max_tokens_is_an_error(embedder: Embedder) -> None:
+    with pytest.raises(EmbedError, match=f"has {MAX_TOKENS + 1} tokens") as caught:
+        embedder.embed_documents(["short", _text_of_tokens(embedder, MAX_TOKENS + 1)])
     assert caught.value.index == 1
 
 
@@ -111,3 +154,9 @@ def test_missing_extra_names_it(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(builtins, "__import__", fail)
     with pytest.raises(EmbedError, match=r"bmlib\[embed\]"):
         Embedder(Path("nonexistent.gguf"))
+
+
+def test_a_str_is_not_a_list_of_texts() -> None:
+    embedder = Embedder.__new__(Embedder)  # no model: the check comes first
+    with pytest.raises(TypeError, match="not a str"):
+        embedder.embed_documents("aspirin")

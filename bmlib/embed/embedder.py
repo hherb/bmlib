@@ -49,31 +49,35 @@ class EmbedError(Exception):
 class Embedder:
     """Embeds documents and queries to 256-dimension unit vectors."""
 
-    def __init__(self, model_path: Path, *, gpu_layers: int = -1, batch_tokens: int = 8192) -> None:
+    def __init__(self, model_path: Path, *, gpu_layers: int = -1) -> None:
         """Load the GGUF model.
 
         Args:
             model_path: Path to the arctic-embed-l-v2.0 GGUF file.
             gpu_layers: Layers offloaded to the GPU (-1 for all).
-            batch_tokens: Tokens per llama.cpp batch.
 
         Raises:
             EmbedError: If llama-cpp-python is not installed.
         """
         try:
-            import llama_cpp
+            import llama_cpp  # type: ignore[import-not-found, unused-ignore]  # optional extra
         except ImportError as exc:
             raise EmbedError(
                 "llama-cpp-python is not installed; install it with: pip install 'bmlib[embed]'"
             ) from exc
+        # One batch holds a whole MAX_TOKENS text, so none escapes the
+        # pre-check below as llama-cpp-python's bare ValueError.
         self._llm = llama_cpp.Llama(
             model_path=str(model_path),
             embedding=True,
             pooling_type=llama_cpp.LLAMA_POOLING_TYPE_CLS,
             n_ctx=MAX_TOKENS,
-            n_batch=batch_tokens,
-            n_ubatch=batch_tokens,
+            n_batch=MAX_TOKENS,
+            n_ubatch=MAX_TOKENS,
             n_gpu_layers=gpu_layers,
+            # Off (llama-cpp-python's default), the non-causal attention matrix
+            # for an 8192-token batch is reserved up front: ~4.5 GiB, not ~350 MiB.
+            flash_attn=True,
             verbose=False,
         )
 
@@ -88,9 +92,13 @@ class Embedder:
         """Embed texts as documents (no prefix).
 
         Raises:
+            TypeError: If ``texts`` is a single ``str`` (it would embed each
+                character).
             EmbedError: With ``index`` set, for an empty text or one longer
                 than ``MAX_TOKENS`` tokens.
         """
+        if isinstance(texts, str):
+            raise TypeError("embed_documents takes a sequence of texts, not a str")
         self._check(texts)
         if not texts:
             return []
