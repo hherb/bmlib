@@ -26,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; its review filed #530 and #532), #526 (`find_passage`, #527), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -46,16 +46,29 @@ all-zero head into a zero "unit" vector, each silently. It now raises
 `EmbedError` gained `Vector { index, error }`. **One norm check does it all**:
 a mutant deleting a separate `isfinite` loop survived, a NaN or infinity
 carrying into the norm, so the loop went. The shared contract's all-zero case
-now expects an error (the maintainer's comment on #530 proposed it), six cases
+now expects an error (a comment on #530 from PR #531's review proposed it), six cases
 join it, and both readers parse `"NaN"`/`"Infinity"`/`"-Infinity"` strings.
 Python mutants all killed. **#532** (the two languages' error vocabularies)
 is still the maintainer's call, and has a comment: Rust's new `Vector`
 variant has no Python subclass, only `EmbedError.__cause__`.
 
+**PR #534's review moved three neighbours** into the same PR. A model
+embedding to fewer than 256 values is refused **at load** (`n_embd()`;
+Rust `n_embd_out()`, the width `embeddings_seq_ith` slices to), since its
+too-short output would otherwise fail every text alike and be blamed on
+text 0. Python's decode catches llama-cpp-python's NULL-pointer `ValueError`
+as well. Rust now names the **first** failing text in input order, as Python
+does: it decodes longest first, so it keeps every result and converts them in
+order (`embeddings()`, which also pins the index). The contract's error cases
+name their kind (`too_short`/`not_scalable`), and the floor cases are the two
+`f32` neighbours of `1e-12`, which is not an `f32` itself, so a case at the
+floor would split the languages. Rust's `NotScalable` still carries no value;
+that is #532's vocabulary question, noted there.
+
 Filed **#533**: the Rust `passage_match` timing tests (2 s wall clock) failed
 once under a full parallel debug `cargo test`, and pass at ~0.5 s alone.
 
-**The session before** (PR #524, #523 + #522): `notice_pmid` is stored
+**An earlier session** (PR #524, #523 + #522): `notice_pmid` is stored
 canonical in Python and Rust; `RetractionIndex::build` refuses an all-`Other`
 export, and Python's nature flag counts findable notices only. **#520** (the
 Rust desktop store's import) must take that nature rule too.
@@ -113,14 +126,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-five open once this session's PR merges** (`gh issue list --state
+**Ninety-six open once this session's PR merges** (`gh issue list --state
 open --limit 300`, 2026-10-22: 97, less #530). **#533** is this
 session's (a flaky timing test). **#532** is PR #531's (the
 embedder): Python's error types do not mirror Rust's — an API-shape decision,
 free while the embedder is unreleased. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
-whose seeds are all too common is rejected at 0.0. **#507** is PR #506's (above); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous
+whose seeds are all too common is rejected at 0.0. **#507** is PR #506's (a non-ISO evidence date refused at the `from_dict` / FFI boundary; read `docs/DECISIONS.md`'s #504 section first); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and

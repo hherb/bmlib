@@ -24,8 +24,8 @@ pub const EMBEDDING_DIM: usize = 256;
 pub const QUERY_PREFIX: &str = "query: ";
 /// Longest input, in tokens, the embedder accepts.
 pub const MAX_TOKENS: usize = 8192;
-/// The smallest norm the kept values may have; below it there is no direction
-/// to scale to unit length.
+/// The smallest norm the kept values may have; below it the output is taken
+/// to have no direction to scale to unit length.
 const NORM_FLOOR: f64 = 1e-12;
 
 /// A model output that cannot be made into an embedding.
@@ -51,8 +51,8 @@ impl fmt::Display for VectorError {
             }
             Self::NotScalable => write!(
                 f,
-                "the kept values are NaN, infinite or of norm below {NORM_FLOOR:e}, \
-                 so cannot be scaled to unit length"
+                "a kept value is NaN or infinite, or their norm is below {NORM_FLOOR:e}, \
+                 so they cannot be scaled to unit length"
             ),
         }
     }

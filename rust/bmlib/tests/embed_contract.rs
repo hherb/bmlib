@@ -17,8 +17,8 @@
 //! The embedder's pure rules and constants, held to the shared contract.
 
 use bmlib::embed::{
-    check_texts, query_text, truncate_and_normalize, ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0,
-    EMBEDDING_DIM, MAX_TOKENS, QUERY_PREFIX,
+    check_texts, query_text, truncate_and_normalize, VectorError, ARCTIC_EMBED_L_V2_F16,
+    ARCTIC_EMBED_L_V2_Q8_0, EMBEDDING_DIM, MAX_TOKENS, QUERY_PREFIX,
 };
 use serde_json::Value;
 
@@ -74,9 +74,15 @@ fn truncate_and_normalize_cases() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().unwrap();
-        let result = truncate_and_normalize(&floats(&case["input"]));
+        let input = floats(&case["input"]);
+        let result = truncate_and_normalize(&input);
         if case["expected"] == "error" {
-            assert!(result.is_err(), "{name}");
+            let want = match case["error"].as_str().unwrap() {
+                "too_short" => VectorError::TooShort { len: input.len() },
+                "not_scalable" => VectorError::NotScalable,
+                other => panic!("{name}: unknown error kind {other}"),
+            };
+            assert_eq!(result, Err(want), "{name}");
             continue;
         }
         let got = result.unwrap_or_else(|e| panic!("{name}: {e}"));

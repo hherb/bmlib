@@ -62,7 +62,7 @@ def truncate_and_normalize(vector: Sequence[float]) -> list[float]:
     head = [float(x) for x in vector[:EMBEDDING_DIM]]
     norm = math.sqrt(sum(x * x for x in head))
     if not NORM_FLOOR <= norm < math.inf:  # a NaN or infinite value carries into the norm
-        raise VectorError(f"the kept values' norm is {norm}, which cannot be scaled to unit length")
+        raise VectorError(f"the kept values' norm is {norm}, so they cannot be made unit length")
     return [x / norm for x in head]
 
 

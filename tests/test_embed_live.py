@@ -255,12 +255,20 @@ def test_a_query_is_prefixed_and_an_empty_one_refused(fake: tuple[Embedder, _Fak
     assert len(llm.embedded) == 1
 
 
-def test_a_decode_failure_is_an_embed_error(fake: tuple[Embedder, _FakeLlama]) -> None:
+@pytest.mark.parametrize(
+    "fail",
+    [RuntimeError("llama_decode returned -3"), ValueError("NULL pointer access")],
+    ids=["decode", "null-pointer"],
+)
+def test_a_decode_failure_is_an_embed_error(
+    fake: tuple[Embedder, _FakeLlama], fail: Exception
+) -> None:
     embedder, llm = fake
-    llm.fail = RuntimeError("llama_decode returned -3")
-    with pytest.raises(EmbedError, match="llama_decode returned -3") as caught:
+    llm.fail = fail
+    with pytest.raises(EmbedError, match=str(fail)) as caught:
         embedder.embed_documents(["a"])
     assert caught.value.index is None
+    assert caught.value.__cause__ is fail
 
 
 @pytest.mark.parametrize("bad", [math.nan, math.inf, 0.0], ids=["nan", "inf", "zero"])
@@ -274,6 +282,59 @@ def test_an_unusable_output_is_an_embed_error_naming_its_text(
         embedder.embed_documents(["a", "b", "c"])
     assert caught.value.index == 1
     assert isinstance(caught.value.__cause__, VectorError)
+
+
+def test_an_unusable_query_output_is_an_embed_error(
+    fake: tuple[Embedder, _FakeLlama], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    embedder, llm = fake
+    monkeypatch.setattr(llm, "embed", lambda texts, normalize, truncate: [[math.nan] * 300])
+    with pytest.raises(EmbedError, match="text at index 0: ") as caught:
+        embedder.embed_query("aspirin")
+    assert caught.value.index == 0
+
+
+def test_the_lowest_unusable_index_is_named(
+    fake: tuple[Embedder, _FakeLlama], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    embedder, llm = fake
+    vectors = [_raw("a"), [math.nan] * EMBEDDING_DIM, [0.0] * EMBEDDING_DIM]
+    monkeypatch.setattr(llm, "embed", lambda texts, normalize, truncate: vectors)
+    with pytest.raises(EmbedError) as caught:
+        embedder.embed_documents(["a", "b", "c"])
+    assert caught.value.index == 1
+
+
+class _FakeLlamaModule:
+    """The ``llama_cpp`` module, whose ``Llama`` embeds to ``width`` values."""
+
+    LLAMA_POOLING_TYPE_CLS = 2
+
+    def __init__(self, width: int) -> None:
+        self.width = width
+        self.closed = False
+
+    def Llama(self, **kwargs: object) -> _FakeLlamaModule:  # noqa: N802  # llama_cpp's name
+        return self
+
+    def n_embd(self) -> int:
+        return self.width
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_a_model_narrower_than_the_embedding_is_refused_at_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _FakeLlamaModule(EMBEDDING_DIM - 1)
+    monkeypatch.setitem(sys.modules, "llama_cpp", module)
+    with pytest.raises(EmbedError, match=f"embeds to {EMBEDDING_DIM - 1} values") as caught:
+        Embedder(Path("narrow.gguf"))
+    assert caught.value.index is None  # the model is at fault, not a text
+    assert module.closed
+    monkeypatch.setitem(sys.modules, "llama_cpp", _FakeLlamaModule(EMBEDDING_DIM))
+    Embedder(Path("wide-enough.gguf"))
 
 
 def test_leaving_a_with_block_frees_the_model(fake: tuple[Embedder, _FakeLlama]) -> None:

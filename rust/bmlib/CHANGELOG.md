@@ -11,8 +11,8 @@ The Python library is documented separately, in the repository's
 
 ### Added — follows Python's embedder
 `embed`: the embedding constants (`EMBEDDING_DIM`, `QUERY_PREFIX`, `MAX_TOKENS`),
-the vector rules (`truncate_and_normalize`, which refuses a NaN, infinite or
-zero-norm head with `VectorError::NotScalable` (#530), `query_text`,
+the vector rules (`truncate_and_normalize`, which refuses a NaN or infinite
+kept value, or a norm below `1e-12`, with `VectorError::NotScalable` (#530), `query_text`,
 `check_texts`) and the
 pinned model files (`ModelFile`, `ARCTIC_EMBED_L_V2_F16`, `ARCTIC_EMBED_L_V2_Q8_0`),
 held to Python's by the shared `tests/fixtures/embedding_contract.json`. With the

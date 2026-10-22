@@ -32,13 +32,20 @@ All notable changes to bmlib are documented here. The format is based on
   a zero "unit" vector. Each would sit at a fixed end of every cosine ranking,
   silently. It now raises `VectorError` (a `ValueError`, new, also raised for
   a vector too short) for any of them, and `Embedder.embed_documents` turns it
-  into an `EmbedError` naming the text's index. One norm check catches all
-  three, a NaN or infinity carrying into the norm; Python also refuses a norm
-  that overflows a double. The shared contract's all-zero case now expects an
-  error, and six cases join it (NaN, `+inf`, `-inf` at the last kept
-  position, NaN in the dropped tail accepted, a norm either side of the
-  floor). The Rust port in the same PR: `VectorTooShort` becomes
-  `VectorError { TooShort, NotScalable }` and `EmbedError` gains `Vector`.
+  into an `EmbedError` naming the lowest such text's index. One norm check
+  catches all three, a NaN or infinity carrying into the norm; Python also
+  refuses a norm that overflows a double. The shared contract's all-zero case
+  now expects an error, and six cases join it (NaN and `+inf` in the head,
+  `-inf` at the last kept position, NaN in the dropped tail accepted, and the
+  two `f32` values either side of the floor); every error case names its kind.
+  Two neighbours from PR #534's review: a model embedding to fewer than 256
+  values is refused at load, where its too-short output used to fail every
+  text alike, in Python as a bare `ValueError`; and llama-cpp-python's
+  `ValueError` from a NULL embedding pointer is an `EmbedError` too. The Rust
+  port in the same PR: `VectorTooShort` becomes
+  `VectorError { TooShort, NotScalable }`, `EmbedError` gains `Vector` (the
+  first failing text in input order, as Python), and `Embedder::load` refuses
+  a narrow model as `Llama`.
 - **A retraction notice's own PMID is stored without leading zeros, as the
   paper's is** (#523, from PR #521's review). `notice_pmid` went through
   whitespace stripping alone, so the export's occasional padding (its paper

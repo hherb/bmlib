@@ -58,11 +58,14 @@ def test_constants() -> None:
     assert (EMBEDDING_DIM, QUERY_PREFIX, MAX_TOKENS) == (256, "query: ", 8192)
 
 
+_ERROR_MESSAGES = {"too_short": "values, need at least", "not_scalable": "made unit length"}
+
+
 @pytest.mark.parametrize("case", CONTRACT["truncate_and_normalize"], ids=lambda c: c["name"])
 def test_truncate_and_normalize(case: dict) -> None:
     vector = [float(x) for x in case["input"]]  # a non-finite value is written as a string
     if case["expected"] == "error":
-        with pytest.raises(VectorError):
+        with pytest.raises(VectorError, match=_ERROR_MESSAGES[case["error"]]):
             truncate_and_normalize(vector)
         return
     got = truncate_and_normalize(vector)
@@ -71,7 +74,7 @@ def test_truncate_and_normalize(case: dict) -> None:
 
 
 def test_a_norm_past_a_floats_range_is_refused() -> None:
-    # Only a double can overflow the norm; the contract's f32 values cannot.
+    # Only Python's doubles overflow the norm from finite values; Rust reads 1e200 as inf.
     with pytest.raises(VectorError, match="norm is inf"):
         truncate_and_normalize([1e200] * EMBEDDING_DIM)
 
