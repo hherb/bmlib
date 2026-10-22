@@ -16,13 +16,21 @@
 
 """In-process embedding: constants, vector rules and the verified model download."""
 
-from bmlib.embed.embedder import Embedder, EmbedError
+from bmlib.embed.embedder import (
+    BatchDecodeError,
+    Embedder,
+    ModelLoadError,
+    TextTooLongError,
+    UnusableOutputError,
+)
 from bmlib.embed.model import (
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
+    ChecksumMismatchError,
     DownloadCancelled,
     ModelFile,
     ModelVerificationError,
+    SizeMismatchError,
     download_model,
     verify_model,
 )
@@ -30,6 +38,7 @@ from bmlib.embed.vectors import (
     EMBEDDING_DIM,
     MAX_TOKENS,
     QUERY_PREFIX,
+    EmbedError,
     EmptyTextError,
     VectorError,
     check_texts,
@@ -40,6 +49,8 @@ from bmlib.embed.vectors import (
 __all__ = [
     "ARCTIC_EMBED_L_V2_F16",
     "ARCTIC_EMBED_L_V2_Q8_0",
+    "BatchDecodeError",
+    "ChecksumMismatchError",
     "DownloadCancelled",
     "EMBEDDING_DIM",
     "EmbedError",
@@ -48,7 +59,11 @@ __all__ = [
     "MAX_TOKENS",
     "QUERY_PREFIX",
     "ModelFile",
+    "ModelLoadError",
     "ModelVerificationError",
+    "SizeMismatchError",
+    "TextTooLongError",
+    "UnusableOutputError",
     "check_texts",
     "download_model",
     "query_text",

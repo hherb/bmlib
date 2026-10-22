@@ -71,16 +71,32 @@ def query_text(query: str) -> str:
     return QUERY_PREFIX + query
 
 
-class EmptyTextError(ValueError):
-    """A text was empty or whitespace-only.
+class EmbedError(Exception):
+    """An embedding request that cannot be honoured.
+
+    Every failure of :class:`~bmlib.embed.Embedder` is one; its subclasses
+    mirror the Rust port's ``EmbedError`` variants.
+
+    Attributes:
+        index: Position of the offending text, or None when not text-specific.
+    """
+
+    def __init__(self, message: str, index: int | None = None) -> None:
+        super().__init__(message)
+        self.index = index
+
+
+class EmptyTextError(EmbedError, ValueError):
+    """A text was empty or whitespace-only (Rust: ``EmbedError::EmptyText``).
 
     Attributes:
         index: Position of the first such text.
     """
 
+    index: int
+
     def __init__(self, index: int) -> None:
-        super().__init__(f"text at index {index} is empty or whitespace-only")
-        self.index = index
+        super().__init__(f"text at index {index} is empty or whitespace-only", index)
 
 
 def check_texts(texts: Sequence[str]) -> None:

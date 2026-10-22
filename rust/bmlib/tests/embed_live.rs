@@ -274,7 +274,7 @@ fn vectors_are_unit_length() {
 #[test]
 fn missing_model_file_is_an_error() {
     match Embedder::load(Path::new("nonexistent.gguf")) {
-        Err(EmbedError::Llama(message)) => assert!(message.contains("nonexistent.gguf")),
-        other => panic!("expected Llama, got {:?}", other.err()),
+        Err(EmbedError::Load(message)) => assert!(message.contains("nonexistent.gguf")),
+        other => panic!("expected Load, got {:?}", other.err()),
     }
 }

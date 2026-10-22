@@ -67,8 +67,13 @@ pub enum EmbedError {
         /// Why its output was refused.
         error: VectorError,
     },
-    /// llama.cpp failed: the model would not load, or a batch would not decode.
-    Llama(String),
+    /// The embedder could not be made: llama.cpp's backend would not start,
+    /// the model file is missing or will not load, or the model embeds to
+    /// fewer than [`EMBEDDING_DIM`] values.
+    Load(String),
+    /// llama.cpp failed while embedding: no context, or a batch would not
+    /// decode.
+    Decode(String),
 }
 
 impl fmt::Display for EmbedError {
@@ -82,15 +87,15 @@ impl fmt::Display for EmbedError {
                 "text at index {index} has {tokens} tokens, over the {MAX_TOKENS} limit"
             ),
             Self::Vector { index, error } => write!(f, "text at index {index}: {error}"),
-            Self::Llama(message) => write!(f, "llama.cpp: {message}"),
+            Self::Load(message) | Self::Decode(message) => write!(f, "llama.cpp: {message}"),
         }
     }
 }
 
 impl std::error::Error for EmbedError {}
 
-fn llama(e: impl fmt::Display) -> EmbedError {
-    EmbedError::Llama(e.to_string())
+fn decode(e: impl fmt::Display) -> EmbedError {
+    EmbedError::Decode(e.to_string())
 }
 
 /// llama.cpp's backend, initialised once per process: a second
@@ -104,7 +109,7 @@ fn backend() -> Result<&'static LlamaBackend, EmbedError> {
             LlamaBackend::init().map_err(|e| e.to_string())
         })
         .as_ref()
-        .map_err(|e| EmbedError::Llama(e.clone()))
+        .map_err(|e| EmbedError::Load(e.clone()))
 }
 
 /// Embeds documents and queries to [`EMBEDDING_DIM`](super::EMBEDDING_DIM)-value
@@ -139,12 +144,12 @@ impl Embedder {
     ///
     /// # Errors
     ///
-    /// [`EmbedError::Llama`] if the file is missing, llama.cpp cannot load it,
+    /// [`EmbedError::Load`] if the file is missing, llama.cpp cannot load it,
     /// or the model embeds to fewer than [`EMBEDDING_DIM`] values.
     pub fn load(model_path: &Path) -> Result<Self, EmbedError> {
         // llama-cpp-2 only debug-asserts the path, so a missing file would panic.
         if !model_path.is_file() {
-            return Err(EmbedError::Llama(format!(
+            return Err(EmbedError::Load(format!(
                 "model file not found: {}",
                 model_path.display()
             )));
@@ -152,7 +157,7 @@ impl Embedder {
         let backend = backend()?;
         let params = LlamaModelParams::default().with_n_gpu_layers(ALL_LAYERS_ON_GPU);
         let model = LlamaModel::load_from_file(backend, model_path, &params)
-            .map_err(|e| EmbedError::Llama(format!("cannot load {}: {e}", model_path.display())))?;
+            .map_err(|e| EmbedError::Load(format!("cannot load {}: {e}", model_path.display())))?;
         refuse_narrow(model.n_embd_out())?;
         Ok(Self { backend, model })
     }
@@ -170,7 +175,7 @@ impl Embedder {
             .with_n_seq_max(MAX_SEQUENCES as u32)
             .with_embeddings(true)
             .with_pooling_type(LlamaPoolingType::Cls);
-        self.model.new_context(self.backend, params).map_err(llama)
+        self.model.new_context(self.backend, params).map_err(decode)
     }
 
     /// Embed texts as documents (no prefix), in input order.
@@ -180,7 +185,7 @@ impl Embedder {
     /// [`EmbedError::EmptyText`] or [`EmbedError::TooLong`] for the first
     /// offending text, before anything is embedded; [`EmbedError::Vector`]
     /// for the first text whose model output is not an embedding;
-    /// [`EmbedError::Llama`] if llama.cpp fails.
+    /// [`EmbedError::Decode`] if llama.cpp fails.
     pub fn embed_documents(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         check_texts(texts).map_err(|e| EmbedError::EmptyText { index: e.index })?;
         if texts.is_empty() {
@@ -203,12 +208,12 @@ impl Embedder {
             for (seq, &i) in (0..).zip(&group) {
                 // Every token an output, as pooled embeddings need: otherwise
                 // llama.cpp overrides the flags and logs a WARN on each decode.
-                batch.add_sequence(&ids[i], seq, true).map_err(llama)?;
+                batch.add_sequence(&ids[i], seq, true).map_err(decode)?;
             }
             ctx.clear_kv_cache();
-            ctx.decode(&mut batch).map_err(llama)?;
+            ctx.decode(&mut batch).map_err(decode)?;
             for (seq, &i) in (0..).zip(&group) {
-                out[i] = truncate_and_normalize(ctx.embeddings_seq_ith(seq).map_err(llama)?);
+                out[i] = truncate_and_normalize(ctx.embeddings_seq_ith(seq).map_err(decode)?);
             }
         }
         embeddings(out)
@@ -246,7 +251,7 @@ fn embeddings(results: Vec<Result<Vec<f32>, VectorError>>) -> Result<Vec<Vec<f32
 /// the model's, so it would fail every text alike.
 fn refuse_narrow(width: i32) -> Result<(), EmbedError> {
     if usize::try_from(width).unwrap_or(0) < EMBEDDING_DIM {
-        return Err(EmbedError::Llama(format!(
+        return Err(EmbedError::Load(format!(
             "the model embeds to {width} values, need at least {EMBEDDING_DIM}"
         )));
     }
@@ -331,7 +336,7 @@ mod tests {
         assert!(refuse_narrow(EMBEDDING_DIM as i32).is_ok());
         for width in [EMBEDDING_DIM as i32 - 1, 0, -1] {
             assert!(
-                matches!(refuse_narrow(width), Err(EmbedError::Llama(m)) if m.contains("embeds to")),
+                matches!(refuse_narrow(width), Err(EmbedError::Load(m)) if m.contains("embeds to")),
                 "{width}"
             );
         }
