@@ -26,8 +26,9 @@ pip install -e ".[all,dev]"
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
 | `fulltext`       | `pip install bmlib[fulltext]`      | `FullTextService` retrieval (httpx). The JATS parser, the models and `SectionSegmenter` need nothing beyond core |
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
+| `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`)|
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
-| `all`            | `pip install bmlib[all]`           | Every runtime extra above (**not** `dev`)  |
+| `all`            | `pip install bmlib[all]`           | Every runtime extra above but `embed` (**not** `dev`)  |
 
 ## Module Overview
 
@@ -45,6 +46,7 @@ bmlib is organised into ten modules, each with a focused responsibility:
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
 | [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching | [fulltext.md](fulltext.md) |
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building (pure stdlib) | [citations.md](citations.md) |
+| [`bmlib.embed`](embeddings.md) | In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download | [embeddings.md](embeddings.md) |
 
 ## Architecture Principles
 

@@ -58,6 +58,7 @@ pub mod atomic;
 pub mod citations;
 pub mod context_processor;
 pub mod db;
+pub mod embed;
 pub mod fulltext;
 #[cfg(feature = "http-ureq")]
 pub mod http;

@@ -70,16 +70,23 @@ fulltext = ["httpx>=0.25"]
 # `# type: ignore[import-untyped]` that switches off checking for the whole
 # of `pdf_converter.py`.
 pdf = ["pymupdf>=1.28.2"]
+# In-process embedding (bmlib.embed): compiles llama.cpp on install. The
+# floor is the one version verified against the reference vectors. Not in
+# `all`: it needs a C++ toolchain, which `all` must not.
+embed = ["llama-cpp-python>=0.3.36"]
 # mypy is pinned for the same reason ruff is (see .github/workflows/ci.yml):
 # a release with new checks would otherwise fail CI on files a PR never
 # touched. `psycopg2` is the one extra shipping no `py.typed`, so
 # `types-psycopg2` supplies the only stubs bmlib needs from typeshed; every
 # other extra carries its own marker, which is why mypy must run in an
-# environment that actually has the extras installed.
+# environment that actually has the extras installed. `embed` is the
+# exception: it is outside `all`, so its `llama_cpp` import carries a
+# targeted ignore and mypy passes with or without it.
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.0", "types-psycopg2"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
-# environment. For a full development install use `.[all,dev]`.
+# environment. For a full development install use `.[all,dev]`. It also
+# excludes `embed`, which compiles llama.cpp: ask for `.[all,embed]`.
 all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf]"]
 
 # Explicit discovery. Auto-discovery works today but is order-dependent in a
@@ -130,7 +137,9 @@ warn_unreachable = true
 # bmlib has (`fitz`) carries an inline `# type: ignore[import-untyped]`
 # instead: `warn_unused_ignores` reports that the day PyMuPDF ships a
 # `py.typed`, whereas a stale override here would go on suppressing
-# nothing, silently.
+# nothing, silently. `llama_cpp` is the one exception: it is outside `all`,
+# so it may or may not be installed, and its inline ignore carries
+# `unused-ignore` to pass both ways, which means it is never reported.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -68,6 +68,11 @@ rust/
     │   │   ├── parser.rs       the [@id:N:Label] scanner (hand-rolled)
     │   │   ├── passage_match.rs  find_passage — an LLM's near-verbatim quote located in its source
     │   │   └── sequence_matcher.rs  difflib.SequenceMatcher, crate-private
+    │   ├── embed/      port of bmlib/embed/ (489 Python lines)
+    │   │   ├── embedder.rs  Embedder over llama-cpp-2 (feature `embed`)
+    │   │   ├── model.rs     the pinned GGUF files, verify_model, download_model
+    │   │   ├── vectors.rs   constants, truncate_and_normalize, query_text, check_texts
+    │   │   └── mod.rs
     │   └── db/         port of bmlib/db/ (787 Python lines)
     │       ├── backend.rs       dialects, placeholder rewriting
     │       ├── error.rs         DbError — backend + caller-abort
@@ -112,6 +117,10 @@ BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live
 # variable is set** — the default `cargo test` opens no socket (0.16s).
 BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1
 
+# The embedder against the reference vectors. Builds llama.cpp (cmake and a C++
+# compiler); without the variable the live tests return immediately.
+BMLIB_EMBED_MODEL=/path/to/file.gguf cargo test -p bmlib --features embed --test embed_live -- --test-threads=1
+
 # One settled bioRxiv day through the whole pipeline — registry, fetcher, walk,
 # storage and day bookkeeping — into an **in-memory** database.
 BMLIB_LIVE_TESTS=1 cargo test --test live_sync
@@ -132,7 +141,9 @@ the **whole** suite over a `postgres:18` service — not the live binary alone, 
 dialect failure and a feature-gated build failure are told apart by the failing
 test's name. The two gates exist so a plain `cargo test` opens no socket; CI sets
 `BMLIB_PG_TESTS` and never `BMLIB_LIVE_TESTS`, because a server is something CI
-can provide deterministically and NCBI's rate limiter is not.
+can provide deterministically and NCBI's rate limiter is not. `rust-embed`
+builds llama.cpp and runs clippy, rustdoc and the tests with `embed`, but
+without a model, so the live embedder tests return early there.
 
 **If cargo cannot write to your `CARGO_HOME`** — a sandbox that permits writes
 only inside this repository, which is the case in the environment this was
@@ -192,6 +203,7 @@ registry, and `.gitignore` covers it.
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`, and `PubMedFetcher` over them (6 named tests). 83 named tests + 148 oracle cases |
+| `embed/` | 489 lines, 4 files | 4 files | **ported** — the vector rules and model files held to the shared contract (7 tests), the verified download (15 tests against a loopback server and 2 without), and the `Embedder` over llama-cpp-2 behind the `embed` feature: 9 live tests against the reference vectors when `BMLIB_EMBED_MODEL` names a GGUF file, plus 1 without a model, and 5 model-free unit tests of batch packing, the token limit and the query check |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
 | `publications/` | 4,190 | — | |

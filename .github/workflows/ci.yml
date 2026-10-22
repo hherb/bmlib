@@ -302,6 +302,42 @@ jobs:
         # failure are told apart by the failing test's name.
         run: cargo test --features postgres
 
+  rust-embed:
+    name: Rust test (embed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - name: Add clippy
+        run: rustup component add clippy
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          # llama-cpp-sys-2 compiles llama.cpp from source (cmake and a C++
+          # compiler, both on the runner image), so this cache is most of the job.
+          key: ${{ runner.os }}-rust-embed-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-embed-
+      - name: clippy (embed feature)
+        # The default feature set does not compile `embed/embedder.rs` at all.
+        run: cargo clippy --all-targets --features embed -- -D warnings
+      - name: rustdoc (embed feature)
+        # rust-lint's rustdoc step builds without `embed`, so it cannot see
+        # the embedder's doc links.
+        run: cargo doc -p bmlib --no-deps --features embed
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Test
+        # No model here: `tests/embed_live.rs` runs only its model-free test
+        # and the live ones return early without BMLIB_EMBED_MODEL.
+        run: cargo test -p bmlib --features embed
+
   ci-success:
     name: CI success
     # Aggregate gate: point branch protection at this single check so the job
@@ -309,7 +345,7 @@ jobs:
     # `skipped` as well as on `failure`, which is why no job above carries a
     # `paths` filter — a filtered-out job would block every unrelated PR.
     if: always()
-    needs: [lint, types, test, build, rust-lint, rust-test, rust-postgres]
+    needs: [lint, types, test, build, rust-lint, rust-test, rust-embed, rust-postgres]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

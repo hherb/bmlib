@@ -1,0 +1,316 @@
+// bmlib — shared library for biomedical literature tools
+// Copyright (C) 2024-2026 Dr Horst Herb
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+//! In-process embedder over llama-cpp-2.
+//!
+//! A port of `bmlib/embed/embedder.py`. Nothing is truncated silently: a text
+//! longer than [`MAX_TOKENS`] or an empty one is an [`EmbedError`] naming it.
+
+use std::fmt;
+use std::num::NonZeroU32;
+use std::path::Path;
+use std::sync::OnceLock;
+
+use llama_cpp_2::context::params::{LlamaContextParams, LlamaPoolingType};
+use llama_cpp_2::context::LlamaContext;
+use llama_cpp_2::llama_backend::LlamaBackend;
+use llama_cpp_2::llama_batch::LlamaBatch;
+use llama_cpp_2::model::params::LlamaModelParams;
+use llama_cpp_2::model::LlamaModel;
+use llama_cpp_2::token::LlamaToken;
+use llama_cpp_2::{send_logs_to_tracing, LogOptions};
+
+use super::vectors::{check_texts, query_text, truncate_and_normalize, MAX_TOKENS};
+
+/// Layers offloaded to the GPU: more than the model has, so all of them. A
+/// build without a GPU backend ignores it.
+const ALL_LAYERS_ON_GPU: u32 = 999;
+/// Most texts packed into one batch (llama.cpp's `n_seq_max`).
+const MAX_SEQUENCES: usize = 16;
+
+/// An embedding request that cannot be honoured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbedError {
+    /// The text at `index` is empty or whitespace-only.
+    EmptyText {
+        /// Position of the first such text.
+        index: usize,
+    },
+    /// The text at `index` has more than [`MAX_TOKENS`] tokens. It is refused,
+    /// never cut short.
+    TooLong {
+        /// Position of the first such text.
+        index: usize,
+        /// How many tokens it has.
+        tokens: usize,
+    },
+    /// llama.cpp failed: the model would not load, or a batch would not decode.
+    Llama(String),
+}
+
+impl fmt::Display for EmbedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyText { index } => {
+                write!(f, "text at index {index} is empty or whitespace-only")
+            }
+            Self::TooLong { index, tokens } => write!(
+                f,
+                "text at index {index} has {tokens} tokens, over the {MAX_TOKENS} limit"
+            ),
+            Self::Llama(message) => write!(f, "llama.cpp: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for EmbedError {}
+
+fn llama(e: impl fmt::Display) -> EmbedError {
+    EmbedError::Llama(e.to_string())
+}
+
+/// llama.cpp's backend, initialised once per process: a second
+/// `LlamaBackend::init` fails while the first is alive, so two embedders share it.
+fn backend() -> Result<&'static LlamaBackend, EmbedError> {
+    static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
+    BACKEND
+        .get_or_init(|| {
+            // Off stderr, as Python's verbose=False; a `tracing` subscriber still sees them.
+            send_logs_to_tracing(LogOptions::default());
+            LlamaBackend::init().map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .map_err(|e| EmbedError::Llama(e.clone()))
+}
+
+/// Embeds documents and queries to [`EMBEDDING_DIM`](super::EMBEDDING_DIM)-value
+/// unit vectors.
+///
+/// Drop it before the process exits. On Metal, llama.cpp aborts at `exit()`
+/// while a model is loaded, and that covers `std::process::exit`, a `static`,
+/// and a Tauri/tao event loop (which exits without dropping managed state).
+/// Keep it in an `Option` (e.g. `Mutex<Option<Embedder>>` in app state) and
+/// take it out on `RunEvent::ExitRequested` / `RunEvent::Exit`.
+///
+/// Flash attention is left to llama.cpp's AUTO policy, which enables it on
+/// CPU and Metal after a probe; a backend that fails the probe falls back to
+/// reserving the full non-causal attention matrix (about 4.5 GiB at 8192
+/// tokens).
+#[derive(Debug)]
+pub struct Embedder {
+    backend: &'static LlamaBackend,
+    model: LlamaModel,
+}
+
+// Tauri's managed state (`Mutex<Option<Embedder>>`) needs `Embedder: Send`.
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<Embedder>();
+};
+
+impl Embedder {
+    /// Load the GGUF model, with every layer on the GPU when llama.cpp was
+    /// built with a GPU backend (Metal on Apple platforms, with or without
+    /// `embed-metal`).
+    ///
+    /// # Errors
+    ///
+    /// [`EmbedError::Llama`] if the file is missing or llama.cpp cannot load it.
+    pub fn load(model_path: &Path) -> Result<Self, EmbedError> {
+        // llama-cpp-2 only debug-asserts the path, so a missing file would panic.
+        if !model_path.is_file() {
+            return Err(EmbedError::Llama(format!(
+                "model file not found: {}",
+                model_path.display()
+            )));
+        }
+        let backend = backend()?;
+        let params = LlamaModelParams::default().with_n_gpu_layers(ALL_LAYERS_ON_GPU);
+        let model = LlamaModel::load_from_file(backend, model_path, &params)
+            .map_err(|e| EmbedError::Llama(format!("cannot load {}: {e}", model_path.display())))?;
+        Ok(Self { backend, model })
+    }
+
+    // shortcut: a fresh context per call (~15 ms on Metal) because LlamaContext
+    // borrows the model; hold one (e.g. self_cell) if query latency matters.
+    // `&mut self` on the callers keeps two contexts from being built at once,
+    // which llama-cpp-2 documents as unsound.
+    fn context(&self) -> Result<LlamaContext<'_>, EmbedError> {
+        let tokens = MAX_TOKENS as u32;
+        let params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(tokens))
+            .with_n_batch(tokens)
+            .with_n_ubatch(tokens)
+            .with_n_seq_max(MAX_SEQUENCES as u32)
+            .with_embeddings(true)
+            .with_pooling_type(LlamaPoolingType::Cls);
+        self.model.new_context(self.backend, params).map_err(llama)
+    }
+
+    /// Embed texts as documents (no prefix), in input order.
+    ///
+    /// # Errors
+    ///
+    /// [`EmbedError::EmptyText`] or [`EmbedError::TooLong`] for the first
+    /// offending text, before anything is embedded; [`EmbedError::Llama`] if
+    /// llama.cpp fails.
+    pub fn embed_documents(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
+        check_texts(texts).map_err(|e| EmbedError::EmptyText { index: e.index })?;
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let vocab = self.model.vocab();
+        let ids: Vec<Vec<LlamaToken>> = texts
+            .iter()
+            .map(|t| vocab.tokenize(t.as_bytes(), true, false))
+            .collect();
+        let lens: Vec<usize> = ids.iter().map(Vec::len).collect();
+        refuse_too_long(&lens)?;
+        let mut ctx = self.context()?;
+        let mut order: Vec<usize> = (0..ids.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(lens[i]));
+        let mut out = vec![Vec::new(); ids.len()];
+        let mut batch = LlamaBatch::new(MAX_TOKENS, MAX_SEQUENCES as i32);
+        for group in pack(&order, &lens) {
+            batch.clear();
+            for (seq, &i) in (0..).zip(&group) {
+                // Every token an output, as pooled embeddings need: otherwise
+                // llama.cpp overrides the flags and logs a WARN on each decode.
+                batch.add_sequence(&ids[i], seq, true).map_err(llama)?;
+            }
+            ctx.clear_kv_cache();
+            ctx.decode(&mut batch).map_err(llama)?;
+            for (seq, &i) in (0..).zip(&group) {
+                let raw = ctx.embeddings_seq_ith(seq).map_err(llama)?;
+                out[i] = truncate_and_normalize(raw).map_err(llama)?;
+            }
+        }
+        Ok(out)
+    }
+
+    /// Embed a search query, with the model's query prefix.
+    ///
+    /// # Errors
+    ///
+    /// As [`embed_documents`](Self::embed_documents); an empty query is
+    /// [`EmbedError::EmptyText`] at index 0.
+    pub fn embed_query(&mut self, query: &str) -> Result<Vec<f32>, EmbedError> {
+        Ok(self.embed_documents(&[&query_document(query)?])?.remove(0))
+    }
+}
+
+/// The document text for `query`, refusing an empty one, which the prefix
+/// would otherwise make look valid.
+fn query_document(query: &str) -> Result<String, EmbedError> {
+    check_texts(&[query]).map_err(|e| EmbedError::EmptyText { index: e.index })?;
+    Ok(query_text(query))
+}
+
+/// Refuse the first text of more than [`MAX_TOKENS`] tokens; `lens[i]` is text
+/// `i`'s token count.
+fn refuse_too_long(lens: &[usize]) -> Result<(), EmbedError> {
+    match lens.iter().position(|&n| n > MAX_TOKENS) {
+        Some(index) => Err(EmbedError::TooLong {
+            index,
+            tokens: lens[index],
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Greedy packing of the length-sorted `order` into batches of at most
+/// [`MAX_TOKENS`] tokens and [`MAX_SEQUENCES`] texts; `lens[i]` is text `i`'s
+/// token count.
+fn pack(order: &[usize], lens: &[usize]) -> Vec<Vec<usize>> {
+    let mut batches = Vec::new();
+    let mut cur = Vec::new();
+    let mut used = 0;
+    for &i in order {
+        let len = lens[i];
+        if !cur.is_empty() && (used + len > MAX_TOKENS || cur.len() == MAX_SEQUENCES) {
+            batches.push(std::mem::take(&mut cur));
+            used = 0;
+        }
+        cur.push(i);
+        used += len;
+    }
+    if !cur.is_empty() {
+        batches.push(cur);
+    }
+    batches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pack, query_document, refuse_too_long, EmbedError, MAX_SEQUENCES, MAX_TOKENS};
+
+    #[test]
+    fn max_tokens_is_accepted_and_one_more_is_refused() {
+        assert_eq!(refuse_too_long(&[MAX_TOKENS, 1]), Ok(()));
+        assert_eq!(
+            refuse_too_long(&[5, MAX_TOKENS + 1, MAX_TOKENS + 9]),
+            Err(EmbedError::TooLong {
+                index: 1,
+                tokens: MAX_TOKENS + 1
+            })
+        );
+    }
+
+    #[test]
+    fn a_query_is_prefixed_and_an_empty_one_refused() {
+        assert_eq!(query_document("aspirin").unwrap(), "query: aspirin");
+        assert_eq!(
+            query_document(" \u{1c} "),
+            Err(EmbedError::EmptyText { index: 0 })
+        );
+    }
+
+    /// Packs `lens` as `embed_documents` does and checks every group.
+    fn packed(lens: &[usize]) -> Vec<Vec<usize>> {
+        let mut order: Vec<usize> = (0..lens.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(lens[i]));
+        let groups = pack(&order, lens);
+        for g in &groups {
+            assert!(!g.is_empty() && g.len() <= MAX_SEQUENCES, "{g:?}");
+            assert!(
+                g.iter().map(|&i| lens[i]).sum::<usize>() <= MAX_TOKENS,
+                "{g:?}"
+            );
+        }
+        // Each index once, in `order`'s sequence: results map back by index.
+        assert_eq!(groups.concat(), order);
+        groups
+    }
+
+    #[test]
+    fn pack_caps_texts_per_group() {
+        assert_eq!(packed(&[3; 40]).len(), 3); // 16 + 16 + 8
+    }
+
+    #[test]
+    fn pack_caps_tokens_per_group() {
+        assert_eq!(packed(&[3000; 5]).len(), 3); // 2 + 2 + 1
+    }
+
+    #[test]
+    fn pack_mixed_lengths_past_both_caps() {
+        let lens: Vec<usize> = (0..37)
+            .map(|i| [MAX_TOKENS, 5000, 900, 40, 7][i % 5])
+            .collect();
+        assert!(lens.iter().sum::<usize>() > MAX_TOKENS && lens.len() > MAX_SEQUENCES);
+        assert!(packed(&lens).len() > 2);
+    }
+}

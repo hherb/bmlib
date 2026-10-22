@@ -1,0 +1,21 @@
+{
+  "repo": "hherb/snowflake-arctic-embed-l-v2.0-gguf",
+  "revision": "c0a1ca8894e853259b9e2aeb1a873f6d50ae5701",
+  "base_model": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "base_revision": "ac6544c8a46e00af67e330e85a9028c66b8cfd9a",
+  "llama_cpp_commit": "26394b4e6749a41c3633db040e0987500a5f7013",
+  "files": [
+    {
+      "file": "snowflake-arctic-embed-l-v2.0-F16.gguf",
+      "size": 1157672160,
+      "sha256": "19227acecdaead5b4272216bda90c9025fa25c243f2abffe755cf89c7fc1b719",
+      "min_cosine": 0.9999863624686169
+    },
+    {
+      "file": "snowflake-arctic-embed-l-v2.0-Q8_0.gguf",
+      "size": 634554720,
+      "sha256": "363d89f6c2476bd5dcb010780884ab19ba3ba19b17aed0953a53877524323b88",
+      "min_cosine": 0.9994404098708016
+    }
+  ]
+}
