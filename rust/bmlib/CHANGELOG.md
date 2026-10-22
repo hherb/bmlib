@@ -17,7 +17,8 @@ held to Python's by the shared `tests/fixtures/embedding_contract.json`. With th
 new `embed` feature (and `embed-metal`): `verify_model` and `ModelError`, and with
 `http-ureq` too `download_model`, which streams to `<file>.part`, stops at the
 first byte past the pinned size, checks size and sha256, and renames only on a
-match.
+match. Its `progress` callback is `FnMut(u64, u64) -> bool`: returning `false`
+cancels the download, removes the `.part` and returns `ModelError::Cancelled`.
 `Embedder` (feature `embed`), over llama-cpp-2: `load`, `embed_documents` and
 `embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Llama`). CLS pooling,
 texts length-sorted and packed up to 8192 tokens and 16 per batch, results in
