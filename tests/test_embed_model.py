@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import logging
+import os
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,7 +29,9 @@ from pathlib import Path
 
 import pytest
 
+import bmlib.embed.model as model_module
 from bmlib.embed import (
+    ARCTIC_EMBED_L_V2_F16,
     DownloadCancelled,
     ModelFile,
     ModelVerificationError,
@@ -76,7 +80,7 @@ def _model(server: _Server, body: bytes = BODY) -> ModelFile:
 
     return _Local(
         repo="r",
-        revision="v",
+        revision="0" * 40,
         file="m.gguf",
         size=len(body),
         sha256=hashlib.sha256(body).hexdigest(),
@@ -86,7 +90,38 @@ def _model(server: _Server, body: bytes = BODY) -> ModelFile:
 def test_download_fetches_and_verifies(server: _Server, tmp_path: Path) -> None:
     path = download_model(_model(server), tmp_path)
     assert path == tmp_path / "m.gguf" and path.read_bytes() == BODY
-    assert not (tmp_path / "m.gguf.part").exists()
+    assert [p.name for p in tmp_path.iterdir()] == ["m.gguf"]
+
+
+def test_final_path_is_absent_until_the_rename(
+    server: _Server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[tuple[str, bool]] = []
+    real_replace = os.replace
+
+    def replace(src: Path, dst: Path) -> None:
+        seen.append((Path(src).name, Path(dst).exists()))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(model_module.os, "replace", replace)
+    download_model(_model(server), tmp_path)
+    [(temp, final_existed)] = seen
+    assert temp.startswith(".m.gguf.") and temp.endswith(".part")
+    assert not final_existed
+
+
+def test_a_concurrent_download_cannot_corrupt_the_file(server: _Server, tmp_path: Path) -> None:
+    model = _model(server)
+    nested: list[Path] = []
+
+    def start_another(done: int, total: int) -> None:
+        if not nested:  # a second call runs to completion mid-way through the first
+            nested.append(download_model(model, tmp_path))
+
+    download_model(model, tmp_path, start_another)
+    assert server.requests == 2
+    assert (tmp_path / "m.gguf").read_bytes() == BODY
+    assert [p.name for p in tmp_path.iterdir()] == ["m.gguf"]
 
 
 def test_download_skips_verified_file(server: _Server, tmp_path: Path) -> None:
@@ -108,6 +143,7 @@ def test_download_oversized_body_fails_early(server: _Server, tmp_path: Path) ->
     with pytest.raises(ModelVerificationError) as info:
         download_model(model, tmp_path)
     assert info.value.what == "size"
+    assert info.value.actual == f"more than {model.size}"  # the in-stream check, not the final one
     assert list(tmp_path.iterdir()) == []
 
 
@@ -120,10 +156,30 @@ def test_download_wrong_bytes_is_checksum_error(server: _Server, tmp_path: Path)
     assert list(tmp_path.iterdir()) == []
 
 
-def test_existing_mismatched_file_is_refetched(server: _Server, tmp_path: Path) -> None:
+def test_existing_mismatched_file_is_refetched(
+    server: _Server, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     (tmp_path / "m.gguf").write_bytes(b"stale")
+    with caplog.at_level(logging.WARNING, logger="bmlib.embed.model"):
+        download_model(_model(server), tmp_path)
+    assert server.requests == 1 and (tmp_path / "m.gguf").read_bytes() == BODY
+    assert "fetching it again" in caplog.text
+
+
+def test_existing_same_size_corrupt_file_is_refetched(server: _Server, tmp_path: Path) -> None:
+    (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
     download_model(_model(server), tmp_path)
     assert server.requests == 1 and (tmp_path / "m.gguf").read_bytes() == BODY
+
+
+def test_mismatched_file_is_gone_even_when_the_refetch_fails(
+    server: _Server, tmp_path: Path
+) -> None:
+    (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
+    server.truncate = True
+    with pytest.raises(ModelVerificationError):
+        download_model(_model(server), tmp_path)
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_progress_reports_reach_size(server: _Server, tmp_path: Path) -> None:
@@ -144,6 +200,42 @@ def test_progress_false_cancels(server: _Server, tmp_path: Path) -> None:
         download_model(_model(server), tmp_path, cancel)
     assert len(calls) == 1
     assert list(tmp_path.iterdir()) == []
+
+
+def test_an_interrupt_leaves_no_part_file(server: _Server, tmp_path: Path) -> None:
+    def interrupt(done: int, total: int) -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        download_model(_model(server), tmp_path, interrupt)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_verify_model_checksum_mismatch(tmp_path: Path, server: _Server) -> None:
+    (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
+    with pytest.raises(ModelVerificationError) as info:
+        verify_model(tmp_path / "m.gguf", _model(server))
+    assert info.value.what == "sha256"
+    assert info.value.actual == hashlib.sha256(bytes(len(BODY))).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("revision", "main"),
+        ("file", "../m.gguf"),
+        ("file", "/abs/m.gguf"),
+        ("file", "sub\\m.gguf"),
+        ("file", ".."),
+        ("file", ""),
+        ("size", 0),
+        ("sha256", "A" * 64),
+        ("sha256", "0" * 63),
+    ],
+)
+def test_model_file_refuses_what_cannot_pin(field: str, value: object) -> None:
+    with pytest.raises(ValueError, match=field):
+        dataclasses.replace(ARCTIC_EMBED_L_V2_F16, **{field: value})
 
 
 def test_verify_model_size_mismatch(tmp_path: Path, server: _Server) -> None:

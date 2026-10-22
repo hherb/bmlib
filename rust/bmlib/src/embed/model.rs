@@ -43,6 +43,65 @@ impl ModelFile {
             self.repo, self.revision, self.file
         )
     }
+
+    /// Refuse a file that cannot be pinned: `revision` must be a 40-hex commit
+    /// (a branch name would defeat the pinning), `file` a bare file name (it is
+    /// joined to the download directory), `size` positive and `sha256` 64
+    /// lower-case hex digits (any other spelling never verifies, so every
+    /// launch would fetch the file again). Python checks the same on
+    /// construction; the fields here are public, so the download checks.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the field.
+    pub const fn check(&self) -> Result<(), &'static str> {
+        if !is_lower_hex(self.revision, 40) {
+            return Err("revision must be a 40-hex commit");
+        }
+        if !is_bare_file_name(self.file) {
+            return Err("file must be a bare file name");
+        }
+        if self.size == 0 {
+            return Err("size must be positive");
+        }
+        if !is_lower_hex(self.sha256, 64) {
+            return Err("sha256 must be 64 lower-case hex digits");
+        }
+        Ok(())
+    }
+}
+
+const fn is_lower_hex(s: &str, len: usize) -> bool {
+    let b = s.as_bytes();
+    if b.len() != len {
+        return false;
+    }
+    let mut i = 0;
+    while i < b.len() {
+        if !matches!(b[i], b'0'..=b'9' | b'a'..=b'f') {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+const fn is_bare_file_name(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.is_empty()
+        || (b.len() == 1 && b[0] == b'.')
+        || (b.len() == 2 && b[0] == b'.' && b[1] == b'.')
+    {
+        return false;
+    }
+    let mut i = 0;
+    while i < b.len() {
+        if matches!(b[i], b'/' | b'\\' | 0) {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 const REPO: &str = "hherb/snowflake-arctic-embed-l-v2.0-gguf";
@@ -65,6 +124,9 @@ pub const ARCTIC_EMBED_L_V2_Q8_0: ModelFile = ModelFile {
     size: 634_554_720,
     sha256: "363d89f6c2476bd5dcb010780884ab19ba3ba19b17aed0953a53877524323b88",
 };
+
+const _: () = assert!(ARCTIC_EMBED_L_V2_F16.check().is_ok());
+const _: () = assert!(ARCTIC_EMBED_L_V2_Q8_0.check().is_ok());
 
 #[cfg(feature = "embed")]
 mod verified {
@@ -101,6 +163,8 @@ mod verified {
         Http(String),
         /// The caller's `progress` hook returned `false`; nothing was kept.
         Cancelled,
+        /// The [`ModelFile`] cannot be pinned (see [`ModelFile::check`]).
+        Invalid(&'static str),
     }
 
     impl fmt::Display for ModelError {
@@ -115,6 +179,7 @@ mod verified {
                 }
                 ModelError::Http(m) => write!(f, "model download failed: {m}"),
                 ModelError::Cancelled => write!(f, "model download cancelled"),
+                ModelError::Invalid(m) => write!(f, "invalid model file: {m}"),
             }
         }
     }
@@ -190,8 +255,9 @@ mod download {
     use std::fs::File;
     use std::io::{Read, Write};
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc::RecvTimeoutError;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
 
     /// Longest wait for a connection, the response headers or one body block.
     const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -214,10 +280,11 @@ mod download {
     ///
     /// An already-verified file costs no network, but it is re-hashed on
     /// every call (about 1 s per GB), so call this once per launch. A
-    /// mismatched one is deleted and fetched again. The download goes through
-    /// `<file>.part`, which is synced to disk before the rename and removed on
-    /// any failure or cancel. Run one call per `directory` at a time:
-    /// concurrent calls share the `.part` file.
+    /// mismatched one is deleted, with a WARNING on stderr, and fetched again.
+    /// The download goes through a temporary file named for this call alone
+    /// (`.<file>.<pid>-<time>-<n>.part`), which is synced to disk before the
+    /// rename and removed on any failure or cancel, so concurrent calls cost
+    /// bandwidth and never a corrupt file.
     ///
     /// `progress(done_bytes, model.size)` runs after each block; returning
     /// `false` cancels the download.
@@ -225,8 +292,8 @@ mod download {
     /// # Errors
     ///
     /// [`ModelError`]: a mismatch (a body longer or shorter than the pinned
-    /// size included), a file-system failure, a network failure, or
-    /// [`ModelError::Cancelled`].
+    /// size included), a file-system failure, a network failure,
+    /// [`ModelError::Cancelled`], or [`ModelError::Invalid`].
     pub fn download_model(
         model: &ModelFile,
         directory: &Path,
@@ -247,18 +314,38 @@ mod download {
         directory: &Path,
         progress: &mut dyn FnMut(u64, u64) -> bool,
     ) -> Result<PathBuf, ModelError> {
+        model.check().map_err(ModelError::Invalid)?;
         std::fs::create_dir_all(directory)?;
         let final_path = directory.join(model.file);
         if final_path.exists() {
             match verify_model(&final_path, model) {
                 Ok(()) => return Ok(final_path),
-                Err(ModelError::SizeMismatch { .. } | ModelError::ChecksumMismatch { .. }) => {
-                    std::fs::remove_file(&final_path)?;
+                Err(
+                    e @ (ModelError::SizeMismatch { .. } | ModelError::ChecksumMismatch { .. }),
+                ) => {
+                    eprintln!(
+                        "bmlib.embed.model WARNING: deleting {} and fetching it again: {e}",
+                        final_path.display()
+                    );
+                    match std::fs::remove_file(&final_path) {
+                        // a concurrent call may have got there first
+                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                        _ => {}
+                    }
                 }
                 Err(other) => return Err(other),
             }
         }
-        let part = directory.join(format!("{}.part", model.file));
+        static CALLS: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let part = directory.join(format!(
+            ".{}.{}-{nanos}-{}.part",
+            model.file,
+            std::process::id(),
+            CALLS.fetch_add(1, Ordering::Relaxed)
+        ));
         let mut guard = PartGuard {
             path: &part,
             armed: true,
@@ -294,6 +381,9 @@ mod download {
             .map_err(|e| ModelError::Http(e.to_string()))?;
         let mut reader = response.into_body().into_reader();
         // A thread reads, so the loop can give up on a stalled block.
+        // shortcut: on a stall the thread stays blocked in `read` (the socket
+        // has no read timeout) until the OS drops the connection; give the
+        // agent a body timeout if a long-lived process sees many stalls.
         let (tx, rx) = std::sync::mpsc::sync_channel::<std::io::Result<Vec<u8>>>(1);
         std::thread::spawn(move || loop {
             let mut buf = vec![0u8; BLOCK_SIZE];
@@ -311,7 +401,7 @@ mod download {
                 }
             }
         });
-        let mut out = File::create(part)?;
+        let mut out = File::options().write(true).create_new(true).open(part)?;
         let mut hasher = Sha256::new();
         let mut done: u64 = 0;
         loop {

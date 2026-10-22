@@ -16,10 +16,13 @@
 """Reproducible GGUF conversion of arctic-embed-l-v2.0, with verification.
 
     python scripts/convert_embedding_model.py --llama-cpp <checkout> \
-        --base-dir <HF snapshot dir> --out <dir> \
-        [--verify-reference tests/fixtures/embedding_reference.json]
+        --base-dir <HF cache>/snapshots/<BASE_REVISION> --out <dir> \
+        --verify-reference tests/fixtures/embedding_reference.json
 
-Refuses any llama.cpp checkout other than the pinned commit. Stdlib only.
+Refuses any llama.cpp checkout other than the pinned commit, and a base
+snapshot directory not named for the pinned revision (the revision is stamped
+into the manifest and model card). Writes ``manifest.json`` and ``README.md``
+only once both files have passed verification. Stdlib only.
 """
 
 from __future__ import annotations
@@ -108,10 +111,7 @@ def verify(llama_cpp: Path, gguf: Path, reference: dict) -> float:
 
 def model_card(m: dict) -> str:
     rows = "\n".join(f"| {f['file']} | {f['size']} | `{f['sha256']}` |" for f in m["files"])
-    results = "\n".join(
-        f"- {f['file']}: {f['min_cosine']:.5f}" if "min_cosine" in f else f"- {f['file']}: not run"
-        for f in m["files"]
-    )
+    results = "\n".join(f"- {f['file']}: {f['min_cosine']:.5f}" for f in m["files"])
     c = m["llama_cpp_commit"]
     return f"""---
 license: apache-2.0
@@ -174,7 +174,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--llama-cpp", type=Path, required=True)
     ap.add_argument("--base-dir", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--verify-reference", type=Path)
+    ap.add_argument("--verify-reference", type=Path, required=True)
     args = ap.parse_args(argv)
 
     head = subprocess.run(
@@ -183,8 +183,13 @@ def main(argv: list[str] | None = None) -> None:
     ).stdout.strip()  # fmt: skip
     if head != LLAMA_CPP_COMMIT:
         sys.exit(f"llama.cpp is at {head}, need {LLAMA_CPP_COMMIT}")
+    # An HF cache snapshot directory is named for its commit.
+    if args.base_dir.resolve().name != BASE_REVISION:
+        sys.exit(f"--base-dir must be the snapshot of {BASE_MODEL} at {BASE_REVISION}")
 
     args.out.mkdir(parents=True, exist_ok=True)
+    for stale in ("manifest.json", "README.md"):  # never left beside unverified files
+        (args.out / stale).unlink(missing_ok=True)
     f16 = args.out / f"{STEM}-F16.gguf"
     q8 = args.out / f"{STEM}-Q8_0.gguf"
     _run([sys.executable, str(args.llama_cpp / "convert_hf_to_gguf.py"), str(args.base_dir),
@@ -192,10 +197,9 @@ def main(argv: list[str] | None = None) -> None:
     _run([str(args.llama_cpp / "build/bin/llama-quantize"), str(f16), str(q8), "Q8_0"])
 
     m = manifest([f16, q8], head, BASE_REVISION)
-    if args.verify_reference:
-        reference = json.loads(args.verify_reference.read_text())
-        for entry, path in zip(m["files"], (f16, q8), strict=True):
-            entry["min_cosine"] = verify(args.llama_cpp, path, reference)
+    reference = json.loads(args.verify_reference.read_text())
+    for entry, path in zip(m["files"], (f16, q8), strict=True):
+        entry["min_cosine"] = verify(args.llama_cpp, path, reference)
     (args.out / "manifest.json").write_text(json.dumps(m, indent=2) + "\n")
     (args.out / "README.md").write_text(model_card(m))
 

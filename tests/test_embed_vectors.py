@@ -42,6 +42,17 @@ MANIFEST = json.loads((FIXTURES / "embedding_model_manifest.json").read_text())
 TOLERANCE = 1e-6
 
 
+def test_every_contract_section_is_read() -> None:
+    # A section added for one language must be read by both suites.
+    assert set(CONTRACT) == {
+        "_readme",
+        "truncate_and_normalize",
+        "query_text",
+        "check_texts",
+        "model_files",
+    }
+
+
 def test_constants() -> None:
     assert (EMBEDDING_DIM, QUERY_PREFIX, MAX_TOKENS) == (256, "query: ", 8192)
 

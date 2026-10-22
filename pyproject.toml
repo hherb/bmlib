@@ -134,11 +134,12 @@ warn_redundant_casts = true
 warn_unreachable = true
 
 # No per-module `ignore_missing_imports` overrides. The one untyped import
-# bmlib has (`fitz`) carries an inline `# type: ignore[import-untyped]`, and
-# `llama_cpp` (often absent, being outside `all`) an inline
-# `import-not-found, unused-ignore` instead: `warn_unused_ignores` reports that the day PyMuPDF ships a
+# bmlib has (`fitz`) carries an inline `# type: ignore[import-untyped]`
+# instead: `warn_unused_ignores` reports that the day PyMuPDF ships a
 # `py.typed`, whereas a stale override here would go on suppressing
-# nothing, silently.
+# nothing, silently. `llama_cpp` is the one exception: it is outside `all`,
+# so it may or may not be installed, and its inline ignore carries
+# `unused-ignore` to pass both ways, which means it is never reported.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

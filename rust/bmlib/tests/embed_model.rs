@@ -48,23 +48,29 @@ fn serve(payload: Vec<u8>, truncate: bool) -> Server {
     let url = format!("http://{}/m.gguf", listener.local_addr().unwrap());
     let requests = Arc::new(AtomicUsize::new(0));
     let count = Arc::clone(&requests);
+    let payload = Arc::new(payload);
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { break };
-            let mut request = [0u8; 4096];
-            let _ = stream.read(&mut request);
-            count.fetch_add(1, Ordering::SeqCst);
-            let sent = if truncate {
-                payload.len() / 2
-            } else {
-                payload.len()
-            };
-            let head = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                payload.len()
-            );
-            let _ = stream.write_all(head.as_bytes());
-            let _ = stream.write_all(&payload[..sent]);
+            let (count, payload) = (Arc::clone(&count), Arc::clone(&payload));
+            // A thread per connection, so a second download can run while
+            // the first is still streaming.
+            std::thread::spawn(move || {
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request);
+                count.fetch_add(1, Ordering::SeqCst);
+                let sent = if truncate {
+                    payload.len() / 2
+                } else {
+                    payload.len()
+                };
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    payload.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&payload[..sent]);
+            });
         }
     });
     Server { url, requests }
@@ -73,7 +79,7 @@ fn serve(payload: Vec<u8>, truncate: bool) -> Server {
 fn model(expected: &[u8]) -> ModelFile {
     ModelFile {
         repo: "r",
-        revision: "v",
+        revision: "0000000000000000000000000000000000000000",
         file: "m.gguf",
         size: expected.len() as u64,
         sha256: Box::leak(hex(expected).into_boxed_str()),
@@ -82,6 +88,15 @@ fn model(expected: &[u8]) -> ModelFile {
 
 fn dir_is_empty(dir: &Path) -> bool {
     std::fs::read_dir(dir).unwrap().next().is_none()
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
 }
 
 fn download(
@@ -99,7 +114,69 @@ fn download_fetches_and_verifies() {
     let path = download(&server, &model(&body()), &tmp).unwrap();
     assert_eq!(path, tmp.join("m.gguf"));
     assert_eq!(std::fs::read(&path).unwrap(), body());
-    assert!(!tmp.join("m.gguf.part").exists());
+    assert_eq!(names(&tmp), ["m.gguf"]);
+}
+
+#[test]
+fn final_path_is_absent_until_the_rename() {
+    let server = serve(body(), false);
+    let tmp = tempdir("atomic");
+    let mut seen = Vec::new();
+    download_model_from(&server.url, &model(&body()), &tmp, &mut |_, _| {
+        seen.push(names(&tmp));
+        true
+    })
+    .unwrap();
+    for listing in &seen {
+        let [temp] = listing.as_slice() else {
+            panic!("{listing:?}")
+        };
+        assert!(
+            temp.starts_with(".m.gguf.") && temp.ends_with(".part"),
+            "{temp}"
+        );
+    }
+    assert_eq!(names(&tmp), ["m.gguf"]);
+}
+
+#[test]
+fn a_concurrent_download_cannot_corrupt_the_file() {
+    let server = serve(body(), false);
+    let tmp = tempdir("concurrent");
+    let m = model(&body());
+    let mut started = false;
+    // A second call runs to completion mid-way through the first.
+    download_model_from(&server.url, &m, &tmp, &mut |_, _| {
+        if !started {
+            started = true;
+            download(&server, &m, &tmp).unwrap();
+        }
+        true
+    })
+    .unwrap();
+    assert_eq!(server.requests.load(Ordering::SeqCst), 2);
+    assert_eq!(std::fs::read(tmp.join("m.gguf")).unwrap(), body());
+    assert_eq!(names(&tmp), ["m.gguf"]);
+}
+
+#[test]
+fn a_model_file_that_cannot_pin_is_refused() {
+    let server = serve(body(), false);
+    let tmp = tempdir("invalid");
+    let mut escaping = model(&body());
+    escaping.file = "../m.gguf";
+    let mut branch = model(&body());
+    branch.revision = "main";
+    let mut upper = model(&body());
+    upper.sha256 = "19227ACECDAEAD5B4272216BDA90C9025FA25C243F2ABFFE755CF89C7FC1B719";
+    for (bad, field) in [(escaping, "file"), (branch, "revision"), (upper, "sha256")] {
+        match download(&server, &bad, &tmp).unwrap_err() {
+            ModelError::Invalid(m) => assert!(m.starts_with(field), "{m}"),
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(server.requests.load(Ordering::SeqCst), 0);
+    assert!(dir_is_empty(&tmp));
 }
 
 #[test]
@@ -182,6 +259,25 @@ fn existing_mismatched_file_is_refetched() {
 }
 
 #[test]
+fn existing_same_size_corrupt_file_is_refetched() {
+    let server = serve(body(), false);
+    let tmp = tempdir("corrupt");
+    std::fs::write(tmp.join("m.gguf"), vec![0u8; body().len()]).unwrap();
+    download(&server, &model(&body()), &tmp).unwrap();
+    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(std::fs::read(tmp.join("m.gguf")).unwrap(), body());
+}
+
+#[test]
+fn mismatched_file_is_gone_even_when_the_refetch_fails() {
+    let server = serve(body(), true);
+    let tmp = tempdir("refetch-fails");
+    std::fs::write(tmp.join("m.gguf"), vec![0u8; body().len()]).unwrap();
+    assert!(download(&server, &model(&body()), &tmp).is_err());
+    assert!(dir_is_empty(&tmp));
+}
+
+#[test]
 fn progress_reports_reach_size() {
     let server = serve(body(), false);
     let tmp = tempdir("progress");
@@ -222,6 +318,17 @@ fn progress_false_cancels() {
     assert!(matches!(err, ModelError::Cancelled), "{err:?}");
     assert_eq!(calls, 1);
     assert!(dir_is_empty(&tmp));
+}
+
+#[test]
+fn verify_model_checksum_mismatch() {
+    let tmp = tempdir("verify-sha");
+    let zeros = vec![0u8; body().len()];
+    std::fs::write(tmp.join("m.gguf"), &zeros).unwrap();
+    match verify_model(&tmp.join("m.gguf"), &model(&body())).unwrap_err() {
+        ModelError::ChecksumMismatch { actual, .. } => assert_eq!(actual, hex(&zeros)),
+        other => panic!("{other}"),
+    }
 }
 
 #[test]

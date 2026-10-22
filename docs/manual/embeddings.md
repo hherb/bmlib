@@ -18,16 +18,21 @@ path = download_model(ARCTIC_EMBED_L_V2_Q8_0, Path("~/.cache/bmlib/models").expa
 embedder = Embedder(path)
 ```
 
-`download_model` streams through a `.part` file, syncs it to disk, and keeps
-nothing that fails its size or sha256 check (`ModelVerificationError`).
+`download_model` streams into a hidden temporary file of its own
+(`.<file>.<id>.part`), syncs it to disk, and renames it into place only once
+its size and sha256 match; nothing that fails the check is kept
+(`ModelVerificationError`).
 
 - It re-hashes an existing file on every call (about 1 s per GB): call it once
-  per launch, not before each use.
-- Run one call per target directory at a time: concurrent calls share the
-  `.part` file.
-- `progress(done_bytes, total_bytes)`, if given, runs after each 1 MiB block.
-  Returning exactly `False` cancels: the `.part` file is removed and
-  `DownloadCancelled` is raised. Returning `None` or `True` carries on.
+  per launch, not before each use. A file that fails the check is deleted,
+  with a WARNING, and fetched again.
+- Concurrent calls for one directory are safe: each downloads into its own
+  temporary file, so a second call costs bandwidth, never a corrupt model.
+- `progress(done_bytes, total_bytes)`, if given, runs after each block of up
+  to 1 MiB. Returning exactly `False` cancels: the temporary file is removed
+  and `DownloadCancelled` is raised. Returning `None` or `True` carries on.
+- A `ModelFile` must name a 40-hex revision, a bare file name, a positive size
+  and a lower-case sha256; anything else is a `ValueError` when it is built.
 
 ## Embedding
 
@@ -51,11 +56,15 @@ when no text is at fault).
 
 - An empty or whitespace-only text.
 - A text over `MAX_TOKENS` (8192) tokens. It is refused, never cut short.
-- `bmlib[embed]` not installed.
+- llama-cpp-python cannot be imported (the message says what was raised; it
+  comes with `bmlib[embed]`).
+- A missing or unloadable model file, or llama.cpp failing to decode a batch.
 
-A missing or unloadable model file is not an `EmbedError`: llama-cpp-python
-raises its own `ValueError`. Passing one `str` to `embed_documents` (instead of
-a list) is a `TypeError`.
+Passing one `str` to `embed_documents` (instead of a list) is a `TypeError`.
+
+An `Embedder` is not thread-safe: use one per thread, or a lock round each
+call. `close()` frees the model, as does leaving a `with Embedder(path) as
+embedder:` block.
 
 The embedder runs with flash attention on. Without it llama.cpp reserves the
 whole non-causal attention matrix for an 8192-token batch up front, about
@@ -84,9 +93,11 @@ let query = embedder.embed_query("what treats malaria")?;
 
 `ModelFile`, `verify_model` and `download_model` (with the default `http-ureq`
 feature) mirror the Python ones; a failed check is a `ModelError`. The same
-rules hold: one call per launch, one caller per directory. The `progress`
+rules hold: one call per launch, and concurrent calls are safe. The `progress`
 hook is `&mut dyn FnMut(u64, u64) -> bool`; returning `false` cancels, removes
-the `.part` file and returns `ModelError::Cancelled`.
+the temporary file and returns `ModelError::Cancelled`. A `ModelFile` that
+cannot be pinned (`ModelFile::check`) is `ModelError::Invalid`, before any
+request.
 
 Flash attention is left to llama.cpp's AUTO policy, which turns it on for CPU
 and Metal after a probe. A backend that fails the probe falls back to the

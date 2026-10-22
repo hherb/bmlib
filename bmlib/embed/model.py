@@ -22,14 +22,20 @@ sha256 matched.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import logging
 import os
+import re
 import urllib.request
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from bmlib import __version__
+
+logger = logging.getLogger(__name__)
 
 BLOCK_SIZE = 1024 * 1024
 HTTP_TIMEOUT_SECONDS = 60
@@ -37,13 +43,31 @@ HTTP_TIMEOUT_SECONDS = 60
 
 @dataclass(frozen=True)
 class ModelFile:
-    """A model file pinned to a repository revision, size and checksum."""
+    """A model file pinned to a repository revision, size and checksum.
+
+    Raises:
+        ValueError: On construction, unless ``revision`` is a 40-hex commit (a
+            branch name would defeat the pinning), ``file`` a bare file name
+            (it is joined to the download directory), ``size`` positive and
+            ``sha256`` 64 lower-case hex digits (any other spelling never
+            verifies, so every launch would fetch the file again).
+    """
 
     repo: str
     revision: str
     file: str
     size: int
     sha256: str
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"[0-9a-f]{40}", self.revision):
+            raise ValueError(f"revision must be a 40-hex commit, not {self.revision!r}")
+        if self.file in ("", ".", "..") or Path(self.file).name != self.file or "\\" in self.file:
+            raise ValueError(f"file must be a bare file name, not {self.file!r}")
+        if self.size <= 0:
+            raise ValueError(f"size must be positive, not {self.size}")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.sha256):
+            raise ValueError(f"sha256 must be 64 lower-case hex digits, not {self.sha256!r}")
 
     def url(self) -> str:
         """Return the revision-pinned download URL."""
@@ -117,10 +141,10 @@ def download_model(
 
     An already-verified file costs no network, but it is re-hashed on every
     call (about 1 s per GB), so call this once per launch. A mismatched one is
-    deleted and fetched again. The download goes through ``<file>.part``, which
-    is synced to disk before the rename and removed on any failure or cancel.
-    Run one call per ``directory`` at a time: concurrent calls share the
-    ``.part`` file.
+    deleted, with a WARNING, and fetched again. The download goes through a
+    temporary file named for this call alone (``.<file>.<uuid>.part``), which
+    is synced to disk before the rename and removed on any failure or cancel,
+    so concurrent calls cost bandwidth and never a corrupt file.
 
     Args:
         model: The pinned file.
@@ -144,16 +168,17 @@ def download_model(
         try:
             verify_model(final, model)
             return final
-        except ModelVerificationError:
-            final.unlink()
-    part = directory / (model.file + ".part")
+        except ModelVerificationError as exc:
+            logger.warning("deleting %s and fetching it again: %s", final, exc)
+            final.unlink(missing_ok=True)  # a concurrent call may have got there first
+    part = directory / f".{model.file}.{uuid.uuid4().hex}.part"
     request = urllib.request.Request(model.url(), headers={"User-Agent": f"bmlib/{__version__}"})
     try:
         digest = hashlib.sha256()
         done = 0
         with (
             urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response,
-            part.open("wb") as out,
+            part.open("xb") as out,
         ):
             while block := response.read(BLOCK_SIZE):
                 out.write(block)
@@ -170,6 +195,7 @@ def download_model(
         _check(part, model, done, digest.hexdigest())
         os.replace(part, final)
     except BaseException:
-        part.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):  # never speak over the original error
+            part.unlink(missing_ok=True)
         raise
     return final

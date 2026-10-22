@@ -17,9 +17,11 @@ All notable changes to bmlib are documented here. The format is based on
 - **`bmlib.embed`: embedding constants, vector rules and a verified model
   download.** `truncate_and_normalize`, `query_text`, `check_texts` (pinned by
   the shared `embedding_contract.json`) and `download_model`, which streams the
-  pinned arctic-embed-l-v2.0 GGUF through a `.part` file and keeps nothing
-  that fails its size or sha256. A `progress` hook returning `False` cancels
-  it (`DownloadCancelled`).
+  pinned arctic-embed-l-v2.0 GGUF into a temporary file of its own (so
+  concurrent calls are safe) and keeps nothing that fails its size or sha256.
+  A `progress` hook returning `False` cancels it (`DownloadCancelled`).
+  `ModelFile` refuses a revision that is not a commit, a file that is not a
+  bare name and a malformed sha256.
 
 ### Fixed
 - **A retraction notice's own PMID is stored without leading zeros, as the

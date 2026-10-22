@@ -91,11 +91,71 @@ def test_refuses_wrong_llama_cpp_commit(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, stdout="f" * 40 + "\n")
 
     monkeypatch.setattr(conv.subprocess, "run", fake_run)
-    argv = ["--llama-cpp", str(tmp_path), "--base-dir", str(tmp_path), "--out", str(tmp_path / "o")]
     with pytest.raises(SystemExit) as e:
-        conv.main(argv)
+        conv.main(_argv(tmp_path, tmp_path))
     assert e.value.code != 0
     assert len(calls) == 1 and "rev-parse" in calls[0]
+
+
+def _argv(tmp_path, base):
+    ref = tmp_path / "ref.json"
+    ref.write_text(json.dumps({"items": [{"name": "d", "kind": "document", "text": "a",
+                                          "vector": [1.0] + [0.0] * 255}]}))  # fmt: skip
+    return ["--llama-cpp", str(tmp_path), "--base-dir", str(base),
+            "--out", str(tmp_path / "o"), "--verify-reference", str(ref)]  # fmt: skip
+
+
+def _fake_tools(vector):
+    """git, the converter, llama-quantize and llama-embedding, without llama.cpp."""
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if "rev-parse" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, stdout=conv.LLAMA_CPP_COMMIT + "\n")
+        if "--outfile" in cmd:
+            Path(cmd[cmd.index("--outfile") + 1]).write_bytes(b"f16")
+        elif cmd[-1] == "Q8_0":
+            Path(cmd[2]).write_bytes(b"q8")
+        out = json.dumps({"data": [{"embedding": vector}]})
+        return subprocess.CompletedProcess(cmd, 0, stdout=out)
+
+    return run, calls
+
+
+def test_refuses_a_base_dir_of_another_revision(tmp_path, monkeypatch):
+    run, calls = _fake_tools([1.0] + [0.0] * 255)
+    monkeypatch.setattr(conv.subprocess, "run", run)
+    base = tmp_path / ("0" * 40)
+    base.mkdir()
+    with pytest.raises(SystemExit, match="snapshot of"):
+        conv.main(_argv(tmp_path, base))
+    assert len(calls) == 1  # nothing converted
+
+
+def test_a_failed_verification_leaves_no_card(tmp_path, monkeypatch):
+    run, _ = _fake_tools([0.0, 1.0] + [0.0] * 254)  # orthogonal to the reference
+    monkeypatch.setattr(conv.subprocess, "run", run)
+    base = tmp_path / conv.BASE_REVISION
+    base.mkdir()
+    out = tmp_path / "o"
+    out.mkdir()
+    for stale in ("manifest.json", "README.md"):
+        (out / stale).write_text("from an earlier run")
+    with pytest.raises(SystemExit, match="min cosine"):
+        conv.main(_argv(tmp_path, base))
+    assert not (out / "manifest.json").exists() and not (out / "README.md").exists()
+
+
+def test_a_verified_conversion_writes_card_and_manifest(tmp_path, monkeypatch):
+    run, _ = _fake_tools([1.0] + [0.0] * 255)
+    monkeypatch.setattr(conv.subprocess, "run", run)
+    base = tmp_path / conv.BASE_REVISION
+    base.mkdir()
+    conv.main(_argv(tmp_path, base))
+    m = json.loads((tmp_path / "o" / "manifest.json").read_text())
+    assert [f["min_cosine"] for f in m["files"]] == [pytest.approx(1.0)] * 2
+    assert "1.00000" in (tmp_path / "o" / "README.md").read_text()
 
 
 def test_parse_embedding_rejects_multiple_entries():

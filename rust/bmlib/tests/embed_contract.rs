@@ -46,6 +46,24 @@ fn constants_are_the_contracts() {
 }
 
 #[test]
+fn every_contract_section_is_read() {
+    // A section added for one language must be read by both suites.
+    let c = contract();
+    let mut keys: Vec<&str> = c.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "_readme",
+            "check_texts",
+            "model_files",
+            "query_text",
+            "truncate_and_normalize"
+        ]
+    );
+}
+
+#[test]
 fn truncate_and_normalize_cases() {
     let c = contract();
     let cases = c["truncate_and_normalize"].as_array().unwrap();

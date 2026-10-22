@@ -177,22 +177,19 @@ impl Embedder {
             .iter()
             .map(|t| vocab.tokenize(t.as_bytes(), true, false))
             .collect();
-        if let Some((index, t)) = ids.iter().enumerate().find(|(_, t)| t.len() > MAX_TOKENS) {
-            return Err(EmbedError::TooLong {
-                index,
-                tokens: t.len(),
-            });
-        }
+        let lens: Vec<usize> = ids.iter().map(Vec::len).collect();
+        refuse_too_long(&lens)?;
         let mut ctx = self.context()?;
         let mut order: Vec<usize> = (0..ids.len()).collect();
-        order.sort_by_key(|&i| std::cmp::Reverse(ids[i].len()));
+        order.sort_by_key(|&i| std::cmp::Reverse(lens[i]));
         let mut out = vec![Vec::new(); ids.len()];
-        let lens: Vec<usize> = ids.iter().map(Vec::len).collect();
         let mut batch = LlamaBatch::new(MAX_TOKENS, MAX_SEQUENCES as i32);
         for group in pack(&order, &lens) {
             batch.clear();
             for (seq, &i) in (0..).zip(&group) {
-                batch.add_sequence(&ids[i], seq, false).map_err(llama)?;
+                // Every token an output, as pooled embeddings need: otherwise
+                // llama.cpp overrides the flags and logs a WARN on each decode.
+                batch.add_sequence(&ids[i], seq, true).map_err(llama)?;
             }
             ctx.clear_kv_cache();
             ctx.decode(&mut batch).map_err(llama)?;
@@ -211,9 +208,26 @@ impl Embedder {
     /// As [`embed_documents`](Self::embed_documents); an empty query is
     /// [`EmbedError::EmptyText`] at index 0.
     pub fn embed_query(&mut self, query: &str) -> Result<Vec<f32>, EmbedError> {
-        // the prefix would otherwise make an empty query look valid
-        check_texts(&[query]).map_err(|e| EmbedError::EmptyText { index: e.index })?;
-        Ok(self.embed_documents(&[&query_text(query)])?.remove(0))
+        Ok(self.embed_documents(&[&query_document(query)?])?.remove(0))
+    }
+}
+
+/// The document text for `query`, refusing an empty one, which the prefix
+/// would otherwise make look valid.
+fn query_document(query: &str) -> Result<String, EmbedError> {
+    check_texts(&[query]).map_err(|e| EmbedError::EmptyText { index: e.index })?;
+    Ok(query_text(query))
+}
+
+/// Refuse the first text of more than [`MAX_TOKENS`] tokens; `lens[i]` is text
+/// `i`'s token count.
+fn refuse_too_long(lens: &[usize]) -> Result<(), EmbedError> {
+    match lens.iter().position(|&n| n > MAX_TOKENS) {
+        Some(index) => Err(EmbedError::TooLong {
+            index,
+            tokens: lens[index],
+        }),
+        None => Ok(()),
     }
 }
 
@@ -241,7 +255,28 @@ fn pack(order: &[usize], lens: &[usize]) -> Vec<Vec<usize>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pack, MAX_SEQUENCES, MAX_TOKENS};
+    use super::{pack, query_document, refuse_too_long, EmbedError, MAX_SEQUENCES, MAX_TOKENS};
+
+    #[test]
+    fn max_tokens_is_accepted_and_one_more_is_refused() {
+        assert_eq!(refuse_too_long(&[MAX_TOKENS, 1]), Ok(()));
+        assert_eq!(
+            refuse_too_long(&[5, MAX_TOKENS + 1, MAX_TOKENS + 9]),
+            Err(EmbedError::TooLong {
+                index: 1,
+                tokens: MAX_TOKENS + 1
+            })
+        );
+    }
+
+    #[test]
+    fn a_query_is_prefixed_and_an_empty_one_refused() {
+        assert_eq!(query_document("aspirin").unwrap(), "query: aspirin");
+        assert_eq!(
+            query_document(" \u{1c} "),
+            Err(EmbedError::EmptyText { index: 0 })
+        );
+    }
 
     /// Packs `lens` as `embed_documents` does and checks every group.
     fn packed(lens: &[usize]) -> Vec<Vec<usize>> {

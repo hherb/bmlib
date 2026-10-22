@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from types import TracebackType
 
 from bmlib.embed.vectors import (
     MAX_TOKENS,
@@ -47,7 +48,12 @@ class EmbedError(Exception):
 
 
 class Embedder:
-    """Embeds documents and queries to 256-dimension unit vectors."""
+    """Embeds documents and queries to 256-dimension unit vectors.
+
+    Not thread-safe (llama.cpp's context is not): use one per thread, or hold
+    a lock round each call. :meth:`close` frees the model; so does leaving a
+    ``with`` block.
+    """
 
     def __init__(self, model_path: Path, *, gpu_layers: int = -1) -> None:
         """Load the GGUF model.
@@ -57,29 +63,51 @@ class Embedder:
             gpu_layers: Layers offloaded to the GPU (-1 for all).
 
         Raises:
-            EmbedError: If llama-cpp-python is not installed.
+            EmbedError: If llama-cpp-python cannot be imported (it comes with
+                ``bmlib[embed]``), or llama.cpp cannot load the file.
         """
         try:
             import llama_cpp  # type: ignore[import-not-found, unused-ignore]  # optional extra
-        except ImportError as exc:
+        # An installed llama_cpp can still fail: a missing dependency of its own,
+        # or a shared library that will not load (RuntimeError, OSError).
+        except (ImportError, OSError, RuntimeError) as exc:
             raise EmbedError(
-                "llama-cpp-python is not installed; install it with: pip install 'bmlib[embed]'"
+                f"cannot import llama-cpp-python ({exc!r}); "
+                "it comes with: pip install 'bmlib[embed]'"
             ) from exc
         # One batch holds a whole MAX_TOKENS text, so none escapes the
         # pre-check below as llama-cpp-python's bare ValueError.
-        self._llm = llama_cpp.Llama(
-            model_path=str(model_path),
-            embedding=True,
-            pooling_type=llama_cpp.LLAMA_POOLING_TYPE_CLS,
-            n_ctx=MAX_TOKENS,
-            n_batch=MAX_TOKENS,
-            n_ubatch=MAX_TOKENS,
-            n_gpu_layers=gpu_layers,
-            # Off (llama-cpp-python's default), the non-causal attention matrix
-            # for an 8192-token batch is reserved up front: ~4.5 GiB, not ~350 MiB.
-            flash_attn=True,
-            verbose=False,
-        )
+        try:
+            self._llm = llama_cpp.Llama(
+                model_path=str(model_path),
+                embedding=True,
+                pooling_type=llama_cpp.LLAMA_POOLING_TYPE_CLS,
+                n_ctx=MAX_TOKENS,
+                n_batch=MAX_TOKENS,
+                n_ubatch=MAX_TOKENS,
+                n_gpu_layers=gpu_layers,
+                # Off (llama-cpp-python's default), the non-causal attention matrix
+                # for an 8192-token batch is reserved up front: ~4.5 GiB, not ~350 MiB.
+                flash_attn=True,
+                verbose=False,
+            )
+        except (ValueError, RuntimeError) as exc:  # missing file, or llama.cpp refused it
+            raise EmbedError(f"cannot load {model_path}: {exc}") from exc
+
+    def close(self) -> None:
+        """Free the model. The embedder cannot be used afterwards."""
+        self._llm.close()
+
+    def __enter__(self) -> Embedder:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
 
     @staticmethod
     def _check(texts: Sequence[str]) -> None:
@@ -95,7 +123,8 @@ class Embedder:
             TypeError: If ``texts`` is a single ``str`` (it would embed each
                 character).
             EmbedError: With ``index`` set, for an empty text or one longer
-                than ``MAX_TOKENS`` tokens.
+                than ``MAX_TOKENS`` tokens, before anything is embedded;
+                without, if llama.cpp fails to decode.
         """
         if isinstance(texts, str):
             raise TypeError("embed_documents takes a sequence of texts, not a str")
@@ -108,10 +137,18 @@ class Embedder:
                 raise EmbedError(
                     f"text at index {i} has {tokens} tokens, over the {MAX_TOKENS} limit", i
                 )
-        raw = self._llm.embed(list(texts), normalize=False, truncate=False)
+        try:
+            raw = self._llm.embed(list(texts), normalize=False, truncate=False)
+        except RuntimeError as exc:  # llama_decode failed
+            raise EmbedError(f"llama.cpp: {exc}") from exc
         return [truncate_and_normalize(vec) for vec in raw]
 
     def embed_query(self, query: str) -> list[float]:
-        """Embed a search query, with the model's query prefix."""
+        """Embed a search query, with the model's query prefix.
+
+        Raises:
+            EmbedError: As :meth:`embed_documents`; an empty query has
+                ``index`` 0.
+        """
         self._check([query])  # the prefix would otherwise make an empty query look valid
         return self.embed_documents([query_text(query)])[0]

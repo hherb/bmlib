@@ -15,10 +15,12 @@ the vector rules (`truncate_and_normalize`, `query_text`, `check_texts`) and the
 pinned model files (`ModelFile`, `ARCTIC_EMBED_L_V2_F16`, `ARCTIC_EMBED_L_V2_Q8_0`),
 held to Python's by the shared `tests/fixtures/embedding_contract.json`. With the
 new `embed` feature (and `embed-metal`): `verify_model` and `ModelError`, and with
-`http-ureq` too `download_model`, which streams to `<file>.part`, stops at the
-first byte past the pinned size, checks size and sha256, and renames only on a
-match. Its `progress` callback is `FnMut(u64, u64) -> bool`: returning `false`
-cancels the download, removes the `.part` and returns `ModelError::Cancelled`.
+`http-ureq` too `download_model`, which streams to a temporary file of its own
+(so concurrent calls are safe), stops at the first byte past the pinned size,
+checks size and sha256, and renames only on a match. Its `progress` callback is
+`FnMut(u64, u64) -> bool`: returning `false` cancels the download, removes the
+temporary file and returns `ModelError::Cancelled`. `ModelFile::check` refuses
+a file that cannot be pinned (`ModelError::Invalid`).
 `Embedder` (feature `embed`), over llama-cpp-2: `load`, `embed_documents` and
 `embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Llama`). CLS pooling,
 texts length-sorted and packed up to 8192 tokens and 16 per batch, results in

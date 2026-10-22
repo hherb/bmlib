@@ -68,7 +68,7 @@ rust/
     │   │   ├── parser.rs       the [@id:N:Label] scanner (hand-rolled)
     │   │   ├── passage_match.rs  find_passage — an LLM's near-verbatim quote located in its source
     │   │   └── sequence_matcher.rs  difflib.SequenceMatcher, crate-private
-    │   ├── embed/      port of bmlib/embed/ (427 Python lines)
+    │   ├── embed/      port of bmlib/embed/ (489 Python lines)
     │   │   ├── embedder.rs  Embedder over llama-cpp-2 (feature `embed`)
     │   │   ├── model.rs     the pinned GGUF files, verify_model, download_model
     │   │   ├── vectors.rs   constants, truncate_and_normalize, query_text, check_texts
@@ -203,7 +203,7 @@ registry, and `.gitignore` covers it.
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`, and `PubMedFetcher` over them (6 named tests). 83 named tests + 148 oracle cases |
-| `embed/` | 427 lines, 4 files | 4 files | **ported** — the vector rules and model files held to the shared contract (6 tests), the verified download (11 tests against a loopback server), and the `Embedder` over llama-cpp-2 behind the `embed` feature: 9 live tests against the reference vectors when `BMLIB_EMBED_MODEL` names a GGUF file, plus 1 without a model, and 3 model-free unit tests of batch packing |
+| `embed/` | 489 lines, 4 files | 4 files | **ported** — the vector rules and model files held to the shared contract (7 tests), the verified download (15 tests against a loopback server and 2 without), and the `Embedder` over llama-cpp-2 behind the `embed` feature: 9 live tests against the reference vectors when `BMLIB_EMBED_MODEL` names a GGUF file, plus 1 without a model, and 5 model-free unit tests of batch packing, the token limit and the query check |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
 | `publications/` | 4,190 | — | |

@@ -81,10 +81,11 @@ postgres = { version = "0.19", optional = true }
 # `ToSql`'s signature names `bytes::BytesMut`, so a hand-written implementation
 # for [`Value`] must name it too. Pulled in only with the backend.
 bytes = { version = "1", optional = true }
-# The embedder's inference engine (llama.cpp). **Pinned exactly**: the model
-# files' checksums and the cosine floors in the shared manifest were measured
-# against one llama.cpp commit, and a crate bump moves that commit. It compiles
-# llama.cpp from source, so it needs cmake and a C++ compiler.
+# The embedder's inference engine (llama.cpp). **Pinned exactly**: the GGUF
+# files were converted, and the cosine floors measured, with one llama.cpp
+# commit; a crate bump moves that commit, and with it the inference numerics
+# (and possibly whether the files load). It compiles llama.cpp from source, so
+# it needs cmake and a C++ compiler.
 llama-cpp-2 = { version = "=0.1.159", optional = true }
 # Pinned to the same version as `llama-cpp-2`, which would otherwise accept a
 # newer -sys crate: 0.1.159 vendors llama.cpp 26394b4e6749a41c3633db040e0987500a5f7013,

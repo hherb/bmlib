@@ -38,8 +38,8 @@ def truncate_and_normalize(vector: Sequence[float]) -> list[float]:
         vector: A model output of at least ``EMBEDDING_DIM`` values.
 
     Returns:
-        The truncated, L2-normalised vector (all zeros when its norm is
-        below :data:`NORM_FLOOR`).
+        The truncated, L2-normalised vector. A norm below :data:`NORM_FLOOR`
+        is replaced by it, so an all-zero head gives zeros.
 
     Raises:
         ValueError: If the vector is shorter than ``EMBEDDING_DIM``.
