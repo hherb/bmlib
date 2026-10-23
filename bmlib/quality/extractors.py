@@ -59,7 +59,16 @@ STUDY_TYPE_PRIORITY = [
 
 # Default study-type keywords.
 DEFAULT_STUDY_TYPE_KEYWORDS = {
-    "systematic_review": ["systematic review", "systematic literature review"],
+    # A review that says how it searched rather than what it is (issue #453).
+    "systematic_review": [
+        "systematic review",
+        "systematic literature review",
+        "systematically searched",
+        "systematically reviewed",
+        "systematically identified",
+        "systematic search",
+        "systematic literature search",
+    ],
     "meta_analysis": ["meta-analysis", "meta analysis", "pooled analysis"],
     "quasi_experimental": [
         "non-randomized trial",
@@ -196,7 +205,26 @@ _PARTICIPANTS = (
 # up on a long article.
 _SUBJECT = rf"\b(?!(?:{_NOT_A_PARTICIPANT}|{_AUXILIARY})\b)[a-z]++(?:\s++\([^()]{{0,80}}\))?\s++"
 _BEFORE = r"\b(?=[a-z]++(?:\s++\([^()]{0,80}\))?\s++"
+# A bibliographic database a review searches (issue #453): "we searched PubMed,
+# Embase and CINAHL", "a search of MEDLINE", "MEDLINE and Embase were searched".
+# Within one sentence, so a methods section's "searched the records" and a
+# later "PubMed" do not pair. On the sampler's random abstract draw these and
+# the search keywords move 420 of 5,954 abstracts: 417 PubMed reviews, 2 Network
+# Meta-Analyses (a type the labels do not name) and 1 case report; reviews read
+# as unknown go 403 -> 219 and as rct 51 -> 27. In full text 79 of 7,410 move,
+# fewer than half of them reviews: a research article searching a database in
+# its methods reads as one, the priority-first rule of #454, a trade the
+# maintainer took. The plural "meta-analyses" was measured and refused: in full
+# text it moved 78 articles for 2 reviews (``docs/DECISIONS.md``).
+_REVIEW_DATABASE = (
+    r"(?:medline|pubmed|embase|cochrane|web\s+of\s+science|cinahl|scopus|psycinfo"
+    r"|google\s+scholar)"
+)
 STUDY_TYPE_PATTERNS = {
+    "systematic_review": [
+        rf"\b(?:searched|search(?:es)?\s+of)\b[^.;]{{0,60}}?\b{_REVIEW_DATABASE}\b",
+        rf"\b{_REVIEW_DATABASE}\b[^.;]{{0,80}}\b(?:was|were)\s+searched\b",
+    ],
     "rct": [
         rf"\brandomi[sz]ed(?:[\s,()-]++(?:and\s++)?{_RCT_DESIGN_MODIFIER})*[\s,()-]++"
         r"(?:trial|study|design|experiment)\b",

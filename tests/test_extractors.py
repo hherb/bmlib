@@ -680,7 +680,7 @@ class TestAnRctIsReadAsItDescribesItself:
             "A pseudo randomised controlled trial was conducted.",
             "A pseudorandomized controlled trial was conducted.",
             # Other papers' trials, in the plural.
-            "Randomized controlled trials were searched in MEDLINE and EMBASE.",
+            "Randomized controlled trials of the drug were compared.",
             "Two randomized, placebo-controlled studies were pooled.",
         ],
     )
@@ -773,6 +773,52 @@ class TestTheFirstTypeInPriorityOrderWins:
     def test_a_non_randomised_trial_is_still_quasi_experimental(self):
         doc = {"abstract": "A prospective non-randomized trial of 60 patients."}
         assert get_extracted_study_type(extract_study_type(doc)) == "quasi_experimental"
+
+
+class TestAReviewIsReadByHowItSearched:
+    """Issue #453: 403 of 1,771 PubMed reviews in the extractor sampler's draw
+    read ``unknown``, saying how they searched rather than naming themselves.
+    Each phrasing below is one the draw's unrecognised reviews used."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Electronic databases were systematically searched up to 2020.",
+            "Two authors systematically reviewed the eligible reports.",
+            "Studies were systematically identified and appraised.",
+            "A systematic search identified 23 eligible studies.",
+            "We performed a systematic literature search for cohort data.",
+            "We searched PubMed, Embase and CINAHL from inception.",
+            "We searched the Cochrane Library for randomized controlled trials.",
+            "A search of MEDLINE identified 40 reports.",
+            "Searches of Web of Science and Scopus were run in May.",
+            "MEDLINE, Embase and PsycINFO were searched to March 2014.",
+            # Read as unknown, not as rct, before #453 (the plural rule).
+            "Randomized controlled trials were searched in MEDLINE and EMBASE.",
+        ],
+    )
+    def test_a_search_of_the_literature_reads_as_a_systematic_review(self, text):
+        assert _study_type(text) == "systematic_review"
+
+    def test_it_outranks_the_trials_the_review_names(self):
+        text = "We searched PubMed for trials. Patients were randomized to A or B in each."
+        assert _study_type(text) == "systematic_review"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # The database and the search are in different sentences.
+            "We searched the hospital records. PubMed lists no similar case.",
+            "PubMed lists no similar case. The records were searched by hand.",
+            # A search that names no bibliographic database.
+            "We searched the electronic health records of 400 patients.",
+            # Refused on measurement: in full text the plural moved 78 articles
+            # for 2 reviews, a paper citing "prior meta-analyses".
+            "Prior meta-analyses found a benefit; we tested it in a cohort.",
+        ],
+    )
+    def test_what_is_not_a_reviews_search_reads_as_before(self, text):
+        assert _study_type(text) == "unknown"
 
 
 class TestExtractSampleSizeDimension:
@@ -1128,7 +1174,7 @@ class TestTheSecondReviewsFindings:
 
 class TestTheRustPortTranscribesThePatterns:
     """The Rust port compiles ``STUDY_TYPE_PATTERNS`` from ``concat!`` pieces
-    named after this module's (#367). Its oracle replays behaviour cases only,
+    named after this module's (#367, #453). Its oracle replays behaviour cases only,
     so a pattern edited here and not there passes it wherever no case reaches
     the edit; this compares the tables themselves."""
 
@@ -1143,6 +1189,7 @@ class TestTheRustPortTranscribesThePatterns:
         "auxiliary",
         "subject",
         "before",
+        "review_database",
     )
 
     @staticmethod
@@ -1150,7 +1197,7 @@ class TestTheRustPortTranscribesThePatterns:
         pieces = re.finditer(r'r"(.*?)"|(\w+)!\(\)', body, re.S)
         return "".join(m.group(1) if m.group(1) is not None else macros[m.group(2)] for m in pieces)
 
-    def test_every_rct_pattern_is_byte_identical(self):
+    def test_every_pattern_is_byte_identical(self):
         source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"
         if not source.exists():
             pytest.skip("no Rust port in this checkout")
@@ -1160,16 +1207,19 @@ class TestTheRustPortTranscribesThePatterns:
             found = re.search(rf"macro_rules! {name} \{{\s*\(\) => \{{(.*?)\}};\s*\}}", src, re.S)
             assert found, f"macro {name}! is missing from the port"
             macros[name] = self._expand(found.group(1), macros)
-        table = re.search(r"pub const STUDY_TYPE_PATTERNS.*?&\[(.*)\],\n\)\];", src, re.S)
+        table = re.search(r"pub const STUDY_TYPE_PATTERNS.*?= \[(.*?)\n\];", src, re.S)
         assert table, "STUDY_TYPE_PATTERNS is missing from the port"
-        blocks = re.findall(r"concat!\((.*?)\n        \)", table.group(1), re.S)
-        # An element outside any ``concat!`` would be invisible to the
-        # comparison, so the table must hold nothing else (PR #455's review).
-        elements = re.search(r'"rct",\s*&\[(.*)', table.group(1), re.S)
-        assert elements, "the port's rct entry is missing"
-        rest = re.sub(r"concat!\((.*?)\n        \)", "", elements.group(1), flags=re.S)
-        assert re.fullmatch(r"[\s,]*", rest), f"the port's table holds more: {rest!r}"
-        assert [self._expand(b, macros) for b in blocks] == STUDY_TYPE_PATTERNS["rct"]
+        entries = re.split(r'\(\s*"(\w+)",\s*&\[', table.group(1))
+        assert re.fullmatch(r"\s*", entries[0]), f"the port's table opens with {entries[0]!r}"
+        port: dict[str, list[str]] = {}
+        for name, body in zip(entries[1::2], entries[2::2]):
+            close = re.compile(r"concat!\((.*?)\n\s*\)", re.S)
+            # An element outside any ``concat!`` would be invisible to the
+            # comparison, so an entry must hold nothing else (PR #455's review).
+            rest = close.sub("", body)
+            assert re.fullmatch(r"[\s,\])]*", rest), f"the port's {name} holds more: {rest!r}"
+            port[name] = [self._expand(b, macros) for b in close.findall(body)]
+        assert port == STUDY_TYPE_PATTERNS
 
     def test_the_rct_exclusions_and_singular_rule_are_the_same(self):
         source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"

@@ -135,7 +135,15 @@ pub const STUDY_TYPE_PRIORITY: [&str; 12] = [
 pub const DEFAULT_STUDY_TYPE_KEYWORDS: [(&str, &[&str]); 12] = [
     (
         "systematic_review",
-        &["systematic review", "systematic literature review"],
+        &[
+            "systematic review",
+            "systematic literature review",
+            "systematically searched",
+            "systematically reviewed",
+            "systematically identified",
+            "systematic search",
+            "systematic literature search",
+        ],
     ),
     (
         "meta_analysis",
@@ -392,80 +400,109 @@ macro_rules! before {
     };
 }
 
+// A bibliographic database a review searches — Python's `_REVIEW_DATABASE`
+// (#453); its comment has the measurement.
+macro_rules! review_database {
+    () => {
+        concat!(
+            r"(?:medline|pubmed|embase|cochrane|web\s+of\s+science|cinahl|scopus|psycinfo",
+            r"|google\s+scholar)"
+        )
+    };
+}
+
 /// Python's `STUDY_TYPE_PATTERNS` (#367): regular expressions a study type also
 /// matches, tried after its keywords and refused by the same exclusions.
-/// Matched against the lowercased text. `rct`'s read a design name ending in a
+/// Matched against the lowercased text. `systematic_review`'s read a search of a
+/// named database (#453). `rct`'s read a design name ending in a
 /// singular `trial`/`study`/`design`/`experiment` (*"a randomized,
 /// double-blind, placebo-controlled, parallel-group study"*) and an allocation
 /// (*"patients were randomized to"*, *"randomized 1:1"*), refusing a subject
 /// that is not a participant and a model's training/validation split.
 /// Transcribed, so the character-class caveats in the module documentation
 /// apply to them too.
-pub const STUDY_TYPE_PATTERNS: [(&str, &[&str]); 1] = [(
-    "rct",
-    &[
-        concat!(
-            r"\brandomi[sz]ed(?:[\s,()-]++(?:and\s++)?",
-            rct_design_modifier!(),
-            r")*[\s,()-]++(?:trial|study|design|experiment)\b"
-        ),
-        concat!(
-            before!(),
-            auxiliary!(),
-            r"\b)(?!",
-            not_a_participant!(),
-            r"\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++",
-            auxiliary!(),
-            r"\s++",
-            r"(?:(?:then|subsequently|also|prospectively|equally)\s++)?",
-            r"(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b",
-            not_a_data_split!()
-        ),
-        concat!(
-            before!(),
-            r"randomi[sz]ed\s++(?:to|into|between)\b)",
-            subject!(),
-            r"randomi[sz]ed\s++(?:to|into|between)\b",
-            not_a_data_split!()
-        ),
-        concat!(
-            r"\bwe\s++(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b",
-            not_a_data_split!()
-        ),
-        concat!(
-            before!(),
-            r"randomi[sz]ed\s++[(\d])",
-            subject!(),
-            r"randomi[sz]ed\s++(?:\(?\d+\s*+:\s*+\d+\)?",
-            r"|\d+\s++(?:\w+\s++){0,3}?",
-            participants!(),
-            r")",
-            not_a_data_split!()
-        ),
-        concat!(
-            before!(),
-            r"(?:",
-            auxiliary!(),
-            r"\s++)?(?:assigned|allocated)\s++randomly\b)",
-            r"(?!(?:",
-            not_a_participant!(),
-            r"|",
-            auxiliary!(),
-            r")\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++",
-            r"(?:",
-            auxiliary!(),
-            r"\s++)?(?:assigned|allocated)\s++randomly\b",
-            not_a_data_split!()
-        ),
-        concat!(
-            before!(),
-            r"randomly\s++(?:allocated|assigned)\s++to\b)",
-            subject!(),
-            r"randomly\s++(?:allocated|assigned)\s++to\b",
-            not_a_data_split!()
-        ),
-    ],
-)];
+pub const STUDY_TYPE_PATTERNS: [(&str, &[&str]); 2] = [
+    (
+        "systematic_review",
+        &[
+            concat!(
+                r"\b(?:searched|search(?:es)?\s+of)\b[^.;]{0,60}?\b",
+                review_database!(),
+                r"\b"
+            ),
+            concat!(
+                r"\b",
+                review_database!(),
+                r"\b[^.;]{0,80}\b(?:was|were)\s+searched\b"
+            ),
+        ],
+    ),
+    (
+        "rct",
+        &[
+            concat!(
+                r"\brandomi[sz]ed(?:[\s,()-]++(?:and\s++)?",
+                rct_design_modifier!(),
+                r")*[\s,()-]++(?:trial|study|design|experiment)\b"
+            ),
+            concat!(
+                before!(),
+                auxiliary!(),
+                r"\b)(?!",
+                not_a_participant!(),
+                r"\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++",
+                auxiliary!(),
+                r"\s++",
+                r"(?:(?:then|subsequently|also|prospectively|equally)\s++)?",
+                r"(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b",
+                not_a_data_split!()
+            ),
+            concat!(
+                before!(),
+                r"randomi[sz]ed\s++(?:to|into|between)\b)",
+                subject!(),
+                r"randomi[sz]ed\s++(?:to|into|between)\b",
+                not_a_data_split!()
+            ),
+            concat!(
+                r"\bwe\s++(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b",
+                not_a_data_split!()
+            ),
+            concat!(
+                before!(),
+                r"randomi[sz]ed\s++[(\d])",
+                subject!(),
+                r"randomi[sz]ed\s++(?:\(?\d+\s*+:\s*+\d+\)?",
+                r"|\d+\s++(?:\w+\s++){0,3}?",
+                participants!(),
+                r")",
+                not_a_data_split!()
+            ),
+            concat!(
+                before!(),
+                r"(?:",
+                auxiliary!(),
+                r"\s++)?(?:assigned|allocated)\s++randomly\b)",
+                r"(?!(?:",
+                not_a_participant!(),
+                r"|",
+                auxiliary!(),
+                r")\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++",
+                r"(?:",
+                auxiliary!(),
+                r"\s++)?(?:assigned|allocated)\s++randomly\b",
+                not_a_data_split!()
+            ),
+            concat!(
+                before!(),
+                r"randomly\s++(?:allocated|assigned)\s++to\b)",
+                subject!(),
+                r"randomly\s++(?:allocated|assigned)\s++to\b",
+                not_a_data_split!()
+            ),
+        ],
+    ),
+];
 
 /// How far before a keyword to search for an exclusion pattern (characters).
 pub const EXCLUSION_CONTEXT_WINDOW: usize = 50;

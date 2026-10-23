@@ -6,6 +6,29 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **`extract_study_type` reads a review by how it searched** (#453). 403 of
+  the extractor sampler's 1,771 PubMed reviews read `unknown`, saying how they
+  searched rather than naming themselves. `systematic_review` gains the
+  keywords "systematically searched / reviewed / identified", "systematic
+  search" and "systematic literature search", and two
+  `STUDY_TYPE_PATTERNS["systematic_review"]` patterns reading a search of a
+  named database (MEDLINE, PubMed, Embase, Cochrane, Web of Science, CINAHL,
+  Scopus, PsycINFO, Google Scholar) within one sentence. On the random
+  abstract draw 420 of 5,954 move — 417 PubMed reviews, 2 Network
+  Meta-Analyses and 1 case report with a literature search; reviews read
+  `unknown` go 403 → 219 and `rct` 51 → 27, and 195 move from
+  `meta_analysis` to `systematic_review` at the same score. In full text 79
+  of 7,410 served articles move, all to `systematic_review` and fewer than
+  half of them reviews: a research article that searched a database in its
+  methods now reads as one (#454's priority-first rule), a trade the
+  maintainer took. The plural "meta-analyses" was measured and refused (78
+  full-text moves for 2 reviews). The Rust port follows, held byte-identical
+  by the transcription test; both committed sampler corpora are re-measured
+  (and the abstract corpus picks up 28 records whose PubMed publication types
+  moved upstream). Nothing stored moves; a caller storing extractor output
+  sees `study_type` move as above.
+
 ### Fixed
 - **A retraction evidence date that is not ISO is refused** (#507).
   `RetractionEvidence.date` is compared as text, so a date such as

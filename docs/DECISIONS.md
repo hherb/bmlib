@@ -5526,6 +5526,40 @@ repo holds them (PR #455's review).
   searches no further than Python would. That the signal still returns a
   determinate answer after an engine error is #456, a design question.
 
+## quality — a review read by how it searched, and the refused plural (#453)
+
+Decided by the maintainer once both corpora were measured. Argued inline at
+`_REVIEW_DATABASE` in `bmlib/quality/extractors.py`.
+
+- **What ships.** Five `systematic_review` keywords ("systematically
+  searched / reviewed / identified", "systematic search", "systematic
+  literature search") and two `STUDY_TYPE_PATTERNS["systematic_review"]`
+  patterns reading a search of a named database within one sentence ("we
+  searched PubMed, Embase", "a search of MEDLINE", "MEDLINE and Embase were
+  searched"). On the random abstract draw 420 of 5,954 move: 417 PubMed
+  reviews, 2 Network Meta-Analyses (a type `LABEL_ORDER` does not name) and 1
+  case report with a literature search. Reviews read `unknown` go 403 → 219
+  and `rct` 51 → 27; 195 move `meta_analysis` → `systematic_review`, the same
+  label and the same score.
+- **The full-text cost was taken.** 79 of 7,410 served articles move, all to
+  `systematic_review`, and 32 of them carry "review" or "bibliometric" in the
+  title or a review `article-type` (a proxy: the bundle carries no PubMed
+  label). The rest search a database in their methods — #454's priority-first
+  rule, which is why the ROADMAP says to pass the extractor abstracts.
+- **The plural "meta-analyses" is refused** (with "metaanalysis",
+  "meta-analytic"). On abstracts it added 43 reviews for 3 non-reviews (two
+  observational studies citing earlier meta-analyses, one trial reporting
+  "a set of meta-analyses" of its own); in full text it moved 78 articles for
+  2 reviews. Reverse it knowingly: `tests/test_extractors.py::
+  TestAReviewIsReadByHowItSearched` pins the refusal.
+- **Narrative reviews are not in the draw**: no stratum is PubMed `Review`
+  alone, so how often a narrative review's "we searched PubMed" now reads as
+  a systematic review is unmeasured.
+- The counterfactuals (each component alone, the plural's figures, the title
+  proxy) were taken on the draw's texts cached in a scratch directory and the
+  served bundle; nothing in the repo holds them. The shipped figures re-derive
+  from `main`'s and this branch's corpus files.
+
 ## scripts — the extractor sampler (#368)
 
 `scripts/sample_extractor_signals.py` re-takes the populations the extractor

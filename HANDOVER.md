@@ -1,10 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-23 (**this session is #507**, branch
-`fix/retraction-evidence-date-507`, worktree `../bmlib-s507`). **0.11.0 is
+_Last updated: 2026-10-23 (**this session is #453**, branch
+`fix/review-wording-453`, worktree `../bmlib-s453`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
-(the embedder), #534 (#530), #535 (#532) and #536 (#500) merged since; all
-five are unreleased._
+(the embedder), #534 (#530), #535 (#532), #536 (#500) and #538 (#507) merged
+since; all six are unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -37,15 +37,23 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #507, a non-ISO evidence date is refused
+## This session: #453, a review read by how it searched
 
-`RetractionEvidence.__post_init__` raises `ValueError` for a `date` that is
-not `None`, `""` or ISO `yyyy`, `yyyy-mm` or a real `yyyy-mm-dd`, so
-`from_dict` and `evidence_from_notices` refuse an app's `05/15/2020` rather
-than sorting it as the oldest date. `""` stays undated (the maintainer's
-choice, recorded in `docs/DECISIONS.md`'s #504 section). Python only: the
-Rust/FFI half, which needs `retraction_status` to return a `Result`, is
-**#537**. No shared fixture case, since the port cannot meet it yet.
+`systematic_review` gains five search keywords and two
+`STUDY_TYPE_PATTERNS` reading a search of a named database within one
+sentence; the Rust port follows (transcription test generalised to every
+table entry, oracle regenerated). On the abstract draw reviews read `unknown`
+go 403 → 219 of 1,771 and `rct` 51 → 27, for 1 non-review; in full text 79 of
+7,410 move, fewer than half reviews (#454). **The maintainer chose the search
+wording only**: the plural "meta-analyses" moved 78 full-text articles for 2
+reviews and is refused, pinned by a test. Both sampler corpora re-measured;
+**every edit to `extractors.py`, comments included, needs both re-run**
+(`remeasure --write` live, `fulltext … --write` offline, ~5 min together) —
+finalise the comments first. Narrative reviews are not in the draw, so their
+cost is unmeasured (`docs/DECISIONS.md`).
+
+**The previous session** (PR #538, #507): a non-ISO `RetractionEvidence.date`
+raises `ValueError`; the Rust/FFI half is **#537**.
 
 Filed earlier and still open: **#533** (the passage_match timing tests).
 
@@ -80,7 +88,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,203 passing + 111 skipped** on this session's branch
+- **Tests: 7,222 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-23; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
@@ -108,8 +116,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-23: 95 with #537, less #507). **#533** is the #530
+**Ninety-three open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-23: 94, less #453). **#533** is the #530
 session's (a flaky timing test; a decision between CPU time, a debug budget
 and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
@@ -132,8 +140,7 @@ open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —
 whether a malformed `pmc_id` should WARN rather than DEBUG (#304's level),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
-phase-specific trials, a decision), #453 (review wording the keywords miss,
-precision unmeasured), #454 (full-text study typing reads a cited trial; a
+phase-specific trials, a decision), #454 (full-text study typing reads a cited trial; a
 design question),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
@@ -228,7 +235,8 @@ samplers.
 **The instrument debt is real**: most sessions measure from scratch scripts
 (the two-checkout comparator, the instrumented `_JATSHandler`,
 #458's record/replay harness). The extractor draw has a committed one since #368;
-**#453** is the next extractor change it measures.
+#453 used it (record-level texts cached in a scratch directory for the
+counterfactuals, since the corpus holds hashes only).
 
 ### Worth doing, not yet an issue
 

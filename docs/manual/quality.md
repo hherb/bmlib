@@ -1061,10 +1061,12 @@ def extract_study_type(
 
 Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword or pattern match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"case report"` matches `"case reports"` but `"RCT"` does not match `"infarct"`. *(0.11.0)* The `rct` keywords are the exception (`SINGULAR_ONLY_STUDY_TYPES`): a paper names its own design in the singular, and *"randomized controlled trials"* or *"RCTs"* name other papers' trials, which is how a review pooling RCTs read as one (#367). Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
 
-*(0.11.0)* **A type also matches its `STUDY_TYPE_PATTERNS`** (`patterns_config`; pass `{}` for keywords alone), tried after its keywords. Today only `rct` has any, and they read an RCT the way its abstract describes itself (#367):
+*(0.11.0)* **A type also matches its `STUDY_TYPE_PATTERNS`** (`patterns_config`; pass `{}` for keywords alone), tried after its keywords. `rct`'s read an RCT the way its abstract describes itself (#367):
 
 - A design name: *"randomized"*, then any run of the words a trial describes itself with, then a singular *"trial"*, *"study"*, *"design"* or *"experiment"* (*"a randomized, double-blind, placebo-controlled, parallel-group study"*, *"a randomized control trial"*).
 - An allocation: *"patients were randomized to"*, *"were randomly allocated"*, *"we randomized"*, *"randomized 1:1"*, *"trial randomized 360 patients"*, *"assigned randomly"*. Each but *"we randomized"* is refused when the word before its verb is not a participant (*"the order of the items was randomized"*, *"the samples were randomized into two batches"*). Each is refused when the split is a model's: a training word and a validation word in either order, the second ending the phrase, or one split word naming a set, cohort or data (*"divided into training and validation sets"*, *"into test and training groups"*, *"into a training set"*). One split word alone is an arm (*"randomized to training or control"*), and so is a training arm whose participants are tested later (*"randomized to cognitive training or control, with testing at baseline"*). *"Randomly selected"* is sampling and never counts. The older keyword *"randomly assigned"* reads any subject.
+
+*(unreleased)* `systematic_review` has two, which read a review by how it searched (#453): a search of a named bibliographic database within one sentence (*"we searched PubMed, Embase and CINAHL"*, *"a search of MEDLINE"*, *"MEDLINE and Embase were searched"*), beside the keywords *"systematically searched"*, *"systematically reviewed"*, *"systematically identified"*, *"systematic search"* and *"systematic literature search"*. On the sampler's random draw, PubMed reviews read `unknown` go from 403 to 219 of 1,771 and those read `rct` from 51 to 27, for 1 non-review abstract; in full text, a research article that searched a database in its methods reads as a review (79 of 7,410 served articles move, fewer than half of them reviews). The plural *"meta-analyses"* is deliberately not a keyword. See `docs/DECISIONS.md`.
 
 On the extractor sampler's random draw, the patterns and the singular rule take RCT recall from 348 to 762 of 1,056 abstracts. Of all `rct` results, the share that are PubMed RCTs rises from 57% to 82%. In full text, any match anywhere in the article counts, so a trial the paper only cites can decide its type (#454). See `docs/DECISIONS.md`.
 
@@ -1082,7 +1084,7 @@ When nothing matches, the result is a `DimensionScore` of `5.0` with a detail wh
 |----------|-------------|
 | `STUDY_TYPE_PRIORITY` | 12 study types in resolution order, highest evidence first. |
 | `DEFAULT_STUDY_TYPE_KEYWORDS` | `dict[str, list[str]]` of trigger phrases per study type. |
-| `STUDY_TYPE_PATTERNS` | *(0.11.0)* `dict[str, list[str]]` of lowercase regular expressions per study type, tried after its keywords (currently only `rct`). |
+| `STUDY_TYPE_PATTERNS` | *(0.11.0)* `dict[str, list[str]]` of lowercase regular expressions per study type, tried after its keywords (`rct`, and *(unreleased)* `systematic_review`). |
 | `SINGULAR_ONLY_STUDY_TYPES` | *(0.11.0)* Study types whose keywords do not match a plural (`{"rct"}`). Not overridable by argument. |
 | `STUDY_TYPE_EXCLUSIONS` | Patterns that invalidate a match (currently only for `rct`). |
 | `EXCLUSION_CONTEXT_WINDOW` | `50` — characters before a keyword searched for exclusions. |
