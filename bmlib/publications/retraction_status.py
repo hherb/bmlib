@@ -194,7 +194,8 @@ _SOURCE_PREFERENCE = {
 }
 
 
-_ISO_DATE_RE = re.compile(r"[0-9]{4}(?:-(?:0[1-9]|1[0-2])(?:-[0-9]{2})?)?")
+# No year 0000 at any precision: ``date`` has none, so a full date could not carry it.
+_ISO_DATE_RE = re.compile(r"(?!0000)[0-9]{4}(?:-(?:0[1-9]|1[0-2])(?:-[0-9]{2})?)?")
 
 
 def _is_iso_date(text: str) -> bool:
