@@ -37,7 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, Literal, SupportsIndex
+from typing import TYPE_CHECKING, Any, Literal, SupportsIndex, TypeGuard
 from urllib.parse import quote
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
@@ -422,6 +422,20 @@ def _pick_oa_pdf_url(data: Any) -> str | None:
     return None
 
 
+def _is_text(value: object) -> TypeGuard[str]:
+    """Whether *value* is a ``str``, asked of its real type (issue #500).
+
+    :func:`isinstance` trusts ``__class__``, so an object faking it — a
+    ``Mock(spec=str)``, a transparent proxy round a string — passed the type
+    test and then escaped :meth:`FullTextService.fetch_fulltext` as a
+    ``TypeError`` from the unbound ``str.strip`` or the regex behind it.
+    ``type()`` cannot be faked, so such a value is refused as any other
+    non-text one is. Restated as :mod:`bmlib.transparency.analyzer`'s own
+    ``_is_text``, the caller rules there being held to agreeing with these.
+    """
+    return issubclass(type(value), str)
+
+
 def _normalise_pmc_id(pmc_id: object) -> str:
     """Prefix a bare numeric PMC ID and validate the result.
 
@@ -444,7 +458,7 @@ def _normalise_pmc_id(pmc_id: object) -> str:
             tier already catches this and moves on, so a malformed ID costs a
             log line rather than a request.
     """
-    if not isinstance(pmc_id, str):
+    if not _is_text(pmc_id):
         raise FullTextError(f"Not a usable PMC ID: {pmc_id!r}")
     normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
     if not _PMC_ID_RE.fullmatch(normalized):
@@ -485,7 +499,7 @@ def _normalise_pmid(pmid: object) -> str:
     """
     if pmid is None:
         return ""
-    if isinstance(pmid, str):
+    if _is_text(pmid):
         # The unbound method, so a `str` subclass's own `strip` cannot hand
         # the regex something that is not text.
         text = str.strip(pmid)
@@ -535,7 +549,7 @@ def _normalise_doi(doi: object) -> str | None:
     """
     if doi is None:
         return None
-    if not isinstance(doi, str):
+    if not _is_text(doi):
         raise FullTextError(f"Not a usable DOI: {_shown(doi)} is not text")
     # The unbound method, so a `str` subclass's own `strip` cannot hand back
     # something that is not the caller's text.
@@ -564,7 +578,7 @@ def _cache_key(identifier: object) -> str | None:
     """
     if identifier is None:
         return None
-    if not isinstance(identifier, str):
+    if not _is_text(identifier):
         raise FullTextError(f"Not a usable cache identifier: {_shown(identifier)} is not text")
     if not str.strip(identifier):
         return None
@@ -586,7 +600,7 @@ def _pmc_id_given_as_pmid(pmid: object) -> str | None:
     PMCID, so the article was retrieved by that route; refusing it as a PMID
     and stopping there would lose it.
     """
-    if not isinstance(pmid, str):
+    if not _is_text(pmid):
         return None
     text = str.strip(pmid)
     return text if _PMC_ID_RE.fullmatch(text) else None

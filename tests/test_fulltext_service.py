@@ -28,7 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import get_args
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -43,6 +43,7 @@ from bmlib.fulltext.service import (
     FullTextService,
     FullTextUnavailableError,
     _extract_free_pdf_url,
+    _is_text,
     _normalise_doi,
     _normalise_pmc_id,
     _normalise_pmid,
@@ -5450,6 +5451,13 @@ class _Index:
         return self.value
 
 
+class _PmidWithItsOwnStr(str):
+    """A ``str`` subclass whose ``__str__`` names another PMID: the value is read, not this."""
+
+    def __str__(self) -> str:
+        return "1"
+
+
 class TestTheCallersPmidIsCanonicalOrRefused:
     """Issue #478: a PMID is sent canonical, and an unusable one is set aside.
 
@@ -5470,6 +5478,9 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         (7, "7"),
         (_Index(33301246), "33301246"),
         (_Index(0), ""),
+        # Both modules strip with the unbound `str.strip`, so the agreement
+        # test fails on a `str(pmid).strip()` in either (PR #536's review).
+        (_PmidWithItsOwnStr(" 33301246 "), "33301246"),
         ("", ""),
         ("   ", ""),
         (None, ""),
@@ -5500,6 +5511,8 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         True,
         1.5,
         b"1",
+        # Faking `str` as its class (issue #500).
+        pytest.param(Mock(spec=str), id="mock-spec-str"),
     ]
 
     @pytest.mark.parametrize("given", _REFUSED)
@@ -5796,6 +5809,8 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
         10,
         True,
         ["10.1/x"],
+        # Faking `str` as its class (issue #500).
+        pytest.param(Mock(spec=str), id="mock-spec-str"),
     ]
 
     @staticmethod
@@ -5921,6 +5936,35 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
             "Not a usable DOI: 10 is not text; "
             "continuing without it (also given: identifier='10.1/x')"
         ]
+
+
+class TestAValueFakingItsClassIsNotText:
+    """Issue #500: :func:`isinstance` trusts ``__class__``, so it is not asked.
+
+    A ``Mock(spec=str)`` or a transparent proxy round a string passed the
+    type test of every caller identifier and escaped ``fetch_fulltext`` as a
+    ``TypeError`` — from the unbound ``str.strip`` for a DOI, a PMID and a
+    cache key, and from the regex for a PMC ID — where only a
+    :class:`FullTextError` may. Each is now refused as any non-text value is,
+    and the chain goes on with the other identifiers.
+    """
+
+    @pytest.mark.parametrize("name", ["doi", "pmid", "pmc_id", "identifier"])
+    def test_the_chain_goes_on_without_it(self, name):
+        urls: list[str] = []
+        service, http = TestTheCallersPmidIsCanonicalOrRefused._service_answering(urls)
+        other = {"pmid": "33301246"} if name != "pmid" else {"doi": "10.1/x"}
+        with http:
+            result = service.fetch_fulltext(**other, **{name: Mock(spec=str)})
+        assert result.web_url in (
+            "https://pubmed.ncbi.nlm.nih.gov/33301246/",
+            "https://doi.org/10.1/x",
+        )
+        assert not any("Mock" in u for u in urls), urls
+
+    def test_a_str_subclass_is_still_text(self):
+        assert _is_text(_DoiWithItsOwnStrip("x"))
+        assert not _is_text(Mock(spec=str))
 
 
 class TestABlankCacheKeyIsNoCacheKey:

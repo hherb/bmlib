@@ -6,6 +6,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **A caller value faking `str` as its class is refused as not text** (#500).
+  `fetch_fulltext`'s `doi`, `pmid`, `pmc_id` and `identifier` checks, and
+  `analyze()`'s `pmid` and `doi`, asked `isinstance(x, str)`, which trusts
+  `__class__`: a `Mock(spec=str)` or a transparent proxy passed it and escaped
+  `fetch_fulltext` as a `TypeError` (from the unbound `str.strip`, or the
+  PMC ID regex), where only a `FullTextError` may, and reached `analyze()` as
+  a `TypeError` naming `str.strip` (DOI) or a `ValueError` quoting the
+  object's repr as a malformed PMID. Both modules now ask the value's real
+  type (`_is_text`, restated in each and held to agreeing); `fetch_fulltext`
+  sets such a value aside with the existing WARNING and goes on, and
+  `analyze()` raises `TypeError`. A `str` subclass is still text, and
+  `analyze()` now reads its value where it read its `__str__`, as
+  `fetch_fulltext` already did. No draw has seen one, so this pins a
+  direction; nothing stored moves.
+
 ### Added
 - **`bmlib.embed`'s errors can be told apart by type, as Rust's are** (#532;
   the embedder is unreleased, so nothing shipped moves). Every embedder failure

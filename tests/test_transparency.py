@@ -25,6 +25,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -8496,7 +8497,12 @@ class TestACallerPmidIsSentOnlyAsDigits:
         assert client.params_for("eutils")["id"] == "33301246"
         assert result.pubmed_status is PubMedStatus.READ
 
-    @pytest.mark.parametrize("pmid", [True, 1.5, ["33301246"], b"33301246"])
+    # `Mock(spec=str)` fakes `str` as its class, and raised a ValueError
+    # quoting its repr as a malformed PMID (issue #500).
+    @pytest.mark.parametrize(
+        "pmid",
+        [True, 1.5, ["33301246"], b"33301246", pytest.param(Mock(spec=str), id="mock-spec-str")],
+    )
     def test_another_type_raises_type_error(self, pmid):
         # `True` is an `int`; without the `bool` exclusion it would surface as
         # a ValueError about `'True'`, the wrong exception for a wrong type.
@@ -8590,7 +8596,11 @@ class TestACallerDoiIsStrippedAndABlankOneIsNone:
 
         assert _caller_doi(_Doi(" 10.1/x ")) == "10.1/x"
 
-    @pytest.mark.parametrize("doi", [b"10.1/x", 10, True, ["10.1/x"]])
+    # `Mock(spec=str)` fakes `str` as its class, and escaped as `str.strip`'s
+    # own TypeError (issue #500).
+    @pytest.mark.parametrize(
+        "doi", [b"10.1/x", 10, True, ["10.1/x"], pytest.param(Mock(spec=str), id="mock-spec-str")]
+    )
     def test_another_type_raises_type_error_before_any_request(self, monkeypatch, doi):
         # Stripping needs text, and the PMID guard's rule is that a wrong
         # type is the caller's to hear about, at the entry and whatever the
