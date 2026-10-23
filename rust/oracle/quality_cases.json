@@ -4548,6 +4548,33 @@
     }
   },
   {
+    "name": "453/search-keyword",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A systematic search identified 23 eligible studies."
+      }
+    }
+  },
+  {
+    "name": "453/non-systematic-search-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A non-systematic search of PubMed was performed."
+      }
+    }
+  },
+  {
+    "name": "453/research-in-context-panel-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Evidence before this study: we searched PubMed for trials. Patients were randomized to A or B."
+      }
+    }
+  },
+  {
     "name": "367/other-types-keep-plural",
     "fn": "extract_study_type",
     "args": {

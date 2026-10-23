@@ -140,7 +140,6 @@ pub const DEFAULT_STUDY_TYPE_KEYWORDS: [(&str, &[&str]); 12] = [
             "systematic literature review",
             "systematically searched",
             "systematically reviewed",
-            "systematically identified",
             "systematic search",
             "systematic literature search",
         ],
@@ -239,41 +238,57 @@ pub const DEFAULT_STUDY_TYPE_KEYWORDS: [(&str, &[&str]); 12] = [
 
 /// Keywords that **exclude** a match for specific study types.
 ///
-/// If any exclusion appears near the keyword, the match is rejected. `rct` is
-/// the only type with a list, as in Python. **`quasi-experimental` and
+/// If any exclusion appears near the keyword, the match is rejected. `rct` and
+/// `systematic_review` have a list, as in Python. **`quasi-experimental` and
 /// `quasi experimental` are members**, which the port removed while it carried
 /// its own #298 contrastive veto; they are back because Python's list has them
 /// and the priority order is what keeps a genuinely quasi-experimental study
 /// out of this branch.
-pub const STUDY_TYPE_EXCLUSIONS: [(&str, &[&str]); 1] = [(
-    "rct",
-    &[
-        "non-randomized",
-        "non-randomised",
-        "nonrandomized",
-        "nonrandomised",
-        "not randomized",
-        "not randomised",
-        "without randomization",
-        "without randomisation",
-        "quasi-experimental",
-        "quasi experimental",
-        // "non-random allocation" and "not randomly allocated" (Python #367).
-        "non-random",
-        "not random",
-        // A named non-random design (Python PR #455's review): the design
-        // pattern reads "randomized" after the space or hyphen. "pseudo" takes
-        // only the design's stem, since a "pseudorandom number generator" can
-        // allocate a genuine RCT.
-        "non random",
-        "quasi-random",
-        "quasi random",
-        "quasirandom",
-        "pseudo-randomi",
-        "pseudo randomi",
-        "pseudorandomi",
-    ],
-)];
+pub const STUDY_TYPE_EXCLUSIONS: [(&str, &[&str]); 2] = [
+    (
+        "systematic_review",
+        &[
+            // A search that denies being systematic, and a trial's "Research
+            // in context" panel (Python PR #539's review). Not "no
+            // systematic": a review's motivation says "no systematic review
+            // has been undertaken".
+            "non-systematic",
+            "nonsystematic",
+            "non systematic",
+            "not systematic",
+            "evidence before this study",
+        ],
+    ),
+    (
+        "rct",
+        &[
+            "non-randomized",
+            "non-randomised",
+            "nonrandomized",
+            "nonrandomised",
+            "not randomized",
+            "not randomised",
+            "without randomization",
+            "without randomisation",
+            "quasi-experimental",
+            "quasi experimental",
+            // "non-random allocation" and "not randomly allocated" (Python #367).
+            "non-random",
+            "not random",
+            // A named non-random design (Python PR #455's review): the design
+            // pattern reads "randomized" after the space or hyphen. "pseudo" takes
+            // only the design's stem, since a "pseudorandom number generator" can
+            // allocate a genuine RCT.
+            "non random",
+            "quasi-random",
+            "quasi random",
+            "quasirandom",
+            "pseudo-randomi",
+            "pseudo randomi",
+            "pseudorandomi",
+        ],
+    ),
+];
 
 /// Study types whose keywords do not match a plural (Python #367).
 ///

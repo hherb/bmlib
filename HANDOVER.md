@@ -39,18 +39,25 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 ## This session: #453, a review read by how it searched
 
-`systematic_review` gains five search keywords and two
-`STUDY_TYPE_PATTERNS` reading a search of a named database within one
-sentence; the Rust port follows (transcription test generalised to every
-table entry, oracle regenerated). On the abstract draw reviews read `unknown`
-go 403 → 219 of 1,771 and `rct` 51 → 27, for 1 non-review; in full text 79 of
-7,410 move, fewer than half reviews (#454). **The maintainer chose the search
-wording only**: the plural "meta-analyses" moved 78 full-text articles for 2
-reviews and is refused, pinned by a test. Both sampler corpora re-measured;
-**every edit to `extractors.py`, comments included, needs both re-run**
-(`remeasure --write` live, `fulltext … --write` offline, ~5 min together) —
-finalise the comments first. Narrative reviews are not in the draw, so their
-cost is unmeasured: **#540** (filed this session).
+`systematic_review` gains four search keywords, two `STUDY_TYPE_PATTERNS`
+reading a search of a named database (no `.` or `;` between, within 60/80
+characters — not a sentence) and an exclusion list (non-systematic, a
+trial's "Evidence before this study" panel); the Rust port follows
+(transcription tests now cover every pattern, keyword and exclusion entry;
+oracle regenerated with three new cases). On the abstract draw reviews read
+`unknown` go 403 → 220 of 1,771 and `rct` 51 → 27; in full text 66 of 7,410
+move, 35 of the 65 new `systematic_review` with no sign of being a review
+(#454). **The maintainer chose the search wording only**: the plural
+"meta-analyses" moved 78 full-text articles for 2 reviews and is refused;
+**PR #539's review** refused "systematically identified" (0 abstracts, 8
+full-text non-reviews), kept "systematically reviewed" knowingly (15 abstract
+reviews, 9 full-text false positives, pinned) and added the exclusions, not
+"no systematic" (it refused 3 reviews' motivations). Both sampler corpora
+re-measured; **every edit to `extractors.py`, comments included, needs both
+re-run** (`remeasure --write` live, `fulltext … --baseline --write` offline)
+— finalise the comments first. The counterfactuals ran on a cached copy of
+the draw's abstract texts (a scratch file, not in the repo). Narrative reviews
+are not in the draw, so their cost is unmeasured: **#540**.
 
 **The previous session** (PR #538, #507): a non-ISO `RetractionEvidence.date`
 raises `ValueError`; the Rust/FFI half is **#537**.
@@ -88,7 +95,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,222 passing + 111 skipped** on this session's branch
+- **Tests: 7,248 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-23; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for

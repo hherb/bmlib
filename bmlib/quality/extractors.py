@@ -65,7 +65,6 @@ DEFAULT_STUDY_TYPE_KEYWORDS = {
         "systematic literature review",
         "systematically searched",
         "systematically reviewed",
-        "systematically identified",
         "systematic search",
         "systematic literature search",
     ],
@@ -207,15 +206,21 @@ _SUBJECT = rf"\b(?!(?:{_NOT_A_PARTICIPANT}|{_AUXILIARY})\b)[a-z]++(?:\s++\([^()]
 _BEFORE = r"\b(?=[a-z]++(?:\s++\([^()]{0,80}\))?\s++"
 # A bibliographic database a review searches (issue #453): "we searched PubMed,
 # Embase and CINAHL", "a search of MEDLINE", "MEDLINE and Embase were searched".
-# Within one sentence, so a methods section's "searched the records" and a
-# later "PubMed" do not pair. On the sampler's random abstract draw these and
-# the search keywords move 420 of 5,954 abstracts: 417 PubMed reviews, 2 Network
-# Meta-Analyses (a type the labels do not name) and 1 case report; reviews read
-# as unknown go 403 -> 219 and as rct 51 -> 27. In full text 79 of 7,410 move,
-# fewer than half of them reviews: a research article searching a database in
-# its methods reads as one, the priority-first rule of #454, a trade the
-# maintainer took. The plural "meta-analyses" was measured and refused: in full
-# text it moved 78 articles for 2 reviews (``docs/DECISIONS.md``).
+# No full stop or semicolon may fall between the two, within 60 characters (80
+# before "was/were searched"), so a methods section's "searched the records."
+# and a later "PubMed" do not pair; a "?", "!", ":" or line break does not stop
+# the window, and an abbreviation's full stop does. On the sampler's random
+# abstract draw these, the search keywords and their exclusions move 421 of
+# 5,954 abstracts: 418 PubMed reviews (one, a "non-systematic literature
+# review", leaving systematic_review), 2 Network Meta-Analyses (a type the
+# labels do not name) and 1 case report; reviews read as unknown go 403 -> 220
+# and as rct 51 -> 27. In full text 66 of 7,410 move, 65 of them to
+# systematic_review, and 35 of those 65 carry neither a review article-type nor
+# "review" in the title: methods that searched a database, a cited paper that
+# "systematically reviewed", a "systematic search" of something else. That is
+# the priority-first rule of #454, a trade the maintainer took. The plural
+# "meta-analyses" was measured and refused: in full text it moved 78 articles
+# for 2 reviews (``docs/DECISIONS.md``).
 _REVIEW_DATABASE = (
     r"(?:medline|pubmed|embase|cochrane|web\s+of\s+science|cinahl|scopus|psycinfo"
     r"|google\s+scholar)"
@@ -260,6 +265,17 @@ SINGULAR_ONLY_STUDY_TYPES = frozenset({"rct"})
 # Keywords that EXCLUDE a match for specific study types. If any exclusion
 # pattern appears near the keyword, the match is rejected.
 STUDY_TYPE_EXCLUSIONS = {
+    # A search that denies being systematic, and the "Research in context" panel
+    # in which a trial reports the search behind its own question (PR #539's
+    # review). Not "no systematic": a review's motivation says "no systematic
+    # review has been undertaken", which cost 3 reviews on the abstract draw.
+    "systematic_review": [
+        "non-systematic",
+        "nonsystematic",
+        "non systematic",
+        "not systematic",
+        "evidence before this study",
+    ],
     "rct": [
         "non-randomized",
         "non-randomised",
@@ -288,7 +304,7 @@ STUDY_TYPE_EXCLUSIONS = {
         "pseudo-randomi",
         "pseudo randomi",
         "pseudorandomi",
-    ]
+    ],
 }
 
 # How far before a keyword to search for an exclusion pattern (characters).

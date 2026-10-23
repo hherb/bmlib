@@ -5528,37 +5528,69 @@ repo holds them (PR #455's review).
 
 ## quality — a review read by how it searched, and the refused plural (#453)
 
-Decided by the maintainer once both corpora were measured. Argued inline at
-`_REVIEW_DATABASE` in `bmlib/quality/extractors.py`.
+Decided by the maintainer once both corpora were measured; PR #539's review
+narrowed the keywords and added exclusions. Argued inline at
+`_REVIEW_DATABASE` and `STUDY_TYPE_EXCLUSIONS` in
+`bmlib/quality/extractors.py`.
 
-- **What ships.** Five `systematic_review` keywords ("systematically
-  searched / reviewed / identified", "systematic search", "systematic
+- **What ships.** Four `systematic_review` keywords ("systematically
+  searched", "systematically reviewed", "systematic search", "systematic
   literature search") and two `STUDY_TYPE_PATTERNS["systematic_review"]`
-  patterns reading a search of a named database within one sentence ("we
-  searched PubMed, Embase", "a search of MEDLINE", "MEDLINE and Embase were
-  searched"). On the random abstract draw 420 of 5,954 move: 417 PubMed
-  reviews, 2 Network Meta-Analyses (a type `LABEL_ORDER` does not name) and 1
-  case report with a literature search. Reviews read `unknown` go 403 → 219
-  and `rct` 51 → 27; 195 move `meta_analysis` → `systematic_review`, the same
-  label and the same score.
-- **The full-text cost was taken.** 79 of 7,410 served articles move, all to
-  `systematic_review`, and 32 of them carry "review" or "bibliometric" in the
-  title or a review `article-type` (a proxy: the bundle carries no PubMed
-  label). The rest search a database in their methods — #454's priority-first
-  rule, which is why the ROADMAP says to pass the extractor abstracts.
+  patterns reading a search of a named database ("we searched PubMed,
+  Embase", "a search of MEDLINE", "MEDLINE and Embase were searched"). **The
+  window is not a sentence**: no full stop or semicolon may fall between the
+  search and the database, within 60 characters (80 before "was/were
+  searched"), so a "?", "!", ":" or line break does not end it and an
+  abbreviation's full stop does. On the random abstract draw 421 of 5,954
+  move: 418 PubMed reviews (417 gaining a review type, and one "non-systematic
+  literature review" losing it), 2 Network Meta-Analyses (a type `LABEL_ORDER`
+  does not name) and 1 case report with a literature search. Reviews read
+  `unknown` go 403 → 220 and `rct` 51 → 27; 195 reviews move `meta_analysis`
+  → `systematic_review`, the same label and the same score.
+- **"systematically identified" is refused** (PR #539's review): it moved 0
+  abstracts and 8 full-text articles, none of them a review — gene families,
+  patients found by ICD code, "these points were not systematically
+  identified". Pinned by `TestAReviewIsReadByHowItSearched`.
+- **"systematically reviewed" is kept, knowingly.** It reads 15 reviews on the
+  abstract draw (without it 7 would read `unknown`, 2 a primary design and
+  6 `meta_analysis`) against 9 full-text articles, mostly a cited paper's review ("Akbar et
+  al. systematically reviewed") or a chart review. The ROADMAP passes the
+  extractor abstracts; the known false positives are pinned.
+- **Exclusions, and the one refused.** `STUDY_TYPE_EXCLUSIONS
+  ["systematic_review"]` is "non-systematic", "nonsystematic", "non
+  systematic", "not systematic" and "evidence before this study", the last
+  being the Lancet family's "Research in context" panel, in which a trial
+  reports the search behind its own question — 5 served articles read as
+  reviews by it, one a phase 3 RCT. On abstracts they move 1 record (the
+  non-systematic review above); in full text they return 6 articles to their
+  own design and take 1 narrative review out of `systematic_review`, where
+  #454's priority-first rule then reads its excluded "case reports". **"no
+  systematic" is not one**: a review's motivation says "no systematic review
+  has been undertaken", which refused 3 reviews of the abstract draw.
+- **The full-text cost was taken.** 66 of 7,410 served articles move, 65 of
+  them to `systematic_review`, and 30 of those 65 carry a `review-article` or
+  `systematic-review` `article-type`, or "review" or "bibliometric" in the
+  `<title-group>` text (a proxy: the bundle carries no PubMed label). The
+  other 35 are 28 research articles, 3 case reports, a brief report, a letter,
+  an editorial and a data paper: a database search in the methods, a cited
+  paper's review, a "systematic search" of something other than the
+  literature — #454's priority-first rule, which is why the ROADMAP says to
+  pass the extractor abstracts.
 - **The plural "meta-analyses" is refused** (with "metaanalysis",
   "meta-analytic"). On abstracts it added 43 reviews for 3 non-reviews (two
   observational studies citing earlier meta-analyses, one trial reporting
   "a set of meta-analyses" of its own); in full text it moved 78 articles for
-  2 reviews. Reverse it knowingly: `tests/test_extractors.py::
-  TestAReviewIsReadByHowItSearched` pins the refusal.
+  2 reviews. Measured before PR #539's review narrowed the keywords. Reverse it
+  knowingly: `tests/test_extractors.py::TestAReviewIsReadByHowItSearched` pins
+  the refusal.
 - **Narrative reviews are not in the draw**: no stratum is PubMed `Review`
   alone, so how often a narrative review's "we searched PubMed" now reads as
-  a systematic review is unmeasured.
-- The counterfactuals (each component alone, the plural's figures, the title
-  proxy) were taken on the draw's texts cached in a scratch directory and the
-  served bundle; nothing in the repo holds them. The shipped figures re-derive
-  from `main`'s and this branch's corpus files.
+  a systematic review is unmeasured (#540).
+- The counterfactuals (each component alone, the plural's figures, the
+  keyword and exclusion variants) were taken on the draw's texts cached in a
+  scratch directory and the served bundle; nothing in the repo holds them.
+  The shipped figures and the title proxy re-derive from `main`'s and this
+  branch's corpus files and the bundle.
 
 ## scripts — the extractor sampler (#368)
 
