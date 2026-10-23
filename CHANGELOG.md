@@ -17,8 +17,10 @@ All notable changes to bmlib are documented here. The format is based on
   object's repr as a malformed PMID. Both modules now ask the value's real
   type (`_is_text`, restated in each and held to agreeing); `fetch_fulltext`
   sets such a value aside with the existing WARNING and goes on, and
-  `analyze()` raises `TypeError`. A `str` subclass is still text. No draw has
-  seen one, so this pins a direction; nothing stored moves.
+  `analyze()` raises `TypeError`. A `str` subclass is still text, and
+  `analyze()` now reads its value where it read its `__str__`, as
+  `fetch_fulltext` already did. No draw has seen one, so this pins a
+  direction; nothing stored moves.
 
 ### Added
 - **`bmlib.embed`'s errors can be told apart by type, as Rust's are** (#532;

@@ -5451,6 +5451,13 @@ class _Index:
         return self.value
 
 
+class _PmidWithItsOwnStr(str):
+    """A ``str`` subclass whose ``__str__`` names another PMID: the value is read, not this."""
+
+    def __str__(self) -> str:
+        return "1"
+
+
 class TestTheCallersPmidIsCanonicalOrRefused:
     """Issue #478: a PMID is sent canonical, and an unusable one is set aside.
 
@@ -5471,6 +5478,9 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         (7, "7"),
         (_Index(33301246), "33301246"),
         (_Index(0), ""),
+        # Both modules strip with the unbound `str.strip`, so the agreement
+        # test fails on a `str(pmid).strip()` in either (PR #536's review).
+        (_PmidWithItsOwnStr(" 33301246 "), "33301246"),
         ("", ""),
         ("   ", ""),
         (None, ""),
