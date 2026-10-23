@@ -9,6 +9,18 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — follows Python's review wording (#453)
+`quality::extractors`: `systematic_review` gains four keywords ("systematically
+searched", "systematically reviewed", "systematic search", "systematic
+literature search"), a `STUDY_TYPE_PATTERNS` entry of two patterns reading a
+search of a named database (`review_database!`), and a `STUDY_TYPE_EXCLUSIONS`
+entry ("non-systematic", "not systematic", "evidence before this study", …).
+The patterns are transcribed byte for byte from Python's, and Python's
+transcription tests hold the patterns, the keywords and the exclusions to its
+own. The quality oracle's review-search case now reads `systematic_review`,
+and three new cases cover a search keyword, a non-systematic search and a
+trial's "Research in context" panel.
+
 ### Added — follows Python's embedder
 `embed`: the embedding constants (`EMBEDDING_DIM`, `QUERY_PREFIX`, `MAX_TOKENS`),
 the vector rules (`truncate_and_normalize`, which refuses a NaN or infinite

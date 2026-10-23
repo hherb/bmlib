@@ -6,6 +6,35 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **`extract_study_type` reads a review by how it searched** (#453). 403 of
+  the extractor sampler's 1,771 PubMed reviews read `unknown`, saying how they
+  searched rather than naming themselves. `systematic_review` gains the
+  keywords "systematically searched", "systematically reviewed", "systematic
+  search" and "systematic literature search", two
+  `STUDY_TYPE_PATTERNS["systematic_review"]` patterns reading a search of a
+  named database (MEDLINE, PubMed, Embase, Cochrane, Web of Science, CINAHL,
+  Scopus, PsycINFO, Google Scholar) with no full stop or semicolon between
+  them, within 60 or 80 characters, and `STUDY_TYPE_EXCLUSIONS
+  ["systematic_review"]`: "non-systematic", "not systematic" and a trial's
+  "Evidence before this study" panel. On the random abstract draw 421 of
+  5,954 move — 418 PubMed reviews (one non-systematic review leaving
+  `systematic_review`), 2 Network Meta-Analyses and 1 case report with a
+  literature search; reviews read `unknown` go 403 → 220 and `rct` 51 → 27,
+  and 195 reviews move from `meta_analysis` to `systematic_review` at the
+  same score. In full text 66 of 7,410 served articles move, 65 of them to
+  `systematic_review`, and 35 of those carry no review `article-type` or
+  title: a database search in the methods, a cited paper that
+  "systematically reviewed", a "systematic search" of something else (#454's
+  priority-first rule), a trade the maintainer took. "systematically
+  identified" (0 abstracts, 8 full-text non-reviews) and the plural
+  "meta-analyses" (78 full-text moves for 2 reviews) were measured and
+  refused. The Rust port follows, its patterns, keywords and exclusions held
+  to Python's by the transcription tests; both committed sampler corpora are
+  re-measured (and the abstract corpus picks up the records whose PubMed
+  publication types moved upstream). Nothing stored moves; a caller storing
+  extractor output sees `study_type` move as above.
+
 ### Fixed
 - **A retraction evidence date that is not ISO is refused** (#507).
   `RetractionEvidence.date` is compared as text, so a date such as

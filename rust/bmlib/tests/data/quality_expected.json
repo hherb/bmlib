@@ -4855,6 +4855,42 @@
         {
           "component": "study_type",
           "dimension": "study_design",
+          "evidence_text": "randomized controlled trials were searched in medline and embase. ",
+          "extracted_value": "systematic_review",
+          "reasoning": "Matched pattern 'searched in medline' indicating systematic review",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "systematic_review"
+    }
+  },
+  {
+    "name": "453/search-keyword",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a systematic search identified 23 eligible studies. ",
+          "extracted_value": "systematic_review",
+          "reasoning": "Matched keyword 'systematic search' indicating systematic review",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "systematic_review"
+    }
+  },
+  {
+    "name": "453/non-systematic-search-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
           "evidence_text": null,
           "extracted_value": "unknown",
           "reasoning": "No study type keywords matched - assigned neutral score",
@@ -4863,6 +4899,24 @@
       ],
       "score": 5.0,
       "type": "unknown"
+    }
+  },
+  {
+    "name": "453/research-in-context-panel-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...before this study: we searched pubmed for trials. patients were randomized to a or b. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
     }
   },
   {

@@ -26,6 +26,7 @@ import pytest
 
 from bmlib.quality.extractors import (
     _DENIAL_LOOKAROUND,
+    DEFAULT_STUDY_TYPE_KEYWORDS,
     SINGULAR_ONLY_STUDY_TYPES,
     STUDY_TYPE_EXCLUSIONS,
     STUDY_TYPE_PATTERNS,
@@ -680,7 +681,7 @@ class TestAnRctIsReadAsItDescribesItself:
             "A pseudo randomised controlled trial was conducted.",
             "A pseudorandomized controlled trial was conducted.",
             # Other papers' trials, in the plural.
-            "Randomized controlled trials were searched in MEDLINE and EMBASE.",
+            "Randomized controlled trials of the drug were compared.",
             "Two randomized, placebo-controlled studies were pooled.",
         ],
     )
@@ -773,6 +774,118 @@ class TestTheFirstTypeInPriorityOrderWins:
     def test_a_non_randomised_trial_is_still_quasi_experimental(self):
         doc = {"abstract": "A prospective non-randomized trial of 60 patients."}
         assert get_extracted_study_type(extract_study_type(doc)) == "quasi_experimental"
+
+
+class TestAReviewIsReadByHowItSearched:
+    """Issue #453: 403 of 1,771 PubMed reviews in the extractor sampler's draw
+    read ``unknown``, saying how they searched rather than naming themselves.
+    The sentences are written for the test; each exercises one keyword or
+    pattern."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Electronic databases were systematically searched up to 2020.",
+            "Two authors systematically reviewed the eligible reports.",
+            "A systematic search identified 23 eligible studies.",
+            "We performed a systematic literature search for cohort data.",
+            "We searched PubMed, Embase and CINAHL from inception.",
+            "We searched the Cochrane Library for randomized controlled trials.",
+            "A search of MEDLINE identified 40 reports.",
+            "Searches of Web of Science and Scopus were run in May.",
+            "MEDLINE, Embase and PsycINFO were searched to March 2014.",
+            # Each database alone, so dropping one fails (PR #539's review).
+            "Embase was searched to 2019.",
+            "We searched CINAHL.",
+            "A search of Scopus found 9 reports.",
+            "We searched PsycINFO.",
+            "We searched Google Scholar only.",
+            "We searched Web of\nScience.",
+            # The windows' edges: a 60-character gap, then an 80-character one.
+            "We searched " + "x" * 58 + " PubMed.",
+            "PubMed " + "x" * 78 + " was searched.",
+            # Read as unknown, not as rct, before #453 (the plural rule).
+            "Randomized controlled trials were searched in MEDLINE and EMBASE.",
+        ],
+    )
+    def test_a_search_of_the_literature_reads_as_a_systematic_review(self, text):
+        assert _study_type(text) == "systematic_review"
+
+    def test_it_outranks_the_trials_the_review_names(self):
+        text = "We searched PubMed for trials. Patients were randomized to A or B in each."
+        assert _study_type(text) == "systematic_review"
+
+    def test_a_trials_research_in_context_panel_is_not_its_design(self):
+        # The Lancet family's panel reports the search behind the trial's own
+        # question; 5 of the served bundle's articles read as reviews by it
+        # before PR #539's review, one of them a phase 3 RCT.
+        text = (
+            "Research in context. Evidence before this study: we searched PubMed for "
+            "trials. Patients were randomized to A or B."
+        )
+        assert _study_type(text) == "rct"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # The search denies being systematic (PR #539's review).
+            "A non-systematic search of PubMed was performed.",
+            "A nonsystematic search of MEDLINE was performed.",
+            "We performed a non systematic literature search.",
+            "These points were not systematically reviewed.",
+            "This narrative review used a non-systematic review methodology.",
+        ],
+    )
+    def test_a_search_denying_it_is_systematic_is_not_a_review(self, text):
+        assert _study_type(text) == "unknown"
+
+    def test_no_systematic_review_yet_is_a_reviews_motivation(self):
+        # Not an exclusion: "no systematic" refused 3 reviews of the abstract
+        # draw, each saying no review had yet been undertaken.
+        text = "No systematic review has been undertaken; we systematically searched MEDLINE."
+        assert _study_type(text) == "systematic_review"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Taken knowingly: in full text 9 articles read as reviews by
+            # "systematically reviewed", mostly a cited paper's review, against
+            # 15 reviews it reads on the abstract draw. These pin the trade.
+            "Akbar et al. systematically reviewed the evidence on statins.",
+            "The medical records of 400 patients were systematically reviewed.",
+            "A systematic search of docking poses was run for each ligand.",
+            "Patients were systematically reviewed and randomized to A or B.",
+        ],
+    )
+    def test_the_accepted_false_positives_are_known(self, text):
+        assert _study_type(text) == "systematic_review"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Refused on measurement (PR #539's review): it moved 0 abstracts
+            # and 8 full-text articles, none of them a review.
+            "Studies were systematically identified and appraised.",
+            # A full stop or semicolon between the search and the database.
+            "We searched the hospital records. PubMed lists no similar case.",
+            "PubMed lists no similar case. The records were searched by hand.",
+            "We searched the records; PubMed lists none.",
+            "MEDLINE lists none; the records were searched.",
+            # One character past each window.
+            "We searched " + "x" * 59 + " PubMed.",
+            "PubMed " + "x" * 79 + " was searched.",
+            # Not the word: "researched", "MedlinePlus".
+            "We researched MEDLINE trends.",
+            "We searched MedlinePlus for leaflets.",
+            # A search that names no bibliographic database.
+            "We searched the electronic health records of 400 patients.",
+            # Refused on measurement: in full text the plural moved 78 articles
+            # for 2 reviews, a paper citing "prior meta-analyses".
+            "Prior meta-analyses found a benefit; we tested it in a cohort.",
+        ],
+    )
+    def test_what_is_not_a_reviews_search_reads_as_before(self, text):
+        assert _study_type(text) == "unknown"
 
 
 class TestExtractSampleSizeDimension:
@@ -1128,7 +1241,7 @@ class TestTheSecondReviewsFindings:
 
 class TestTheRustPortTranscribesThePatterns:
     """The Rust port compiles ``STUDY_TYPE_PATTERNS`` from ``concat!`` pieces
-    named after this module's (#367). Its oracle replays behaviour cases only,
+    named after this module's (#367, #453). Its oracle replays behaviour cases only,
     so a pattern edited here and not there passes it wherever no case reaches
     the edit; this compares the tables themselves."""
 
@@ -1143,14 +1256,36 @@ class TestTheRustPortTranscribesThePatterns:
         "auxiliary",
         "subject",
         "before",
+        "review_database",
     )
 
-    @staticmethod
-    def _expand(body: str, macros: dict[str, str]) -> str:
-        pieces = re.finditer(r'r"(.*?)"|(\w+)!\(\)', body, re.S)
+    _PIECE = re.compile(r'r"(.*?)"|(\w+)!\(\)', re.S)
+
+    @classmethod
+    def _expand(cls, body: str, macros: dict[str, str]) -> str:
+        # A piece this cannot read (a plain "x", an r#"x"#) would be dropped
+        # from the comparison and pass, so anything else fails (PR #539's review).
+        rest = re.sub(r"//[^\n]*", "", cls._PIECE.sub("", body)).replace("concat!(", "")
+        assert re.fullmatch(r"[\s,()]*", rest), f"the port holds a piece this cannot read: {rest!r}"
+        pieces = cls._PIECE.finditer(body)
         return "".join(m.group(1) if m.group(1) is not None else macros[m.group(2)] for m in pieces)
 
-    def test_every_rct_pattern_is_byte_identical(self):
+    @staticmethod
+    def _string_table(src: str, name: str) -> dict[str, list[str]]:
+        """Read a port's ``[(&str, &[&str]); N]`` table of plain string literals."""
+        table = re.search(rf"pub const {name}\b.*?= \[(.*?)\n\)?\];", src, re.S)
+        assert table, f"{name} is missing from the port"
+        entries = re.split(r'\(\s*"(\w+)",\s*&\[', re.sub(r"//[^\n]*", "", table.group(1)))
+        assert re.fullmatch(r"\s*", entries[0]), f"the port's {name} opens with {entries[0]!r}"
+        port: dict[str, list[str]] = {}
+        for entry, body in zip(entries[1::2], entries[2::2]):
+            assert entry not in port, f"the port's {name} names {entry} twice"
+            rest = re.sub(r'"[^"\\]*"', "", body)
+            assert re.fullmatch(r"[\s,\])]*", rest), f"the port's {entry} holds more: {rest!r}"
+            port[entry] = re.findall(r'"([^"\\]*)"', body)
+        return port
+
+    def test_every_pattern_is_byte_identical(self):
         source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"
         if not source.exists():
             pytest.skip("no Rust port in this checkout")
@@ -1160,30 +1295,38 @@ class TestTheRustPortTranscribesThePatterns:
             found = re.search(rf"macro_rules! {name} \{{\s*\(\) => \{{(.*?)\}};\s*\}}", src, re.S)
             assert found, f"macro {name}! is missing from the port"
             macros[name] = self._expand(found.group(1), macros)
-        table = re.search(r"pub const STUDY_TYPE_PATTERNS.*?&\[(.*)\],\n\)\];", src, re.S)
+        table = re.search(r"pub const STUDY_TYPE_PATTERNS.*?= \[(.*?)\n\];", src, re.S)
         assert table, "STUDY_TYPE_PATTERNS is missing from the port"
-        blocks = re.findall(r"concat!\((.*?)\n        \)", table.group(1), re.S)
-        # An element outside any ``concat!`` would be invisible to the
-        # comparison, so the table must hold nothing else (PR #455's review).
-        elements = re.search(r'"rct",\s*&\[(.*)', table.group(1), re.S)
-        assert elements, "the port's rct entry is missing"
-        rest = re.sub(r"concat!\((.*?)\n        \)", "", elements.group(1), flags=re.S)
-        assert re.fullmatch(r"[\s,]*", rest), f"the port's table holds more: {rest!r}"
-        assert [self._expand(b, macros) for b in blocks] == STUDY_TYPE_PATTERNS["rct"]
+        entries = re.split(r'\(\s*"(\w+)",\s*&\[', table.group(1))
+        assert re.fullmatch(r"\s*", entries[0]), f"the port's table opens with {entries[0]!r}"
+        port: dict[str, list[str]] = {}
+        for name, body in zip(entries[1::2], entries[2::2]):
+            close = re.compile(r"concat!\((.*?)\n\s*\)", re.S)
+            # An element outside any ``concat!`` would be invisible to the
+            # comparison, so an entry must hold nothing else (PR #455's review).
+            rest = close.sub("", body)
+            assert re.fullmatch(r"[\s,\])]*", rest), f"the port's {name} holds more: {rest!r}"
+            # Rust reads the first entry of a name, Python's dict the last.
+            assert name not in port, f"the port names {name} twice"
+            port[name] = [self._expand(b, macros) for b in close.findall(body)]
+        assert port == STUDY_TYPE_PATTERNS
 
-    def test_the_rct_exclusions_and_singular_rule_are_the_same(self):
+    def test_every_keyword_is_the_same(self):
+        # The oracle reaches few keywords, so a keyword misspelt in the port
+        # passed it (PR #539's review).
         source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"
         if not source.exists():
             pytest.skip("no Rust port in this checkout")
         src = source.read_text(encoding="utf-8")
-        table = re.search(
-            r'pub const STUDY_TYPE_EXCLUSIONS[^=]*=\s*\[\(\s*"rct",\s*&\[(.*?)\],\s*\)\];',
-            src,
-            re.S,
-        )
-        assert table, "STUDY_TYPE_EXCLUSIONS is missing from the port"
-        body = re.sub(r"//[^\n]*", "", table.group(1))
-        assert re.findall(r'"([^"]*)"', body) == STUDY_TYPE_EXCLUSIONS["rct"]
+        port = self._string_table(src, "DEFAULT_STUDY_TYPE_KEYWORDS")
+        assert port == DEFAULT_STUDY_TYPE_KEYWORDS
+
+    def test_the_exclusions_and_singular_rule_are_the_same(self):
+        source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"
+        if not source.exists():
+            pytest.skip("no Rust port in this checkout")
+        src = source.read_text(encoding="utf-8")
+        assert self._string_table(src, "STUDY_TYPE_EXCLUSIONS") == STUDY_TYPE_EXCLUSIONS
         singular = re.search(
             r"pub const SINGULAR_ONLY_STUDY_TYPES: \[&str; \d+\] = \[(.*?)\];", src
         )
