@@ -50,7 +50,7 @@ reviews and is refused, pinned by a test. Both sampler corpora re-measured;
 **every edit to `extractors.py`, comments included, needs both re-run**
 (`remeasure --write` live, `fulltext … --write` offline, ~5 min together) —
 finalise the comments first. Narrative reviews are not in the draw, so their
-cost is unmeasured (`docs/DECISIONS.md`).
+cost is unmeasured: **#540** (filed this session).
 
 **The previous session** (PR #538, #507): a non-ISO `RetractionEvidence.date`
 raises `ValueError`; the Rust/FFI half is **#537**.
@@ -116,8 +116,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-three open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-23: 94, less #453). **#533** is the #530
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-23: 95 with #540, less #453). **#533** is the #530
 session's (a flaky timing test; a decision between CPU time, a debug budget
 and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
