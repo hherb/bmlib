@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 from types import TracebackType
+from typing import Any
 
 from bmlib.embed.vectors import (
     EMBEDDING_DIM,
@@ -53,13 +54,17 @@ class TextTooLongError(EmbedError):
         )
         self.tokens = tokens
 
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
+        return type(self), (self.index, self.tokens), self.__dict__
+
 
 class UnusableOutputError(EmbedError):
     """A text's model output is not an embedding (Rust: ``EmbedError::Vector``).
 
     Attributes:
         index: Position of the text.
-        error: The :class:`VectorError` saying why (also ``__cause__``).
+        error: The :class:`VectorError` saying why; the embedder raises this
+            error ``from`` it, so it is the ``__cause__`` too.
     """
 
     index: int
@@ -68,17 +73,29 @@ class UnusableOutputError(EmbedError):
         super().__init__(f"text at index {index}: {error}", index)
         self.error = error
 
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
+        return type(self), (self.index, self.error), self.__dict__
+
 
 class ModelLoadError(EmbedError):
     """The embedder could not be made (Rust: ``EmbedError::Load``).
 
-    llama-cpp-python will not import, llama.cpp will not load the file, or
-    the model embeds to fewer than ``EMBEDDING_DIM`` values. ``index`` is None.
+    llama-cpp-python will not import, llama.cpp will not load the file or
+    create its context, or the model embeds to fewer than ``EMBEDDING_DIM``
+    values. ``index`` is None. llama-cpp-python creates the context with the
+    model, so a context failure is this error here, where Rust, which creates
+    one per call, reports it as ``EmbedError::Decode`` when embedding.
     """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 class BatchDecodeError(EmbedError):
     """llama.cpp failed to embed a batch (Rust: ``EmbedError::Decode``). ``index`` is None."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 class Embedder:
@@ -98,8 +115,8 @@ class Embedder:
 
         Raises:
             ModelLoadError: If llama-cpp-python cannot be imported (it comes with
-                ``bmlib[embed]``), llama.cpp cannot load the file, or the model
-                embeds to fewer than ``EMBEDDING_DIM`` values.
+                ``bmlib[embed]``), llama.cpp cannot load the file or create its
+                context, or the model embeds to fewer than ``EMBEDDING_DIM`` values.
         """
         try:
             import llama_cpp  # type: ignore[import-not-found, unused-ignore]  # optional extra
@@ -161,6 +178,9 @@ class Embedder:
                 before anything is embedded.
             TextTooLongError: For the first text over ``MAX_TOKENS`` tokens,
                 before anything is embedded.
+            EmbedError: Itself, with ``index``, for the first text that cannot
+                be tokenized (one carrying a lone surrogate), before anything is
+                embedded.
             UnusableOutputError: For the first text whose model output is
                 unusable (NaN, infinite or zero; see :class:`VectorError`).
             BatchDecodeError: If llama.cpp fails to decode (no ``index``).
@@ -173,7 +193,12 @@ class Embedder:
         if not texts:
             return []
         for i, text in enumerate(texts):
-            tokens = len(self._llm.tokenize(text.encode(), add_bos=True, special=False))
+            try:
+                tokens = len(self._llm.tokenize(text.encode(), add_bos=True, special=False))
+            # A lone surrogate will not encode, and llama-cpp-python's tokenize can
+            # raise; Rust meets neither (a str is valid UTF-8, its tokenize cannot fail).
+            except (UnicodeEncodeError, RuntimeError) as exc:
+                raise EmbedError(f"text at index {i} cannot be tokenized: {exc}", i) from exc
             if tokens > MAX_TOKENS:
                 raise TextTooLongError(i, tokens)
         try:

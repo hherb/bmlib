@@ -28,6 +28,7 @@ import builtins
 import json
 import math
 import os
+import pickle
 import sys
 import types
 from pathlib import Path
@@ -163,12 +164,14 @@ def test_vectors_are_unit_length(embedder: Embedder) -> None:
         assert math.isclose(math.hypot(*vec), 1.0, abs_tol=1e-6), f"item {i}"
 
 
-def test_missing_extra_names_it(monkeypatch: pytest.MonkeyPatch) -> None:
+# An installed llama_cpp can fail to import with any of the three.
+@pytest.mark.parametrize("raised", [ImportError, OSError, RuntimeError])
+def test_missing_extra_names_it(monkeypatch: pytest.MonkeyPatch, raised: type[Exception]) -> None:
     real_import = builtins.__import__
 
     def fail(name: str, *args: object, **kwargs: object) -> object:
         if name == "llama_cpp":
-            raise ImportError("no llama_cpp")
+            raise raised("no llama_cpp")
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(builtins, "__import__", fail)
@@ -243,6 +246,25 @@ def test_an_empty_text_is_refused_before_tokenizing(fake: tuple[Embedder, _FakeL
         embedder.embed_documents(["ok", " \x1c "])
     assert caught.value.index == 1
     assert llm.tokenized == [] and llm.embedded == []
+
+
+def test_a_text_that_cannot_be_tokenized_is_named(
+    fake: tuple[Embedder, _FakeLlama], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    embedder, llm = fake
+    with pytest.raises(EmbedError, match="text at index 1 cannot be tokenized") as caught:
+        embedder.embed_documents(["ok", "lone \udc80 surrogate"])
+    assert (type(caught.value), caught.value.index) == (EmbedError, 1)
+    assert isinstance(caught.value.__cause__, UnicodeEncodeError)
+
+    def refuse(text: bytes, add_bos: bool, special: bool) -> list[int]:
+        raise RuntimeError("Failed to tokenize")
+
+    monkeypatch.setattr(llm, "tokenize", refuse)
+    with pytest.raises(EmbedError, match="index 0 cannot be tokenized: Failed") as caught:
+        embedder.embed_documents(["ok"])
+    assert (type(caught.value), caught.value.index) == (EmbedError, 0)
+    assert llm.embedded == []
 
 
 def test_no_texts_embed_nothing(fake: tuple[Embedder, _FakeLlama]) -> None:
@@ -370,3 +392,25 @@ def test_a_model_that_will_not_load_is_an_embed_error(
 )
 def test_every_embedder_error_is_an_embed_error(error: type[Exception]) -> None:
     assert issubclass(error, EmbedError)  # one except clause still catches every failure
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        EmbedError("message", 3),
+        EmptyTextError(2),
+        TextTooLongError(1, MAX_TOKENS + 1),
+        UnusableOutputError(4, VectorError("its norm is nan")),
+        ModelLoadError("cannot load"),
+        BatchDecodeError("llama.cpp: decode failed"),
+    ],
+    ids=type,
+)
+def test_every_embedder_error_survives_pickling(error: EmbedError) -> None:
+    # A worker process's error reaches its pool pickled.
+    back = pickle.loads(pickle.dumps(error))
+    assert (type(back), back.args, repr(vars(back))) == (
+        type(error),
+        error.args,
+        repr(vars(error)),
+    )

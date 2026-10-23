@@ -14,11 +14,15 @@ All notable changes to bmlib are documented here. The format is based on
   as a `ValueError`, raised directly rather than re-wrapped; Rust
   `EmptyText`), `TextTooLongError` with `.tokens` (`TooLong`),
   `UnusableOutputError` with `.error`, the `VectorError` (`Vector`),
-  `ModelLoadError` for a failed import, an unloadable file or a model narrower
-  than 256 (`Load`), and `BatchDecodeError` (`Decode`). A model that fails its
-  check is a `SizeMismatchError` or a `ChecksumMismatchError`, both
-  `ModelVerificationError`s keeping `.what`. In Rust, `EmbedError::Llama`
-  splits into `Load` and `Decode`. `VectorError::NotScalable` still carries no
+  `ModelLoadError` for a failed import, an unloadable file, a context llama.cpp
+  will not create or a model narrower than 256 (`Load`; Rust makes its context
+  per call, so it reports that one as `Decode`), and `BatchDecodeError`
+  (`Decode`). A text that cannot be tokenized (a lone surrogate) is an
+  `EmbedError` naming its index, where it escaped as `UnicodeEncodeError`; Rust
+  cannot meet it. A model that fails its check is a `SizeMismatchError` or a
+  `ChecksumMismatchError`, both `ModelVerificationError`s, `.what` now their
+  class attribute. Every one survives pickling, so it crosses a process pool.
+  In Rust, `EmbedError::Llama` splits into `Load` and `Decode`. `VectorError::NotScalable` still carries no
   norm (left as is: see #532's last comment).
 - **`bmlib.embed.Embedder`: in-process embedding over llama-cpp-python** (new
   `bmlib[embed]` extra). `embed_documents` / `embed_query` return 256-dimension

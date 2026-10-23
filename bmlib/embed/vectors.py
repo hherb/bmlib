@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import Any
 
 EMBEDDING_DIM = 256
 QUERY_PREFIX = "query: "
@@ -74,8 +75,9 @@ def query_text(query: str) -> str:
 class EmbedError(Exception):
     """An embedding request that cannot be honoured.
 
-    Every failure of :class:`~bmlib.embed.Embedder` is one; its subclasses
-    mirror the Rust port's ``EmbedError`` variants.
+    Every failure of :class:`~bmlib.embed.Embedder` given a sequence of texts
+    is one. Its subclasses mirror the Rust port's ``EmbedError`` variants; a
+    failure Rust cannot meet (a text that cannot be tokenized) is this class itself.
 
     Attributes:
         index: Position of the offending text, or None when not text-specific.
@@ -97,6 +99,9 @@ class EmptyTextError(EmbedError, ValueError):
 
     def __init__(self, index: int) -> None:
         super().__init__(f"text at index {index} is empty or whitespace-only", index)
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not ``index``
+        return type(self), (self.index,), self.__dict__
 
 
 def check_texts(texts: Sequence[str]) -> None:

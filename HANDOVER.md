@@ -53,6 +53,18 @@ model in both languages. **Left as is**: `VectorError::NotScalable` carries no
 norm (#532's last comment: a payload loses `Eq`, a split adds names Python's
 one class lacks); Python's `VectorError` names it only in its message.
 
+**PR #535's review** fixed four things. Four of the new exceptions could not
+be unpickled, which would break a process pool on one long text; every error
+now round-trips, and a test pins it. A context llama.cpp will not create is
+`Load` in Python and `Decode` in Rust. That is deliberate: llama-cpp-python
+builds the context with the model, while Rust builds one per call. It is now
+documented on both sides instead of the mapping being claimed one-to-one.
+A text that cannot be tokenized (a lone surrogate) used to escape as
+`UnicodeEncodeError`; it is now an `EmbedError` naming its index. Rust has no
+variant for it, because Rust strings cannot hold one. `.what` became each
+mismatch class's own class attribute. The review also added tests for Rust
+`Load` (a garbage `.gguf`) and `Decode` (its helper).
+
 Filed earlier and still open: **#533** (the passage_match timing tests).
 
 **An earlier session** (PR #524, #523 + #522): `notice_pmid` is stored

@@ -22,6 +22,7 @@ import dataclasses
 import hashlib
 import logging
 import os
+import pickle
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -180,7 +181,7 @@ def test_mismatched_file_is_gone_even_when_the_refetch_fails(
 ) -> None:
     (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
     server.truncate = True
-    with pytest.raises(ModelVerificationError):
+    with pytest.raises(SizeMismatchError):
         download_model(_model(server), tmp_path)
     assert list(tmp_path.iterdir()) == []
 
@@ -251,3 +252,18 @@ def test_verify_model_size_mismatch(tmp_path: Path, server: _Server) -> None:
 def test_both_mismatches_are_verification_errors() -> None:
     assert issubclass(SizeMismatchError, ModelVerificationError)
     assert issubclass(ChecksumMismatchError, ModelVerificationError)
+    assert (SizeMismatchError.what, ChecksumMismatchError.what) == ("size", "sha256")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SizeMismatchError(Path("m.gguf"), 3, "more than 3"),
+        ChecksumMismatchError(Path("m.gguf"), "0" * 64, "1" * 64),
+    ],
+    ids=type,
+)
+def test_a_mismatch_survives_pickling(error: ModelVerificationError) -> None:
+    # A worker process's error reaches its pool pickled.
+    back = pickle.loads(pickle.dumps(error))
+    assert (type(back), back.args, vars(back)) == (type(error), error.args, vars(error))

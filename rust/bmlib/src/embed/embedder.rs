@@ -72,7 +72,8 @@ pub enum EmbedError {
     /// fewer than [`EMBEDDING_DIM`] values.
     Load(String),
     /// llama.cpp failed while embedding: no context, or a batch would not
-    /// decode.
+    /// decode. A context is made per call here; llama-cpp-python makes it with
+    /// the model, so Python reports a context failure as `ModelLoadError`.
     Decode(String),
 }
 
@@ -144,8 +145,9 @@ impl Embedder {
     ///
     /// # Errors
     ///
-    /// [`EmbedError::Load`] if the file is missing, llama.cpp cannot load it,
-    /// or the model embeds to fewer than [`EMBEDDING_DIM`] values.
+    /// [`EmbedError::Load`] if the file is missing, llama.cpp's backend will
+    /// not start or cannot load the file, or the model embeds to fewer than
+    /// [`EMBEDDING_DIM`] values.
     pub fn load(model_path: &Path) -> Result<Self, EmbedError> {
         // llama-cpp-2 only debug-asserts the path, so a missing file would panic.
         if !model_path.is_file() {
@@ -295,8 +297,8 @@ fn pack(order: &[usize], lens: &[usize]) -> Vec<Vec<usize>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        embeddings, pack, query_document, refuse_narrow, refuse_too_long, truncate_and_normalize,
-        EmbedError, VectorError, EMBEDDING_DIM, MAX_SEQUENCES, MAX_TOKENS,
+        decode, embeddings, pack, query_document, refuse_narrow, refuse_too_long,
+        truncate_and_normalize, EmbedError, VectorError, EMBEDDING_DIM, MAX_SEQUENCES, MAX_TOKENS,
     };
 
     #[test]
@@ -329,6 +331,11 @@ mod tests {
         .unwrap();
         assert_eq!(got.len(), 2);
         assert_eq!((got[0][0], got[1][0], got[1][1]), (0.0625, 0.0, 1.0));
+    }
+
+    #[test]
+    fn an_embedding_failure_is_a_decode_error() {
+        assert_eq!(decode("no batch"), EmbedError::Decode("no batch".into()));
     }
 
     #[test]
