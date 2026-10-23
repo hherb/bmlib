@@ -22,6 +22,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -204,6 +205,50 @@ def test_a_verdict_that_contradicts_itself_is_refused(
 def test_a_crossref_result_that_contradicts_itself_is_refused(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         CrossrefResult(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "value", [None, "", "2020", "2020-06", "2020-06-02", "2024-02-29", "0999-01-01"]
+)
+def test_an_iso_or_absent_date_is_accepted(value: str | None) -> None:
+    evidence = RetractionEvidence(
+        RetractionSource.CROSSREF_PUBLISHER, RetractionKind.RETRACTION, value
+    )
+    assert evidence.date == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "05/15/2020",
+        "2020-13",
+        "2020-00",
+        "2020-02-30",
+        "2020-6-2",
+        "20200602",
+        " 2020-06-02",
+        "2020-06-02T00:00",
+        "\uff12\uff10\uff12\uff10",
+        2020,
+        pytest.param(Mock(spec=str), id="mock-spec-str"),
+    ],
+)
+def test_a_date_that_is_not_iso_is_refused(value: object) -> None:
+    # A non-ISO date compares as text against ISO ones: "05/..." sorts oldest (#507).
+    with pytest.raises(ValueError, match="date"):
+        RetractionEvidence(RetractionSource.CROSSREF_PUBLISHER, RetractionKind.RETRACTION, value)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="date"):
+        RetractionEvidence.from_dict(
+            {"source": "crossref_publisher", "kind": "retraction", "date": value}
+        )
+
+
+def test_an_export_notice_with_a_non_iso_date_is_refused() -> None:
+    notice = RetractionNotice(
+        record_id="1", nature=RetractionNature.RETRACTION, retraction_date="05/15/2020"
+    )
+    with pytest.raises(ValueError, match="date"):
+        evidence_from_notices([notice])
 
 
 def test_an_undecodable_body_is_unreachable() -> None:

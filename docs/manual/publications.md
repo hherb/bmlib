@@ -2046,7 +2046,11 @@ to):
 - Newest first over retractions, withdrawals, removals, reinstatements and
   the label, the first decides. Corrections, errata, corrigenda, addenda,
   clarifications, new versions and new editions are evidence of nothing.
-  Undated entries (`None`, or `""`) are the oldest. Dates compare as ISO
+  Undated entries (`None`, or `""`) are the oldest. Any other date that is
+  not ISO `yyyy`, `yyyy-mm` or a real `yyyy-mm-dd` is refused with
+  `ValueError` when the `RetractionEvidence` is built — by `from_dict`, by
+  `evidence_from_notices` for a stored notice — *(unreleased)*, since a
+  `05/15/2020` would compare as older than every ISO date. Dates compare as ISO
   text, so a less precise date sorts before a more precise one in the same
   period: a retraction dated `2021` is older than a reinstatement dated
   `2021-01-05`. On equal dates a reinstatement wins over a retraction (it can

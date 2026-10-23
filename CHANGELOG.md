@@ -7,6 +7,18 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **A retraction evidence date that is not ISO is refused** (#507).
+  `RetractionEvidence.date` is compared as text, so a date such as
+  `05/15/2020` from an app's own storage sorted as older than every ISO date
+  and could let a reinstatement or a retraction decide when it should not.
+  Building a `RetractionEvidence` — directly, through `from_dict`, or through
+  `evidence_from_notices` for a stored `RetractionNotice` — now raises
+  `ValueError` for any date that is not `None`, `""` (still undated, by
+  decision) or ISO `yyyy`, `yyyy-mm` or a real `yyyy-mm-dd`. Every date bmlib
+  itself produces (the export parser, the Crossref parser) already has that
+  shape, so nothing stored moves; a notice a caller stored with another
+  shape now raises when it is read as evidence. The Rust/FFI half is filed
+  separately.
 - **A caller value faking `str` as its class is refused as not text** (#500).
   `fetch_fulltext`'s `doi`, `pmid`, `pmc_id` and `identifier` checks, and
   `analyze()`'s `pmid` and `doi`, asked `isinstance(x, str)`, which trusts
