@@ -1,10 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-23 (**this session is #500**, branch
-`fix/fake-str-type-check-500`, worktree `../bmlib-s500`). **0.11.0 is released**
-(`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531 (the
-embedder), #534 (#530) and #535 (#532) merged since; all four are
-unreleased._
+_Last updated: 2026-10-23 (**this session is #507**, branch
+`fix/retraction-evidence-date-507`, worktree `../bmlib-s507`). **0.11.0 is
+released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
+(the embedder), #534 (#530), #535 (#532) and #536 (#500) merged since; all
+five are unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -27,7 +27,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -37,19 +37,15 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #500, a value faking `str` is not text
+## This session: #507, a non-ISO evidence date is refused
 
-`isinstance(x, str)` trusts `__class__`, so a `Mock(spec=str)` or a
-transparent proxy passed every caller-identifier check and escaped
-`fetch_fulltext` as `TypeError` — `doi`, `pmid`, `identifier` (the unbound
-`str.strip`) and, which the issue did not name, `pmc_id` (the regex). Both
-`fulltext/service.py` and `transparency/analyzer.py` now ask the real type
-through `_is_text` (`issubclass(type(x), str)`, a `TypeGuard`, restated in
-each module as the agreement rule requires); `_caller_pmid` also strips with
-the unbound `str.strip`, as `fulltext` does. **Pytest's own id generator is
-fooled by `Mock(spec=str)`** — a parametrize value needs an explicit
-`pytest.param(..., id=...)`. Remote JSON values (the ID Converter's `pmcid`)
-keep `isinstance`: `json` only produces real `str`.
+`RetractionEvidence.__post_init__` raises `ValueError` for a `date` that is
+not `None`, `""` or ISO `yyyy`, `yyyy-mm` or a real `yyyy-mm-dd`, so
+`from_dict` and `evidence_from_notices` refuse an app's `05/15/2020` rather
+than sorting it as the oldest date. `""` stays undated (the maintainer's
+choice, recorded in `docs/DECISIONS.md`'s #504 section). Python only: the
+Rust/FFI half, which needs `retraction_status` to return a `Result`, is
+**#537**. No shared fixture case, since the port cannot meet it yet.
 
 Filed earlier and still open: **#533** (the passage_match timing tests).
 
@@ -84,7 +80,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,182 passing + 111 skipped** on this session's branch
+- **Tests: 7,203 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-23; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
@@ -113,12 +109,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-23: 95, less #500). **#533** is the #530
+open --limit 300`, 2026-10-23: 95 with #537, less #507). **#533** is the #530
 session's (a flaky timing test; a decision between CPU time, a debug budget
 and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
-whose seeds are all too common is rejected at 0.0. **#507** is PR #506's (a non-ISO evidence date refused at the `from_dict` / FFI boundary; read `docs/DECISIONS.md`'s #504 section first); **#520** is the Rust store's import, which owes #522's nature rule too. **#503** is PR #502's review's (the PDF title
+whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **#503** is PR #502's review's (the PDF title
 sampler's `europepmc` population changed with #494 and its corpus cannot
 tell). **Five more filed on 2026-10-17 are in no list below yet**: the FFI
 spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on

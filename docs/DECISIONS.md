@@ -5037,6 +5037,14 @@ crossed the cap since planning.
   the always-undated PubMed label both lose to any dated reinstatement. That
   is the issue's own rule ("a reinstatement dated later"), kept as written;
   `label_beaten_by_a_later_reinstatement` pins it.
+- **`""` stays undated; every other non-ISO date is refused** (#507, the
+  maintainer's choice, 2026-10-23). `RetractionEvidence.__post_init__`
+  raises `ValueError` for a date that is not `None`, `""`, `yyyy`, `yyyy-mm`
+  or a real `yyyy-mm-dd`, so an app's own `05/15/2020` cannot sort as the
+  oldest date and let the wrong notice decide. `""` keeps PR #506's reading
+  (the shared fixture pins it), so the Rust port's behaviour on every fixture
+  case is unchanged. Python only: the FFI's `retraction_status` would have to
+  return a `Result`, an API change for the apps, filed for the Rust side.
 - **Look a paper up by its PMID as well as its DOI.** 5,886 of the 67,845
   retractions (8.7%) in the 73,283-row export of 2026-10-18 carry no DOI, so
   a DOI-only lookup can miss a notice the export holds under a PMID and still

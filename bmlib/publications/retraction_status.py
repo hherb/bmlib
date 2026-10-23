@@ -44,6 +44,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -193,14 +194,35 @@ _SOURCE_PREFERENCE = {
 }
 
 
+# No year 0000 at any precision: ``date`` has none, so a full date could not carry it.
+_ISO_DATE_RE = re.compile(r"(?!0000)[0-9]{4}(?:-(?:0[1-9]|1[0-2])(?:-[0-9]{2})?)?")
+
+
+def _is_iso_date(text: str) -> bool:
+    """Is ``text`` empty, ``yyyy``, ``yyyy-mm`` or a real ``yyyy-mm-dd``?"""
+    if not text:
+        return True
+    if not _ISO_DATE_RE.fullmatch(text):
+        return False
+    if len(text) < 10:
+        return True
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class RetractionEvidence:
     """One source's statement about one paper, in a source-neutral form.
 
     ``date`` is ISO: ``yyyy-mm-dd``, or ``yyyy-mm`` / ``yyyy`` where Crossref
-    deposited only that much. ``notice_doi`` is the notice's DOI, normalised
-    (doi.org prefix and whitespace stripped, lower-cased). ``raw_kind`` is the
-    source's own spelling of the kind.
+    deposited only that much; ``None`` or ``""`` is undated. Any other date
+    raises ``ValueError`` (#507), since dates compare as text and a
+    ``05/15/2020`` would sort as older than every ISO date. ``notice_doi`` is
+    the notice's DOI, normalised (doi.org prefix and whitespace stripped,
+    lower-cased). ``raw_kind`` is the source's own spelling of the kind.
     """
 
     source: RetractionSource
@@ -209,6 +231,15 @@ class RetractionEvidence:
     notice_doi: str | None = None
     record_id: str | None = None
     raw_kind: str | None = None
+
+    def __post_init__(self) -> None:
+        # The real type, not isinstance, which trusts a faked __class__ (#500).
+        if self.date is not None and not (
+            issubclass(type(self.date), str) and _is_iso_date(self.date)
+        ):
+            raise ValueError(
+                f"RetractionEvidence.date must be ISO yyyy[-mm[-dd]], empty or None: {self.date!r}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary (the fixture's shape)."""
