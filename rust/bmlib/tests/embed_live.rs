@@ -274,7 +274,21 @@ fn vectors_are_unit_length() {
 #[test]
 fn missing_model_file_is_an_error() {
     match Embedder::load(Path::new("nonexistent.gguf")) {
-        Err(EmbedError::Llama(message)) => assert!(message.contains("nonexistent.gguf")),
-        other => panic!("expected Llama, got {:?}", other.err()),
+        Err(EmbedError::Load(message)) => assert!(message.contains("nonexistent.gguf")),
+        other => panic!("expected Load, got {:?}", other.err()),
+    }
+}
+
+/// Runs without a model: a file llama.cpp will not load is a `Load` error
+/// naming it.
+#[test]
+fn unloadable_model_file_is_a_load_error() {
+    let path = std::env::temp_dir().join(format!("bmlib-not-a-model-{}.gguf", std::process::id()));
+    std::fs::write(&path, b"not a GGUF file").unwrap();
+    let result = Embedder::load(&path);
+    std::fs::remove_file(&path).unwrap();
+    match result {
+        Err(EmbedError::Load(message)) => assert!(message.contains("bmlib-not-a-model-")),
+        other => panic!("expected Load, got {:?}", other.err()),
     }
 }

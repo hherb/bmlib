@@ -28,6 +28,7 @@ import builtins
 import json
 import math
 import os
+import pickle
 import sys
 import types
 from pathlib import Path
@@ -37,8 +38,13 @@ import pytest
 from bmlib.embed import (
     EMBEDDING_DIM,
     MAX_TOKENS,
+    BatchDecodeError,
     Embedder,
     EmbedError,
+    EmptyTextError,
+    ModelLoadError,
+    TextTooLongError,
+    UnusableOutputError,
     VectorError,
     query_text,
     truncate_and_normalize,
@@ -106,7 +112,7 @@ def test_query_is_prefixed_document(embedder: Embedder) -> None:
 @live
 def test_overlong_text_is_an_error(embedder: Embedder) -> None:
     long_text = "word " * 40_000
-    with pytest.raises(EmbedError) as caught:
+    with pytest.raises(TextTooLongError) as caught:
         embedder.embed_documents(["short", long_text])
     assert caught.value.index == 1
 
@@ -132,21 +138,21 @@ def test_text_at_max_tokens_is_accepted(embedder: Embedder) -> None:
 
 @live
 def test_text_one_over_max_tokens_is_an_error(embedder: Embedder) -> None:
-    with pytest.raises(EmbedError, match=f"has {MAX_TOKENS + 1} tokens") as caught:
+    with pytest.raises(TextTooLongError, match=f"has {MAX_TOKENS + 1} tokens") as caught:
         embedder.embed_documents(["short", _text_of_tokens(embedder, MAX_TOKENS + 1)])
     assert caught.value.index == 1
 
 
 @live
 def test_empty_text_is_an_error(embedder: Embedder) -> None:
-    with pytest.raises(EmbedError) as caught:
+    with pytest.raises(EmptyTextError) as caught:
         embedder.embed_documents(["fine", "  "])
     assert caught.value.index == 1
 
 
 @live
 def test_empty_query_is_an_error(embedder: Embedder) -> None:
-    with pytest.raises(EmbedError) as caught:
+    with pytest.raises(EmptyTextError) as caught:
         embedder.embed_query("   ")
     assert caught.value.index == 0
 
@@ -158,16 +164,18 @@ def test_vectors_are_unit_length(embedder: Embedder) -> None:
         assert math.isclose(math.hypot(*vec), 1.0, abs_tol=1e-6), f"item {i}"
 
 
-def test_missing_extra_names_it(monkeypatch: pytest.MonkeyPatch) -> None:
+# An installed llama_cpp can fail to import with any of the three.
+@pytest.mark.parametrize("raised", [ImportError, OSError, RuntimeError])
+def test_missing_extra_names_it(monkeypatch: pytest.MonkeyPatch, raised: type[Exception]) -> None:
     real_import = builtins.__import__
 
     def fail(name: str, *args: object, **kwargs: object) -> object:
         if name == "llama_cpp":
-            raise ImportError("no llama_cpp")
+            raise raised("no llama_cpp")
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(builtins, "__import__", fail)
-    with pytest.raises(EmbedError, match=r"bmlib\[embed\]") as caught:
+    with pytest.raises(ModelLoadError, match=r"bmlib\[embed\]") as caught:
         Embedder(Path("nonexistent.gguf"))
     assert "no llama_cpp" in str(caught.value)  # what was raised, not an assumed cause
 
@@ -225,18 +233,38 @@ def test_max_tokens_is_accepted_and_one_more_is_refused(
 ) -> None:
     embedder, llm = fake
     embedder.embed_documents(["a" * MAX_TOKENS])
-    with pytest.raises(EmbedError, match=f"has {MAX_TOKENS + 1} tokens") as caught:
+    with pytest.raises(TextTooLongError, match=f"has {MAX_TOKENS + 1} tokens") as caught:
         embedder.embed_documents(["ok", "a" * (MAX_TOKENS + 1), "ok"])
     assert caught.value.index == 1
+    assert caught.value.tokens == MAX_TOKENS + 1
     assert len(llm.embedded) == 1  # the refused batch embedded nothing
 
 
 def test_an_empty_text_is_refused_before_tokenizing(fake: tuple[Embedder, _FakeLlama]) -> None:
     embedder, llm = fake
-    with pytest.raises(EmbedError) as caught:
+    with pytest.raises(EmptyTextError) as caught:
         embedder.embed_documents(["ok", " \x1c "])
     assert caught.value.index == 1
     assert llm.tokenized == [] and llm.embedded == []
+
+
+def test_a_text_that_cannot_be_tokenized_is_named(
+    fake: tuple[Embedder, _FakeLlama], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    embedder, llm = fake
+    with pytest.raises(EmbedError, match="text at index 1 cannot be tokenized") as caught:
+        embedder.embed_documents(["ok", "lone \udc80 surrogate"])
+    assert (type(caught.value), caught.value.index) == (EmbedError, 1)
+    assert isinstance(caught.value.__cause__, UnicodeEncodeError)
+
+    def refuse(text: bytes, add_bos: bool, special: bool) -> list[int]:
+        raise RuntimeError("Failed to tokenize")
+
+    monkeypatch.setattr(llm, "tokenize", refuse)
+    with pytest.raises(EmbedError, match="index 0 cannot be tokenized: Failed") as caught:
+        embedder.embed_documents(["ok"])
+    assert (type(caught.value), caught.value.index) == (EmbedError, 0)
+    assert llm.embedded == []
 
 
 def test_no_texts_embed_nothing(fake: tuple[Embedder, _FakeLlama]) -> None:
@@ -249,7 +277,7 @@ def test_a_query_is_prefixed_and_an_empty_one_refused(fake: tuple[Embedder, _Fak
     embedder, llm = fake
     embedder.embed_query("aspirin")
     assert llm.embedded[0][0] == [query_text("aspirin")]
-    with pytest.raises(EmbedError) as caught:
+    with pytest.raises(EmptyTextError) as caught:
         embedder.embed_query("   ")
     assert caught.value.index == 0
     assert len(llm.embedded) == 1
@@ -265,7 +293,7 @@ def test_a_decode_failure_is_an_embed_error(
 ) -> None:
     embedder, llm = fake
     llm.fail = fail
-    with pytest.raises(EmbedError, match=str(fail)) as caught:
+    with pytest.raises(BatchDecodeError, match=str(fail)) as caught:
         embedder.embed_documents(["a"])
     assert caught.value.index is None
     assert caught.value.__cause__ is fail
@@ -278,10 +306,11 @@ def test_an_unusable_output_is_an_embed_error_naming_its_text(
     embedder, llm = fake
     vectors = [_raw("a"), [bad] * EMBEDDING_DIM, _raw("c")]
     monkeypatch.setattr(llm, "embed", lambda texts, normalize, truncate: vectors)
-    with pytest.raises(EmbedError, match="text at index 1: ") as caught:
+    with pytest.raises(UnusableOutputError, match="text at index 1: ") as caught:
         embedder.embed_documents(["a", "b", "c"])
     assert caught.value.index == 1
-    assert isinstance(caught.value.__cause__, VectorError)
+    assert isinstance(caught.value.error, VectorError)
+    assert caught.value.__cause__ is caught.value.error
 
 
 def test_an_unusable_query_output_is_an_embed_error(
@@ -289,7 +318,7 @@ def test_an_unusable_query_output_is_an_embed_error(
 ) -> None:
     embedder, llm = fake
     monkeypatch.setattr(llm, "embed", lambda texts, normalize, truncate: [[math.nan] * 300])
-    with pytest.raises(EmbedError, match="text at index 0: ") as caught:
+    with pytest.raises(UnusableOutputError, match="text at index 0: ") as caught:
         embedder.embed_query("aspirin")
     assert caught.value.index == 0
 
@@ -300,7 +329,7 @@ def test_the_lowest_unusable_index_is_named(
     embedder, llm = fake
     vectors = [_raw("a"), [math.nan] * EMBEDDING_DIM, [0.0] * EMBEDDING_DIM]
     monkeypatch.setattr(llm, "embed", lambda texts, normalize, truncate: vectors)
-    with pytest.raises(EmbedError) as caught:
+    with pytest.raises(UnusableOutputError) as caught:
         embedder.embed_documents(["a", "b", "c"])
     assert caught.value.index == 1
 
@@ -329,7 +358,7 @@ def test_a_model_narrower_than_the_embedding_is_refused_at_load(
 ) -> None:
     module = _FakeLlamaModule(EMBEDDING_DIM - 1)
     monkeypatch.setitem(sys.modules, "llama_cpp", module)
-    with pytest.raises(EmbedError, match=f"embeds to {EMBEDDING_DIM - 1} values") as caught:
+    with pytest.raises(ModelLoadError, match=f"embeds to {EMBEDDING_DIM - 1} values") as caught:
         Embedder(Path("narrow.gguf"))
     assert caught.value.index is None  # the model is at fault, not a text
     assert module.closed
@@ -352,6 +381,36 @@ def test_a_model_that_will_not_load_is_an_embed_error(
 
     module = types.SimpleNamespace(Llama=refuse, LLAMA_POOLING_TYPE_CLS=2)
     monkeypatch.setitem(sys.modules, "llama_cpp", module)
-    with pytest.raises(EmbedError, match="does not exist") as caught:
+    with pytest.raises(ModelLoadError, match="does not exist") as caught:
         Embedder(tmp_path / "missing.gguf")
     assert caught.value.index is None
+
+
+@pytest.mark.parametrize(
+    "error",
+    [EmptyTextError, TextTooLongError, UnusableOutputError, ModelLoadError, BatchDecodeError],
+)
+def test_every_embedder_error_is_an_embed_error(error: type[Exception]) -> None:
+    assert issubclass(error, EmbedError)  # one except clause still catches every failure
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        EmbedError("message", 3),
+        EmptyTextError(2),
+        TextTooLongError(1, MAX_TOKENS + 1),
+        UnusableOutputError(4, VectorError("its norm is nan")),
+        ModelLoadError("cannot load"),
+        BatchDecodeError("llama.cpp: decode failed"),
+    ],
+    ids=type,
+)
+def test_every_embedder_error_survives_pickling(error: EmbedError) -> None:
+    # A worker process's error reaches its pool pickled.
+    back = pickle.loads(pickle.dumps(error))
+    assert (type(back), back.args, repr(vars(back))) == (
+        type(error),
+        error.args,
+        repr(vars(error)),
+    )

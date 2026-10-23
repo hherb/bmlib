@@ -30,6 +30,7 @@ from bmlib.embed import (
     EMBEDDING_DIM,
     MAX_TOKENS,
     QUERY_PREFIX,
+    EmbedError,
     EmptyTextError,
     VectorError,
     check_texts,
@@ -92,7 +93,7 @@ def test_check_texts(case: dict) -> None:
     with pytest.raises(EmptyTextError) as caught:
         check_texts(case["texts"])
     assert caught.value.index == case["error_index"]
-    assert isinstance(caught.value, ValueError)
+    assert isinstance(caught.value, ValueError) and isinstance(caught.value, EmbedError)
 
 
 @pytest.mark.parametrize("case", CONTRACT["model_files"], ids=lambda c: c["name"])

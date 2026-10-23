@@ -24,7 +24,8 @@ checks size and sha256, and renames only on a match. Its `progress` callback is
 temporary file and returns `ModelError::Cancelled`. `ModelFile::check` refuses
 a file that cannot be pinned (`ModelError::Invalid`).
 `Embedder` (feature `embed`), over llama-cpp-2: `load`, `embed_documents` and
-`embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Vector`, `Llama`). CLS pooling,
+`embed_query`, with `EmbedError` (`EmptyText`, `TooLong`, `Vector`, `Load`, `Decode`; #532 split
+`Llama` into the last two, a load failure and an embedding one, and Python raises a subclass per variant). CLS pooling,
 texts length-sorted and packed up to 8192 tokens and 16 per batch, results in
 input order. A text over `MAX_TOKENS` is refused, never cut short; a missing or
 unloadable model is an `EmbedError` too. Held to the reference vectors by

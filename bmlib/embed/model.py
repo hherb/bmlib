@@ -32,6 +32,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, ClassVar
 
 from bmlib import __version__
 
@@ -94,14 +95,38 @@ ARCTIC_EMBED_L_V2_Q8_0 = ModelFile(
 
 
 class ModelVerificationError(Exception):
-    """A model file's size or sha256 is not the pinned one."""
+    """A model file's size or sha256 is not the pinned one.
 
-    def __init__(self, path: Path, what: str, expected: int | str, actual: int | str) -> None:
-        super().__init__(f"{path}: {what} is {actual}, expected {expected}")
+    Only ever raised as :class:`SizeMismatchError` or
+    :class:`ChecksumMismatchError`, whose class attribute ``what`` (``"size"``
+    or ``"sha256"``) says which, so the two can never disagree.
+    """
+
+    what: ClassVar[str]
+
+    def __init__(self, path: Path, expected: int | str, actual: int | str) -> None:
+        super().__init__(f"{path}: {self.what} is {actual}, expected {expected}")
         self.path = path
-        self.what = what
         self.expected = expected
         self.actual = actual
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
+        return type(self), (self.path, self.expected, self.actual), self.__dict__
+
+
+class SizeMismatchError(ModelVerificationError):
+    """The size is not the pinned one (Rust: ``ModelError::SizeMismatch``).
+
+    ``actual`` is ``"more than N"`` for a download stopped at its first excess block.
+    """
+
+    what = "size"
+
+
+class ChecksumMismatchError(ModelVerificationError):
+    """The sha256 is not the pinned one (Rust: ``ModelError::ChecksumMismatch``)."""
+
+    what = "sha256"
 
 
 class DownloadCancelled(Exception):  # noqa: N818 - a cancel, not an error
@@ -110,9 +135,9 @@ class DownloadCancelled(Exception):  # noqa: N818 - a cancel, not an error
 
 def _check(path: Path, model: ModelFile, size: int, sha256: str) -> None:
     if size != model.size:
-        raise ModelVerificationError(path, "size", model.size, size)
+        raise SizeMismatchError(path, model.size, size)
     if sha256 != model.sha256:
-        raise ModelVerificationError(path, "sha256", model.sha256, sha256)
+        raise ChecksumMismatchError(path, model.sha256, sha256)
 
 
 def verify_model(path: Path, model: ModelFile) -> None:
@@ -124,7 +149,7 @@ def verify_model(path: Path, model: ModelFile) -> None:
     """
     size = path.stat().st_size
     if size != model.size:
-        raise ModelVerificationError(path, "size", model.size, size)
+        raise SizeMismatchError(path, model.size, size)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while block := handle.read(BLOCK_SIZE):
@@ -185,9 +210,7 @@ def download_model(
                 digest.update(block)
                 done += len(block)
                 if done > model.size:  # stop at the first excess block
-                    raise ModelVerificationError(
-                        part, "size", model.size, f"more than {model.size}"
-                    )
+                    raise SizeMismatchError(part, model.size, f"more than {model.size}")
                 if progress is not None and progress(done, model.size) is False:
                     raise DownloadCancelled(f"download of {model.file} cancelled")
             out.flush()

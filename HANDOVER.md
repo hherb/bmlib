@@ -1,9 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-22 (**this session is #530**, branch
-`fix/embed-nonfinite-530`, worktree `../bmlib-s530`). **0.11.0 is released**
-(`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`) and #531 (the
-embedder) merged before this session._
+_Last updated: 2026-10-23 (**this session is #532**, branch
+`feat/embed-error-types-532`, worktree `../bmlib-s532`). **0.11.0 is released**
+(`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531 (the
+embedder) and #534 (#530) merged before this session; all three are
+unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -26,7 +27,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -36,37 +37,35 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #530, an embedding that is not one
+## This session: #532, the embedder's errors typed alike
 
-`truncate_and_normalize` passed NaN and infinity through and turned an
-all-zero head into a zero "unit" vector, each silently. It now raises
-`VectorError` (a new `ValueError`, also for a too-short vector) and the
-`Embedder` wraps it as an `EmbedError` naming the text's index; Rust's
-`VectorTooShort` became `VectorError { TooShort, NotScalable }` and
-`EmbedError` gained `Vector { index, error }`. **One norm check does it all**:
-a mutant deleting a separate `isfinite` loop survived, a NaN or infinity
-carrying into the norm, so the loop went. The shared contract's all-zero case
-now expects an error (a comment on #530 from PR #531's review proposed it), six cases
-join it, and both readers parse `"NaN"`/`"Infinity"`/`"-Infinity"` strings.
-Python mutants all killed. **#532** (the two languages' error vocabularies)
-is still the maintainer's call, and has a comment: Rust's new `Vector`
-variant has no Python subclass, only `EmbedError.__cause__`.
+Python's embedder now raises one `EmbedError` subclass per Rust variant, so a
+caller can tell "split this text" from "the model is broken" without parsing
+`str(exc)`: `EmptyTextError` (moved under `EmbedError`, which now lives in
+`vectors.py` so the stdlib-only module can own it; still a `ValueError`),
+`TextTooLongError(index, tokens)`, `UnusableOutputError(index, error)`,
+`ModelLoadError` (import, load, narrow model) and `BatchDecodeError`.
+`ModelVerificationError` gains `SizeMismatchError` / `ChecksumMismatchError`,
+keeping `.what`. Rust's `EmbedError::Llama` split into `Load` (backend, file,
+narrow model) and `Decode` (context, batch, decode). `except EmbedError`
+still catches everything, pinned by a test. Live tests ran against the Q8_0
+model in both languages. **Left as is**: `VectorError::NotScalable` carries no
+norm (#532's last comment: a payload loses `Eq`, a split adds names Python's
+one class lacks); Python's `VectorError` names it only in its message.
 
-**PR #534's review moved three neighbours** into the same PR. A model
-embedding to fewer than 256 values is refused **at load** (`n_embd()`;
-Rust `n_embd_out()`, the width `embeddings_seq_ith` slices to), since its
-too-short output would otherwise fail every text alike and be blamed on
-text 0. Python's decode catches llama-cpp-python's NULL-pointer `ValueError`
-as well. Rust now names the **first** failing text in input order, as Python
-does: it decodes longest first, so it keeps every result and converts them in
-order (`embeddings()`, which also pins the index). The contract's error cases
-name their kind (`too_short`/`not_scalable`), and the floor cases are the two
-`f32` neighbours of `1e-12`, which is not an `f32` itself, so a case at the
-floor would split the languages. Rust's `NotScalable` still carries no value;
-that is #532's vocabulary question, noted there.
+**PR #535's review** fixed four things. Four of the new exceptions could not
+be unpickled, which would break a process pool on one long text; every error
+now round-trips, and a test pins it. A context llama.cpp will not create is
+`Load` in Python and `Decode` in Rust. That is deliberate: llama-cpp-python
+builds the context with the model, while Rust builds one per call. It is now
+documented on both sides instead of the mapping being claimed one-to-one.
+A text that cannot be tokenized (a lone surrogate) used to escape as
+`UnicodeEncodeError`; it is now an `EmbedError` naming its index. Rust has no
+variant for it, because Rust strings cannot hold one. `.what` became each
+mismatch class's own class attribute. The review also added tests for Rust
+`Load` (a garbage `.gguf`) and `Decode` (its helper).
 
-Filed **#533**: the Rust `passage_match` timing tests (2 s wall clock) failed
-once under a full parallel debug `cargo test`, and pass at ~0.5 s alone.
+Filed earlier and still open: **#533** (the passage_match timing tests).
 
 **An earlier session** (PR #524, #523 + #522): `notice_pmid` is stored
 canonical in Python and Rust; `RetractionIndex::build` refuses an all-`Other`
@@ -99,8 +98,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,949 passing + 101 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-21); measure `main` with `pytest
+- **Tests: 7,161 passing + 111 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-23; the embedder's live tests skip
+  without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); this session ran
   `test_backends.py` with it (197 passed + 1 skipped). The default skips are
@@ -126,11 +126,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-six open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-22: 97, less #530). **#533** is this
-session's (a flaky timing test). **#532** is PR #531's (the
-embedder): Python's error types do not mirror Rust's — an API-shape decision,
-free while the embedder is unreleased. **#528** and
+**Ninety-five open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-23: 96, less #532). **#533** is the previous
+session's (a flaky timing test; a decision between CPU time, a debug budget
+and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#507** is PR #506's (a non-ISO evidence date refused at the `from_dict` / FFI boundary; read `docs/DECISIONS.md`'s #504 section first); **#520** is the Rust store's import, which owes #522's nature rule too. **#500** is the previous

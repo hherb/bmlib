@@ -22,6 +22,7 @@ import dataclasses
 import hashlib
 import logging
 import os
+import pickle
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,9 +33,11 @@ import pytest
 import bmlib.embed.model as model_module
 from bmlib.embed import (
     ARCTIC_EMBED_L_V2_F16,
+    ChecksumMismatchError,
     DownloadCancelled,
     ModelFile,
     ModelVerificationError,
+    SizeMismatchError,
     download_model,
     verify_model,
 )
@@ -132,7 +135,7 @@ def test_download_skips_verified_file(server: _Server, tmp_path: Path) -> None:
 
 def test_download_truncated_body_leaves_no_model(server: _Server, tmp_path: Path) -> None:
     server.truncate = True
-    with pytest.raises(ModelVerificationError) as info:
+    with pytest.raises(SizeMismatchError) as info:
         download_model(_model(server), tmp_path)
     assert info.value.what == "size"
     assert list(tmp_path.iterdir()) == []
@@ -140,7 +143,7 @@ def test_download_truncated_body_leaves_no_model(server: _Server, tmp_path: Path
 
 def test_download_oversized_body_fails_early(server: _Server, tmp_path: Path) -> None:
     model = _model(server, BODY[: 1024 * 1024])  # server sends 3 MiB, 1 MiB expected
-    with pytest.raises(ModelVerificationError) as info:
+    with pytest.raises(SizeMismatchError) as info:
         download_model(model, tmp_path)
     assert info.value.what == "size"
     assert info.value.actual == f"more than {model.size}"  # the in-stream check, not the final one
@@ -149,8 +152,9 @@ def test_download_oversized_body_fails_early(server: _Server, tmp_path: Path) ->
 
 def test_download_wrong_bytes_is_checksum_error(server: _Server, tmp_path: Path) -> None:
     model = dataclasses.replace(_model(server), sha256="0" * 64)
-    with pytest.raises(ModelVerificationError) as info:
+    with pytest.raises(ChecksumMismatchError) as info:
         download_model(model, tmp_path)
+    assert info.value.what == "sha256"
     assert info.value.expected == "0" * 64
     assert info.value.actual == hashlib.sha256(BODY).hexdigest()
     assert list(tmp_path.iterdir()) == []
@@ -177,7 +181,7 @@ def test_mismatched_file_is_gone_even_when_the_refetch_fails(
 ) -> None:
     (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
     server.truncate = True
-    with pytest.raises(ModelVerificationError):
+    with pytest.raises(SizeMismatchError):
         download_model(_model(server), tmp_path)
     assert list(tmp_path.iterdir()) == []
 
@@ -213,7 +217,7 @@ def test_an_interrupt_leaves_no_part_file(server: _Server, tmp_path: Path) -> No
 
 def test_verify_model_checksum_mismatch(tmp_path: Path, server: _Server) -> None:
     (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
-    with pytest.raises(ModelVerificationError) as info:
+    with pytest.raises(ChecksumMismatchError) as info:
         verify_model(tmp_path / "m.gguf", _model(server))
     assert info.value.what == "sha256"
     assert info.value.actual == hashlib.sha256(bytes(len(BODY))).hexdigest()
@@ -240,6 +244,26 @@ def test_model_file_refuses_what_cannot_pin(field: str, value: object) -> None:
 
 def test_verify_model_size_mismatch(tmp_path: Path, server: _Server) -> None:
     (tmp_path / "m.gguf").write_bytes(b"x")
-    with pytest.raises(ModelVerificationError) as info:
+    with pytest.raises(SizeMismatchError) as info:
         verify_model(tmp_path / "m.gguf", _model(server))
-    assert (info.value.expected, info.value.actual) == (len(BODY), 1)
+    assert (info.value.what, info.value.expected, info.value.actual) == ("size", len(BODY), 1)
+
+
+def test_both_mismatches_are_verification_errors() -> None:
+    assert issubclass(SizeMismatchError, ModelVerificationError)
+    assert issubclass(ChecksumMismatchError, ModelVerificationError)
+    assert (SizeMismatchError.what, ChecksumMismatchError.what) == ("size", "sha256")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SizeMismatchError(Path("m.gguf"), 3, "more than 3"),
+        ChecksumMismatchError(Path("m.gguf"), "0" * 64, "1" * 64),
+    ],
+    ids=type,
+)
+def test_a_mismatch_survives_pickling(error: ModelVerificationError) -> None:
+    # A worker process's error reaches its pool pickled.
+    back = pickle.loads(pickle.dumps(error))
+    assert (type(back), back.args, vars(back)) == (type(error), error.args, vars(error))

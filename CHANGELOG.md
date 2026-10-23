@@ -7,6 +7,23 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`bmlib.embed`'s errors can be told apart by type, as Rust's are** (#532;
+  the embedder is unreleased, so nothing shipped moves). Every embedder failure
+  is still an `EmbedError` with `.index`, now raised as one of five subclasses
+  mirroring the Rust variants: `EmptyTextError` (now an `EmbedError` as well
+  as a `ValueError`, raised directly rather than re-wrapped; Rust
+  `EmptyText`), `TextTooLongError` with `.tokens` (`TooLong`),
+  `UnusableOutputError` with `.error`, the `VectorError` (`Vector`),
+  `ModelLoadError` for a failed import, an unloadable file, a context llama.cpp
+  will not create or a model narrower than 256 (`Load`; Rust makes its context
+  per call, so it reports that one as `Decode`), and `BatchDecodeError`
+  (`Decode`). A text that cannot be tokenized (a lone surrogate) is an
+  `EmbedError` naming its index, where it escaped as `UnicodeEncodeError`; Rust
+  cannot meet it. A model that fails its check is a `SizeMismatchError` or a
+  `ChecksumMismatchError`, both `ModelVerificationError`s, `.what` now their
+  class attribute. Every one survives pickling, so it crosses a process pool.
+  In Rust, `EmbedError::Llama` splits into `Load` and `Decode`. `VectorError::NotScalable` still carries no
+  norm (left as is: see #532's last comment).
 - **`bmlib.embed.Embedder`: in-process embedding over llama-cpp-python** (new
   `bmlib[embed]` extra). `embed_documents` / `embed_query` return 256-dimension
   unit vectors, held to the shared reference vectors (cosine >= 0.999 on F16,
@@ -45,7 +62,7 @@ All notable changes to bmlib are documented here. The format is based on
   port in the same PR: `VectorTooShort` becomes
   `VectorError { TooShort, NotScalable }`, `EmbedError` gains `Vector` (the
   first failing text in input order, as Python), and `Embedder::load` refuses
-  a narrow model as `Llama`.
+  a narrow model as `Llama` (`Load` since #532).
 - **A retraction notice's own PMID is stored without leading zeros, as the
   paper's is** (#523, from PR #521's review). `notice_pmid` went through
   whitespace stripping alone, so the export's occasional padding (its paper
