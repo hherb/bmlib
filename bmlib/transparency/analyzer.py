@@ -37,7 +37,7 @@ from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field, fields
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, SupportsIndex
+from typing import TYPE_CHECKING, Any, SupportsIndex, TypeGuard
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in analyze().
     import httpx
@@ -2718,6 +2718,19 @@ def _pmid_is_zero(text: str) -> bool:
     return text.isascii() and text.isdigit()
 
 
+def _is_text(value: object) -> TypeGuard[str]:
+    """Whether *value* is a ``str``, asked of its real type (issue #500).
+
+    :func:`isinstance` trusts ``__class__``, so a ``Mock(spec=str)`` or a
+    transparent proxy round a string passed it: the DOI then raised a
+    ``TypeError`` naming ``str.strip``, and the PMID a ``ValueError`` quoting
+    the object's repr as though it were a malformed PMID. ``type()`` cannot be
+    faked. Restated in :mod:`bmlib.fulltext.service`, whose caller rules are
+    held to agreeing with these.
+    """
+    return issubclass(type(value), str)
+
+
 def _caller_pmid(pmid: object) -> str | None:
     """The PMID a caller passed to :meth:`TransparencyAnalyzer.analyze`, or raise.
 
@@ -2749,8 +2762,9 @@ def _caller_pmid(pmid: object) -> str | None:
     """
     if pmid is None:
         return None
-    if isinstance(pmid, str):
-        text = str(pmid).strip()
+    if _is_text(pmid):
+        # The unbound method, as for the DOI below.
+        text = str.strip(pmid)
     else:
         # `SupportsIndex` is runtime-checkable: it asks for `__index__`, which
         # is exactly what `operator.index` calls.
@@ -2799,7 +2813,7 @@ def _caller_doi(doi: object) -> str | None:
     """
     if doi is None:
         return None
-    if not isinstance(doi, str):
+    if not _is_text(doi):
         raise TypeError(f"doi must be a str, not {type(doi).__name__}: {reprlib.repr(doi)}")
     # The unbound method, so a `str` subclass's own `strip` cannot hand back
     # something that is not the caller's text.
