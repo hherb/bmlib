@@ -1,10 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-23 (**this session is #453**, branch
-`fix/review-wording-453`, worktree `../bmlib-s453`). **0.11.0 is
+_Last updated: 2026-10-24 (**this session is #540**, branch
+`feat/review-stratum-540`, worktree `../bmlib-s540`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
-(the embedder), #534 (#530), #535 (#532), #536 (#500) and #538 (#507) merged
-since; all six are unreleased._
+(the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507) and #539
+(#453) merged since; all seven are unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -27,7 +27,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -37,27 +37,23 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #453, a review read by how it searched
+## This session: #540, narrative reviews measured
 
-`systematic_review` gains four search keywords, two `STUDY_TYPE_PATTERNS`
-reading a search of a named database (no `.` or `;` between, within 60/80
-characters — not a sentence) and an exclusion list (non-systematic, a
-trial's "Evidence before this study" panel); the Rust port follows
-(transcription tests now cover every pattern, keyword and exclusion entry;
-oracle regenerated with three new cases). On the abstract draw reviews read
-`unknown` go 403 → 220 of 1,771 and `rct` 51 → 27; in full text 66 of 7,410
-move, 35 of the 65 new `systematic_review` with no sign of being a review
-(#454). **The maintainer chose the search wording only**: the plural
-"meta-analyses" moved 78 full-text articles for 2 reviews and is refused;
-**PR #539's review** refused "systematically identified" (0 abstracts, 8
-full-text non-reviews), kept "systematically reviewed" knowingly (15 abstract
-reviews, 9 full-text false positives, pinned) and added the exclusions, not
-"no systematic" (it refused 3 reviews' motivations). Both sampler corpora
-re-measured; **every edit to `extractors.py`, comments included, needs both
-re-run** (`remeasure --write` live, `fulltext … --baseline --write` offline)
-— finalise the comments first. The counterfactuals ran on a cached copy of
-the draw's abstract texts (a scratch file, not in the repo). Narrative reviews
-are not in the draw, so their cost is unmeasured: **#540**.
+`sample_extractor_signals.py abstracts --publication-type Review` draws
+PubMed's bare `Review` as a displaced draw, and `LABEL_ORDER` gains
+`review_only` (last, so a case report with a literature review stays a case
+report; it moves 4 committed records from `other`). The draw is committed as
+`tests/data/extractor_abstracts_review.json` and **pinned like the other two
+— an `extractors.py` edit now re-measures three corpora** (`remeasure
+tests/data/extractor_abstracts_review.json --email … --write`). Over its 760
+`review_only` records #453 moves 7: 1 narrative review misread, 1 borderline,
+3 searched reviews, 2 already `meta_analysis` (`docs/DECISIONS.md`'s #453
+entry). The counterfactual ran on texts cached in a scratch directory. Adding
+`Review` to the *committed* strata is still the maintainer's decision. The
+draw used a placeholder contact address in the `User-Agent`.
+
+**The session before** (PR #539, #453): `systematic_review` reads a review by
+how it searched; "meta-analyses" and "systematically identified" were refused.
 
 **The previous session** (PR #538, #507): a non-ISO `RetractionEvidence.date`
 raises `ValueError`; the Rust/FFI half is **#537**.
@@ -95,8 +91,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,248 passing + 111 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-23; the embedder's live tests skip
+- **Tests: 7,256 passing + 111 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-24; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); this session ran
@@ -123,8 +119,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-23: 95 with #540, less #453). **#533** is the #530
+**Ninety-three open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-24: 94, less #540). **#533** is the #530
 session's (a flaky timing test; a decision between CPU time, a debug budget
 and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript

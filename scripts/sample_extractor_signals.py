@@ -35,6 +35,10 @@ change to the extractors has something to re-run.
   used ``PMC10030002_PMC10040000.xml.gz``) whose abstract and body, stripped of
   markup, hold at least :data:`MIN_FULLTEXT_CHARS` characters. Offline.
 
+``--publication-type`` draws other PubMed types in the same three years, a
+displaced draw that must name its own ``-o``: ``tests/data/extractor_abstracts_review.json``
+is ``Review`` (#540), labelled ``review_only`` where no other label applies.
+
 **A random draw, not a relevance page.** The audit took the first page by
 Europe PMC relevance, which is an ordering, not a sample (``sample_jats_exhibits.py``'s
 lesson: a contiguous block is not a rate). Here each stratum's whole population is enumerated by
@@ -80,7 +84,7 @@ rewrites the committed corpus once the moves are read::
     uv run python scripts/sample_extractor_signals.py fulltext \\
         ~/europepmc/packages/PMC10030002_PMC10040000.xml.gz --baseline
 
-``tests/test_extractor_sampler.py`` fails while either committed corpus was
+``tests/test_extractor_sampler.py`` fails while any committed corpus was
 measured by an ``extractors.py`` other than the current one — byte for byte,
 so a comment-only edit counts. Every measuring command refuses to run when
 ``import bmlib`` resolves to another checkout's extractors (a worktree on the
@@ -181,7 +185,8 @@ HTTP_TIMEOUT_SECONDS = 60.0
 _THROTTLE_STATUSES = frozenset({429, 503})
 
 #: PubMed publication types to one label, first match wins — the audit's order
-#: (issue #368). A review outranks a trial because a meta-analysis *of* RCTs
+#: (issue #368). A systematic review or meta-analysis outranks a trial (bare
+#: ``Review`` does not, below) because a meta-analysis *of* RCTs
 #: carries both types and is not itself one; an RCT outranks the wider trial
 #: types because a record carrying both *is* the narrower one, so the more
 #: specific type wins. Compared case-folded: the value is PubMed's. Europe
@@ -195,6 +200,10 @@ LABEL_ORDER: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("clinical_trial", ("Clinical Trial",)),
     ("observational", ("Observational Study",)),
     ("case_report", ("Case Reports",)),
+    # `Review` and nothing more specific, which is not necessarily narrative
+    # (#540). Last, so a "case report and review of the literature" stays a
+    # case report, and a review carrying a trial or observational type keeps it.
+    ("review_only", ("Review",)),
 )
 OTHER_LABEL = "other"
 
@@ -1333,7 +1342,8 @@ def cmd_abstracts(args: argparse.Namespace) -> int:
         print(f"--per-stratum must be at least 1, not {args.per_stratum}")
         return 2
     displaced = (
-        args.draw != "random"
+        args.publication_type is not None
+        or args.draw != "random"
         or args.seed != DEFAULT_SEED
         or args.per_stratum != DEFAULT_PER_STRATUM
     )
@@ -1342,12 +1352,18 @@ def cmd_abstracts(args: argparse.Namespace) -> int:
         # replaces it under its own name.
         print(
             "a draw other than the committed one (random, seed "
-            f"{DEFAULT_SEED}, {DEFAULT_PER_STRATUM} a stratum) must name its own -o"
+            f"{DEFAULT_SEED}, {DEFAULT_PER_STRATUM} a stratum, the committed strata) "
+            "must name its own -o"
         )
         return 2
     pace = _make_pacer(args.per_host_interval)
     with _client(args.email) as client:
-        corpus = draw_abstracts(client, pace, args.per_stratum, args.seed, args.draw)
+        strata = None
+        if args.publication_type is not None:
+            # A repeated type would walk and report each of its strata twice.
+            types = dict.fromkeys(args.publication_type)
+            strata = [Stratum(pt, year) for pt in types for year in YEARS]
+        corpus = draw_abstracts(client, pace, args.per_stratum, args.seed, args.draw, strata)
     lines, reportable = report_abstracts(corpus)
     print("\n".join(lines))
     written = write_corpus(corpus, args.output, reportable)
@@ -1445,6 +1461,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--per-stratum", type=int, default=DEFAULT_PER_STRATUM)
     p.add_argument("--seed", type=int, default=DEFAULT_SEED)
     p.add_argument("--draw", choices=("random", "relevance"), default="random")
+    p.add_argument(
+        "--publication-type",
+        action="append",
+        help="Draw this PubMed type in every year instead of the committed seven (repeatable).",
+    )
     p.add_argument("-o", "--output", type=Path, default=DEFAULT_ABSTRACTS_OUTPUT)
     p.set_defaults(func=cmd_abstracts)
 

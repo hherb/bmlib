@@ -6,6 +6,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **The extractor sampler measures PubMed's bare `Review`** (#540).
+  `sample_extractor_signals.py abstracts --publication-type T` draws other
+  publication types in the same three years, as a displaced draw that must
+  name its own `-o`, and `LABEL_ORDER` gains `review_only` — `Review` and
+  nothing more specific, last so a "case report and review of the literature"
+  stays a case report. It moves 4 records of the committed abstract corpus
+  from `other` to `review_only`, three of them Network Meta-Analyses. The
+  displaced draw, `tests/data/extractor_abstracts_review.json` (900 abstracts,
+  0 unmeasured), is committed and pinned to `extractors.py` like the other two
+  corpora, so an extractor change now re-measures three. Over its 760
+  `review_only` records #453's search wording moves 7, all to
+  `systematic_review`: 2 were `meta_analysis`, 3 are database-searched reviews,
+  1 is borderline and 1 is a narrative review misread — 1 or 2 of 760, read by
+  hand (`docs/DECISIONS.md`). Nothing in `bmlib` moves.
+
 ### Changed
 - **`extract_study_type` reads a review by how it searched** (#453). 403 of
   the extractor sampler's 1,771 PubMed reviews read `unknown`, saying how they

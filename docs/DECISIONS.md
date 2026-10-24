@@ -5544,7 +5544,8 @@ narrowed the keywords and added exclusions. Argued inline at
   abbreviation's full stop does. On the random abstract draw 421 of 5,954
   move: 418 PubMed reviews (417 gaining a review type, and one "non-systematic
   literature review" losing it), 2 Network Meta-Analyses (a type `LABEL_ORDER`
-  does not name) and 1 case report with a literature search. Reviews read
+  did not then name; their bare `Review` labels them `review_only` since #540)
+  and 1 case report with a literature search. Reviews read
   `unknown` go 403 → 220 and `rct` 51 → 27; 195 reviews move `meta_analysis`
   → `systematic_review`, the same label and the same score.
 - **"systematically identified" is refused** (PR #539's review): it moved 0
@@ -5583,9 +5584,19 @@ narrowed the keywords and added exclusions. Argued inline at
   2 reviews. Measured before PR #539's review narrowed the keywords. Reverse it
   knowingly: `tests/test_extractors.py::TestAReviewIsReadByHowItSearched` pins
   the refusal.
-- **Narrative reviews are not in the draw**: no stratum is PubMed `Review`
-  alone, so how often a narrative review's "we searched PubMed" now reads as
-  a systematic review is unmeasured (#540).
+- **A narrative review is rarely misread** (#540, measured 2026-10-24 on a
+  displaced draw, `tests/data/extractor_abstracts_review.json`: 300 PubMed
+  `Review` abstracts a year, 2006/2014/2023). Of the 760 labelled
+  `review_only` (`Review` and no more specific type), #453 moves 7, all to
+  `systematic_review`: 2 were `meta_analysis` already, 3 are database-searched
+  reviews (one a two-reviewer extraction, one an integrative review "by a
+  systematic search", one leaving `rct`), 1 is borderline (a "literature
+  review" stating its databases and 61 included articles) and 1 is a narrative
+  review whose "systematic search" was a laboratory's, in 2006 — 1 or 2 of 760
+  (0.1-0.3%, upper bound 1.0%), read by hand. 21 more `review_only` records
+  read `systematic_review` without #453. `review_only` is not "narrative":
+  before PubMed's `Systematic Review` type (2019), a systematic review often
+  carries `Review` alone.
 - The counterfactuals (each component alone, the plural's figures, the
   keyword and exclusion variants) were taken on the draw's texts cached in a
   scratch directory and the served bundle; nothing in the repo holds them.
@@ -5595,11 +5606,12 @@ narrowed the keywords and added exclusions. Argued inline at
 ## scripts — the extractor sampler (#368)
 
 `scripts/sample_extractor_signals.py` re-takes the populations the extractor
-decisions above were taken on, and two committed corpora
-(`tests/data/extractor_abstracts.json`, `tests/data/extractor_fulltext.json`)
+decisions above were taken on, and three committed corpora
+(`tests/data/extractor_abstracts.json`, `tests/data/extractor_fulltext.json`
+and #540's displaced `Review` draw, `tests/data/extractor_abstracts_review.json`)
 record what the current `extractors.py` returns on them.
 `test_the_committed_corpus_was_measured_by_these_extractors` fails on any edit
-to that module until both are re-measured, so a change ships with its moves.
+to that module until all are re-measured, so a change ships with its moves.
 The maintainer kept both halves of that pin (2026-10-10), the full-text
 half's need for the local bundle included. The pin is of the module's raw
 bytes, so a comment-only edit counts. The first runs, on 2026-10-10 —

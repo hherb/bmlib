@@ -29,6 +29,7 @@ No network: every test drives the script through a fake client.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import importlib.util
@@ -164,6 +165,10 @@ class TestTheGroundTruthIsPubMeds:
             (["Clinical Trial", "Journal Article"], "clinical_trial"),
             (["Observational Study"], "observational"),
             (["Case Reports"], "case_report"),
+            (["Review", "Journal Article"], "review_only"),
+            (["Case Reports", "Review"], "case_report"),
+            (["Observational Study", "Review"], "observational"),
+            (["Systematic Review", "Review"], "review"),
             (["Journal Article"], "other"),
             (["systematic-review"], "other"),  # a JATS article type, not PubMed's
             ([], "other"),
@@ -1105,8 +1110,13 @@ class TestTheAbstractsCommandWritesWhereItSays:
 
     @pytest.mark.parametrize(
         "flags",
-        [["--draw", "relevance"], ["--seed", "1"], ["--per-stratum", "10"]],
-        ids=["relevance", "seed", "per-stratum"],
+        [
+            ["--draw", "relevance"],
+            ["--seed", "1"],
+            ["--per-stratum", "10"],
+            ["--publication-type", "Review"],
+        ],
+        ids=["relevance", "seed", "per-stratum", "publication-type"],
     )
     def test_any_other_draw_is_refused_at_the_default_path_however_spelled(self, flags, capsys):
         spelled = (
@@ -1115,6 +1125,34 @@ class TestTheAbstractsCommandWritesWhereItSays:
         argv = ["abstracts", "--email", "t@example.org", *flags, "-o", str(spelled)]
         assert sampler.main(argv) == 2
         assert "must name its own -o" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        ("types", "expected"),
+        [
+            (["Review"], ["Review"]),
+            (["Review", "Editorial"], ["Review", "Editorial"]),
+            (["Review", "Editorial", "Review"], ["Review", "Editorial"]),
+        ],
+        ids=["one", "several-in-order", "repeat-drawn-once"],
+    )
+    def test_each_named_publication_type_is_drawn_in_every_year(
+        self, monkeypatch, tmp_path, types, expected
+    ):
+        drawn = []
+
+        def fake_draw(client, pace, per_stratum, seed, draw, strata=None):
+            drawn.extend(strata)
+            return {"header": {}, "strata": [], "records": {}}
+
+        monkeypatch.setattr(sampler, "draw_abstracts", fake_draw)
+        monkeypatch.setattr(sampler, "_client", lambda email: contextlib.nullcontext())
+        monkeypatch.setattr(sampler, "report_abstracts", lambda corpus: ([], False))
+        argv = ["abstracts", "--email", "t@example.org"]
+        for pt in types:
+            argv += ["--publication-type", pt]
+        assert sampler.main(argv + ["-o", str(tmp_path / "x.json")]) == 1
+        assert (tmp_path / "x.unreportable.json").exists()
+        assert drawn == [sampler.Stratum(pt, year) for pt in expected for year in sampler.YEARS]
 
     def test_a_draw_of_nothing_a_stratum_is_refused(self, tmp_path, capsys):
         argv = ["abstracts", "--email", "t@example.org", "--per-stratum", "0"]
@@ -1326,9 +1364,13 @@ class TestTheFulltextCommand:
 
 _ABSTRACTS = sampler.DEFAULT_ABSTRACTS_OUTPUT
 _FULLTEXT = sampler.DEFAULT_FULLTEXT_OUTPUT
+#: #540's displaced draw: PubMed's bare `Review`, which the committed strata lack.
+_REVIEWS = _ABSTRACTS.with_name("extractor_abstracts_review.json")
 
 
-@pytest.mark.parametrize("path", [_ABSTRACTS, _FULLTEXT], ids=["abstracts", "fulltext"])
+@pytest.mark.parametrize(
+    "path", [_ABSTRACTS, _FULLTEXT, _REVIEWS], ids=["abstracts", "fulltext", "reviews"]
+)
 def test_the_committed_corpus_was_measured_by_these_extractors(path):
     """A change to ``extractors.py`` fails here until the corpus is re-measured.
 
@@ -1339,6 +1381,8 @@ def test_the_committed_corpus_was_measured_by_these_extractors(path):
 
         uv run python scripts/sample_extractor_signals.py remeasure --email … --write
         uv run python scripts/sample_extractor_signals.py fulltext BUNDLE --baseline --write
+        uv run python scripts/sample_extractor_signals.py remeasure \\
+            tests/data/extractor_abstracts_review.json --email … --write
     """
     header = sampler.load_corpus(path)["header"]
     assert header["extractors_sha256"] == sampler.extractors_digest(sampler.EXTRACTORS_PATH), (
@@ -1346,15 +1390,23 @@ def test_the_committed_corpus_was_measured_by_these_extractors(path):
     )
 
 
-def test_the_committed_abstract_corpus_is_a_reportable_random_draw():
-    corpus = sampler.load_corpus(_ABSTRACTS)
+@pytest.mark.parametrize(
+    ("path", "strata"),
+    [
+        (_ABSTRACTS, sampler.all_strata()),
+        (_REVIEWS, [sampler.Stratum("Review", year) for year in sampler.YEARS]),
+    ],
+    ids=["abstracts", "reviews"],
+)
+def test_the_committed_abstract_corpus_is_a_reportable_random_draw(path, strata):
+    corpus = sampler.load_corpus(path)
     header = corpus["header"]
     assert header["draw"] == "random"
     assert header["seed"] == sampler.DEFAULT_SEED
     assert header["per_stratum"] == sampler.DEFAULT_PER_STRATUM
     assert header["query_template"] == sampler.QUERY_TEMPLATE
     assert [(s["publication_type"], s["year"]) for s in corpus["strata"]] == [
-        (s.publication_type, s.year) for s in sampler.all_strata()
+        (s.publication_type, s.year) for s in strata
     ]
     for stratum in corpus["strata"]:
         assert stratum["status"] == "ok"
@@ -1365,7 +1417,9 @@ def test_the_committed_abstract_corpus_is_a_reportable_random_draw():
     assert reportable
 
 
-@pytest.mark.parametrize("path", [_ABSTRACTS, _FULLTEXT], ids=["abstracts", "fulltext"])
+@pytest.mark.parametrize(
+    "path", [_ABSTRACTS, _FULLTEXT, _REVIEWS], ids=["abstracts", "fulltext", "reviews"]
+)
 def test_the_committed_corpus_keeps_no_text(path):
     # `load_corpus` refuses a row carrying any key but these, a measured row
     # lacking any of the last three, and a stored signal no extractor returns.
