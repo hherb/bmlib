@@ -7,6 +7,17 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The PDF-title sampler can tell its populations apart** (#503, part 1).
+  `scripts/sample_pdf_metadata_titles.py` records each row's and each
+  unmeasured attempt's PDF `url`, and stamps every journal line with
+  `ROW_DEFINITIONS_VERSION` (1: since #494 the `europepmc` population is Europe
+  PMC's own PDF, where it was the first free-PDF entry, mostly PubMedCentral's).
+  A journal holding an entry stamped otherwise, or not at all, is refused
+  (exit 2) rather than resumed and pooled under one `source` label. The
+  committed corpus is unchanged: its 175 `europepmc` rows carry neither field,
+  which is how a reader knows they are the old population. Whether to redraw
+  them, and re-check `looks_like_junk`'s last reject-list member against the
+  new rows, is #503's open half. Nothing in `bmlib` moves.
 - **The extractor sampler measures PubMed's bare `Review`** (#540).
   `sample_extractor_signals.py abstracts --publication-type T` draws other
   publication types in the same three years, as a displaced draw that must
