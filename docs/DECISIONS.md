@@ -5544,7 +5544,8 @@ narrowed the keywords and added exclusions. Argued inline at
   abbreviation's full stop does. On the random abstract draw 421 of 5,954
   move: 418 PubMed reviews (417 gaining a review type, and one "non-systematic
   literature review" losing it), 2 Network Meta-Analyses (a type `LABEL_ORDER`
-  does not name) and 1 case report with a literature search. Reviews read
+  did not then name; their bare `Review` labels them `review_only` since #540)
+  and 1 case report with a literature search. Reviews read
   `unknown` go 403 → 220 and `rct` 51 → 27; 195 reviews move `meta_analysis`
   → `systematic_review`, the same label and the same score.
 - **"systematically identified" is refused** (PR #539's review): it moved 0

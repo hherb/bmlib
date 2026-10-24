@@ -185,7 +185,8 @@ HTTP_TIMEOUT_SECONDS = 60.0
 _THROTTLE_STATUSES = frozenset({429, 503})
 
 #: PubMed publication types to one label, first match wins — the audit's order
-#: (issue #368). A review outranks a trial because a meta-analysis *of* RCTs
+#: (issue #368). A systematic review or meta-analysis outranks a trial (bare
+#: ``Review`` does not, below) because a meta-analysis *of* RCTs
 #: carries both types and is not itself one; an RCT outranks the wider trial
 #: types because a record carrying both *is* the narrower one, so the more
 #: specific type wins. Compared case-folded: the value is PubMed's. Europe
@@ -199,9 +200,9 @@ LABEL_ORDER: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("clinical_trial", ("Clinical Trial",)),
     ("observational", ("Observational Study",)),
     ("case_report", ("Case Reports",)),
-    # Last, so a "case report and review of the literature" stays a case
-    # report: PubMed's bare `Review` is mostly a narrative review, the
-    # population #540 asks whether a review search misreads as systematic.
+    # `Review` and nothing more specific, which is not necessarily narrative
+    # (#540). Last, so a "case report and review of the literature" stays a
+    # case report, and a review carrying a trial or observational type keeps it.
     ("review_only", ("Review",)),
 )
 OTHER_LABEL = "other"
@@ -1359,7 +1360,9 @@ def cmd_abstracts(args: argparse.Namespace) -> int:
     with _client(args.email) as client:
         strata = None
         if args.publication_type is not None:
-            strata = [Stratum(pt, year) for pt in args.publication_type for year in YEARS]
+            # A repeated type would walk and report each of its strata twice.
+            types = dict.fromkeys(args.publication_type)
+            strata = [Stratum(pt, year) for pt in types for year in YEARS]
         corpus = draw_abstracts(client, pace, args.per_stratum, args.seed, args.draw, strata)
     lines, reportable = report_abstracts(corpus)
     print("\n".join(lines))

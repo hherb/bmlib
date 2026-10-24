@@ -167,6 +167,7 @@ class TestTheGroundTruthIsPubMeds:
             (["Case Reports"], "case_report"),
             (["Review", "Journal Article"], "review_only"),
             (["Case Reports", "Review"], "case_report"),
+            (["Observational Study", "Review"], "observational"),
             (["Systematic Review", "Review"], "review"),
             (["Journal Article"], "other"),
             (["systematic-review"], "other"),  # a JATS article type, not PubMed's
@@ -1125,7 +1126,18 @@ class TestTheAbstractsCommandWritesWhereItSays:
         assert sampler.main(argv) == 2
         assert "must name its own -o" in capsys.readouterr().out
 
-    def test_a_named_publication_type_is_drawn_in_every_year(self, monkeypatch, tmp_path):
+    @pytest.mark.parametrize(
+        ("types", "expected"),
+        [
+            (["Review"], ["Review"]),
+            (["Review", "Editorial"], ["Review", "Editorial"]),
+            (["Review", "Editorial", "Review"], ["Review", "Editorial"]),
+        ],
+        ids=["one", "several-in-order", "repeat-drawn-once"],
+    )
+    def test_each_named_publication_type_is_drawn_in_every_year(
+        self, monkeypatch, tmp_path, types, expected
+    ):
         drawn = []
 
         def fake_draw(client, pace, per_stratum, seed, draw, strata=None):
@@ -1135,9 +1147,12 @@ class TestTheAbstractsCommandWritesWhereItSays:
         monkeypatch.setattr(sampler, "draw_abstracts", fake_draw)
         monkeypatch.setattr(sampler, "_client", lambda email: contextlib.nullcontext())
         monkeypatch.setattr(sampler, "report_abstracts", lambda corpus: ([], False))
-        argv = ["abstracts", "--email", "t@example.org", "--publication-type", "Review"]
-        sampler.main(argv + ["-o", str(tmp_path / "x.json")])
-        assert drawn == [sampler.Stratum("Review", year) for year in sampler.YEARS]
+        argv = ["abstracts", "--email", "t@example.org"]
+        for pt in types:
+            argv += ["--publication-type", pt]
+        assert sampler.main(argv + ["-o", str(tmp_path / "x.json")]) == 1
+        assert (tmp_path / "x.unreportable.json").exists()
+        assert drawn == [sampler.Stratum(pt, year) for pt in expected for year in sampler.YEARS]
 
     def test_a_draw_of_nothing_a_stratum_is_refused(self, tmp_path, capsys):
         argv = ["abstracts", "--email", "t@example.org", "--per-stratum", "0"]
@@ -1366,7 +1381,7 @@ def test_the_committed_corpus_was_measured_by_these_extractors(path):
 
         uv run python scripts/sample_extractor_signals.py remeasure --email … --write
         uv run python scripts/sample_extractor_signals.py fulltext BUNDLE --baseline --write
-        uv run python scripts/sample_extractor_signals.py remeasure \
+        uv run python scripts/sample_extractor_signals.py remeasure \\
             tests/data/extractor_abstracts_review.json --email … --write
     """
     header = sampler.load_corpus(path)["header"]
