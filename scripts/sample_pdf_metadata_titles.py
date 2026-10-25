@@ -176,6 +176,17 @@ _BUCKETS = ("match", "truncated", "unrelated", "absent")
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # Markup left after unescaping a record title — `<i>`, `<sub>`, `<sup>`.
 _TAG_RE = re.compile(r"<[^>]+>")
+#: What a population draws, stamped on every journal line by :func:`append_row`.
+#: A resumed run refuses a journal holding any other stamp, or none, because
+#: its rows would pool with fresh ones under the same ``source`` label (#503).
+#: **Bump it whenever a population starts drawing something else under its old
+#: name.** None: written before #503, whatever it drew. 1: ``biorxiv`` and
+#: ``medrxiv`` read ``/pubs`` (#325; ``/details`` before, which the committed
+#: rows are) and ``europepmc`` takes Europe PMC's own PDF (#494). The second
+#: is no change for the committed rows: every one's ``file_name`` is
+#: ``<id>?pdf=render``, Europe PMC's own URL, where a ``PubMedCentral`` entry
+#: ends ``/pdf/?tool=EBI``.
+ROW_DEFINITIONS_VERSION = 1
 
 
 def _tokens(text: str) -> list[str]:
@@ -378,7 +389,10 @@ def load_partial(path: Path) -> list[dict[str, Any]]:
 
 
 def append_row(path: Path, row: dict[str, Any]) -> None:
-    """Append one row to the journal and put it beyond a crash.
+    """Append one row to the journal, stamped, and put it beyond a crash.
+
+    The stamp is :data:`ROW_DEFINITIONS_VERSION`, added here so no writer can
+    forget it; the corpus is built from the journal, so it carries it too.
 
     ``flush()`` returns success while the bytes are still in the page cache,
     so the ``fsync`` is not ceremony — it is the difference between a journal
@@ -387,9 +401,37 @@ def append_row(path: Path, row: dict[str, Any]) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        stamped = {**row, "definitions": ROW_DEFINITIONS_VERSION}
+        handle.write(json.dumps(stamped, ensure_ascii=False) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def journal_disagreement(entries: list[dict[str, Any]]) -> str | None:
+    """Why a journal's entries must not be resumed, or ``None`` if they may be.
+
+    Any entry whose ``definitions`` stamp is not :data:`ROW_DEFINITIONS_VERSION`
+    refuses the whole journal: its population was drawn under another
+    definition, and pooling it with fresh rows under one ``source`` label is
+    the defect #503 names. An absent stamp disagrees, which is the fail-closed
+    direction every pre-#503 journal takes. Only the ``int`` agrees, since a
+    hand-edited ``true`` or ``1.0`` equals it; counted by ``repr`` so a stamp
+    that cannot be hashed is refused rather than raising out of ``main``.
+    """
+    stale = Counter(
+        repr(stamp)
+        for stamp in (entry.get("definitions") for entry in entries)
+        if not (type(stamp) is int and stamp == ROW_DEFINITIONS_VERSION)
+    )
+    if not stale:
+        return None
+    found = ", ".join(f"{n} with {stamp}" for stamp, n in sorted(stale.items()))
+    return (
+        f"{stale.total()} of {len(entries)} entries were drawn under other "
+        f"definitions ({found}; this run is {ROW_DEFINITIONS_VERSION}). Refusing to "
+        "pool them with new rows; delete the journal (the next run then redraws "
+        "every population at this -o) or pick a different -o."
+    )
 
 
 def _latest_per_identifier(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -761,6 +803,7 @@ def process_candidates(
                     "id": candidate.identifier,
                     "attempts": attempt,
                     "cause": cause,
+                    "url": candidate.url,
                 }
                 if candidate.day is not None:
                     marker["day"] = candidate.day
@@ -768,6 +811,8 @@ def process_candidates(
                 continue
             if candidate.day is not None:
                 row["day"] = candidate.day
+            # The host is what tells two populations under one label apart (#503).
+            row["url"] = candidate.url
             rows.append(row)
             append_row(context.journal, row)
     return rows, unmeasured
@@ -785,8 +830,8 @@ def sample_europepmc_rows(
 
     Since #494 ``_extract_free_pdf_url`` takes Europe PMC's own entry alone,
     so this population is Europe PMC's own PDFs. The committed corpus's
-    ``europepmc`` rows were drawn first-wins, mostly another host's PDF, and
-    carry no host to tell the two apart; a resume pools them under one label
+    ``europepmc`` rows were drawn first-wins, and are this population too:
+    each one's ``file_name`` is ``<id>?pdf=render``, Europe PMC's own URL
     (#503).
 
     Returns:
@@ -1005,11 +1050,26 @@ def main() -> int:
     Resumable: rows are appended to a JSONL journal beside the output as they
     land, and a later run loads it, skips the identifiers already collected,
     and tops each population up to ``--target``. Delete the journal to start
-    over.
+    over. A journal holding an entry stamped with another
+    :data:`ROW_DEFINITIONS_VERSION`, or none, is refused (exit 2), and so is a
+    one-population ``--source`` at the default ``-o``.
     """
     args = _build_arg_parser().parse_args()
+    # The corpus is rebuilt from the journal alone, so a one-source run at the
+    # committed path would replace it with that population and drop the rest.
+    if args.source != "both" and args.output.resolve() == DEFAULT_OUTPUT.resolve():
+        print(
+            f"ERROR: --source {args.source} would rewrite {DEFAULT_OUTPUT} without the "
+            "other population; pass -o to sample one population.",
+            file=sys.stderr,
+        )
+        return 2
     journal = _journal_path(args.output)
     previous = load_partial(journal)
+    stale = journal_disagreement(previous)
+    if stale:
+        print(f"ERROR: {journal}: {stale}", file=sys.stderr)
+        return 2
     cache = _open_cache(args)
     context = RunContext(
         pace=_make_pacer(args.per_host_interval),

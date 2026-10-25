@@ -2401,7 +2401,11 @@ this paper" gets the answer from the log instead.
 The rule and its reject-list backstop are measured against
 `tests/data/pdf_metadata_titles.json`, a corpus of real Europe PMC and
 bioRxiv PDFs collected by `scripts/sample_pdf_metadata_titles.py`. **Run that
-sampler before changing either.**
+sampler before changing either.** Its 175 `europepmc` rows predate #494 but are
+Europe PMC's own PDFs all the same (each `file_name` is `<id>?pdf=render`); its
+60 `biorxiv` rows predate #325 and are drawn from `/details`. Rows the sampler
+writes now carry the PDF's `url` and a `definitions` stamp, and it refuses to
+resume a journal written before #503.
 
 ---
 
