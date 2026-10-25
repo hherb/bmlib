@@ -180,8 +180,12 @@ _TAG_RE = re.compile(r"<[^>]+>")
 #: A resumed run refuses a journal holding any other stamp, or none, because
 #: its rows would pool with fresh ones under the same ``source`` label (#503).
 #: **Bump it whenever a population starts drawing something else under its old
-#: name.** None: before #503, when ``europepmc`` took the first free-PDF entry
-#: whatever its site (mostly PubMedCentral's). 1: #494, Europe PMC's own PDF.
+#: name.** None: written before #503, whatever it drew. 1: ``biorxiv`` and
+#: ``medrxiv`` read ``/pubs`` (#325; ``/details`` before, which the committed
+#: rows are) and ``europepmc`` takes Europe PMC's own PDF (#494). The second
+#: is no change for the committed rows: every one's ``file_name`` is
+#: ``<id>?pdf=render``, Europe PMC's own URL, where a ``PubMedCentral`` entry
+#: ends ``/pdf/?tool=EBI``.
 ROW_DEFINITIONS_VERSION = 1
 
 
@@ -410,17 +414,23 @@ def journal_disagreement(entries: list[dict[str, Any]]) -> str | None:
     refuses the whole journal: its population was drawn under another
     definition, and pooling it with fresh rows under one ``source`` label is
     the defect #503 names. An absent stamp disagrees, which is the fail-closed
-    direction every pre-#503 journal takes.
+    direction every pre-#503 journal takes. Only the ``int`` agrees, since a
+    hand-edited ``true`` or ``1.0`` equals it; counted by ``repr`` so a stamp
+    that cannot be hashed is refused rather than raising out of ``main``.
     """
-    stamps = Counter(entry.get("definitions") for entry in entries)
-    stale = {stamp: n for stamp, n in stamps.items() if stamp != ROW_DEFINITIONS_VERSION}
+    stale = Counter(
+        repr(stamp)
+        for stamp in (entry.get("definitions") for entry in entries)
+        if not (type(stamp) is int and stamp == ROW_DEFINITIONS_VERSION)
+    )
     if not stale:
         return None
-    found = ", ".join(f"{n} with {stamp!r}" for stamp, n in sorted(stale.items(), key=str))
+    found = ", ".join(f"{n} with {stamp}" for stamp, n in sorted(stale.items()))
     return (
-        f"{sum(stale.values())} of {len(entries)} entries were drawn under other "
+        f"{stale.total()} of {len(entries)} entries were drawn under other "
         f"definitions ({found}; this run is {ROW_DEFINITIONS_VERSION}). Refusing to "
-        "pool them with new rows; delete the journal or pick a different -o."
+        "pool them with new rows; delete the journal (the next run then redraws "
+        "every population at this -o) or pick a different -o."
     )
 
 
@@ -820,9 +830,8 @@ def sample_europepmc_rows(
 
     Since #494 ``_extract_free_pdf_url`` takes Europe PMC's own entry alone,
     so this population is Europe PMC's own PDFs. The committed corpus's
-    ``europepmc`` rows were drawn first-wins, mostly another host's PDF; they
-    carry no ``url`` and no ``definitions`` stamp, which is how a reader tells
-    them apart, and a journal holding them is refused rather than resumed
+    ``europepmc`` rows were drawn first-wins, and are this population too:
+    each one's ``file_name`` is ``<id>?pdf=render``, Europe PMC's own URL
     (#503).
 
     Returns:
@@ -1042,9 +1051,19 @@ def main() -> int:
     land, and a later run loads it, skips the identifiers already collected,
     and tops each population up to ``--target``. Delete the journal to start
     over. A journal holding an entry stamped with another
-    :data:`ROW_DEFINITIONS_VERSION`, or none, is refused (exit 2).
+    :data:`ROW_DEFINITIONS_VERSION`, or none, is refused (exit 2), and so is a
+    one-population ``--source`` at the default ``-o``.
     """
     args = _build_arg_parser().parse_args()
+    # The corpus is rebuilt from the journal alone, so a one-source run at the
+    # committed path would replace it with that population and drop the rest.
+    if args.source != "both" and args.output.resolve() == DEFAULT_OUTPUT.resolve():
+        print(
+            f"ERROR: --source {args.source} would rewrite {DEFAULT_OUTPUT} without the "
+            "other population; pass -o to sample one population.",
+            file=sys.stderr,
+        )
+        return 2
     journal = _journal_path(args.output)
     previous = load_partial(journal)
     stale = journal_disagreement(previous)

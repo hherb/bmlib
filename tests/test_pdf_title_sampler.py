@@ -1241,13 +1241,14 @@ class TestARetriedFailureIsNotCountedTwice:
 
 
 class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
-    """#494 changed what ``europepmc`` draws without changing its name, and a
-    journal written before carried nothing to tell the two apart, so a resume
-    pooled them (#503). Every entry is stamped and carries its URL now, and a
-    journal with an entry stamped otherwise, or not at all, is refused."""
+    """#325 changed what ``biorxiv`` draws without changing its name (#494 did
+    the same to ``europepmc``, which for the committed rows drew the same
+    PDFs), and a journal carried no stamp, so a resume pooled them (#503).
+    Every entry is stamped and carries its URL now, and a journal with an
+    entry stamped otherwise, or not at all, is refused."""
 
     @staticmethod
-    def _run_main(monkeypatch: pytest.MonkeyPatch, output: Path) -> tuple[int, list[str]]:
+    def _run_main(monkeypatch: pytest.MonkeyPatch, *args: str) -> tuple[int, list[str]]:
         walked: list[str] = []
         monkeypatch.setattr(
             sampler, "sample_europepmc_rows", lambda *a, **k: (walked.append("e"), ([], 0))[1]
@@ -1255,7 +1256,7 @@ class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
         monkeypatch.setattr(
             sampler, "sample_biorxiv_rows", lambda *a, **k: (walked.append("b"), ([], 0))[1]
         )
-        monkeypatch.setattr(sys, "argv", ["s", "-o", str(output), "--no-pdf-cache"])
+        monkeypatch.setattr(sys, "argv", ["s", "--no-pdf-cache", *args])
         return sampler.main(), walked
 
     def test_every_journal_line_is_stamped(self, tmp_path: Path) -> None:
@@ -1269,11 +1270,14 @@ class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
         context = sampler.RunContext(
             pace=lambda host: None, journal=tmp_path / "j.jsonl", seen=set(), workers=1
         )
-        candidate = sampler.Candidate("europepmc", "PMC1", _RECORD_TITLE, "https://e/1.pdf")
+        candidate = sampler.Candidate(
+            "biorxiv", "10.1101/1", _RECORD_TITLE, "https://e/1.pdf", day="2026-01-01"
+        )
         sampler.process_candidates(
             _Client({"https://e/1.pdf": _Resp(404)}), [candidate], context, tmp_path
         )
-        assert sampler.load_partial(context.journal)[-1]["url"] == "https://e/1.pdf"
+        marker = sampler.load_partial(context.journal)[-1]
+        assert (marker["url"], marker["day"]) == ("https://e/1.pdf", "2026-01-01")
 
     @pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
     def test_a_row_carries_its_url(self, tmp_path: Path) -> None:
@@ -1291,21 +1295,79 @@ class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
         assert rows[0]["url"] == url
         assert sampler.load_partial(context.journal)[-1]["url"] == url
 
+    @pytest.mark.parametrize(
+        "old_line",
+        [
+            {"source": "europepmc", "id": "PMC2", "bucket": "match"},
+            # A marker feeds the unmeasured share and the attempt count, so it
+            # pools as surely as a row does.
+            {"unmeasured": True, "source": "europepmc", "id": "PMC2", "attempts": 1},
+        ],
+        ids=["row", "marker"],
+    )
     def test_an_unstamped_journal_is_refused_before_any_walk(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+        old_line: dict[str, Any],
     ) -> None:
         output = tmp_path / "corpus.json"
         journal = sampler._journal_path(output)
         sampler.append_row(journal, {"source": "europepmc", "id": "PMC1", "bucket": "match"})
         with journal.open("a", encoding="utf-8") as handle:  # a pre-#503 line
-            handle.write(json.dumps({"source": "europepmc", "id": "PMC2"}) + "\n")
+            handle.write(json.dumps(old_line) + "\n")
 
-        status, walked = self._run_main(monkeypatch, output)
+        status, walked = self._run_main(monkeypatch, "-o", str(output))
 
         assert status == 2
         assert walked == []
         assert not output.exists()
         assert not output.with_suffix(".unreportable.json").exists()
+        err = capsys.readouterr().err
+        assert f"ERROR: {journal}: 1 of 2 entries" in err
+        assert "Refusing to pool" in err
+
+    def test_an_unhashable_stamp_is_refused_not_raised(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "corpus.json"
+        journal = sampler._journal_path(output)
+        journal.write_text(json.dumps({"source": "biorxiv", "id": "a", "definitions": [1]}) + "\n")
+
+        status, walked = self._run_main(monkeypatch, "-o", str(output))
+
+        assert (status, walked) == (2, [])
+
+    @pytest.mark.parametrize("stamp", [True, 1.0, "1"], ids=["true", "float", "string"])
+    def test_only_the_int_stamp_agrees(self, stamp: object) -> None:
+        assert sampler.ROW_DEFINITIONS_VERSION == 1  # else these stop being look-alikes
+        reason = sampler.journal_disagreement([{"id": "a", "definitions": stamp}])
+        assert reason is not None
+        assert f"1 with {stamp!r}" in reason
+
+    def test_a_one_population_run_at_the_committed_path_is_refused(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        status, walked = self._run_main(monkeypatch, "--source", "biorxiv")
+
+        assert (status, walked) == (2, [])
+        assert not sampler.DEFAULT_OUTPUT.exists()
+        assert "pass -o to sample one population" in capsys.readouterr().err
+
+    def test_a_one_population_run_elsewhere_proceeds(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "corpus.json"
+
+        status, walked = self._run_main(monkeypatch, "--source", "biorxiv", "-o", str(output))
+
+        assert (status, walked) == (0, ["b"])
 
     def test_a_journal_stamped_with_another_version_is_refused(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1316,7 +1378,7 @@ class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
         entry = {"source": "biorxiv", "id": "a", "definitions": other}
         journal.write_text(json.dumps(entry) + "\n")
 
-        status, walked = self._run_main(monkeypatch, output)
+        status, walked = self._run_main(monkeypatch, "-o", str(output))
 
         assert (status, walked) == (2, [])
 
@@ -1329,6 +1391,13 @@ class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
         assert "2 of 3 entries" in reason
         assert "2 with None" in reason
 
+    def test_the_refusal_names_every_stale_stamp(self) -> None:
+        later = sampler.ROW_DEFINITIONS_VERSION + 1
+        reason = sampler.journal_disagreement([{"id": "a"}, {"id": "b", "definitions": later}])
+        assert reason is not None
+        assert "1 with None" in reason
+        assert f"1 with {later}" in reason
+
     def test_an_agreeing_journal_resumes(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -1336,7 +1405,7 @@ class TestAJournalFromAnotherPopulationIsRefusedNotPooled:
         journal = sampler._journal_path(output)
         sampler.append_row(journal, {"source": "europepmc", "id": "PMC1", "bucket": "match"})
 
-        _, walked = self._run_main(monkeypatch, output)
+        _, walked = self._run_main(monkeypatch, "-o", str(output))
 
         assert walked == ["e", "b"]
         corpus = json.loads(output.read_text())

@@ -41,18 +41,27 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 `scripts/sample_pdf_metadata_titles.py` records each row's and each
 unmeasured attempt's PDF `url`, and `append_row` stamps every journal line
-with `ROW_DEFINITIONS_VERSION` (1 = since #494). `main` refuses (exit 2) a
-journal holding any entry stamped otherwise or not at all, so an old journal
-can no longer pool under the `europepmc` label. No live run, and the committed
-corpus is untouched: its 175 `europepmc` rows carry neither field. **#503
-stays open for part 2**, a decision: redraw `europepmc` live (Europe PMC's own
-PDFs only now) or keep the old rows as first-wins, then re-check
-`looks_like_junk`'s remaining reject-list member against the new rows.
+with `ROW_DEFINITIONS_VERSION` (1 = `/pubs` for bioRxiv since #325, Europe
+PMC's own PDF since #494). `main` refuses (exit 2) a journal holding any entry
+stamped otherwise or not at all, and a one-population `--source` at the
+default `-o`. **The review refuted #503's premise for `europepmc`**: all 175
+committed rows have `file_name` `<id>?pdf=render`, Europe PMC's own URL (a
+`PubMedCentral` entry ends `/pdf/?tool=EBI`, live 2026-10-25), so they are
+the population #494 draws. The 60 committed `biorxiv` rows are `/details`
+rows (drawn 2026-08-13, before #325). No live run; the corpus is untouched.
+**#503 stays open for part 2**, a decision: redraw `biorxiv` or keep it, then
+re-check `looks_like_junk`'s remaining reject-list member. The local journal
+beside the corpus is unstamped, so the next default run is refused until it
+is deleted.
 
 **The session before** (PR #541, #540): PubMed's bare `Review` is a displaced
 draw, committed as `tests/data/extractor_abstracts_review.json` and pinned, so
-**an `extractors.py` edit re-measures three corpora**. Adding `Review` to the
-committed strata is still the maintainer's decision.
+**an `extractors.py` edit re-measures three corpora** (`remeasure
+tests/data/extractor_abstracts_review.json --email … --write`). `LABEL_ORDER`
+gained `review_only`, moving 4 committed records from `other`; over its 760
+`review_only` records #453 moves 7 (`docs/DECISIONS.md`'s #453 entry). Adding
+`Review` to the committed strata is still the maintainer's decision. The draw
+used a placeholder contact address in the `User-Agent`.
 
 **Two sessions back** (PR #539, #453): `systematic_review` reads a review by
 how it searched; "meta-analyses" and "systematically identified" were refused.
@@ -93,7 +102,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,266 passing + 111 skipped** on this session's branch
+- **Tests: 7,274 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-24; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
@@ -128,7 +137,7 @@ and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **#503** is PR #502's review's; its first half is this session's, and what
-is left is the redraw decision (above). **Five more filed on 2026-10-17 are in no list below yet**: the FFI
+is left is the `biorxiv` redraw decision (above). **Five more filed on 2026-10-17 are in no list below yet**: the FFI
 spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
 deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
