@@ -2403,9 +2403,10 @@ The rule and its reject-list backstop are measured against
 bioRxiv PDFs collected by `scripts/sample_pdf_metadata_titles.py`. **Run that
 sampler before changing either.** Its 175 `europepmc` rows predate #494 but are
 Europe PMC's own PDFs all the same (each `file_name` is `<id>?pdf=render`); its
-60 `biorxiv` rows predate #325 and are drawn from `/details`. Rows the sampler
-writes now carry the PDF's `url` and a `definitions` stamp, and it refuses to
-resume a journal written before #503.
+150 `biorxiv` rows were drawn from `/pubs` on 2026-10-27 *(unreleased)*,
+replacing 60 drawn from `/details` before #325. Every row carries a
+`definitions` stamp, and rows written since #503 the PDF's `url`; the sampler
+refuses to resume a journal written before #503.
 
 ---
 

@@ -181,9 +181,10 @@ _TAG_RE = re.compile(r"<[^>]+>")
 #: its rows would pool with fresh ones under the same ``source`` label (#503).
 #: **Bump it whenever a population starts drawing something else under its old
 #: name.** None: written before #503, whatever it drew. 1: ``biorxiv`` and
-#: ``medrxiv`` read ``/pubs`` (#325; ``/details`` before, which the committed
-#: rows are) and ``europepmc`` takes Europe PMC's own PDF (#494). The second
-#: is no change for the committed rows: every one's ``file_name`` is
+#: ``medrxiv`` read ``/pubs`` (#325; ``/details`` before) and ``europepmc``
+#: takes Europe PMC's own PDF (#494). The committed ``biorxiv`` rows were
+#: redrawn under 1 (#503); the ``europepmc`` rows predate it and were stamped
+#: 1 by hand, being this population already: every one's ``file_name`` is
 #: ``<id>?pdf=render``, Europe PMC's own URL, where a ``PubMedCentral`` entry
 #: ends ``/pdf/?tool=EBI``.
 ROW_DEFINITIONS_VERSION = 1

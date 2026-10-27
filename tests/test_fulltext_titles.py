@@ -198,7 +198,7 @@ class TestCorroborationIsAnchoredToWholeTokens:
 class TestTheOneBackstopMember:
     """A title of fewer than three words is not an article title.
 
-    Measured over the 235 real PDFs in ``tests/data/pdf_metadata_titles.json``:
+    Measured over the 325 real PDFs in ``tests/data/pdf_metadata_titles.json``:
     it rejects no row whose metadata title matched its record, and the shortest
     genuine title measured is five words.
 
@@ -311,7 +311,10 @@ class TestALineNumberedManuscriptStillCorroborates:
 
     Measured over 130 matched rows, this was the only wrongly rejected title,
     and it is a whole class of document rather than one file: every
-    line-numbered preprint whose title wraps.
+    line-numbered preprint whose title wraps. Over #503's ``/pubs`` redraw
+    it is 5 of 164 conclusive matched rows, enough that the corpus tests now
+    fail without the rule; its ``$`` anchor and digit bounds still rest on
+    these tests alone.
     """
 
     def test_a_title_split_by_line_numbers_is_accepted(self) -> None:

@@ -1,10 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-24 (**this session is #503 part 1**, branch
-`fix/pdf-title-sampler-host-503`, worktree `../bmlib-s503`). **0.11.0 is
+_Last updated: 2026-10-27 (**this session is #503 part 2**, branch
+`fix/pdf-title-biorxiv-redraw-503`, worktree `../bmlib-s503b`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
-(#453) and #541 (#540) merged since; all eight are unreleased._
+(#453), #541 (#540) and #542 (#503 part 1) merged since; all nine are
+unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -27,7 +28,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -37,36 +38,34 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #503 part 1, the PDF-title sampler's populations
+## This session: #503 part 2, the `biorxiv` redraw (#503 done)
 
-`scripts/sample_pdf_metadata_titles.py` records each row's and each
-unmeasured attempt's PDF `url`, and `append_row` stamps every journal line
-with `ROW_DEFINITIONS_VERSION` (1 = `/pubs` for bioRxiv since #325, Europe
-PMC's own PDF since #494). `main` refuses (exit 2) a journal holding any entry
-stamped otherwise or not at all, and a one-population `--source` at the
-default `-o`. **The review refuted #503's premise for `europepmc`**: all 175
-committed rows have `file_name` `<id>?pdf=render`, Europe PMC's own URL (a
-`PubMedCentral` entry ends `/pdf/?tool=EBI`, live 2026-10-25), so they are
-the population #494 draws. The 60 committed `biorxiv` rows are `/details`
-rows (drawn 2026-08-13, before #325). No live run; the corpus is untouched.
-**#503 stays open for part 2**, a decision: redraw `biorxiv` or keep it, then
-re-check `looks_like_junk`'s remaining reject-list member. The local journal
-beside the corpus is unstamped, so the next default run is refused until it
-is deleted.
+`tests/data/pdf_metadata_titles.json`'s 60 `/details` `biorxiv` rows are
+replaced by **150 drawn live from `/pubs`** (2026-10-27; 27 unmeasured,
+15.3%). Recipe for redrawing one population, now in `CLAUDE.md`: seed a fresh
+journal with the other population's entries stamped `definitions: 1`, then run
+`--source both`; the 175 `europepmc` rows came back byte-identical bar the
+stamp. The corpus is 325 rows; both ship rules hold (0/192, 47/49), and
+`looks_like_junk`'s one member still rescues no row, so **nothing in `bmlib`
+moves**. The redraw makes `_LINE_NUMBER_RE` and its `^` anchor
+corpus-constrained (removing either fails ship rule 1; mutation-checked), and
+every comment quoting the old corpus is re-measured. The journal for this
+corpus lives in the worktree (gitignored); the main checkout's unstamped one
+is stale and should be deleted.
 
-**The session before** (PR #541, #540): PubMed's bare `Review` is a displaced
+**The session before** (PR #542, #503 part 1): the sampler stamps every
+journal line with `ROW_DEFINITIONS_VERSION`, records each PDF's `url`, and
+refuses an unstamped journal and a one-population run at the corpus path.
+
+**Two sessions back** (PR #541, #540): PubMed's bare `Review` is a displaced
 draw, committed as `tests/data/extractor_abstracts_review.json` and pinned, so
-**an `extractors.py` edit re-measures three corpora** (`remeasure
-tests/data/extractor_abstracts_review.json --email … --write`). `LABEL_ORDER`
-gained `review_only`, moving 4 committed records from `other`; over its 760
-`review_only` records #453 moves 7 (`docs/DECISIONS.md`'s #453 entry). Adding
-`Review` to the committed strata is still the maintainer's decision. The draw
-used a placeholder contact address in the `User-Agent`.
+**an `extractors.py` edit re-measures three corpora**. Adding `Review` to the
+committed strata is still the maintainer's decision.
 
-**Two sessions back** (PR #539, #453): `systematic_review` reads a review by
+**Three sessions back** (PR #539, #453): `systematic_review` reads a review by
 how it searched; "meta-analyses" and "systematically identified" were refused.
 
-**Three sessions back** (PR #538, #507): a non-ISO `RetractionEvidence.date`
+**Four sessions back** (PR #538, #507): a non-ISO `RetractionEvidence.date`
 raises `ValueError`; the Rust/FFI half is **#537**.
 
 Filed earlier and still open: **#533** (the passage_match timing tests).
@@ -103,10 +102,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests: 7,274 passing + 111 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-24; the embedder's live tests skip
+  (`uv run pytest tests/ -v`, 2026-10-27; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
-  PR #448's branch (5,810 passed + 2 skipped); this session ran
+  PR #448's branch (5,810 passed + 2 skipped); PR #542's session ran
   `test_backends.py` with it (197 passed + 1 skipped). The default skips are
   the PostgreSQL parameterisations, 1 a PostgreSQL-only schema test, and
   `test_pymupdf_requires_dependency`.
@@ -130,14 +129,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-three open** (`gh issue list --state open --limit 300`, 2026-10-24;
-this session's PR leaves #503 open for its second half). **#533** is the #530
+**Ninety-two open** once this session's PR lands, #503 with it (`gh issue list
+--state open --limit 300`, 2026-10-27). **#533** is the #530
 session's (a flaky timing test; a decision between CPU time, a debug budget
 and a work bound). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
-whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **#503** is PR #502's review's; its first half is this session's, and what
-is left is the `biorxiv` redraw decision (above). **Five more filed on 2026-10-17 are in no list below yet**: the FFI
+whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI
 spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
 deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
