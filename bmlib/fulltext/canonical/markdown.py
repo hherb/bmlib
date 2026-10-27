@@ -23,20 +23,26 @@ the two cannot drift apart through two different parsers. Line by line:
   headings (``===`` for level 1, ``---`` for level 2, under a paragraph line)
   start a section at their level. A level-1 heading before any other content
   is the **title**, not a section.
-* Blank lines separate paragraphs. A list item (``-``, ``*``, ``+``, ``1.``,
-  ``1)``) is a block of its own, its marker dropped, and takes the plain lines
-  that follow it. ``>`` is stripped. A fenced code block (three or more
-  backticks or tildes) is one block, kept verbatim. A thematic break
-  (``---``, ``***``, ``___``) is dropped.
+* Blank lines separate paragraphs. A list item is a block of its own and takes
+  the plain lines that follow it: a bullet (``-``, ``*``, ``+``) loses its
+  marker, a number (``1.``, ``1)``) keeps it, being text. As in CommonMark, a
+  numbered line interrupts a paragraph only when it starts at 1, so a wrapped
+  ``2019.`` stays in its sentence. ``>`` is stripped. A fenced code block
+  (three or more backticks or tildes) is one block whose inline markup is not
+  stripped. A thematic break (``---``, ``***``, ``___``) is dropped.
 * A line starting with ``|`` is a table row; the delimiter row
-  (``|---|:--:|``) is dropped, and ``\\|`` is a pipe inside a cell.
+  (``|---|:--:|``) right after a table's first row is dropped, and ``\\|``
+  is a pipe inside a cell.
 * Inline: emphasis and strong emphasis (``*``/``_``) lose their delimiters,
   code spans their backticks, a link or image keeps its text, an autolink
   (``<https://…>``) its address, and a backslash escape its character.
   Emphasis opens only where the delimiter is not preceded by a letter or
   digit, and closes only where it is not followed by one, so ``snake_case``,
-  ``IL_6`` and ``2*3*4`` stay as written. Anything else, HTML included, is
-  text.
+  ``IL_6`` and ``2*3*4`` stay as written. A link's target may hold
+  balanced parentheses (``doi.org/…(20)…``), and its text escaped brackets.
+  Anything else, HTML included, is text.
+* Whitespace is Unicode ``White_Space`` (:func:`is_white_space`), never
+  ``str.isspace()``, so U+001C to U+001F stay characters as in the Rust port.
 * Content before the first heading is an untitled level-1 section.
 """
 
@@ -51,6 +57,7 @@ from bmlib.fulltext.canonical.model import (
     SectionDraft,
     SourceFormat,
     assemble,
+    is_white_space,
     normalise_whitespace,
 )
 from bmlib.fulltext.canonical.plain import split_lines
@@ -65,8 +72,10 @@ _ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t](.*))?$")
 _ATX_CLOSE = re.compile(r"(?:^|[ \t]+)#+[ \t]*$")
 #: A setext underline: ``=`` for level 1, ``-`` for level 2.
 _SETEXT = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
-#: A list item's marker and its text.
-_LIST_ITEM = re.compile(r"^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+(.*)$")
+#: A list item: a bullet (group 1) or a number (group 2), then its text (group 3).
+_LIST_ITEM = re.compile(r"^[ \t]*(?:([-*+])|([0-9]{1,9})[.)])[ \t]+(.*)$")
+#: The number a numbered item must start at to interrupt a paragraph.
+_INTERRUPTING_NUMBER = 1
 #: A code fence: three or more backticks or tildes, then an info string.
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 #: A blockquote marker and the one space that may follow it.
@@ -85,6 +94,29 @@ _EMPHASIS = frozenset("*_")
 _MAX_EMPHASIS_RUN = 2
 #: The level setext underlines give, by underline character.
 _SETEXT_LEVELS = {"=": 1, "-": 2}
+
+
+def _strip(text: str) -> str:
+    """*text* without leading and trailing :func:`is_white_space` characters."""
+    start, end = 0, len(text)
+    while start < end and is_white_space(text[start]):
+        start += 1
+    while end > start and is_white_space(text[end - 1]):
+        end -= 1
+    return text[start:end]
+
+
+def _find_unescaped(text: str, ch: str, start: int) -> int:
+    """The index of the first *ch* at or after *start* not escaped by a backslash, or -1."""
+    i = start
+    while i < len(text):
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == ch:
+            return i
+        i += 1
+    return -1
 
 
 def strip_inline(text: str) -> str:
@@ -112,7 +144,7 @@ def strip_inline(text: str) -> str:
         if ch == "<":
             close = text.find(">", i + 1)
             inner = text[i + 1 : close] if close > 0 else ""
-            if inner.startswith(_AUTOLINK_SCHEMES) and not any(c.isspace() for c in inner):
+            if inner.startswith(_AUTOLINK_SCHEMES) and not any(map(is_white_space, inner)):
                 out.append(inner)
                 i = close + 1
                 continue
@@ -132,14 +164,28 @@ def strip_inline(text: str) -> str:
 
 
 def _link_at(text: str, start: int) -> tuple[str, int] | None:
-    """The label of a ``[label](target)`` starting at *start*, and the index after it."""
-    close = text.find("]", start + 1)
+    """The label of a ``[label](target)`` starting at *start*, and the index after it.
+
+    The label ends at the first unescaped ``]``; the target at the ``)`` that
+    balances its opening one, skipping escaped parentheses.
+    """
+    close = _find_unescaped(text, "]", start + 1)
     if close < 0 or not text.startswith("(", close + 1):
         return None
-    end = text.find(")", close + 2)
-    if end < 0:
-        return None
-    return text[start + 1 : close], end + 1
+    depth = 0
+    i = close + 1
+    while i < len(text):
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start + 1 : close], i + 1
+        i += 1
+    return None
 
 
 def _run_length(text: str, start: int) -> int:
@@ -161,7 +207,7 @@ def _emphasis_at(text: str, start: int) -> tuple[str, int] | None:
     delimiter = text[start]
     run = _run_length(text, start)
     after = start + run
-    if run > _MAX_EMPHASIS_RUN or after >= len(text) or text[after].isspace():
+    if run > _MAX_EMPHASIS_RUN or after >= len(text) or is_white_space(text[after]):
         return None
     if start > 0 and text[start - 1].isalnum():
         return None
@@ -174,7 +220,7 @@ def _emphasis_at(text: str, start: int) -> tuple[str, int] | None:
         end = i + length
         if (
             length == run
-            and not text[i - 1].isspace()
+            and not is_white_space(text[i - 1])
             and not (end < len(text) and text[end].isalnum())
         ):
             return text[after:i], end
@@ -184,8 +230,7 @@ def _emphasis_at(text: str, start: int) -> tuple[str, int] | None:
 
 def _table_cells(line: str) -> list[str]:
     """The cells of a table row, split on unescaped pipes, inline markup stripped."""
-    body = line.strip()
-    body = body[1:]
+    body = _strip(line)[1:]
     if body.endswith("|") and not body.endswith("\\|"):
         body = body[:-1]
     cells: list[str] = []
@@ -208,7 +253,7 @@ def _table_cells(line: str) -> list[str]:
 
 def _is_delimiter_row(line: str) -> bool:
     """Whether *line* is a table's ``|---|:--:|`` row."""
-    return "-" in line and all(c in _DELIMITER_ROW_CHARS for c in line.strip())
+    return "-" in line and all(c in _DELIMITER_ROW_CHARS for c in _strip(line))
 
 
 def _is_thematic_break(line: str) -> bool:
@@ -225,6 +270,8 @@ class _Converter:
         self.title_taken = False
         self.sections = [SectionDraft("", TOP_LEVEL)]
         self.paragraph: list[str] = []
+        self.in_item = False
+        self.table_rows = 0
         self.seen_content = False
         self.fence: str | None = None
         self.fence_lines: list[str] = []
@@ -239,6 +286,7 @@ class _Converter:
         if self.paragraph:
             self.block(BlockDraft.paragraph(strip_inline(" ".join(self.paragraph))))
             self.paragraph = []
+        self.in_item = False
 
     def heading(self, level: int, text: str) -> None:
         """Start a section, or take the title for a leading level-1 heading."""
@@ -251,14 +299,14 @@ class _Converter:
         self.seen_content = True
 
     def close_fence(self) -> None:
-        """End the fenced block, kept verbatim."""
+        """End the fenced block; its inline markup is not stripped."""
         self.block(BlockDraft.paragraph("\n".join(self.fence_lines)))
         self.fence, self.fence_lines = None, []
 
     def line(self, line: str) -> None:
         """Read one line."""
         if self.fence is not None:
-            stripped = line.strip()
+            stripped = _strip(line)
             if (
                 stripped
                 and stripped == self.fence[0] * len(stripped)
@@ -270,6 +318,9 @@ class _Converter:
             return
         while _QUOTE.match(line):
             line = _QUOTE.sub("", line, count=1)
+        is_table_line = _strip(line).startswith("|")
+        if not is_table_line:
+            self.table_rows = 0
         if fence := _FENCE.match(line):
             self.flush()
             self.fence = fence.group(1)
@@ -288,16 +339,25 @@ class _Converter:
         if _is_thematic_break(line):
             self.flush()
             return
-        if line.strip().startswith("|"):
+        if is_table_line:
             self.flush()
-            if not _is_delimiter_row(line):
+            self.table_rows += 1
+            # Only the row right after a table's first is its delimiter row.
+            if not (self.table_rows == 2 and _is_delimiter_row(line)):
                 self.block(BlockDraft.row(_table_cells(line)))
             return
-        if item := _LIST_ITEM.match(line):
+        item = _LIST_ITEM.match(line)
+        if item and (
+            item.group(1)
+            or not self.paragraph
+            or self.in_item
+            or int(item.group(2)) == _INTERRUPTING_NUMBER
+        ):
             self.flush()
-            self.paragraph = [item.group(1)]
+            self.paragraph = [item.group(3) if item.group(1) else _strip(line)]
+            self.in_item = True
             return
-        self.paragraph.append(line.strip())
+        self.paragraph.append(_strip(line))
 
     def finish(self) -> CanonicalText:
         """End the document and lay it out."""

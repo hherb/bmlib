@@ -513,8 +513,14 @@ impl JATSReferenceInfo {
     /// artifact's 174,458 references that carry a deposited string and render
     /// structured (346 of 8,118 articles) were moved by this rule. **And
     /// components that name no work are not a citation either, however many
-    /// there are** (issue #276): where there is a deposit and none of
+    /// there are** (issue #276). `R Core Team. (2019)` for a whole software
+    /// citation, and `(2021). 635-642` for a paper it never names, are the pairs
+    /// the count let through. So where there is a deposit and none of
     /// `article_title`, `source` or `doi` would print, the deposit is printed.
+    /// `source` is the weakest member — for a journal article it is the
+    /// container rather than the work — and is admitted on #276's own reading,
+    /// where refusing it would print the deposit for every citation tagging a
+    /// book or a report by its `<source>`.
     pub(crate) fn defers_to_the_deposit(&self, printed_part_count: usize) -> bool {
         if printed_part_count == 0 {
             return true;

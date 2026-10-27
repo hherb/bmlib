@@ -47,7 +47,7 @@ text keeps everything `to_html()` shows but the metadata lines, references
 included. `bmlib.fulltext.canonical` / `bmlib::fulltext::canonical`: one
 string, every title, heading and block a code-point `TextSpan`; converters
 hand drafts to one `assemble`. Shared contract
-`tests/fixtures/canonical_text.json` (22 cases; the generator was a scratch
+`tests/fixtures/canonical_text.json` (26 cases; the generator was a scratch
 script, so a new case is written by hand in the same `to_dict` shape).
 `JATS_CANONICAL_VERSION` is pinned beside `RENDERER_VERSION` in
 `tests/test_renderer_version.py` (**a JATS PR now trips two pins**; a change
@@ -55,7 +55,10 @@ to `assemble` bumps all three converter versions). Beside it:
 `JATSTableInfo.header_rows`/`body_rows` (and through the FFI), Rust
 `JATSReferenceInfo::formatted_citation()` (the oracle now diffs it), and the
 fulltext import guard walks subpackages. Markdown's emphasis follows a
-word-boundary rule for `*` as for `_`, unlike CommonMark, so `2*3*4` stays.
+word-boundary rule for `*` as for `_`, unlike CommonMark, so `2*3*4` stays;
+a numbered list item keeps its number (a wrapped `2019.` must never vanish),
+and only a number starting at 1 interrupts a paragraph. The whole-branch
+review's four deferred minors are filed (see the PR).
 Mutation-checked in both languages. The Rust JATS side inherits #409 (a cited
 `<etal/>`), so the fixture has none. **Next for StudyAnalyzer: item 3** (the
 chunker, over this text), or 4b.
@@ -123,7 +126,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,389 passing + 111 skipped** on this session's branch
+- **Tests: 7,397 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-28; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for

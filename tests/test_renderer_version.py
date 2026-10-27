@@ -85,7 +85,7 @@ NOT_RENDERING = {
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-CANONICAL_PINNED = (1, "e349166817f145716bcddc4e55e88095ac46110055705584601dff56882fd280")
+CANONICAL_PINNED = (1, "f66877cc2653daabfdd60de15b039c354a967186faa750bb06eb3571c756c3fa")
 
 PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")
 

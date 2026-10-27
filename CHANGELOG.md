@@ -20,15 +20,16 @@ All notable changes to bmlib are documented here. The format is based on
   by a tab. JATS keeps everything `to_html()` shows apart from the metadata
   lines (abstract, body, funding, figure captions, tables as rows, references,
   the maintainer's call of 2026-10-28), with `[text](#id)` cross-reference
-  links reduced to their text. Markdown is a hand-written subset in both
-  languages (headings, lists, quotes, fences, pipe tables; emphasis, code,
-  links, images, autolinks, escapes), whose emphasis neither opens after nor
-  closes before a letter or digit, so `snake_case`, `IL_6` and `2*3*4` stay as
-  written. Each result names its `converter_version` (`"jats-1"`,
+  links reduced to their text in every field. Markdown is a hand-written
+  subset in both languages (headings, lists, quotes, fences, pipe tables;
+  emphasis, code, links, images, autolinks, escapes), whose emphasis neither
+  opens after nor closes before a letter or digit, so `snake_case`, `IL_6` and
+  `2*3*4` stay as written; a numbered item keeps its number, and a link target
+  may hold balanced parentheses (a Lancet DOI's `(20)`). Each result names its `converter_version` (`"jats-1"`,
   `"markdown-1"`, `"plain_text-1"`); `JATS_CANONICAL_VERSION` is pinned beside
   `RENDERER_VERSION` in `tests/test_renderer_version.py` over the reader, the
   models and the converter. Python and Rust in the same PR, held by
-  `tests/fixtures/canonical_text.json` (22 cases). The JATS half inherits the
+  `tests/fixtures/canonical_text.json` (26 cases). The JATS half inherits the
   Rust reader's open gaps: a cited `<etal/>` (#409) is not read there.
 - **`JATSTableInfo.header_rows` and `body_rows`**: a table's cell texts as
   data, in both languages and through the FFI's `JatsTable`, so the canonical

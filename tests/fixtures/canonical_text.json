@@ -713,7 +713,7 @@
       "format": "markdown",
       "input": "Items:\n\n- first item\n  continues\n* second\n1. third\n2) fourth\n\n> Quoted **text**\n> more\n",
       "expected": {
-        "text": "Items:\n\nfirst item continues\n\nsecond\n\nthird\n\nfourth\n\nQuoted text more",
+        "text": "Items:\n\nfirst item continues\n\nsecond\n\n1. third\n\n2) fourth\n\nQuoted text more",
         "title_span": null,
         "sections": [
           {
@@ -745,21 +745,21 @@
                 "kind": "paragraph",
                 "span": {
                   "start": 38,
-                  "end": 43
+                  "end": 46
                 }
               },
               {
                 "kind": "paragraph",
                 "span": {
-                  "start": 45,
-                  "end": 51
+                  "start": 48,
+                  "end": 57
                 }
               },
               {
                 "kind": "paragraph",
                 "span": {
-                  "start": 53,
-                  "end": 69
+                  "start": 59,
+                  "end": 75
                 }
               }
             ]
@@ -819,9 +819,9 @@
     {
       "name": "markdown/pipe-table",
       "format": "markdown",
-      "input": "| Group | n |\n|:------|--:|\n| A | 12 |\n| B \\| C | 7 |\n",
+      "input": "| Group | n |\n|:------|--:|\n| A | 12 |\n| B \\| C | 7 |\n| - | - |\n",
       "expected": {
-        "text": "Group\tn\n\nA\t12\n\nB | C\t7",
+        "text": "Group\tn\n\nA\t12\n\nB | C\t7\n\n-\t-",
         "title_span": null,
         "sections": [
           {
@@ -847,6 +847,13 @@
                 "span": {
                   "start": 15,
                   "end": 22
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 24,
+                  "end": 27
                 }
               }
             ]
@@ -947,6 +954,246 @@
                 "span": {
                   "start": 22,
                   "end": 26
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "jats/xrefs-everywhere",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Xrefs</article-title></title-group>\n<abstract><sec><title>Results <xref ref-type=\"table\" rid=\"t1\">T1</xref></title><p>See <xref ref-type=\"fig\" rid=\"f1\">Figure 1</xref> here.</p></sec></abstract>\n<funding-group><funding-statement>Funded as in <xref ref-type=\"table\" rid=\"t1\">Table 1</xref>.</funding-statement></funding-group>\n</article-meta></front>\n<body><sec><title>S</title><p>x</p>\n<fig id=\"f1\"><label>Figure 1</label><caption><p>As in <xref ref-type=\"table\" rid=\"t1\">Table 1</xref>.</p></caption></fig>\n<table-wrap id=\"t1\"><label>Table 1</label><caption><p>Compare <xref ref-type=\"fig\" rid=\"f1\">Figure 1</xref>.</p></caption><table><tbody><tr><td>v</td></tr></tbody></table>\n<table-wrap-foot><fn><p>cf <xref ref-type=\"fig\" rid=\"f1\">Fig. 1</xref></p></fn></table-wrap-foot></table-wrap>\n</sec></body></article>\n",
+      "expected": {
+        "text": "Xrefs\n\nAbstract\n\nResults T1\n\nSee Figure 1 here.\n\nS\n\nx\n\nFunding\n\nFunded as in Table 1.\n\nFigures\n\nFigure 1\n\nAs in Table 1.\n\nTables\n\nTable 1\n\nCompare Figure 1.\n\nv\n\ncf Fig. 1",
+        "title_span": {
+          "start": 0,
+          "end": 5
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 7,
+              "end": 15
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 17,
+              "end": 27
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 29,
+                  "end": 47
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 49,
+              "end": 50
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 52,
+                  "end": 53
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 55,
+              "end": 62
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 64,
+                  "end": 85
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 87,
+              "end": 94
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 96,
+              "end": 104
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 106,
+                  "end": 120
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 122,
+              "end": 128
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 130,
+              "end": 137
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 139,
+                  "end": 156
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 158,
+                  "end": 159
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 161,
+                  "end": 170
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "markdown/odd-whitespace",
+      "format": "markdown",
+      "input": "a\u001f\n\n| a | b |\u001f\n\n*\u001fa*",
+      "expected": {
+        "text": "a\u001f\n\na\tb\t\u001f\n\n\u001fa",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 2
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 4,
+                  "end": 9
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 11,
+                  "end": 13
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/wrapped-number",
+      "format": "markdown",
+      "input": "Data were collected until December\n2019. A total of 5.\n\n1. first\n2. second",
+      "expected": {
+        "text": "Data were collected until December 2019. A total of 5.\n\n1. first\n\n2. second",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 54
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 56,
+                  "end": 64
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 66,
+                  "end": 75
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/links",
+      "format": "markdown",
+      "input": "[link](https://doi.org/10.1016/S0140-6736(20)30183-5) end and [\\[1\\]](#ref1).",
+      "expected": {
+        "text": "link end and [1].",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 17
                 }
               }
             ]

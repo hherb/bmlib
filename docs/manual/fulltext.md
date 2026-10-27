@@ -2475,11 +2475,16 @@ doc.converter_version                     # "jats-1"
   rows, notes); `References`, one block per `formatted_citation`. These
   headings are the labels `to_html()` prints; nothing else is invented, so
   unheaded prose is an untitled section. Exhibits follow the body, as in
-  `to_html()`. Cross-reference links (`[Fig 1](#f1)`) read as their text.
+  `to_html()`. Cross-reference links (`[Fig 1](#f1)`) read as their text
+  wherever the reader wrote them: body, abstract, captions, notes, funding.
 - **Markdown**: a small subset, hand-written in both languages: ATX and setext
   headings (a level-1 heading before any content is the title), paragraphs,
-  list items (one block each), `>` quotes, fenced code (kept verbatim), pipe
-  tables (rows; the delimiter row dropped) and thematic breaks (dropped).
+  list items (one block each; a bullet loses its marker, a number keeps it,
+  and a numbered line interrupts a paragraph only when it starts at 1, so a
+  wrapped `2019.` stays in its sentence), `>` quotes, fenced code (inline
+  markup not stripped), pipe tables (rows; the delimiter row after a table's
+  first row is dropped) and thematic breaks (dropped). A link's target may
+  hold balanced parentheses, as a Lancet DOI's `(20)` does.
   Inline emphasis, code spans, links, images, autolinks and backslash escapes
   are stripped to their text; emphasis neither opens after nor closes before
   a letter or digit, so `snake_case`, `IL_6` and `2*3*4` stay as written.

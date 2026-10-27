@@ -24,6 +24,9 @@
 //! the rendering already prints for those modelled fields; no other heading is
 //! invented. Exhibits come after the body, where the rendering puts them: the
 //! article keeps them in lists of their own, not where the body cites them.
+//! The reader writes a `[text](#id)` link for a cross-reference into whatever
+//! field holds it (body, abstract, captions, notes, funding), so every text
+//! read from the article goes through [`strip_links`].
 
 use crate::fulltext::canonical::model::{
     assemble, BlockDraft, CanonicalText, SectionDraft, SourceFormat, TOP_LEVEL,
@@ -61,14 +64,15 @@ pub fn strip_links(text: &str) -> String {
 #[must_use]
 pub fn canonical_from_jats(article: &JATSArticle) -> CanonicalText {
     let sub_level = TOP_LEVEL + 1;
+    let para = |text: &str| BlockDraft::paragraph(strip_links(text));
     let mut sections: Vec<SectionDraft> = Vec::new();
     if !article.abstract_sections.is_empty() {
         sections.push(SectionDraft::new(ABSTRACT_HEADING, TOP_LEVEL, vec![]));
         sections.extend(article.abstract_sections.iter().map(|part| {
             SectionDraft::new(
-                part.title.clone(),
+                strip_links(&part.title),
                 sub_level,
-                vec![BlockDraft::paragraph(part.content.clone())],
+                vec![para(&part.content)],
             )
         }));
     }
@@ -78,12 +82,12 @@ pub fn canonical_from_jats(article: &JATSArticle) -> CanonicalText {
     let funding: Vec<BlockDraft> = article
         .funding_statements
         .iter()
-        .map(|statement| BlockDraft::paragraph(statement.clone()))
+        .map(|statement| para(statement))
         .chain(
             article
                 .funding_awards
                 .iter()
-                .map(|award| BlockDraft::paragraph(format_award(award))),
+                .map(|award| para(&format_award(award))),
         )
         .collect();
     if !funding.is_empty() {
@@ -94,36 +98,36 @@ pub fn canonical_from_jats(article: &JATSArticle) -> CanonicalText {
         for figure in &article.figures {
             let blocks = std::iter::once(&figure.caption)
                 .chain(&figure.footnotes)
-                .map(|text| BlockDraft::paragraph(text.clone()))
+                .map(|text| para(text))
                 .collect();
-            sections.push(SectionDraft::new(figure.label.clone(), sub_level, blocks));
+            sections.push(SectionDraft::new(
+                strip_links(&figure.label),
+                sub_level,
+                blocks,
+            ));
         }
     }
     if !article.tables.is_empty() {
         sections.push(SectionDraft::new(TABLES_HEADING, TOP_LEVEL, vec![]));
         for table in &article.tables {
-            let mut blocks = vec![BlockDraft::paragraph(table.caption.clone())];
-            blocks.extend(
-                table
-                    .header_rows
-                    .iter()
-                    .chain(&table.body_rows)
-                    .map(|row| BlockDraft::row(row)),
-            );
-            blocks.extend(
-                table
-                    .footnotes
-                    .iter()
-                    .map(|note| BlockDraft::paragraph(note.clone())),
-            );
-            sections.push(SectionDraft::new(table.label.clone(), sub_level, blocks));
+            let mut blocks = vec![para(&table.caption)];
+            blocks.extend(table.header_rows.iter().chain(&table.body_rows).map(|row| {
+                let cells: Vec<String> = row.iter().map(|cell| strip_links(cell)).collect();
+                BlockDraft::row(&cells)
+            }));
+            blocks.extend(table.footnotes.iter().map(|note| para(note)));
+            sections.push(SectionDraft::new(
+                strip_links(&table.label),
+                sub_level,
+                blocks,
+            ));
         }
     }
     if !article.references.is_empty() {
         let blocks = article
             .references
             .iter()
-            .map(|reference| BlockDraft::paragraph(reference.formatted_citation()))
+            .map(|reference| para(&reference.formatted_citation()))
             .collect();
         sections.push(SectionDraft::new(REFERENCES_HEADING, TOP_LEVEL, blocks));
     }

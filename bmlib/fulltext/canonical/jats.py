@@ -24,6 +24,10 @@ and references. The headings ``Abstract``, ``Funding``, ``Figures``,
 those modelled fields; no other heading is invented, so prose the document
 heads with nothing stays an untitled section.
 
+The reader writes a ``[text](#id)`` link for a cross-reference into whatever
+field holds it (body, abstract, captions, notes, funding), so every text read
+from the article goes through :func:`strip_links`.
+
 A figure and a table are laid out where ``to_html`` puts them, after the body:
 :class:`~bmlib.fulltext.models.JATSArticle` keeps exhibits in lists of their
 own, not at the point the body cites them.
@@ -70,16 +74,20 @@ def canonical_from_jats(article: JATSArticle) -> CanonicalText:
     """
     sections: list[SectionDraft] = []
     sub_level = TOP_LEVEL + 1
+
+    def para(text: str) -> BlockDraft:
+        return BlockDraft.paragraph(strip_links(text))
+
     if article.abstract_sections:
         sections.append(SectionDraft(ABSTRACT_HEADING, TOP_LEVEL))
         sections.extend(
-            SectionDraft(part.title, sub_level, [BlockDraft.paragraph(part.content)])
+            SectionDraft(strip_links(part.title), sub_level, [para(part.content)])
             for part in article.abstract_sections
         )
     for body in article.body_sections:
         sections.extend(_body_sections(body, TOP_LEVEL))
-    funding = [BlockDraft.paragraph(s) for s in article.funding_statements]
-    funding += [BlockDraft.paragraph(_format_award(a)) for a in article.funding_awards]
+    funding = [para(s) for s in article.funding_statements]
+    funding += [para(_format_award(a)) for a in article.funding_awards]
     if funding:
         sections.append(SectionDraft(FUNDING_HEADING, TOP_LEVEL, funding))
     if article.figures:
@@ -87,21 +95,20 @@ def canonical_from_jats(article: JATSArticle) -> CanonicalText:
         for figure in article.figures:
             texts = [figure.caption, *figure.footnotes]
             sections.append(
-                SectionDraft(figure.label, sub_level, [BlockDraft.paragraph(t) for t in texts])
+                SectionDraft(strip_links(figure.label), sub_level, [para(t) for t in texts])
             )
     if article.tables:
         sections.append(SectionDraft(TABLES_HEADING, TOP_LEVEL))
         for table in article.tables:
-            rows = [BlockDraft.row(r) for r in (*table.header_rows, *table.body_rows)]
+            rows = [
+                BlockDraft.row([strip_links(c) for c in r])
+                for r in (*table.header_rows, *table.body_rows)
+            ]
             sections.append(
                 SectionDraft(
-                    table.label,
+                    strip_links(table.label),
                     sub_level,
-                    [
-                        BlockDraft.paragraph(table.caption),
-                        *rows,
-                        *(BlockDraft.paragraph(f) for f in table.footnotes),
-                    ],
+                    [para(table.caption), *rows, *(para(f) for f in table.footnotes)],
                 )
             )
     if article.references:
@@ -109,7 +116,7 @@ def canonical_from_jats(article: JATSArticle) -> CanonicalText:
             SectionDraft(
                 REFERENCES_HEADING,
                 TOP_LEVEL,
-                [BlockDraft.paragraph(r.formatted_citation) for r in article.references],
+                [para(r.formatted_citation) for r in article.references],
             )
         )
     return assemble(

@@ -21,8 +21,11 @@
 //! states the subset; both are hand-written so the two cannot drift apart
 //! through two different parsers, and the shared fixture holds them together.
 //! Text is read as a `Vec<char>`, so every index is a code point, as in Python.
-//! A letter or digit is `char::is_alphanumeric` here and `str.isalnum` there;
-//! the two differ only for a few combining marks.
+//! Whitespace is Unicode `White_Space` in both. A letter or digit is
+//! `char::is_alphanumeric` here and `str.isalnum` there, which differ for
+//! characters Unicode calls alphabetic without being letters (Thai and Indic
+//! vowel signs, circled letters such as `Ⓐ`) and wherever the two languages'
+//! Unicode versions differ, so emphasis next to those may be read differently.
 
 use std::sync::OnceLock;
 
@@ -73,11 +76,14 @@ fn setext() -> &'static Regex {
     pattern(&CELL, r"^ {0,3}(=+|-+)[ \t]*$")
 }
 
-/// A list item's marker and its text.
+/// A list item: a bullet (group 1) or a number (group 2), then its text (group 3).
 fn list_item() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+(.*)$")
+    pattern(&CELL, r"^[ \t]*(?:([-*+])|([0-9]{1,9})[.)])[ \t]+(.*)$")
 }
+
+/// The number a numbered item must start at to interrupt a paragraph.
+const INTERRUPTING_NUMBER: u32 = 1;
 
 /// A code fence: three or more backticks or tildes, then an info string.
 fn fence() -> &'static Regex {
@@ -162,14 +168,51 @@ fn find(text: &[char], ch: char, from: usize) -> Option<usize> {
         .map(|at| at + from)
 }
 
+/// The first index of `ch` at or after `from` not escaped by a backslash.
+fn find_unescaped(text: &[char], ch: char, from: usize) -> Option<usize> {
+    let mut i = from;
+    while i < text.len() {
+        if text[i] == '\\' {
+            i += 2;
+            continue;
+        }
+        if text[i] == ch {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// The label of a `[label](target)` starting at `start`, and the index after it.
+///
+/// The label ends at the first unescaped `]`; the target at the `)` that
+/// balances its opening one, skipping escaped parentheses.
 fn link_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
-    let close = find(text, ']', start + 1)?;
+    let close = find_unescaped(text, ']', start + 1)?;
     if text.get(close + 1) != Some(&'(') {
         return None;
     }
-    let end = find(text, ')', close + 2)?;
-    Some((&text[start + 1..close], end + 1))
+    let mut depth = 0usize;
+    let mut i = close + 1;
+    while i < text.len() {
+        match text[i] {
+            '\\' => {
+                i += 2;
+                continue;
+            }
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&text[start + 1..close], i + 1));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// How many copies of `text[start]` follow from `start`.
@@ -262,6 +305,8 @@ struct Converter {
     title_taken: bool,
     sections: Vec<SectionDraft>,
     paragraph: Vec<String>,
+    in_item: bool,
+    table_rows: usize,
     seen_content: bool,
     fence: Option<String>,
     fence_lines: Vec<String>,
@@ -274,6 +319,8 @@ impl Converter {
             title_taken: false,
             sections: vec![SectionDraft::new("", TOP_LEVEL, vec![])],
             paragraph: Vec::new(),
+            in_item: false,
+            table_rows: 0,
             seen_content: false,
             fence: None,
             fence_lines: Vec::new(),
@@ -297,6 +344,7 @@ impl Converter {
             self.paragraph.clear();
             self.block(BlockDraft::paragraph(text));
         }
+        self.in_item = false;
     }
 
     /// Start a section, or take the title for a leading level-1 heading.
@@ -312,7 +360,7 @@ impl Converter {
         self.seen_content = true;
     }
 
-    /// End the fenced block, kept verbatim.
+    /// End the fenced block; its inline markup is not stripped.
     fn close_fence(&mut self) {
         let text = self.fence_lines.join("\n");
         self.fence = None;
@@ -338,6 +386,10 @@ impl Converter {
         let mut line = line.to_string();
         while let Some(marker) = quote().find(&line) {
             line = line[marker.end()..].to_string();
+        }
+        let is_table_line = line.trim().starts_with('|');
+        if !is_table_line {
+            self.table_rows = 0;
         }
         if let Some(open) = fence().captures(&line) {
             self.flush();
@@ -367,17 +419,28 @@ impl Converter {
             self.flush();
             return;
         }
-        if line.trim().starts_with('|') {
+        if is_table_line {
             self.flush();
-            if !is_delimiter_row(&line) {
+            self.table_rows += 1;
+            // Only the row right after a table's first is its delimiter row.
+            if !(self.table_rows == 2 && is_delimiter_row(&line)) {
                 self.block(BlockDraft::row(&table_cells(&line)));
             }
             return;
         }
         if let Some(item) = list_item().captures(&line) {
-            self.flush();
-            self.paragraph = vec![item[1].to_string()];
-            return;
+            let bullet = item.get(1).is_some();
+            let starts_at_one = item
+                .get(2)
+                .and_then(|number| number.as_str().parse::<u32>().ok())
+                == Some(INTERRUPTING_NUMBER);
+            if bullet || self.paragraph.is_empty() || self.in_item || starts_at_one {
+                self.flush();
+                let text = if bullet { &item[3] } else { line.trim() };
+                self.paragraph = vec![text.to_string()];
+                self.in_item = true;
+                return;
+            }
         }
         self.paragraph.push(line.trim().to_string());
     }
