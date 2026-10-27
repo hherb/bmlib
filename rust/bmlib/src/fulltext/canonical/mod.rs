@@ -19,9 +19,11 @@
 //! The port of Python's `bmlib.fulltext.canonical`; see [`model`] for the
 //! layout and the offset unit.
 
+pub mod jats;
 pub mod model;
 pub mod plain;
 
+pub use jats::{canonical_from_jats, strip_links, JATS_CANONICAL_VERSION};
 pub use model::{
     assemble, BlockDraft, BlockKind, CanonicalBlock, CanonicalError, CanonicalSection,
     CanonicalText, SectionDraft, SourceFormat, TextSpan, BLOCK_SEPARATOR, CELL_SEPARATOR,

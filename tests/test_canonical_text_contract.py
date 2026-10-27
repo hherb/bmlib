@@ -30,7 +30,8 @@ from typing import Any
 
 import pytest
 
-from bmlib.fulltext.canonical import CanonicalText, canonical_from_plain_text
+from bmlib.fulltext.canonical import CanonicalText, canonical_from_jats, canonical_from_plain_text
+from bmlib.fulltext.jats_parser import JATSParser
 
 FIXTURE = Path(__file__).parent / "fixtures" / "canonical_text.json"
 CASES: list[dict[str, Any]] = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
@@ -41,6 +42,8 @@ def convert(case: dict[str, Any]) -> CanonicalText:
     fmt = case["format"]
     if fmt == "plain_text":
         return canonical_from_plain_text(case["input"], case.get("title", ""))
+    if fmt == "jats":
+        return canonical_from_jats(JATSParser(case["input"].encode()).parse())
     raise AssertionError(f"unknown format {fmt!r} in {case['name']}")
 
 
@@ -55,4 +58,4 @@ def test_expected_value_round_trips(case: dict[str, Any]) -> None:
 
 
 def test_the_contract_covers_every_format_it_names() -> None:
-    assert {c["format"] for c in CASES} >= {"plain_text"}
+    assert {c["format"] for c in CASES} >= {"plain_text", "jats"}

@@ -963,7 +963,7 @@ fn format_identifiers_html(article: &JATSArticle) -> String {
 /// no funder prints its number alone, and a funder named with no number prints
 /// alone too — the second being the commonest shape there is. Nothing is
 /// invented: no `"Grant:"` label, no placeholder for an absent id.
-fn format_award(award: &JATSFundingAward) -> String {
+pub(crate) fn format_award(award: &JATSFundingAward) -> String {
     let funders = award
         .sources
         .iter()
@@ -1081,10 +1081,15 @@ pub fn html_escape(text: &str) -> String {
 }
 
 /// Convert markdown-style `[text](#anchor)` to anchors, escaping the rest.
-fn convert_inline_links(text: &str) -> String {
+/// The `[text](target)` link the JATS reader writes for a cross-reference,
+/// Python's `_LINK_RE`: group 1 is the text, group 2 the target.
+pub(crate) fn inline_link_pattern() -> &'static Regex {
     static LINK: OnceLock<Regex> = OnceLock::new();
-    let pattern =
-        LINK.get_or_init(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").expect("a fixed pattern"));
+    LINK.get_or_init(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").expect("a fixed pattern"))
+}
+
+fn convert_inline_links(text: &str) -> String {
+    let pattern = inline_link_pattern();
 
     let mut result = String::new();
     let mut last_end = 0;

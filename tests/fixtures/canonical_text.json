@@ -211,6 +211,324 @@
         "source_format": "plain_text",
         "converter_version": "plain_text-1"
       }
+    },
+    {
+      "name": "jats/full",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta>\n<article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Aspirin and   outcomes</article-title></title-group>\n<abstract><sec><title>Background</title><p>Aspirin is common.</p></sec><sec><title>Results</title><p>Fewer events.</p></sec></abstract>\n<funding-group><award-group><funding-source>National Institutes of Health</funding-source><award-id>R01 1</award-id></award-group><funding-statement>Funded by NIH.</funding-statement></funding-group>\n</article-meta></front>\n<body>\n<sec><title>Methods</title><p>We randomised 120 patients.</p>\n<sec><title>Statistics</title><p>We used Cox models.</p></sec>\n<fig id=\"f1\"><label>Figure 1</label><caption><p>Flow of patients.</p></caption><fn><p>Excludes withdrawals.</p></fn></fig>\n<table-wrap id=\"t1\"><label>Table 1</label><caption><p>Baseline.</p></caption><table><thead><tr><th>Group</th><th>n</th></tr></thead><tbody><tr><td>A</td><td>12</td></tr></tbody></table></table-wrap>\n</sec>\n<sec><title>Discussion</title><p>Aspirin helped.</p></sec>\n</body>\n<back><ref-list><ref id=\"r1\"><element-citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><article-title>A trial</article-title><source>Lancet</source><year>2020</year><volume>1</volume><fpage>2</fpage></element-citation></ref>\n<ref id=\"r2\"><element-citation><year>2021</year><pub-id pub-id-type=\"doi\">10.1/x</pub-id></element-citation></ref></ref-list></back>\n</article>\n",
+      "expected": {
+        "text": "Aspirin and outcomes\n\nAbstract\n\nBackground\n\nAspirin is common.\n\nResults\n\nFewer events.\n\nMethods\n\nWe randomised 120 patients.\n\nStatistics\n\nWe used Cox models.\n\nDiscussion\n\nAspirin helped.\n\nFunding\n\nFunded by NIH.\n\nNational Institutes of Health: R01 1\n\nFigures\n\nFigure 1\n\nFlow of patients.\n\nExcludes withdrawals.\n\nTables\n\nTable 1\n\nBaseline.\n\nGroup\tn\n\nA\t12\n\nReferences\n\nJ Smith. A trial. Lancet. (2020). 1:2\n\n(2021). doi:10.1/x",
+        "title_span": {
+          "start": 0,
+          "end": 20
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 22,
+              "end": 30
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 32,
+              "end": 42
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 44,
+                  "end": 62
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 64,
+              "end": 71
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 73,
+                  "end": 86
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 88,
+              "end": 95
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 97,
+                  "end": 124
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 126,
+              "end": 136
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 138,
+                  "end": 157
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 159,
+              "end": 169
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 171,
+                  "end": 186
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 188,
+              "end": 195
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 197,
+                  "end": 211
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 213,
+                  "end": 249
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 251,
+              "end": 258
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 260,
+              "end": 268
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 270,
+                  "end": 287
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 289,
+                  "end": 310
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 312,
+              "end": 318
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 320,
+              "end": 327
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 329,
+                  "end": 338
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 340,
+                  "end": 347
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 349,
+                  "end": 353
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 355,
+              "end": 365
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 367,
+                  "end": 404
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 406,
+                  "end": 424
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "jats/inline-links",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Links</article-title></title-group></article-meta></front>\n<body><sec><title>Results <xref ref-type=\"fig\" rid=\"f1\">Fig 1</xref></title><p>As shown in <xref ref-type=\"fig\" rid=\"f1\">Fig 1</xref> and before <xref ref-type=\"bibr\" rid=\"r2\">2</xref>, the effect [95% CI] held.</p></sec></body>\n<back><ref-list><ref id=\"r2\"><mixed-citation>Doe J. Old work. 1999.</mixed-citation></ref></ref-list></back></article>\n",
+      "expected": {
+        "text": "Links\n\nResults Fig 1\n\nAs shown in Fig 1 and before 2, the effect [95% CI] held.\n\nReferences\n\nDoe J. Old work. 1999.",
+        "title_span": {
+          "start": 0,
+          "end": 5
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 7,
+              "end": 20
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 22,
+                  "end": 79
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 81,
+              "end": 91
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 93,
+                  "end": 115
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "jats/front-only",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Only a title</article-title></title-group></article-meta></front></article>\n",
+      "expected": {
+        "text": "Only a title",
+        "title_span": {
+          "start": 0,
+          "end": 12
+        },
+        "sections": [],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "jats/untitled-body",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Loose</article-title></title-group></article-meta></front>\n<body><p>Loose prose one.</p><p>Loose prose two.</p></body></article>\n",
+      "expected": {
+        "text": "Loose\n\nLoose prose one.\n\nLoose prose two.",
+        "title_span": {
+          "start": 0,
+          "end": 5
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 7,
+                  "end": 23
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 25,
+                  "end": 41
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
     }
   ]
 }

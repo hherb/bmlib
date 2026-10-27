@@ -19,6 +19,11 @@
 See :mod:`bmlib.fulltext.canonical.model` for the layout and the offset unit.
 """
 
+from bmlib.fulltext.canonical.jats import (
+    JATS_CANONICAL_VERSION,
+    canonical_from_jats,
+    strip_links,
+)
 from bmlib.fulltext.canonical.model import (
     BLOCK_SEPARATOR,
     CELL_SEPARATOR,
@@ -44,6 +49,7 @@ from bmlib.fulltext.canonical.plain import (
 __all__ = [
     "BLOCK_SEPARATOR",
     "CELL_SEPARATOR",
+    "JATS_CANONICAL_VERSION",
     "PLAIN_TEXT_VERSION",
     "TOP_LEVEL",
     "BlockDraft",
@@ -55,8 +61,10 @@ __all__ = [
     "SourceFormat",
     "TextSpan",
     "assemble",
+    "canonical_from_jats",
     "canonical_from_plain_text",
     "is_white_space",
     "normalise_whitespace",
     "split_lines",
+    "strip_links",
 ]
