@@ -27,7 +27,9 @@ matcher in CitationFinderAgent took ~30 s per citation on a 1 kB abstract).
 
 import math
 import random
+import re
 from difflib import SequenceMatcher
+from pathlib import Path
 
 import pytest
 
@@ -62,6 +64,9 @@ SENTENCES = [
     "resulted in lower mortality.",
 ]
 ABSTRACT = " ".join(SENTENCES)
+RUST_SENTENCES = (
+    Path(__file__).resolve().parent.parent / "rust/bmlib/tests/data/passage_match_sentences.rs"
+)
 
 # Most windows a fuzzy search may score, whatever the text and passage length:
 # per candidate region, the edge alignment, the estimated window, and per
@@ -338,7 +343,7 @@ class TestFuzzyMatch:
         assert match.matched
         # A search scoring one window per text character would exceed the bound.
         assert len(text) > MAX_WINDOWS_SCORED
-        assert 0 < windows_scored[0] <= MAX_WINDOWS_SCORED
+        assert 1 < windows_scored[0] <= MAX_WINDOWS_SCORED
 
     def test_long_non_matching_passage_scores_a_bounded_number_of_windows(
         self, windows_scored: list[int]
@@ -346,7 +351,7 @@ class TestFuzzyMatch:
         passage = " ".join(reversed(SENTENCES))
         match = find_passage(passage, ABSTRACT, min_similarity=0.95)
         assert not match.matched
-        assert 0 < windows_scored[0] <= MAX_WINDOWS_SCORED
+        assert 1 < windows_scored[0] <= MAX_WINDOWS_SCORED
 
     def test_long_text_scores_a_bounded_number_of_windows(self, windows_scored: list[int]) -> None:
         text = " ".join(f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS))
@@ -355,14 +360,15 @@ class TestFuzzyMatch:
         assert match.matched
         assert match.text == SENTENCES[4]
         assert len(text) > MAX_WINDOWS_SCORED
-        assert 0 < windows_scored[0] <= MAX_WINDOWS_SCORED
+        assert 1 < windows_scored[0] <= MAX_WINDOWS_SCORED
 
 
 @pytest.fixture
 def windows_scored(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Count the windows ``find_passage`` scores: one ``set_seq1`` each.
 
-    ``SequenceMatcher``'s constructor calls ``set_seq1`` too, so the count is one high.
+    ``SequenceMatcher``'s constructor calls ``set_seq1`` too, so the count is one high,
+    and a search that scored nothing reads 1: the tests ask for more.
     """
     count = [0]
 
@@ -373,6 +379,14 @@ def windows_scored(monkeypatch: pytest.MonkeyPatch) -> list[int]:
 
     monkeypatch.setattr(passage_match, "SequenceMatcher", CountingMatcher)
     return count
+
+
+def test_the_rust_tests_share_these_sentences() -> None:
+    """The Rust port's copy of ``SENTENCES`` is this one (#533's review)."""
+    source = RUST_SENTENCES.read_text(encoding="utf-8")
+    # A Rust string's trailing backslash drops the newline and the next line's indent.
+    literals = re.findall(r'"((?:[^"\\]|\\.)*)"', re.sub(r"\\\n\s*", "", source))
+    assert literals == SENTENCES
 
 
 class TestRejection:

@@ -670,8 +670,8 @@ fn accepted(
 
 #[cfg(test)]
 mod tests {
-    use super::super::sequence_matcher::WINDOWS_SET;
     use super::*;
+    use crate::citations::sequence_matcher::WINDOWS_SET;
     use serde_json::{json, Value};
 
     // TestFitsText and TestMaxEditPoints, from tests/test_passage_match.py.
