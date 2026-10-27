@@ -3980,7 +3980,7 @@ commented for that reason. The entries here are the pointers.
   showed does not become a member however obvious it looks.** That is the
   reject-list this design exists to avoid — not one of the shapes issue #56
   proposed (`.docx`, `"untitled"`, the file stem) appears anywhere in the 235
-  measured PDFs. **Run `scripts/sample_pdf_metadata_titles.py` before
+  measured PDFs, nor in the 325 of #503's redraw. **Run `scripts/sample_pdf_metadata_titles.py` before
   changing it.** `_MIN_TITLE_WORDS` is now kept as defence-in-depth rather
   than as a member the corpus earns — anchored containment rejects the row
   that admitted it — and says so at its definition;
@@ -4011,11 +4011,16 @@ commented for that reason. The entries here are the pointers.
   against a page that is *also* empty, which would otherwise hand back
   `"###"` as an image-only scan's title. Argued inline;
   `test_the_empty_normalisation_guard_stands_on_its_own` pins it.
-- **`_LINE_NUMBER_RE` rests on its unit tests, not on the corpus.** Four
-  independent mutations of it change the answer on zero of the 235 rows, so a
-  green corpus run has *not* checked it —
+- **`_LINE_NUMBER_RE`'s details rest on its unit tests, not on the corpus.**
+  Dropping its `$` anchor or moving either digit bound changes the answer on
+  zero rows, so a green corpus run has *not* checked those —
   `TestALineNumberedManuscriptStillCorroborates` has. Both digit bounds are
-  deliberate and argued at the pattern.
+  deliberate and argued at the pattern. The rule itself and its `^` anchor are
+  corpus-constrained: since #503's `/pubs` redraw (325 rows) removing either
+  fails ship rule 1 (5 of 164, 2 of 185 conclusive good titles rejected), and
+  over the first 235 rows each already failed the 3% bound on rule 1 (1 of
+  115; 0 of 119, bound 3.1%) — an entry here said "four mutations changed
+  nothing", naming three, one of them the `^`.
 - **`accepted_metadata_title` returns `str | None` and sends its four
   rejection reasons to the log.** Every caller asks one binary question and
   would discard a richer answer; the one party who wants the reasons is the

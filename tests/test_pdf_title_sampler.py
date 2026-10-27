@@ -358,7 +358,7 @@ class TestTheFixtureRowCarriesWhatTheMetricTestNeeds:
 
         ``tests/test_pdf_metadata_titles.py::_is_truncated`` derives exactly
         this comparison and uses it to **exclude rows from the wrong-rejection
-        denominator** — 200 of the 235 committed rows are truncated — so a
+        denominator** — 254 of the 325 committed rows are truncated — so a
         count that silently equalled the stored length would let real
         rejections vanish behind a passing 0.00%. Every other fixture here
         fits inside the cap, which left both the slice and the count able to

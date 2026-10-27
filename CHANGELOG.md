@@ -6,6 +6,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **The PDF-title corpus's `biorxiv` rows are a `/pubs` draw** (#503, part
+  2). The 60 committed rows were drawn from `/details` on 2026-08-13, before
+  #325 moved the fetcher; they are replaced by 150 drawn live from `/pubs` on
+  2026-10-27 (publication days 2026-09-22 to 2026-09-27; 27 attempts
+  unmeasured, 15.3%, 24 of them this machine's transport failures and 3
+  oversized PDFs). The redraw seeded a fresh journal with the old journal's
+  `europepmc` entries, stamped `definitions: 1` by hand since part 1 showed
+  they are Europe PMC's own PDFs, and ran `--source both`; those 175 rows are
+  byte-identical bar the stamp, which every corpus row now carries. The corpus
+  is 325 rows (biorxiv 109 match / 30 unrelated / 11 absent). Both ship rules
+  still hold: 0 of 192 conclusive good titles wrongly rejected (95% upper
+  bound 2.0%, was 3.0% over 126), and 47 of 49 junk titles rejected (lower
+  bound 86%); the two accepted are titles page 1 prints that bioRxiv's record
+  names otherwise (a rewording, and α spelled `a`). **`looks_like_junk`'s one
+  member, re-checked, still rescues no row** (it matches 30 junk titles,
+  every one corroboration rejects), so it stays as defence-in-depth and
+  nothing in `bmlib` moves. What the redraw does change is what the corpus
+  pins: removing `_LINE_NUMBER_RE` wrongly rejects 5 of 164 conclusive good
+  titles and dropping its `^` anchor 2 of 185, so both now fail
+  `tests/test_pdf_metadata_titles.py` (each mutant reddens 2 tests), where
+  over the first 235 rows each reddened only the 3% bound on rule 1, not the
+  rule (1 of 115; 0 of 119, bound 3.1%). Its `$` anchor and
+  digit bounds still move no row. The comments quoting the old corpus are
+  re-measured, and one was already false: a good title did carry the
+  `Appligent` creator, in both corpora.
+
 ### Added
 - **The PDF-title sampler can tell its populations apart** (#503, part 1).
   `scripts/sample_pdf_metadata_titles.py` records each row's and each

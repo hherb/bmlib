@@ -50,7 +50,7 @@ _FIXTURE = Path(__file__).resolve().parent / "data" / "pdf_metadata_titles.json"
 # `wilson` comes from the sampler's own helpers rather than being restated
 # here. Both ship rules below are *threshold* rules, and `_sampling.wilson`'s
 # docstring is the argument for why a threshold needs an interval: a point
-# estimate over 126 rows cannot settle a 1% ceiling. Computed rather than
+# estimate over 192 rows cannot settle a 1% ceiling. Computed rather than
 # written down, so a re-sampled corpus moves the reported bound with it
 # instead of leaving a stale number in a docstring.
 _HELPERS = Path(__file__).resolve().parent.parent / "scripts" / "_sampling.py"
@@ -153,10 +153,11 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
         """Rule 1 is a *threshold* rule, and the corpus does not settle it at
         the threshold it names.
 
-        0 wrong rejections in 126 conclusive rows is a point estimate of 0%,
-        but its 95% upper bound is about 3% — roughly triple the "ceiling 1%"
-        printed beside it. A reader takes the corpus to have established ≤1%
-        when it has established ≤3%.
+        0 wrong rejections in 192 conclusive rows is a point estimate of 0%,
+        but its 95% upper bound is about 2% — double the "ceiling 1%" printed
+        beside it. A reader takes the corpus to have established ≤1% when it
+        has established ≤2%. (Over the 126 conclusive rows before #503's
+        ``/pubs`` redraw the bound was about 3%.)
 
         This is stated rather than enforced: the ship rule is what it is, and
         moving a threshold is a decision, not a test edit. What the test
@@ -169,7 +170,7 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
         wrong = [row for row in conclusive if _accepted(row) is None]
         _lo, hi = wilson(len(wrong), len(conclusive))
         assert hi <= 0.03, (
-            f"the corpus now bounds the wrong-rejection rate at {hi:.1%}, not ~3% — "
+            f"the corpus now bounds the wrong-rejection rate at {hi:.1%}, above 3% — "
             f"{len(wrong)}/{len(conclusive)} conclusive rows"
         )
 
@@ -201,8 +202,11 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
 
     def test_rule_two_is_settled_at_its_threshold(self) -> None:
         """Unlike rule 1, this one the corpus does settle: the 95% lower bound
-        on 34 of 35 junk rejected clears the 80% floor, so the floor holds at
-        confidence and not merely on the point estimate."""
+        on 47 of 49 junk rejected clears the 80% floor, so the floor holds at
+        confidence and not merely on the point estimate. Neither accepted
+        title is junk: page 1 prints each, and bioRxiv's record names the
+        article otherwise (a reworded title, and α spelled ``a``), so ground
+        truth, which is the record, counts them as misses."""
         rows = _bucket("unrelated")
         rejected = [row for row in rows if _accepted(row) is None]
         lo, _hi = wilson(len(rejected), len(rows))

@@ -74,8 +74,9 @@ _LINE_BREAK_HYPHEN_RE = re.compile(
 #: contained in a page reading "…virtually null 1 stomatal safety margins… 2
 #: and nutrient induced…", and a perfectly good title is rejected.
 #:
-#: Measured: this was the *only* wrongly rejected title in 130 matched rows,
-#: and it is a whole class of document rather than one file. Dropping these
+#: Measured: this was the *only* wrongly rejected title in 130 matched rows
+#: (5 of 164 conclusive ones without it, over #503's redraw), and it is a
+#: whole class of document rather than one file. Dropping these
 #: lines removes text from the page side of a containment test, and a line
 #: that is only a number is not part of any title. Note it does not only
 #: remove: excising a line also *joins* what sat either side of it, which is
@@ -83,12 +84,18 @@ _LINE_BREAK_HYPHEN_RE = re.compile(
 #: does not literally print. That is the intended effect here, not a
 #: side-effect, but it is the direction to think about when widening this.
 #:
-#: **The corpus constrains none of this.** Four independent mutations of this
-#: pattern — dropping the ``$`` anchor, and moving the digit bound to 3 and to
-#: 9 — change the answer on zero of the 235 rows. The corpus is evidence for
-#: corroboration and for the backstop; this rule rests entirely on the tests
-#: in ``TestALineNumberedManuscriptStillCorroborates``, so do not read a green
-#: corpus run as having checked it. Both bounds are deliberate: 4 digits
+#: **The corpus constrains the rule and its ``^`` anchor, and nothing else in
+#: it.** Since #503 redrew the ``biorxiv`` rows from ``/pubs`` (325 rows),
+#: removing the rule wrongly rejects 5 of 164 conclusive good titles and
+#: dropping the ``^`` anchor 2 of 185, each failing ship rule 1 and the 3%
+#: bound beside it in ``tests/test_pdf_metadata_titles.py``. Over the 235 rows
+#: before it, each failed that bound alone and not the rule — the removal at 1
+#: wrong rejection in 115, the ``^`` by rejecting seven truncated rows and so
+#: shrinking the conclusive ones to 119 (bound 3.1%). Dropping the ``$`` anchor, and
+#: moving the digit bound to 3 or to 9, still change the answer on zero rows,
+#: so those rest entirely on the tests in
+#: ``TestALineNumberedManuscriptStillCorroborates``; do not read a green
+#: corpus run as having checked them. Both bounds are deliberate: 4 digits
 #: covers continuous journal pagination, while a longer run alone on a line is
 #: an accession or job number whose removal would let a title match a page
 #: with its distinguishing token gone.
@@ -127,13 +134,16 @@ def normalise(text: str) -> str:
 #: A title of fewer than this many words is not an article title.
 #:
 #: **Retained as defence-in-depth, not as a member the corpus currently
-#: earns.** It was earned by exactly one row of the 235 — ``"Nepal Journ"``, a
-#: journal name truncated mid-word in a running header, which page 1 really
-#: does print — under the membership rule in :func:`looks_like_junk`. Anchored
-#: containment now rejects that row on its own (``journ`` is not ``journal``),
-#: so re-measured over the corpus this threshold rescues **nothing**
-#: corroboration does not already reject, and it would not ship today under
-#: the rule that first admitted it.
+#: earns.** It was earned by exactly one row of the first 235 — ``"Nepal
+#: Journ"``, a journal name truncated mid-word in a running header, which
+#: page 1 really does print — under the membership rule in
+#: :func:`looks_like_junk`. Anchored containment now rejects that row on its
+#: own (``journ`` is not ``journal``), so re-measured over the corpus this
+#: threshold rescues **nothing** corroboration does not already reject, and it
+#: would not ship today under the rule that first admitted it. Re-checked over
+#: the 325 rows of #503's redraw: it matches 30 junk titles (27 bare job
+#: numbers, ``"Tagged Pdf"``, ``"Nepal Journ"``, ``"Layout 1"``) and still
+#: rescues none.
 #:
 #: What it still covers, and anchoring does not: a short but *complete* junk
 #: string that page 1 genuinely prints — a footer reading ``"Layout 1"``.
@@ -150,13 +160,13 @@ def normalise(text: str) -> str:
 #: low rather than "tuned".
 #:
 #: The member the corpus most obviously suggests, and why it is not here: the
-#: junk clusters hard by ``creator``. 14 of bioRxiv's 16 junk titles carry
-#: ``creator: "Appligent AppendPDF Pro 5.5"``, and not one row with that value
-#: is a good title — but every one of those 14 is *already* rejected by
-#: corroboration, so a member on it would clear no row and fails the
-#: membership rule on its own terms. (``producer`` is not the signal:
-#: ``Appligent`` appears in it zero times.) Recorded so the next reader does
-#: not re-derive it and reach the opposite conclusion.
+#: junk clusters hard by ``creator``. 27 of bioRxiv's 30 junk titles carry
+#: ``creator: "Appligent AppendPDF Pro 5.5"`` (14 of 16 before #503's
+#: redraw), and one good title does too — and every one of those 27 is
+#: *already* rejected by corroboration, so a member on it would clear no row
+#: and fails the membership rule on its own terms. (``producer`` is not the
+#: signal: ``Appligent`` appears in it zero times.) Recorded so the next
+#: reader does not re-derive it and reach the opposite conclusion.
 _MIN_TITLE_WORDS = 3
 
 
@@ -275,7 +285,7 @@ def accepted_metadata_title(metadata: Mapping[str, Any], page_one_text: str | No
     # was then returned verbatim *and* beat the font-size fallback that would
     # have recovered the whole line.
     #
-    # Measured: anchoring changes no verdict on any of the 235 corpus rows,
+    # Measured: anchoring changes no verdict on any of the 325 corpus rows,
     # so this costs nothing already accounted for. The corpus holds no
     # `truncated` row, so that class is unmeasured rather than shown safe —
     # which is why the rule is tightened here rather than left to the corpus.
