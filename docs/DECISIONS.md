@@ -4016,9 +4016,11 @@ commented for that reason. The entries here are the pointers.
   zero rows, so a green corpus run has *not* checked those —
   `TestALineNumberedManuscriptStillCorroborates` has. Both digit bounds are
   deliberate and argued at the pattern. The rule itself and its `^` anchor are
-  corpus-constrained since #503's `/pubs` redraw (325 rows): removing either
-  fails ship rule 1 (5 of 164, 2 of 185 conclusive good titles rejected),
-  where over the first 235 rows four mutations changed nothing.
+  corpus-constrained: since #503's `/pubs` redraw (325 rows) removing either
+  fails ship rule 1 (5 of 164, 2 of 185 conclusive good titles rejected), and
+  over the first 235 rows each already failed the 3% bound on rule 1 (1 of
+  115; 0 of 119, bound 3.1%) — an entry here said "four mutations changed
+  nothing", naming three, one of them the `^`.
 - **`accepted_metadata_title` returns `str | None` and sends its four
   rejection reasons to the log.** Every caller asks one binary question and
   would discard a richer answer; the one party who wants the reasons is the

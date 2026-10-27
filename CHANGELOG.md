@@ -27,7 +27,8 @@ All notable changes to bmlib are documented here. The format is based on
   pins: removing `_LINE_NUMBER_RE` wrongly rejects 5 of 164 conclusive good
   titles and dropping its `^` anchor 2 of 185, so both now fail
   `tests/test_pdf_metadata_titles.py` (each mutant reddens 2 tests), where
-  over the first 235 rows they changed nothing a test saw. Its `$` anchor and
+  over the first 235 rows each reddened only the 3% bound on rule 1, not the
+  rule (1 of 115; 0 of 119, bound 3.1%). Its `$` anchor and
   digit bounds still move no row. The comments quoting the old corpus are
   re-measured, and one was already false: a good title did carry the
   `Appligent` creator, in both corpora.

@@ -312,8 +312,9 @@ class TestALineNumberedManuscriptStillCorroborates:
     Measured over 130 matched rows, this was the only wrongly rejected title,
     and it is a whole class of document rather than one file: every
     line-numbered preprint whose title wraps. Over #503's ``/pubs`` redraw
-    it is 5 of 164 conclusive matched rows, enough that the corpus tests now
-    fail without the rule; its ``$`` anchor and digit bounds still rest on
+    it is 5 of 164 conclusive matched rows, enough that ship rule 1 now fails
+    without it (over the first 235 rows only the 3% bound beside it did); its
+    ``$`` anchor and digit bounds still rest on
     these tests alone.
     """
 

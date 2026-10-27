@@ -74,8 +74,9 @@ _LINE_BREAK_HYPHEN_RE = re.compile(
 #: contained in a page reading "…virtually null 1 stomatal safety margins… 2
 #: and nutrient induced…", and a perfectly good title is rejected.
 #:
-#: Measured: this was the *only* wrongly rejected title in 130 matched rows,
-#: and it is a whole class of document rather than one file. Dropping these
+#: Measured: this was the *only* wrongly rejected title in 130 matched rows
+#: (5 of 164 conclusive ones without it, over #503's redraw), and it is a
+#: whole class of document rather than one file. Dropping these
 #: lines removes text from the page side of a containment test, and a line
 #: that is only a number is not part of any title. Note it does not only
 #: remove: excising a line also *joins* what sat either side of it, which is
@@ -86,9 +87,11 @@ _LINE_BREAK_HYPHEN_RE = re.compile(
 #: **The corpus constrains the rule and its ``^`` anchor, and nothing else in
 #: it.** Since #503 redrew the ``biorxiv`` rows from ``/pubs`` (325 rows),
 #: removing the rule wrongly rejects 5 of 164 conclusive good titles and
-#: dropping the ``^`` anchor 2 of 185, each failing ship rule 1 in
-#: ``tests/test_pdf_metadata_titles.py`` (the 235 rows before it held one such
-#: title, which is why this rule exists). Dropping the ``$`` anchor, and
+#: dropping the ``^`` anchor 2 of 185, each failing ship rule 1 and the 3%
+#: bound beside it in ``tests/test_pdf_metadata_titles.py``. Over the 235 rows
+#: before it, each failed that bound alone and not the rule — the removal at 1
+#: wrong rejection in 115, the ``^`` by rejecting seven truncated rows and so
+#: shrinking the conclusive ones to 119 (bound 3.1%). Dropping the ``$`` anchor, and
 #: moving the digit bound to 3 or to 9, still change the answer on zero rows,
 #: so those rest entirely on the tests in
 #: ``TestALineNumberedManuscriptStillCorroborates``; do not read a green

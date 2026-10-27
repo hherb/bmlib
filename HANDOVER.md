@@ -47,8 +47,9 @@ journal with the other population's entries stamped `definitions: 1`, then run
 `--source both`; the 175 `europepmc` rows came back byte-identical bar the
 stamp. The corpus is 325 rows; both ship rules hold (0/192, 47/49), and
 `looks_like_junk`'s one member still rescues no row, so **nothing in `bmlib`
-moves**. The redraw makes `_LINE_NUMBER_RE` and its `^` anchor
-corpus-constrained (removing either fails ship rule 1; mutation-checked), and
+moves**. Removing `_LINE_NUMBER_RE` or its `^` anchor now fails ship rule 1
+itself (mutation-checked); over the old 235 rows each failed only the 3% bound
+test beside it, which the first draft of this PR missed (its review), and
 every comment quoting the old corpus is re-measured. The journal for this
 corpus lives in the worktree (gitignored); the main checkout's unstamped one
 is stale and should be deleted.
