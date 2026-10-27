@@ -1,10 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-27 (**this session is #503 part 2**, branch
-`fix/pdf-title-biorxiv-redraw-503`, worktree `../bmlib-s503b`). **0.11.0 is
+_Last updated: 2026-10-27 (**this session is #533**, branch
+`fix/passage-match-work-bound-533`, worktree `../bmlib-s533`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
-(#453), #541 (#540) and #542 (#503 part 1) merged since; all nine are
+(#453), #541 (#540), #542 and #543 (#503) merged since; all ten are
 unreleased._
 
 ## What 0.11.0 costs a downstream
@@ -28,7 +28,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -38,38 +38,34 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #503 part 2, the `biorxiv` redraw (#503 done)
+## This session: #533, `find_passage`'s timing tests bound work
 
-`tests/data/pdf_metadata_titles.json`'s 60 `/details` `biorxiv` rows are
-replaced by **150 drawn live from `/pubs`** (2026-10-27; 27 unmeasured,
-15.3%). Recipe for redrawing one population, now in `CLAUDE.md`: seed a fresh
-journal with the other population's entries stamped `definitions: 1`, then run
-`--source both`; the 175 `europepmc` rows came back byte-identical bar the
-stamp. The corpus is 325 rows; both ship rules hold (0/192, 47/49), and
-`looks_like_junk`'s one member still rescues no row, so **nothing in `bmlib`
-moves**. Removing `_LINE_NUMBER_RE` or its `^` anchor now fails ship rule 1
-itself (mutation-checked); over the old 235 rows each failed only the 3% bound
-test beside it, which the first draft of this PR missed (its review), and
-every comment quoting the old corpus is re-measured. The journal for this
-corpus lives in the worktree (gitignored); the main checkout's unstamped one
-is stale and should be deleted.
+The maintainer chose the work bound. The three `*_is_fast` tests per language
+now count the windows scored (Python monkeypatches a counting
+`SequenceMatcher`; Rust counts `set_a` behind `#[cfg(test)]`, so its three
+tests moved into `citations::passage_match`'s unit tests, sharing
+`rust/bmlib/tests/data/passage_match_sentences.rs` with the integration file)
+and assert `MAX_WINDOWS_SCORED` = 1,330, a formula over the search's
+constants. Measured 90/130/10 (Rust; Python +1 for the constructor's
+`set_seq1`), unchanged at 41 kB. Mutation-checked in both languages. No
+library code moves.
 
-**The session before** (PR #542, #503 part 1): the sampler stamps every
-journal line with `ROW_DEFINITIONS_VERSION`, records each PDF's `url`, and
-refuses an unstamped journal and a one-population run at the corpus path.
+**The two sessions before** (PRs #542 and #543, #503): the PDF-title sampler
+stamps every journal line with `ROW_DEFINITIONS_VERSION` and refuses an
+unstamped journal; the corpus's `biorxiv` rows are a 150-row `/pubs` draw, and
+nothing in `bmlib` moved. The stale unstamped journal in the main checkout was
+moved aside this session.
 
-**Two sessions back** (PR #541, #540): PubMed's bare `Review` is a displaced
+**Three sessions back** (PR #541, #540): PubMed's bare `Review` is a displaced
 draw, committed as `tests/data/extractor_abstracts_review.json` and pinned, so
 **an `extractors.py` edit re-measures three corpora**. Adding `Review` to the
 committed strata is still the maintainer's decision.
 
-**Three sessions back** (PR #539, #453): `systematic_review` reads a review by
+**Four sessions back** (PR #539, #453): `systematic_review` reads a review by
 how it searched; "meta-analyses" and "systematically identified" were refused.
 
-**Four sessions back** (PR #538, #507): a non-ISO `RetractionEvidence.date`
+**Five sessions back** (PR #538, #507): a non-ISO `RetractionEvidence.date`
 raises `ValueError`; the Rust/FFI half is **#537**.
-
-Filed earlier and still open: **#533** (the passage_match timing tests).
 
 **An earlier session** (PR #524, #523 + #522): `notice_pmid` is stored
 canonical in Python and Rust; `RetractionIndex::build` refuses an all-`Other`
@@ -130,10 +126,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-two open** once this session's PR lands, #503 with it (`gh issue list
---state open --limit 300`, 2026-10-27). **#533** is the #530
-session's (a flaky timing test; a decision between CPU time, a debug budget
-and a work bound). **#528** and
+**Ninety-one open** once this session's PR lands, #533 with it (`gh issue list
+--state open --limit 300`, 2026-10-27). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI

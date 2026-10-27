@@ -44,6 +44,13 @@ pub(crate) struct SequenceMatcher {
     a: Vec<char>,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Calls to `set_a` on this thread: the windows `find_passage` scored, which
+    /// its work-bound tests read (#533).
+    pub(crate) static WINDOWS_SET: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// CPython's `_calculate_ratio`: `1.0` when both sequences are empty.
 fn calculate_ratio(matches: usize, length: usize) -> f64 {
     if length > 0 {
@@ -69,6 +76,8 @@ impl SequenceMatcher {
 
     /// Replaces sequence `a`.
     pub(crate) fn set_a(&mut self, a: &[char]) {
+        #[cfg(test)]
+        WINDOWS_SET.with(|n| n.set(n.get() + 1));
         self.a = a.to_vec();
     }
 

@@ -671,9 +671,75 @@ fn accepted(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::citations::sequence_matcher::WINDOWS_SET;
     use serde_json::{json, Value};
 
     // TestFitsText and TestMaxEditPoints, from tests/test_passage_match.py.
+
+    include!("../../tests/data/passage_match_sentences.rs");
+
+    const LONG_TEXT_REPEATS: usize = 10;
+
+    /// Most windows a fuzzy search may score, whatever the text and passage
+    /// length: per candidate region, the edge alignment, the estimated window,
+    /// and per refinement pass every word boundary within `EDGE_SEARCH_MARGIN`
+    /// of the two estimates of each edge. A bound on work rather than wall time
+    /// (#533), since a clock fails on a loaded machine; Python's
+    /// `MAX_WINDOWS_SCORED` is the same formula.
+    const MAX_WINDOWS_SCORED: usize = MAX_CANDIDATE_REGIONS
+        * (2 + REFINEMENT_PASSES * 2 * 2 * (2 * EDGE_SEARCH_MARGIN as usize + 1));
+
+    fn abstract_text() -> String {
+        SENTENCES.join(" ")
+    }
+
+    fn long_text() -> String {
+        (0..LONG_TEXT_REPEATS)
+            .map(|i| format!("Section {i}. {}", SENTENCES.join(" ")))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// `find_passage`'s result and the number of windows it scored.
+    fn find_counting(passage: &str, text: &str) -> (PassageMatch, usize) {
+        WINDOWS_SET.with(|n| n.set(0));
+        let m = find_passage(passage, text, 0.95).expect("a valid threshold");
+        (m, WINDOWS_SET.with(|n| n.get()))
+    }
+
+    #[test]
+    fn long_passage_scores_a_bounded_number_of_windows() {
+        // The whole ~1 kB abstract, with two edits, against a ~10 kB text.
+        let text = long_text();
+        let passage = abstract_text()
+            .replace("twice daily", "twice-daily")
+            .replace("Major", "Majr");
+        let (m, windows) = find_counting(&passage, &text);
+        assert!(m.matched());
+        // A search scoring one window per text character would exceed the bound.
+        assert!(text.chars().count() > MAX_WINDOWS_SCORED);
+        assert!(windows > 0 && windows <= MAX_WINDOWS_SCORED, "{windows}");
+    }
+
+    #[test]
+    fn long_non_matching_passage_scores_a_bounded_number_of_windows() {
+        let mut reversed = SENTENCES;
+        reversed.reverse();
+        let (m, windows) = find_counting(&reversed.join(" "), &abstract_text());
+        assert!(!m.matched());
+        assert!(windows > 0 && windows <= MAX_WINDOWS_SCORED, "{windows}");
+    }
+
+    #[test]
+    fn long_text_scores_a_bounded_number_of_windows() {
+        let text = long_text();
+        let passage = SENTENCES[4].replace("hazard ratio", "hazard-ratio");
+        let (m, windows) = find_counting(&passage, &text);
+        assert!(m.matched());
+        assert_eq!(m.span.as_ref().map(|s| s.text.as_str()), Some(SENTENCES[4]));
+        assert!(text.chars().count() > MAX_WINDOWS_SCORED);
+        assert!(windows > 0 && windows <= MAX_WINDOWS_SCORED, "{windows}");
+    }
 
     #[test]
     fn fits_text_bound() {
