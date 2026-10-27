@@ -58,7 +58,9 @@ fulltext import guard walks subpackages. Markdown's emphasis follows a
 word-boundary rule for `*` as for `_`, unlike CommonMark, so `2*3*4` stays;
 a numbered list item keeps its number (a wrapped `2019.` must never vanish),
 and only a number starting at 1 interrupts a paragraph. The whole-branch
-review's four deferred minors are filed (see the PR).
+review's four deferred minors are **#548** (fences in quotes), **#549**
+(quadratic emphasis scan), **#550** (`from_dict`/`from_value` strictness) and
+**#551** (no pin for the Markdown and plain-text versions).
 Mutation-checked in both languages. The Rust JATS side inherits #409 (a cited
 `<etal/>`), so the fixture has none. **Next for StudyAnalyzer: item 3** (the
 chunker, over this text), or 4b.
