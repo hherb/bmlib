@@ -22337,3 +22337,35 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
         assert jats_parser_module._AFFILIATION_MARKER_WRAPPERS <= (
             jats_parser_module._TEXT_ACCUMULATING
         )
+
+
+class TestATableKeepsItsRowsAsData:
+    """A table's rows are fields of their own, not only the rendered HTML.
+
+    StudyAnalyzer's canonical text lays a table out as plain rows, and reading
+    them back out of ``html_content`` would be parsing bmlib's own rendering.
+    """
+
+    TABLE = (
+        '<table-wrap id="t1"><label>Table 1</label><table>'
+        "<thead><tr><th>Group</th><th>n</th></tr></thead>"
+        "<tbody><tr><td>A</td><td>12</td></tr></tbody>"
+        "</table></table-wrap>"
+    )
+
+    def test_header_and_body_rows_are_kept(self):
+        article = JATSParser(_article_with(body=f"<sec><p>x</p>{self.TABLE}</sec>")).parse()
+
+        assert article.tables[0].header_rows == [["Group", "n"]]
+        assert article.tables[0].body_rows == [["A", "12"]]
+
+    def test_a_graphic_only_table_has_no_rows(self):
+        graphic = (
+            '<table-wrap id="t1"><label>Table 1</label>'
+            '<graphic xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="t1.jpg"/>'
+            "</table-wrap>"
+        )
+        article = JATSParser(_article_with(body=f"<sec><p>x</p>{graphic}</sec>")).parse()
+
+        assert article.tables[0].header_rows == []
+        assert article.tables[0].body_rows == []

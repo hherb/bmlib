@@ -358,6 +358,9 @@ fn article_from(spec: &Value) -> JATSArticle {
                         .and_then(Value::as_str)
                         .map(str::to_string),
                     footnotes: strings(table, "footnotes"),
+                    // The HTML renderer reads `html_content`, never the rows.
+                    header_rows: Vec::new(),
+                    body_rows: Vec::new(),
                 })
                 .collect()
         })

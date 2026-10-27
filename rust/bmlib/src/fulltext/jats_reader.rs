@@ -1042,6 +1042,8 @@ impl TableBuilder {
                 Some(self.graphic.href.clone())
             },
             footnotes: self.footnotes.footnotes.clone(),
+            header_rows: self.header_rows.clone(),
+            body_rows: self.body_rows.clone(),
         }
     }
 

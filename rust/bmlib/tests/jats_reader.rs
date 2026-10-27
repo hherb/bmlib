@@ -24,11 +24,9 @@
 //! The renderer below mirrors `dump_jats.py`'s, including the three values that
 //! are Python *properties* rather than dataclass fields: `full_name` and
 //! `is_named` on a contributor, and `formatted_citation` on a reference. They
-//! are derived here for the same reason the oracle derives them there — the
-//! Rust models carry no such accessor — and [`author_full_name`] /
-//! [`author_is_named`] are the reader's own functions rather than copies, so a
-//! divergence between the reader's "is this contributor named?" and the
-//! oracle's would show up as a diff.
+//! are the library's own — [`author_full_name`], [`author_is_named`] and
+//! `JATSReferenceInfo::formatted_citation` — rather than copies, so a
+//! divergence between the library and the oracle shows up as a diff.
 
 use bmlib::fulltext::jats_reader::{author_full_name, author_is_named, parse, parse_audited};
 use bmlib::fulltext::models::{
@@ -63,87 +61,6 @@ fn render_body(section: &JATSBodySection) -> Value {
     })
 }
 
-/// Python's `JATSReferenceInfo._volume_info`, the `volume(issue):locator` run.
-fn volume_info(reference: &JATSReferenceInfo) -> String {
-    let mut volume_info = String::new();
-    if !reference.volume.is_empty() {
-        volume_info = reference.volume.clone();
-        if !reference.issue.is_empty() {
-            volume_info.push_str(&format!("({})", reference.issue));
-        }
-    }
-    let mut page_range = reference.first_page.clone();
-    if !page_range.is_empty() && !reference.last_page.is_empty() {
-        page_range.push_str(&format!("-{}", reference.last_page));
-    }
-    let locator = if page_range.is_empty() {
-        reference.elocation_id.clone()
-    } else {
-        page_range
-    };
-    if !locator.is_empty() {
-        volume_info = if volume_info.is_empty() {
-            locator
-        } else {
-            format!("{volume_info}:{locator}")
-        };
-    }
-    volume_info
-}
-
-/// Python's `JATSReferenceInfo._defers_to_the_deposit` and `_names_a_work`.
-fn defers_to_the_deposit(printed_part_count: usize, reference: &JATSReferenceInfo) -> bool {
-    if printed_part_count == 0 {
-        return true;
-    }
-    if reference.citation.is_empty() {
-        return false;
-    }
-    let names_a_work = !reference.article_title.is_empty()
-        || !reference.source.is_empty()
-        || !reference.doi.is_empty();
-    printed_part_count == 1 || !names_a_work
-}
-
-/// Python's `JATSReferenceInfo.formatted_citation`.
-///
-/// Joined through the crate's `join_citation_parts`, as `format_ref_html` in
-/// `fulltext::service` is, so a component already ending a sentence (`et al.`)
-/// takes no second mark (#385).
-fn formatted_citation(reference: &JATSReferenceInfo) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if !reference.authors.is_empty() {
-        if reference.authors.len() <= 3 {
-            parts.push(reference.authors.join(", "));
-        } else {
-            parts.push(format!(
-                "{}, {}, et al.",
-                reference.authors[0], reference.authors[1]
-            ));
-        }
-    }
-    if !reference.article_title.is_empty() {
-        parts.push(reference.article_title.clone());
-    }
-    if !reference.source.is_empty() {
-        parts.push(reference.source.clone());
-    }
-    if !reference.year.is_empty() {
-        parts.push(format!("({})", reference.year));
-    }
-    let volume = volume_info(reference);
-    if !volume.is_empty() {
-        parts.push(volume);
-    }
-    if !reference.doi.is_empty() {
-        parts.push(format!("doi:{}", reference.doi));
-    }
-    if defers_to_the_deposit(parts.len(), reference) {
-        return reference.citation.clone();
-    }
-    join_citation_parts(&parts, false)
-}
-
 fn render_reference(reference: &JATSReferenceInfo) -> Value {
     json!({
         "id": reference.id,
@@ -160,7 +77,7 @@ fn render_reference(reference: &JATSReferenceInfo) -> Value {
         "doi": reference.doi,
         "pmid": reference.pmid,
         "elocation_id": reference.elocation_id,
-        "formatted_citation": formatted_citation(reference),
+        "formatted_citation": reference.formatted_citation(),
     })
 }
 
@@ -1107,7 +1024,7 @@ fn a_reference_naming_no_work_prints_its_deposit() {
     assert_eq!(software.doi, "");
     assert_eq!(software.citation, "R Core(2019)");
     assert_eq!(
-        formatted_citation(&software),
+        software.formatted_citation(),
         "R Core(2019)",
         "no component names the work, so the deposit is printed"
     );
@@ -1122,7 +1039,7 @@ fn a_reference_naming_no_work_prints_its_deposit() {
          <source>J</source>(<year>2019</year>)</mixed-citation></ref></ref-list>",
     ));
     assert_eq!(named.source, "J");
-    assert_eq!(formatted_citation(&named), "J Smith. J. (2019)");
+    assert_eq!(named.formatted_citation(), "J Smith. J. (2019)");
 
     // A DOI names the work on its own, which is what keeps
     // `(2019). doi:10.1/x` from deferring.
@@ -1132,7 +1049,7 @@ fn a_reference_naming_no_work_prints_its_deposit() {
         "<ref-list><ref id=\"r1\"><mixed-citation>(<year>2019</year>)\
          <pub-id pub-id-type=\"doi\">10.1/x</pub-id></mixed-citation></ref></ref-list>",
     ));
-    assert_eq!(formatted_citation(&doi), "(2019). doi:10.1/x");
+    assert_eq!(doi.formatted_citation(), "(2019). doi:10.1/x");
 }
 
 /// **An NLM 2.x `<citation>` is read by its deposit** (#390).
@@ -1325,7 +1242,7 @@ fn a_sentence_ending_takes_no_second_mark() {
         "Toxicol Appl Pharmacol",
     );
     assert_eq!(
-        formatted_citation(&four),
+        four.formatted_citation(),
         "M Ahamed, M Karns, et al. DNA damage response. Toxicol Appl Pharmacol. (2008)"
     );
 
@@ -1336,13 +1253,13 @@ fn a_sentence_ending_takes_no_second_mark() {
         "Nat Commun.",
     );
     assert_eq!(
-        formatted_citation(&three),
+        three.formatted_citation(),
         "M Ahamed, M Karns, M Goodson. DNA damage response. Nat Commun. (2008)"
     );
 
     let debris = citation("", "Neurophysiol.,");
     assert_eq!(
-        formatted_citation(&debris),
+        debris.formatted_citation(),
         "DNA damage response. Neurophysiol.,. (2008)",
         "a deposited comma is not a sentence ending"
     );
@@ -1479,7 +1396,7 @@ fn an_element_only_citation_no_field_reads_renders_nothing() {
         assert_eq!(empty.source, "", "shape {index}");
         assert_eq!(empty.year, "", "shape {index}");
         assert_eq!(
-            formatted_citation(&empty),
+            empty.formatted_citation(),
             "",
             "shape {index} must render nothing at all"
         );
@@ -1514,7 +1431,7 @@ fn a_books_edition_publisher_and_comment_are_dropped() {
     assert_eq!(book.source, "The Nazi War on Cancer");
     assert_eq!(book.year, "1999");
     assert_eq!(
-        formatted_citation(&book),
+        book.formatted_citation(),
         "RN Proctor. The Nazi War on Cancer. (1999)",
         "the edition, the place, the publisher and the comment are gone"
     );
@@ -1556,7 +1473,7 @@ fn a_names_parts_glue_in_a_mixed_citations_deposit() {
         glued.citation, "KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022",
         "the deposited string is"
     );
-    assert_eq!(formatted_citation(&glued), glued.citation);
+    assert_eq!(glued.formatted_citation(), glued.citation);
 }
 
 /// **An `<award-group>`'s `<principal-award-recipient>` reaches no field**
@@ -1621,5 +1538,35 @@ fn a_ref_of_only_a_note_renders_nothing() {
     assert_eq!(note.citation, "", "nothing collects the note");
     assert_eq!(note.article_title, "");
     assert_eq!(note.source, "");
-    assert_eq!(formatted_citation(&note), "", "and nothing renders");
+    assert_eq!(note.formatted_citation(), "", "and nothing renders");
+}
+
+/// A table's rows are fields of their own, as in Python (the canonical text
+/// lays a table out as rows).
+#[test]
+fn a_table_keeps_its_rows_as_data() {
+    let table = "<table-wrap id=\"t1\"><label>Table 1</label><table>\
+                 <thead><tr><th>Group</th><th>n</th></tr></thead>\
+                 <tbody><tr><td>A</td><td>12</td></tr></tbody>\
+                 </table></table-wrap>";
+    let article = parse(&article_with(
+        "",
+        &format!("<sec><p>x</p>{table}</sec>"),
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(article.tables[0].header_rows, vec![vec!["Group", "n"]]);
+    assert_eq!(article.tables[0].body_rows, vec![vec!["A", "12"]]);
+
+    let graphic = "<table-wrap id=\"t1\"><label>Table 1</label>\
+                   <graphic xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:href=\"t1.jpg\"/>\
+                   </table-wrap>";
+    let article = parse(&article_with(
+        "",
+        &format!("<sec><p>x</p>{graphic}</sec>"),
+        "",
+    ))
+    .expect("the fixture parses");
+    assert!(article.tables[0].header_rows.is_empty());
+    assert!(article.tables[0].body_rows.is_empty());
 }

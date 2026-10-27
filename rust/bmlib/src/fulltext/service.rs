@@ -1040,17 +1040,11 @@ fn build_exhibit_url(path: &str, pmc_id: &str) -> String {
 /// structured rendering would print fewer than two components.
 fn format_ref_html(reference: &JATSReferenceInfo) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if !reference.authors.is_empty() {
-        if reference.authors.len() <= 3 {
-            parts.push(html_escape(&reference.authors.join(", ")));
-        } else {
-            // `et al.` ends in a period, which `join_citation_parts` does not
-            // double (#385).
-            parts.push(html_escape(&format!(
-                "{}, {}, et al.",
-                reference.authors[0], reference.authors[1]
-            )));
-        }
+    let authors = reference.author_text();
+    if !authors.is_empty() {
+        // `et al.` ends in a period, which `join_citation_parts` does not
+        // double (#385).
+        parts.push(html_escape(&authors));
     }
     if !reference.article_title.is_empty() {
         parts.push(html_escape(&reference.article_title));
@@ -1061,7 +1055,7 @@ fn format_ref_html(reference: &JATSReferenceInfo) -> String {
     if !reference.year.is_empty() {
         parts.push(format!("({})", html_escape(&reference.year)));
     }
-    let volume_info = reference_volume_info(reference);
+    let volume_info = reference.volume_info();
     if !volume_info.is_empty() {
         parts.push(html_escape(&volume_info));
     }
@@ -1069,69 +1063,10 @@ fn format_ref_html(reference: &JATSReferenceInfo) -> String {
         let doi = html_escape(&reference.doi);
         parts.push(format!("<a href=\"https://doi.org/{doi}\">doi:{doi}</a>"));
     }
-    if defers_to_the_deposit(parts.len(), reference) {
+    if reference.defers_to_the_deposit(parts.len()) {
         return html_escape(&reference.citation);
     }
     join_citation_parts(&parts, true)
-}
-
-/// The `volume(issue):locator` run, as both Python renderers print it.
-fn reference_volume_info(reference: &JATSReferenceInfo) -> String {
-    let mut volume_info = String::new();
-    if !reference.volume.is_empty() {
-        volume_info = reference.volume.clone();
-        if !reference.issue.is_empty() {
-            volume_info.push_str(&format!("({})", reference.issue));
-        }
-    }
-    let mut page_range = reference.first_page.clone();
-    if !page_range.is_empty() && !reference.last_page.is_empty() {
-        page_range.push_str(&format!("-{}", reference.last_page));
-    }
-    let locator = if page_range.is_empty() {
-        reference.elocation_id.clone()
-    } else {
-        page_range
-    };
-    if !locator.is_empty() {
-        volume_info = if volume_info.is_empty() {
-            locator
-        } else {
-            format!("{volume_info}:{locator}")
-        };
-    }
-    volume_info
-}
-
-/// Would a rendering of that many components print `citation` instead?
-///
-/// **One component is never a citation**: a `<mixed-citation>` tagging just one
-/// of its structured children rendered that child *in place of* the whole
-/// deposited string — a bare `(2023)` for a report, an author list for a work
-/// the rendering then never names. 828 of the served artifact's 174,458
-/// references that carry a deposited string and render structured (346 of 8,118
-/// articles) were moved by this rule.
-/// **And components that name no work are not a citation either, however many
-/// there are** (issue #276). `R Core Team. (2019)` for a whole software
-/// citation, and `(2021). 635-642` for a paper it never names, are the pairs
-/// the count let through. So where there is a deposit and none of
-/// `article_title`, `source` or `doi` would print, the deposit is printed.
-/// `source` is the weakest member — for a journal article it is the container
-/// rather than the work — and is admitted on #276's own reading, where refusing
-/// it would print the deposit for every citation tagging a book or a report by
-/// its `<source>`.
-fn defers_to_the_deposit(printed_part_count: usize, reference: &JATSReferenceInfo) -> bool {
-    if printed_part_count == 0 {
-        return true;
-    }
-    if reference.citation.is_empty() {
-        return false;
-    }
-    // Python's `_names_a_work`: any of the three naming fields populated.
-    let names_a_work = !reference.article_title.is_empty()
-        || !reference.source.is_empty()
-        || !reference.doi.is_empty();
-    printed_part_count == 1 || !names_a_work
 }
 
 /// Python's `html.escape(text)` — with `quote=True`, so both quote characters

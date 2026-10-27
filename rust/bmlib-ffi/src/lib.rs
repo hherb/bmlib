@@ -149,6 +149,10 @@ pub struct JatsTable {
     pub graphic_url: Option<String>,
     /// The table's notes; see [`JatsFigure::footnotes`] for the marker rule.
     pub footnotes: Vec<String>,
+    /// The `<thead>` rows as cell texts, as deposited; empty for an image-only table.
+    pub header_rows: Vec<Vec<String>>,
+    /// The body rows as cell texts, as deposited; empty for an image-only table.
+    pub body_rows: Vec<Vec<String>>,
 }
 
 /// One reference-list entry.
@@ -406,6 +410,8 @@ impl From<m::JATSTableInfo> for JatsTable {
             html_content,
             graphic_url,
             footnotes,
+            header_rows,
+            body_rows,
         } = t;
         JatsTable {
             id,
@@ -414,6 +420,8 @@ impl From<m::JATSTableInfo> for JatsTable {
             html_content,
             graphic_url,
             footnotes,
+            header_rows,
+            body_rows,
         }
     }
 }
