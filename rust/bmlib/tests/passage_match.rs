@@ -23,9 +23,8 @@
 //! `PassageSpan` are `#[non_exhaustive]`, so only `find_passage` builds them
 //! (and the property test checks every span it returns). Python's non-string
 //! inputs cannot be expressed, and `TestFitsText`/`TestMaxEditPoints` are unit
-//! tests in the crate, the two bounds being crate-private.
-
-use std::time::Instant;
+//! tests in the crate, the two bounds being crate-private; so are the three
+//! long-input tests, which count the windows the crate-private matcher scores.
 
 use bmlib::citations::passage_match::{
     find_passage, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageMatch, PassageSpan,
@@ -181,28 +180,7 @@ fn occurs_once_counts_copies_the_way_find_passage_compares() {
     }
 }
 
-const SENTENCES: [&str; 7] = [
-    "Background: Atrial fibrillation is the most common sustained arrhythmia and is \
-     associated with a fivefold increase in the risk of stroke.",
-    "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 \
-     years or older across 14 centres in Europe between 2015 and 2019.",
-    "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target \
-     international normalised ratio of 2.0 to 3.0.",
-    "The primary outcome was stroke or systemic embolism; the primary safety outcome \
-     was major bleeding according to ISTH criteria.",
-    "Results: Over a median follow-up of 2.1 years, stroke or systemic embolism \
-     occurred in 1.27% per year in the apixaban group and 1.60% per year in the \
-     warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95).",
-    "Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year \
-     with warfarin.",
-    "Conclusions: In elderly patients with atrial fibrillation, apixaban was superior \
-     to warfarin in preventing stroke or systemic embolism, caused less bleeding and \
-     resulted in lower mortality.",
-];
-
-/// Generous wall-clock bound for a fuzzy match on a ~10 kB text.
-const FUZZY_TIME_BUDGET_SECONDS: f64 = 2.0;
-const LONG_TEXT_REPEATS: usize = 10;
+include!("data/passage_match_sentences.rs");
 
 /// Seeded comparison against exhaustive search over word-boundary windows.
 /// Python's `random.Random` is not reproduced; an inline LCG takes its seed.
@@ -214,13 +192,6 @@ const PROPERTY_SCORE_TOLERANCE: f64 = 0.01;
 
 fn abstract_text() -> String {
     SENTENCES.join(" ")
-}
-
-fn long_text() -> String {
-    (0..LONG_TEXT_REPEATS)
-        .map(|i| format!("Section {i}. {}", SENTENCES.join(" ")))
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 fn find(passage: &str, text: &str, min_similarity: f64) -> PassageMatch {
@@ -499,46 +470,8 @@ fn fuzzy_match_is_not_exact() {
     assert!(find(SENTENCES[4], &abstract_text(), 0.95).exact);
 }
 
-#[test]
-fn long_passage_is_fast() {
-    // The whole ~1 kB abstract, with two edits, against a ~10 kB text.
-    let text = long_text();
-    let passage = abstract_text()
-        .replace("twice daily", "twice-daily")
-        .replace("Major", "Majr");
-    let started = Instant::now();
-    let m = find(&passage, &text, 0.95);
-    let elapsed = started.elapsed().as_secs_f64();
-    eprintln!("long_passage_is_fast: {elapsed:.3} s");
-    assert!(m.matched());
-    assert!(elapsed < FUZZY_TIME_BUDGET_SECONDS, "{elapsed} s");
-}
-
-#[test]
-fn long_non_matching_passage_is_fast() {
-    let mut reversed = SENTENCES;
-    reversed.reverse();
-    let passage = reversed.join(" ");
-    let started = Instant::now();
-    let m = find(&passage, &abstract_text(), 0.95);
-    let elapsed = started.elapsed().as_secs_f64();
-    eprintln!("long_non_matching_passage_is_fast: {elapsed:.3} s");
-    assert!(!m.matched());
-    assert!(elapsed < FUZZY_TIME_BUDGET_SECONDS, "{elapsed} s");
-}
-
-#[test]
-fn long_text_is_fast() {
-    let text = long_text();
-    let passage = SENTENCES[4].replace("hazard ratio", "hazard-ratio");
-    let started = Instant::now();
-    let m = find(&passage, &text, 0.95);
-    let elapsed = started.elapsed().as_secs_f64();
-    eprintln!("long_text_is_fast: {elapsed:.3} s");
-    assert!(m.matched());
-    assert_eq!(matched_text(&m), Some(SENTENCES[4]));
-    assert!(elapsed < FUZZY_TIME_BUDGET_SECONDS, "{elapsed} s");
-}
+// The three long-input tests count the windows scored, which needs the
+// crate-private matcher, so they are unit tests in `citations::passage_match`.
 
 // TestRejection
 

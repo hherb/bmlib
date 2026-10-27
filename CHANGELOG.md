@@ -7,6 +7,21 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- **`find_passage`'s long-input tests bound work, not wall time** (#533).
+  The three `*_is_fast` tests in each language asserted a 2.0 s wall-clock
+  budget, and Rust's `long_passage_is_fast` failed once under a parallel
+  debug `cargo test` on a loaded machine (0.5 s alone). Each now counts the
+  windows the search scores (Python: a counting `SequenceMatcher`
+  monkeypatched in; Rust: a `#[cfg(test)]` counter in the crate-private
+  matcher's `set_a`, so the three tests moved into the crate's own unit
+  tests) and asserts at most `MAX_CANDIDATE_REGIONS × (2 + REFINEMENT_PASSES
+  × 2 × 2 × (2 × EDGE_SEARCH_MARGIN + 1))` = 1,330, a bound independent of
+  the text and passage, against a 10 kB text longer than it. Measured: 91,
+  131 and 11 windows in Python (one more than Rust, `SequenceMatcher`'s
+  constructor calling `set_seq1`), unchanged at 41 kB. A mutant whose
+  refinement scans every word boundary in the text fails both long-text
+  tests in both languages; the non-matching test does not reach refinement,
+  so it bounds the alignments only. Nothing outside the tests moves.
 - **The PDF-title corpus's `biorxiv` rows are a `/pubs` draw** (#503, part
   2). The 60 committed rows were drawn from `/details` on 2026-08-13, before
   #325 moved the fetcher; they are replaced by 150 drawn live from `/pubs` on

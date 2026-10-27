@@ -27,12 +27,15 @@ matcher in CitationFinderAgent took ~30 s per citation on a 1 kB abstract).
 
 import math
 import random
-import time
 from difflib import SequenceMatcher
 
 import pytest
 
+from bmlib.citations import passage_match
 from bmlib.citations.passage_match import (
+    EDGE_SEARCH_MARGIN,
+    MAX_CANDIDATE_REGIONS,
+    REFINEMENT_PASSES,
     PassageMatch,
     _fits_text,
     _max_edit_points,
@@ -60,9 +63,15 @@ SENTENCES = [
 ]
 ABSTRACT = " ".join(SENTENCES)
 
-# Generous wall-clock bound for a fuzzy match on a ~10 kB text. The old
-# implementation would take hours here; the new one takes well under 0.5 s.
-FUZZY_TIME_BUDGET_SECONDS = 2.0
+# Most windows a fuzzy search may score, whatever the text and passage length:
+# per candidate region, the edge alignment, the estimated window, and per
+# refinement pass every word boundary within EDGE_SEARCH_MARGIN of the two
+# estimates of each edge. A bound on work rather than wall time (#533), since
+# a clock fails on a loaded machine; the old implementation scored windows in
+# proportion to the text and took hours on these inputs.
+MAX_WINDOWS_SCORED = MAX_CANDIDATE_REGIONS * (
+    2 + REFINEMENT_PASSES * 2 * 2 * (2 * EDGE_SEARCH_MARGIN + 1)
+)
 LONG_TEXT_REPEATS = 10
 
 # Seeded comparison against exhaustive search over word-boundary windows.
@@ -319,33 +328,51 @@ class TestFuzzyMatch:
         assert not find_passage(passage, ABSTRACT, min_similarity=0.95).exact
         assert find_passage(SENTENCES[4], ABSTRACT, min_similarity=0.95).exact
 
-    def test_long_passage_is_fast(self) -> None:
+    def test_long_passage_scores_a_bounded_number_of_windows(
+        self, windows_scored: list[int]
+    ) -> None:
         # The whole ~1 kB abstract, with two edits, against a ~10 kB text.
         text = " ".join(f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS))
         passage = ABSTRACT.replace("twice daily", "twice-daily").replace("Major", "Majr")
-        started = time.perf_counter()
         match = find_passage(passage, text, min_similarity=0.95)
-        elapsed = time.perf_counter() - started
         assert match.matched
-        assert elapsed < FUZZY_TIME_BUDGET_SECONDS
+        # A search scoring one window per text character would exceed the bound.
+        assert len(text) > MAX_WINDOWS_SCORED
+        assert 0 < windows_scored[0] <= MAX_WINDOWS_SCORED
 
-    def test_long_non_matching_passage_is_fast(self) -> None:
+    def test_long_non_matching_passage_scores_a_bounded_number_of_windows(
+        self, windows_scored: list[int]
+    ) -> None:
         passage = " ".join(reversed(SENTENCES))
-        started = time.perf_counter()
         match = find_passage(passage, ABSTRACT, min_similarity=0.95)
-        elapsed = time.perf_counter() - started
         assert not match.matched
-        assert elapsed < FUZZY_TIME_BUDGET_SECONDS
+        assert 0 < windows_scored[0] <= MAX_WINDOWS_SCORED
 
-    def test_long_text_is_fast(self) -> None:
+    def test_long_text_scores_a_bounded_number_of_windows(self, windows_scored: list[int]) -> None:
         text = " ".join(f"Section {i}. " + " ".join(SENTENCES) for i in range(LONG_TEXT_REPEATS))
         passage = SENTENCES[4].replace("hazard ratio", "hazard-ratio")
-        started = time.perf_counter()
         match = find_passage(passage, text, min_similarity=0.95)
-        elapsed = time.perf_counter() - started
         assert match.matched
         assert match.text == SENTENCES[4]
-        assert elapsed < FUZZY_TIME_BUDGET_SECONDS
+        assert len(text) > MAX_WINDOWS_SCORED
+        assert 0 < windows_scored[0] <= MAX_WINDOWS_SCORED
+
+
+@pytest.fixture
+def windows_scored(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count the windows ``find_passage`` scores: one ``set_seq1`` each.
+
+    ``SequenceMatcher``'s constructor calls ``set_seq1`` too, so the count is one high.
+    """
+    count = [0]
+
+    class CountingMatcher(SequenceMatcher):
+        def set_seq1(self, a: str) -> None:
+            count[0] += 1
+            super().set_seq1(a)
+
+    monkeypatch.setattr(passage_match, "SequenceMatcher", CountingMatcher)
+    return count
 
 
 class TestRejection:
