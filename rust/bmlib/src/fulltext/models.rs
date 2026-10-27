@@ -274,9 +274,9 @@ pub struct JATSTableInfo {
     /// both fields may be set; which one to show is the renderer's choice. A
     /// caller that wants the facsimile — because the markup lost a merged cell,
     /// or because it is showing the page as published — reads this field
-    /// directly, and it is the only way to get at it: `FullTextService` discards
-    /// the `JATSArticle` and caches the rendered HTML alone, so for a service
-    /// consumer that renderer choice is permanent. Both populations are measured
+    /// directly. A `FullTextService` consumer gets at it by parsing
+    /// `FullTextResult::jats_xml`; the HTML the service renders and caches holds
+    /// the renderer's choice alone. Both populations are measured
     /// over the two committed draws (1,997 articles, 2,448 `<table-wrap>`, every
     /// one of them in the recent window): the image is the *only* rendition for
     /// **8**, and sits beside a `<table>` for **84**.
@@ -671,9 +671,11 @@ pub struct FullTextResult {
     /// for byte as served, so a caller can build its own structure from it.
     ///
     /// Set for a [`ContentKind::Fulltext`] or [`ContentKind::Abstract`] that
-    /// came from JATS; `None` for extracted PDF text, a link, an abstract read
-    /// back from beside a cached PDF, and a cached HTML entry written before
-    /// bmlib cached the XML beside it. A PDF's own bytes are at
+    /// came from JATS, from the network or the cache; `None` for extracted PDF
+    /// text, a link, a cached entry written before bmlib cached the XML beside
+    /// it, and one whose XML could not be read back. The bytes are always
+    /// UTF-8 here: the Rust tiers refuse a body of any other encoding before
+    /// keeping it. A PDF's own bytes are at
     /// [`file_path`](FullTextResult::file_path).
     #[serde(default)]
     pub jats_xml: Option<Vec<u8>>,

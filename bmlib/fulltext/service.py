@@ -1398,6 +1398,11 @@ class FullTextService:
             return result
         if abstract_only.html and result.file_path and cache_id and self.cache is not None:
             try:
+                # The XML first, as for an HTML entry, so the abstract is cached
+                # only once its XML is. Not where an HTML entry is present: a
+                # stale one is still served (#172), and jats/ holds its XML.
+                if abstract_only.jats_xml is not None and not self.cache.has_html(cache_id):
+                    self.cache.save_jats(abstract_only.jats_xml, cache_id)
                 self.cache.save_abstract(abstract_only.html, cache_id)
             except Exception as e:
                 # Not _warn_cache_write_failed: the PDF *was* cached, so "nothing
@@ -1407,9 +1412,10 @@ class FullTextService:
                 # later directory-wide fault of the same type.
                 self._warn_once(
                     f"abstract-write:{type(e).__name__}",
-                    "Could not cache the abstract beside a cached PDF (%s: %s); the "
-                    "PDF is cached, but a later hit on it that yields no text will "
-                    "return no abstract. Further %s failures will not be repeated.",
+                    "Could not cache the abstract, or the JATS XML it was rendered "
+                    "from, beside a cached PDF (%s: %s); the PDF is cached, but a "
+                    "later hit on it that yields no text will return no abstract. "
+                    "Further %s failures will not be repeated.",
                     type(e).__name__,
                     e,
                     type(e).__name__,
@@ -1656,12 +1662,10 @@ class FullTextService:
         log_hit = logger.debug if stale_ok else logger.info
         html = cache.get_html(cache_id, stale_ok=stale_ok)
         if html:
+            jats_xml = self._read_cached_jats(cache, cache_id)
             log_hit("Cache hit (HTML) for %s", cache_id)
             return FullTextResult(
-                source="cached",
-                html=html,
-                content_kind="fulltext",
-                jats_xml=cache.get_jats(cache_id),
+                source="cached", html=html, content_kind="fulltext", jats_xml=jats_xml
             )
         pdf_path = cache.get_pdf(cache_id)
         if pdf_path:
@@ -1673,8 +1677,33 @@ class FullTextService:
                 if abstract:
                     result.html = abstract
                     result.content_kind = "abstract"
+                    result.jats_xml = self._read_cached_jats(cache, cache_id)
             return result
         return None
+
+    def _read_cached_jats(self, cache: FullTextCache, cache_id: str) -> bytes | None:
+        """The JATS XML cached beside a hit, or ``None``, never raising ``OSError``.
+
+        An unreadable one is reported and moved aside, and the hit is served
+        without it (the maintainer's call, PR #545's review): the rendering
+        beside it reads fine, and abandoning the hit for it turned a cache used
+        offline into a failure, or a lower-ranked PDF, for that lookup. Later
+        lookups serve the rendering with ``None``, as for an entry an earlier
+        bmlib wrote. Anything but ``OSError`` reaches the read guard as itself.
+        """
+        try:
+            return cache.get_jats(cache_id)
+        except OSError as exc:
+            logger.warning(
+                "Could not read the cached JATS XML for %s (%s: %s); serving the cached "
+                "rendering without it.",
+                cache_id,
+                type(exc).__name__,
+                exc,
+            )
+            logger.debug("JATS cache read failed for %s", cache_id, exc_info=True)
+            self._quarantine_cache_entry(cache, cache_id)
+            return None
 
     def _quarantine_cache_entry(self, cache: FullTextCache, cache_id: str) -> None:
         """Move an unreadable cache entry aside, never raising.
@@ -1788,8 +1817,7 @@ class FullTextService:
     def _cache_html(self, html: str, xml: bytes, cache_id: str | None) -> None:
         """Save HTML, and the JATS XML it was rendered from, to the disk cache if enabled.
 
-        The XML is written first and the HTML only once it is on disk, so an
-        HTML entry this writes is never served without its XML.
+        The XML is written first and the HTML only once it is on disk.
 
         Reads :attr:`cache` directly, unlike :meth:`_check_cache`,
         :meth:`_quarantine_cache_entry` and :meth:`_save_pdf_to_cache`. Those
@@ -1806,6 +1834,24 @@ class FullTextService:
         if cache_id and self.cache is not None:
             try:
                 self.cache.save_jats(xml, cache_id)
+            except Exception as e:
+                # Not _warn_cache_write_failed: jats/ is created on first save,
+                # so an older cache whose root is read-only fails here while
+                # pdfs/ writes fine, and "nothing is being cached" would be false.
+                name = type(e).__name__
+                self._warn_once(
+                    f"jats-write:{name}",
+                    "Could not cache JATS XML (%s: %s), so the HTML rendered from it "
+                    "is not cached either and that article is re-fetched at its next "
+                    "lookup; PDFs are cached as before. Further %s failures will not "
+                    "be repeated.",
+                    name,
+                    e,
+                    name,
+                )
+                logger.debug("Failed to cache the JATS XML for %s", cache_id, exc_info=True)
+                return
+            try:
                 self.cache.save_html(html, cache_id)
             except Exception as e:
                 self._warn_cache_write_failed(e)

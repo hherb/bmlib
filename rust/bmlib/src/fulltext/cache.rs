@@ -126,6 +126,11 @@ pub fn is_readable(path: &Path) -> bool {
             .map(|bytes| String::from_utf8(bytes).is_ok())
             .unwrap_or(false);
     }
+    if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+        // Read whole, as `get_jats` reads it: one that opens and fails on the
+        // read would otherwise never be moved aside.
+        return std::fs::read(path).is_ok();
+    }
     std::fs::File::open(path).is_ok()
 }
 
@@ -378,12 +383,27 @@ impl FullTextCache {
             .and_then(|bytes| String::from_utf8(bytes).ok())
     }
 
-    /// Save the JATS XML an HTML entry was rendered from, as served.
+    /// Whether an HTML entry for `identifier` is on disk, readable or not.
+    ///
+    /// Reads nothing, so a stale or unreadable entry counts. The service asks it
+    /// before keeping an abstract's XML beside a PDF: `jats/` holds one document
+    /// per key, and one belonging to an HTML entry must not be replaced by an
+    /// abstract's.
+    #[must_use]
+    pub fn has_html(&self, identifier: &str) -> bool {
+        self.html_dir()
+            .join(format!("{}.html", safe_filename(identifier)))
+            .exists()
+    }
+
+    /// Save the JATS XML an HTML entry, or an abstract beside a PDF, was
+    /// rendered from, as served.
     ///
     /// [`FullTextService`](crate::fulltext::FullTextService) writes it just
-    /// ahead of [`FullTextCache::save_html`] and skips the HTML when this fails,
-    /// so every HTML entry it writes has its XML beside it. Published
-    /// atomically; like a PDF it is the publisher's bytes, not a rendering.
+    /// ahead of [`FullTextCache::save_html`] (or [`FullTextCache::save_abstract`])
+    /// and skips that write when this fails, so an entry it writes is written
+    /// only once its XML is on disk. Published atomically; like a PDF it is the
+    /// publisher's bytes, not a rendering.
     ///
     /// # Errors
     ///
@@ -398,20 +418,26 @@ impl FullTextCache {
         Ok(path)
     }
 
-    /// The cached JATS XML bytes, or `None` if not cached **or unreadable**.
+    /// The cached JATS XML bytes, `Ok(None)` if not cached.
     ///
-    /// `None` beside an HTML entry an earlier bmlib wrote, since it cached no
-    /// XML. An unreadable entry is `None` as [`FullTextCache::get_html`]'s is,
-    /// and the service tells the two apart by the entry's presence.
-    #[must_use]
-    pub fn get_jats(&self, identifier: &str) -> Option<Vec<u8>> {
+    /// `Ok(None)` beside an HTML entry an earlier bmlib wrote, since it cached no
+    /// XML. Absence is decided by the read itself, not by `Path::exists`, which
+    /// answers `false` for a path it cannot reach: an unreachable `jats/` must
+    /// be an error, not pass for an entry with no XML.
+    ///
+    /// # Errors
+    ///
+    /// Any read failure but `NotFound`, which the service reports and moves
+    /// aside, serving the entry beside it without its XML.
+    pub fn get_jats(&self, identifier: &str) -> std::io::Result<Option<Vec<u8>>> {
         let path = self
             .jats_dir()
             .join(format!("{}.xml", safe_filename(identifier)));
-        if !path.exists() {
-            return None;
+        match std::fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
         }
-        std::fs::read(&path).ok()
     }
 
     /// Save the abstract a cached PDF was returned with.

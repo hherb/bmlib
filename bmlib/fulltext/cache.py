@@ -205,6 +205,10 @@ def _is_readable(path: Path) -> bool:
     try:
         if path.suffix == ".html":
             path.read_text(encoding="utf-8")
+        elif path.suffix == ".xml":
+            # Read whole, as get_jats reads it: one that opens and fails on
+            # the read would otherwise never be moved aside.
+            path.read_bytes()
         else:
             with path.open("rb"):
                 pass
@@ -458,16 +462,27 @@ class FullTextCache:
         path = self._html_dir / f"{_safe_filename(identifier)}.html"
         return self._read_rendered(path, stale_ok=stale_ok)
 
+    def has_html(self, identifier: str) -> bool:
+        """Report whether an HTML entry for *identifier* is on disk, readable or not.
+
+        Reads nothing, so a stale or unreadable entry counts. ``FullTextService``
+        asks it before keeping an abstract's XML beside a PDF: ``jats/`` holds
+        one document per key, and one belonging to an HTML entry must not be
+        replaced by an abstract's.
+        """
+        return (self._html_dir / f"{_safe_filename(identifier)}.html").exists()
+
     # --- JATS operations ----------------------------------------------------
 
     def save_jats(self, data: bytes, identifier: str) -> str:
-        """Save the JATS XML an HTML entry was rendered from, as served.
+        """Save the JATS XML an HTML entry, or an abstract beside a PDF, was rendered from.
 
-        ``FullTextService`` writes it just ahead of :meth:`save_html` and
-        skips the HTML when this fails, so every HTML entry it writes has
-        its XML beside it. Published atomically and not stamped: like a PDF,
-        it is the publisher's bytes, not a rendering. The directory is
-        created here rather than at construction, as ``abstracts/`` is.
+        ``FullTextService`` writes it just ahead of :meth:`save_html` (or
+        :meth:`save_abstract`) and skips that write when this fails, so an
+        entry it writes is written only once its XML is on disk. Published
+        atomically and not stamped: like a PDF, it is the publisher's bytes,
+        not a rendering. The directory is created here rather than at
+        construction, as ``abstracts/`` is.
 
         Returns:
             The file path.
@@ -485,16 +500,19 @@ class FullTextCache:
         """Return the cached JATS XML bytes, or ``None`` if not cached.
 
         ``None`` beside an HTML entry an earlier bmlib wrote, since it cached
-        no XML.
+        no XML. Absence is decided by the read itself, not by ``exists()``,
+        which answers ``False`` for a path it cannot reach (Python 3.14+): an
+        unreachable ``jats/`` must raise, not pass for an entry with no XML.
 
         Raises:
-            OSError: If an entry exists and cannot be read, which the
-                service's read guard moves aside as it does an HTML entry.
+            OSError: If an entry cannot be read, which ``FullTextService``
+                reports and moves aside, serving the entry beside it without
+                its XML.
         """
-        path = self._jats_dir / f"{_safe_filename(identifier)}.xml"
-        if not path.exists():
+        try:
+            return (self._jats_dir / f"{_safe_filename(identifier)}.xml").read_bytes()
+        except FileNotFoundError:
             return None
-        return path.read_bytes()
 
     # --- Abstract operations ------------------------------------------------
 

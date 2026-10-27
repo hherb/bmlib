@@ -13,10 +13,14 @@ All notable changes to bmlib are documented here. The format is based on
   tier (Europe PMC, NCBI PMC, a fetcher's `xml` source) now hands back the
   bytes as served, on full text and on a body-less abstract, carried onto a
   PDF link with the abstract. The cache keeps it in a new `jats/` directory
-  (`save_jats` / `get_jats`), written ahead of the HTML entry, which is skipped
-  when the XML cannot be written; `delete`, `clear` and `quarantine` reach it.
-  An HTML entry an earlier bmlib cached is served with `jats_xml=None` rather
-  than re-fetched (the maintainer's call, 2026-10-27). A PDF's bytes stay at
+  (`save_jats` / `get_jats`, and `has_html`), written ahead of the HTML entry,
+  or of the abstract beside a PDF, which is skipped when the XML cannot be
+  written (warned on its own key); the abstract's XML is not written over an
+  HTML entry's. `delete`, `clear` and `quarantine` reach it. An HTML entry an
+  earlier bmlib cached is served with `jats_xml=None` rather than re-fetched,
+  and so is one whose XML cannot be read, which is moved aside (the
+  maintainer's calls, 2026-10-27 and PR #545's review). Rust's bytes are always
+  UTF-8, its tiers refusing any other encoding first. A PDF's bytes stay at
   `file_path`. Rust (`Option<Vec<u8>>`) and Python in the same PR, held by
   `tests/fixtures/fulltext_source.json`. `RENDERER_VERSION` is re-pinned, not
   bumped: the renderer is untouched.

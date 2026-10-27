@@ -3891,18 +3891,29 @@ class TestASecondDistinctFaultIsStillReported:
 
         assert caplog.text.count("Could not write to the full-text cache") == 1
 
-    def test_no_html_entry_is_written_when_its_xml_cannot_be(self, tmp_path: Path) -> None:
-        """An HTML entry this writes always has its JATS beside it.
+    def test_no_html_entry_is_written_when_its_xml_cannot_be(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An HTML entry is written only once its JATS is on disk.
 
         Otherwise a hit on it would hand a caller that builds its own
-        structure from the XML nothing to build from, for good.
+        structure from the XML nothing to build from, for good. Reported on
+        its own key: ``jats/`` is created on first save, so an older cache
+        whose root is read-only fails here while ``pdfs/`` writes fine, and
+        "nothing is being cached" would be false.
         """
         service = self._service(tmp_path)
         assert service.cache is not None
-        with patch.object(service.cache, "save_jats", side_effect=OSError("disk full")):
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service.cache, "save_jats", side_effect=OSError("disk full")),
+        ):
             service._cache_html("<p>a</p>", b"<article/>", "10.1/a")
+            service._cache_html("<p>b</p>", b"<article/>", "10.1/b")
 
         assert service.cache.get_html("10.1/a") is None
+        assert caplog.text.count("Could not cache JATS XML (OSError: disk full)") == 1
+        assert "nothing is being cached" not in caplog.text
 
     def test_two_different_pdf_backend_failures_are_both_reported(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -4683,7 +4694,8 @@ class TestACachedPDFKeepsItsAbstract:
 
         assert result.content_kind == "abstract"
         assert (
-            "Could not cache the abstract beside a cached PDF (OSError: read-only)" in caplog.text
+            "Could not cache the abstract, or the JATS XML it was rendered from, beside a "
+            "cached PDF (OSError: read-only)" in caplog.text
         )
         # Not the directory-wide warning: the PDF was cached, and that
         # warning's one-shot key must stay free for a fault that is.
@@ -4918,6 +4930,30 @@ class TestAnEntryFromAnOlderRendererIsRefetched:
         assert "Rendered before the stamp" not in (after.html or "")
         assert cache.stale_entries(self.CACHE_ID) == []
         assert (settled.source, settled.html) == ("cached", after.html)
+
+    def test_a_stale_html_entry_keeps_its_own_xml_over_an_abstracts(self, tmp_path):
+        """The stale HTML is served over a PDF and an abstract, with the XML it came from.
+
+        ``jats/`` holds one document per key, so an abstract's XML written
+        beside the PDF would have been handed back as the HTML's.
+        """
+        own = b"<article>the HTML's own</article>"
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(own, self.CACHE_ID)
+        self._supersede(cache.save_html("<p>x</p>", self.CACHE_ID))
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+        service._http_get = _Remote(  # type: ignore[method-assign]
+            served={"PMC1": "abstract_only_article.xml"},
+            search_pmcid="PMC1",
+            search_pdf="https://europepmc.org/x.pdf",
+            pdf_bytes=self.PDF,
+        )
+
+        result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("cached", "fulltext")
+        assert result.jats_xml == own
+        assert cache.get_jats(self.CACHE_ID) == own
 
     def test_a_chain_that_raises_serves_the_stale_html(self, tmp_path):
         cache = FullTextCache(cache_dir=tmp_path)

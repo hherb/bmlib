@@ -9595,8 +9595,8 @@ def _format_exhibit_footnotes_html(footnotes: list[str]) -> list[str]:
     selector would have built against; PR #237's review.) It is where the
     publisher prints them, and it keeps caption and
     footnote distinguishable in the string ``FullTextService`` caches — which
-    for a service consumer is the only place either is ever seen, since the
-    service discards the :class:`~bmlib.fulltext.models.JATSArticle`. Folded
+    is where a service consumer that does not re-parse
+    ``FullTextResult.jats_xml`` sees either. Folded
     into ``caption`` instead, a per-table funding note would read as part of
     the legend to every downstream that prints one.
 

@@ -139,11 +139,13 @@ fn contract_case() {
         let name = case["name"].as_str().unwrap();
         let dir = TempDir::new(name);
         let cache = FullTextCache::new(Some(dir.0.clone())).expect("an explicit directory");
+        let key = sanitize_identifier(case["request"]["identifier"].as_str().unwrap_or(""));
+        let jats_entry = cache.jats_dir().join(format!("{key}.xml"));
         if let Some(html) = case["seed_html"].as_str() {
-            let identifier = case["request"]["identifier"].as_str().unwrap();
-            cache
-                .save_html(html, &sanitize_identifier(identifier))
-                .expect("seeded");
+            cache.save_html(html, &key).expect("seeded");
+        }
+        if case["seed_unreadable_jats"].as_bool() == Some(true) {
+            std::fs::create_dir_all(&jats_entry).expect("an unreadable entry");
         }
         let answers = case["responses"].as_array().expect("responses");
         check(
@@ -151,6 +153,13 @@ fn contract_case() {
             &fetch(&cache, name, &case["request"], answers),
             &case["expected"],
         );
+        if case["moved_aside"].as_bool() == Some(true) {
+            assert!(!jats_entry.exists(), "{name}");
+            assert!(
+                cache.jats_dir().join(format!("{key}.xml.corrupt")).exists(),
+                "{name}"
+            );
+        }
         if let Some(then) = case.get("then") {
             check(name, &fetch(&cache, name, &case["request"], &[]), then);
         }

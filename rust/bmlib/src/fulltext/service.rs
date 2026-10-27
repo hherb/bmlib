@@ -1851,7 +1851,18 @@ impl FullTextService {
         if let (Some(abstract_html), true, Some(cache_id), Some(cache)) =
             (abstract_html, has_file, cache_id, self.cache.as_ref())
         {
-            if let Err(error) = cache.save_abstract(abstract_html, cache_id) {
+            // The XML first, as for an HTML entry, so the abstract is cached
+            // only once its XML is. Not where an HTML entry is present, so its
+            // XML is never replaced by an abstract's (Python serves a stale one
+            // over a re-fetch that returned less, #172).
+            let saved = match abstract_only.jats_xml.as_deref() {
+                Some(xml) if !cache.has_html(cache_id) => {
+                    cache.save_jats(xml, cache_id).map(|_| ())
+                }
+                _ => Ok(()),
+            }
+            .and_then(|()| cache.save_abstract(abstract_html, cache_id).map(|_| ()));
+            if let Err(error) = saved {
                 // Not `warn_cache_write_failed`: the PDF *was* cached, so "nothing
                 // is being cached" would be false — an older cache whose root is
                 // read-only cannot create `abstracts/` while `pdfs/` writes fine
@@ -1861,7 +1872,7 @@ impl FullTextService {
                 self.warn_once(
                     &format!("abstract-write:{kind}"),
                     format!(
-                        "Could not cache the abstract beside a cached PDF ({kind}: {error}); the PDF is cached, but a later hit on it that yields no text will return no abstract. Further {kind} failures will not be repeated."
+                        "Could not cache the abstract, or the JATS XML it was rendered from, beside a cached PDF ({kind}: {error}); the PDF is cached, but a later hit on it that yields no text will return no abstract. Further {kind} failures will not be repeated."
                     ),
                 );
                 self.debug(format!("Failed to cache the abstract for {cache_id}"));
@@ -2021,21 +2032,7 @@ impl FullTextService {
         // the very file that was read. Reproduced: `Some("")` is not a hit.
         if let Some(html) = html {
             if !html.is_empty() {
-                // An HTML entry this bmlib wrote has its XML beside it; one an
-                // earlier bmlib wrote has none and is served without it. An XML
-                // entry present but unreadable is the HTML case above again.
-                let jats_xml = cache.get_jats(cache_id);
-                let jats_path = cache
-                    .jats_dir()
-                    .join(format!("{}.xml", safe_filename(cache_id)));
-                if jats_xml.is_none() && jats_path.exists() {
-                    self.warn(format!(
-                        "Could not read the cached full text for {cache_id} (Unreadable: the JATS entry could not be read back); re-fetching."
-                    ));
-                    self.debug(format!("Cache read failed for {cache_id}"));
-                    self.quarantine_cache_entry(cache, cache_id);
-                    return None;
-                }
+                let jats_xml = self.read_cached_jats(cache, cache_id);
                 self.info(format!("Cache hit (HTML) for {cache_id}"));
                 return Some(fulltext_result("cached", html, jats_xml));
             }
@@ -2093,12 +2090,36 @@ impl FullTextService {
                     if !abstract_html.is_empty() {
                         result.html = Some(abstract_html);
                         result.content_kind = ContentKind::Abstract;
+                        result.jats_xml = self.read_cached_jats(cache, cache_id);
                     }
                 }
             }
             return Some(result);
         }
         None
+    }
+
+    /// The JATS XML cached beside a hit, or `None`.
+    ///
+    /// An unreadable one is reported and moved aside, and the hit is served
+    /// without it (the maintainer's call, PR #545's review): the rendering
+    /// beside it reads fine, and abandoning the hit for it turned a cache used
+    /// offline into a failure, or a lower-ranked PDF, for that lookup. Later
+    /// lookups serve the rendering with `None`, as for an entry an earlier bmlib
+    /// wrote.
+    fn read_cached_jats(&self, cache: &FullTextCache, cache_id: &str) -> Option<Vec<u8>> {
+        match cache.get_jats(cache_id) {
+            Ok(jats_xml) => jats_xml,
+            Err(error) => {
+                self.warn(format!(
+                    "Could not read the cached JATS XML for {cache_id} ({:?}: {error}); serving the cached rendering without it.",
+                    error.kind()
+                ));
+                self.debug(format!("JATS cache read failed for {cache_id}"));
+                self.quarantine_cache_entry(cache, cache_id);
+                None
+            }
+        }
     }
 
     /// Move an unreadable cache entry aside, never raising.
@@ -2149,8 +2170,7 @@ impl FullTextService {
     /// Save HTML, and the JATS XML it was rendered from, to the disk cache if
     /// caching is enabled.
     ///
-    /// The XML is written first and the HTML only once it is on disk, so an HTML
-    /// entry this writes is never served without its XML.
+    /// The XML is written first and the HTML only once it is on disk.
     ///
     /// Failing to write costs only a re-fetch next run — the HTML is already in
     /// hand and is returned either way — so no cache means nothing to say here
@@ -2162,10 +2182,21 @@ impl FullTextService {
         if cache_id.is_empty() {
             return;
         }
-        if let Err(error) = cache
-            .save_jats(xml, cache_id)
-            .and_then(|_| cache.save_html(html, cache_id))
-        {
+        if let Err(error) = cache.save_jats(xml, cache_id) {
+            // Not `warn_cache_write_failed`: `jats/` is created on first save, so
+            // an older cache whose root is read-only fails here while `pdfs/`
+            // writes fine, and "nothing is being cached" would be false.
+            let kind = format!("{:?}", error.kind());
+            self.warn_once(
+                &format!("jats-write:{kind}"),
+                format!(
+                    "Could not cache JATS XML ({kind}: {error}), so the HTML rendered from it is not cached either and that article is re-fetched at its next lookup; PDFs are cached as before. Further {kind} failures will not be repeated."
+                ),
+            );
+            self.debug(format!("Failed to cache the JATS XML for {cache_id}"));
+            return;
+        }
+        if let Err(error) = cache.save_html(html, cache_id) {
             self.warn_cache_write_failed(&format!("{:?}", error.kind()), &error.to_string());
             self.debug(format!("Failed to cache HTML for {cache_id}"));
         }

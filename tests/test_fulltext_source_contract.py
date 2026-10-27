@@ -89,10 +89,17 @@ def _check(result: FullTextResult, expected: dict[str, Any]) -> None:
 @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
 def test_contract_case(case: dict[str, Any], tmp_path: Path) -> None:
     cache = FullTextCache(tmp_path)
+    key = sanitize_identifier(case["request"].get("identifier", ""))
+    jats_entry = tmp_path / "jats" / f"{key}.xml"
     if "seed_html" in case:
-        cache.save_html(case["seed_html"], sanitize_identifier(case["request"]["identifier"]))
+        cache.save_html(case["seed_html"], key)
+    if case.get("seed_unreadable_jats"):
+        jats_entry.mkdir(parents=True)
     service = FullTextService(email="test@example.com", cache=cache)
 
     _check(_fetch(service, case["request"], case["responses"]), case["expected"])
+    if case.get("moved_aside"):
+        assert not jats_entry.exists()
+        assert jats_entry.with_name(f"{jats_entry.name}.corrupt").exists()
     if "then" in case:
         _check(_fetch(service, case["request"], []), case["then"])

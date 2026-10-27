@@ -44,9 +44,12 @@ StudyAnalyzer's phase 1 item 9 (plan:
 `docs/superpowers/plans/2026-10-27-fulltext-jats-source.md`).
 `FullTextResult.jats_xml` (Python `bytes`, Rust `Option<Vec<u8>>`) carries
 the JATS every JATS tier served, and the cache keeps it in `jats/`, written
-ahead of the HTML entry (no HTML entry without its XML). The maintainer's
-calls: raw bytes; an HTML entry an earlier bmlib cached is served with
-`jats_xml=None`, not re-fetched; a PDF stays at `file_path`. Shared contract
+ahead of the HTML entry or the abstract beside a PDF (an entry is written
+only once its XML is on disk). The maintainer's calls: raw bytes; an HTML
+entry an earlier bmlib cached is served with `jats_xml=None`, not re-fetched;
+a PDF stays at `file_path`; and from PR #545's review, an unreadable XML is
+moved aside and its HTML served without it, and the abstract beside a PDF
+keeps its XML too ("usually more valuable than the PDF"). Shared contract
 `tests/fixtures/fulltext_source.json`; mutation-checked in both languages.
 `RENDERER_VERSION` re-pinned without a bump. Next for StudyAnalyzer is item 4
 (canonical text), which reads this.
@@ -109,7 +112,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,287 passing + 111 skipped** on this session's branch
+- **Tests: 7,295 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-27; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for

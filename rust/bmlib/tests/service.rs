@@ -638,6 +638,21 @@ fn no_html_entry_is_written_when_its_xml_cannot_be() {
     let result = service.fetch_fulltext(&request).expect("retrieved");
     assert_eq!(result.jats_xml.as_deref(), Some(FULL_JATS.as_bytes()));
     assert_eq!(cache.get_html(&sanitize_identifier("10.1/test")), None);
+    // Its own key: `jats/` is created on first save, so an older cache whose
+    // root is read-only fails here while `pdfs/` writes fine.
+    let warnings = service.warnings();
+    assert!(
+        warnings
+            .iter()
+            .any(|line| line.starts_with("Could not cache JATS XML (")),
+        "{warnings:?}"
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|line| line.contains("nothing is being cached")),
+        "{warnings:?}"
+    );
 }
 
 #[test]
@@ -1691,7 +1706,7 @@ fn a_failed_abstract_write_warns_once_with_its_own_key() {
     assert_eq!(
         warnings
             .iter()
-            .filter(|line| line.contains("Could not cache the abstract beside a cached PDF"))
+            .filter(|line| line.contains("Could not cache the abstract, or the JATS XML it was rendered from, beside a cached PDF"))
             .count(),
         1,
         "once per cause, not per article: {warnings:?}"

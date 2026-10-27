@@ -278,7 +278,7 @@ Every "downloads and caches" above is conditional on there being somewhere to pu
 - **Caching is opt-in per call.** The service normally holds a `FullTextCache`, but reads and writes only occur when a usable `identifier` is passed — not a blank one *(#485)*.
 - **A cache directory that cannot be *created* does not fail construction.** When the service builds the default cache itself and the directory cannot be made — a file standing where it should be, a read-only parent, no determinable home directory — it emits one `WARNING` naming what was raised, sets `service.cache` to `None`, and retrieves without caching. Retrieval never needed a cache, so aborting there would have taken down a run that had every chance of succeeding. A cache you construct and pass in yourself still raises; see [FullTextCache](#fulltextcache).
 - **Without a cache, a PDF is not downloaded at all.** This is the half of the degraded state worth knowing before you rely on it, and the `WARNING` above says so: a PDF is fetched *into* the cache, so with `service.cache is None` the download is skipped, `file_path` is never set, and `convert_pdfs` has nothing to extract from. A PDF-only article therefore comes back carrying `pdf_url` alone — lost content, not merely repeated network traffic. JATS full text is unaffected: it still parses and is still returned, only the write is skipped. The per-article line about the skipped download stays at `DEBUG`, since the construction warning already named the consequence; it is *not* gated on `convert_pdfs`, because `file_path` is lost whatever that flag says.
-- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent. A failed write of the abstract kept beside a PDF has its own one-shot warning *(0.11.0)*, saying the PDF is still cached — it is not the directory-wide fault, and must not spend that warning.
+- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent. A failed write of the abstract kept beside a PDF has its own one-shot warning *(0.11.0)*, saying the PDF is still cached — it is not the directory-wide fault, and must not spend that warning. A failed write of the JATS XML has its own too *(unreleased)*: `jats/` is created on first save, so an older cache whose root is read-only fails there while `pdfs/` writes fine, and the HTML (or abstract) rendered from it is then not cached either.
 - **A cache entry is never half-written.** Every write — HTML, PDF and the abstract beside a PDF — goes to a temporary file and are published with `os.replace`, so a write that fails partway leaves the previous entry — or nothing — rather than a truncated article. This matters because a truncated HTML file decodes perfectly and would then be served as `content_kind="fulltext"` from `source="cached"` on every later run, with nothing logged at any level: `quality/` would score a paper whose Methods and Results do not exist. Note the scope: this closes the window in which such an entry is *written*. It does not detect one already on disk — a truncation of English-language prose usually lands on an ASCII boundary and decodes fine — so a cache written by bmlib before 0.9.0 is best cleared once.
 - **A cache entry that cannot be *read* does not fail the retrieval either.** An entry corrupted by something outside bmlib — a killed process, a manual edit, a filesystem fault — is reported with a `WARNING` naming the cache key and the exception type, and the retrieval chain runs as though the cache had missed. Unlike the write warning above this is emitted per article, because the cause is a property of that one file. The bad entry is not deleted, but it *is* renamed with a `.corrupt` suffix, which takes it out of the lookup path while leaving the bytes for you to inspect. Leaving it in place was not viable: only a re-fetch that returns JATS full text overwrites the HTML entry, so an article served as a PDF kept warning and re-downloading on every run — the undecodable entry is read first, so it hid the freshly cached PDF behind it. `clear()` sweeps the `.corrupt` files up.
 
@@ -334,11 +334,13 @@ class FullTextResult:
 The JATS document `html` was rendered from, byte for byte as served, so a
 caller can build its own structure from it rather than parse bmlib's HTML
 back (`JATSParser(result.jats_xml)` reads the bytes and honours the declared
-encoding). Set for `"fulltext"` and `"abstract"` results that came from JATS,
-including a cache hit on an HTML entry this version wrote. `None` for
-extracted PDF text, a link, an abstract read back from beside a cached PDF,
-and a cache hit on an HTML entry an earlier bmlib wrote (it is served, not
-re-fetched). A PDF's own bytes are the file at `file_path`, which needs a
+encoding — in Python; the Rust tiers refuse a non-UTF-8 body before keeping
+it, so Rust's bytes are always UTF-8). Set for `"fulltext"` and `"abstract"`
+results that came from JATS, including a cache hit on an HTML entry, or an
+abstract beside a PDF, this version wrote. `None` for extracted PDF text, a
+link, and a cache hit on an entry an earlier bmlib wrote or whose XML cannot
+be read back (it is served, not re-fetched; an unreadable XML is warned about
+and moved aside). A PDF's own bytes are the file at `file_path`, which needs a
 cache and an `identifier` as any PDF download does.
 
 ### `content_kind`
@@ -1945,7 +1947,7 @@ anyway, and `citation` still holds what was typeset.
 
 ## FullTextCache
 
-Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)* and `jats/` for the JATS XML an HTML entry was rendered from *(unreleased)*. `FullTextService` writes the XML first and skips the HTML when that fails, so an HTML entry it writes always has its XML; `jats/` is created by the first `save_jats()`, and the XML is not stamped.
+Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)* and `jats/` for the JATS XML an HTML entry was rendered from *(unreleased)*. `FullTextService` writes the XML first and skips the HTML (or the abstract beside a PDF) when that fails, so an entry it writes is written only once its XML is on disk; it does not write an abstract's XML where an HTML entry is present, whose own XML `jats/` holds. `jats/` is created by the first `save_jats()`, and the XML is not stamped. Two processes caching one article at once can still pair one fetch's HTML with the other's XML; the writes are atomic, not locked.
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
@@ -1980,6 +1982,7 @@ class FullTextCache:
     # The JATS an HTML entry was rendered from, as served (unreleased)
     def save_jats(self, data: bytes, identifier: str) -> str: ...
     def get_jats(self, identifier: str) -> bytes | None: ...
+    def has_html(self, identifier: str) -> bool: ...  # present, readable or not (unreleased)
 
     # Shared
     def stale_entries(self, identifier: str) -> list[str]: ...   # new in 0.11.0
