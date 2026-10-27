@@ -828,6 +828,14 @@ class FullTextResult:
     # Callers that must not analyse an abstract as if it were an article
     # should branch on this rather than on ``html`` being set.
     content_kind: ContentKind = "none"
+    # The JATS document ``html`` was rendered from, byte for byte as served,
+    # so a caller can build its own structure from it (``JATSParser`` reads
+    # bytes and honours the declared encoding). Set for a ``"fulltext"`` or
+    # ``"abstract"`` that came from JATS; ``None`` for extracted PDF text, a
+    # link, an abstract read back from beside a cached PDF, and a cached HTML
+    # entry written before bmlib cached the XML beside it. A PDF's own bytes
+    # are at ``file_path``.
+    jats_xml: bytes | None = None
 
 
 class SectionType(Enum):

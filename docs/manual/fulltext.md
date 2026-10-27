@@ -326,7 +326,20 @@ class FullTextResult:
     web_url: str | None = None     # Publisher / PubMed website URL
     file_path: str | None = None   # Local cached file path
     content_kind: ContentKind = "none"   # what `html` actually is
+    jats_xml: bytes | None = None  # the JATS `html` was rendered from *(unreleased)*
 ```
+
+### `jats_xml` *(unreleased)*
+
+The JATS document `html` was rendered from, byte for byte as served, so a
+caller can build its own structure from it rather than parse bmlib's HTML
+back (`JATSParser(result.jats_xml)` reads the bytes and honours the declared
+encoding). Set for `"fulltext"` and `"abstract"` results that came from JATS,
+including a cache hit on an HTML entry this version wrote. `None` for
+extracted PDF text, a link, an abstract read back from beside a cached PDF,
+and a cache hit on an HTML entry an earlier bmlib wrote (it is served, not
+re-fetched). A PDF's own bytes are the file at `file_path`, which needs a
+cache and an `identifier` as any PDF download does.
 
 ### `content_kind`
 
@@ -1932,7 +1945,7 @@ anyway, and `citation` still holds what was typeset.
 
 ## FullTextCache
 
-Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)*.
+Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)* and `jats/` for the JATS XML an HTML entry was rendered from *(unreleased)*. `FullTextService` writes the XML first and skips the HTML when that fails, so an HTML entry it writes always has its XML; `jats/` is created by the first `save_jats()`, and the XML is not stamped.
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
@@ -1963,6 +1976,10 @@ class FullTextCache:
     # The abstract a cached PDF was returned with (new in 0.11.0)
     def save_abstract(self, html: str, identifier: str) -> str: ...
     def get_abstract(self, identifier: str) -> str | None: ...
+
+    # The JATS an HTML entry was rendered from, as served (unreleased)
+    def save_jats(self, data: bytes, identifier: str) -> str: ...
+    def get_jats(self, identifier: str) -> bytes | None: ...
 
     # Shared
     def stale_entries(self, identifier: str) -> list[str]: ...   # new in 0.11.0

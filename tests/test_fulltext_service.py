@@ -1199,10 +1199,11 @@ class TestNCBIPMCFetch:
 
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=resp):
-            html, has_body = service._fetch_ncbi_pmc("PMC123")
+            html, has_body, xml = service._fetch_ncbi_pmc("PMC123")
 
         assert has_body is True
         assert "<h1>" in html
+        assert xml == resp.content
 
     def test_the_numeric_id_is_sent(self):
         """efetch's documented form for db=pmc is the digits alone."""
@@ -1266,7 +1267,7 @@ class TestNCBIPMCFetch:
 
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=resp):
-            html, has_body = service._fetch_ncbi_pmc("PMC123")
+            html, has_body, _xml = service._fetch_ncbi_pmc("PMC123")
 
         assert has_body is False
         assert html
@@ -3869,9 +3870,9 @@ class TestASecondDistinctFaultIsStillReported:
         assert service.cache is not None
         with caplog.at_level("WARNING"):
             with patch.object(service.cache, "save_html", side_effect=OSError("disk full")):
-                service._cache_html("<p>a</p>", "10.1/a")
+                service._cache_html("<p>a</p>", b"<article/>", "10.1/a")
             with patch.object(service.cache, "save_html", side_effect=TypeError("bmlib bug")):
-                service._cache_html("<p>b</p>", "10.1/b")
+                service._cache_html("<p>b</p>", b"<article/>", "10.1/b")
 
         assert "OSError: disk full" in caplog.text
         assert "TypeError: bmlib bug" in caplog.text
@@ -3885,10 +3886,23 @@ class TestASecondDistinctFaultIsStillReported:
             caplog.at_level("WARNING"),
             patch.object(service.cache, "save_html", side_effect=OSError("disk full")),
         ):
-            service._cache_html("<p>a</p>", "10.1/a")
-            service._cache_html("<p>b</p>", "10.1/b")
+            service._cache_html("<p>a</p>", b"<article/>", "10.1/a")
+            service._cache_html("<p>b</p>", b"<article/>", "10.1/b")
 
         assert caplog.text.count("Could not write to the full-text cache") == 1
+
+    def test_no_html_entry_is_written_when_its_xml_cannot_be(self, tmp_path: Path) -> None:
+        """An HTML entry this writes always has its JATS beside it.
+
+        Otherwise a hit on it would hand a caller that builds its own
+        structure from the XML nothing to build from, for good.
+        """
+        service = self._service(tmp_path)
+        assert service.cache is not None
+        with patch.object(service.cache, "save_jats", side_effect=OSError("disk full")):
+            service._cache_html("<p>a</p>", b"<article/>", "10.1/a")
+
+        assert service.cache.get_html("10.1/a") is None
 
     def test_two_different_pdf_backend_failures_are_both_reported(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

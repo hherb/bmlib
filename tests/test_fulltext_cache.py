@@ -978,3 +978,56 @@ class TestAStaleEntryCanBeDiscarded:
         with pytest.raises(UnicodeDecodeError):
             cache.discard_stale("PMC123")
         assert path.exists()
+
+
+class TestTheJATSIsKeptBesideTheHTML:
+    """The JATS XML an HTML entry was rendered from (StudyAnalyzer item 9).
+
+    Kept as served, bytes and declared encoding alike, so a caller building
+    its own structure from a cache hit reads exactly what a fetch would have
+    handed it. Not stamped: like a PDF it is the publisher's bytes.
+    """
+
+    XML = b'<?xml version="1.0" encoding="ISO-8859-1"?><article>caf\xe9</article>'
+
+    def test_the_bytes_round_trip_unchanged(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_jats(self.XML, "10.1234/x")
+
+        assert Path(path).parent == tmp_path / "jats"
+        assert cache.get_jats("10.1234/x") == self.XML
+
+    def test_an_absent_entry_is_none(self, tmp_path):
+        """An earlier bmlib's cache has no ``jats/`` at all."""
+        assert FullTextCache(cache_dir=tmp_path).get_jats("10.1234/x") is None
+
+    def test_it_is_not_created_at_construction(self, tmp_path):
+        """A read-only cache an earlier bmlib built must still construct."""
+        FullTextCache(cache_dir=tmp_path)
+
+        assert not (tmp_path / "jats").exists()
+
+    def test_delete_removes_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+
+        cache.delete("PMC123")
+
+        assert cache.get_jats("PMC123") is None
+
+    def test_clear_removes_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+
+        cache.clear()
+
+        assert cache.get_jats("PMC123") is None
+
+    def test_an_unreadable_entry_is_moved_aside(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        (tmp_path / "jats" / "PMC123.xml").mkdir(parents=True)
+
+        moved = cache.quarantine("PMC123")
+
+        assert moved == [str(tmp_path / "jats" / "PMC123.xml.corrupt")]
+        assert cache.get_jats("PMC123") is None

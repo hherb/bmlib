@@ -17,7 +17,7 @@
 """Local cache for downloaded full-text articles (PDFs and HTML).
 
 Caches retrieved full-text content on disk, organised into ``pdfs/``,
-``html/`` and ``abstracts/`` subdirectories under a user-configurable root.  The default
+``html/``, ``jats/`` and ``abstracts/`` subdirectories under a user-configurable root.  The default
 location follows the XDG convention:
 
 * macOS: ``~/Library/Caches/bmlib/fulltext_cache``
@@ -37,7 +37,8 @@ The two *rendered* entries — ``html/`` and ``abstracts/``, which hold
 one-line stamp naming the renderer that wrote them
 (``<!-- bmlib-fulltext-renderer: N -->``), and one written by an older renderer
 reads as absent (#172). A PDF is the publisher's bytes, not a rendering, and is
-not stamped.
+not stamped; nor is the JATS XML an HTML entry was rendered from, kept in
+``jats/`` beside it for a caller that builds its own structure.
 """
 
 from __future__ import annotations
@@ -282,10 +283,10 @@ class FullTextCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._pdf_dir.mkdir(parents=True, exist_ok=True)
         self._html_dir.mkdir(parents=True, exist_ok=True)
-        # ``abstracts/`` is created by the first save_abstract(), not here: a
-        # cache an earlier bmlib built has no such directory, and creating it
-        # at construction would make a read-only cache that serves hits today
-        # raise instead.
+        # ``abstracts/`` and ``jats/`` are created by their first save, not
+        # here: a cache an earlier bmlib built has no such directory, and
+        # creating it at construction would make a read-only cache that serves
+        # hits today raise instead.
 
     @property
     def _pdf_dir(self) -> Path:
@@ -299,18 +300,23 @@ class FullTextCache:
     def _abstract_dir(self) -> Path:
         return self.cache_dir / "abstracts"
 
-    def _entries(self, identifier: str) -> tuple[Path, Path, Path]:
+    @property
+    def _jats_dir(self) -> Path:
+        return self.cache_dir / "jats"
+
+    def _entries(self, identifier: str) -> tuple[Path, Path, Path, Path]:
         """Every path an entry for *identifier* can occupy, HTML first."""
         name = _safe_filename(identifier)
         return (
             self._html_dir / f"{name}.html",
             self._pdf_dir / f"{name}.pdf",
             self._abstract_dir / f"{name}.html",
+            self._jats_dir / f"{name}.xml",
         )
 
     def _rendered_entries(self, identifier: str) -> tuple[Path, Path]:
         """The two stamped entries for *identifier*: the HTML, then the abstract."""
-        html, _pdf, abstract = self._entries(identifier)
+        html, _pdf, abstract, _jats = self._entries(identifier)
         return html, abstract
 
     def _stale(self, identifier: str) -> list[tuple[Path, str, bool]]:
@@ -451,6 +457,44 @@ class FullTextCache:
         """
         path = self._html_dir / f"{_safe_filename(identifier)}.html"
         return self._read_rendered(path, stale_ok=stale_ok)
+
+    # --- JATS operations ----------------------------------------------------
+
+    def save_jats(self, data: bytes, identifier: str) -> str:
+        """Save the JATS XML an HTML entry was rendered from, as served.
+
+        ``FullTextService`` writes it just ahead of :meth:`save_html` and
+        skips the HTML when this fails, so every HTML entry it writes has
+        its XML beside it. Published atomically and not stamped: like a PDF,
+        it is the publisher's bytes, not a rendering. The directory is
+        created here rather than at construction, as ``abstracts/`` is.
+
+        Returns:
+            The file path.
+
+        Raises:
+            OSError: If the directory cannot be created or the write fails.
+        """
+        path = self._jats_dir / f"{_safe_filename(identifier)}.xml"
+        self._jats_dir.mkdir(exist_ok=True)
+        atomic_write(path, data)
+        logger.info("Cached JATS XML for %s (%d bytes)", identifier, len(data))
+        return str(path)
+
+    def get_jats(self, identifier: str) -> bytes | None:
+        """Return the cached JATS XML bytes, or ``None`` if not cached.
+
+        ``None`` beside an HTML entry an earlier bmlib wrote, since it cached
+        no XML.
+
+        Raises:
+            OSError: If an entry exists and cannot be read, which the
+                service's read guard moves aside as it does an HTML entry.
+        """
+        path = self._jats_dir / f"{_safe_filename(identifier)}.xml"
+        if not path.exists():
+            return None
+        return path.read_bytes()
 
     # --- Abstract operations ------------------------------------------------
 
@@ -607,19 +651,20 @@ class FullTextCache:
         return moved
 
     def delete(self, identifier: str) -> None:
-        """Delete all cached files for *identifier* (HTML, PDF and abstract)."""
+        """Delete all cached files for *identifier* (HTML, PDF, abstract and JATS)."""
         for path in self._entries(identifier):
             _remove(path)
 
     def clear(self) -> None:
         """Remove all cached files, including quarantined and temporary ones.
 
-        A subdirectory that is absent is skipped: ``abstracts/`` exists only
-        once something has been saved there, so an older cache lacks it.
+        A subdirectory that is absent is skipped: ``abstracts/`` and ``jats/``
+        exist only once something has been saved there, so an older cache
+        lacks them.
         Every subdirectory is skipped alike, where a missing ``pdfs/`` or
         ``html/`` used to raise ``FileNotFoundError``.
         """
-        for directory in (self._pdf_dir, self._html_dir, self._abstract_dir):
+        for directory in (self._pdf_dir, self._html_dir, self._abstract_dir, self._jats_dir):
             if not directory.is_dir():
                 continue
             for path in directory.iterdir():

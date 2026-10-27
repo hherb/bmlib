@@ -667,6 +667,16 @@ pub struct FullTextResult {
     /// article should branch on this rather than on `html` being set.
     #[serde(default)]
     pub content_kind: ContentKind,
+    /// The JATS document [`html`](FullTextResult::html) was rendered from, byte
+    /// for byte as served, so a caller can build its own structure from it.
+    ///
+    /// Set for a [`ContentKind::Fulltext`] or [`ContentKind::Abstract`] that
+    /// came from JATS; `None` for extracted PDF text, a link, an abstract read
+    /// back from beside a cached PDF, and a cached HTML entry written before
+    /// bmlib cached the XML beside it. A PDF's own bytes are at
+    /// [`file_path`](FullTextResult::file_path).
+    #[serde(default)]
+    pub jats_xml: Option<Vec<u8>>,
 }
 
 /// What a [`FullTextResult::html`] payload actually is.
@@ -1226,5 +1236,6 @@ mod tests {
         assert_eq!(result.pdf_url, None);
         assert_eq!(result.web_url, None);
         assert_eq!(result.file_path, None);
+        assert_eq!(result.jats_xml, None);
     }
 }

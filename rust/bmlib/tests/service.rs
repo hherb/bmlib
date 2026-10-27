@@ -620,6 +620,26 @@ fn a_known_source_xml_wins_and_is_cached() {
     );
 }
 
+/// **No HTML entry is written when its JATS cannot be**, so a hit on an HTML
+/// entry this writes always carries the XML a caller builds its own structure
+/// from. A file standing where `jats/` should be fails the XML write.
+#[test]
+fn no_html_entry_is_written_when_its_xml_cannot_be() {
+    let dir = TempDir::new("jats-write-fails");
+    let cache = dir.cache();
+    std::fs::write(cache.jats_dir(), b"not a directory").expect("blocker");
+    let client = ScriptedClient::new(vec![ok(FULL_JATS)]);
+    let service = service(client).with_cache(Some(cache.clone()));
+
+    let mut request = request();
+    request.pmc_id = Some("PMC123".to_string());
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.jats_xml.as_deref(), Some(FULL_JATS.as_bytes()));
+    assert_eq!(cache.get_html(&sanitize_identifier("10.1/test")), None);
+}
+
 #[test]
 fn known_sources_are_ordered_xml_then_pdf_then_html() {
     let client = ScriptedClient::new(vec![status(404), body(200, "%PDF-1.4 fake")]);

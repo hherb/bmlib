@@ -1419,6 +1419,7 @@ class FullTextService:
             return result
         result.html = abstract_only.html
         result.content_kind = "abstract"
+        result.jats_xml = abstract_only.jats_xml
         logger.info("PDF yielded no text — pairing the link with the abstract-only rendering")
         return result
 
@@ -1455,20 +1456,22 @@ class FullTextService:
         )
         for source, name, fetch in fetchers:
             try:
-                html, has_body = fetch(pmc_id)
+                html, has_body, xml = fetch(pmc_id)
             except Exception as exc:
                 logger.debug("%s failed for %s", name, pmc_id, exc_info=True)
                 failures.record(exc)
                 continue
             if has_body:
                 logger.info("Full text retrieved from %s for %s", name, pmc_id)
-                self._cache_html(html, cache_id)
-                return FullTextResult(source=source, html=html, content_kind="fulltext"), (
-                    abstract_only
-                )
+                self._cache_html(html, xml, cache_id)
+                return FullTextResult(
+                    source=source, html=html, content_kind="fulltext", jats_xml=xml
+                ), abstract_only
             logger.info("%s XML for %s has no body — looking further", name, pmc_id)
             if abstract_only is None:
-                abstract_only = FullTextResult(source=source, html=html, content_kind="abstract")
+                abstract_only = FullTextResult(
+                    source=source, html=html, content_kind="abstract", jats_xml=xml
+                )
         return None, abstract_only
 
     def _discover_pmc_id(
@@ -1560,7 +1563,7 @@ class FullTextService:
         for entry in sorted_sources:
             try:
                 if entry.format == "xml":
-                    html, has_body = self._fetch_jats_xml(entry.url)
+                    html, has_body, xml = self._fetch_jats_xml(entry.url)
                     if not has_body:
                         # Not cached: a later fetch may find a populated
                         # document, and caching this would make the abstract
@@ -1572,13 +1575,18 @@ class FullTextService:
                         )
                         if abstract_only is None:
                             abstract_only = FullTextResult(
-                                source=entry.source, html=html, content_kind="abstract"
+                                source=entry.source,
+                                html=html,
+                                content_kind="abstract",
+                                jats_xml=xml,
                             )
                         continue
                     logger.info("Full text from JATS XML (%s)", entry.source)
-                    self._cache_html(html, cache_id)
+                    self._cache_html(html, xml, cache_id)
                     return (
-                        FullTextResult(source=entry.source, html=html, content_kind="fulltext"),
+                        FullTextResult(
+                            source=entry.source, html=html, content_kind="fulltext", jats_xml=xml
+                        ),
                         abstract_only,
                     )
                 elif entry.format == "pdf":
@@ -1649,7 +1657,12 @@ class FullTextService:
         html = cache.get_html(cache_id, stale_ok=stale_ok)
         if html:
             log_hit("Cache hit (HTML) for %s", cache_id)
-            return FullTextResult(source="cached", html=html, content_kind="fulltext")
+            return FullTextResult(
+                source="cached",
+                html=html,
+                content_kind="fulltext",
+                jats_xml=cache.get_jats(cache_id),
+            )
         pdf_path = cache.get_pdf(cache_id)
         if pdf_path:
             log_hit("Cache hit (PDF) for %s", cache_id)
@@ -1772,8 +1785,11 @@ class FullTextService:
         self._warned.add(key)
         logger.warning(msg, *args)
 
-    def _cache_html(self, html: str, cache_id: str | None) -> None:
-        """Save HTML to disk cache if caching is enabled.
+    def _cache_html(self, html: str, xml: bytes, cache_id: str | None) -> None:
+        """Save HTML, and the JATS XML it was rendered from, to the disk cache if enabled.
+
+        The XML is written first and the HTML only once it is on disk, so an
+        HTML entry this writes is never served without its XML.
 
         Reads :attr:`cache` directly, unlike :meth:`_check_cache`,
         :meth:`_quarantine_cache_entry` and :meth:`_save_pdf_to_cache`. Those
@@ -1789,6 +1805,7 @@ class FullTextService:
         """
         if cache_id and self.cache is not None:
             try:
+                self.cache.save_jats(xml, cache_id)
                 self.cache.save_html(html, cache_id)
             except Exception as e:
                 self._warn_cache_write_failed(e)
@@ -2147,13 +2164,14 @@ class FullTextService:
 
     # --- Fetch helpers --------------------------------------------------------
 
-    def _fetch_jats_xml(self, url: str) -> tuple[str, bool]:
+    def _fetch_jats_xml(self, url: str) -> tuple[str, bool, bytes]:
         """Fetch JATS XML from an arbitrary URL and parse to HTML.
 
         Returns:
-            A tuple of the rendered HTML and whether the document actually
-            had a body. A body-less document renders to little more than the
-            abstract, so the caller must keep looking for the real full text.
+            A tuple of the rendered HTML, whether the document actually had a
+            body, and the XML as served. A body-less document renders to
+            little more than the abstract, so the caller must keep looking for
+            the real full text.
 
         Raises:
             FullTextError: On a non-200 response other than 404.
@@ -2167,7 +2185,7 @@ class FullTextService:
         if resp.status_code != 200:
             raise FullTextError(f"JATS XML fetch failed: HTTP {resp.status_code}")
         article, html = JATSParser(resp.content).parse_with_html()
-        return html, article.has_body
+        return html, article.has_body, resp.content
 
     def _resolve_pmc_id_and_pdf_url(
         self,
@@ -2374,12 +2392,12 @@ class FullTextService:
             failures.record(exc)
             return None
 
-    def _fetch_europepmc(self, pmc_id: str) -> tuple[str, bool]:
+    def _fetch_europepmc(self, pmc_id: str) -> tuple[str, bool, bytes]:
         """Fetch JATS XML from Europe PMC and parse to HTML.
 
         Returns:
-            A tuple of the rendered HTML and whether the document had a body,
-            as for :meth:`_fetch_jats_xml`.
+            A tuple of the rendered HTML, whether the document had a body, and
+            the XML as served, as for :meth:`_fetch_jats_xml`.
         """
         normalized = _normalise_pmc_id(pmc_id)
         url = f"{EUROPE_PMC_BASE}/{normalized}/fullTextXML"
@@ -2392,9 +2410,9 @@ class FullTextService:
 
         parser = JATSParser(resp.content, known_pmc_id=normalized)
         article, html = parser.parse_with_html()
-        return html, article.has_body
+        return html, article.has_body, resp.content
 
-    def _fetch_ncbi_pmc(self, pmc_id: str) -> tuple[str, bool]:
+    def _fetch_ncbi_pmc(self, pmc_id: str) -> tuple[str, bool, bytes]:
         """Fetch a PMC article from NCBI's own copy via E-utilities ``efetch``.
 
         Europe PMC's ``fullTextXML`` serves the corpus its ``inEPMC`` flag
@@ -2402,8 +2420,8 @@ class FullTextService:
         PMC does not, this is the only source that answers.
 
         Returns:
-            A tuple of the rendered HTML and whether the document had a body,
-            as for :meth:`_fetch_europepmc`.
+            A tuple of the rendered HTML, whether the document had a body, and
+            the XML as served, as for :meth:`_fetch_europepmc`.
 
         Raises:
             FullTextError: On a bad ID or a non-200 response.
@@ -2433,7 +2451,7 @@ class FullTextService:
         article, html = JATSParser(resp.content, known_pmc_id=normalized).parse_with_html()
         if not article.has_body and not article.abstract_sections:
             raise FullTextUnavailableError(f"NCBI PMC returned no article content for {normalized}")
-        return html, article.has_body
+        return html, article.has_body, resp.content
 
     def _fetch_unpaywall(self, doi: str) -> str:
         """Query Unpaywall for open-access PDF URL.
