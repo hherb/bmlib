@@ -22,6 +22,7 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 | `models` | `FullTextResult`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
 | `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
 | `segmenter` | `SectionSegmenter`, heading-detection patterns | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()` |
+| `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
 > When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
@@ -1691,6 +1692,8 @@ class JATSTableInfo:
     html_content: str = ""         # Pre-rendered HTML <table>
     graphic_url: str | None = None # The <graphic> href, as deposited
     footnotes: list[str] = ...     # <table-wrap-foot> notes (marker folded in) and <attrib> credits
+    header_rows: list[list[str]] = ...  # <thead> rows, cell texts as deposited (unreleased)
+    body_rows: list[list[str]] = ...    # body rows, cell texts as deposited (unreleased)
 ```
 
 `graphic_url` on both is the href **as the document deposited it**, which for
@@ -2429,6 +2432,69 @@ replacing 60 drawn from `/details` before #325. Every row carries a
 refuses to resume a journal written before #503.
 
 ---
+
+## Canonical text *(unreleased)*
+
+`bmlib.fulltext.canonical` turns a paper, whatever its format, into **one
+string** and records the title, every heading and every block as a span into
+it, so everything that points into the paper (retrieval chunks, citations,
+highlights) points into the same text. Rust has the same API under
+`bmlib::fulltext::canonical`; `tests/fixtures/canonical_text.json` holds the
+two together.
+
+```python
+from bmlib.fulltext import JATSParser
+from bmlib.fulltext.canonical import (
+    canonical_from_jats, canonical_from_markdown, canonical_from_plain_text,
+)
+
+doc = canonical_from_jats(JATSParser(xml_bytes).parse())
+doc.text                                  # the whole canonical text
+doc.span_text(doc.title_span)             # the title
+for section in doc.sections:              # flat, in order; level 1 is top
+    heading = section.heading_span and doc.span_text(section.heading_span)
+    for block in section.blocks:          # kind: "paragraph" or "table_row"
+        print(section.level, heading, block.kind.value, doc.span_text(block.span))
+doc.converter_version                     # "jats-1"
+```
+
+- **Spans count Unicode code points**, half-open `[start, end)`: Python's
+  string indices and Rust's `char`s. A UTF-16 (JavaScript) or byte offset
+  differs as soon as the text holds `𝛽`; convert at your own boundary.
+- **Layout**: title, then each section's heading (if any) and its blocks,
+  every piece separated by `BLOCK_SEPARATOR` (`"\n\n"`), which belongs to no
+  span. Whitespace runs collapse to one space (Unicode `White_Space`). An
+  empty block is dropped, and so is a section left with neither heading nor
+  blocks; a heading with no blocks is kept. A table row's cells are joined by
+  `CELL_SEPARATOR` (a tab), so `find_passage` matches a quote that separates
+  them with spaces.
+- **JATS**: title; `Abstract` with each abstract part as a level-2 section;
+  the body sections, nested by level, back matter included; `Funding`
+  (statements, then awards); `Figures` (each figure a level-2 section headed
+  by its label: caption, notes); `Tables` (label: caption, header rows, body
+  rows, notes); `References`, one block per `formatted_citation`. These
+  headings are the labels `to_html()` prints; nothing else is invented, so
+  unheaded prose is an untitled section. Exhibits follow the body, as in
+  `to_html()`. Cross-reference links (`[Fig 1](#f1)`) read as their text.
+- **Markdown**: a small subset, hand-written in both languages: ATX and setext
+  headings (a level-1 heading before any content is the title), paragraphs,
+  list items (one block each), `>` quotes, fenced code (kept verbatim), pipe
+  tables (rows; the delimiter row dropped) and thematic breaks (dropped).
+  Inline emphasis, code spans, links, images, autolinks and backslash escapes
+  are stripped to their text; emphasis neither opens after nor closes before
+  a letter or digit, so `snake_case`, `IL_6` and `2*3*4` stay as written.
+  HTML is kept as text.
+- **Plain text**: one untitled section, paragraphs separated by blank lines;
+  the title, if known, is passed in.
+- **Versions**: `converter_version` is `"<format>-<n>"` from
+  `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION` and `PLAIN_TEXT_VERSION`. A
+  stored canonical text whose version is older than the current one may be
+  laid out differently now; what to do about that is the caller's call.
+- **Storing it**: `to_dict()` / `from_dict()` (Rust: serde, and
+  `CanonicalText::from_value`, which validates). `validate()` checks every
+  span lies in the text, in order, without overlap.
+
+PDF (from the segmenter) and HTML are later parts of the same work.
 
 ## FullTextError and FullTextUnavailableError
 

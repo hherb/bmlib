@@ -7,6 +7,36 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Canonical text: one string per paper, every piece a span** (StudyAnalyzer
+  phase 1, item 4a). `bmlib.fulltext.canonical` (Rust
+  `bmlib::fulltext::canonical`) converts a `JATSArticle`, Markdown or plain
+  text into a `CanonicalText`: one string holding the title and each
+  section's heading and blocks, separated by `"\n\n"`, with every one of
+  them recorded as a code-point `TextSpan`, so chunks, citations and
+  highlights all point into the same text. Each converter hands drafts to one
+  `assemble`, which collapses whitespace (Unicode `White_Space` in both
+  languages: Python's `isspace()` minus U+001C-U+001F), drops empty blocks
+  and records the spans. A table row is a `table_row` block, its cells joined
+  by a tab. JATS keeps everything `to_html()` shows apart from the metadata
+  lines (abstract, body, funding, figure captions, tables as rows, references,
+  the maintainer's call of 2026-10-28), with `[text](#id)` cross-reference
+  links reduced to their text. Markdown is a hand-written subset in both
+  languages (headings, lists, quotes, fences, pipe tables; emphasis, code,
+  links, images, autolinks, escapes), whose emphasis neither opens after nor
+  closes before a letter or digit, so `snake_case`, `IL_6` and `2*3*4` stay as
+  written. Each result names its `converter_version` (`"jats-1"`,
+  `"markdown-1"`, `"plain_text-1"`); `JATS_CANONICAL_VERSION` is pinned beside
+  `RENDERER_VERSION` in `tests/test_renderer_version.py` over the reader, the
+  models and the converter. Python and Rust in the same PR, held by
+  `tests/fixtures/canonical_text.json` (22 cases). The JATS half inherits the
+  Rust reader's open gaps: a cited `<etal/>` (#409) is not read there.
+- **`JATSTableInfo.header_rows` and `body_rows`**: a table's cell texts as
+  data, in both languages and through the FFI's `JatsTable`, so the canonical
+  text need not parse `html_content` back. Rust gains
+  `JATSReferenceInfo::formatted_citation()`, the port of Python's property,
+  sharing its helpers with the HTML renderer; the JATS oracle now diffs the
+  library method rather than a copy in the test. `RENDERER_VERSION` is
+  re-pinned, not bumped: `to_html()` reads neither field.
 - **`FullTextResult.jats_xml`: the JATS a result was rendered from** (StudyAnalyzer
   phase 1, item 9). Retrieval rendered JATS to HTML and dropped the document,
   so a caller wanting its sections had to parse bmlib's HTML back. Every JATS
