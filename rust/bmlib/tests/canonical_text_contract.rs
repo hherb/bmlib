@@ -21,7 +21,9 @@
 //! `CanonicalText`, spans counted in code points, and the expected value
 //! round-trips through `CanonicalText::from_value`.
 
-use bmlib::fulltext::canonical::{canonical_from_jats, canonical_from_plain_text, CanonicalText};
+use bmlib::fulltext::canonical::{
+    canonical_from_jats, canonical_from_markdown, canonical_from_plain_text, CanonicalText,
+};
 use bmlib::fulltext::jats_reader::parse;
 use serde_json::Value;
 
@@ -39,6 +41,7 @@ fn convert(case: &Value) -> CanonicalText {
     let input = case["input"].as_str().expect("an input string");
     match case["format"].as_str().expect("a format") {
         "plain_text" => canonical_from_plain_text(input, case["title"].as_str().unwrap_or("")),
+        "markdown" => canonical_from_markdown(input),
         "jats" => canonical_from_jats(&parse(input).expect("the case's JATS parses")),
         other => panic!("unknown format {other:?} in {}", case["name"]),
     }

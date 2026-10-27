@@ -529,6 +529,432 @@
         "source_format": "jats",
         "converter_version": "jats-1"
       }
+    },
+    {
+      "name": "markdown/title-and-sections",
+      "format": "markdown",
+      "input": "# The Trial\n\nIntro paragraph\ncontinues here.\n\n## Methods\n\nWe did *things*.\n\n### Stats ###\n\nCox.\n\n# Discussion\n\nDone.\n",
+      "expected": {
+        "text": "The Trial\n\nIntro paragraph continues here.\n\nMethods\n\nWe did things.\n\nStats\n\nCox.\n\nDiscussion\n\nDone.",
+        "title_span": {
+          "start": 0,
+          "end": 9
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 11,
+                  "end": 42
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 44,
+              "end": 51
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 53,
+                  "end": 67
+                }
+              }
+            ]
+          },
+          {
+            "level": 3,
+            "heading_span": {
+              "start": 69,
+              "end": 74
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 76,
+                  "end": 80
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 82,
+              "end": 92
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 94,
+                  "end": 99
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/late-h1",
+      "format": "markdown",
+      "input": "Lead.\n\n# Not the title\n\nBody.",
+      "expected": {
+        "text": "Lead.\n\nNot the title\n\nBody.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 5
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 7,
+              "end": 20
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 22,
+                  "end": 27
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/setext",
+      "format": "markdown",
+      "input": "Main Title\n==========\n\nLead text.\n\nPart A\n------\n\nBody A.\n\nPara line\n***\nAfter break.\n",
+      "expected": {
+        "text": "Main Title\n\nLead text.\n\nPart A\n\nBody A.\n\nPara line\n\nAfter break.",
+        "title_span": {
+          "start": 0,
+          "end": 10
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 12,
+                  "end": 22
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 24,
+              "end": 30
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 32,
+                  "end": 39
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 41,
+                  "end": 50
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 52,
+                  "end": 64
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/lists-and-quote",
+      "format": "markdown",
+      "input": "Items:\n\n- first item\n  continues\n* second\n1. third\n2) fourth\n\n> Quoted **text**\n> more\n",
+      "expected": {
+        "text": "Items:\n\nfirst item continues\n\nsecond\n\nthird\n\nfourth\n\nQuoted text more",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 6
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 8,
+                  "end": 28
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 30,
+                  "end": 36
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 38,
+                  "end": 43
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 45,
+                  "end": 51
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 53,
+                  "end": 69
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/fenced-code",
+      "format": "markdown",
+      "input": "Before.\n\n```python\nx = *a*  # not emphasis\n```\n\n~~~\ntwo\n~~~\nAfter.\n",
+      "expected": {
+        "text": "Before.\n\nx = *a* # not emphasis\n\ntwo\n\nAfter.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 7
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 9,
+                  "end": 31
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 33,
+                  "end": 36
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 38,
+                  "end": 44
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/pipe-table",
+      "format": "markdown",
+      "input": "| Group | n |\n|:------|--:|\n| A | 12 |\n| B \\| C | 7 |\n",
+      "expected": {
+        "text": "Group\tn\n\nA\t12\n\nB | C\t7",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 0,
+                  "end": 7
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 9,
+                  "end": 13
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 15,
+                  "end": 22
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/inline",
+      "format": "markdown",
+      "input": "Mix **bold**, __strong__, *em*, _em2_, `code *x*`, [link](http://a.b), ![alt text](i.png), <https://x.org/p>, \\*literal\\* and <b>tag</b>.",
+      "expected": {
+        "text": "Mix bold, strong, em, em2, code *x*, link, alt text, https://x.org/p, *literal* and <b>tag</b>.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 95
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/intraword",
+      "format": "markdown",
+      "input": "snake_case_name and IL_6 and 2*3*4 and a * b * c and x_1 y_ z.",
+      "expected": {
+        "text": "snake_case_name and IL_6 and 2*3*4 and a * b * c and x_1 y_ z.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 62
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/blank",
+      "format": "markdown",
+      "input": "  \n\n ",
+      "expected": {
+        "text": "",
+        "title_span": null,
+        "sections": [],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/crlf",
+      "format": "markdown",
+      "input": "# T\r\n\r\nline one\r\nline two\r\rlast",
+      "expected": {
+        "text": "T\n\nline one line two\n\nlast",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 20
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 22,
+                  "end": 26
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
     }
   ]
 }

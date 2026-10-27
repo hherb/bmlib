@@ -24,6 +24,11 @@ from bmlib.fulltext.canonical.jats import (
     canonical_from_jats,
     strip_links,
 )
+from bmlib.fulltext.canonical.markdown import (
+    MARKDOWN_VERSION,
+    canonical_from_markdown,
+    strip_inline,
+)
 from bmlib.fulltext.canonical.model import (
     BLOCK_SEPARATOR,
     CELL_SEPARATOR,
@@ -50,6 +55,7 @@ __all__ = [
     "BLOCK_SEPARATOR",
     "CELL_SEPARATOR",
     "JATS_CANONICAL_VERSION",
+    "MARKDOWN_VERSION",
     "PLAIN_TEXT_VERSION",
     "TOP_LEVEL",
     "BlockDraft",
@@ -62,9 +68,11 @@ __all__ = [
     "TextSpan",
     "assemble",
     "canonical_from_jats",
+    "canonical_from_markdown",
     "canonical_from_plain_text",
     "is_white_space",
     "normalise_whitespace",
     "split_lines",
+    "strip_inline",
     "strip_links",
 ]
