@@ -6,6 +6,25 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`FullTextResult.jats_xml`: the JATS a result was rendered from** (StudyAnalyzer
+  phase 1, item 9). Retrieval rendered JATS to HTML and dropped the document,
+  so a caller wanting its sections had to parse bmlib's HTML back. Every JATS
+  tier (Europe PMC, NCBI PMC, a fetcher's `xml` source) now hands back the
+  bytes as served, on full text and on a body-less abstract, carried onto a
+  PDF link with the abstract. The cache keeps it in a new `jats/` directory
+  (`save_jats` / `get_jats`, and `has_html`), written ahead of the HTML entry,
+  or of the abstract beside a PDF, which is skipped when the XML cannot be
+  written (warned on its own key); the abstract's XML is not written over an
+  HTML entry's. `delete`, `clear` and `quarantine` reach it. An HTML entry an
+  earlier bmlib cached is served with `jats_xml=None` rather than re-fetched,
+  and so is one whose XML cannot be read, which is moved aside (the
+  maintainer's calls, 2026-10-27 and PR #545's review). Rust's bytes are always
+  UTF-8, its tiers refusing any other encoding first. A PDF's bytes stay at
+  `file_path`. Rust (`Option<Vec<u8>>`) and Python in the same PR, held by
+  `tests/fixtures/fulltext_source.json`. `RENDERER_VERSION` is re-pinned, not
+  bumped: the renderer is untouched.
+
 ### Changed
 - **`find_passage`'s long-input tests bound work, not wall time** (#533).
   The three `*_is_fast` tests in each language asserted a 2.0 s wall-clock

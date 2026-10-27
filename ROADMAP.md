@@ -132,6 +132,7 @@ hold the full story.
 | ⬜ Planned | A source for unpublished preprints | Issue #341 — the population `/pubs` does not serve. Candidates: bioRxiv's TDM bucket, an OAI-PMH feed, Crossref posted-content by prefix |
 | ⬜ Planned | Revisit a non-durable day outside the window for every source | Issue #342 — a decision. Rule 5 is `settle_days`-gated; for PubMed it would re-fetch every pre-0.10.0 day once |
 | **Full text (`bmlib.fulltext`)** | | |
+| ✅ Done *(unreleased)* | A result hands back the JATS it was rendered from | StudyAnalyzer's item 9: `FullTextResult.jats_xml` carries the bytes every JATS tier served, and the cache keeps them in `jats/` beside the HTML and the abstract beside a PDF (written first; an entry is written only once its XML is on disk). An entry an earlier bmlib cached, or one whose XML cannot be read, is served without it. Python and Rust, held by `tests/fixtures/fulltext_source.json` *(unreleased)* |
 | ✅ Done | Tiered retrieval | Caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL, with disk-based caching |
 | ✅ Done | JATS XML parser | JATS → structured `JATSArticle` data; external entity loading disabled. `parse_with_html()` gets both in one SAX pass |
 | ✅ Done | PDF → text conversion | Pluggable `PDFConverter` with a PyMuPDF backend behind the optional `bmlib[pdf]` extra (0.4.0) |

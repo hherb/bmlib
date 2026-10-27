@@ -1851,7 +1851,18 @@ impl FullTextService {
         if let (Some(abstract_html), true, Some(cache_id), Some(cache)) =
             (abstract_html, has_file, cache_id, self.cache.as_ref())
         {
-            if let Err(error) = cache.save_abstract(abstract_html, cache_id) {
+            // The XML first, as for an HTML entry, so the abstract is cached
+            // only once its XML is. Not where an HTML entry is present, so its
+            // XML is never replaced by an abstract's (Python serves a stale one
+            // over a re-fetch that returned less, #172).
+            let saved = match abstract_only.jats_xml.as_deref() {
+                Some(xml) if !cache.has_html(cache_id) => {
+                    cache.save_jats(xml, cache_id).map(|_| ())
+                }
+                _ => Ok(()),
+            }
+            .and_then(|()| cache.save_abstract(abstract_html, cache_id).map(|_| ()));
+            if let Err(error) = saved {
                 // Not `warn_cache_write_failed`: the PDF *was* cached, so "nothing
                 // is being cached" would be false — an older cache whose root is
                 // read-only cannot create `abstracts/` while `pdfs/` writes fine
@@ -1861,7 +1872,7 @@ impl FullTextService {
                 self.warn_once(
                     &format!("abstract-write:{kind}"),
                     format!(
-                        "Could not cache the abstract beside a cached PDF ({kind}: {error}); the PDF is cached, but a later hit on it that yields no text will return no abstract. Further {kind} failures will not be repeated."
+                        "Could not cache the abstract, or the JATS XML it was rendered from, beside a cached PDF ({kind}: {error}); the PDF is cached, but a later hit on it that yields no text will return no abstract. Further {kind} failures will not be repeated."
                     ),
                 );
                 self.debug(format!("Failed to cache the abstract for {cache_id}"));
@@ -1873,6 +1884,7 @@ impl FullTextService {
         }
         result.html = abstract_only.html.clone();
         result.content_kind = ContentKind::Abstract;
+        result.jats_xml = abstract_only.jats_xml.clone();
         self.info("PDF yielded no text — pairing the link with the abstract-only rendering");
         result
     }
@@ -1908,7 +1920,7 @@ impl FullTextService {
         for entry in sorted {
             if entry.format == "xml" {
                 match self.fetch_jats_xml(&entry.url) {
-                    Ok((html, false)) => {
+                    Ok((html, false, xml)) => {
                         // Not cached: a later fetch may find a populated
                         // document, and caching this would make the abstract
                         // permanent.
@@ -1917,14 +1929,17 @@ impl FullTextService {
                             entry.source
                         ));
                         if abstract_only.is_none() {
-                            abstract_only = Some(abstract_result(&entry.source, html));
+                            abstract_only = Some(abstract_result(&entry.source, html, Some(xml)));
                         }
                         continue;
                     }
-                    Ok((html, true)) => {
+                    Ok((html, true, xml)) => {
                         self.info(format!("Full text from JATS XML ({})", entry.source));
-                        self.cache_html(&html, cache_id);
-                        return (Some(fulltext_result(&entry.source, html)), abstract_only);
+                        self.cache_html(&html, &xml, cache_id);
+                        return (
+                            Some(fulltext_result(&entry.source, html, Some(xml))),
+                            abstract_only,
+                        );
                     }
                     Err(fault) => {
                         self.debug(format!(
@@ -2017,8 +2032,9 @@ impl FullTextService {
         // the very file that was read. Reproduced: `Some("")` is not a hit.
         if let Some(html) = html {
             if !html.is_empty() {
+                let jats_xml = self.read_cached_jats(cache, cache_id);
                 self.info(format!("Cache hit (HTML) for {cache_id}"));
-                return Some(fulltext_result("cached", html));
+                return Some(fulltext_result("cached", html, jats_xml));
             }
         }
         // The PDF entry is consulted the same way, and **presence without a hit
@@ -2074,12 +2090,36 @@ impl FullTextService {
                     if !abstract_html.is_empty() {
                         result.html = Some(abstract_html);
                         result.content_kind = ContentKind::Abstract;
+                        result.jats_xml = self.read_cached_jats(cache, cache_id);
                     }
                 }
             }
             return Some(result);
         }
         None
+    }
+
+    /// The JATS XML cached beside a hit, or `None`.
+    ///
+    /// An unreadable one is reported and moved aside, and the hit is served
+    /// without it (the maintainer's call, PR #545's review): the rendering
+    /// beside it reads fine, and abandoning the hit for it turned a cache used
+    /// offline into a failure, or a lower-ranked PDF, for that lookup. Later
+    /// lookups serve the rendering with `None`, as for an entry an earlier bmlib
+    /// wrote.
+    fn read_cached_jats(&self, cache: &FullTextCache, cache_id: &str) -> Option<Vec<u8>> {
+        match cache.get_jats(cache_id) {
+            Ok(jats_xml) => jats_xml,
+            Err(error) => {
+                self.warn(format!(
+                    "Could not read the cached JATS XML for {cache_id} ({:?}: {error}); serving the cached rendering without it.",
+                    error.kind()
+                ));
+                self.debug(format!("JATS cache read failed for {cache_id}"));
+                self.quarantine_cache_entry(cache, cache_id);
+                None
+            }
+        }
     }
 
     /// Move an unreadable cache entry aside, never raising.
@@ -2127,16 +2167,33 @@ impl FullTextService {
         );
     }
 
-    /// Save HTML to the disk cache if caching is enabled.
+    /// Save HTML, and the JATS XML it was rendered from, to the disk cache if
+    /// caching is enabled.
+    ///
+    /// The XML is written first and the HTML only once it is on disk.
     ///
     /// Failing to write costs only a re-fetch next run — the HTML is already in
     /// hand and is returned either way — so no cache means nothing to say here
     /// beyond the warning construction has already emitted.
-    fn cache_html(&self, html: &str, cache_id: Option<&str>) {
+    fn cache_html(&self, html: &str, xml: &[u8], cache_id: Option<&str>) {
         let (Some(cache_id), Some(cache)) = (cache_id, self.cache.as_ref()) else {
             return;
         };
         if cache_id.is_empty() {
+            return;
+        }
+        if let Err(error) = cache.save_jats(xml, cache_id) {
+            // Not `warn_cache_write_failed`: `jats/` is created on first save, so
+            // an older cache whose root is read-only fails here while `pdfs/`
+            // writes fine, and "nothing is being cached" would be false.
+            let kind = format!("{:?}", error.kind());
+            self.warn_once(
+                &format!("jats-write:{kind}"),
+                format!(
+                    "Could not cache JATS XML ({kind}: {error}), so the HTML rendered from it is not cached either and that article is re-fetched at its next lookup; PDFs are cached as before. Further {kind} failures will not be repeated."
+                ),
+            );
+            self.debug(format!("Failed to cache the JATS XML for {cache_id}"));
             return;
         }
         if let Err(error) = cache.save_html(html, cache_id) {
@@ -2422,8 +2479,8 @@ impl FullTextService {
 
     /// Fetch JATS XML from an arbitrary URL and parse to HTML.
     ///
-    /// Returns the rendered HTML and whether the document actually had a body.
-    /// A body-less document renders to little more than the abstract, so the
+    /// Returns the rendered HTML, whether the document actually had a body, and
+    /// the XML as served. A body-less document renders to little more than the abstract, so the
     /// caller must keep looking for the real full text.
     ///
     /// # Errors
@@ -2431,7 +2488,7 @@ impl FullTextService {
     /// [`TierFault::unavailable`] on a 404 — a fetcher's stored URL going stale
     /// is common, and counting it as a fault would inflate the one bucket the
     /// exhaustion report asks the operator to act on.
-    fn fetch_jats_xml(&self, url: &str) -> Result<(String, bool), TierFault> {
+    fn fetch_jats_xml(&self, url: &str) -> Result<(String, bool, Vec<u8>), TierFault> {
         let response = self.http_get(url)?;
         if response.status == 404 {
             return Err(TierFault::unavailable(format!("JATS XML not found: {url}")));
@@ -2444,7 +2501,11 @@ impl FullTextService {
         }
         let article = parse_with_pmc_id(response_text(&response)?, "")
             .map_err(|error| TierFault::fault("SAXParseException", error.to_string()))?;
-        Ok((render_jats_html(&article), article.has_body))
+        Ok((
+            render_jats_html(&article),
+            article.has_body,
+            response.body.clone(),
+        ))
     }
 
     /// Tiers 1a and 1c for **one** PMC ID: Europe PMC's XML, then NCBI's.
@@ -2467,17 +2528,20 @@ impl FullTextService {
         mut abstract_only: Option<FullTextResult>,
     ) -> (Option<FullTextResult>, Option<FullTextResult>) {
         match self.fetch_europepmc(pmc_id) {
-            Ok((html, true)) => {
+            Ok((html, true, xml)) => {
                 self.info(format!("Full text retrieved from Europe PMC for {pmc_id}"));
-                self.cache_html(&html, cache_id);
-                return (Some(fulltext_result("europepmc", html)), abstract_only);
+                self.cache_html(&html, &xml, cache_id);
+                return (
+                    Some(fulltext_result("europepmc", html, Some(xml))),
+                    abstract_only,
+                );
             }
-            Ok((html, false)) => {
+            Ok((html, false, xml)) => {
                 self.info(format!(
                     "Europe PMC XML for {pmc_id} has no body — looking further"
                 ));
                 if abstract_only.is_none() {
-                    abstract_only = Some(abstract_result("europepmc", html));
+                    abstract_only = Some(abstract_result("europepmc", html, Some(xml)));
                 }
             }
             Err(fault) => {
@@ -2486,17 +2550,20 @@ impl FullTextService {
             }
         }
         match self.fetch_ncbi_pmc(pmc_id) {
-            Ok((html, true)) => {
+            Ok((html, true, xml)) => {
                 self.info(format!("Full text retrieved from NCBI PMC for {pmc_id}"));
-                self.cache_html(&html, cache_id);
-                return (Some(fulltext_result("ncbi_pmc", html)), abstract_only);
+                self.cache_html(&html, &xml, cache_id);
+                return (
+                    Some(fulltext_result("ncbi_pmc", html, Some(xml))),
+                    abstract_only,
+                );
             }
-            Ok((html, false)) => {
+            Ok((html, false, xml)) => {
                 self.info(format!(
                     "NCBI PMC XML for {pmc_id} has no body — looking further"
                 ));
                 if abstract_only.is_none() {
-                    abstract_only = Some(abstract_result("ncbi_pmc", html));
+                    abstract_only = Some(abstract_result("ncbi_pmc", html, Some(xml)));
                 }
             }
             Err(fault) => {
@@ -2853,12 +2920,13 @@ impl FullTextService {
 
     /// Fetch JATS XML from Europe PMC and parse to HTML.
     ///
-    /// Returns the rendered HTML and whether the document had a body.
+    /// Returns the rendered HTML, whether the document had a body, and the XML
+    /// as served.
     ///
     /// # Errors
     ///
     /// [`TierFault`] for a bad id, a 404 (as an absence) or a non-200.
-    fn fetch_europepmc(&self, pmc_id: &str) -> Result<(String, bool), TierFault> {
+    fn fetch_europepmc(&self, pmc_id: &str) -> Result<(String, bool, Vec<u8>), TierFault> {
         let normalized = normalise_pmc_id(pmc_id).map_err(TierFault::from)?;
         let url = format!("{EUROPE_PMC_BASE}/{normalized}/fullTextXML");
 
@@ -2877,7 +2945,11 @@ impl FullTextService {
 
         let article = parse_with_pmc_id(response_text(&response)?, &normalized)
             .map_err(|error| TierFault::fault("SAXParseException", error.to_string()))?;
-        Ok((render_jats_html(&article), article.has_body))
+        Ok((
+            render_jats_html(&article),
+            article.has_body,
+            response.body.clone(),
+        ))
     }
 
     /// Fetch a PMC article from NCBI's own copy via E-utilities `efetch`.
@@ -2895,7 +2967,7 @@ impl FullTextService {
     /// abstract. Returned rather than refused, it would be promoted to the
     /// last-resort abstract and become near-empty HTML labelled as one. Raised
     /// as an absence rather than a fault because the source answered.
-    fn fetch_ncbi_pmc(&self, pmc_id: &str) -> Result<(String, bool), TierFault> {
+    fn fetch_ncbi_pmc(&self, pmc_id: &str) -> Result<(String, bool, Vec<u8>), TierFault> {
         let normalized = normalise_pmc_id(pmc_id).map_err(TierFault::from)?;
         let numeric = normalized.strip_prefix("PMC").unwrap_or(&normalized);
         let url = self.ncbi_url(
@@ -2923,7 +2995,11 @@ impl FullTextService {
                 "NCBI PMC returned no article content for {normalized}"
             )));
         }
-        Ok((render_jats_html(&article), article.has_body))
+        Ok((
+            render_jats_html(&article),
+            article.has_body,
+            response.body.clone(),
+        ))
     }
 
     /// Query Unpaywall for an open-access PDF URL.
@@ -2992,23 +3068,26 @@ fn empty_result(source: impl Into<String>) -> FullTextResult {
         web_url: None,
         file_path: None,
         content_kind: ContentKind::None,
+        jats_xml: None,
     }
 }
 
-/// A result carrying a JATS body.
-fn fulltext_result(source: &str, html: String) -> FullTextResult {
+/// A result carrying a JATS body, and the XML it was rendered from where known.
+fn fulltext_result(source: &str, html: String, jats_xml: Option<Vec<u8>>) -> FullTextResult {
     FullTextResult {
         html: Some(html),
         content_kind: ContentKind::Fulltext,
+        jats_xml,
         ..empty_result(source)
     }
 }
 
 /// A result carrying a body-less JATS rendering — an abstract, never full text.
-fn abstract_result(source: &str, html: String) -> FullTextResult {
+fn abstract_result(source: &str, html: String, jats_xml: Option<Vec<u8>>) -> FullTextResult {
     FullTextResult {
         html: Some(html),
         content_kind: ContentKind::Abstract,
+        jats_xml,
         ..empty_result(source)
     }
 }

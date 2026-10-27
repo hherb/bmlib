@@ -978,3 +978,127 @@ class TestAStaleEntryCanBeDiscarded:
         with pytest.raises(UnicodeDecodeError):
             cache.discard_stale("PMC123")
         assert path.exists()
+
+
+class TestTheJATSIsKeptBesideTheHTML:
+    """The JATS XML an HTML entry was rendered from (StudyAnalyzer item 9).
+
+    Kept as served, bytes and declared encoding alike, so a caller building
+    its own structure from a cache hit reads exactly what a fetch would have
+    handed it. Not stamped: like a PDF it is the publisher's bytes.
+    """
+
+    XML = b'<?xml version="1.0" encoding="ISO-8859-1"?><article>caf\xe9</article>'
+
+    def test_the_bytes_round_trip_unchanged(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_jats(self.XML, "10.1234/x")
+
+        assert Path(path).parent == tmp_path / "jats"
+        assert cache.get_jats("10.1234/x") == self.XML
+
+    def test_an_absent_entry_is_none(self, tmp_path):
+        """An earlier bmlib's cache has no ``jats/`` at all."""
+        assert FullTextCache(cache_dir=tmp_path).get_jats("10.1234/x") is None
+
+    def test_it_is_not_created_at_construction(self, tmp_path):
+        """A read-only cache an earlier bmlib built must still construct."""
+        FullTextCache(cache_dir=tmp_path)
+
+        assert not (tmp_path / "jats").exists()
+
+    def test_delete_removes_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+
+        cache.delete("PMC123")
+
+        assert cache.get_jats("PMC123") is None
+
+    def test_clear_removes_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+
+        cache.clear()
+
+        assert cache.get_jats("PMC123") is None
+
+    def test_an_unreadable_entry_is_moved_aside(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        (tmp_path / "jats" / "PMC123.xml").mkdir(parents=True)
+
+        moved = cache.quarantine("PMC123")
+
+        assert moved == [str(tmp_path / "jats" / "PMC123.xml.corrupt")]
+        assert cache.get_jats("PMC123") is None
+
+    def test_an_entry_that_opens_and_will_not_read_is_moved_aside(self, tmp_path, monkeypatch):
+        """Judged by a whole read, as ``get_jats`` reads it, not by an open alone."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+        entry = tmp_path / "jats" / "PMC123.xml"
+        real_read_bytes = Path.read_bytes
+
+        def eio_on_the_entry(path: Path) -> bytes:
+            if path == entry:
+                raise OSError(errno.EIO, "Input/output error")
+            return real_read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", eio_on_the_entry)
+
+        assert cache.quarantine("PMC123") == [f"{entry}.corrupt"]
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root reads through any permission")
+    def test_an_unreachable_directory_raises_rather_than_reading_as_absent(
+        self, tmp_path, monkeypatch
+    ):
+        """``exists()`` answers ``False`` for a path it cannot reach (Python 3.14+).
+
+        Read as absent, every hit would be served with no XML and no warning,
+        indistinguishable from an entry an earlier bmlib wrote. 3.14's
+        ``exists()`` is emulated, since CI's interpreters raise from it instead
+        and would pass an ``exists()`` test without it.
+        """
+        real_exists = Path.exists
+
+        def exists_as_in_3_14(path: Path, *args: object, **kwargs: object) -> bool:
+            try:
+                return real_exists(path, *args, **kwargs)
+            except OSError:
+                return False
+
+        monkeypatch.setattr(Path, "exists", exists_as_in_3_14)
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+        (tmp_path / "jats").chmod(0)
+        try:
+            with pytest.raises(PermissionError):
+                cache.get_jats("PMC123")
+        finally:
+            (tmp_path / "jats").chmod(0o755)
+
+    def test_the_entry_is_published_not_written_in_place(self, tmp_path):
+        """At the rename, the entry's own name is still absent (``atomic_write``)."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        entry = tmp_path / "jats" / "PMC123.xml"
+        seen: list[bool] = []
+        real_replace = os.replace
+
+        def replace(src, dst, *args, **kwargs):
+            seen.append(entry.exists())
+            return real_replace(src, dst, *args, **kwargs)
+
+        with mock.patch.object(os, "replace", replace):
+            cache.save_jats(self.XML, "PMC123")
+
+        assert seen == [False]
+        assert entry.read_bytes() == self.XML
+
+    def test_has_html_reports_an_html_entry_whatever_it_holds(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_jats(self.XML, "PMC123")
+        assert not cache.has_html("PMC123")
+
+        (tmp_path / "html" / "PMC123.html").write_bytes(b"\xff")
+
+        assert cache.has_html("PMC123")

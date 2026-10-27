@@ -743,3 +743,70 @@ fn a_write_leaves_no_temporary_behind() {
     // and the loser's cleanup cannot remove the winner's file.
     assert_ne!(temp_path_beside(&target), temp_path_beside(&target));
 }
+
+/// **The JATS an HTML entry was rendered from round-trips byte for byte** —
+/// declared encoding and all — and is not created at construction, so a
+/// read-only cache an earlier bmlib built still constructs.
+#[test]
+fn the_jats_entry_round_trips_its_bytes() {
+    let xml = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><article>caf\xe9</article>";
+    let dir = TempDir::new("jats-round-trip");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    assert_eq!(
+        cache.get_jats("10.1234/x").expect("absent is not an error"),
+        None
+    );
+    assert!(!cache.jats_dir().exists());
+
+    let path = cache.save_jats(xml, "10.1234/x").expect("jats write");
+
+    assert_eq!(path.parent(), Some(cache.jats_dir().as_path()));
+    assert_eq!(
+        cache.get_jats("10.1234/x").expect("jats read").as_deref(),
+        Some(&xml[..])
+    );
+}
+
+/// **`delete`, `clear` and `quarantine` reach the JATS entry** as they reach the
+/// other three.
+#[test]
+fn the_jats_entry_is_deleted_cleared_and_quarantined() {
+    let dir = TempDir::new("jats-remove");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+
+    cache.save_jats(b"<article/>", "PMC1").expect("jats write");
+    cache.delete("PMC1");
+    assert_eq!(cache.get_jats("PMC1").expect("absent"), None);
+
+    cache.save_jats(b"<article/>", "PMC2").expect("jats write");
+    cache.clear().expect("clear");
+    assert_eq!(cache.get_jats("PMC2").expect("absent"), None);
+
+    let unreadable = cache.jats_dir().join("PMC3.xml");
+    std::fs::create_dir_all(&unreadable).expect("a directory where the entry should be");
+    // Present and unreadable is an error, never the `Ok(None)` of an entry an
+    // earlier bmlib wrote, which is served without its XML in silence.
+    assert!(cache.get_jats("PMC3").is_err());
+    assert_eq!(
+        cache.quarantine("PMC3"),
+        vec![cache.jats_dir().join("PMC3.xml.corrupt")]
+    );
+}
+
+/// **An HTML entry is reported present whatever it holds**, and only an HTML
+/// entry: the service asks before keeping an abstract's XML beside a PDF, so an
+/// HTML entry's own XML is never replaced by an abstract's.
+#[test]
+fn has_html_reports_an_html_entry_only() {
+    let dir = TempDir::new("has-html");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    assert!(!cache.has_html("PMC1"));
+    cache.save_jats(b"<article/>", "PMC1").expect("jats write");
+    assert!(!cache.has_html("PMC1"));
+    std::fs::create_dir_all(cache.html_dir()).expect("html dir");
+    std::fs::write(cache.html_dir().join("PMC1.html"), [0xff]).expect("an undecodable entry");
+    assert!(cache.has_html("PMC1"));
+}

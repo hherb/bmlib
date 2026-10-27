@@ -126,6 +126,11 @@ pub fn is_readable(path: &Path) -> bool {
             .map(|bytes| String::from_utf8(bytes).is_ok())
             .unwrap_or(false);
     }
+    if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+        // Read whole, as `get_jats` reads it: one that opens and fails on the
+        // read would otherwise never be moved aside.
+        return std::fs::read(path).is_ok();
+    }
     std::fs::File::open(path).is_ok()
 }
 
@@ -295,6 +300,15 @@ impl FullTextCache {
         self.cache_dir.join("abstracts")
     }
 
+    /// Where the JATS XML an HTML entry was rendered from lives.
+    ///
+    /// Created by the first [`FullTextCache::save_jats`], not by construction,
+    /// for [`FullTextCache::abstract_dir`]'s reason.
+    #[must_use]
+    pub fn jats_dir(&self) -> PathBuf {
+        self.cache_dir.join("jats")
+    }
+
     /// Save PDF data **if it passes magic-byte validation**.
     ///
     /// The file is published atomically, so a write that fails partway leaves no
@@ -369,6 +383,63 @@ impl FullTextCache {
             .and_then(|bytes| String::from_utf8(bytes).ok())
     }
 
+    /// Whether an HTML entry for `identifier` is on disk, readable or not.
+    ///
+    /// Reads nothing, so a stale or unreadable entry counts. The service asks it
+    /// before keeping an abstract's XML beside a PDF: `jats/` holds one document
+    /// per key, and one belonging to an HTML entry must not be replaced by an
+    /// abstract's.
+    #[must_use]
+    pub fn has_html(&self, identifier: &str) -> bool {
+        self.html_dir()
+            .join(format!("{}.html", safe_filename(identifier)))
+            .exists()
+    }
+
+    /// Save the JATS XML an HTML entry, or an abstract beside a PDF, was
+    /// rendered from, as served.
+    ///
+    /// [`FullTextService`](crate::fulltext::FullTextService) writes it just
+    /// ahead of [`FullTextCache::save_html`] (or [`FullTextCache::save_abstract`])
+    /// and skips that write when this fails, so an entry it writes is written
+    /// only once its XML is on disk. Published atomically; like a PDF it is the
+    /// publisher's bytes, not a rendering.
+    ///
+    /// # Errors
+    ///
+    /// A filesystem failure — the directory cannot be created, or the write
+    /// fails.
+    pub fn save_jats(&self, data: &[u8], identifier: &str) -> std::io::Result<PathBuf> {
+        let path = self
+            .jats_dir()
+            .join(format!("{}.xml", safe_filename(identifier)));
+        std::fs::create_dir_all(self.jats_dir())?;
+        atomic_write(&path, data)?;
+        Ok(path)
+    }
+
+    /// The cached JATS XML bytes, `Ok(None)` if not cached.
+    ///
+    /// `Ok(None)` beside an HTML entry an earlier bmlib wrote, since it cached no
+    /// XML. Absence is decided by the read itself, not by `Path::exists`, which
+    /// answers `false` for a path it cannot reach: an unreachable `jats/` must
+    /// be an error, not pass for an entry with no XML.
+    ///
+    /// # Errors
+    ///
+    /// Any read failure but `NotFound`, which the service reports and moves
+    /// aside, serving the entry beside it without its XML.
+    pub fn get_jats(&self, identifier: &str) -> std::io::Result<Option<Vec<u8>>> {
+        let path = self
+            .jats_dir()
+            .join(format!("{}.xml", safe_filename(identifier)));
+        match std::fs::read(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Save the abstract a cached PDF was returned with.
     ///
     /// [`FullTextService`](crate::fulltext::FullTextService) holds a body-less
@@ -440,6 +511,7 @@ impl FullTextCache {
             self.html_dir().join(format!("{name}.html")),
             self.pdf_dir().join(format!("{name}.pdf")),
             self.abstract_dir().join(format!("{name}.html")),
+            self.jats_dir().join(format!("{name}.xml")),
         ] {
             if !path.exists() || is_readable(&path) {
                 continue;
@@ -457,7 +529,7 @@ impl FullTextCache {
         moved
     }
 
-    /// Delete every cached file for `identifier` — HTML, PDF and abstract.
+    /// Delete every cached file for `identifier` — HTML, PDF, abstract and JATS.
     pub fn delete(&self, identifier: &str) {
         let name = safe_filename(identifier);
         // Best effort: a caller removing an entry has no recovery either way,
@@ -465,6 +537,7 @@ impl FullTextCache {
         let _ = remove_entry(&self.html_dir().join(format!("{name}.html")));
         let _ = remove_entry(&self.pdf_dir().join(format!("{name}.pdf")));
         let _ = remove_entry(&self.abstract_dir().join(format!("{name}.html")));
+        let _ = remove_entry(&self.jats_dir().join(format!("{name}.xml")));
     }
 
     /// Remove **all** cached files, quarantined and temporary ones included.
@@ -474,9 +547,14 @@ impl FullTextCache {
     /// it silently is how both documented ways to remove a bad entry failed on
     /// the same one. A subdirectory that is **absent** is skipped, which the
     /// loop's `else` already does: `abstracts/` exists only once something has
-    /// been saved there, so an older cache lacks it.
+    /// been saved there, so an older cache lacks it; `jats/` likewise.
     pub fn clear(&self) -> std::io::Result<()> {
-        for directory in [self.pdf_dir(), self.html_dir(), self.abstract_dir()] {
+        for directory in [
+            self.pdf_dir(),
+            self.html_dir(),
+            self.abstract_dir(),
+            self.jats_dir(),
+        ] {
             let Ok(entries) = std::fs::read_dir(&directory) else {
                 continue;
             };
