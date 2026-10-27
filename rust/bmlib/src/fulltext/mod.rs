@@ -22,6 +22,7 @@
 //! | `fulltext/jats_parser.py`'s reader | [`jats_reader`] | ported |
 
 pub mod cache;
+pub mod canonical;
 pub mod jats_reader;
 pub mod jats_text;
 pub mod models;
