@@ -22,7 +22,7 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 | `models` | `FullTextResult`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
 | `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
 | `segmenter` | `SectionSegmenter`, heading-detection patterns | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()` |
-| `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
+| `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
 > When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
@@ -2505,10 +2505,24 @@ doc.converter_version                     # "jats-1"
   `str.isalnum` and Rust's `char::is_alphanumeric` differ for a few marks and
   symbols such as `Ⓐ`, so emphasis next to one may be read differently).
   HTML is kept as text.
-- **Plain text**: one untitled section, paragraphs separated by blank lines;
-  the title, if known, is passed in.
+- **Plain text**: one untitled section, paragraphs separated by blank lines
+  (`split_paragraphs`); the title, if known, is passed in.
+- **PDF**: `canonical_from_segmented(SectionSegmenter().segment_document(blocks,
+  metadata))` takes the segmenter's `SegmentedDocument`, so it needs no PDF
+  library itself. The title is the document's (a title passed as
+  `metadata["title"]` is used when page 1 prints it); each section is a
+  level-1 section headed by the heading the segmenter detected, a hand-built
+  `subsections` entry one level deeper; front matter and the no-headings
+  fallback are untitled, since "Front Matter" and "Full Text" are bmlib's
+  labels and not the paper's; paragraphs are the content's blank-line runs.
+  The text is the extraction's: a table's cells may run together, a hyphen at
+  a line break is kept with a space after it (`dose- response`), and a title
+  read off page 1 is often in the front matter too. Python extracts with PyMuPDF and Rust with PDFium,
+  so the shared fixture holds the two together from the `SegmentedDocument`
+  on (its `to_dict()` form).
 - **Versions**: `converter_version` is `"<format>-<n>"` from
-  `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION` and `PLAIN_TEXT_VERSION`. A
+  `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION`, `PLAIN_TEXT_VERSION` and
+  `PDF_CANONICAL_VERSION` (which moves with the segmenter too). A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.
 - **Storing it**: `to_dict()` / `from_dict()` (Rust: serde, and
@@ -2519,7 +2533,7 @@ doc.converter_version                     # "jats-1"
   (Rust: `CanonicalError`), both languages refusing the same list
   (`refusals` in the shared fixture).
 
-PDF (from the segmenter) and HTML are later parts of the same work.
+HTML is a later part of the same work.
 
 ## FullTextError and FullTextUnavailableError
 

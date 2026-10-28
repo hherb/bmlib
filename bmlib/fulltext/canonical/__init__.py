@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""One canonical text per paper, built from JATS, Markdown or plain text, and its chunks.
+"""One canonical text per paper, built from JATS, Markdown, plain text or a PDF, and its chunks.
 
 See :mod:`bmlib.fulltext.canonical.model` for the layout and the offset unit.
 """
@@ -55,10 +55,12 @@ from bmlib.fulltext.canonical.model import (
     is_white_space,
     normalise_whitespace,
 )
+from bmlib.fulltext.canonical.pdf import PDF_CANONICAL_VERSION, canonical_from_segmented
 from bmlib.fulltext.canonical.plain import (
     PLAIN_TEXT_VERSION,
     canonical_from_plain_text,
     split_lines,
+    split_paragraphs,
 )
 
 __all__ = [
@@ -70,6 +72,7 @@ __all__ = [
     "DEFAULT_OVERLAP_CHARS",
     "JATS_CANONICAL_VERSION",
     "MARKDOWN_VERSION",
+    "PDF_CANONICAL_VERSION",
     "PLAIN_TEXT_VERSION",
     "TOP_LEVEL",
     "BlockDraft",
@@ -85,12 +88,14 @@ __all__ = [
     "canonical_from_jats",
     "canonical_from_markdown",
     "canonical_from_plain_text",
+    "canonical_from_segmented",
     "chunk_canonical",
     "is_abbreviation",
     "is_white_space",
     "normalise_whitespace",
     "sentence_spans",
     "split_lines",
+    "split_paragraphs",
     "strip_inline",
     "strip_links",
 ]

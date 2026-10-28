@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! One canonical text per paper, built from JATS, Markdown or plain text, and
-//! its chunks.
+//! One canonical text per paper, built from JATS, Markdown, plain text or a
+//! PDF, and its chunks.
 //!
 //! The port of Python's `bmlib.fulltext.canonical`; see [`model`] for the
 //! layout and the offset unit.
@@ -24,6 +24,7 @@ pub mod chunk;
 pub mod jats;
 pub mod markdown;
 pub mod model;
+pub mod pdf;
 pub mod plain;
 
 pub use chunk::{
@@ -37,4 +38,5 @@ pub use model::{
     CanonicalText, SectionDraft, SourceFormat, TextSpan, BLOCK_SEPARATOR, CELL_SEPARATOR,
     TOP_LEVEL,
 };
-pub use plain::{canonical_from_plain_text, split_lines, PLAIN_TEXT_VERSION};
+pub use pdf::{canonical_from_segmented, PDF_CANONICAL_VERSION};
+pub use plain::{canonical_from_plain_text, split_lines, split_paragraphs, PLAIN_TEXT_VERSION};

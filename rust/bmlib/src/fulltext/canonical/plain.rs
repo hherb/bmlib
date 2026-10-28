@@ -36,13 +36,12 @@ pub fn split_lines(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Convert plain `text`: paragraphs are separated by blank lines.
+/// `text`'s paragraphs, separated by blank lines, each line joined by a space.
 ///
-/// A line holding only whitespace counts as blank. `title` (the paper's title,
-/// known from elsewhere) becomes the title when it is not blank. Everything
-/// else is one section, level 1, with no heading.
+/// A line holding only whitespace counts as blank, so a run of blank lines
+/// separates two paragraphs once and no paragraph is empty.
 #[must_use]
-pub fn canonical_from_plain_text(text: &str, title: &str) -> CanonicalText {
+pub fn split_paragraphs(text: &str) -> Vec<BlockDraft> {
     let mut paragraphs = Vec::new();
     let mut current: Vec<String> = Vec::new();
     for line in split_lines(text) {
@@ -56,9 +55,19 @@ pub fn canonical_from_plain_text(text: &str, title: &str) -> CanonicalText {
     if !current.is_empty() {
         paragraphs.push(BlockDraft::paragraph(current.join(" ")));
     }
+    paragraphs
+}
+
+/// Convert plain `text`: paragraphs are separated by blank lines.
+///
+/// A line holding only whitespace counts as blank. `title` (the paper's title,
+/// known from elsewhere) becomes the title when it is not blank. Everything
+/// else is one section, level 1, with no heading.
+#[must_use]
+pub fn canonical_from_plain_text(text: &str, title: &str) -> CanonicalText {
     assemble(
         title,
-        &[SectionDraft::new("", TOP_LEVEL, paragraphs)],
+        &[SectionDraft::new("", TOP_LEVEL, split_paragraphs(text))],
         SourceFormat::PlainText,
         &SourceFormat::PlainText.converter_version(PLAIN_TEXT_VERSION),
     )
@@ -71,6 +80,11 @@ mod tests {
     #[test]
     fn every_line_ending_splits_alike() {
         assert_eq!(split_lines("a\r\nb\rc\nd"), ["a", "b", "c", "d"]);
+    }
+
+    #[test]
+    fn text_with_no_line_is_no_paragraph() {
+        assert!(split_paragraphs("\n \n").is_empty());
     }
 
     #[test]

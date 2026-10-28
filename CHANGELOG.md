@@ -7,6 +7,26 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Canonical text from a segmented PDF** (StudyAnalyzer phase 1, item 4b).
+  `canonical_from_segmented(document)` in `bmlib.fulltext.canonical` (Rust
+  `bmlib::fulltext::canonical`) lays a `SegmentedDocument` out as a
+  `CanonicalText` (`source_format` `"pdf"`, version `"pdf-1"`): the
+  document's title, one level-1 section per segmented section with its
+  detected heading, a `subsections` entry one level deeper, paragraphs at the
+  content's blank lines. Front matter and the no-headings fallback are
+  untitled, their "Front Matter" and "Full Text" being bmlib's labels, so a
+  quote can only be located in the paper's own text. The text is taken as the
+  extraction gives it (a hyphen at a line break is kept, the lines joined by a
+  space).
+  Plain text's paragraph rule is now `split_paragraphs`, public in
+  `bmlib.fulltext.canonical` and shared by both converters, with no change in
+  output. `PDF_CANONICAL_VERSION` (1) is pinned
+  in `tests/test_renderer_version.py` against the converter, the layout, the
+  segmenter and the PyMuPDF line extraction, since a segmenter change moves
+  the text too; the other canonical pins were re-taken without a bump (a new
+  `SourceFormat` member and the refactor move no output). Python and Rust,
+  held by seven `pdf` cases in `tests/fixtures/canonical_text.json` whose input
+  is the `SegmentedDocument`, since PyMuPDF and PDFium extract differently.
 - **Chunks of a canonical text, for retrieval** (StudyAnalyzer phase 1,
   item 3). `chunk_canonical(text, max_chars=1000, overlap_chars=100)` in
   `bmlib.fulltext.canonical` (Rust `bmlib::fulltext::canonical`) splits each
