@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 6**, branch
+_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 6**, PR #562, branch
 `feat/llm-streaming`, worktree `../bmlib-stream`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
@@ -41,7 +41,7 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 ## This session: streamed chat (StudyAnalyzer item 6)
 
-Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`. `chat_stream(…,
+PR #562. Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`. `chat_stream(…,
 on_delta)` beside `chat()` in both languages, returning `chat()`'s
 `LLMResponse`; `on_delta` returning `False` / `ControlFlow::Break` stops it
 (`stop_reason="cancelled"`). **Transport differs, the reducer does not**:
