@@ -26,21 +26,29 @@ the two cannot drift apart through two different parsers. Line by line:
 * Blank lines separate paragraphs. A list item is a block of its own and takes
   the plain lines that follow it: a bullet (``-``, ``*``, ``+``) loses its
   marker, a number (``1.``, ``1)``) keeps it, being text. As in CommonMark, a
-  numbered line interrupts a paragraph only when it starts at 1, so a wrapped
-  ``2019.`` stays in its sentence. ``>`` is stripped. A fenced code block
-  (three or more backticks or tildes) is one block whose inline markup is not
-  stripped. A thematic break (``---``, ``***``, ``___``) is dropped.
+  numbered line interrupts a paragraph (or a bulleted item) only when it starts
+  at 1, and an item of a numbered list at any number, so a wrapped ``2019.``
+  stays in its sentence. A setext underline under a list item is a thematic
+  break, not a heading. ``>`` is stripped. A fenced code block (three or more
+  backticks or tildes) is one block whose inline markup is not stripped; its
+  lines and indentation collapse to single spaces like any paragraph's. A
+  thematic break (``---``, ``***``, ``___``) is dropped.
 * A line starting with ``|`` is a table row; the delimiter row
   (``|---|:--:|``) right after a table's first row is dropped, and ``\\|``
   is a pipe inside a cell.
 * Inline: emphasis and strong emphasis (``*``/``_``) lose their delimiters,
-  code spans their backticks, a link or image keeps its text, an autolink
-  (``<https://…>``) its address, and a backslash escape its character.
-  Emphasis opens only where the delimiter is not preceded by a letter or
-  digit, and closes only where it is not followed by one, so ``snake_case``,
-  ``IL_6`` and ``2*3*4`` stay as written. A link's target may hold
-  balanced parentheses (``doi.org/…(20)…``), and its text escaped brackets.
-  Anything else, HTML included, is text.
+  a code span its backtick runs (an opening run closes at the next run of the
+  same length), a link or image keeps its text (so one with empty text leaves
+  nothing, as a renderer shows nothing), an autolink (``<https://…>``) its
+  address, and a backslash escape its character. Emphasis opens only where the
+  delimiter is not preceded by a letter or digit, and closes only where it is
+  not followed by one, so ``snake_case``, ``IL_6`` and ``2*3*4`` stay as
+  written; a letter or digit is ``str.isalnum``, which the Rust port's
+  ``char::is_alphanumeric`` exceeds for some marks and symbols (see
+  ``markdown.rs``). A link's target may hold balanced parentheses
+  (``doi.org/…(20)…``) and its text escaped brackets; a target holding
+  whitespace is a link only as ``url "title"``, so a parenthetical after a
+  bracket stays text. Anything else, HTML included, is text.
 * Whitespace is Unicode ``White_Space`` (:func:`is_white_space`), never
   ``str.isspace()``, so U+001C to U+001F stay characters as in the Rust port.
 * Content before the first heading is an untitled level-1 section.
@@ -130,11 +138,11 @@ def strip_inline(text: str) -> str:
             i += 2
             continue
         if ch == "`":
-            close = text.find("`", i + 1)
-            if close > i + 1:
-                out.append(text[i + 1 : close])
-                i = close + 1
-                continue
+            run = _run_length(text, i)
+            close = _find_run(text, i + run, run)
+            out.append(text[i + run : close] if close >= 0 else text[i : i + run])
+            i = close + run if close >= 0 else i + run
+            continue
         if ch == "[" or (ch == "!" and text.startswith("[", i + 1)):
             link = _link_at(text, i + 1 if ch == "!" else i)
             if link is not None:
@@ -163,11 +171,36 @@ def strip_inline(text: str) -> str:
     return "".join(out)
 
 
+def _find_run(text: str, start: int, run: int) -> int:
+    """The index of the first run of exactly *run* backticks at or after *start*, or -1."""
+    i = start
+    while i < len(text):
+        if text[i] != "`":
+            i += 1
+            continue
+        length = _run_length(text, i)
+        if length == run:
+            return i
+        i += length
+    return -1
+
+
+def _is_link_target(target: str) -> bool:
+    """Whether *target* reads as a link destination: no whitespace, or ``url "title"``."""
+    target = _strip(target)
+    gap = next((i for i, ch in enumerate(target) if is_white_space(ch)), None)
+    if gap is None:
+        return True
+    title = _strip(target[gap:])
+    return len(title) >= 2 and title[0] in "\"'" and title[-1] == title[0]
+
+
 def _link_at(text: str, start: int) -> tuple[str, int] | None:
     """The label of a ``[label](target)`` starting at *start*, and the index after it.
 
     The label ends at the first unescaped ``]``; the target at the ``)`` that
-    balances its opening one, skipping escaped parentheses.
+    balances its opening one, skipping escaped parentheses, and must pass
+    :func:`_is_link_target`.
     """
     close = _find_unescaped(text, "]", start + 1)
     if close < 0 or not text.startswith("(", close + 1):
@@ -183,6 +216,8 @@ def _link_at(text: str, start: int) -> tuple[str, int] | None:
         elif text[i] == ")":
             depth -= 1
             if depth == 0:
+                if not _is_link_target(text[close + 2 : i]):
+                    return None
                 return text[start + 1 : close], i + 1
         i += 1
     return None
@@ -270,7 +305,7 @@ class _Converter:
         self.title_taken = False
         self.sections = [SectionDraft("", TOP_LEVEL)]
         self.paragraph: list[str] = []
-        self.in_item = False
+        self.item: str | None = None  # the open list item's marker: "bullet" or "number"
         self.table_rows = 0
         self.seen_content = False
         self.fence: str | None = None
@@ -286,7 +321,7 @@ class _Converter:
         if self.paragraph:
             self.block(BlockDraft.paragraph(strip_inline(" ".join(self.paragraph))))
             self.paragraph = []
-        self.in_item = False
+        self.item = None
 
     def heading(self, level: int, text: str) -> None:
         """Start a section, or take the title for a leading level-1 heading."""
@@ -331,7 +366,7 @@ class _Converter:
         if atx := _ATX.match(line):
             self.heading(len(atx.group(1)), _ATX_CLOSE.sub("", atx.group(2) or ""))
             return
-        if self.paragraph and (setext := _SETEXT.match(line)):
+        if self.paragraph and self.item is None and (setext := _SETEXT.match(line)):
             text = " ".join(self.paragraph)
             self.paragraph = []
             self.heading(_SETEXT_LEVELS[setext.group(1)[0]], text)
@@ -350,12 +385,12 @@ class _Converter:
         if item and (
             item.group(1)
             or not self.paragraph
-            or self.in_item
+            or self.item == "number"
             or int(item.group(2)) == _INTERRUPTING_NUMBER
         ):
             self.flush()
             self.paragraph = [item.group(3) if item.group(1) else _strip(line)]
-            self.in_item = True
+            self.item = "bullet" if item.group(1) else "number"
             return
         self.paragraph.append(_strip(line))
 

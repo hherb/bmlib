@@ -1202,6 +1202,1148 @@
         "source_format": "markdown",
         "converter_version": "markdown-1"
       }
+    },
+    {
+      "name": "jats/untitled-wrapper-section",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>T</article-title></title-group>\n<abstract><p>Abs text.</p></abstract></article-meta></front>\n<body><sec><sec><title>Methods</title><p>We did.</p><sec><title>Assay</title><p>Measured.</p></sec></sec></sec></body></article>",
+      "expected": {
+        "text": "T\n\nAbstract\n\nAbs text.\n\nMethods\n\nWe did.\n\nAssay\n\nMeasured.",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 3,
+              "end": 11
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 13,
+                  "end": 22
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 24,
+              "end": 31
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 33,
+                  "end": 40
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 42,
+              "end": 47
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 49,
+                  "end": 58
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "jats/literal-brackets",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Brackets</article-title></title-group>\n</article-meta></front>\n<body><sec><title>S</title><p>As in <xref ref-type=\"fig\" rid=\"f1 f2\">Figs 1, 2</xref> over [0,T](I(t)).</p>\n<fig id=\"f1\"><label>Figure <xref ref-type=\"fig\" rid=\"f1\">1</xref></label><caption><p>The [Ru(bpy)3](ClO4) complex.</p></caption></fig>\n<table-wrap id=\"t1\"><label>Table 1</label><caption><p>Doses</p></caption><table><thead><tr><th>[N = 313](Percentage)</th></tr></thead><tbody><tr><td>[1000,1300](mm)</td></tr></tbody></table></table-wrap>\n</sec></body></article>",
+      "expected": {
+        "text": "Brackets\n\nS\n\nAs in Figs 1, 2 over [0,T](I(t)).\n\nFigures\n\nFigure 1\n\nThe [Ru(bpy)3](ClO4) complex.\n\nTables\n\nTable 1\n\nDoses\n\n[N = 313](Percentage)\n\n[1000,1300](mm)",
+        "title_span": {
+          "start": 0,
+          "end": 8
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 10,
+              "end": 11
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 13,
+                  "end": 46
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 48,
+              "end": 55
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 57,
+              "end": 65
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 67,
+                  "end": 96
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 98,
+              "end": 104
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 106,
+              "end": 113
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 115,
+                  "end": 120
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 122,
+                  "end": 143
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 145,
+                  "end": 160
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "jats/reference-labels",
+      "format": "jats",
+      "input": "<?xml version=\"1.0\"?>\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id>\n<title-group><article-title>Refs</article-title></title-group>\n</article-meta></front>\n<body><sec><title>S</title><p>As shown [2].</p></sec></body>\n<back><ref-list><ref id=\"r1\"><label>1</label><element-citation/></ref><ref id=\"r2\"><label>2</label><mixed-citation>Smith J. A trial. Lancet. 2020.</mixed-citation></ref><ref id=\"r3\"><mixed-citation>Jones K. Unlabelled. BMJ. 2021.</mixed-citation></ref></ref-list></back></article>",
+      "expected": {
+        "text": "Refs\n\nS\n\nAs shown [2].\n\nReferences\n\n1\n\n2 Smith J. A trial. Lancet. 2020.\n\nJones K. Unlabelled. BMJ. 2021.",
+        "title_span": {
+          "start": 0,
+          "end": 4
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 6,
+              "end": 7
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 9,
+                  "end": 22
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 24,
+              "end": 34
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 36,
+                  "end": 37
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 39,
+                  "end": 72
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 74,
+                  "end": 105
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "jats",
+        "converter_version": "jats-1"
+      }
+    },
+    {
+      "name": "markdown/link-targets",
+      "format": "markdown",
+      "input": "See [1](the discussion in Smith (2019) and later) for more.\n\n[a](https://x.org \"Title\") and [e](a\\)b) and [s]( https://y.org ).",
+      "expected": {
+        "text": "See [1](the discussion in Smith (2019) and later) for more.\n\na and e and s.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 59
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 61,
+                  "end": 75
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/lists-against-setext-and-numbers",
+      "format": "markdown",
+      "input": "- point one\n- point two\n---\nBody.\n\n- until December\n2019. A total of 5.\n\n1. first\n2. second\n- bullet\n1. restart",
+      "expected": {
+        "text": "point one\n\npoint two\n\nBody.\n\nuntil December 2019. A total of 5.\n\n1. first\n\n2. second\n\nbullet\n\n1. restart",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 9
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 11,
+                  "end": 20
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 22,
+                  "end": 27
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 29,
+                  "end": 63
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 65,
+                  "end": 73
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 75,
+                  "end": 84
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 86,
+                  "end": 92
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 94,
+                  "end": 104
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/code-spans",
+      "format": "markdown",
+      "input": "a ``x`y`` b ```z `q` and ` lone",
+      "expected": {
+        "text": "a x`y b ```z q and ` lone",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 25
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/whitespace-only-line",
+      "format": "markdown",
+      "input": "a\n  \t\nb",
+      "expected": {
+        "text": "a\n\nb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "plain/whitespace-only-line",
+      "format": "plain_text",
+      "input": "a\n  \t\nb",
+      "expected": {
+        "text": "a\n\nb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "markdown/two-tables",
+      "format": "markdown",
+      "input": "| a |\n|---|\n\nx\n\n| b |\n|---|",
+      "expected": {
+        "text": "a\n\nx\n\nb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 6,
+                  "end": 7
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/second-h1",
+      "format": "markdown",
+      "input": "# Title\n# Second\n\ntext",
+      "expected": {
+        "text": "Title\n\nSecond\n\ntext",
+        "title_span": {
+          "start": 0,
+          "end": 5
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 7,
+              "end": 13
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 15,
+                  "end": 19
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/emphasis-edges",
+      "format": "markdown",
+      "input": "**a *b* c** then _word _another_ and x * y* and *foo** end",
+      "expected": {
+        "text": "a b c then word _another and x * y* and *foo** end",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 50
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/lone-break",
+      "format": "markdown",
+      "input": "a\n\n---\n\nb",
+      "expected": {
+        "text": "a\n\nb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    },
+    {
+      "name": "markdown/fence-length-and-nested-quote",
+      "format": "markdown",
+      "input": "````\n```\nkept\n````\n\n> > quoted twice\n\n# C#",
+      "expected": {
+        "text": "``` kept\n\nquoted twice\n\nC#",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 8
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 10,
+                  "end": 22
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 24,
+              "end": 26
+            },
+            "blocks": []
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-1"
+      }
+    }
+  ],
+  "valid": {
+    "text": "T\n\nb",
+    "title_span": {
+      "start": 0,
+      "end": 1
+    },
+    "sections": [
+      {
+        "level": 1,
+        "heading_span": null,
+        "blocks": [
+          {
+            "kind": "paragraph",
+            "span": {
+              "start": 3,
+              "end": 4
+            }
+          }
+        ]
+      }
+    ],
+    "source_format": "plain_text",
+    "converter_version": "plain_text-1"
+  },
+  "refusals": [
+    {
+      "name": "span-end-a-bool",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": false,
+          "end": true
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "span-end-a-float",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4.0
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "span-start-negative",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": -1,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "span-reversed",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 4,
+                  "end": 3
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "span-past-the-end",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 9
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "level-a-string",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": "1",
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "level-a-float",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1.0,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "level-a-bool",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": true,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "level-null",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": null,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "level-zero",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 0,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "title-span-missing",
+      "value": {
+        "text": "T\n\nb",
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "heading-span-missing",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "text-missing",
+      "value": {
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "sections-not-a-list",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": 5,
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "blocks-not-a-list",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": {}
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "unknown-block-kind",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "figure",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "unknown-source-format",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "span-takes-the-separator",
+      "value": {
+        "text": "T\n\nb",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 1,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "text-past-the-last-span",
+      "value": {
+        "text": "T\n\nb\n\nORPHAN",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
+    },
+    {
+      "name": "empty-span",
+      "value": {
+        "text": "T\n\nb\n\n",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 6,
+                  "end": 6
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "plain_text",
+        "converter_version": "plain_text-1"
+      }
     }
   ]
 }

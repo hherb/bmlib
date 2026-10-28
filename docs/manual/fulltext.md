@@ -1692,8 +1692,8 @@ class JATSTableInfo:
     html_content: str = ""         # Pre-rendered HTML <table>
     graphic_url: str | None = None # The <graphic> href, as deposited
     footnotes: list[str] = ...     # <table-wrap-foot> notes (marker folded in) and <attrib> credits
-    header_rows: list[list[str]] = ...  # <thead> rows, cell texts as deposited (unreleased)
-    body_rows: list[list[str]] = ...    # body rows, cell texts as deposited (unreleased)
+    header_rows: list[list[str]] = ...  # header rows, cell texts as read, unpadded (unreleased)
+    body_rows: list[list[str]] = ...    # body rows (<tfoot> too), read as header_rows (unreleased)
 ```
 
 `graphic_url` on both is the href **as the document deposited it**, which for
@@ -2450,7 +2450,7 @@ from bmlib.fulltext.canonical import (
 
 doc = canonical_from_jats(JATSParser(xml_bytes).parse())
 doc.text                                  # the whole canonical text
-doc.span_text(doc.title_span)             # the title
+title = doc.title_span and doc.span_text(doc.title_span)  # None when untitled
 for section in doc.sections:              # flat, in order; level 1 is top
     heading = section.heading_span and doc.span_text(section.heading_span)
     for block in section.blocks:          # kind: "paragraph" or "table_row"
@@ -2459,35 +2459,51 @@ doc.converter_version                     # "jats-1"
 ```
 
 - **Spans count Unicode code points**, half-open `[start, end)`: Python's
-  string indices and Rust's `char`s. A UTF-16 (JavaScript) or byte offset
-  differs as soon as the text holds `𝛽`; convert at your own boundary.
+  string indices and Rust's `char`s. A byte offset differs from the first
+  non-ASCII character (`é`), a UTF-16 (JavaScript) one from the first
+  character outside the Basic Multilingual Plane (`𝛽`); convert at your own
+  boundary.
 - **Layout**: title, then each section's heading (if any) and its blocks,
   every piece separated by `BLOCK_SEPARATOR` (`"\n\n"`), which belongs to no
-  span. Whitespace runs collapse to one space (Unicode `White_Space`). An
+  span; the spans and separators cover the whole text exactly. Whitespace
+  runs collapse to one space (Unicode `White_Space`). An
   empty block is dropped, and so is a section left with neither heading nor
   blocks; a heading with no blocks is kept. A table row's cells are joined by
   `CELL_SEPARATOR` (a tab), so `find_passage` matches a quote that separates
   them with spaces.
 - **JATS**: title; `Abstract` with each abstract part as a level-2 section;
-  the body sections, nested by level, back matter included; `Funding`
+  the body sections, nested by level, back matter included (a section with
+  neither heading nor prose is dropped and its subsections take its level);
+  `Funding`
   (statements, then awards); `Figures` (each figure a level-2 section headed
   by its label: caption, notes); `Tables` (label: caption, header rows, body
-  rows, notes); `References`, one block per `formatted_citation`. These
+  rows, notes); `References`, one block per reference, its deposited label
+  followed by its `formatted_citation` (so a body citation `[12]` finds
+  reference 12, and a reference that formats as nothing keeps its label). These
   headings are the labels `to_html()` prints; nothing else is invented, so
   unheaded prose is an untitled section. Exhibits follow the body, as in
   `to_html()`. Cross-reference links (`[Fig 1](#f1)`) read as their text
   wherever the reader wrote them: body, abstract, captions, notes, funding.
+  Only a `#` target is a link, so a literal `[Ru(bpy)3](ClO4)` in a caption
+  or a cell is kept.
 - **Markdown**: a small subset, hand-written in both languages: ATX and setext
   headings (a level-1 heading before any content is the title), paragraphs,
   list items (one block each; a bullet loses its marker, a number keeps it,
-  and a numbered line interrupts a paragraph only when it starts at 1, so a
-  wrapped `2019.` stays in its sentence), `>` quotes, fenced code (inline
-  markup not stripped), pipe tables (rows; the delimiter row after a table's
-  first row is dropped) and thematic breaks (dropped). A link's target may
-  hold balanced parentheses, as a Lancet DOI's `(20)` does.
-  Inline emphasis, code spans, links, images, autolinks and backslash escapes
-  are stripped to their text; emphasis neither opens after nor closes before
-  a letter or digit, so `snake_case`, `IL_6` and `2*3*4` stay as written.
+  and a numbered line interrupts a paragraph or a bulleted item only when it
+  starts at 1, so a wrapped `2019.` stays in its sentence; an underline under
+  a list item is a break, not a heading), `>` quotes, fenced code (inline
+  markup not stripped; its lines collapse to one paragraph like any other),
+  pipe tables (rows; the delimiter row after a table's first row is dropped)
+  and thematic breaks (dropped). A link's target may hold balanced
+  parentheses, as a Lancet DOI's `(20)` does, but whitespace only as
+  `url "title"`, so `[1](see Smith (2019))` stays text. A link with empty
+  text leaves nothing, as it renders.
+  Inline emphasis, code spans (a backtick run closes at the next run of the
+  same length), links, images, autolinks and backslash escapes are stripped to
+  their text; emphasis neither opens after nor closes before a letter or
+  digit, so `snake_case`, `IL_6` and `2*3*4` stay as written (Python's
+  `str.isalnum` and Rust's `char::is_alphanumeric` differ for a few marks and
+  symbols such as `Ⓐ`, so emphasis next to one may be read differently).
   HTML is kept as text.
 - **Plain text**: one untitled section, paragraphs separated by blank lines;
   the title, if known, is passed in.
@@ -2496,8 +2512,12 @@ doc.converter_version                     # "jats-1"
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.
 - **Storing it**: `to_dict()` / `from_dict()` (Rust: serde, and
-  `CanonicalText::from_value`, which validates). `validate()` checks every
-  span lies in the text, in order, without overlap.
+  `CanonicalText::from_value`, which validates). `validate()` checks the
+  layout exactly: every span non-empty, in order, separated by
+  `BLOCK_SEPARATOR` alone, and covering the text to its end; `assemble()`
+  validates what it returns. A malformed stored value raises `ValueError`
+  (Rust: `CanonicalError`), both languages refusing the same list
+  (`refusals` in the shared fixture).
 
 PDF (from the segmenter) and HTML are later parts of the same work.
 

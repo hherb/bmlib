@@ -162,9 +162,33 @@
       "suppressed_nested_articles": 0,
       "tables": [
         {
+          "body_rows": [
+            [
+              "HeLa",
+              "2.5",
+              "1.8-3.2"
+            ],
+            [
+              "MCF-7",
+              "5.1",
+              "4.2-6.0"
+            ],
+            [
+              "A549",
+              "8.3",
+              "7.1-9.5"
+            ]
+          ],
           "caption": "IC50 values for Compound X across cell lines.",
           "footnotes": [],
           "graphic_url": null,
+          "header_rows": [
+            [
+              "Cell Line",
+              "IC50 (μM)",
+              "95% CI"
+            ]
+          ],
           "html_content": "<table>\n  <thead>\n    <tr>\n      <th>Cell Line</th>\n      <th>IC50 (μM)</th>\n      <th>95% CI</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>HeLa</td>\n      <td>2.5</td>\n      <td>1.8-3.2</td>\n    </tr>\n    <tr>\n      <td>MCF-7</td>\n      <td>5.1</td>\n      <td>4.2-6.0</td>\n    </tr>\n    <tr>\n      <td>A549</td>\n      <td>8.3</td>\n      <td>7.1-9.5</td>\n    </tr>\n  </tbody>\n</table>",
           "id": "tbl1",
           "label": "Table 1"
@@ -3167,11 +3191,17 @@
       "suppressed_nested_articles": 0,
       "tables": [
         {
+          "body_rows": [
+            [
+              "1"
+            ]
+          ],
           "caption": "",
           "footnotes": [
             "a — See Smith*inner end."
           ],
           "graphic_url": null,
+          "header_rows": [],
           "html_content": "<table>\n  <tbody>\n    <tr>\n      <td>1</td>\n    </tr>\n  </tbody>\n</table>",
           "id": "t1",
           "label": ""
@@ -7240,11 +7270,17 @@
       "suppressed_nested_articles": 0,
       "tables": [
         {
+          "body_rows": [
+            [
+              "12.3a"
+            ]
+          ],
           "caption": "",
           "footnotes": [
             "a b — A note."
           ],
           "graphic_url": null,
+          "header_rows": [],
           "html_content": "<table>\n  <tbody>\n    <tr>\n      <td>12.3a</td>\n    </tr>\n  </tbody>\n</table>",
           "id": "t1",
           "label": "Table 1"

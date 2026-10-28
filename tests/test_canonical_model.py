@@ -117,19 +117,36 @@ class TestValidation:
         with pytest.raises(ValueError, match="outside"):
             doc_with().span_text(TextSpan(2, 7))
 
-    def test_span_text_refuses_a_reversed_span(self) -> None:
-        with pytest.raises(ValueError, match="reversed"):
-            doc_with().span_text(TextSpan(3, 2))
+    @pytest.mark.parametrize(("start", "end"), [(3, 2), (-1, 2), (False, True), (0, 1.0)])
+    def test_a_span_that_is_not_two_ordered_integers_cannot_be_built(
+        self, start: object, end: object
+    ) -> None:
+        with pytest.raises(ValueError, match="span"):
+            TextSpan(start, end)  # type: ignore[arg-type]
 
     def test_span_text_counts_code_points(self) -> None:
         assert doc_with(text="\U0001d6fdx").span_text(TextSpan(1, 2)) == "x"
 
-    def test_a_valid_text_validates(self) -> None:
-        doc_with(para(0, 2), para(4, 6)).validate()
+    def test_a_text_the_spans_tile_validates(self) -> None:
+        doc_with(para(0, 2), para(4, 6), text="ab\n\ncd").validate()
+        doc_with(text="").validate()
 
-    def test_overlapping_blocks_are_refused(self) -> None:
-        with pytest.raises(ValueError, match="order"):
-            doc_with(para(0, 3), para(2, 5)).validate()
+    @pytest.mark.parametrize(
+        ("text", "blocks"),
+        [
+            pytest.param("ab\n\ncd", (para(0, 3), para(2, 5)), id="overlapping"),
+            pytest.param("ab\n\ncd", (para(0, 2), para(2, 6)), id="separator-in-a-span"),
+            pytest.param("ab\n\ncd", (para(0, 2), para(4, 4), para(4, 6)), id="empty-span"),
+            pytest.param("ab\n\ncd", (para(0, 2),), id="text-runs-on"),
+            pytest.param("abcdef", (para(0, 2), para(4, 6)), id="no-separator"),
+            pytest.param("ab", (), id="text-and-no-spans"),
+        ],
+    )
+    def test_spans_that_do_not_tile_the_text_are_refused(
+        self, text: str, blocks: tuple[CanonicalBlock, ...]
+    ) -> None:
+        with pytest.raises(ValueError):
+            doc_with(*blocks, text=text).validate()
 
     def test_a_span_past_the_end_is_refused(self) -> None:
         with pytest.raises(ValueError, match="outside"):
@@ -145,6 +162,17 @@ class TestValidation:
         )
         with pytest.raises(ValueError, match="level"):
             doc.validate()
+
+    def test_assemble_validates_what_it_returns(self) -> None:
+        with pytest.raises(ValueError, match="level"):
+            assemble("", [SectionDraft("H", 0)], SourceFormat.PLAIN_TEXT, "test-1")
+
+    def test_a_hand_built_row_has_its_cells_normalised(self) -> None:
+        row = BlockDraft(BlockKind.TABLE_ROW, "a\n\nb\t \t")
+        doc = assemble("", [SectionDraft("", 1, [row])], SourceFormat.PLAIN_TEXT, "test-1")
+        assert doc.text == "a b\t\t"
+        blank = BlockDraft(BlockKind.TABLE_ROW, "\t \t")
+        assert assemble("", [SectionDraft("", 1, [blank])], SourceFormat.PLAIN_TEXT, "t").text == ""
 
 
 class TestFromDict:

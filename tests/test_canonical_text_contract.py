@@ -19,7 +19,8 @@
 The same file Rust's ``rust/bmlib/tests/canonical_text_contract.rs`` asserts
 against: every converter turns each case's input into exactly the expected
 ``CanonicalText``, spans counted in code points, and the expected value
-round-trips through ``from_dict``.
+round-trips through ``from_dict``. Each of its ``refusals`` (a variant of its
+``valid`` value) is refused by both languages alike.
 """
 
 from __future__ import annotations
@@ -39,7 +40,9 @@ from bmlib.fulltext.canonical import (
 from bmlib.fulltext.jats_parser import JATSParser
 
 FIXTURE = Path(__file__).parent / "fixtures" / "canonical_text.json"
-CASES: list[dict[str, Any]] = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
+CONTRACT: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
+CASES: list[dict[str, Any]] = CONTRACT["cases"]
+REFUSALS: list[dict[str, Any]] = CONTRACT["refusals"]
 
 
 def convert(case: dict[str, Any]) -> CanonicalText:
@@ -66,3 +69,13 @@ def test_expected_value_round_trips(case: dict[str, Any]) -> None:
 
 def test_the_contract_covers_every_format_it_names() -> None:
     assert {c["format"] for c in CASES} == {"plain_text", "markdown", "jats"}
+
+
+def test_the_value_the_refusals_vary_is_accepted() -> None:
+    assert CanonicalText.from_dict(CONTRACT["valid"]).to_dict() == CONTRACT["valid"]
+
+
+@pytest.mark.parametrize("refusal", REFUSALS, ids=[r["name"] for r in REFUSALS])
+def test_a_malformed_value_is_refused_with_a_value_error(refusal: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        CanonicalText.from_dict(refusal["value"])

@@ -19,7 +19,8 @@
 //! The same file Python's `tests/test_canonical_text_contract.py` asserts
 //! against: every converter turns each case's input into exactly the expected
 //! `CanonicalText`, spans counted in code points, and the expected value
-//! round-trips through `CanonicalText::from_value`.
+//! round-trips through `CanonicalText::from_value`. Each of its `refusals` (a
+//! variant of its `valid` value) is refused by both languages alike.
 
 use bmlib::fulltext::canonical::{
     canonical_from_jats, canonical_from_markdown, canonical_from_plain_text, CanonicalText,
@@ -29,9 +30,12 @@ use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/canonical_text.json");
 
+fn fixture() -> Value {
+    serde_json::from_str(FIXTURE).expect("the fixture is JSON")
+}
+
 fn cases() -> Vec<Value> {
-    let fixture: Value = serde_json::from_str(FIXTURE).expect("the fixture is JSON");
-    fixture["cases"]
+    fixture()["cases"]
         .as_array()
         .expect("a list of cases")
         .clone()
@@ -74,4 +78,23 @@ fn every_expected_value_round_trips() {
             case["name"]
         );
     }
+}
+
+#[test]
+fn the_value_the_refusals_vary_is_accepted() {
+    let valid = fixture()["valid"].clone();
+    let parsed = CanonicalText::from_value(valid.clone()).expect("the valid value is accepted");
+    assert_eq!(serde_json::to_value(parsed).expect("serialisable"), valid);
+}
+
+#[test]
+fn every_malformed_value_is_refused() {
+    let fixture = fixture();
+    let refusals = fixture["refusals"].as_array().expect("a list of refusals");
+    let accepted: Vec<&Value> = refusals
+        .iter()
+        .filter(|refusal| CanonicalText::from_value(refusal["value"].clone()).is_ok())
+        .map(|refusal| &refusal["name"])
+        .collect();
+    assert!(accepted.is_empty(), "accepted: {accepted:?}");
 }

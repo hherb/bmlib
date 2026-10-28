@@ -24,10 +24,15 @@ is recorded as a :class:`TextSpan` into that string. Everything downstream
 located once is located for good.
 
 Spans count **Unicode code points**, half-open ``[start, end)``: Python's own
-string indices, and what the Rust port counts as ``char``s. A UTF-16 or byte
-offset differs as soon as the text holds a character outside the Basic
-Multilingual Plane (``𝛽``), so any conversion happens at an application's
-boundary, never here.
+string indices, and what the Rust port counts as ``char``s. A byte offset
+differs from the first non-ASCII character (``é``), a UTF-16 one from the first
+character outside the Basic Multilingual Plane (``𝛽``), so any conversion
+happens at an application's boundary, never here.
+
+The layout is exact: the pieces are joined by :data:`BLOCK_SEPARATOR` and
+nothing else, every span is non-empty, and together the spans and separators
+cover the whole text. :meth:`CanonicalText.validate` checks that, and
+:func:`assemble` validates what it returns.
 
 Converters do not lay text out themselves. They hand :func:`assemble` drafts
 (:class:`SectionDraft`, :class:`BlockDraft`), and it normalises, drops what is
@@ -81,6 +86,13 @@ class TextSpan:
     start: int
     end: int
 
+    def __post_init__(self) -> None:
+        """Refuse a span that is not two integers with ``0 <= start <= end``."""
+        if type(self.start) is not int or type(self.end) is not int:
+            raise ValueError(f"a span's start and end must be integers, got {self!r}")
+        if not 0 <= self.start <= self.end:
+            raise ValueError(f"span {self} is reversed or negative")
+
     def to_dict(self) -> dict[str, int]:
         """Return ``{"start": …, "end": …}``."""
         return {"start": self.start, "end": self.end}
@@ -88,10 +100,7 @@ class TextSpan:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TextSpan:
         """Rebuild a span from :meth:`to_dict` output; ``ValueError`` if malformed."""
-        start, end = _field(data, "start"), _field(data, "end")
-        if not isinstance(start, int) or not isinstance(end, int):
-            raise ValueError(f"a span's start and end must be integers, got {data!r}")
-        return cls(start, end)
+        return cls(_field(data, "start"), _field(data, "end"))
 
 
 @dataclass(frozen=True)
@@ -106,8 +115,9 @@ class CanonicalBlock:
 class CanonicalSection:
     """One section: its level (1 is top), its heading if it has one, its blocks.
 
-    Sections form a flat list in document order; a subsection is a section
-    whose ``level`` is one more than its parent's.
+    Sections form a flat list in document order; a section nests under the
+    nearest section before it with a lower ``level``. Levels may skip (a
+    Markdown ``#`` followed by ``###``).
     """
 
     level: int
@@ -134,7 +144,7 @@ class CanonicalText:
         """The text *span* covers.
 
         Raises:
-            ValueError: if the span is reversed or reaches outside the text.
+            ValueError: if the span reaches outside the text.
         """
         _check_span(span, len(self.text))
         return self.text[span.start : span.end]
@@ -149,22 +159,36 @@ class CanonicalText:
         return out
 
     def validate(self) -> None:
-        """Check every span lies in the text, in order and without overlap.
+        """Check the layout: the spans, in order and each non-empty, tile the text.
+
+        The first span starts at 0, each next one starts right after a
+        :data:`BLOCK_SEPARATOR` following the one before, and the last ends at
+        the end of the text; with no spans the text is empty.
 
         Raises:
             ValueError: naming the first span or level that is wrong.
         """
         for section in self.sections:
-            if section.level < TOP_LEVEL:
+            if type(section.level) is not int or section.level < TOP_LEVEL:
                 raise ValueError(
-                    f"a section's level must be at least {TOP_LEVEL}, got {section.level}"
+                    f"a section's level must be an integer of at least {TOP_LEVEL}, "
+                    f"got {section.level!r}"
                 )
-        previous_end = 0
-        for span in self.spans():
+        position = 0
+        for index, span in enumerate(self.spans()):
             _check_span(span, len(self.text))
-            if span.start < previous_end:
-                raise ValueError(f"span {span} is out of order: it starts before {previous_end}")
-            previous_end = span.end
+            if index:
+                if self.text[position : position + len(BLOCK_SEPARATOR)] != BLOCK_SEPARATOR:
+                    raise ValueError(f"no block separator at {position}, before span {span}")
+                position += len(BLOCK_SEPARATOR)
+            if span.start != position or span.end == span.start:
+                raise ValueError(
+                    f"span {span} is empty or does not start at {position}, "
+                    "where the layout puts the next piece"
+                )
+            position = span.end
+        if position != len(self.text):
+            raise ValueError(f"the text runs on past the last span, from {position}")
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON-serialisable form, the shape the shared contract pins."""
@@ -206,10 +230,10 @@ class CanonicalText:
                         kind=_enum(BlockKind, _field(block, "kind")),
                         span=TextSpan.from_dict(_field(block, "span")),
                     )
-                    for block in _field(section, "blocks")
+                    for block in _list_field(section, "blocks")
                 ),
             )
-            for section in _field(data, "sections")
+            for section in _list_field(data, "sections")
         )
         result = cls(
             text=text,
@@ -285,6 +309,10 @@ def assemble(
     row is kept as :meth:`BlockDraft.row` built it. An empty block is dropped,
     a section with no heading and no blocks left is dropped, and a heading with
     no blocks is kept. Pieces are joined by :data:`BLOCK_SEPARATOR`.
+
+    Raises:
+        ValueError: if a section's level is below :data:`TOP_LEVEL` (the
+            result is validated before it is returned).
     """
     parts: list[str] = []
     length = 0
@@ -315,27 +343,32 @@ def assemble(
                 blocks=tuple(CanonicalBlock(kind, put(text)) for kind, text in blocks),
             )
         )
-    return CanonicalText(
+    result = CanonicalText(
         text="".join(parts),
         title_span=title_span,
         sections=tuple(laid_out),
         source_format=source_format,
         converter_version=converter_version,
     )
+    result.validate()
+    return result
 
 
 def _block_text(block: BlockDraft) -> str:
-    """A block's laid-out text: a row as built (empty if every cell is), prose normalised."""
+    """A block's laid-out text: each cell of a row normalised (empty if every
+    cell is), prose normalised as a whole."""
     if block.kind is BlockKind.TABLE_ROW:
-        return block.text if block.text.strip(CELL_SEPARATOR) else ""
+        cells = [normalise_whitespace(cell) for cell in block.text.split(CELL_SEPARATOR)]
+        return CELL_SEPARATOR.join(cells) if any(cells) else ""
     return normalise_whitespace(block.text)
 
 
 def _check_span(span: TextSpan, length: int) -> None:
-    """Raise ``ValueError`` if *span* is reversed or reaches outside ``[0, length]``."""
-    if span.start > span.end:
-        raise ValueError(f"span {span} is reversed")
-    if span.start < 0 or span.end > length:
+    """Raise ``ValueError`` if *span* reaches past a text of *length* code points.
+
+    A reversed or negative span cannot be built (:meth:`TextSpan.__post_init__`).
+    """
+    if span.end > length:
         raise ValueError(f"span {span} lies outside a text of {length} code points")
 
 
@@ -352,6 +385,14 @@ def _field(data: Any, name: str) -> Any:
     if not isinstance(data, dict) or name not in data:
         raise ValueError(f"canonical text is missing the field {name!r}")
     return data[name]
+
+
+def _list_field(data: Any, name: str) -> list[Any]:
+    """``data[name]`` if it is a list, else a ``ValueError`` naming the field."""
+    value = _field(data, name)
+    if not isinstance(value, list):
+        raise ValueError(f"canonical text field {name!r} must be a list, got {value!r}")
+    return value
 
 
 def _enum(kind: type[Enum], value: Any) -> Any:

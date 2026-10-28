@@ -47,20 +47,31 @@ text keeps everything `to_html()` shows but the metadata lines, references
 included. `bmlib.fulltext.canonical` / `bmlib::fulltext::canonical`: one
 string, every title, heading and block a code-point `TextSpan`; converters
 hand drafts to one `assemble`. Shared contract
-`tests/fixtures/canonical_text.json` (26 cases; the generator was a scratch
-script, so a new case is written by hand in the same `to_dict` shape).
+`tests/fixtures/canonical_text.json` (39 cases and 20 `refusals`, variants of
+its `valid` value that both languages must reject; the generator was a
+scratch script, so a new case is written by hand in the same `to_dict` shape
+and its expected value checked by eye before it is trusted).
 `JATS_CANONICAL_VERSION` is pinned beside `RENDERER_VERSION` in
-`tests/test_renderer_version.py` (**a JATS PR now trips two pins**; a change
-to `assemble` bumps all three converter versions). Beside it:
+`tests/test_renderer_version.py` (**a JATS PR now trips two pins**), and
+`MARKDOWN_VERSION`/`PLAIN_TEXT_VERSION` each to its own sources; a change to
+`assemble` bumps all three converter versions. `validate()` checks the layout
+exactly (the spans tile the text) and `assemble()` validates its output. Beside it:
 `JATSTableInfo.header_rows`/`body_rows` (and through the FFI), Rust
 `JATSReferenceInfo::formatted_citation()` (the oracle now diffs it), and the
 fulltext import guard walks subpackages. Markdown's emphasis follows a
 word-boundary rule for `*` as for `_`, unlike CommonMark, so `2*3*4` stays;
 a numbered list item keeps its number (a wrapped `2019.` must never vanish),
-and only a number starting at 1 interrupts a paragraph. The whole-branch
-review's four deferred minors are **#548** (fences in quotes), **#549**
-(quadratic emphasis scan), **#550** (`from_dict`/`from_value` strictness) and
-**#551** (no pin for the Markdown and plain-text versions).
+and only a number starting at 1 interrupts a paragraph or a bulleted item.
+JATS: only a `#` target is a cross-reference link (a literal
+`[Ru(bpy)3](ClO4)` is kept), a reference is printed after its label (the
+maintainer's choice), and a section with neither heading nor prose passes its
+level to its subsections. The whole-branch review's deferred minors are
+**#548** (fences in quotes) and **#549** (quadratic emphasis scan); #550
+(`from_dict`/`from_value` strictness) and #551 (version pins) were fixed by
+the PR review that followed, which filed **#552** (`to_html()` prints a
+caption's, abstract's or funding statement's cross-reference as literal
+Markdown) and **#553** (emphasis flanking: `str.isalnum` against
+`char::is_alphanumeric`).
 Mutation-checked in both languages. The Rust JATS side inherits #409 (a cited
 `<etal/>`), so the fixture has none. **Next for StudyAnalyzer: item 3** (the
 chunker, over this text), or 4b.

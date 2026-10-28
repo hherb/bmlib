@@ -26,16 +26,32 @@
 //! article keeps them in lists of their own, not where the body cites them.
 //! The reader writes a `[text](#id)` link for a cross-reference into whatever
 //! field holds it (body, abstract, captions, notes, funding), so every text
-//! read from the article goes through [`strip_links`].
+//! read from the article goes through [`strip_links`]. Only a target starting
+//! with `#` is a link: the rendering's own pattern takes any `[x](y)`, which in
+//! a caption or a cell is as often chemistry or an interval
+//! (`[Ru(bpy)3](ClO4)`).
+//!
+//! A body section with no heading and no prose is a wrapper the layout drops,
+//! so its subsections take its level rather than reading as children of
+//! whatever section precedes it. A reference is printed after its deposited
+//! label, so a body citation `[12]` finds reference 12 even where an earlier
+//! reference printed nothing but its label.
+
+use std::sync::OnceLock;
+
+use regex::Regex;
 
 use crate::fulltext::canonical::model::{
     assemble, BlockDraft, CanonicalText, SectionDraft, SourceFormat, TOP_LEVEL,
 };
+use crate::fulltext::jats_text::normalize_whitespace;
 use crate::fulltext::models::{JATSArticle, JATSBodySection};
-use crate::fulltext::service::{format_award, inline_link_pattern};
+use crate::fulltext::service::format_award;
 
 /// Bumped whenever this converter, [`assemble`] or the JATS reader can lay an
-/// article out differently; Python pins it beside `RENDERER_VERSION`.
+/// article out differently. Python pins it against a digest of its own reader
+/// and converter; a change to the Rust reader alone is held only by the shared
+/// fixture.
 pub const JATS_CANONICAL_VERSION: u32 = 1;
 
 /// The label for the abstract's section.
@@ -49,10 +65,17 @@ pub const TABLES_HEADING: &str = "Tables";
 /// The label for the references section.
 pub const REFERENCES_HEADING: &str = "References";
 
-/// `text` with each `[text](target)` link the reader wrote reduced to its text.
+/// A cross-reference link as the reader writes it: `[text](#rid)`, the `rid`
+/// verbatim (an IDREFS, so it may hold a space but never `)`).
+fn xref_link() -> &'static Regex {
+    static LINK: OnceLock<Regex> = OnceLock::new();
+    LINK.get_or_init(|| Regex::new(r"\[([^\]]+)\]\(#[^)]*\)").expect("a fixed pattern"))
+}
+
+/// `text` with each `[text](#id)` link the reader wrote reduced to its text.
 #[must_use]
 pub fn strip_links(text: &str) -> String {
-    inline_link_pattern().replace_all(text, "$1").into_owned()
+    xref_link().replace_all(text, "$1").into_owned()
 }
 
 /// Convert a parsed JATS `article` to its canonical text.
@@ -60,7 +83,11 @@ pub fn strip_links(text: &str) -> String {
 /// Order: title; `Abstract` with each abstract section beneath it; the body
 /// sections, nested by level; `Funding` (statements, then awards); `Figures`
 /// and `Tables`, each exhibit a section headed by its label; `References`, one
-/// block per reference.
+/// block per reference, its label first.
+///
+/// A table carries rows only as the reader fills them; a [`JATSArticle`]
+/// deserialised from JSON written before `header_rows` and `body_rows`
+/// existed defaults them to empty, and its tables lay out as caption and notes.
 #[must_use]
 pub fn canonical_from_jats(article: &JATSArticle) -> CanonicalText {
     let sub_level = TOP_LEVEL + 1;
@@ -127,7 +154,13 @@ pub fn canonical_from_jats(article: &JATSArticle) -> CanonicalText {
         let blocks = article
             .references
             .iter()
-            .map(|reference| para(&reference.formatted_citation()))
+            .map(|reference| {
+                para(&format!(
+                    "{} {}",
+                    reference.label,
+                    reference.formatted_citation()
+                ))
+            })
             .collect();
         sections.push(SectionDraft::new(REFERENCES_HEADING, TOP_LEVEL, blocks));
     }
@@ -140,19 +173,21 @@ pub fn canonical_from_jats(article: &JATSArticle) -> CanonicalText {
 }
 
 /// Push `section` and its subsections, depth first, links stripped.
+///
+/// A section [`assemble`] will drop (no heading, no prose) passes its own level
+/// to its subsections.
 fn push_body_sections(out: &mut Vec<SectionDraft>, section: &JATSBodySection, level: usize) {
-    let blocks = section
-        .paragraphs
-        .iter()
-        .map(|paragraph| BlockDraft::paragraph(strip_links(paragraph)))
-        .collect();
-    out.push(SectionDraft::new(
-        strip_links(&section.title),
-        level,
-        blocks,
-    ));
+    let title = strip_links(&section.title);
+    let paragraphs: Vec<String> = section.paragraphs.iter().map(|p| strip_links(p)).collect();
+    let dropped = normalize_whitespace(&title).is_empty()
+        && paragraphs
+            .iter()
+            .all(|p| normalize_whitespace(p).is_empty());
+    let blocks = paragraphs.into_iter().map(BlockDraft::paragraph).collect();
+    out.push(SectionDraft::new(title, level, blocks));
+    let sub_level = if dropped { level } else { level + 1 };
     for sub in &section.subsections {
-        push_body_sections(out, sub, level + 1);
+        push_body_sections(out, sub, sub_level);
     }
 }
 
@@ -226,8 +261,8 @@ mod tests {
     #[test]
     fn strip_links_keeps_brackets_that_are_not_links() {
         assert_eq!(
-            strip_links("see [Fig 1](#f1) [95% CI]"),
-            "see Fig 1 [95% CI]"
+            strip_links("see [Fig 1](#f1) [95% CI] [Ru(bpy)3](ClO4) [Figs 1, 2](#f1 f2)"),
+            "see Fig 1 [95% CI] [Ru(bpy)3](ClO4) Figs 1, 2"
         );
     }
 }

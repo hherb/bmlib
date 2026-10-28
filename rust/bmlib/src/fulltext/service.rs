@@ -1080,16 +1080,11 @@ pub fn html_escape(text: &str) -> String {
         .replace('\'', "&#x27;")
 }
 
-/// The `[text](target)` link the JATS reader writes for a cross-reference,
-/// Python's `_LINK_RE`: group 1 is the text, group 2 the target.
-pub(crate) fn inline_link_pattern() -> &'static Regex {
-    static LINK: OnceLock<Regex> = OnceLock::new();
-    LINK.get_or_init(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").expect("a fixed pattern"))
-}
-
 /// Convert markdown-style `[text](#anchor)` to anchors, escaping the rest.
 fn convert_inline_links(text: &str) -> String {
-    let pattern = inline_link_pattern();
+    static LINK: OnceLock<Regex> = OnceLock::new();
+    let pattern =
+        LINK.get_or_init(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").expect("a fixed pattern"));
 
     let mut result = String::new();
     let mut last_end = 0;

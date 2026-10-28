@@ -117,11 +117,18 @@ fn strip_chars(text: &[char]) -> String {
             continue;
         }
         if ch == '`' {
-            if let Some(close) = find(text, '`', i + 1).filter(|&close| close > i + 1) {
-                out.extend(&text[i + 1..close]);
-                i = close + 1;
-                continue;
+            let run = run_length(text, i);
+            match find_run(text, i + run, run) {
+                Some(close) => {
+                    out.extend(&text[i + run..close]);
+                    i = close + run;
+                }
+                None => {
+                    out.extend(&text[i..i + run]);
+                    i += run;
+                }
             }
+            continue;
         }
         if ch == '[' || (ch == '!' && text.get(i + 1) == Some(&'[')) {
             let start = if ch == '!' { i + 1 } else { i };
@@ -184,10 +191,40 @@ fn find_unescaped(text: &[char], ch: char, from: usize) -> Option<usize> {
     None
 }
 
+/// The index of the first run of exactly `run` backticks at or after `from`.
+fn find_run(text: &[char], from: usize, run: usize) -> Option<usize> {
+    let mut i = from;
+    while i < text.len() {
+        if text[i] != '`' {
+            i += 1;
+            continue;
+        }
+        let length = run_length(text, i);
+        if length == run {
+            return Some(i);
+        }
+        i += length;
+    }
+    None
+}
+
+/// Whether `target` reads as a link destination: no whitespace, or
+/// `url "title"`.
+fn is_link_target(target: &[char]) -> bool {
+    let target: String = target.iter().collect();
+    let target = target.trim();
+    let Some(gap) = target.find(char::is_whitespace) else {
+        return true;
+    };
+    let title: Vec<char> = target[gap..].trim().chars().collect();
+    title.len() >= 2 && (title[0] == '"' || title[0] == '\'') && title.last() == Some(&title[0])
+}
+
 /// The label of a `[label](target)` starting at `start`, and the index after it.
 ///
 /// The label ends at the first unescaped `]`; the target at the `)` that
-/// balances its opening one, skipping escaped parentheses.
+/// balances its opening one, skipping escaped parentheses, and must pass
+/// [`is_link_target`].
 fn link_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
     let close = find_unescaped(text, ']', start + 1)?;
     if text.get(close + 1) != Some(&'(') {
@@ -205,6 +242,9 @@ fn link_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
             ')' => {
                 depth -= 1;
                 if depth == 0 {
+                    if !is_link_target(&text[close + 2..i]) {
+                        return None;
+                    }
                     return Some((&text[start + 1..close], i + 1));
                 }
             }
@@ -299,13 +339,20 @@ fn is_thematic_break(line: &str) -> bool {
         && marks.iter().all(|&c| c == marks[0])
 }
 
+/// The marker of an open list item.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Marker {
+    Bullet,
+    Number,
+}
+
 /// The line-by-line state of one conversion.
 struct Converter {
     title: String,
     title_taken: bool,
     sections: Vec<SectionDraft>,
     paragraph: Vec<String>,
-    in_item: bool,
+    item: Option<Marker>,
     table_rows: usize,
     seen_content: bool,
     fence: Option<String>,
@@ -319,7 +366,7 @@ impl Converter {
             title_taken: false,
             sections: vec![SectionDraft::new("", TOP_LEVEL, vec![])],
             paragraph: Vec::new(),
-            in_item: false,
+            item: None,
             table_rows: 0,
             seen_content: false,
             fence: None,
@@ -344,7 +391,7 @@ impl Converter {
             self.paragraph.clear();
             self.block(BlockDraft::paragraph(text));
         }
-        self.in_item = false;
+        self.item = None;
     }
 
     /// Start a section, or take the title for a leading level-1 heading.
@@ -406,7 +453,7 @@ impl Converter {
             self.heading(heading[1].len(), &text);
             return;
         }
-        if !self.paragraph.is_empty() {
+        if !self.paragraph.is_empty() && self.item.is_none() {
             if let Some(underline) = setext().captures(&line) {
                 let level = if underline[1].starts_with('=') { 1 } else { 2 };
                 let text = self.paragraph.join(" ");
@@ -434,11 +481,19 @@ impl Converter {
                 .get(2)
                 .and_then(|number| number.as_str().parse::<u32>().ok())
                 == Some(INTERRUPTING_NUMBER);
-            if bullet || self.paragraph.is_empty() || self.in_item || starts_at_one {
+            if bullet
+                || self.paragraph.is_empty()
+                || self.item == Some(Marker::Number)
+                || starts_at_one
+            {
                 self.flush();
                 let text = if bullet { &item[3] } else { line.trim() };
                 self.paragraph = vec![text.to_string()];
-                self.in_item = true;
+                self.item = Some(if bullet {
+                    Marker::Bullet
+                } else {
+                    Marker::Number
+                });
                 return;
             }
         }

@@ -123,6 +123,8 @@ fn render_article(article: &JATSArticle) -> Value {
                 "html_content": table.html_content,
                 "graphic_url": table.graphic_url,
                 "footnotes": table.footnotes,
+                "header_rows": table.header_rows,
+                "body_rows": table.body_rows,
             }))
             .collect::<Vec<_>>(),
         "references": article.references.iter().map(render_reference).collect::<Vec<_>>(),

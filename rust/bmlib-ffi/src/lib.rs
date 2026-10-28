@@ -149,9 +149,11 @@ pub struct JatsTable {
     pub graphic_url: Option<String>,
     /// The table's notes; see [`JatsFigure::footnotes`] for the marker rule.
     pub footnotes: Vec<String>,
-    /// The `<thead>` rows as cell texts, as deposited; empty for an image-only table.
+    /// The header rows as cell texts, as the reader reads them (see the crate's
+    /// `JATSTableInfo::header_rows`); empty for an image-only table.
     pub header_rows: Vec<Vec<String>>,
-    /// The body rows as cell texts, as deposited; empty for an image-only table.
+    /// The body rows as cell texts, read as `header_rows` are; empty for an
+    /// image-only table.
     pub body_rows: Vec<Vec<String>>,
 }
 

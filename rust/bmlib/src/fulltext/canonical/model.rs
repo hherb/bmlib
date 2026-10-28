@@ -24,9 +24,15 @@
 //! into it, so chunks, citations and highlights all point into one text.
 //!
 //! Spans count **Unicode code points** (`char`s), half-open `[start, end)`,
-//! never bytes: Python counts code points, and a byte or UTF-16 offset
-//! differs as soon as the text holds `𝛽` or `é`. Converting to the unit a
+//! never bytes: Python counts code points, a byte offset differs from the
+//! first non-ASCII character (`é`), and a UTF-16 one from the first character
+//! outside the Basic Multilingual Plane (`𝛽`). Converting to the unit a
 //! frontend counts happens at that boundary, never here.
+//!
+//! The layout is exact: the pieces are joined by [`BLOCK_SEPARATOR`] and
+//! nothing else, every span is non-empty, and together the spans and
+//! separators cover the whole text. [`CanonicalText::validate`] checks that,
+//! and [`assemble`] validates what it returns.
 
 use std::fmt;
 
@@ -112,13 +118,16 @@ pub struct CanonicalBlock {
 
 /// One section: its level (1 is top), its heading if it has one, its blocks.
 ///
-/// Sections form a flat list in document order; a subsection is a section
-/// whose `level` is one more than its parent's.
+/// Sections form a flat list in document order; a section nests under the
+/// nearest section before it with a lower `level`. Levels may skip (a Markdown
+/// `#` followed by `###`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanonicalSection {
     /// 1 for a top-level section.
     pub level: usize,
-    /// Where the heading lies; `None` for an untitled section.
+    /// Where the heading lies; `None` for an untitled section. The key is
+    /// required in the JSON form, as Python requires it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub heading_span: Option<TextSpan>,
     /// The section's blocks, in order.
     pub blocks: Vec<CanonicalBlock>,
@@ -133,7 +142,9 @@ pub struct CanonicalSection {
 pub struct CanonicalText {
     /// The whole text.
     pub text: String,
-    /// Where the title lies; `None` when there is no title.
+    /// Where the title lies; `None` when there is no title. The key is
+    /// required in the JSON form, as Python requires it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub title_span: Option<TextSpan>,
     /// The sections, in document order.
     pub sections: Vec<CanonicalSection>,
@@ -155,12 +166,19 @@ pub enum CanonicalError {
         /// The text's length in code points.
         length: usize,
     },
-    /// A span starting before the previous one ended.
-    OutOfOrder {
+    /// A span that is empty, or does not start at `position`, where the
+    /// layout puts the next piece (after a [`BLOCK_SEPARATOR`] unless it is
+    /// the first).
+    Misplaced {
         /// The span.
         span: TextSpan,
-        /// Where the previous span ended.
-        previous_end: usize,
+        /// Where the next piece belongs.
+        position: usize,
+    },
+    /// Text past the last span (or any text, where there is no span).
+    RunsOn {
+        /// Where the last span ended.
+        position: usize,
     },
     /// A section level below [`TOP_LEVEL`].
     Level(usize),
@@ -175,10 +193,14 @@ impl fmt::Display for CanonicalError {
             CanonicalError::Outside { span, length } => {
                 write!(f, "span {span} lies outside a text of {length} code points")
             }
-            CanonicalError::OutOfOrder { span, previous_end } => write!(
+            CanonicalError::Misplaced { span, position } => write!(
                 f,
-                "span {span} is out of order: it starts before {previous_end}"
+                "span {span} is empty or does not start at {position}, where the layout puts \
+                 the next piece"
             ),
+            CanonicalError::RunsOn { position } => {
+                write!(f, "the text runs on past the last span, from {position}")
+            }
             CanonicalError::Level(level) => write!(
                 f,
                 "a section's level must be at least {TOP_LEVEL}, got {level}"
@@ -195,9 +217,21 @@ impl CanonicalText {
     /// the text.
     #[must_use]
     pub fn span_text(&self, span: TextSpan) -> Option<&str> {
-        check_span(span, self.text.chars().count()).ok()?;
-        let start = byte_offset(&self.text, span.start);
-        let end = byte_offset(&self.text, span.end);
+        if span.start > span.end {
+            return None;
+        }
+        // One walk to `span.end`, never over the whole text.
+        let mut offsets = self
+            .text
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .chain(std::iter::once(self.text.len()));
+        let start = offsets.nth(span.start)?;
+        let end = if span.end == span.start {
+            start
+        } else {
+            offsets.nth(span.end - span.start - 1)?
+        };
         Some(&self.text[start..end])
     }
 
@@ -212,7 +246,11 @@ impl CanonicalText {
         out
     }
 
-    /// Check every span lies in the text, in order and without overlap.
+    /// Check the layout: the spans, in order and each non-empty, tile the text.
+    ///
+    /// The first span starts at 0, each next one starts right after a
+    /// [`BLOCK_SEPARATOR`] following the one before, and the last ends at the
+    /// end of the text; with no spans the text is empty.
     ///
     /// # Errors
     ///
@@ -221,14 +259,24 @@ impl CanonicalText {
         if let Some(section) = self.sections.iter().find(|s| s.level < TOP_LEVEL) {
             return Err(CanonicalError::Level(section.level));
         }
-        let length = self.text.chars().count();
-        let mut previous_end = 0;
-        for span in self.spans() {
-            check_span(span, length)?;
-            if span.start < previous_end {
-                return Err(CanonicalError::OutOfOrder { span, previous_end });
+        let chars: Vec<char> = self.text.chars().collect();
+        let separator: Vec<char> = BLOCK_SEPARATOR.chars().collect();
+        let mut position = 0;
+        for (index, span) in self.spans().into_iter().enumerate() {
+            check_span(span, chars.len())?;
+            if index > 0 {
+                if chars.get(position..position + separator.len()) != Some(&separator[..]) {
+                    return Err(CanonicalError::Misplaced { span, position });
+                }
+                position += separator.len();
             }
-            previous_end = span.end;
+            if span.start != position || span.end == span.start {
+                return Err(CanonicalError::Misplaced { span, position });
+            }
+            position = span.end;
+        }
+        if position != chars.len() {
+            return Err(CanonicalError::RunsOn { position });
         }
         Ok(())
     }
@@ -337,6 +385,11 @@ impl Layout {
 /// row is kept as [`BlockDraft::row`] built it. An empty block is dropped, a
 /// section with no heading and no blocks left is dropped, and a heading with no
 /// blocks is kept. Pieces are joined by [`BLOCK_SEPARATOR`].
+///
+/// # Panics
+///
+/// If a section's level is below [`TOP_LEVEL`]: the result is validated before
+/// it is returned, as Python's `assemble` raises `ValueError`.
 #[must_use]
 pub fn assemble(
     title: &str,
@@ -373,21 +426,35 @@ pub fn assemble(
             blocks,
         });
     }
-    CanonicalText {
+    let text = CanonicalText {
         text: layout.text,
         title_span,
         sections: laid_out,
         source_format,
         converter_version: converter_version.to_string(),
+    };
+    if let Err(error) = text.validate() {
+        panic!("assemble laid out an invalid canonical text: {error}");
     }
+    text
 }
 
-/// A block's laid-out text: a row as built (empty if every cell is), prose
-/// normalised.
+/// A block's laid-out text: each cell of a row normalised (empty if every cell
+/// is), prose normalised as a whole.
 fn block_text(block: &BlockDraft) -> String {
     match block.kind {
-        BlockKind::TableRow if block.text.trim_matches(CELL_SEPARATOR).is_empty() => String::new(),
-        BlockKind::TableRow => block.text.clone(),
+        BlockKind::TableRow => {
+            let cells: Vec<String> = block
+                .text
+                .split(CELL_SEPARATOR)
+                .map(normalize_whitespace)
+                .collect();
+            if cells.iter().all(String::is_empty) {
+                String::new()
+            } else {
+                cells.join(&CELL_SEPARATOR.to_string())
+            }
+        }
         BlockKind::Paragraph => normalize_whitespace(&block.text),
     }
 }
@@ -401,13 +468,6 @@ fn check_span(span: TextSpan, length: usize) -> Result<(), CanonicalError> {
         return Err(CanonicalError::Outside { span, length });
     }
     Ok(())
-}
-
-/// The byte offset of code point `index` in `text` (its length at the end).
-fn byte_offset(text: &str, index: usize) -> usize {
-    text.char_indices()
-        .nth(index)
-        .map_or(text.len(), |(offset, _)| offset)
 }
 
 #[cfg(test)]
@@ -515,20 +575,48 @@ mod tests {
     fn span_text_counts_code_points_and_refuses_bad_spans() {
         let doc = doc_with("\u{1d6fd}x", 1, vec![]);
         assert_eq!(doc.span_text(TextSpan { start: 1, end: 2 }), Some("x"));
+        assert_eq!(
+            doc.span_text(TextSpan { start: 0, end: 1 }),
+            Some("\u{1d6fd}")
+        );
+        assert_eq!(doc.span_text(TextSpan { start: 2, end: 2 }), Some(""));
         assert_eq!(doc.span_text(TextSpan { start: 1, end: 3 }), None);
         assert_eq!(doc.span_text(TextSpan { start: 2, end: 1 }), None);
     }
 
     #[test]
-    fn validate_accepts_ordered_spans_and_refuses_the_rest() {
+    fn a_text_the_spans_tile_validates() {
         assert_eq!(
-            doc_with("abcdef", 1, vec![para(0, 2), para(4, 6)]).validate(),
+            doc_with("ab\n\ncd", 1, vec![para(0, 2), para(4, 6)]).validate(),
             Ok(())
         );
-        assert!(matches!(
-            doc_with("abcdef", 1, vec![para(0, 3), para(2, 5)]).validate(),
-            Err(CanonicalError::OutOfOrder { .. })
-        ));
+        assert_eq!(doc_with("", 1, vec![]).validate(), Ok(()));
+    }
+
+    #[test]
+    fn spans_that_do_not_tile_the_text_are_refused() {
+        for (text, blocks) in [
+            ("ab\n\ncd", vec![para(0, 3), para(2, 5)]),
+            ("ab\n\ncd", vec![para(0, 2), para(2, 6)]),
+            ("ab\n\ncd", vec![para(0, 2), para(4, 4), para(4, 6)]),
+            ("abcdef", vec![para(0, 2), para(4, 6)]),
+        ] {
+            assert!(
+                matches!(
+                    doc_with(text, 1, blocks.clone()).validate(),
+                    Err(CanonicalError::Misplaced { .. })
+                ),
+                "{text:?} {blocks:?}"
+            );
+        }
+        assert_eq!(
+            doc_with("ab\n\ncd", 1, vec![para(0, 2)]).validate(),
+            Err(CanonicalError::RunsOn { position: 2 })
+        );
+        assert_eq!(
+            doc_with("ab", 1, vec![]).validate(),
+            Err(CanonicalError::RunsOn { position: 0 })
+        );
         assert!(matches!(
             doc_with("abcdef", 1, vec![para(0, 9)]).validate(),
             Err(CanonicalError::Outside { .. })
@@ -544,8 +632,31 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "level")]
+    fn assemble_validates_what_it_returns() {
+        let _ = build("", &[SectionDraft::new("H", 0, vec![])]);
+    }
+
+    #[test]
+    fn a_hand_built_row_has_its_cells_normalised() {
+        let row = BlockDraft {
+            kind: BlockKind::TableRow,
+            text: "a\n\nb\t \t".to_string(),
+        };
+        assert_eq!(
+            build("", &[SectionDraft::new("", 1, vec![row])]).text,
+            "a b\t\t"
+        );
+        let blank = BlockDraft {
+            kind: BlockKind::TableRow,
+            text: "\t \t".to_string(),
+        };
+        assert_eq!(build("", &[SectionDraft::new("", 1, vec![blank])]).text, "");
+    }
+
+    #[test]
     fn from_value_refuses_an_unknown_kind_and_an_invalid_span() {
-        let mut value = serde_json::to_value(doc_with("abcdef", 1, vec![para(0, 2)])).unwrap();
+        let mut value = serde_json::to_value(doc_with("ab", 1, vec![para(0, 2)])).unwrap();
         value["sections"][0]["blocks"][0]["kind"] = "figure".into();
         assert!(matches!(
             CanonicalText::from_value(value.clone()),

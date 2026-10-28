@@ -20,20 +20,39 @@ All notable changes to bmlib are documented here. The format is based on
   by a tab. JATS keeps everything `to_html()` shows apart from the metadata
   lines (abstract, body, funding, figure captions, tables as rows, references,
   the maintainer's call of 2026-10-28), with `[text](#id)` cross-reference
-  links reduced to their text in every field. Markdown is a hand-written
+  links reduced to their text in every field. Only a `#` target is a link
+  there, where `to_html()`'s own pattern takes any `[x](y)`, so a literal
+  `[Ru(bpy)3](ClO4)` or `[1000,1300](mm)` in a caption or a cell is kept. A reference is printed after its
+  deposited label (the maintainer's choice), so a body citation `[12]` finds
+  reference 12 and one that formats as nothing keeps its slot; and a body
+  section with neither heading nor prose passes its level to its subsections,
+  which otherwise read as children of the section before it. Markdown is a hand-written
   subset in both languages (headings, lists, quotes, fences, pipe tables;
   emphasis, code, links, images, autolinks, escapes), whose emphasis neither
   opens after nor closes before a letter or digit, so `snake_case`, `IL_6` and
   `2*3*4` stay as written; a numbered item keeps its number, and a link target
-  may hold balanced parentheses (a Lancet DOI's `(20)`). Each result names its `converter_version` (`"jats-1"`,
-  `"markdown-1"`, `"plain_text-1"`); `JATS_CANONICAL_VERSION` is pinned beside
-  `RENDERER_VERSION` in `tests/test_renderer_version.py` over the reader, the
-  models and the converter. Python and Rust in the same PR, held by
-  `tests/fixtures/canonical_text.json` (26 cases). The JATS half inherits the
+  may hold balanced parentheses (a Lancet DOI's `(20)`) but whitespace only as
+  `url "title"`, so a parenthetical after a bracket stays text. As in
+  CommonMark, a numbered line interrupts a paragraph or a bulleted item only
+  when it starts at 1, an underline under a list item is a break and not a
+  heading, and a code span's backtick run closes at the next run of the same
+  length. Each result names its `converter_version` (`"jats-1"`,
+  `"markdown-1"`, `"plain_text-1"`); each version is pinned in
+  `tests/test_renderer_version.py` to a digest of the code that computes it
+  (`JATS_CANONICAL_VERSION` beside `RENDERER_VERSION`, over the reader, the
+  models and the converter). `validate()` checks the layout exactly (the
+  spans, each non-empty, tile the text with `"\n\n"` between them), and
+  `assemble()` validates what it returns. `from_dict()` raises `ValueError`
+  for any malformed value (a `bool` or a float where an integer belongs, a
+  non-list, a missing span key), and Rust's `from_value` refuses the same
+  list. Python and Rust in the same PR, held by
+  `tests/fixtures/canonical_text.json` (39 cases and 20 refusals). The JATS half inherits the
   Rust reader's open gaps: a cited `<etal/>` (#409) is not read there.
 - **`JATSTableInfo.header_rows` and `body_rows`**: a table's cell texts as
   data, in both languages and through the FFI's `JatsTable`, so the canonical
-  text need not parse `html_content` back. Rust gains
+  text need not parse `html_content` back. They hold the cells as the reader
+  reads them, neither padded nor cut to the column count `html_content` takes
+  from the first row, and the JATS oracle now diffs them across languages. Rust gains
   `JATSReferenceInfo::formatted_citation()`, the port of Python's property,
   sharing its helpers with the HTML renderer; the JATS oracle now diffs the
   library method rather than a copy in the test. `RENDERER_VERSION` is

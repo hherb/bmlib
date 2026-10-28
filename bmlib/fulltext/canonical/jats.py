@@ -26,7 +26,15 @@ heads with nothing stays an untitled section.
 
 The reader writes a ``[text](#id)`` link for a cross-reference into whatever
 field holds it (body, abstract, captions, notes, funding), so every text read
-from the article goes through :func:`strip_links`.
+from the article goes through :func:`strip_links`. Only a target starting with
+``#`` is a link: ``to_html``'s own pattern takes any ``[x](y)``, which in a
+caption or a cell is as often chemistry or an interval (``[Ru(bpy)3](ClO4)``).
+
+A body section with no heading and no prose is a wrapper the layout drops, so
+its subsections take its level rather than reading as children of whatever
+section precedes it. A reference is printed after its deposited label, so a
+body citation ``[12]`` finds reference 12 even where an earlier reference
+printed nothing but its label.
 
 A figure and a table are laid out where ``to_html`` puts them, after the body:
 :class:`~bmlib.fulltext.models.JATSArticle` keeps exhibits in lists of their
@@ -35,6 +43,8 @@ own, not at the point the body cites them.
 
 from __future__ import annotations
 
+import re
+
 from bmlib.fulltext.canonical.model import (
     TOP_LEVEL,
     BlockDraft,
@@ -42,8 +52,9 @@ from bmlib.fulltext.canonical.model import (
     SectionDraft,
     SourceFormat,
     assemble,
+    normalise_whitespace,
 )
-from bmlib.fulltext.jats_parser import _LINK_RE, _format_award
+from bmlib.fulltext.jats_parser import _format_award
 from bmlib.fulltext.models import JATSArticle, JATSBodySection
 
 #: Bumped whenever this converter, :func:`assemble` or the JATS reader can lay
@@ -58,10 +69,14 @@ FIGURES_HEADING = "Figures"
 TABLES_HEADING = "Tables"
 REFERENCES_HEADING = "References"
 
+#: A cross-reference link as the reader writes it: ``[text](#rid)``, the
+#: ``rid`` verbatim (an IDREFS, so it may hold a space but never ``)``).
+_XREF_LINK = re.compile(r"\[([^\]]+)\]\(#[^)]*\)")
+
 
 def strip_links(text: str) -> str:
-    """*text* with each ``[text](target)`` link the reader wrote reduced to its text."""
-    return _LINK_RE.sub(r"\1", text)
+    """*text* with each ``[text](#id)`` link the reader wrote reduced to its text."""
+    return _XREF_LINK.sub(r"\1", text)
 
 
 def canonical_from_jats(article: JATSArticle) -> CanonicalText:
@@ -70,7 +85,11 @@ def canonical_from_jats(article: JATSArticle) -> CanonicalText:
     Order: title; ``Abstract`` with each abstract section beneath it; the body
     sections, nested by level; ``Funding`` (statements, then awards);
     ``Figures`` and ``Tables``, each exhibit a section headed by its label;
-    ``References``, one block per reference.
+    ``References``, one block per reference, its label first.
+
+    A table carries rows only as the reader fills them; a
+    :class:`~bmlib.fulltext.models.JATSTableInfo` built by hand with
+    ``html_content`` alone lays out as its caption and notes.
     """
     sections: list[SectionDraft] = []
     sub_level = TOP_LEVEL + 1
@@ -116,7 +135,7 @@ def canonical_from_jats(article: JATSArticle) -> CanonicalText:
             SectionDraft(
                 REFERENCES_HEADING,
                 TOP_LEVEL,
-                [para(r.formatted_citation) for r in article.references],
+                [para(f"{r.label} {r.formatted_citation}") for r in article.references],
             )
         )
     return assemble(
@@ -128,14 +147,15 @@ def canonical_from_jats(article: JATSArticle) -> CanonicalText:
 
 
 def _body_sections(section: JATSBodySection, level: int) -> list[SectionDraft]:
-    """*section* and its subsections, depth first, links stripped."""
-    out = [
-        SectionDraft(
-            strip_links(section.title),
-            level,
-            [BlockDraft.paragraph(strip_links(p)) for p in section.paragraphs],
-        )
-    ]
+    """*section* and its subsections, depth first, links stripped.
+
+    A section :func:`assemble` will drop (no heading, no prose) passes its own
+    level to its subsections.
+    """
+    title = strip_links(section.title)
+    paragraphs = [strip_links(p) for p in section.paragraphs]
+    dropped = not normalise_whitespace(title) and not any(map(normalise_whitespace, paragraphs))
+    out = [SectionDraft(title, level, [BlockDraft.paragraph(p) for p in paragraphs])]
     for sub in section.subsections:
-        out.extend(_body_sections(sub, level + 1))
+        out.extend(_body_sections(sub, level if dropped else level + 1))
     return out
