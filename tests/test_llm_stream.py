@@ -100,6 +100,11 @@ class TestRunStream:
         assert response.stop_reason == "stop"
         assert response.content == "Forty patients."
 
+    def test_only_a_boolean_done_ends_an_ollama_stream(self):
+        events = [{"message": {"content": "Cut"}, "done": "false"}]
+        with pytest.raises(StreamError, match="ended before done"):
+            run_stream("ollama", events, "m", lambda _d: None)
+
     def test_no_event_is_read_after_a_stop(self):
         read: list[dict] = []
 

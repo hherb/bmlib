@@ -498,6 +498,11 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
                     "thinking".to_string(),
                     json!({"type": "enabled", "budget_tokens": budget}),
                 );
+                // The API rejects non-default sampling parameters while
+                // thinking is enabled, so they are omitted, as the Python's
+                // provider omits them.
+                body.remove("temperature");
+                body.remove("top_p");
             }
         }
     }

@@ -289,6 +289,28 @@ fn a_reasoning_model_drops_temperature_and_renames_the_cap() {
     assert_eq!(body["temperature"], json!(0.7));
 }
 
+/// Anthropic's extended thinking **drops `temperature` and `top_p`**: the API
+/// rejects non-default sampling parameters while thinking is enabled, and the
+/// Python's provider omits them for that reason.
+#[test]
+fn anthropic_thinking_drops_the_sampling_parameters() {
+    let mut request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("anthropic:m");
+    request.top_p = Some(0.9);
+    let target = resolve_target(&request, "anthropic", None, Some("k")).expect("resolves");
+    let body = chat_body(&request, &target, false);
+    assert_eq!(body["temperature"], json!(0.7), "kept without thinking");
+    assert_eq!(body["top_p"], json!(0.9));
+
+    request.think = Some("2048".to_string());
+    let body = chat_body(&request, &target, false);
+    assert_eq!(
+        body["thinking"],
+        json!({"type": "enabled", "budget_tokens": 2048})
+    );
+    assert!(body.get("temperature").is_none(), "{body:?}");
+    assert!(body.get("top_p").is_none(), "{body:?}");
+}
+
 /// `extra_body` is merged **last**, so a caller can set a field this port does
 /// not know about — and can deliberately override one it does.
 #[test]
