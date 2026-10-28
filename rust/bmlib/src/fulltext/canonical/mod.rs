@@ -14,16 +14,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! One canonical text per paper, built from JATS, Markdown or plain text.
+//! One canonical text per paper, built from JATS, Markdown or plain text, and
+//! its chunks.
 //!
 //! The port of Python's `bmlib.fulltext.canonical`; see [`model`] for the
 //! layout and the offset unit.
 
+pub mod chunk;
 pub mod jats;
 pub mod markdown;
 pub mod model;
 pub mod plain;
 
+pub use chunk::{
+    chunk_canonical, is_abbreviation, sentence_spans, Chunk, ChunkError, ABBREVIATIONS,
+    CHUNKER_VERSION, DEFAULT_MAX_CHARS, DEFAULT_OVERLAP_CHARS,
+};
 pub use jats::{canonical_from_jats, strip_links, JATS_CANONICAL_VERSION};
 pub use markdown::{canonical_from_markdown, strip_inline, MARKDOWN_VERSION};
 pub use model::{

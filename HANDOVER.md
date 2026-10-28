@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 4a**, branch
-`feat/canonical-text`, worktree `../bmlib-canonical`). **0.11.0 is
+_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 3**, PR #554, branch
+`feat/rag-chunker`, worktree `../bmlib-chunker`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
-(#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545 (item 9) merged
-since; all twelve are unreleased._
+(#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545 (item 9) and
+#547 (item 4a) merged since; all thirteen are unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -28,7 +28,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -38,50 +38,36 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: canonical text, part 1 (StudyAnalyzer item 4a)
+## This session: chunks of a canonical text (StudyAnalyzer item 3)
 
-Plan: `docs/superpowers/plans/2026-10-28-canonical-text.md`. The maintainer
-split item 4 into three PRs (4a: model, JATS, Markdown, plain text; **4b: PDF
-from the segmenter; 4c: HTML extraction**) and chose that the JATS canonical
-text keeps everything `to_html()` shows but the metadata lines, references
-included. `bmlib.fulltext.canonical` / `bmlib::fulltext::canonical`: one
-string, every title, heading and block a code-point `TextSpan`; converters
-hand drafts to one `assemble`. Shared contract
-`tests/fixtures/canonical_text.json` (39 cases and 20 `refusals`, variants of
-its `valid` value that both languages must reject; the generator was a
-scratch script, so a new case is written by hand in the same `to_dict` shape
-and its expected value checked by eye before it is trusted).
-`JATS_CANONICAL_VERSION` is pinned beside `RENDERER_VERSION` in
-`tests/test_renderer_version.py` (**a JATS PR now trips two pins**), and
-`MARKDOWN_VERSION`/`PLAIN_TEXT_VERSION` each to its own sources; a change to
-`assemble` bumps all three converter versions. `validate()` checks the layout
-exactly (the spans tile the text) and `assemble()` validates its output. Beside it:
-`JATSTableInfo.header_rows`/`body_rows` (and through the FFI), Rust
-`JATSReferenceInfo::formatted_citation()` (the oracle now diffs it), and the
-fulltext import guard walks subpackages. Markdown's emphasis follows a
-word-boundary rule for `*` as for `_`, unlike CommonMark, so `2*3*4` stays;
-a numbered list item keeps its number (a wrapped `2019.` must never vanish),
-and only a number starting at 1 interrupts a paragraph or a bulleted item.
-JATS: only a `#` target is a cross-reference link (a literal
-`[Ru(bpy)3](ClO4)` is kept), a reference is printed after its label (the
-maintainer's choice), and a section with neither heading nor prose passes its
-level to its subsections. The whole-branch review's deferred minors are
-**#548** (fences in quotes) and **#549** (quadratic emphasis scan); #550
-(`from_dict`/`from_value` strictness) and #551 (version pins) were fixed by
-the PR review that followed, which filed **#552** (`to_html()` prints a
-caption's, abstract's or funding statement's cross-reference as literal
-Markdown) and **#553** (emphasis flanking: `str.isalnum` against
-`char::is_alphanumeric`).
-Mutation-checked in both languages. The Rust JATS side inherits #409 (a cited
-`<etal/>`), so the fixture has none. **Next for StudyAnalyzer: item 3** (the
-chunker, over this text), or 4b.
+Plan: `docs/superpowers/plans/2026-10-28-rag-chunker.md`.
+`bmlib.fulltext.canonical.chunk` / `bmlib::fulltext::canonical::chunk`:
+`chunk_canonical(text, max_chars, overlap_chars)` returns `Chunk`s (a
+code-point `TextSpan` and a `section_index`), sentence-aware, never across a
+section, never past `max_chars` (an over-long sentence is cut at whitespace,
+else at the cap), nothing dropped; overlap is by whole sentences, as in
+bmlibrarian. Sentence ends: bmlibrarian's abbreviation lookbehinds became a
+whole-token check (Rust's `regex` has no lookbehind). Shared contract
+`tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random,
+three refusals; the generator was a scratch script, so a new case is written
+in the same shape and checked by eye). `CHUNKER_VERSION` is pinned against
+`canonical/model.py` and `canonical/chunk.py`, so **an edit to the model now
+trips four pins**. Mutation-checked in both languages. **Next for
+StudyAnalyzer: 4b** (PDF), then 4c (HTML); item 6 (streaming) at any point.
 
-**The session before** (PR #545, item 9): `FullTextResult.jats_xml` carries
+**The session before** (PR #547, item 4a): `bmlib.fulltext.canonical`, one
+string per paper with every title, heading and block a code-point span, from
+JATS, Markdown and plain text; contract `tests/fixtures/canonical_text.json`.
+`JATS_CANONICAL_VERSION` is pinned beside `RENDERER_VERSION` (**a JATS PR
+trips two pins**). Its reviews left **#548**, **#549**, **#552** and **#553**
+open.
+
+**Two sessions back** (PR #545, item 9): `FullTextResult.jats_xml` carries
 the JATS every tier served, the cache keeps it in `jats/`; an old HTML-only
 entry is served with `jats_xml=None`. Shared contract
 `tests/fixtures/fulltext_source.json`.
 
-**Two sessions back** (PR #544, #533): the maintainer chose the work bound. The three `*_is_fast` tests per language
+**Three sessions back** (PR #544, #533): the maintainer chose the work bound. The three `*_is_fast` tests per language
 now count the windows scored (Python monkeypatches a counting
 `SequenceMatcher`; Rust counts `set_a` behind `#[cfg(test)]`, so its three
 tests moved into `citations::passage_match`'s unit tests, sharing

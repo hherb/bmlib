@@ -7,6 +7,24 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Chunks of a canonical text, for retrieval** (StudyAnalyzer phase 1,
+  item 3). `chunk_canonical(text, max_chars=1000, overlap_chars=100)` in
+  `bmlib.fulltext.canonical` (Rust `bmlib::fulltext::canonical`) splits each
+  section's blocks into sentences (a `.`, `!` or `?` before whitespace, unless
+  the token before it is in `ABBREVIATIONS`: bmlibrarian's
+  `adaptive_chunker_optimized.py` list as a whole-token check, plus `figs`,
+  `e.g`, `i.e`, `cf`, `approx`) and packs them into `Chunk`s: a code-point
+  `TextSpan` into the canonical text and the index of its section. A chunk
+  never crosses a section, may cross its blocks, and never passes
+  `max_chars`: a longer sentence is cut at whitespace, or at the cap where it
+  has none, and nothing is dropped. The next chunk carries the previous one's
+  last whole sentences that lie within `overlap_chars` of its end (never its
+  first), unless they would leave the next sentence no room. `Chunk` has
+  `to_dict`/`from_dict`. Sizes are bmlibrarian's
+  `chunk_embedder.py`. `CHUNKER_VERSION` (1) is pinned against `chunk.py` and
+  `model.py` in `tests/test_renderer_version.py`. Python and Rust, held by
+  `tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random
+  ones, three refusals).
 - **Canonical text: one string per paper, every piece a span** (StudyAnalyzer
   phase 1, item 4a). `bmlib.fulltext.canonical` (Rust
   `bmlib::fulltext::canonical`) converts a `JATSArticle`, Markdown or plain
