@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from typing import Any
 
 from bmlib.llm.data_types import (
@@ -37,6 +38,7 @@ from bmlib.llm.providers.base import (
     ProviderCapabilities,
     _sdk_import_failed,
 )
+from bmlib.llm.stream import StreamDelta, run_stream
 from bmlib.llm.utils import extract_json
 
 logger = logging.getLogger(__name__)
@@ -179,47 +181,8 @@ class AnthropicProvider(BaseProvider):
         """
         model = model or self.default_model
         client = self._get_client()
-
-        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
+        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
-        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
-        tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
-        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
-
-        # Separate the system message and convert the rest into Anthropic
-        # message format. Anthropic uses content blocks for everything,
-        # so we route through a converter that handles both plain-text
-        # turns and tool-related turns (assistant tool_use, tool results).
-        system_content, chat_messages = _convert_messages_to_anthropic(messages)
-
-        request_kwargs: dict[str, object] = {
-            "model": model,
-            "messages": chat_messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        if system_content:
-            request_kwargs["system"] = system_content
-        if top_p is not None:
-            request_kwargs["top_p"] = top_p
-
-        if think:
-            request_kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": _resolve_thinking_budget(think, max_tokens),
-            }
-            # The API rejects non-default sampling parameters while
-            # thinking is enabled — omit them rather than error out.
-            request_kwargs.pop("temperature", None)
-            request_kwargs.pop("top_p", None)
-
-        # Tool calling: convert OpenAI-style tool defs to Anthropic format
-        # and forward tool_choice if explicitly set.
-        if tools is not None:
-            request_kwargs["tools"] = [_convert_tool_def_to_anthropic(t) for t in tools]
-            anth_tool_choice = _convert_tool_choice_to_anthropic(tool_choice)
-            if anth_tool_choice is not None:
-                request_kwargs["tool_choice"] = anth_tool_choice
 
         response = client.messages.create(**request_kwargs)
 
@@ -264,6 +227,90 @@ class AnthropicProvider(BaseProvider):
             tool_calls=tool_calls if tool_calls else None,
             thinking="\n\n".join(thinking_parts) if thinking_parts else None,
         )
+
+    def _request_kwargs(
+        self,
+        messages: list[LLMMessage],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        kwargs: dict[str, object],
+    ) -> dict[str, object]:
+        """Build the ``messages.create`` arguments :meth:`chat` and
+        :meth:`chat_stream` send, from their arguments and extra options.
+
+        Raises:
+            ValueError: As :meth:`chat` documents for *think*.
+        """
+        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
+        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
+        tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
+        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
+
+        # Separate the system message and convert the rest into Anthropic
+        # message format. Anthropic uses content blocks for everything,
+        # so we route through a converter that handles both plain-text
+        # turns and tool-related turns (assistant tool_use, tool results).
+        system_content, chat_messages = _convert_messages_to_anthropic(messages)
+
+        request_kwargs: dict[str, object] = {
+            "model": model,
+            "messages": chat_messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if system_content:
+            request_kwargs["system"] = system_content
+        if top_p is not None:
+            request_kwargs["top_p"] = top_p
+
+        if think:
+            request_kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": _resolve_thinking_budget(think, max_tokens),
+            }
+            # The API rejects non-default sampling parameters while
+            # thinking is enabled — omit them rather than error out.
+            request_kwargs.pop("temperature", None)
+            request_kwargs.pop("top_p", None)
+
+        # Tool calling: convert OpenAI-style tool defs to Anthropic format
+        # and forward tool_choice if explicitly set.
+        if tools is not None:
+            request_kwargs["tools"] = [_convert_tool_def_to_anthropic(t) for t in tools]
+            anth_tool_choice = _convert_tool_choice_to_anthropic(tool_choice)
+            if anth_tool_choice is not None:
+                request_kwargs["tool_choice"] = anth_tool_choice
+
+        return request_kwargs
+
+    def chat_stream(
+        self,
+        messages: list[LLMMessage],
+        on_delta: Callable[[StreamDelta], object],
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        **kwargs: object,
+    ) -> LLMResponse:
+        """Stream a chat answer from the Anthropic API.
+
+        Sends the request :meth:`chat` would, with ``stream=True``, and reads
+        the events through :func:`~bmlib.llm.stream.run_stream`. The SDK
+        retries opening the stream itself.
+
+        Raises:
+            StreamError: If the stream ends early.
+            ValueError: As :meth:`chat` documents for *think*.
+        """
+        model = model or self.default_model
+        client = self._get_client()
+        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
+        stream = client.messages.create(**request_kwargs, stream=True)
+        try:
+            return run_stream("anthropic", (event.to_dict() for event in stream), model, on_delta)
+        finally:
+            stream.close()
 
     # --- Model listing ---
 

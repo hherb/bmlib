@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from bmlib.llm.data_types import (
@@ -53,6 +54,7 @@ from bmlib.llm.providers import (
     get_provider,
     list_providers,
 )
+from bmlib.llm.stream import StreamDelta
 from bmlib.llm.token_tracker import get_token_tracker
 
 logger = logging.getLogger(__name__)
@@ -221,17 +223,70 @@ class LLMClient:
             json_mode=json_mode,
             **kwargs,
         )
+        _record_usage(provider, provider_name, model_name, response)
+        return response
 
-        # Track token usage
-        tracker = get_token_tracker()
-        cost = provider.calculate_cost(model_name, response.input_tokens, response.output_tokens)
-        tracker.record_usage(
-            model=f"{provider_name}:{model_name}",
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            cost=cost,
+    def chat_stream(
+        self,
+        messages: list[LLMMessage],
+        on_delta: Callable[[StreamDelta], object],
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        top_p: float | None = None,
+        json_mode: bool = False,
+        **kwargs: object,
+    ) -> LLMResponse:
+        """Send a chat request and stream the answer as the model writes it.
+
+        Routes and builds the request as :meth:`chat` does, then calls
+        *on_delta* once per :class:`~bmlib.llm.stream.StreamDelta`, in order:
+        ``kind="text"`` for the answer, ``kind="thinking"`` for a separated
+        reasoning trace (pass ``think=`` as for :meth:`chat`). It returns the
+        same :class:`LLMResponse` once the stream ends, and records its usage.
+
+        Stopping
+        --------
+        *on_delta* returning ``False`` stops the stream: the connection is
+        closed and the response holds what arrived, with ``stop_reason``
+        ``"cancelled"``. Any other return value (``None`` included) carries
+        on. An exception *on_delta* raises propagates, closing the stream.
+
+        What differs from :meth:`chat`
+        -------------------------------
+        * **No tools.** Passing ``tools=`` raises, rather than dropping them.
+        * The content is exactly what was streamed: no ``<think>``-tag
+          splitting and no JSON repair under *json_mode* (which is still sent
+          to the server).
+        * OpenAI-compatible servers report token usage on a stream only when
+          asked, and only :data:`~bmlib.llm.stream.STREAM_USAGE_PROVIDERS` are
+          asked; elsewhere the counts are 0 unless the server sends them.
+
+        Raises:
+            NotImplementedError: If *tools* is passed, or the provider
+                cannot stream.
+            StreamError: If the server reports a failure mid-stream or the
+                stream ends before its end marker; the deltas already
+                delivered are what arrived of an incomplete answer.
+        """
+        if kwargs.get("tools") is not None:
+            raise NotImplementedError(
+                "chat_stream does not carry tool calls; use chat() for a request with tools"
+            )
+        provider_name, model_name = self._parse_model_string(model)
+        logger.debug("Chat stream: provider=%s, model=%s", provider_name, model_name)
+        provider = self._get_provider(provider_name)
+        response = provider.chat_stream(
+            messages,
+            on_delta,
+            model=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            json_mode=json_mode,
+            **kwargs,
         )
-
+        _record_usage(provider, provider_name, model_name, response)
         return response
 
     def generate(
@@ -424,6 +479,19 @@ _TOOL_CAPABLE_PROVIDERS = {
     "gemini",
     "ollama",
 }
+
+
+def _record_usage(
+    provider: BaseProvider, provider_name: str, model_name: str, response: LLMResponse
+) -> None:
+    """Record a finished call's tokens and cost in the process's token tracker."""
+    cost = provider.calculate_cost(model_name, response.input_tokens, response.output_tokens)
+    get_token_tracker().record_usage(
+        model=f"{provider_name}:{model_name}",
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
+        cost=cost,
+    )
 
 
 def supports_tools(provider_name: str) -> bool:

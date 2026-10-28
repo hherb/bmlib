@@ -51,6 +51,7 @@ from bmlib.llm.providers.base import (
     ProviderCapabilities,
     _sdk_import_failed,
 )
+from bmlib.llm.stream import StreamDelta, run_stream
 
 logger = logging.getLogger(__name__)
 
@@ -373,50 +374,7 @@ class OllamaProvider(BaseProvider):
         """
         model = model or self.default_model
         client = self._get_client()
-
-        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
-        json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
-        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
-        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
-        # Note: Ollama's native API does not yet expose a tool_choice
-        # parameter the way OpenAI does. The model decides when to call
-        # a tool based on the conversation. We accept the kwarg for API
-        # symmetry with the other providers but do not forward it.
-        _ = kwargs.get("tool_choice", "auto")
-
-        ollama_messages = _convert_messages_to_ollama(messages)
-
-        options: dict[str, object] = {
-            "temperature": temperature,
-            "num_predict": max_tokens,
-        }
-        if top_p is not None:
-            options["top_p"] = top_p
-
-        request_kwargs: dict[str, object] = {
-            "model": model,
-            "messages": ollama_messages,
-            "options": options,
-        }
-
-        if json_mode:
-            request_kwargs["format"] = "json"
-
-        if think is not None:
-            # Ollama accepts a bool or an effort-level string ("low"/
-            # "medium"/"high", gpt-oss models). An int is the cross-provider
-            # token-budget form (Anthropic) — Ollama has no budget concept,
-            # so it degrades to on/off by truthiness (0 stays off).
-            if isinstance(think, (bool, str)):
-                request_kwargs["think"] = think
-            else:
-                request_kwargs["think"] = bool(think)
-
-        # Tool calling: ollama-python (>=0.3) accepts an OpenAI-style
-        # tools list directly. Convert our LLMToolDefinition into the
-        # standard {"type": "function", "function": {...}} shape.
-        if tools is not None:
-            request_kwargs["tools"] = [_convert_tool_def_to_ollama(t) for t in tools]
+        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
 
         response = client.chat(**request_kwargs)
 
@@ -491,6 +449,95 @@ class OllamaProvider(BaseProvider):
             tool_calls=tool_calls if tool_calls else None,
             thinking=thinking,
         )
+
+    def _request_kwargs(
+        self,
+        messages: list[LLMMessage],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        kwargs: dict[str, object],
+    ) -> dict[str, object]:
+        """Build the ``Client.chat`` arguments :meth:`chat` and
+        :meth:`chat_stream` send, from their arguments and extra options."""
+        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
+        json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
+        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
+        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
+        # Note: Ollama's native API does not yet expose a tool_choice
+        # parameter the way OpenAI does. The model decides when to call
+        # a tool based on the conversation. We accept the kwarg for API
+        # symmetry with the other providers but do not forward it.
+        _ = kwargs.get("tool_choice", "auto")
+
+        ollama_messages = _convert_messages_to_ollama(messages)
+
+        options: dict[str, object] = {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        }
+        if top_p is not None:
+            options["top_p"] = top_p
+
+        request_kwargs: dict[str, object] = {
+            "model": model,
+            "messages": ollama_messages,
+            "options": options,
+        }
+
+        if json_mode:
+            request_kwargs["format"] = "json"
+
+        if think is not None:
+            # Ollama accepts a bool or an effort-level string ("low"/
+            # "medium"/"high", gpt-oss models). An int is the cross-provider
+            # token-budget form (Anthropic) — Ollama has no budget concept,
+            # so it degrades to on/off by truthiness (0 stays off).
+            if isinstance(think, (bool, str)):
+                request_kwargs["think"] = think
+            else:
+                request_kwargs["think"] = bool(think)
+
+        # Tool calling: ollama-python (>=0.3) accepts an OpenAI-style
+        # tools list directly. Convert our LLMToolDefinition into the
+        # standard {"type": "function", "function": {...}} shape.
+        if tools is not None:
+            request_kwargs["tools"] = [_convert_tool_def_to_ollama(t) for t in tools]
+
+        return request_kwargs
+
+    def chat_stream(
+        self,
+        messages: list[LLMMessage],
+        on_delta: Callable[[StreamDelta], object],
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        **kwargs: object,
+    ) -> LLMResponse:
+        """Stream a chat answer from the local Ollama server.
+
+        Sends the request :meth:`chat` would, with ``stream=True``, and reads
+        the native ``/api/chat`` chunks through
+        :func:`~bmlib.llm.stream.run_stream`. Unlike :meth:`chat`, a stream
+        whose last chunk carries no token counts reports 0 rather than an
+        estimate; Ollama sends them on every completed stream.
+
+        Raises:
+            StreamError: If the stream ends early.
+        """
+        model = model or self.default_model
+        client = self._get_client()
+        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
+        stream = client.chat(**request_kwargs, stream=True)
+        try:
+            # ollama >=0.4 yields Pydantic models; older versions yield dicts.
+            events = (
+                chunk.model_dump() if hasattr(chunk, "model_dump") else chunk for chunk in stream
+            )
+            return run_stream("ollama", events, model, on_delta)
+        finally:
+            stream.close()
 
     def embed(
         self,

@@ -43,6 +43,7 @@ from bmlib.llm.json_repair import (
     safe_json_loads,
     salvage_json_fields,
 )
+from bmlib.llm.stream import StreamDelta, StreamError, StreamState, run_stream
 from bmlib.llm.text_utils import (
     TextChunk,
     TextChunker,
@@ -64,6 +65,9 @@ __all__ = [
     "LLMResponse",
     "LLMToolCall",
     "LLMToolDefinition",
+    "StreamDelta",
+    "StreamError",
+    "StreamState",
     "TextChunk",
     "TextChunker",
     "TokenTracker",
@@ -79,6 +83,7 @@ __all__ = [
     "repair_json",
     "reset_llm_client",
     "reset_token_tracker",
+    "run_stream",
     "safe_json_loads",
     "salvage_json_fields",
     "supports_tools",

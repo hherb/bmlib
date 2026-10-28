@@ -28,12 +28,15 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from bmlib.llm.data_types import (
         BatchEmbeddingResponse,
         EmbeddingResponse,
         LLMMessage,
         LLMResponse,
     )
+    from bmlib.llm.stream import StreamDelta
 
 
 @dataclass
@@ -132,6 +135,26 @@ class BaseProvider(ABC):
         max_tokens: int = 4096,
         **kwargs: object,
     ) -> LLMResponse: ...
+
+    def chat_stream(
+        self,
+        messages: list[LLMMessage],
+        on_delta: Callable[[StreamDelta], object],
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        **kwargs: object,
+    ) -> LLMResponse:
+        """Stream a chat answer, calling *on_delta* for each piece.
+
+        Takes :meth:`chat`'s arguments and returns what it would, once the
+        stream ends; see :meth:`bmlib.llm.client.LLMClient.chat_stream`. Not
+        abstract, so a third-party provider written before streaming keeps
+        working; the default raises :class:`NotImplementedError` rather than
+        falling back to :meth:`chat`, which would make a caller's progress
+        display wait for the whole answer without saying why.
+        """
+        raise NotImplementedError(f"{self.PROVIDER_NAME} does not support streaming")
 
     def embed(
         self,
