@@ -44,27 +44,30 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 Plan: `docs/superpowers/plans/2026-10-28-canonical-html.md`.
 `canonical_from_html(html)` (`bmlib.fulltext.canonical.html` /
 `…::canonical::html`, `"html-1"`) reads a page by fixed rules: pruned elements,
-the fullest `<article>` else `<main>` else `<body>`, the first `<h1>` as title,
-headings as sections, `<tr>` as rows. **Two WHATWG parsers, one tree**:
-html5lib (new extra `html`, in `all`; `scripting=True`, html5ever's default,
-or `<noscript>` in the head builds a different body) and scraper 0.27 over
-html5ever (new Cargo feature `html`, off by default; CI's `pdf` test row and a
-clippy and a doc step turn it on). All 17 `html` contract cases agreed on the
-first Rust run, malformed markup and foster-parenting included.
-`assess_full_text(text)` is the maintainer's ask (2026-10-28): an abstract
-landing page converts as cleanly as a full text, so a separate check over any
-canonical text says whether it looks like a whole paper (Methods plus Results
-or Discussion outside the abstract, `MIN_BODY_WORDS` = 1,000 body words).
-**Unmeasured**: the maintainer will report pages that fool it; what the app
-does with `False` is StudyAnalyzer's phase 2. Contract
-`tests/fixtures/full_text_assessment.json` from
-`scripts/make_full_text_assessment.py` (Markdown input, so it runs without the
-feature). `match_section_type` is public in Python now; **a `segmenter.py`
-edit trips the PDF pin**, and **a `model.py` edit trips six pins**.
-Mutation-checked, 22 mutants per language, all killed; the first Python sweep
-read a stale `.pyc` (same-size mutants a second apart) until `__pycache__` was
-cleared per mutant, as SESSION-RULES says. **Next for StudyAnalyzer**: phase 1
-items 6 (streaming), 5, 7, 8; phase 2 needs only 6 more.
+the fullest `<article>` else `<main>` else `<body>`, the first `<h1>` the walk
+reaches as title, headings as sections, `<tr>` as rows. **html5ever in both
+languages**: markupever (new extra `html`, in `all`) and scraper 0.27 (new
+Cargo feature `html`, off by default; CI's `pdf` test row, a clippy and a doc
+step turn it on). html5lib was the first cut and the pre-PR review refused it:
+it predates `<template>`, `<search>` and the BOM rule, so it built other trees.
+The versions still differ (0.40 / 0.39) until **#558** (after 2026-11-04).
+**Every walk is iterative** (the review aborted the Rust process with 50,000
+nested `<div>`s); html5ever's parse is still quadratic in depth, so the app
+must cap a page's size. **markupever's nodes compare by value and its `!=` is
+not `==`'s negation**: never compare two of its nodes. `assess_full_text(text)`
+is the maintainer's ask (2026-10-28): an abstract landing page converts as
+cleanly as a full text, so a check over any canonical text says whether it
+looks like a whole paper (Methods plus Results or Discussion outside the
+abstract, `MIN_BODY_WORDS` = 1,000 body words). **Unmeasured**: the maintainer
+will report pages that fool it; what the app does with `False` is
+StudyAnalyzer's phase 2. Contract `tests/fixtures/full_text_assessment.json`
+from `scripts/make_full_text_assessment.py` (Markdown input, so it runs
+without the feature). `match_section_type` is public in Python now and differs
+from Rust on U+001C–U+001F and combining marks (**#557**, older than this
+session). **A `segmenter.py` edit trips the PDF pin**, and **a `model.py` edit
+trips six pins**. Mutation-checked, 29 mutants per language, one equivalent
+each. **Next for StudyAnalyzer**: phase 1 item 6 (streaming) is the last one
+phase 2 needs; 5, 7, 8 after.
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #556 (4b,
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
@@ -131,7 +134,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,997 passing + 111 skipped** on this session's branch
+- **Tests: 8,009 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-29; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
@@ -159,9 +162,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-five open** (`gh issue list --state open --limit 300`, 2026-10-29;
-PR #547's #548, #549, #552 and #553 are the four since the last count, and
-this session filed and closed none). **#528** and
+**Ninety-seven open** (`gh issue list --state open --limit 300`, 2026-10-29;
+PR #547's #548, #549, #552 and #553 are the four since the last count; this
+session filed **#557** (`match_section_type` parity) and **#558** (scraper
+0.29), and closed none). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI

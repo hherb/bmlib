@@ -26,7 +26,8 @@ All notable changes to bmlib are documented here. The format is based on
   should cap a page's size. html5lib was tried first and refused by the
   pre-PR review: it predates `<template>`, `<search>` and the byte-order-mark
   rule, so it built a different tree from html5ever's on all three. The two
-  html5ever versions differ (0.40 here, 0.39 under scraper 0.27), and 21
+  html5ever versions differ (0.40 here, 0.39 under scraper 0.27; #558
+  aligns them), and 22
   `html` cases in `tests/fixtures/canonical_text.json`, starting at the HTML
   source, hold them together: malformed markup, table foster-parenting,
   `<noscript>` in the head, template content, a leading BOM, legacy entities
@@ -46,8 +47,10 @@ All notable changes to bmlib are documented here. The format is based on
   written by `scripts/make_full_text_assessment.py`. `HTML_CANONICAL_VERSION`
   (1) is pinned against the converter and the layout; the other canonical
   pins were re-taken without a bump (a new `SourceFormat` member and a new
-  segmenter function move no output). Mutation-checked in both languages (22
-  mutants each, all killed, before the parser swap; re-run after it).
+  segmenter function move no output). Mutation-checked in both languages (29 mutants each; every one killed but
+  one equivalent per language, the root's own edges, which no consumer reads).
+  `match_section_type` still reads a heading holding U+001C–U+001F or a
+  combining mark differently in the two languages (#557, older than this).
 - **Canonical text from a segmented PDF** (StudyAnalyzer phase 1, item 4b).
   `canonical_from_segmented(document)` in `bmlib.fulltext.canonical` (Rust
   `bmlib::fulltext::canonical`) lays a `SegmentedDocument` out as a

@@ -110,6 +110,16 @@ reads every compound it ends** (PR #455's review): `\brandomi[sz]ed` read
 reached, so list the prefixes a widened match newly sees, and check that each
 exclusion's spelling covers them.
 
+*Two languages, one parser* (StudyAnalyzer item 4c's pre-PR review). **Two
+parsers of one spec are two parsers**: html5lib 1.1 and html5ever both follow
+WHATWG, and html5lib predates `<template>`, `<search>` and the BOM rule, so
+they built different trees on all three while the fixture agreed. Where the
+same engine binds into both languages (markupever is html5ever's), use it, and
+put the shapes a spec revision touched into the fixture. **A walk over a tree
+from outside recurses per level only where the depth is bounded**: one frame
+per nesting level aborted the Rust process on 50,000 nested `<div>`s, and a
+stack overflow cannot be caught; walk by the tree's edges.
+
 *Rules and their neighbours.* When a rule replaces a guard, ask what else that
 guard was holding — and **a guard you add can widen the defect next door**:
 #272's empty-`<fpage>` guard kept `pages` non-empty, which re-admitted the
