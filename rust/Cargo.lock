@@ -195,6 +195,7 @@ dependencies = [
  "bytes",
  "chrono",
  "csv",
+ "ego-tree",
  "fancy-regex",
  "llama-cpp-2",
  "llama-cpp-sys-2",

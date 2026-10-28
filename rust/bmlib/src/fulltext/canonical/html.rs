@@ -17,17 +17,19 @@
 //! An HTML page to canonical text: its main content, headings as sections.
 //!
 //! The port of Python's `bmlib.fulltext.canonical.html`, whose docstring states
-//! the rules. The page is parsed by html5ever (through `scraper`), a WHATWG
-//! parser, as Python parses it with html5lib, so a malformed page builds the
-//! same tree in both languages; the shared fixture holds them together.
-//! Scripting is on, html5ever's default, which Python asks html5lib for. In
+//! the rules. The page is parsed by html5ever, through `scraper` here and
+//! markupever in Python, so both languages build html5ever's tree (0.39 here,
+//! 0.40 there; the shared fixture is what holds them together), scripting on
+//! and a leading byte-order mark discarded. Every walk is iterative, over
+//! ego-tree's open and close edges, so nesting depth costs time, not stack. In
 //! short: [`PRUNED`] elements and any `hidden` one are dropped; the root is the
-//! fullest `<article>`, else `<main>` (or `role="main"`), else `<body>`; the
-//! title is the root's first `<h1>` with text, else `<meta
-//! name="citation_title">`, else `<title>`; `<h1>`–`<h6>` start sections; a
-//! [`BLOCKS`] element ends the running paragraph; a `<tr>` is a table row.
-//! Behind the `html` feature.
+//! fullest `<article>`, else `<main>` (or `role="main"`), else `<body>`, else
+//! the `<html>` element; the title is the first `<h1>` with text the walk
+//! reaches, else `<meta name="citation_title">`, else `<title>`; `<h1>`–`<h6>`
+//! start sections; a [`BLOCKS`] element ends the running paragraph; a `<tr>` is
+//! a table row. Behind the `html` feature.
 
+use ego_tree::iter::Edge;
 use scraper::{ElementRef, Html, Node};
 
 use crate::fulltext::canonical::model::{
@@ -110,14 +112,61 @@ fn is_pruned(element: ElementRef<'_>) -> bool {
     PRUNED.contains(&element.value().name()) || element.value().attr("hidden").is_some()
 }
 
-/// `root`'s descendant elements in document order, pruned subtrees skipped.
-fn elements<'a>(root: ElementRef<'a>, out: &mut Vec<ElementRef<'a>>) {
-    for child in root.children().filter_map(ElementRef::wrap) {
-        if !is_pruned(child) {
-            out.push(child);
-            elements(child, out);
+/// One step of [`edges`]: an element opening or closing, or a text.
+#[derive(Clone, Copy)]
+enum Step<'a> {
+    Open(ElementRef<'a>),
+    Close(ElementRef<'a>),
+    Text(&'a str),
+}
+
+/// `root`'s content in document order, pruned subtrees and comments skipped.
+///
+/// Each element below `root` is bracketed by an [`Step::Open`] and a
+/// [`Step::Close`]. The tree is walked by ego-tree's open and close edges,
+/// never by recursion; `root`'s own two edges are not steps.
+fn edges<'a>(root: ElementRef<'a>) -> impl Iterator<Item = Step<'a>> {
+    let mut skipping = 0usize;
+    root.traverse().filter_map(move |edge| {
+        let (node, open) = match edge {
+            Edge::Open(node) => (node, true),
+            Edge::Close(node) => (node, false),
+        };
+        if node.id() == root.id() {
+            return None;
         }
-    }
+        if skipping > 0 {
+            if open {
+                skipping += 1;
+            } else {
+                skipping -= 1;
+            }
+            return None;
+        }
+        match node.value() {
+            Node::Element(_) => {
+                let element = ElementRef::wrap(node).expect("an element node");
+                if open && is_pruned(element) {
+                    skipping = 1;
+                    None
+                } else if open {
+                    Some(Step::Open(element))
+                } else {
+                    Some(Step::Close(element))
+                }
+            }
+            Node::Text(text) if open => Some(Step::Text(text)),
+            _ => None,
+        }
+    })
+}
+
+/// `root`'s descendant elements in document order, pruned subtrees skipped.
+fn elements<'a>(root: ElementRef<'a>) -> impl Iterator<Item = ElementRef<'a>> {
+    edges(root).filter_map(|step| match step {
+        Step::Open(element) => Some(element),
+        _ => None,
+    })
 }
 
 /// The first of [`elements`] for which `wanted` is true.
@@ -125,68 +174,58 @@ fn first<'a>(
     root: ElementRef<'a>,
     wanted: impl Fn(ElementRef<'a>) -> bool,
 ) -> Option<ElementRef<'a>> {
-    let mut all = Vec::new();
-    elements(root, &mut all);
-    all.into_iter().find(|&e| wanted(e))
+    elements(root).find(|&e| wanted(e))
 }
 
-/// The text `element` holds, a space at each inner block's start and end.
-fn raw_text(element: ElementRef<'_>, out: &mut String) {
-    for child in element.children() {
-        match child.value() {
-            Node::Text(text) => out.push_str(text),
-            Node::Element(_) => {
-                let child = ElementRef::wrap(child).expect("an element node");
-                if is_pruned(child) {
-                    continue;
-                }
-                let name = child.value().name();
-                if name == "br" {
-                    out.push(' ');
-                } else if BLOCKS.contains(&name) || heading_level(name).is_some() {
-                    out.push(' ');
-                    raw_text(child, out);
-                    out.push(' ');
-                } else {
-                    raw_text(child, out);
-                }
+/// Whether a heading's or cell's text puts a space where element `name`
+/// begins and ends.
+fn spaces_out(name: &str) -> bool {
+    BLOCKS.contains(&name) || heading_level(name).is_some()
+}
+
+/// The text `element` holds, a space at each inner block's start and end and
+/// at `<br>`.
+fn raw_text(element: ElementRef<'_>) -> String {
+    let mut out = String::new();
+    for step in edges(element) {
+        match step {
+            Step::Text(text) => out.push_str(text),
+            Step::Open(e) if e.value().name() == "br" || spaces_out(e.value().name()) => {
+                out.push(' ');
             }
+            Step::Close(e) if spaces_out(e.value().name()) => out.push(' '),
             _ => {}
         }
     }
+    out
 }
 
 /// [`raw_text`] with its whitespace collapsed.
 fn text_of(element: ElementRef<'_>) -> String {
-    let mut out = String::new();
-    raw_text(element, &mut out);
-    normalize_whitespace(&out)
+    normalize_whitespace(&raw_text(element))
 }
 
 /// The element the paper is read from: the fullest article, else main, else `body`.
 fn content_root(body: ElementRef<'_>) -> ElementRef<'_> {
-    let mut all = Vec::new();
-    elements(body, &mut all);
     let mut best: Option<(ElementRef<'_>, usize)> = None;
-    for element in all.iter().filter(|e| e.value().name() == "article") {
-        let length = text_of(*element).chars().count();
+    for element in elements(body).filter(|e| e.value().name() == "article") {
+        let length = text_of(element).chars().count();
         if best.is_none_or(|(_, longest)| length > longest) {
-            best = Some((*element, length));
+            best = Some((element, length));
         }
     }
     if let Some((article, _)) = best {
         return article;
     }
-    all.into_iter()
-        .find(|e| e.value().name() == "main" || e.value().attr("role") == Some("main"))
-        .unwrap_or(body)
+    first(body, |e| {
+        e.value().name() == "main" || e.value().attr("role") == Some("main")
+    })
+    .unwrap_or(body)
 }
 
 /// The `citation_title` meta tag's content, else the `<title>`'s text, else `""`.
 fn metadata_title(document: ElementRef<'_>) -> String {
-    let mut all = Vec::new();
-    elements(document, &mut all);
-    for element in &all {
+    for element in elements(document) {
         let value = element.value();
         if value.name() == "meta"
             && value.attr("name").unwrap_or("").to_lowercase() == CITATION_TITLE
@@ -197,25 +236,34 @@ fn metadata_title(document: ElementRef<'_>) -> String {
             }
         }
     }
-    all.into_iter()
-        .find(|e| e.value().name() == "title")
+    first(document, |e| e.value().name() == "title")
         .map(text_of)
         .unwrap_or_default()
 }
 
-/// The section drafts a walk over the root builds, and its running paragraph.
-struct Walk<'a> {
-    /// The heading taken as the title, which is not a section.
-    skip: Option<ElementRef<'a>>,
+/// `row`'s `<td>` and `<th>` children that are not pruned.
+fn cells(row: ElementRef<'_>) -> Vec<String> {
+    row.children()
+        .filter_map(ElementRef::wrap)
+        .filter(|c| CELLS.contains(&c.value().name()) && !is_pruned(*c))
+        .map(raw_text)
+        .collect()
+}
+
+/// The section drafts a walk over the root builds, its title and its running
+/// paragraph.
+struct Walk {
+    /// The first `<h1>` with text the walk reached, which is not a section.
+    title: Option<String>,
     sections: Vec<SectionDraft>,
     buffer: String,
 }
 
-impl<'a> Walk<'a> {
-    /// Start with one untitled section.
-    fn new(skip: Option<ElementRef<'a>>) -> Self {
+impl Walk {
+    /// Start with one untitled section and no title.
+    fn new() -> Self {
         Walk {
-            skip,
+            title: None,
             sections: vec![SectionDraft::new("", TOP_LEVEL, Vec::new())],
             buffer: String::new(),
         }
@@ -236,53 +284,52 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Read `element`'s content into the drafts, in document order.
-    fn visit(&mut self, element: ElementRef<'a>) {
-        for child in element.children() {
-            match child.value() {
-                Node::Text(text) => self.buffer.push_str(text),
-                Node::Element(_) => {
-                    let child = ElementRef::wrap(child).expect("an element node");
-                    if !is_pruned(child) {
-                        self.child(child);
-                    }
+    /// Read `root`'s content into section drafts, in document order.
+    ///
+    /// A heading or a row is read whole where it opens (its own text, its
+    /// cells), and the walk passes over its content to where it closes.
+    fn read(&mut self, root: ElementRef<'_>) {
+        let mut inside = 0usize;
+        for step in edges(root) {
+            if inside > 0 {
+                match step {
+                    Step::Open(_) => inside += 1,
+                    Step::Close(_) => inside -= 1,
+                    Step::Text(_) => {}
                 }
-                _ => {}
+                continue;
+            }
+            let (element, open) = match step {
+                Step::Text(text) => {
+                    self.buffer.push_str(text);
+                    continue;
+                }
+                Step::Open(element) => (element, true),
+                Step::Close(element) => (element, false),
+            };
+            let name = element.value().name();
+            if open && name == "br" {
+                self.buffer.push(' ');
+            } else if let (true, Some(level)) = (open, heading_level(name)) {
+                self.flush();
+                let heading = text_of(element);
+                if level == 1 && self.title.is_none() && !heading.is_empty() {
+                    self.title = Some(heading);
+                } else {
+                    self.sections
+                        .push(SectionDraft::new(heading, level, Vec::new()));
+                }
+                inside = 1;
+            } else if open && name == ROW {
+                self.flush();
+                let cells = cells(element);
+                self.current().blocks.push(BlockDraft::row(&cells));
+                inside = 1;
+            } else if BLOCKS.contains(&name) {
+                self.flush();
             }
         }
-    }
-
-    /// Read one child element, by what it is.
-    fn child(&mut self, element: ElementRef<'a>) {
-        let name = element.value().name();
-        if name == "br" {
-            self.buffer.push(' ');
-        } else if let Some(level) = heading_level(name) {
-            self.flush();
-            if self.skip != Some(element) {
-                self.sections
-                    .push(SectionDraft::new(text_of(element), level, Vec::new()));
-            }
-        } else if name == ROW {
-            self.flush();
-            let cells: Vec<String> = element
-                .children()
-                .filter_map(ElementRef::wrap)
-                .filter(|c| CELLS.contains(&c.value().name()) && !is_pruned(*c))
-                .map(|c| {
-                    let mut text = String::new();
-                    raw_text(c, &mut text);
-                    text
-                })
-                .collect();
-            self.current().blocks.push(BlockDraft::row(&cells));
-        } else if BLOCKS.contains(&name) {
-            self.flush();
-            self.visit(element);
-            self.flush();
-        } else {
-            self.visit(element);
-        }
+        self.flush();
     }
 }
 
@@ -293,13 +340,12 @@ pub fn canonical_from_html(html: &str) -> CanonicalText {
     let document = Html::parse_document(html);
     let root_element = document.root_element();
     let body = first(root_element, |e| e.value().name() == "body").unwrap_or(root_element);
-    let root = content_root(body);
-    let title_heading = first(root, |e| e.value().name() == "h1" && !text_of(e).is_empty());
-    let title = title_heading.map_or_else(|| metadata_title(root_element), text_of);
-
-    let mut walk = Walk::new(title_heading);
-    walk.visit(root);
-    walk.flush();
+    let mut walk = Walk::new();
+    walk.read(content_root(body));
+    let title = walk
+        .title
+        .take()
+        .unwrap_or_else(|| metadata_title(root_element));
     assemble(
         &title,
         &walk.sections,
@@ -405,6 +451,25 @@ mod tests {
             blocks("<table><tr><td><p>a</p><p>b</p></td><td></td><td>c</td></tr></table>"),
             ["a b\t\tc"]
         );
+    }
+
+    #[test]
+    fn deep_nesting_is_walked_without_recursion() {
+        // A 256 KiB stack, an eighth of a tokio worker's: every walk is
+        // iterative, so depth costs time and never stack.
+        const DEPTH: usize = 5000;
+        let html = format!(
+            "{}<h2>Deep</h2>text{}",
+            "<div>".repeat(DEPTH),
+            "</div>".repeat(DEPTH)
+        );
+        let text = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(move || canonical_from_html(&html).text)
+            .expect("a thread")
+            .join()
+            .expect("no stack overflow");
+        assert_eq!(text, "Deep\n\ntext");
     }
 
     #[test]

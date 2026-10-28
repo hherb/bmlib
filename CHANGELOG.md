@@ -7,6 +7,47 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Canonical text from an HTML page, and a full-text check** (StudyAnalyzer
+  phase 1, item 4c). `canonical_from_html(html)` in `bmlib.fulltext.canonical`
+  (Rust `bmlib::fulltext::canonical`, feature `html`) parses with html5ever in
+  both languages, through markupever here (new extra `html`, which `all` now
+  includes) and scraper in Rust, and reads the page by fixed rules, not a
+  score: script, style, navigation, forms, media, `svg` and any `hidden`
+  element are dropped with their content; the root is the `<article>` holding
+  the most text, else `<main>` or `role="main"`, else `<body>`, else the
+  `<html>` element (a frameset page); the title is the first `<h1>` with text
+  the walk reaches (not one in a table row), else `<meta
+  name="citation_title">`, else `<title>`; `<h1>`–`<h6>` start sections at
+  their level; a block element ends a paragraph and `<br>` is a space; a
+  `<tr>` is a table row of its cells (`source_format` `"html"`, version
+  `"html-1"`). Input is text, so decoding a page's bytes is the caller's.
+  Every walk is iterative, so a page nested 5,000 deep converts on a 256 KiB
+  stack; parsing deep nesting is still quadratic in html5ever, so a caller
+  should cap a page's size. html5lib was tried first and refused by the
+  pre-PR review: it predates `<template>`, `<search>` and the byte-order-mark
+  rule, so it built a different tree from html5ever's on all three. The two
+  html5ever versions differ (0.40 here, 0.39 under scraper 0.27), and 21
+  `html` cases in `tests/fixtures/canonical_text.json`, starting at the HTML
+  source, hold them together: malformed markup, table foster-parenting,
+  `<noscript>` in the head, template content, a leading BOM, legacy entities
+  and astral characters among them.
+  `assess_full_text(text)` judges any canonical text: `is_full_text` when a
+  `methods` heading and a `results` or `discussion` one lie outside the
+  abstract and its body (blocks outside the abstract and references) holds at
+  least `MIN_BODY_WORDS` (1,000) words; `FullTextAssessment` carries the
+  section types found and the word count, so a caller can say why. A section
+  nested under `Abstract` or `References` is theirs, so a structured
+  abstract's `Methods` does not count. **Unmeasured**: the threshold and rule
+  are a starting point, and a paper without IMRaD headings fails it. It exists
+  because an abstract-only landing page converts as cleanly as a full-text
+  page. Headings are classified by the PDF segmenter's table through
+  `bmlib.fulltext.segmenter.match_section_type`, now public as in Rust.
+  Contract: `tests/fixtures/full_text_assessment.json` (19 Markdown cases),
+  written by `scripts/make_full_text_assessment.py`. `HTML_CANONICAL_VERSION`
+  (1) is pinned against the converter and the layout; the other canonical
+  pins were re-taken without a bump (a new `SourceFormat` member and a new
+  segmenter function move no output). Mutation-checked in both languages (22
+  mutants each, all killed, before the parser swap; re-run after it).
 - **Canonical text from a segmented PDF** (StudyAnalyzer phase 1, item 4b).
   `canonical_from_segmented(document)` in `bmlib.fulltext.canonical` (Rust
   `bmlib::fulltext::canonical`) lays a `SegmentedDocument` out as a

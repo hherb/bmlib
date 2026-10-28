@@ -21,17 +21,19 @@ separately whether the result is a whole paper; try it and report back.
   `bmlib.fulltext.canonical.html` / `bmlib::fulltext::canonical::html`,
   `SourceFormat.HTML`, `HTML_CANONICAL_VERSION = 1` (`"html-1"`). Input is
   text; decoding bytes (a `<meta charset>`) is the caller's.
-- **Parser**: a WHATWG HTML parser in both languages, so a malformed page
-  builds the same tree in each: html5lib (Python, MIT, extra `html`, with
-  `scripting=True` to match html5ever's default) and scraper over html5ever
-  (Rust, ISC / MIT-Apache, feature `html`). Both optional, as PDF is.
+- **Parser**: html5ever in both languages, so a malformed page builds the
+  same tree in each: markupever (Python, MIT, extra `html`) and scraper 0.27
+  (Rust, ISC, feature `html`). Both optional, as PDF is. html5lib was the
+  first choice and was refused by the pre-PR review: it predates
+  `<template>`, `<search>` and the BOM rule. Every walk is iterative.
 - **Pruned** (subtree dropped, text after it kept): `script`, `style`,
   `noscript`, `template`, `nav`, `aside`, `form`, `button`, `select`,
   `textarea`, `svg`, `iframe`, `object`, `embed`, `canvas`, `audio`,
   `video`, and any element with a `hidden` attribute.
 - **Root**: the `<article>` holding the most text (the first on a tie), else
   the first `<main>` or `role="main"`, else `<body>`.
-- **Title**: the root's first `<h1>` with text, which is then not a section;
+- **Title**: the first `<h1>` with text the walk reaches (not one in a table
+  row), which is then not a section;
   else `<meta name="citation_title">`; else `<title>`.
 - **Sections**: `<h1>`–`<h6>` start a section at their level; content before
   the first is an untitled top-level section (as Markdown).

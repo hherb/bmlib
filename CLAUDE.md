@@ -75,12 +75,16 @@ bmlib/
 │   │   ├── model.py         # CanonicalText, TextSpan, assemble() — the one layout every converter hands its drafts to
 │   │   ├── jats.py          # JATSArticle → canonical text (what to_html() shows, metadata lines aside)
 │   │   ├── markdown.py      # A hand-written Markdown subset → canonical text
-│   │   └── plain.py         # Plain text → canonical text
+│   │   ├── plain.py         # Plain text → canonical text
+│   │   ├── pdf.py           # The segmenter's SegmentedDocument → canonical text
+│   │   ├── html.py          # An HTML page's main content → canonical text (html5ever via markupever, extra `html`)
+│   │   ├── chunk.py         # Sentence-aware retrieval chunks of a canonical text
+│   │   └── assess.py        # Does a canonical text look like a whole paper? (heuristic, unmeasured)
 │   ├── _parse_audit.py      # Did the JATS parse unwind cleanly? (private, stdlib only)
 │   ├── jats_parser.py       # JATS XML → structured data
 │   ├── models.py            # FullTextResult, FullTextSourceEntry, JATSArticle, etc.
 │   ├── pdf_converter.py     # Pluggable PDF → text (PDFConverter ABC, PyMuPDF backend)
-│   ├── segmenter.py         # Heading-driven section segmentation of PDF text lines
+│   ├── segmenter.py         # Heading-driven section segmentation of PDF text lines; match_section_type()
 │   ├── _titles.py           # Is the PDF's metadata title the article's title? (private)
 │   └── service.py           # Tiered FullTextService (known sources → EuropePMC → Unpaywall → DOI)
 ├── llm/                     # Unified LLM client with pluggable providers

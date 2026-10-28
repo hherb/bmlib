@@ -16,16 +16,21 @@
 
 """An HTML page to canonical text: its main content, headings as sections.
 
-The page is parsed by html5lib, a WHATWG parser, as the Rust port parses it
-with html5ever, so a malformed page builds the same tree in both languages.
-Scripting is on, as html5ever's default is, which decides how ``<noscript>``
-parses. Then, by fixed rules rather than a score:
+The page is parsed by html5ever, through markupever here and scraper in the
+Rust port, so a malformed page builds the tree html5ever builds in both
+languages (html5ever 0.40 here and 0.39 there; the shared fixture is what
+holds them together). Scripting is on and a leading byte-order mark is
+discarded, html5ever's defaults in both. Every walk over the tree is iterative,
+so nesting depth costs time, not stack. Then, by fixed rules rather than a
+score:
 
 * **Pruned**: :data:`PRUNED` elements and any element with a ``hidden``
   attribute are dropped with everything inside them (text after them is kept).
 * **Root**: the ``<article>`` holding the most text (the first on a tie), else
-  the first ``<main>`` or ``role="main"`` element, else ``<body>``.
-* **Title**: the root's first ``<h1>`` with text, which is then not a section;
+  the first ``<main>`` or ``role="main"`` element, else ``<body>``, else (a
+  frameset page, or a hidden body) the whole ``<html>`` element.
+* **Title**: the first ``<h1>`` with text the walk over the root reaches (not
+  one inside a table row or another heading), which is then not a section;
   else ``<meta name="citation_title">``; else ``<title>``.
 * **Sections**: ``<h1>`` to ``<h6>`` start a section at their level; content
   before the first heading is an untitled level-1 section.
@@ -41,7 +46,7 @@ page's bytes is the caller's: this takes text.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bmlib.fulltext.canonical.model import (
     TOP_LEVEL,
@@ -54,7 +59,7 @@ from bmlib.fulltext.canonical.model import (
 )
 
 if TYPE_CHECKING:
-    from xml.etree.ElementTree import Element
+    from markupever.dom import Element
 
 #: Bumped whenever this converter (or :func:`assemble`) can lay a page out
 #: differently.
@@ -140,58 +145,84 @@ def canonical_from_html(html: str) -> CanonicalText:
     """Convert an HTML page to its canonical text (see the module docstring).
 
     Raises:
-        ImportError: if html5lib, the ``html`` extra, is not installed.
+        ImportError: if markupever, the ``html`` extra, is not installed.
     """
     document = _parse(html)
     body = _first(document, lambda e: _name(e) == "body")
-    root = _content_root(body if body is not None else document)
-    title_heading = _first(root, lambda e: _name(e) == "h1" and bool(_text_of(e)))
-    title = _text_of(title_heading) if title_heading is not None else _metadata_title(document)
-
-    walk = _Walk(skip=title_heading)
-    walk.visit(root)
-    walk.flush()
+    walk = _Walk()
+    sections = walk.read(_content_root(body if body is not None else document))
     return assemble(
-        title,
-        walk.sections,
+        walk.title if walk.title is not None else _metadata_title(document),
+        sections,
         SourceFormat.HTML,
         f"{SourceFormat.HTML.value}-{HTML_CANONICAL_VERSION}",
     )
 
 
 def _parse(html: str) -> Element:
-    """Parse *html* into an ElementTree, HTML elements without a namespace."""
+    """Parse *html* and return its ``<html>`` element."""
     try:
-        import html5lib
+        import markupever
+        from markupever.dom import Element
     except ImportError as e:
         raise ImportError(
-            f"html5lib is required for HTML conversion ({e}). Install with: pip install bmlib[html]"
+            f"markupever is required for HTML conversion ({e}). "
+            "Install with: pip install bmlib[html]"
         ) from e
-    tree: Element = html5lib.parse(html, namespaceHTMLElements=False, scripting=True)
-    return tree
+    # html5ever always builds an <html> element, whatever the input.
+    return next(n for n in markupever.parse(html).root().children() if isinstance(n, Element))
 
 
 def _name(element: Element) -> str:
-    """The element's local name; ``""`` for a comment, whose tag is not a string.
-
-    html5lib names a foreign (SVG, MathML) element ``{namespace}name``.
-    """
-    tag = element.tag
-    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+    """The element's local name (an SVG ``<title>`` is ``title`` too)."""
+    return str(element.name.local)
 
 
 def _is_pruned(element: Element) -> bool:
     """Whether *element* and its content are dropped (:data:`PRUNED`, or ``hidden``)."""
-    return _name(element) in PRUNED or element.get("hidden") is not None
+    return _name(element) in PRUNED or element.attrs.get("hidden") is not None
+
+
+#: What :func:`_edges` yields: an element opening or closing, or a text's content.
+_OPEN, _CLOSE, _TEXT = "open", "close", "text"
+
+
+def _edges(root: Element) -> Iterator[tuple[str, Any]]:
+    """*root*'s content in document order, pruned subtrees and comments skipped.
+
+    ``(_OPEN, element)`` and ``(_CLOSE, element)`` bracket each element below
+    *root*, and ``(_TEXT, content)`` is a text. The tree is walked by its open
+    and close edges (markupever's ``traverse``), never by recursion; *depth*
+    counts the edges open below *root*, so *root*'s own close ends the walk.
+    """
+    from markupever.dom import Element, Text
+
+    edges = root.traverse()
+    next(edges)  # root's own open edge
+    depth = 0
+    skipping = 0
+    for edge in edges:
+        if not edge.closed:
+            depth += 1
+        elif depth == 0:
+            return
+        else:
+            depth -= 1
+        node = edge.node
+        if skipping:
+            skipping += -1 if edge.closed else 1
+        elif isinstance(node, Element):
+            if not edge.closed and _is_pruned(node):
+                skipping = 1
+            else:
+                yield (_CLOSE if edge.closed else _OPEN, node)
+        elif isinstance(node, Text) and not edge.closed:
+            yield (_TEXT, node.content)
 
 
 def _elements(root: Element) -> Iterator[Element]:
     """*root*'s descendant elements in document order, pruned subtrees skipped."""
-    for child in root:
-        if not _name(child) or _is_pruned(child):
-            continue
-        yield child
-        yield from _elements(child)
+    return (node for kind, node in _edges(root) if kind == _OPEN)
 
 
 def _first(root: Element, wanted: Callable[[Element], bool]) -> Element | None:
@@ -199,19 +230,19 @@ def _first(root: Element, wanted: Callable[[Element], bool]) -> Element | None:
     return next((e for e in _elements(root) if wanted(e)), None)
 
 
+def _spaces_out(name: str) -> bool:
+    """Whether a heading's or cell's text puts a space where element *name* begins and ends."""
+    return name in BLOCKS or name in HEADINGS
+
+
 def _raw_text(element: Element) -> str:
-    """The text *element* holds, a space at each inner block's start and end."""
-    parts = [element.text or ""]
-    for child in element:
-        name = _name(child)
-        if name and not _is_pruned(child):
-            if name == "br":
-                parts.append(" ")
-            elif name in BLOCKS or name in HEADINGS:
-                parts.extend((" ", _raw_text(child), " "))
-            else:
-                parts.append(_raw_text(child))
-        parts.append(child.tail or "")
+    """The text *element* holds, a space at each inner block's start and end and at ``<br>``."""
+    parts: list[str] = []
+    for kind, node in _edges(element):
+        if kind == _TEXT:
+            parts.append(node)
+        elif (kind == _OPEN and _name(node) == "br") or _spaces_out(_name(node)):
+            parts.append(" ")
     return "".join(parts)
 
 
@@ -231,15 +262,15 @@ def _content_root(body: Element) -> Element:
                 best, best_length = element, length
     if best is not None:
         return best
-    main = _first(body, lambda e: _name(e) == "main" or e.get("role") == "main")
+    main = _first(body, lambda e: _name(e) == "main" or e.attrs.get("role") == "main")
     return main if main is not None else body
 
 
 def _metadata_title(document: Element) -> str:
     """The ``citation_title`` meta tag's content, else the ``<title>``'s text, else ``""``."""
     for element in _elements(document):
-        if _name(element) == "meta" and (element.get("name") or "").lower() == _CITATION_TITLE:
-            content = normalise_whitespace(element.get("content") or "")
+        if _name(element) == "meta" and element.attrs.get("name", "").lower() == _CITATION_TITLE:
+            content = normalise_whitespace(element.attrs.get("content", ""))
             if content:
                 return content
     title = _first(document, lambda e: _name(e) == "title")
@@ -249,9 +280,9 @@ def _metadata_title(document: Element) -> str:
 class _Walk:
     """The section drafts a walk over the root builds, and its running paragraph."""
 
-    def __init__(self, skip: Element | None) -> None:
-        """Start with one untitled section; *skip* is the heading taken as the title."""
-        self.skip = skip
+    def __init__(self) -> None:
+        """Start with one untitled section and no title."""
+        self.title: str | None = None
         self.sections = [SectionDraft("", TOP_LEVEL)]
         self.buffer: list[str] = []
 
@@ -261,30 +292,49 @@ class _Walk:
             self.sections[-1].blocks.append(BlockDraft.paragraph("".join(self.buffer)))
             self.buffer = []
 
-    def visit(self, element: Element) -> None:
-        """Read *element*'s content into the drafts, in document order."""
-        self.buffer.append(element.text or "")
-        for child in element:
-            name = _name(child)
-            if name and not _is_pruned(child):
-                self.child(child, name)
-            self.buffer.append(child.tail or "")
+    def read(self, root: Element) -> list[SectionDraft]:
+        """Read *root*'s content into section drafts, in document order.
 
-    def child(self, element: Element, name: str) -> None:
-        """Read one child element, by what it is."""
-        if name == "br":
-            self.buffer.append(" ")
-        elif name in HEADINGS:
-            self.flush()
-            if element is not self.skip:
-                self.sections.append(SectionDraft(_text_of(element), HEADINGS[name]))
-        elif name == _ROW:
-            self.flush()
-            cells = [_raw_text(c) for c in element if _name(c) in _CELLS and not _is_pruned(c)]
-            self.sections[-1].blocks.append(BlockDraft.row(cells))
-        elif name in BLOCKS:
-            self.flush()
-            self.visit(element)
-            self.flush()
-        else:
-            self.visit(element)
+        A heading or a row is read whole where it opens (its own text, its
+        cells), and the walk passes over its content to where it closes. The
+        first ``<h1>`` with text it reaches is :attr:`title`, not a section.
+        """
+        inside = 0
+        for kind, node in _edges(root):
+            if inside:
+                inside += {_OPEN: 1, _CLOSE: -1}.get(kind, 0)
+                continue
+            if kind == _TEXT:
+                self.buffer.append(node)
+                continue
+            name = _name(node)
+            if kind == _OPEN and name == "br":
+                self.buffer.append(" ")
+            elif kind == _OPEN and name in HEADINGS:
+                self.flush()
+                heading = _text_of(node)
+                if name == "h1" and self.title is None and heading:
+                    self.title = heading
+                else:
+                    self.sections.append(SectionDraft(heading, HEADINGS[name]))
+                inside = 1
+            elif kind == _OPEN and name == _ROW:
+                self.flush()
+                cells = [_raw_text(c) for c in _cells(node)]
+                self.sections[-1].blocks.append(BlockDraft.row(cells))
+                inside = 1
+            elif name in BLOCKS:
+                self.flush()
+        self.flush()
+        return self.sections
+
+
+def _cells(row: Element) -> list[Element]:
+    """*row*'s ``<td>`` and ``<th>`` children that are not pruned."""
+    from markupever.dom import Element
+
+    return [
+        c
+        for c in row.children()
+        if isinstance(c, Element) and _name(c) in _CELLS and not _is_pruned(c)
+    ]

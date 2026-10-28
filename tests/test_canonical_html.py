@@ -23,6 +23,7 @@ The byte-exact layouts are in the shared contract
 from __future__ import annotations
 
 import builtins
+import sys
 from typing import Any
 
 import pytest
@@ -56,7 +57,7 @@ class TestPruning:
 
     def test_noscript_is_dropped_even_in_the_head(self) -> None:
         # Scripting off would move the <img> and "junk" out of the head into
-        # the body; html5ever parses with scripting on, so this does too.
+        # the body; html5ever parses with scripting on, in both languages.
         doc = canonical_from_html("<head><noscript><img src=x>junk</noscript></head><p>body</p>")
         assert blocks(doc) == ["body"]
 
@@ -185,6 +186,13 @@ class TestTables:
         assert blocks(doc) == ["\tc"]
 
 
+def test_deep_nesting_is_walked_without_recursion() -> None:
+    # Five times the default recursion limit: every walk is iterative.
+    depth = 5 * sys.getrecursionlimit()
+    doc = canonical_from_html("<div>" * depth + "<h2>Deep</h2>text" + "</div>" * depth)
+    assert pieces(doc) == ["Deep", "text"]
+
+
 def test_the_version_and_format_are_stamped() -> None:
     doc = canonical_from_html("<p>x</p>")
     assert (doc.source_format, doc.converter_version) == (SourceFormat.HTML, "html-1")
@@ -195,14 +203,14 @@ def test_an_empty_page_is_an_empty_text() -> None:
     assert (doc.text, doc.sections) == ("", ())
 
 
-def test_a_missing_html5lib_is_an_import_error_naming_the_extra(
+def test_a_missing_markupever_is_an_import_error_naming_the_extra(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     real_import = builtins.__import__
 
     def refuse(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "html5lib":
-            raise ImportError("no html5lib")
+        if name == "markupever":
+            raise ImportError("no markupever")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", refuse)
