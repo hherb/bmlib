@@ -53,8 +53,11 @@ def canonical_from_segmented(document: SegmentedDocument) -> CanonicalText:
     page 1). Each section becomes a section at :data:`TOP_LEVEL` and each of its
     ``subsections`` follows it one level deeper. A section's heading is its
     ``title``, except that front matter and the no-headings fallback are
-    untitled, since their headings are not the paper's. Paragraphs are the
-    content's blank-line-separated runs (:func:`split_paragraphs`).
+    untitled, since their headings are not the paper's. That is keyed on
+    ``section_type``, so any ``FRONT_MATTER`` or ``UNKNOWN`` section is untitled,
+    a hand-built one too; the segmenter makes ``UNKNOWN`` only for the
+    fallback. Paragraphs are the content's blank-line-separated runs
+    (:func:`split_paragraphs`).
     """
     drafts: list[SectionDraft] = []
 

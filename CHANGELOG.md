@@ -18,8 +18,9 @@ All notable changes to bmlib are documented here. The format is based on
   quote can only be located in the paper's own text. The text is taken as the
   extraction gives it (a hyphen at a line break is kept, the lines joined by a
   space).
-  Plain text's paragraph rule is now `split_paragraphs`, shared by both
-  converters, with no change in output. `PDF_CANONICAL_VERSION` (1) is pinned
+  Plain text's paragraph rule is now `split_paragraphs`, public in
+  `bmlib.fulltext.canonical` and shared by both converters, with no change in
+  output. `PDF_CANONICAL_VERSION` (1) is pinned
   in `tests/test_renderer_version.py` against the converter, the layout, the
   segmenter and the PyMuPDF line extraction, since a segmenter change moves
   the text too; the other canonical pins were re-taken without a bump (a new

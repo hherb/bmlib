@@ -72,8 +72,10 @@ fn add(section: &Section, level: usize, drafts: &mut Vec<SectionDraft>) {
 /// becomes a section at [`TOP_LEVEL`] and each of its `subsections` follows it
 /// one level deeper. A section's heading is its `title`, except that front
 /// matter and the no-headings fallback are untitled, since their headings are
-/// not the paper's. Paragraphs are the content's blank-line-separated runs
-/// ([`split_paragraphs`]).
+/// not the paper's. That is keyed on `section_type`, so any `FrontMatter` or
+/// `Unknown` section is untitled, a hand-built one too; the segmenter makes
+/// `Unknown` only for the fallback. Paragraphs are the content's
+/// blank-line-separated runs ([`split_paragraphs`]).
 #[must_use]
 pub fn canonical_from_segmented(document: &SegmentedDocument) -> CanonicalText {
     let mut drafts = Vec::new();
