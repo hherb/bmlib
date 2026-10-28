@@ -1657,7 +1657,11 @@ def _fulltext_modules() -> list[str]:
     """
     package = Path(bmlib.fulltext.__file__).parent
     names = ["bmlib.fulltext"]
-    names += sorted(f"bmlib.fulltext.{info.name}" for info in pkgutil.iter_modules([str(package)]))
+    # Walked, not iterated: a subpackage's own modules (``canonical.model``)
+    # gate their importers as surely as a top-level one does.
+    names += sorted(
+        info.name for info in pkgutil.walk_packages([str(package)], prefix="bmlib.fulltext.")
+    )
     return names
 
 
@@ -1734,10 +1738,17 @@ class TestPackageImports:
         ``service`` (httpx) and ``pdf_converter`` (PyMuPDF).
         """
         package = Path(bmlib.fulltext.__file__).parent
-        on_disk = {p.stem for p in package.glob("*.py") if p.stem != "__init__"}
+        on_disk = set()
+        for path in package.rglob("*.py"):
+            parts = path.relative_to(package).with_suffix("").parts
+            if parts[-1] == "__init__":
+                parts = parts[:-1]
+            if parts:
+                on_disk.add(".".join(parts))
 
         assert _FULLTEXT_MODULES[0] == "bmlib.fulltext"
-        assert {n.rpartition(".")[2] for n in _FULLTEXT_MODULES[1:]} == on_disk
+        assert {n.removeprefix("bmlib.fulltext.") for n in _FULLTEXT_MODULES[1:]} == on_disk
+        assert "bmlib.fulltext.canonical.model" in _FULLTEXT_MODULES
         assert "bmlib.fulltext.service" in _FULLTEXT_MODULES
         assert "bmlib.fulltext.pdf_converter" in _FULLTEXT_MODULES
 

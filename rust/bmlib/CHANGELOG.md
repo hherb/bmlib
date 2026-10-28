@@ -9,6 +9,23 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's canonical text (StudyAnalyzer item 4a)
+`fulltext::canonical`: `CanonicalText`, `TextSpan` (code points),
+`CanonicalSection`, `CanonicalBlock`, `BlockKind`, `SourceFormat`,
+`CanonicalError`, `assemble` (which panics on a level below `TOP_LEVEL`, as
+Python's raises), and the three converters `canonical_from_jats`,
+`canonical_from_markdown` and `canonical_from_plain_text`, held to Python's by
+the shared `tests/fixtures/canonical_text.json`, cases and refusals alike.
+`CanonicalText::from_value` validates; a plain serde `Deserialize` does not,
+though it too requires the `title_span` and `heading_span` keys.
+`JATSReferenceInfo::formatted_citation()`, the port of Python's property,
+moved out of the JATS oracle test into the library.
+
+### Changed — breaking
+`JATSTableInfo` gains `header_rows` and `body_rows` (`#[serde(default)]`), and
+the FFI's `JatsTable` the same two fields, so a struct literal of either must
+name them.
+
 ### Changed — follows Python's review wording (#453)
 `quality::extractors`: `systematic_review` gains four keywords ("systematically
 searched", "systematically reviewed", "systematic search", "systematic

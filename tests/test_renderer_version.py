@@ -46,6 +46,11 @@ from pathlib import Path
 
 import pytest
 
+from bmlib.fulltext.canonical import (
+    JATS_CANONICAL_VERSION,
+    MARKDOWN_VERSION,
+    PLAIN_TEXT_VERSION,
+)
 from bmlib.fulltext.jats_parser import RENDERER_VERSION
 
 FULLTEXT = Path(__file__).resolve().parents[1] / "bmlib" / "fulltext"
@@ -63,6 +68,23 @@ FULLTEXT = Path(__file__).resolve().parents[1] / "bmlib" / "fulltext"
 # imports by ``test_the_digest_covers_every_module_the_renderer_imports``.
 RENDERER_SOURCES = ("jats_parser.py", "models.py")
 
+#: What the JATS canonical text is computed by: the reader and its models, and
+#: the converter and the layout it hands its drafts to.
+CANONICAL_SOURCES = (*RENDERER_SOURCES, "canonical/model.py", "canonical/jats.py")
+
+#: What the plain-text and Markdown canonical texts are computed by (the
+#: Markdown converter reads lines with the plain-text one's ``split_lines``).
+PLAIN_TEXT_SOURCES = ("canonical/model.py", "canonical/plain.py")
+MARKDOWN_SOURCES = (*PLAIN_TEXT_SOURCES, "canonical/markdown.py")
+
+#: The version constant each source holds, whose value no digest reads.
+VERSION_CONSTANTS = {
+    "jats_parser.py": "RENDERER_VERSION",
+    "canonical/jats.py": "JATS_CANONICAL_VERSION",
+    "canonical/plain.py": "PLAIN_TEXT_VERSION",
+    "canonical/markdown.py": "MARKDOWN_VERSION",
+}
+
 # bmlib modules the renderer imports whose code cannot reach its output, each
 # with the reason — so a new import has to be classified rather than slipping
 # past the digest by default.
@@ -74,7 +96,11 @@ NOT_RENDERING = {
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-PINNED = (7, "08dff9dced1cd9161acecdb938cb07f1dc5e8f93af57c78ee3aff00bcaf57336")
+CANONICAL_PINNED = (1, "5ef86753de0d68fd6dcee2fb99514a093d95646875800b2e2ba366d1e9da85e1")
+PLAIN_TEXT_PINNED = (1, "14e07e5b63014e2d2f6d67b24614cba05209cc38f9edcc7ade485f70fb9da4b1")
+MARKDOWN_PINNED = (1, "2dd34ae8d459a3a78b256b884dba14956979aee10b2a73ef798fc32bb4624621")
+
+PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")
 
 _SKIPPED_TOKENS = {"COMMENT", "NL", "ENCODING", "ENDMARKER"}
 
@@ -147,8 +173,10 @@ def normalised_tokens(source: str) -> list[tuple[str, str]]:
     return tokens
 
 
-def _without_the_version(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Blank the value of ``RENDERER_VERSION = N``, which must appear once, alone.
+def _without_the_version(
+    tokens: list[tuple[str, str]], constant: str = "RENDERER_VERSION"
+) -> list[tuple[str, str]]:
+    """Blank the value of ``<constant> = N``, which must appear once, alone.
 
     The constant lives in the source it versions, so without this a bump
     would move the digest it is pinned beside and every bump would need two
@@ -161,34 +189,94 @@ def _without_the_version(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]
     found = [
         i
         for i in range(len(tokens) - 3)
-        if tokens[i] == ("NAME", "RENDERER_VERSION")
+        if tokens[i] == ("NAME", constant)
         and tokens[i + 1] == ("OP", "=")
         and tokens[i + 2][0] == "NUMBER"
         and tokens[i + 3 : i + 4] == [("NEWLINE", "\n")]
     ]
     if len(found) != 1:
-        raise AssertionError(f"expected one RENDERER_VERSION = <number>, found {len(found)}")
+        raise AssertionError(f"expected one {constant} = <number>, found {len(found)}")
     blanked = list(tokens)
     blanked[found[0] + 2] = ("NUMBER", "<version>")
     return blanked
 
 
-def renderer_digest(root: Path = FULLTEXT) -> str:
-    """SHA-256 over the normalised tokens of every module in RENDERER_SOURCES.
+def _digest(root: Path, sources: tuple[str, ...]) -> str:
+    """SHA-256 over the normalised tokens of *sources*, every version value blanked.
 
-    The value of ``RENDERER_VERSION`` is left out (:func:`_without_the_version`),
-    so bumping it leaves this digest where it was. *root* is the directory the
-    sources are read from, a copy of it in the test that the digest moves.
+    The value of each version constant (:data:`VERSION_CONSTANTS`) is left out
+    (:func:`_without_the_version`), so bumping one leaves the digest where it
+    was.
     """
     digest = hashlib.sha256()
-    for name in RENDERER_SOURCES:
+    for name in sources:
         tokens = normalised_tokens((root / name).read_text(encoding="utf-8"))
-        if name == "jats_parser.py":
-            tokens = _without_the_version(tokens)
+        if name in VERSION_CONSTANTS:
+            tokens = _without_the_version(tokens, VERSION_CONSTANTS[name])
         digest.update(f"{name}\0".encode())
         for kind, text in tokens:
             digest.update(f"{kind}\0{text}\0".encode())
     return digest.hexdigest()
+
+
+def renderer_digest(root: Path = FULLTEXT) -> str:
+    """SHA-256 over the normalised tokens of every module in RENDERER_SOURCES.
+
+    *root* is the directory the sources are read from, a copy of it in the
+    test that the digest moves.
+    """
+    return _digest(root, RENDERER_SOURCES)
+
+
+def canonical_digest(root: Path = FULLTEXT) -> str:
+    """SHA-256 over the normalised tokens of every module in CANONICAL_SOURCES."""
+    return _digest(root, CANONICAL_SOURCES)
+
+
+def test_the_canonical_version_moves_with_its_converter() -> None:
+    actual = (JATS_CANONICAL_VERSION, canonical_digest())
+    assert actual == CANONICAL_PINNED, (
+        "The JATS canonical text's code changed (the JATS reader, the models, or\n"
+        "bmlib/fulltext/canonical/model.py or jats.py).\n"
+        "If the change can move what canonical_from_jats() returns for ANY document,\n"
+        "bump JATS_CANONICAL_VERSION in canonical/jats.py, so a stored canonical text\n"
+        "and everything pointing into it can tell it is stale; a change to assemble()\n"
+        "in model.py bumps PLAIN_TEXT_VERSION and MARKDOWN_VERSION too. Decide on\n"
+        "RENDERER_VERSION beside it. Either way, then re-pin CANONICAL_PINNED in this\n"
+        f"file to (JATS_CANONICAL_VERSION, {actual[1]!r})."
+    )
+
+
+@pytest.mark.parametrize(
+    ("constant", "version", "sources", "pinned"),
+    [
+        pytest.param(
+            "PLAIN_TEXT_VERSION",
+            PLAIN_TEXT_VERSION,
+            PLAIN_TEXT_SOURCES,
+            PLAIN_TEXT_PINNED,
+            id="plain-text",
+        ),
+        pytest.param(
+            "MARKDOWN_VERSION",
+            MARKDOWN_VERSION,
+            MARKDOWN_SOURCES,
+            MARKDOWN_PINNED,
+            id="markdown",
+        ),
+    ],
+)
+def test_a_text_converters_version_moves_with_its_code(
+    constant: str, version: int, sources: tuple[str, ...], pinned: tuple[int, str]
+) -> None:
+    actual = (version, _digest(FULLTEXT, sources))
+    assert actual == pinned, (
+        f"The code {constant} versions changed ({', '.join(sources)}).\n"
+        "If the change can move what the converter returns for ANY text, bump\n"
+        f"{constant}; a change to assemble() in model.py bumps every converter's\n"
+        "version, JATS_CANONICAL_VERSION included. Either way, then re-pin its\n"
+        f"*_PINNED in this file to ({constant}, {actual[1]!r})."
+    )
 
 
 def test_the_version_moves_with_the_renderer() -> None:
@@ -212,7 +300,8 @@ class TestTheDigestReadsTheRealSources:
 
     @pytest.fixture
     def copy(self, tmp_path: Path) -> Path:
-        for name in RENDERER_SOURCES:
+        for name in CANONICAL_SOURCES:
+            (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
             (tmp_path / name).write_text(
                 (FULLTEXT / name).read_text(encoding="utf-8"), encoding="utf-8"
             )
@@ -244,6 +333,26 @@ class TestTheDigestReadsTheRealSources:
 
         assert renderer_digest(copy) == renderer_digest()
 
+    @pytest.mark.parametrize("name", CANONICAL_SOURCES)
+    def test_a_code_change_to_a_canonical_source_moves_its_digest(
+        self, copy: Path, name: str
+    ) -> None:
+        path = copy / name
+        path.write_text(path.read_text(encoding="utf-8") + "\n_TRIPWIRE = 1\n", encoding="utf-8")
+
+        assert canonical_digest(copy) != canonical_digest()
+
+    def test_a_canonical_bump_does_not(self, copy: Path) -> None:
+        path = copy / "canonical" / "jats.py"
+        text = path.read_text(encoding="utf-8")
+        line = f"JATS_CANONICAL_VERSION = {JATS_CANONICAL_VERSION}\n"
+        assert text.count(line) == 1
+        path.write_text(
+            text.replace(line, f"JATS_CANONICAL_VERSION = {JATS_CANONICAL_VERSION + 1}\n")
+        )
+
+        assert canonical_digest(copy) == canonical_digest()
+
 
 def bmlib_imports(source: str) -> set[str]:
     """Every bmlib module *source* (a module in ``bmlib.fulltext``) imports.
@@ -266,22 +375,32 @@ def bmlib_imports(source: str) -> set[str]:
 
 def unclassified_imports(sources: dict[str, str]) -> set[str]:
     """bmlib modules the renderer imports that the digest neither covers nor excuses."""
-    covered = {f"bmlib.fulltext.{name.removesuffix('.py')}" for name in sources}
+    covered = {f"bmlib.fulltext.{name.removesuffix('.py').replace('/', '.')}" for name in sources}
     imported = set().union(*(bmlib_imports(text) for text in sources.values()))
     return imported - covered - NOT_RENDERING
 
 
-def test_the_digest_covers_every_module_the_renderer_imports() -> None:
-    """A bmlib module the renderer starts importing must be classified.
+@pytest.mark.parametrize(
+    "names",
+    [RENDERER_SOURCES, CANONICAL_SOURCES, PLAIN_TEXT_SOURCES, MARKDOWN_SOURCES],
+    ids=["renderer", "jats-canonical", "plain-text", "markdown"],
+)
+def test_the_digest_covers_every_module_the_renderer_imports(names: tuple[str, ...]) -> None:
+    """A bmlib module a pinned source starts importing must be classified.
 
-    Left out of RENDERER_SOURCES by default, a helper moved out of
-    ``jats_parser`` would take its code out of the digest with it, and every
-    later change to it would reach the cache unstamped.
+    Left out of the source list by default, a helper moved out of
+    ``jats_parser`` (or a converter) would take its code out of the digest with
+    it, and every later change to it would move output unstamped.
     """
+    sources = {name: (FULLTEXT / name).read_text(encoding="utf-8") for name in names}
+
+    assert unclassified_imports(sources) == set()
+
+
+def test_every_exclusion_is_still_imported() -> None:
     sources = {name: (FULLTEXT / name).read_text(encoding="utf-8") for name in RENDERER_SOURCES}
     imported = set().union(*(bmlib_imports(text) for text in sources.values()))
 
-    assert unclassified_imports(sources) == set()
     assert NOT_RENDERING <= imported, "an exclusion the renderer no longer imports is stale"
 
 
@@ -303,6 +422,17 @@ class TestTheImportNetCanFail:
     )
     def test_an_unlisted_bmlib_import_is_reported(self, line, module):
         assert unclassified_imports({"jats_parser.py": line}) == {module}
+
+    def test_a_source_in_a_subpackage_covers_its_own_module(self):
+        sources = {
+            "canonical/jats.py": "from bmlib.fulltext.canonical.model import A\n",
+            "canonical/model.py": "import re\n",
+        }
+
+        assert unclassified_imports(sources) == set()
+        assert unclassified_imports({"canonical/jats.py": sources["canonical/jats.py"]}) == {
+            "bmlib.fulltext.canonical.model"
+        }
 
     def test_a_listed_or_excused_import_is_not(self):
         sources = {

@@ -313,6 +313,24 @@ pub struct JATSTableInfo {
     /// funding and disclosure notes `bmlib.transparency` scans for.
     #[serde(default)]
     pub footnotes: Vec<String>,
+    /// The header rows (a `<thead>`'s, or, where there is none, a leading row
+    /// of `<th>` cells outside `<tbody>`), each a list of cell texts as the
+    /// reader reads them: whitespace normalised, a `colspan` of n followed by
+    /// n - 1 empty cells, a cross-reference as a `[text](#id)` link, a
+    /// `rowspan` not expanded. Neither padded nor cut to the column count
+    /// [`html_content`](JATSTableInfo::html_content) takes from the first row,
+    /// so a row wider than that keeps the cells the HTML drops.
+    ///
+    /// The canonical text lays a table out as plain rows, and reading them back
+    /// out of `html_content` would be parsing this library's own rendering.
+    /// Empty for a table deposited only as an image, and in JSON written before
+    /// the field existed (it defaults).
+    #[serde(default)]
+    pub header_rows: Vec<Vec<String>>,
+    /// The body rows (a `<tfoot>`'s included), read as
+    /// [`header_rows`](JATSTableInfo::header_rows) are.
+    #[serde(default)]
+    pub body_rows: Vec<Vec<String>>,
 }
 
 /// Parsed reference/citation information.
@@ -411,6 +429,116 @@ fn without_trailing_close_tags(mut part: &str) -> &str {
         }
     }
     part
+}
+
+impl JATSReferenceInfo {
+    /// The reference as one plain string, assembled from its structured fields.
+    ///
+    /// The port of Python's `JATSReferenceInfo.formatted_citation`: authors
+    /// (the first two and `et al.` beyond three), title, source, `(year)`, the
+    /// `volume(issue):locator` run and `doi:`, joined by [`join_citation_parts`].
+    /// The deposited `citation` is printed instead where fewer than two of those
+    /// would print, or where none names the work (issue #276). Python also
+    /// prints `et al.` after a list the deposit marked truncated (#406); the
+    /// Rust reader does not read that mark yet (#409).
+    #[must_use]
+    pub fn formatted_citation(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        let authors = self.author_text();
+        if !authors.is_empty() {
+            parts.push(authors);
+        }
+        if !self.article_title.is_empty() {
+            parts.push(self.article_title.clone());
+        }
+        if !self.source.is_empty() {
+            parts.push(self.source.clone());
+        }
+        if !self.year.is_empty() {
+            parts.push(format!("({})", self.year));
+        }
+        let volume = self.volume_info();
+        if !volume.is_empty() {
+            parts.push(volume);
+        }
+        if !self.doi.is_empty() {
+            parts.push(format!("doi:{}", self.doi));
+        }
+        if self.defers_to_the_deposit(parts.len()) {
+            return self.citation.clone();
+        }
+        join_citation_parts(&parts, false)
+    }
+
+    /// The author component, unescaped, as both renderers print it: a list of
+    /// more than three names as its first two and `et al.`, a shorter one in
+    /// full, and empty where there are no names.
+    pub(crate) fn author_text(&self) -> String {
+        match self.authors.as_slice() {
+            [] => String::new(),
+            [first, second, _, _, ..] => format!("{first}, {second}, et al."),
+            names => names.join(", "),
+        }
+    }
+
+    /// The `volume(issue):locator` run, unescaped, as both renderers print it;
+    /// the locator is the page range, or `elocation_id` where there is none.
+    pub(crate) fn volume_info(&self) -> String {
+        let mut volume_info = String::new();
+        if !self.volume.is_empty() {
+            volume_info.clone_from(&self.volume);
+            if !self.issue.is_empty() {
+                volume_info.push_str(&format!("({})", self.issue));
+            }
+        }
+        let mut page_range = self.first_page.clone();
+        if !page_range.is_empty() && !self.last_page.is_empty() {
+            page_range.push_str(&format!("-{}", self.last_page));
+        }
+        let locator = if page_range.is_empty() {
+            self.elocation_id.clone()
+        } else {
+            page_range
+        };
+        if !locator.is_empty() {
+            volume_info = if volume_info.is_empty() {
+                locator
+            } else {
+                format!("{volume_info}:{locator}")
+            };
+        }
+        volume_info
+    }
+
+    /// Would a rendering of `printed_part_count` components print `citation`
+    /// instead?
+    ///
+    /// **One component is never a citation**: a `<mixed-citation>` tagging just
+    /// one of its structured children rendered that child *in place of* the
+    /// whole deposited string — a bare `(2023)` for a report. 828 of the served
+    /// artifact's 174,458 references that carry a deposited string and render
+    /// structured (346 of 8,118 articles) were moved by this rule. **And
+    /// components that name no work are not a citation either, however many
+    /// there are** (issue #276). `R Core Team. (2019)` for a whole software
+    /// citation, and `(2021). 635-642` for a paper it never names, are the pairs
+    /// the count let through. So where there is a deposit and none of
+    /// `article_title`, `source` or `doi` would print, the deposit is printed.
+    /// `source` is the weakest member — for a journal article it is the
+    /// container rather than the work — and is admitted on #276's own reading,
+    /// where refusing it would print the deposit for every citation tagging a
+    /// book or a report by its `<source>`.
+    pub(crate) fn defers_to_the_deposit(&self, printed_part_count: usize) -> bool {
+        if printed_part_count == 0 {
+            return true;
+        }
+        if self.citation.is_empty() {
+            return false;
+        }
+        // Python's `_names_a_work`: any of the three naming fields populated.
+        let names_a_work =
+            !self.article_title.is_empty() || !self.source.is_empty() || !self.doi.is_empty();
+        printed_part_count == 1 || !names_a_work
+    }
 }
 
 /// Join a reference's rendered components the way both renderers print them.
@@ -1081,6 +1209,8 @@ mod tests {
                 html_content: "<table></table>".to_string(),
                 graphic_url: None,
                 footnotes: vec!["A note.".to_string()],
+                header_rows: vec![vec!["Group".to_string()]],
+                body_rows: vec![vec!["A".to_string()]],
             }],
             vec![JATSReferenceInfo {
                 id: "ref1".to_string(),

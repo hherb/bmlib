@@ -125,6 +125,8 @@ fn every_field_set() -> m::JATSArticle {
             html_content: "<table><tr><td>1</td></tr></table>".into(),
             graphic_url: Some("tab.g001".into()),
             footnotes: vec!["b — table note".into()],
+            header_rows: vec![vec!["Group".into()]],
+            body_rows: vec![vec!["1".into()]],
         }],
         references: vec![m::JATSReferenceInfo {
             id: "r1".into(),

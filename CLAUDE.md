@@ -71,6 +71,11 @@ bmlib/
 │   └── migrations.py        # Migration dataclass, run_migrations()
 ├── fulltext/                # Full-text retrieval, JATS XML parsing, PDF conversion
 │   ├── cache.py             # Disk-based FullTextCache, sanitize_identifier(), renderer-stamped HTML entries, served JATS XML
+│   ├── canonical/           # One canonical text per paper (one string, every piece a code-point span), held to Rust by tests/fixtures/canonical_text.json
+│   │   ├── model.py         # CanonicalText, TextSpan, assemble() — the one layout every converter hands its drafts to
+│   │   ├── jats.py          # JATSArticle → canonical text (what to_html() shows, metadata lines aside)
+│   │   ├── markdown.py      # A hand-written Markdown subset → canonical text
+│   │   └── plain.py         # Plain text → canonical text
 │   ├── _parse_audit.py      # Did the JATS parse unwind cleanly? (private, stdlib only)
 │   ├── jats_parser.py       # JATS XML → structured data
 │   ├── models.py            # FullTextResult, FullTextSourceEntry, JATSArticle, etc.
@@ -826,7 +831,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `_user_agent.py`     | Pinned at its two call sites, where the header is delivered: `test_transparency.py::test_analyze_sends_it` and `test_sync.py::test_the_client_carries_the_shared_user_agent` |
 | `transparency/`      | `test_transparency.py`, `test_funder_matching.py`          |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py`, `test_retractions.py`, `test_retraction_status.py` (the shared contract `tests/fixtures/retraction_status.json`, which the Rust port asserts against too and bmlibrarian_lite is to), `test_fetch_reconciliation.py` |
-| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py`, `test_segmenter.py`, `test_fulltext_titles.py`, `test_pdf_metadata_titles.py`, `test_renderer_version.py` (pins `RENDERER_VERSION` to a digest of the renderer's code, #172) |
+| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py`, `test_segmenter.py`, `test_fulltext_titles.py`, `test_pdf_metadata_titles.py`, `test_renderer_version.py` (pins `RENDERER_VERSION` to a digest of the renderer's code, #172, and each canonical converter's version to its own), `test_canonical_model.py`, `test_canonical_jats.py`, `test_canonical_markdown.py`, `test_canonical_text_contract.py` (the shared `tests/fixtures/canonical_text.json`, cases and refusals, which the Rust port asserts too) |
 | `fulltext/_parse_audit.py` | `test_parse_audit.py` — the pure half only: what an imbalance *reads as*, given a state. That the state is captured correctly, and that every entry point reaches it, is pinned at the call site in `test_jats_parser.py`, where the behaviour is delivered — a struct agreeing with a capture agreeing with nothing would pass `test_parse_audit.py` in full |
 | `scripts/`           | `test_api_failure_sampler.py` (`sample_api_failures.py` only), `test_databank_sampler.py` (`sample_databank_names.py` only), `test_free_pdf_sampler.py` (`sample_free_pdf_urls.py` only), `test_pdf_title_sampler.py` (`sample_pdf_metadata_titles.py` only), `test_efetch_paging_sampler.py` (`sample_efetch_paging.py` only), `test_rerun_rust_oracle.py` (`rerun_rust_oracle.py` only), `test_jats_exhibit_sampler.py` (`sample_jats_exhibits.py` only), `test_prose_name_sampler.py` (`measure_jats_prose_names.py` only — each context's fate held to the real parser), `test_extractor_sampler.py` (`sample_extractor_signals.py` only, and the pin holding its three committed corpora to the current `extractors.py`), `test_sampling_helpers.py` (`_sampling.py`) |
 

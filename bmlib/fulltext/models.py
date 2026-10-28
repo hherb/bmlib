@@ -371,6 +371,19 @@ class JATSTableInfo:
     html_content: str = ""
     graphic_url: str | None = None
     footnotes: list[str] = field(default_factory=list)
+    # The table's rows as data: the header rows (a ``<thead>``'s, or, where
+    # there is none, a leading row of ``<th>`` cells outside ``<tbody>``) and
+    # the body rows, each a list of cell texts as the reader reads them:
+    # whitespace normalised, a ``colspan`` of n followed by n - 1 empty cells,
+    # a cross-reference as a ``[text](#id)`` link, a ``rowspan`` not expanded.
+    # Neither padded nor cut to the column count ``html_content`` takes from
+    # the first row, so a row wider than that keeps the cells the HTML drops.
+    # StudyAnalyzer's canonical text lays a table out as plain rows, and
+    # reading them back out of ``html_content`` would be parsing this
+    # library's own rendering. Empty for a table deposited only as an image.
+    # Declared last so a construction written before them keeps working.
+    header_rows: list[list[str]] = field(default_factory=list)
+    body_rows: list[list[str]] = field(default_factory=list)
 
 
 #: The reference components that name the work cited, as opposed to who wrote

@@ -64,6 +64,8 @@ def render_article(article) -> dict:
                 "html_content": t.html_content,
                 "graphic_url": t.graphic_url,
                 "footnotes": list(t.footnotes),
+                "header_rows": [list(row) for row in t.header_rows],
+                "body_rows": [list(row) for row in t.body_rows],
             }
             for t in article.tables
         ],

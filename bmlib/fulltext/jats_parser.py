@@ -692,6 +692,8 @@ class _TableBuilder(_GraphicHolder, _FootnoteHolder):
             html_content=self._build_html_table(),
             graphic_url=self.graphic_href or None,
             footnotes=list(self.footnotes),
+            header_rows=[list(row) for row in self.header_rows],
+            body_rows=[list(row) for row in self.body_rows],
         )
 
     def _build_html_table(self) -> str:
