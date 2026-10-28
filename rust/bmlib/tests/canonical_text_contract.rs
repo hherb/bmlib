@@ -21,7 +21,9 @@
 //! `SegmentedDocument` as Python's `to_dict()` writes it) into exactly the expected
 //! `CanonicalText`, spans counted in code points, and the expected value
 //! round-trips through `CanonicalText::from_value`. Each of its `refusals` (a
-//! variant of its `valid` value) is refused by both languages alike.
+//! variant of its `valid` value) is refused by both languages alike. The `html`
+//! cases are converted only with the `html` feature; their expected values
+//! round-trip without it.
 
 use bmlib::fulltext::canonical::{
     canonical_from_jats, canonical_from_markdown, canonical_from_plain_text,
@@ -44,26 +46,42 @@ fn cases() -> Vec<Value> {
         .clone()
 }
 
-fn convert(case: &Value) -> CanonicalText {
+/// An HTML page's canonical text, or `None` in a build without the `html` feature.
+#[cfg(feature = "html")]
+fn html(input: &str) -> Option<CanonicalText> {
+    Some(bmlib::fulltext::canonical::canonical_from_html(input))
+}
+
+#[cfg(not(feature = "html"))]
+fn html(_input: &str) -> Option<CanonicalText> {
+    None
+}
+
+/// Run the converter the case names on its input; `None` if this build lacks it.
+fn convert(case: &Value) -> Option<CanonicalText> {
     if case["format"] == "pdf" {
         let document: SegmentedDocument = serde_json::from_value(case["input"].clone())
             .expect("the case's input is a SegmentedDocument");
-        return canonical_from_segmented(&document);
+        return Some(canonical_from_segmented(&document));
     }
     let input = case["input"].as_str().expect("an input string");
-    match case["format"].as_str().expect("a format") {
+    Some(match case["format"].as_str().expect("a format") {
         "plain_text" => canonical_from_plain_text(input, case["title"].as_str().unwrap_or("")),
         "markdown" => canonical_from_markdown(input),
         "jats" => canonical_from_jats(&parse(input).expect("the case's JATS parses")),
+        "html" => return html(input),
         other => panic!("unknown format {other:?} in {}", case["name"]),
-    }
+    })
 }
 
 #[test]
 fn every_converter_output_is_the_expected_canonical_text() {
     let mut failures = Vec::new();
     for case in cases() {
-        let actual = serde_json::to_value(convert(&case)).expect("serialisable");
+        let Some(converted) = convert(&case) else {
+            continue;
+        };
+        let actual = serde_json::to_value(converted).expect("serialisable");
         if actual != case["expected"] {
             failures.push(format!(
                 "{}:\n  expected {}\n  actual   {}",
@@ -82,7 +100,7 @@ fn the_contract_covers_every_format_it_names() {
         .collect();
     formats.sort();
     formats.dedup();
-    assert_eq!(formats, ["jats", "markdown", "pdf", "plain_text"]);
+    assert_eq!(formats, ["html", "jats", "markdown", "pdf", "plain_text"]);
 }
 
 #[test]

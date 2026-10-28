@@ -78,6 +78,7 @@ class SourceFormat(Enum):
     MARKDOWN = "markdown"
     PLAIN_TEXT = "plain_text"
     PDF = "pdf"
+    HTML = "html"
 
 
 @dataclass(frozen=True)
@@ -131,7 +132,8 @@ class CanonicalText:
     """A paper's canonical text and the spans of its title, headings and blocks.
 
     ``converter_version`` names the converter that produced ``text``
-    (``"jats-1"``, ``"markdown-1"``, ``"plain_text-1"``, ``"pdf-1"``), so whatever points
+    (``"jats-1"``, ``"markdown-1"``, ``"plain_text-1"``, ``"pdf-1"``,
+    ``"html-1"``), so whatever points
     into it can tell when a newer converter would lay the text out differently.
     """
 

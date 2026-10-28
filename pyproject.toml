@@ -70,24 +70,28 @@ fulltext = ["httpx>=0.25"]
 # `# type: ignore[import-untyped]` that switches off checking for the whole
 # of `pdf_converter.py`.
 pdf = ["pymupdf>=1.28.2"]
+# HTML to canonical text (bmlib.fulltext.canonical.html): a WHATWG parser, so a
+# malformed page builds the tree html5ever builds in the Rust port. 1.1 is the
+# current release (2020), checked on Python 3.11 and 3.14.
+html = ["html5lib>=1.1"]
 # In-process embedding (bmlib.embed): compiles llama.cpp on install. The
 # floor is the one version verified against the reference vectors. Not in
 # `all`: it needs a C++ toolchain, which `all` must not.
 embed = ["llama-cpp-python>=0.3.36"]
 # mypy is pinned for the same reason ruff is (see .github/workflows/ci.yml):
 # a release with new checks would otherwise fail CI on files a PR never
-# touched. `psycopg2` is the one extra shipping no `py.typed`, so
-# `types-psycopg2` supplies the only stubs bmlib needs from typeshed; every
-# other extra carries its own marker, which is why mypy must run in an
+# touched. `psycopg2` and `html5lib` are the extras shipping no `py.typed`,
+# so `types-psycopg2` and `types-html5lib` supply the only stubs bmlib needs
+# from typeshed; every other extra carries its own marker, which is why mypy must run in an
 # environment that actually has the extras installed. `embed` is the
 # exception: it is outside `all`, so its `llama_cpp` import carries a
 # targeted ignore and mypy passes with or without it.
-dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.0", "types-psycopg2"]
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.0", "types-psycopg2", "types-html5lib"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`. It also
 # excludes `embed`, which compiles llama.cpp: ask for `.[all,embed]`.
-all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf]"]
+all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf,html]"]
 
 # Explicit discovery. Auto-discovery works today but is order-dependent in a
 # flat layout with tests/, docs/ and scripts/ beside the package; naming the

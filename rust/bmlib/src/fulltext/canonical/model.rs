@@ -88,6 +88,8 @@ pub enum SourceFormat {
     PlainText,
     /// A PDF, through the line extraction and the section segmenter.
     Pdf,
+    /// An HTML page, through its main content.
+    Html,
 }
 
 impl SourceFormat {
@@ -99,6 +101,7 @@ impl SourceFormat {
             SourceFormat::Markdown => "markdown",
             SourceFormat::PlainText => "plain_text",
             SourceFormat::Pdf => "pdf",
+            SourceFormat::Html => "html",
         }
     }
 
@@ -139,7 +142,7 @@ pub struct CanonicalSection {
 /// A paper's canonical text and the spans of its title, headings and blocks.
 ///
 /// `converter_version` names the converter that produced `text` (`"jats-1"`,
-/// `"markdown-1"`, `"plain_text-1"`, `"pdf-1"`), so whatever points into it can tell when
+/// `"markdown-1"`, `"plain_text-1"`, `"pdf-1"`, `"html-1"`), so whatever points into it can tell when
 /// a newer converter would lay the text out differently.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanonicalText {

@@ -71,6 +71,11 @@ ureq = { version = "3", optional = true }
 # who never converts a PDF does not pay for it.
 pdfium-render = { version = "0.9", optional = true }
 pdfium-bundled = { version = "0.2", optional = true, features = ["bundled"] }
+# HTML to canonical text (`fulltext::canonical::html`). A WHATWG parser, html5ever,
+# because Python parses with html5lib, another one: a malformed page then builds
+# the same tree in both languages. `scraper` is the maintained tree over it; its
+# CSS-selector half goes unused. 0.27, not 0.29 (released 2026-10-21, too new).
+scraper = { version = "0.27", optional = true, default-features = false }
 # The PostgreSQL backend: a real driver behind the `postgres` feature, matching
 # the Python library's optional `psycopg2` extra. Optional so a caller that only
 # ever opens SQLite does not link a Postgres client and its async runtime. The
@@ -114,6 +119,9 @@ http-ureq = ["dep:ureq"]
 # PDF text extraction. Off by default, so a build that never reads a PDF needs no
 # C++ toolchain and no download.
 pdf = ["dep:pdfium-render", "dep:pdfium-bundled"]
+# HTML to canonical text. Off by default, as Python's `html` extra is, so a build
+# that never reads a web page does not compile an HTML parser.
+html = ["dep:scraper"]
 # The PostgreSQL backend. Off by default. `Dialect::Postgres`, the placeholder
 # rewriter and the PostgreSQL DDL are always present; this adds the driver that
 # can actually run a statement against a server.

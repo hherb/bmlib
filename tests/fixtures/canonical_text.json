@@ -2216,6 +2216,628 @@
         "source_format": "pdf",
         "converter_version": "pdf-1"
       }
+    },
+    {
+      "name": "html/publisher-page",
+      "format": "html",
+      "input": "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>Effect of X on Y | Journal</title>\n<meta name=\"citation_title\" content=\"Effect of X on Y\"><script>var a = \"<p>no</p>\";</script>\n<style>p { color: red }</style></head>\n<body><header><a href=\"/\">Journal</a><nav><ul><li>Home</li><li>Issues</li></ul></nav></header>\n<main><article><header><h1>Effect of X on Y</h1><p class=\"authors\">A. Author, B. Author</p></header>\n<section><h2>Abstract</h2><p>We tested X.</p></section>\n<section><h2>1. Methods</h2><p>Patients were <em>randomised</em> 1:1.<sup><a href=\"#r1\">1</a></sup></p>\n<table><caption>Table 1. Baseline</caption><thead><tr><th>Arm</th><th>n</th></tr></thead>\n<tbody><tr><td>X</td><td>60</td></tr><tr><td>Placebo</td><td>60</td></tr></tbody></table></section>\n<section><h2>2. Results</h2><p>Y fell.</p><figure><img src=\"f1.png\" alt=\"Figure\"><figcaption>Figure 1. Y over time.</figcaption></figure></section>\n<aside><h3>Related</h3><p>Other paper</p></aside>\n<form><button>Download PDF ($30)</button></form></article></main>\n<footer><p>&copy; 2026 Publisher</p></footer></body></html>\n",
+      "expected": {
+        "text": "Effect of X on Y\n\nA. Author, B. Author\n\nAbstract\n\nWe tested X.\n\n1. Methods\n\nPatients were randomised 1:1.1\n\nTable 1. Baseline\n\nArm\tn\n\nX\t60\n\nPlacebo\t60\n\n2. Results\n\nY fell.\n\nFigure 1. Y over time.",
+        "title_span": {
+          "start": 0,
+          "end": 16
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 18,
+                  "end": 38
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 40,
+              "end": 48
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 50,
+                  "end": 62
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 64,
+              "end": 74
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 76,
+                  "end": 106
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 108,
+                  "end": 125
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 127,
+                  "end": 132
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 134,
+                  "end": 138
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 140,
+                  "end": 150
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 152,
+              "end": 162
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 164,
+                  "end": 171
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 173,
+                  "end": 195
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/no-article-or-main",
+      "format": "html",
+      "input": "<title>A Page</title><div>Intro text <b>bold</b>.</div><h2>Methods</h2>Loose text<p>Para</p>",
+      "expected": {
+        "text": "A Page\n\nIntro text bold.\n\nMethods\n\nLoose text\n\nPara",
+        "title_span": {
+          "start": 0,
+          "end": 6
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 8,
+                  "end": 24
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 26,
+              "end": 33
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 35,
+                  "end": 45
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 47,
+                  "end": 51
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/fullest-article-wins",
+      "format": "html",
+      "input": "<article><p>teaser</p></article><article><h1>Paper</h1><p>the body of the paper</p></article><article><p>another teaser</p></article>",
+      "expected": {
+        "text": "Paper\n\nthe body of the paper",
+        "title_span": {
+          "start": 0,
+          "end": 5
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 7,
+                  "end": 28
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/role-main",
+      "format": "html",
+      "input": "<div>banner</div><div role=\"main\"><h1>T</h1><p>content</p></div><div>footer</div>",
+      "expected": {
+        "text": "T\n\ncontent",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 10
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/citation-title-fallback",
+      "format": "html",
+      "input": "<head><title>Junk | Site</title><meta name=\"CITATION_TITLE\" content=\"  The  Real Title \"></head><body><p>x</p></body>",
+      "expected": {
+        "text": "The Real Title\n\nx",
+        "title_span": {
+          "start": 0,
+          "end": 14
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 16,
+                  "end": 17
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/malformed-markup",
+      "format": "html",
+      "input": "<p>one<p>two<ul><li>a<li>b</ul><b>bold <i>both</b> italic?</i></div></span><p>after stray ends",
+      "expected": {
+        "text": "one\n\ntwo\n\na\n\nb\n\nbold both italic?\n\nafter stray ends",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 3
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 5,
+                  "end": 8
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 10,
+                  "end": 11
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 13,
+                  "end": 14
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 16,
+                  "end": 33
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 35,
+                  "end": 51
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/table-foster-parenting",
+      "format": "html",
+      "input": "<table>stray text<tr><td>a<td>b</table><p>after</p>",
+      "expected": {
+        "text": "stray text\n\na\tb\n\nafter",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 10
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 12,
+                  "end": 15
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 17,
+                  "end": 22
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/table-cells",
+      "format": "html",
+      "input": "<table><tr><th>Outcome</th><th></th><th>p</th></tr><tr><td><p>Death</p><p>(any cause)</p></td><td>12</td><td>0.03</td></tr><tr><td></td><td> </td><td></td></tr></table>",
+      "expected": {
+        "text": "Outcome\t\tp\n\nDeath (any cause)\t12\t0.03",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 0,
+                  "end": 10
+                }
+              },
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 12,
+                  "end": 37
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/noscript-in-head",
+      "format": "html",
+      "input": "<head><noscript><img src=x>head junk<p>no</p></noscript></head><body><noscript><p>body junk</p></noscript><p>kept</p></body>",
+      "expected": {
+        "text": "kept",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/entities-and-astral",
+      "format": "html",
+      "input": "<p>a &amp; b &lt; c &copy &notit; &#x1D6FD; &#128; 5&nbsp;mg &bogus; &#0;</p><p>&#x1D6FD;-blocker 𝛽 é</p>",
+      "expected": {
+        "text": "a & b < c © ¬it; 𝛽 € 5 mg &bogus; �\n\n𝛽-blocker 𝛽 é",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 35
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 37,
+                  "end": 50
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/hidden-and-comments",
+      "format": "html",
+      "input": "<p>shown<!-- a <p>comment</p> --> on</p><div hidden><p>hidden</p></div><p hidden>also hidden</p><template><p>tpl</p></template><p>end</p>",
+      "expected": {
+        "text": "shown on\n\nend",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 8
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 10,
+                  "end": 13
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/headings",
+      "format": "html",
+      "input": "<h2>Lead <p>in</p> heading</h2><p>a</p><h3>Sub<h4>Implied close</h4><p>b</p><h6>Deep</h6><h2><span></span></h2><p>c</p>",
+      "expected": {
+        "text": "Lead in heading\n\na\n\nSub\n\nImplied close\n\nb\n\nDeep\n\nc",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 0,
+              "end": 15
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 17,
+                  "end": 18
+                }
+              }
+            ]
+          },
+          {
+            "level": 3,
+            "heading_span": {
+              "start": 20,
+              "end": 23
+            },
+            "blocks": []
+          },
+          {
+            "level": 4,
+            "heading_span": {
+              "start": 25,
+              "end": 38
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 40,
+                  "end": 41
+                }
+              }
+            ]
+          },
+          {
+            "level": 6,
+            "heading_span": {
+              "start": 43,
+              "end": 47
+            },
+            "blocks": []
+          },
+          {
+            "level": 2,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 49,
+                  "end": 50
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/svg-dropped-math-kept",
+      "format": "html",
+      "input": "<p>See <svg><text>label</text></svg>the formula <math><mi>x</mi><mo>=</mo><mn>2</mn></math> here.</p>",
+      "expected": {
+        "text": "See the formula x=2 here.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 25
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/whitespace-and-br",
+      "format": "html",
+      "input": "<p>line one\r\nline\ttwo<br>three<br/> four</p><pre>  code\n    block  </pre><hr><p>  </p>",
+      "expected": {
+        "text": "line one line two three four\n\ncode block",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 28
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 30,
+                  "end": 40
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/empty",
+      "format": "html",
+      "input": "",
+      "expected": {
+        "text": "",
+        "title_span": null,
+        "sections": [],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
     }
   ],
   "valid": {
@@ -2670,7 +3292,7 @@
             ]
           }
         ],
-        "source_format": "html",
+        "source_format": "docx",
         "converter_version": "plain_text-1"
       }
     },

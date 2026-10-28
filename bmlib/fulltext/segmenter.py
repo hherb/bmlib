@@ -416,3 +416,20 @@ class SectionSegmenter:
         if candidate.font_size > median_font_size * _TITLE_SIZE_RATIO:
             return candidate.text
         return None
+
+
+#: The segmenter :func:`match_section_type` classifies with. Its patterns do
+#: not depend on the constructor's font thresholds, so one instance serves.
+_CLASSIFIER = SectionSegmenter()
+
+
+def match_section_type(text: str) -> tuple[SectionType, float]:
+    """Classify a heading's text against :attr:`SectionSegmenter.SECTION_PATTERNS`.
+
+    The segmenter's own rule, for a heading that did not come from a PDF (the
+    Rust port's ``segmenter::match_section_type``): an anchored match is
+    ``(type, 1.0)``, an unanchored word-bounded one ``(type,
+    PARTIAL_MATCH_CONFIDENCE)``, and ``(SectionType.UNKNOWN, 0.0)`` means no
+    pattern claimed it.
+    """
+    return _CLASSIFIER._match_section_type(text)
