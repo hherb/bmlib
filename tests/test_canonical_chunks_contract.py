@@ -19,12 +19,15 @@
 The same file Rust's ``rust/bmlib/tests/canonical_chunks_contract.rs`` asserts
 against: each case's canonical text, chunked with its sizes, gives exactly the
 expected chunks; the chunker's version and defaults are the fixture's; and each
-of its ``refusals`` (sizes) is refused by both languages alike.
+of its ``refusals`` (sizes) is refused by both languages alike. The fixture is
+written by ``scripts/make_canonical_chunks.py``, which must still build it.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +43,7 @@ from bmlib.fulltext.canonical import (
 
 FIXTURE = Path(__file__).parent / "fixtures" / "canonical_chunks.json"
 CONTRACT: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
+_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "scripts" / "make_canonical_chunks.py"
 CASES: list[dict[str, Any]] = CONTRACT["cases"]
 REFUSALS: list[dict[str, Any]] = CONTRACT["refusals"]
 
@@ -64,3 +68,13 @@ def test_bad_sizes_are_refused_with_a_value_error(refusal: dict[str, Any]) -> No
     canonical = CanonicalText.from_dict(CASES[0]["canonical"])
     with pytest.raises(ValueError, match="max_chars"):
         chunk_canonical(canonical, refusal["max_chars"], refusal["overlap_chars"])
+
+
+def test_the_generator_still_builds_the_fixture() -> None:
+    """A case edited into the JSON by hand, not into the script, is lost on regeneration."""
+    spec = importlib.util.spec_from_file_location("bmlib_make_canonical_chunks", _SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    make = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = make
+    spec.loader.exec_module(make)
+    assert make.build_contract() == CONTRACT

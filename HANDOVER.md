@@ -63,6 +63,25 @@ dropped; contract `tests/fixtures/canonical_chunks.json`. Its Rust CHANGELOG
 entry was missing and is added by this session.
 
 **Two sessions back** (PR #547, item 4a): `bmlib.fulltext.canonical`, one
+## This session: chunks of a canonical text (StudyAnalyzer item 3)
+
+Plan: `docs/superpowers/plans/2026-10-28-rag-chunker.md`.
+`bmlib.fulltext.canonical.chunk` / `bmlib::fulltext::canonical::chunk`:
+`chunk_canonical(text, max_chars, overlap_chars)` returns `Chunk`s (a
+code-point `TextSpan` and a `section_index`), sentence-aware, never across a
+section, never past `max_chars` (an over-long sentence is cut at whitespace,
+else at the cap), nothing dropped; overlap is by whole sentences, as in
+bmlibrarian. Sentence ends: bmlibrarian's abbreviation lookbehinds became a
+whole-token check (Rust's `regex` has no lookbehind). Shared contract
+`tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random,
+three refusals), written by `scripts/make_canonical_chunks.py`: add a case
+there, re-run it and check its stderr by eye, since a test holds the script to
+the fixture. `CHUNKER_VERSION` is pinned against
+`canonical/model.py` and `canonical/chunk.py`, so **an edit to the model now
+trips four pins**. Mutation-checked in both languages. **Next for
+StudyAnalyzer: 4b** (PDF), then 4c (HTML); item 6 (streaming) at any point.
+
+**The session before** (PR #547, item 4a): `bmlib.fulltext.canonical`, one
 string per paper with every title, heading and block a code-point span, from
 JATS, Markdown and plain text; contract `tests/fixtures/canonical_text.json`.
 `JATS_CANONICAL_VERSION` is pinned beside `RENDERER_VERSION` (**a JATS PR
