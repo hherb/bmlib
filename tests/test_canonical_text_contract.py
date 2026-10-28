@@ -21,7 +21,8 @@ against: every converter turns each case's input (for a PDF, the segmenter's
 ``SegmentedDocument`` as ``to_dict()`` writes it) into exactly the expected
 ``CanonicalText``, spans counted in code points, and the expected value
 round-trips through ``from_dict``. Each of its ``refusals`` (a variant of its
-``valid`` value) is refused by both languages alike.
+``valid`` value) is refused by both languages alike, and its ``html_elements``
+lists are both languages' ``PRUNED`` and ``BLOCKS``.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from bmlib.fulltext.canonical import (
     canonical_from_plain_text,
     canonical_from_segmented,
 )
+from bmlib.fulltext.canonical.html import BLOCKS, PRUNED
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import SegmentedDocument
 
@@ -73,6 +75,13 @@ def test_converter_output_is_the_expected_canonical_text(case: dict[str, Any]) -
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
 def test_expected_value_round_trips(case: dict[str, Any]) -> None:
     assert CanonicalText.from_dict(case["expected"]).to_dict() == case["expected"]
+
+
+def test_the_html_element_sets_are_the_contracts() -> None:
+    # A member one port lacks is otherwise invisible to both: each language's
+    # own tests iterate its own constant.
+    elements = CONTRACT["html_elements"]
+    assert (sorted(PRUNED), sorted(BLOCKS)) == (elements["pruned"], elements["blocks"])
 
 
 def test_the_contract_covers_every_format_it_names() -> None:

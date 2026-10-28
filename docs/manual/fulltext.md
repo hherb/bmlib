@@ -21,7 +21,7 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
 | `models` | `FullTextResult`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
 | `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
-| `segmenter` | `SectionSegmenter`, heading-detection patterns | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()` |
+| `segmenter` | `SectionSegmenter`, heading-detection patterns, `match_section_type()` | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()`; `assess_full_text()` classifies headings with `match_section_type()` |
 | `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `canonical_from_html()`, `assess_full_text()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
@@ -2522,21 +2522,27 @@ doc.converter_version                     # "jats-1"
   on (its `to_dict()` form).
 - **HTML** (extra `html`; Rust feature `html`): `canonical_from_html(html)`
   takes the page as text and reads it by fixed rules. Script, style,
-  navigation (`nav`, `aside`), forms, media, `svg`, `template`, `noscript` and
-  any element with a `hidden` attribute are dropped with their content. The
-  root is the `<article>` holding the most text (the first on a tie), else the
-  first `<main>` or `role="main"` element, else `<body>`. The title is the
+  navigation (`nav`, `aside`), forms, media, `svg`, `template`, `noscript`,
+  `noembed`, `noframes` and any element with a `hidden` attribute (but
+  `hidden="until-found"`, collapsed content a reader can still find) are
+  dropped with their content. The root is the `<article>` holding the most
+  text (the first on a tie) if it holds at least half the body's text
+  (`MIN_ARTICLE_SHARE`, unmeasured; a related-article card marked up as an
+  `<article>` beside the paper does not displace it), else the first `<main>`
+  or `role="main"` element, else `<body>`. The title is the
   first `<h1>` with text that the walk over the root reaches (not one inside a
   table row), which is then not a section, else `<meta
   name="citation_title">`, else `<title>`; a page with no `<body>` (a
-  frameset) is read from its `<html>` element. `<h1>`–`<h6>` start a section at
+  frameset) or a hidden one is read from its `<html>` element less its
+  `<head>`, so it has a title and no text. `<h1>`–`<h6>` start a section at
   their level, content before the first one is an untitled level-1 section, a
   block element (`p`, `div`, `li`, `section`, `figcaption`, …) ends the
   running paragraph, inline markup runs on, and `<br>` is a space. A `<tr>` is
   a table row of its `<td>`/`<th>` cells. Both languages parse with html5ever
   (through markupever in Python, scraper in Rust), so a malformed page builds
   the same tree in both; the versions differ (0.40 and 0.39), and the shared
-  fixture holds them together from the HTML source. Every walk is iterative,
+  fixture holds them together from the HTML source. Pass text: bytes raise
+  `TypeError` (markupever would decode them lossily). Every walk is iterative,
   so deep nesting costs no stack, but html5ever's parse is quadratic in
   nesting depth, so cap the size of a page you accept from outside.
   A page with neither `<article>` nor `<main>` may contribute its site name as
@@ -2546,12 +2552,13 @@ doc.converter_version                     # "jats-1"
   returns a `FullTextAssessment`: `is_full_text`, the `section_types` its
   headings were classified as (by `bmlib.fulltext.segmenter.match_section_type`)
   and `body_words`. It is a paper when a *Methods* heading and a *Results* or
-  *Discussion* one lie outside the abstract, and the blocks outside the
+  *Discussion* one lie outside the abstract and the references, and the blocks outside the
   abstract and the references hold at least `MIN_BODY_WORDS` (1,000) words. A
   section nested under *Abstract* (or *References*) is theirs, so a structured
   abstract's own *Methods* does not count. The threshold is **unmeasured**,
   and a paper without IMRaD headings (a case report, a letter) fails, so treat
-  `False` as "ask", not as proof.
+  `False` as "ask", not as proof. `True` is not proof either: a landing page
+  whose *Cited by* or *Similar articles* list is long enough can pass (#560).
 - **Versions**: `converter_version` is `"<format>-<n>"` from
   `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION`, `PLAIN_TEXT_VERSION`,
   `PDF_CANONICAL_VERSION` (which moves with the segmenter too) and

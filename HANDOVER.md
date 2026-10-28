@@ -45,7 +45,12 @@ Plan: `docs/superpowers/plans/2026-10-28-canonical-html.md`.
 `canonical_from_html(html)` (`bmlib.fulltext.canonical.html` /
 `…::canonical::html`, `"html-1"`) reads a page by fixed rules: pruned elements,
 the fullest `<article>` else `<main>` else `<body>`, the first `<h1>` the walk
-reaches as title, headings as sections, `<tr>` as rows. **html5ever in both
+reaches as title, headings as sections, `<tr>` as rows. The PR review
+(2026-10-29) made the fullest `<article>` the root only if it holds half the
+body's text, skipped `<head>` when the root falls back to `<html>`, pruned
+`noembed`/`noframes`, kept `hidden="until-found"`, refused bytes, measured
+nested articles in one walk, and pinned `PRUNED`/`BLOCKS` to the fixture's
+`html_elements` in both languages. **html5ever in both
 languages**: markupever (new extra `html`, in `all`) and scraper 0.27 (new
 Cargo feature `html`, off by default; CI's `pdf` test row, a clippy and a doc
 step turn it on). html5lib was the first cut and the pre-PR review refused it:
@@ -64,8 +69,10 @@ StudyAnalyzer's phase 2. Contract `tests/fixtures/full_text_assessment.json`
 from `scripts/make_full_text_assessment.py` (Markdown input, so it runs
 without the feature). `match_section_type` is public in Python now and differs
 from Rust on U+001C–U+001F and combining marks (**#557**, older than this
-session). **A `segmenter.py` edit trips the PDF pin**, and **a `model.py` edit
-trips six pins**. Mutation-checked, 29 mutants per language, one equivalent
+session). **A `segmenter.py` edit trips the PDF pin** but nothing pins
+`assess.py`: a pattern edit moves every assessment, and only
+`full_text_assessment.json` catches it. **A `model.py` edit trips six pins**.
+`assess_full_text` can say `True` for an abstract page (**#560**). Mutation-checked, 29 mutants per language, one equivalent
 each. **Next for StudyAnalyzer**: phase 1 item 6 (streaming) is the last one
 phase 2 needs; 5, 7, 8 after.
 

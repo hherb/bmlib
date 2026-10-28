@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""``canonical_from_html``: one test per rule of its module docstring.
+"""``canonical_from_html``: a test per rule of its module docstring.
 
 The byte-exact layouts are in the shared contract
 (``tests/test_canonical_text_contract.py``); these tests name the rules.
@@ -34,7 +34,7 @@ from bmlib.fulltext.canonical import (
     SourceFormat,
     canonical_from_html,
 )
-from bmlib.fulltext.canonical.html import PRUNED
+from bmlib.fulltext.canonical.html import BLOCKS, PRUNED
 
 
 def pieces(doc: CanonicalText) -> list[str]:
@@ -65,6 +65,17 @@ class TestPruning:
         doc = canonical_from_html("<p>shown</p><div hidden><p>not shown</p></div>")
         assert blocks(doc) == ["shown"]
 
+    def test_hidden_until_found_is_kept_in_any_case(self) -> None:
+        doc = canonical_from_html(
+            '<div hidden="until-found"><p>a</p></div><div hidden="UNTIL-FOUND">b</div>'
+            '<div hidden="until">c</div>'
+        )
+        assert blocks(doc) == ["a", "b"]
+
+    def test_noembed_markup_is_not_text(self) -> None:
+        # Raw text to html5ever: its content would be the literal "<b>x</b>".
+        assert blocks(canonical_from_html("<p>a<noembed><b>x</b></noembed>b</p>")) == ["ab"]
+
     def test_a_comment_is_dropped_and_its_tail_kept(self) -> None:
         assert blocks(canonical_from_html("<p>a<!-- note -->b</p>")) == ["ab"]
 
@@ -91,6 +102,35 @@ class TestRoot:
 
     def test_without_either_the_body_is_read(self) -> None:
         assert blocks(canonical_from_html("<div>a</div><p>b</p>")) == ["a", "b"]
+
+    def test_an_article_holding_under_half_the_text_is_not_the_root(self) -> None:
+        doc = canonical_from_html(
+            "<main><p>the paper, a long text</p></main><article><p>a teaser</p></article>"
+        )
+        assert blocks(doc) == ["the paper, a long text"]
+
+    def test_a_nested_articles_text_counts_towards_the_one_around_it(self) -> None:
+        doc = canonical_from_html("<p>x</p><article>a<article>bbbb</article></article>")
+        assert blocks(doc) == ["a", "bbbb"]
+
+    def test_nested_articles_are_measured_in_one_walk(self) -> None:
+        # Each article measured over its own subtree took 19 s at this depth.
+        doc = canonical_from_html("<article>x" * 4000)
+        assert len(blocks(doc)) == 4000
+
+    def test_a_hidden_body_leaves_the_head_unread(self) -> None:
+        doc = canonical_from_html("<title>T</title><body hidden><p>the paper</p></body>")
+        assert (doc.text, doc.sections) == ("T", ())
+
+    def test_a_frameset_page_has_no_text_but_its_title(self) -> None:
+        doc = canonical_from_html(
+            "<title>T</title><frameset><frame src=a><noframes><p>Read it</p></noframes></frameset>"
+        )
+        assert (doc.text, doc.sections) == ("T", ())
+
+    def test_a_namespaced_role_is_not_role(self) -> None:
+        doc = canonical_from_html("<p>a</p><math xlink:role=main><mi>x</mi></math><p>b</p>")
+        assert blocks(doc) == ["a", "x", "b"]
 
     def test_an_article_inside_a_pruned_element_is_not_a_root(self) -> None:
         doc = canonical_from_html(
@@ -152,7 +192,21 @@ class TestSections:
         assert pieces(doc)[0] == "1. Methods"
 
 
+#: Elements html5ever drops outside a table; the table tests read them.
+_TABLE_PARTS = frozenset({"caption", "table", "tbody", "td", "tfoot", "th", "thead", "tr"})
+
+
 class TestBlocks:
+    # `<body>` merges into the page's own; `<hr>` is void. The <main> keeps an
+    # <article> or a <main> from becoming the root.
+    @pytest.mark.parametrize("element", sorted(BLOCKS - _TABLE_PARTS - {"body", "hr"}))
+    def test_every_block_element_ends_the_paragraph(self, element: str) -> None:
+        doc = canonical_from_html(f"<main><div>a<{element}>b</{element}>c</div></main>")
+        assert blocks(doc) == ["a", "b", "c"]
+
+    def test_hr_ends_the_paragraph(self) -> None:
+        assert blocks(canonical_from_html("<div>a<hr>b</div>")) == ["a", "b"]
+
     def test_a_block_element_ends_the_paragraph_and_inline_runs_on(self) -> None:
         doc = canonical_from_html("<div>one <b>bold</b><i>italic</i><p>two</p>three</div>")
         assert blocks(doc) == ["one bolditalic", "two", "three"]
@@ -202,6 +256,17 @@ def test_deep_nesting_is_walked_without_recursion() -> None:
 def test_the_version_and_format_are_stamped() -> None:
     doc = canonical_from_html("<p>x</p>")
     assert (doc.source_format, doc.converter_version) == (SourceFormat.HTML, "html-1")
+
+
+def test_bytes_are_refused_not_decoded() -> None:
+    # markupever would decode a Latin-1 page's é to U+FFFD, in silence.
+    with pytest.raises(TypeError, match="not bytes"):
+        canonical_from_html(b"<p>caf\xe9</p>")  # type: ignore[arg-type]
+
+
+def test_a_lone_surrogate_is_a_value_error_naming_it() -> None:
+    with pytest.raises(ValueError, match="lone surrogate at index 4"):
+        canonical_from_html("<p>a\ud800</p>")
 
 
 def test_an_empty_page_is_an_empty_text() -> None:

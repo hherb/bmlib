@@ -35,8 +35,10 @@ fn every_assessment_is_the_expected_one() {
     let mut failures = Vec::new();
     for case in fixture["cases"].as_array().expect("a list of cases") {
         let markdown = case["markdown"].as_str().expect("a markdown string");
-        let actual = serde_json::to_value(assess_full_text(&canonical_from_markdown(markdown)))
-            .expect("serialisable");
+        let actual = serde_json::to_value(
+            assess_full_text(&canonical_from_markdown(markdown)).expect("a valid text"),
+        )
+        .expect("serialisable");
         if actual != case["expected"] {
             failures.push(format!(
                 "{}:\n  expected {}\n  actual   {}",

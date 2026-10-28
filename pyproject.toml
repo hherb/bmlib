@@ -73,7 +73,7 @@ pdf = ["pymupdf>=1.28.2"]
 # HTML to canonical text (bmlib.fulltext.canonical.html): markupever binds
 # html5ever, the parser the Rust port uses, so a page builds one tree in both
 # languages (html5lib was tried first and predates <template>, <search> and
-# the BOM rule). MIT; wheels for CPython 3.10-3.15 on every desktop platform.
+# the BOM rule). MIT.
 html = ["markupever>=0.4.0"]
 # In-process embedding (bmlib.embed): compiles llama.cpp on install. The
 # floor is the one version verified against the reference vectors. Not in

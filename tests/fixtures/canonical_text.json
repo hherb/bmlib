@@ -3077,6 +3077,369 @@
         "source_format": "html",
         "converter_version": "html-1"
       }
+    },
+    {
+      "name": "html/text-before-a-heading-is-the-lead",
+      "format": "html",
+      "input": "lead text<h2>Methods</h2><p>a</p>",
+      "expected": {
+        "text": "lead text\n\nMethods\n\na",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 9
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 11,
+              "end": 18
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 20,
+                  "end": 21
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/a-heading-in-a-cell-is-spaced",
+      "format": "html",
+      "input": "<table><tr><td>a<h2>b</h2>c</td></tr></table>",
+      "expected": {
+        "text": "a b c",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 0,
+                  "end": 5
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/an-empty-citation-title-is-passed-over",
+      "format": "html",
+      "input": "<meta name=\"citation_title\" content=\"\"><meta name=\"citation_title\" content=\"Second\"><p>x</p>",
+      "expected": {
+        "text": "Second\n\nx",
+        "title_span": {
+          "start": 0,
+          "end": 6
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 8,
+                  "end": 9
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/an-article-in-a-pruned-element-is-not-a-root",
+      "format": "html",
+      "input": "<aside><article><p>a long sidebar story</p></article></aside><p>x</p>",
+      "expected": {
+        "text": "x",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/the-first-of-equal-articles",
+      "format": "html",
+      "input": "<article><p>one</p></article><article><p>two</p></article>",
+      "expected": {
+        "text": "one",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 3
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/a-teaser-article-does-not-displace-main",
+      "format": "html",
+      "input": "<main><p>the paper, a long text</p></main><article><p>a teaser</p></article>",
+      "expected": {
+        "text": "the paper, a long text",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 22
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/an-article-at-exactly-half-the-text",
+      "format": "html",
+      "input": "<p>ab</p><article><p>cd</p></article>",
+      "expected": {
+        "text": "cd",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 2
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/a-nested-article-counts-towards-its-parent",
+      "format": "html",
+      "input": "<p>x</p><article>a<article>bbbb</article></article>",
+      "expected": {
+        "text": "a\n\nbbbb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 7
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/a-hidden-body-leaves-the-head-unread",
+      "format": "html",
+      "input": "<title>T</title><body hidden><h1>Paper</h1><p>the paper</p></body>",
+      "expected": {
+        "text": "T",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/a-frameset-page-has-only-its-title",
+      "format": "html",
+      "input": "<title>T</title><meta name=\"citation_title\" content=\"Paper\"><frameset><frame src=\"a\"><noframes><p>Read the <b>paper</b></p></noframes></frameset>",
+      "expected": {
+        "text": "Paper",
+        "title_span": {
+          "start": 0,
+          "end": 5
+        },
+        "sections": [],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/noembed-markup-is-not-text",
+      "format": "html",
+      "input": "<p>a<noembed><b>x</b></noembed>b</p>",
+      "expected": {
+        "text": "ab",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 2
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/hidden-until-found-is-kept",
+      "format": "html",
+      "input": "<div hidden=\"until-found\"><p>a</p></div><div hidden=\"UNTIL-FOUND\">b</div><div hidden=\"until\">c</div>",
+      "expected": {
+        "text": "a\n\nb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
+      "name": "html/a-namespaced-role-is-not-role",
+      "format": "html",
+      "input": "<p>a</p><math xlink:role=main><mi>x</mi></math><p>b</p>",
+      "expected": {
+        "text": "a\n\nx\n\nb",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 6,
+                  "end": 7
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
     }
   ],
   "valid": {
@@ -3623,5 +3986,65 @@
         "converter_version": "plain_text-1"
       }
     }
-  ]
+  ],
+  "html_elements": {
+    "pruned": [
+      "aside",
+      "audio",
+      "button",
+      "canvas",
+      "embed",
+      "form",
+      "iframe",
+      "nav",
+      "noembed",
+      "noframes",
+      "noscript",
+      "object",
+      "script",
+      "select",
+      "style",
+      "svg",
+      "template",
+      "textarea",
+      "video"
+    ],
+    "blocks": [
+      "address",
+      "article",
+      "blockquote",
+      "body",
+      "caption",
+      "dd",
+      "details",
+      "dialog",
+      "div",
+      "dl",
+      "dt",
+      "fieldset",
+      "figcaption",
+      "figure",
+      "footer",
+      "header",
+      "hgroup",
+      "hr",
+      "legend",
+      "li",
+      "main",
+      "menu",
+      "ol",
+      "p",
+      "pre",
+      "section",
+      "summary",
+      "table",
+      "tbody",
+      "td",
+      "tfoot",
+      "th",
+      "thead",
+      "tr",
+      "ul"
+    ]
+  }
 }

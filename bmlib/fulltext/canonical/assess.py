@@ -57,12 +57,22 @@ class FullTextAssessment:
 
     ``section_types`` are the classified headings outside the abstract and the
     references (those two themselves included), each once, in document order;
-    ``body_words`` counts the words of the blocks outside them.
+    ``body_words`` counts the words of the blocks outside them. The verdict,
+    :attr:`is_full_text`, is computed from the two, so no assessment can carry
+    one they contradict.
     """
 
-    is_full_text: bool
     section_types: tuple[SectionType, ...]
     body_words: int
+
+    @property
+    def is_full_text(self) -> bool:
+        """Whether the text looks like a whole paper (see :func:`assess_full_text`)."""
+        return (
+            _REQUIRED in self.section_types
+            and any(k in _ONE_OF for k in self.section_types)
+            and self.body_words >= MIN_BODY_WORDS
+        )
 
     def to_dict(self) -> dict[str, object]:
         """Return the JSON-serialisable form, the shape the shared contract pins."""
@@ -90,7 +100,8 @@ def assess_full_text(text: CanonicalText) -> FullTextAssessment:
     """Judge whether *text* is a whole paper (see the module docstring).
 
     It is when a *Methods* heading and a *Results* or *Discussion* one lie
-    outside the abstract, and the body holds at least :data:`MIN_BODY_WORDS`.
+    outside the abstract and the references, and the body holds at least
+    :data:`MIN_BODY_WORDS`.
     """
     found: list[SectionType] = []
     body_words = 0
@@ -108,7 +119,4 @@ def assess_full_text(text: CanonicalText) -> FullTextAssessment:
             excluded_level = section.level
             continue
         body_words += sum(count_words(text.span_text(b.span)) for b in section.blocks)
-    is_full_text = (
-        _REQUIRED in found and any(k in _ONE_OF for k in found) and body_words >= MIN_BODY_WORDS
-    )
-    return FullTextAssessment(is_full_text, tuple(found), body_words)
+    return FullTextAssessment(tuple(found), body_words)

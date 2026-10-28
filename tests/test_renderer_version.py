@@ -94,8 +94,9 @@ PDF_SOURCES = (
 )
 
 #: What an HTML page's canonical text is computed by: the converter and the
-#: layout. markupever, which parses the page, is outside this net as the standard
-#: library is outside the renderer's.
+#: layout. The parser is outside this net: a markupever release (it has no upper
+#: bound) or Rust's next html5ever (#558) can move the output with no pin
+#: firing, so the shared fixture's malformed-markup cases are what catch that.
 HTML_SOURCES = ("canonical/model.py", "canonical/html.py")
 
 #: What the chunks of a canonical text are computed by (the chunker reads the
@@ -128,7 +129,7 @@ CANONICAL_PINNED = (1, "0bdd9bd8ec8b67e290a912bc6d7bccab25ceb91df542251e659b2125
 PLAIN_TEXT_PINNED = (1, "0bcaf643207714fffded4b3b666145131f2988cf43fc1a21bf57089997c6a34d")
 MARKDOWN_PINNED = (1, "8b7077cd0ddc7b5803a465044b9531699f550f4e7c914d77858c6c202179115e")
 PDF_PINNED = (1, "49a5b071d85fa0c0d27b5d3a85bcad900f8dd86ff12bc6ec860aa6d757fd5742")
-HTML_PINNED = (1, "63e4203766f01af9a53e72eb0bf1a6b6e0506c041cf99a7179f30be5b460c8f3")
+HTML_PINNED = (1, "bf07e27dfcec51a6951a16fa120d1a0ae2bdcb88b21d1be4ef279466388558b4")
 CHUNKER_PINNED = (1, "ef8ad47f8c4ee52e960c7349272ff39813c62b0f5ac34b2ba09fc5e41771f845")
 
 PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")

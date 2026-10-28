@@ -22,9 +22,10 @@
 //! 0.40 there; the shared fixture is what holds them together), scripting on
 //! and a leading byte-order mark discarded. Every walk is iterative, over
 //! ego-tree's open and close edges, so nesting depth costs time, not stack. In
-//! short: [`PRUNED`] elements and any `hidden` one are dropped; the root is the
-//! fullest `<article>`, else `<main>` (or `role="main"`), else `<body>`, else
-//! the `<html>` element; the title is the first `<h1>` with text the walk
+//! short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
+//! are dropped; the root is the fullest `<article>` if it holds at least
+//! [`MIN_ARTICLE_SHARE`] of the body's text, else `<main>` (or `role="main"`),
+//! else `<body>`, else the `<html>` element without its `<head>`; the title is the first `<h1>` with text the walk
 //! reaches, else `<meta name="citation_title">`, else `<title>`; `<h1>`–`<h6>`
 //! start sections; a [`BLOCKS`] element ends the running paragraph; a `<tr>` is
 //! a table row. Behind the `html` feature.
@@ -41,11 +42,19 @@ use crate::fulltext::jats_text::normalize_whitespace;
 /// differently.
 pub const HTML_CANONICAL_VERSION: u32 = 1;
 
+/// The least share of the body's text, in characters that are not white space,
+/// the fullest `<article>` must hold to be the root, as `(numerator,
+/// denominator)`. Unmeasured: a starting point, like [`MIN_BODY_WORDS`].
+///
+/// [`MIN_BODY_WORDS`]: crate::fulltext::canonical::MIN_BODY_WORDS
+pub const MIN_ARTICLE_SHARE: (usize, usize) = (1, 2);
+
 /// Elements dropped with their content: code, styling, navigation, forms,
-/// embedded media and graphics, none of it the paper's prose.
-pub const PRUNED: [&str; 17] = [
-    "script", "style", "noscript", "template", "nav", "aside", "form", "button", "select",
-    "textarea", "svg", "iframe", "object", "embed", "canvas", "audio", "video",
+/// embedded media and graphics, none of it the paper's prose. `<noembed>` and
+/// `<noframes>` are raw text to html5ever, so their content is markup.
+pub const PRUNED: [&str; 19] = [
+    "script", "style", "noscript", "noembed", "noframes", "template", "nav", "aside", "form",
+    "button", "select", "textarea", "svg", "iframe", "object", "embed", "canvas", "audio", "video",
 ];
 
 /// Elements that end the running paragraph where they begin and end.
@@ -107,9 +116,14 @@ fn heading_level(name: &str) -> Option<usize> {
     }
 }
 
-/// Whether `element` and its content are dropped ([`PRUNED`], or `hidden`).
+/// Whether `element` and its content are dropped ([`PRUNED`], or `hidden` but
+/// not `hidden="until-found"`). `attr` reads an attribute in no namespace.
 fn is_pruned(element: ElementRef<'_>) -> bool {
-    PRUNED.contains(&element.value().name()) || element.value().attr("hidden").is_some()
+    PRUNED.contains(&element.value().name())
+        || element
+            .value()
+            .attr("hidden")
+            .is_some_and(|hidden| !hidden.eq_ignore_ascii_case("until-found"))
 }
 
 /// One step of [`edges`]: an element opening or closing, or a text.
@@ -206,16 +220,48 @@ fn text_of(element: ElementRef<'_>) -> String {
 }
 
 /// The element the paper is read from: the fullest article, else main, else `body`.
+///
+/// One walk measures every article: a text counts towards the innermost open
+/// one, and an article's length towards the one enclosing it when it closes,
+/// so nested articles cost time linear in the page, not in their depth.
 fn content_root(body: ElementRef<'_>) -> ElementRef<'_> {
-    let mut best: Option<(ElementRef<'_>, usize)> = None;
-    for element in elements(body).filter(|e| e.value().name() == "article") {
-        let length = text_of(element).chars().count();
-        if best.is_none_or(|(_, longest)| length > longest) {
-            best = Some((element, length));
+    let mut articles: Vec<(ElementRef<'_>, usize)> = Vec::new(); // in document order
+    let mut open: Vec<usize> = Vec::new();
+    let mut total = 0usize;
+    for step in edges(body) {
+        match step {
+            Step::Text(text) => {
+                let length = text.chars().filter(|c| !c.is_whitespace()).count();
+                total += length;
+                if let Some(&index) = open.last() {
+                    articles[index].1 += length;
+                }
+            }
+            Step::Open(e) if e.value().name() == "article" => {
+                open.push(articles.len());
+                articles.push((e, 0));
+            }
+            Step::Close(e) if e.value().name() == "article" => {
+                let length = open.pop().map_or(0, |index| articles[index].1);
+                if let Some(&index) = open.last() {
+                    articles[index].1 += length;
+                }
+            }
+            _ => {}
         }
     }
-    if let Some((article, _)) = best {
-        return article;
+    let mut best: Option<(ElementRef<'_>, usize)> = None;
+    for &(article, length) in &articles {
+        // A strict `>`, so the first article wins a tie.
+        if best.is_none_or(|(_, longest)| length > longest) {
+            best = Some((article, length));
+        }
+    }
+    let (numerator, denominator) = MIN_ARTICLE_SHARE;
+    if let Some((article, length)) = best {
+        if denominator * length >= numerator * total {
+            return article;
+        }
     }
     first(body, |e| {
         e.value().name() == "main" || e.value().attr("role") == Some("main")
@@ -288,6 +334,8 @@ impl Walk {
     ///
     /// A heading or a row is read whole where it opens (its own text, its
     /// cells), and the walk passes over its content to where it closes.
+    /// `<head>`, reached only when the root is the `<html>` element, is passed
+    /// over whole: its `<title>` is metadata, read only as the title.
     fn read(&mut self, root: ElementRef<'_>) {
         let mut inside = 0usize;
         for step in edges(root) {
@@ -308,7 +356,9 @@ impl Walk {
                 Step::Close(element) => (element, false),
             };
             let name = element.value().name();
-            if open && name == "br" {
+            if open && name == "head" {
+                inside = 1;
+            } else if open && name == "br" {
                 self.buffer.push(' ');
             } else if let (true, Some(level)) = (open, heading_level(name)) {
                 self.flush();
@@ -391,9 +441,7 @@ mod tests {
     #[test]
     fn the_root_is_the_fullest_article_else_main_else_body() {
         assert_eq!(
-            blocks(
-                "<p>blurb</p><article><p>teaser</p></article><article><p>the paper</p></article>"
-            ),
+            blocks("<p>b</p><article><p>teaser</p></article><article><p>the paper</p></article>"),
             ["the paper"]
         );
         assert_eq!(
@@ -435,6 +483,24 @@ mod tests {
             .map(|s| (s.level, s.heading_span.is_some()))
             .collect();
         assert_eq!(levels, [(1, false), (2, true), (4, true)]);
+    }
+
+    #[test]
+    fn every_block_element_ends_the_paragraph() {
+        // html5ever drops the table's own elements outside a table (the row
+        // tests read them), merges `<body>` into the page's, and `<hr>` is
+        // void. The `<main>` keeps an `<article>` or `<main>` from being the root.
+        const TABLE_PARTS: [&str; 8] = [
+            "caption", "table", "tbody", "td", "tfoot", "th", "thead", "tr",
+        ];
+        for element in BLOCKS
+            .iter()
+            .filter(|e| !TABLE_PARTS.contains(e) && !["body", "hr"].contains(e))
+        {
+            let html = format!("<main><div>a<{element}>b</{element}>c</div></main>");
+            assert_eq!(blocks(&html), ["a", "b", "c"], "{element}");
+        }
+        assert_eq!(blocks("<div>a<hr>b</div>"), ["a", "b"]);
     }
 
     #[test]

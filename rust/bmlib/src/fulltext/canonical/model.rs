@@ -76,9 +76,11 @@ pub enum BlockKind {
     TableRow,
 }
 
-/// The format a canonical text was converted from.
+/// The format a canonical text was converted from. `#[non_exhaustive]`, so a
+/// converter added later is not a breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SourceFormat {
     /// JATS XML, through the JATS reader.
     Jats,

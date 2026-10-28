@@ -31,7 +31,7 @@
 
 use serde::Serialize;
 
-use crate::fulltext::canonical::model::CanonicalText;
+use crate::fulltext::canonical::model::{CanonicalError, CanonicalText};
 use crate::fulltext::models::SectionType;
 use crate::fulltext::segmenter::match_section_type;
 
@@ -53,8 +53,11 @@ const ONE_OF: [SectionType; 2] = [SectionType::Results, SectionType::Discussion]
 /// `section_types` are the classified headings outside the abstract and the
 /// references (those two themselves included), each once, in document order;
 /// `body_words` counts the words of the blocks outside them. Serialises to the
-/// shape the shared contract pins, as Python's `to_dict()`.
+/// shape the shared contract pins, as Python's `to_dict()`. Built only by
+/// [`assess_full_text`] (`#[non_exhaustive]`), so `is_full_text` always agrees
+/// with the other two fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct FullTextAssessment {
     /// Whether the text looks like a whole paper.
     pub is_full_text: bool,
@@ -75,10 +78,16 @@ pub fn count_words(text: &str) -> usize {
 /// Judge whether `text` is a whole paper (the rule is in the module docs).
 ///
 /// It is when a *Methods* heading and a *Results* or *Discussion* one lie
-/// outside the abstract, and the body holds at least [`MIN_BODY_WORDS`].
-#[must_use]
-pub fn assess_full_text(text: &CanonicalText) -> FullTextAssessment {
-    let span_text = |span| text.span_text(span).expect("a canonical text's own span");
+/// outside the abstract and the references, and the body holds at least
+/// [`MIN_BODY_WORDS`].
+///
+/// # Errors
+///
+/// [`CanonicalError`] if `text` fails [`CanonicalText::validate`] (a text
+/// deserialised from storage, say), where Python's `span_text` raises.
+pub fn assess_full_text(text: &CanonicalText) -> Result<FullTextAssessment, CanonicalError> {
+    text.validate()?;
+    let span_text = |span| text.span_text(span).expect("a validated text's own span");
     let mut found: Vec<SectionType> = Vec::new();
     let mut body_words = 0;
     let mut excluded_level: Option<usize> = None;
@@ -106,11 +115,11 @@ pub fn assess_full_text(text: &CanonicalText) -> FullTextAssessment {
     let is_full_text = found.contains(&REQUIRED)
         && found.iter().any(|kind| ONE_OF.contains(kind))
         && body_words >= MIN_BODY_WORDS;
-    FullTextAssessment {
+    Ok(FullTextAssessment {
         is_full_text,
         section_types: found,
         body_words,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -130,11 +139,21 @@ mod tests {
         let text = canonical_from_markdown(&format!(
             "## Abstract\n\n### Methods\n\n{body}\n\n### Results\n\n## Introduction\n\ny"
         ));
-        let result = assess_full_text(&text);
+        let result = assess_full_text(&text).expect("a valid text");
         assert_eq!(
             result.section_types,
             vec![SectionType::Abstract, SectionType::Introduction]
         );
         assert_eq!((result.is_full_text, result.body_words), (false, 1));
+    }
+
+    #[test]
+    fn a_text_that_fails_validation_is_an_error_not_a_panic() {
+        let mut text = canonical_from_markdown("## Methods\n\nword");
+        text.sections[0].blocks[0].span.end = 99;
+        assert!(matches!(
+            assess_full_text(&text),
+            Err(CanonicalError::Outside { .. })
+        ));
     }
 }

@@ -23,7 +23,8 @@
 //! round-trips through `CanonicalText::from_value`. Each of its `refusals` (a
 //! variant of its `valid` value) is refused by both languages alike. The `html`
 //! cases are converted only with the `html` feature; their expected values
-//! round-trip without it.
+//! round-trip without it. Its `html_elements` lists are both languages'
+//! `PRUNED` and `BLOCKS`.
 
 use bmlib::fulltext::canonical::{
     canonical_from_jats, canonical_from_markdown, canonical_from_plain_text,
@@ -90,6 +91,30 @@ fn every_converter_output_is_the_expected_canonical_text() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// A member one port lacks is otherwise invisible to both: each language's own
+/// tests iterate its own constant.
+#[cfg(feature = "html")]
+#[test]
+fn the_html_element_sets_are_the_contracts() {
+    use bmlib::fulltext::canonical::html::{BLOCKS, PRUNED};
+    let contract = fixture();
+    let listed = |key: &str| -> Vec<String> {
+        contract["html_elements"][key]
+            .as_array()
+            .expect("a list of element names")
+            .iter()
+            .map(|name| name.as_str().expect("a name").to_string())
+            .collect()
+    };
+    let sorted = |names: &[&str]| -> Vec<String> {
+        let mut names: Vec<String> = names.iter().map(ToString::to_string).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(sorted(&PRUNED), listed("pruned"));
+    assert_eq!(sorted(&BLOCKS), listed("blocks"));
 }
 
 #[test]
