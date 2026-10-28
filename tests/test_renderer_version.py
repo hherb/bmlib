@@ -47,6 +47,7 @@ from pathlib import Path
 import pytest
 
 from bmlib.fulltext.canonical import (
+    CHUNKER_VERSION,
     JATS_CANONICAL_VERSION,
     MARKDOWN_VERSION,
     PLAIN_TEXT_VERSION,
@@ -77,12 +78,17 @@ CANONICAL_SOURCES = (*RENDERER_SOURCES, "canonical/model.py", "canonical/jats.py
 PLAIN_TEXT_SOURCES = ("canonical/model.py", "canonical/plain.py")
 MARKDOWN_SOURCES = (*PLAIN_TEXT_SOURCES, "canonical/markdown.py")
 
+#: What the chunks of a canonical text are computed by (the chunker reads the
+#: model's spans and ``is_white_space``).
+CHUNKER_SOURCES = ("canonical/model.py", "canonical/chunk.py")
+
 #: The version constant each source holds, whose value no digest reads.
 VERSION_CONSTANTS = {
     "jats_parser.py": "RENDERER_VERSION",
     "canonical/jats.py": "JATS_CANONICAL_VERSION",
     "canonical/plain.py": "PLAIN_TEXT_VERSION",
     "canonical/markdown.py": "MARKDOWN_VERSION",
+    "canonical/chunk.py": "CHUNKER_VERSION",
 }
 
 # bmlib modules the renderer imports whose code cannot reach its output, each
@@ -99,6 +105,7 @@ NOT_RENDERING = {
 CANONICAL_PINNED = (1, "5ef86753de0d68fd6dcee2fb99514a093d95646875800b2e2ba366d1e9da85e1")
 PLAIN_TEXT_PINNED = (1, "14e07e5b63014e2d2f6d67b24614cba05209cc38f9edcc7ade485f70fb9da4b1")
 MARKDOWN_PINNED = (1, "2dd34ae8d459a3a78b256b884dba14956979aee10b2a73ef798fc32bb4624621")
+CHUNKER_PINNED = (1, "89c2620c35383235ee7eafca40d74b46051341447db9a9f23c2e0fbe7925917f")
 
 PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")
 
@@ -263,6 +270,13 @@ def test_the_canonical_version_moves_with_its_converter() -> None:
             MARKDOWN_SOURCES,
             MARKDOWN_PINNED,
             id="markdown",
+        ),
+        pytest.param(
+            "CHUNKER_VERSION",
+            CHUNKER_VERSION,
+            CHUNKER_SOURCES,
+            CHUNKER_PINNED,
+            id="chunker",
         ),
     ],
 )
