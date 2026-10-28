@@ -33,8 +33,10 @@ client, no async).
   by name rather than silently.
 - **A stream that ends early is an error, not a short answer** (house rule 6):
   Anthropic must send `message_stop`, OpenAI a `finish_reason`, Ollama
-  `done: true`. An `error` event or object mid-stream is an error too.
-  `StreamError` in Python, `ChatError::Stream` in Rust.
+  `done: true`. An `error` event or object, or a connection breaking, after
+  the stream opened is an error too. `StreamError` in Python (each provider
+  wraps its SDK's own exception, since the SDKs raise on error events before
+  the reducer sees them), `ChatError::Stream` in Rust.
 - **Stopping:** `on_delta` returning `False` (Python) or
   `ControlFlow::Break` (Rust) closes the stream and returns what arrived,
   with `stop_reason = "cancelled"`. A chat UI needs a Stop button, and adding
@@ -48,7 +50,8 @@ client, no async).
   recorded in the token tracker, as `chat()` records.
 - **Not in a stream:** tools (refused, so a call never drops them silently),
   `<think>`-tag splitting and JSON repair (the content is exactly what was
-  streamed). Anthropic's reasoning blocks join with a blank line, as
+  streamed). Every provider's `chat_stream` refuses tools, not only the
+  client's. Anthropic's reasoning blocks join with a blank line, as
   Python's `chat()` joins them.
 - **Retry:** Python's Anthropic and OpenAI SDKs retry opening a stream
   themselves. Rust retries opening it (a transport failure, 429, 500, 502,
@@ -57,9 +60,10 @@ client, no async).
   caller has already shown those deltas. Rust's `chat()` retries nothing; that
   is filed as an issue, not widened here.
 - **Timeouts (Rust):** `ureq` has no idle timeout. A stream gets
-  `timeout_seconds` to connect and receive headers, then
-  `stream_timeout_seconds` (default 600) for the whole body, not the 45 s
-  global timeout that would cut a long answer off.
+  `timeout_seconds` for each step of sending, then `stream_timeout_seconds`
+  (default 600) for its headers (a local server may load the model first) and
+  again for its whole body, not the 45 s global timeout that would cut a long
+  answer off.
 
 ## Steps
 

@@ -53,6 +53,7 @@ class OpenAIProvider(OpenAICompatibleProvider):
             context_window=128_000,
             pricing=ModelPricing(input_cost=2.50, output_cost=10.0),
             capabilities=ProviderCapabilities(
+                supports_streaming=True,
                 supports_vision=True,
                 supports_function_calling=True,
                 supports_system_messages=True,

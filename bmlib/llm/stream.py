@@ -39,7 +39,7 @@ early.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -63,7 +63,9 @@ STREAM_USAGE_PROVIDERS: tuple[str, ...] = ("openai", "deepseek", "ollama")
 An OpenAI-compatible server reports token usage on a stream only when the
 request carries ``stream_options: {"include_usage": true}``, and some servers
 refuse that field as unknown. So it is sent only to the providers listed
-here, which document it. The Rust port keeps the same list.
+here, whose OpenAI-compatible APIs document it. Python's Ollama provider
+speaks the native API, which reports usage unasked, so the ``"ollama"`` entry
+matters only to the Rust port, which keeps the same list.
 """
 
 THINKING_BLOCK_SEPARATOR = "\n\n"
@@ -74,10 +76,54 @@ class StreamError(RuntimeError):
     """A stream that failed or ended before the answer was complete.
 
     Raised for an ``error`` event or object in the stream (the server's own
-    message is quoted) and for a stream that ended before its end marker.
-    The deltas already handed to ``on_delta`` stay valid as what arrived, but
-    the answer is not complete.
+    message is quoted), for a stream that broke off after it opened (the
+    providers wrap their SDK's exception, kept as ``__cause__``), and for a
+    stream that ended before its end marker. The deltas already handed to
+    ``on_delta`` stay valid as what arrived, but the answer is not complete.
+    A request refused before the stream opened raises what :meth:`chat`
+    would.
     """
+
+
+def refuse_tools(kwargs: Mapping[str, object]) -> None:
+    """Refuse a streamed request that carries tools.
+
+    A stream does not carry tool calls back, so tools sent with it would be
+    dropped silently and the caller would read prose as the model choosing
+    not to call them. Every ``chat_stream`` calls this before sending.
+
+    Raises:
+        NotImplementedError: If ``kwargs["tools"]`` is set.
+    """
+    if kwargs.get("tools") is not None:
+        raise NotImplementedError(
+            "chat_stream does not carry tool calls; use chat() for a request with tools"
+        )
+
+
+def sdk_events(
+    stream: Iterable[Any], dump: Callable[[Any], Mapping[str, Any]]
+) -> Iterator[Mapping[str, Any]]:
+    """Yield an SDK stream's events as dicts, its failures as :class:`StreamError`.
+
+    The SDKs raise their own exceptions for an error event or a broken
+    connection mid-stream; wrapping them here gives a caller one exception
+    for "the stream failed after it opened", as the Rust port's
+    ``ChatError::Stream`` is. Only the iteration is wrapped: an exception
+    ``on_delta`` raises is outside this generator and propagates unchanged.
+
+    Args:
+        stream: The SDK's stream object.
+        dump: Turns one SDK event into its JSON-shaped dict.
+
+    Raises:
+        StreamError: Whatever the SDK raised while streaming, as its cause.
+    """
+    try:
+        for event in stream:
+            yield dump(event)
+    except Exception as exc:
+        raise StreamError(f"the stream failed: {exc}") from exc
 
 
 @dataclass(frozen=True)

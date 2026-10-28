@@ -15,9 +15,11 @@ All notable changes to bmlib are documented here. The format is based on
   `StreamDelta` (text, or a separated reasoning trace) and returns the same
   `LLMResponse`, recording its usage. `on_delta` returning `False`
   (`ControlFlow::Break`) stops the stream, with `stop_reason="cancelled"`. A
-  stream that ends before its end marker, or reports an error mid-stream, is
-  a `StreamError` (`ChatError::Stream`), never a short answer. Tools are
-  refused (`ChatError::StreamingToolsUnsupported`); the content is exactly what
+  stream that fails after it opens (an error event, a broken connection; in
+  Python the SDK's exception is the `__cause__`) or ends before its end
+  marker is a `StreamError` (`ChatError::Stream`), never a short answer. Tools are
+  refused, by every provider's `chat_stream` too
+  (`ChatError::StreamingToolsUnsupported`); the content is exactly what
   was streamed, with no `<think>` splitting or JSON repair. The pure reducer,
   `StreamState` / `run_stream` in `bmlib.llm.stream` (`bmlib::llm::stream`),
   is held to the shared contract `tests/fixtures/chat_stream.json` (17
@@ -26,13 +28,15 @@ All notable changes to bmlib are documented here. The format is based on
   on an OpenAI-compatible stream is asked for only from
   `STREAM_USAGE_PROVIDERS` (`openai`, `deepseek`, `ollama`), as some servers
   refuse `stream_options`. Rust adds `HttpClient::post_json_stream` (refusing
-  by default) and `HttpStream`; `UreqClient` gives a stream its
-  `timeout_seconds` up to the headers and `stream_timeout_seconds` (600) for
-  the body, since the 45-second global timeout would cut a long answer off;
+  by default) and `HttpStream`; `UreqClient` gives each step of sending a
+  stream `timeout_seconds`, and its headers and then its body
+  `stream_timeout_seconds` (600) each, since the 45-second global timeout would
+  cut a long answer off and a local server may load the model first;
   `SseEvents` reads the wire; `LlmClient::chat_stream` retries opening (a
   transport failure or 429/500/502/503/504/529) up to three tries with
   backoff from `retry_base_delay`, never after the first byte. Python's
-  providers build `chat()`'s request in a `_request_kwargs` method both share.
+  providers build `chat()`'s request in a `_request_kwargs` method both share,
+  and now declare `supports_streaming`.
   Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`.
 - **Canonical text from an HTML page, and a full-text check** (StudyAnalyzer
   phase 1, item 4c). `canonical_from_html(html)` in `bmlib.fulltext.canonical`

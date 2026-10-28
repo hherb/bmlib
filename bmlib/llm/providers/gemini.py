@@ -51,6 +51,7 @@ class GeminiProvider(OpenAICompatibleProvider):
             context_window=1_000_000,
             pricing=ModelPricing(input_cost=0.10, output_cost=0.40),
             capabilities=ProviderCapabilities(
+                supports_streaming=True,
                 supports_vision=True,
                 supports_function_calling=True,
                 supports_system_messages=True,

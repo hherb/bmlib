@@ -38,7 +38,7 @@ from bmlib.llm.providers.base import (
     ProviderCapabilities,
     _sdk_import_failed,
 )
-from bmlib.llm.stream import StreamDelta, run_stream
+from bmlib.llm.stream import StreamDelta, refuse_tools, run_stream, sdk_events
 from bmlib.llm.utils import extract_json
 
 logger = logging.getLogger(__name__)
@@ -300,15 +300,19 @@ class AnthropicProvider(BaseProvider):
         retries opening the stream itself.
 
         Raises:
-            StreamError: If the stream ends early.
+            NotImplementedError: If *tools* is passed.
+            StreamError: If the stream fails after it opens or ends early.
             ValueError: As :meth:`chat` documents for *think*.
         """
+        refuse_tools(kwargs)
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
         stream = client.messages.create(**request_kwargs, stream=True)
         try:
-            return run_stream("anthropic", (event.to_dict() for event in stream), model, on_delta)
+            return run_stream(
+                "anthropic", sdk_events(stream, lambda e: e.to_dict()), model, on_delta
+            )
         finally:
             stream.close()
 
@@ -343,6 +347,7 @@ class AnthropicProvider(BaseProvider):
                         context_window=DEFAULT_CONTEXT_WINDOW,
                         pricing=pricing,
                         capabilities=ProviderCapabilities(
+                            supports_streaming=True,
                             supports_vision=True,
                             supports_function_calling=True,
                             supports_system_messages=True,

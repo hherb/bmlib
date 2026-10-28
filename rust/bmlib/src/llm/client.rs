@@ -45,9 +45,15 @@ pub const DEFAULT_PROVIDER: &str = "anthropic";
 
 /// How many times [`LlmClient::chat_stream`] tries to open a stream.
 ///
-/// The count Python's Anthropic and OpenAI SDKs use (one try and two
-/// retries). Only opening is retried: once a delta has reached the caller, a
-/// retry would show them a second answer after the first.
+/// As many tries as Python's Anthropic and OpenAI SDKs make by default (one
+/// and two retries); which failures are retried, and the backoff, are this
+/// port's own (the SDKs also retry 408 and 409 and honour `Retry-After`).
+/// Only opening is retried: once a delta has reached the caller, a retry
+/// would show them a second answer after the first. Every transport failure
+/// is retried, since [`FetchError`](crate::publications::fetchers::FetchError)
+/// does not say which step failed; a timeout waiting for the headers is one,
+/// so a request the server was already answering can be sent again, as the
+/// SDKs send it again.
 pub const STREAM_OPEN_ATTEMPTS: u32 = 3;
 
 /// The statuses on which opening a stream is retried: rate limiting, server
@@ -304,9 +310,10 @@ pub enum ChatError {
     Transport(String),
     /// The server's answer could not be used.
     Malformed(String),
-    /// A stream failed or ended before the answer was complete: an `error`
-    /// event (the server's message is quoted) or a missing end marker. The
-    /// deltas already delivered are what arrived of an incomplete answer.
+    /// A stream failed after it opened or ended before the answer was
+    /// complete: an `error` event (the server's message is quoted), a read
+    /// that broke off, or a missing end marker. The deltas already delivered
+    /// are what arrived of an incomplete answer.
     Stream(String),
     /// Tools were passed to [`LlmClient::chat_stream`], which does not carry
     /// tool calls; refused rather than sent without them.
@@ -757,7 +764,11 @@ impl LlmClient {
     /// What differs from `chat`: tools are refused; the content is exactly
     /// what was streamed; and an OpenAI-compatible server reports usage only
     /// when asked, which only [`STREAM_USAGE_PROVIDERS`] are, so elsewhere the
-    /// counts are 0 unless the server sends them unasked.
+    /// counts are 0 unless the server sends them unasked. A stopped stream
+    /// reports the counts the server had sent when it stopped (Anthropic's
+    /// input count is exact and its output count partial; an OpenAI-compatible
+    /// server reports usage last, so none). A failed stream records no usage,
+    /// as a failed `chat` records none.
     ///
     /// Opening the stream is retried on a transport failure or a
     /// [`RETRYABLE_STATUSES`] status, up to [`STREAM_OPEN_ATTEMPTS`] tries, with
@@ -798,7 +809,8 @@ impl LlmClient {
                 })
             });
         let response = run_stream(target.protocol, events, &target.model, on_delta)?;
-        // Recorded for a stopped stream too: its tokens were spent.
+        // Recorded for a stopped stream too, with the counts the server had
+        // sent by then, which understate what it spent.
         record_usage(&target, &response);
         Ok(response)
     }

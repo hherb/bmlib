@@ -51,7 +51,7 @@ from bmlib.llm.providers.base import (
     ProviderCapabilities,
     _sdk_import_failed,
 )
-from bmlib.llm.stream import StreamDelta, run_stream
+from bmlib.llm.stream import StreamDelta, refuse_tools, run_stream, sdk_events
 
 logger = logging.getLogger(__name__)
 
@@ -524,17 +524,17 @@ class OllamaProvider(BaseProvider):
         estimate; Ollama sends them on every completed stream.
 
         Raises:
-            StreamError: If the stream ends early.
+            NotImplementedError: If *tools* is passed.
+            StreamError: If the stream fails after it opens or ends early.
         """
+        refuse_tools(kwargs)
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
         stream = client.chat(**request_kwargs, stream=True)
         try:
             # ollama >=0.4 yields Pydantic models; older versions yield dicts.
-            events = (
-                chunk.model_dump() if hasattr(chunk, "model_dump") else chunk for chunk in stream
-            )
+            events = sdk_events(stream, lambda c: c.model_dump() if hasattr(c, "model_dump") else c)
             return run_stream("ollama", events, model, on_delta)
         finally:
             stream.close()
@@ -771,6 +771,7 @@ class OllamaProvider(BaseProvider):
             context_window=known_context,
             capabilities=_LazyOllamaCapabilities(
                 resolver,
+                supports_streaming=True,
                 supports_system_messages=True,
                 supports_function_calling="tools" in capability_names,
                 supports_vision="vision" in capability_names,
@@ -885,6 +886,7 @@ class OllamaProvider(BaseProvider):
                 context_window=context_window,
                 pricing=_FREE_PRICING,
                 capabilities=ProviderCapabilities(
+                    supports_streaming=True,
                     supports_system_messages=True,
                     supports_function_calling="tools" in capability_names,
                     supports_vision="vision" in capability_names,

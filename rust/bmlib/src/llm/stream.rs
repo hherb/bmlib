@@ -47,7 +47,9 @@ pub const CANCELLED_STOP_REASON: &str = "cancelled";
 /// An OpenAI-compatible server reports token usage on a stream only when the
 /// request carries `stream_options: {"include_usage": true}`, and some servers
 /// refuse that field as unknown. So it is sent only to the providers listed
-/// here, which document it. The Python keeps the same list.
+/// here, whose OpenAI-compatible APIs document it. The Python keeps the same
+/// list; its Ollama provider speaks the native API, so the `ollama` entry
+/// matters only here.
 pub const STREAM_USAGE_PROVIDERS: &[&str] = &["openai", "deepseek", "ollama"];
 
 /// What joins two of Anthropic's reasoning blocks, as Python's `chat()` joins
@@ -376,9 +378,9 @@ impl<R: BufRead> SseEvents<R> {
 }
 
 impl<R: BufRead> Iterator for SseEvents<R> {
-    /// An event's data, a transport failure ([`ChatError::Transport`]), or a
-    /// line that is not UTF-8 ([`ChatError::Malformed`]). Nothing follows an
-    /// error.
+    /// An event's data, a read that broke off ([`ChatError::Stream`]: the
+    /// stream had opened, as Python's providers report it), or a line that is
+    /// not UTF-8 ([`ChatError::Malformed`]). Nothing follows an error.
     type Item = Result<String, ChatError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -397,9 +399,7 @@ impl<R: BufRead> Iterator for SseEvents<R> {
                 Ok(_) => {}
                 Err(e) => {
                     self.finished = true;
-                    return Some(Err(ChatError::Transport(format!(
-                        "the stream broke off: {e}"
-                    ))));
+                    return Some(Err(ChatError::Stream(format!("the stream failed: {e}"))));
                 }
             }
             let Ok(text) = std::str::from_utf8(&line) else {
@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn a_read_failure_is_a_transport_error_and_ends_the_events() {
+    fn a_read_failure_is_a_stream_error_and_ends_the_events() {
         struct Broken;
         impl std::io::Read for Broken {
             fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
@@ -493,7 +493,7 @@ mod tests {
         }
         let got: Vec<_> = SseEvents::new(std::io::BufReader::new(Broken)).collect();
         assert_eq!(got.len(), 1);
-        assert!(matches!(&got[0], Err(ChatError::Transport(m)) if m.contains("reset")));
+        assert!(matches!(&got[0], Err(ChatError::Stream(m)) if m.contains("reset")));
     }
 
     #[test]

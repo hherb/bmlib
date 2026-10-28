@@ -54,7 +54,7 @@ from bmlib.llm.providers import (
     get_provider,
     list_providers,
 )
-from bmlib.llm.stream import StreamDelta
+from bmlib.llm.stream import StreamDelta, refuse_tools
 from bmlib.llm.token_tracker import get_token_tracker
 
 logger = logging.getLogger(__name__)
@@ -256,8 +256,15 @@ class LLMClient:
         -------------------------------
         * **No tools.** Passing ``tools=`` raises, rather than dropping them.
         * The content is exactly what was streamed: no ``<think>``-tag
-          splitting and no JSON repair under *json_mode* (which is still sent
-          to the server).
+          splitting and no JSON repair under *json_mode*. *json_mode* is still
+          sent where the protocol has a field for it (OpenAI-compatible
+          ``response_format``, Ollama ``format``); Anthropic has none, so
+          there it does nothing on a stream.
+        * A stopped stream reports the token counts the server had sent when
+          it stopped: Anthropic's input count is exact and its output count
+          partial, and an OpenAI-compatible server, which reports usage last,
+          has sent none. A stream that fails records no usage, as a failed
+          :meth:`chat` records none.
         * OpenAI-compatible servers report token usage on a stream only when
           asked, and only :data:`~bmlib.llm.stream.STREAM_USAGE_PROVIDERS` are
           asked; elsewhere the counts are 0 unless the server sends them.
@@ -265,14 +272,14 @@ class LLMClient:
         Raises:
             NotImplementedError: If *tools* is passed, or the provider
                 cannot stream.
-            StreamError: If the server reports a failure mid-stream or the
-                stream ends before its end marker; the deltas already
-                delivered are what arrived of an incomplete answer.
+            StreamError: If the stream fails after it opens (the server
+                reports an error, or the connection breaks; the SDK's
+                exception is the ``__cause__``) or ends before its end marker.
+                The deltas already delivered are what arrived of an
+                incomplete answer. A request refused before the stream opens
+                raises what :meth:`chat` would.
         """
-        if kwargs.get("tools") is not None:
-            raise NotImplementedError(
-                "chat_stream does not carry tool calls; use chat() for a request with tools"
-            )
+        refuse_tools(kwargs)
         provider_name, model_name = self._parse_model_string(model)
         logger.debug("Chat stream: provider=%s, model=%s", provider_name, model_name)
         provider = self._get_provider(provider_name)

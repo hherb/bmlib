@@ -35,8 +35,9 @@ pub const DEFAULT_TIMEOUT_SECONDS: u64 = 45;
 ///
 /// [`DEFAULT_TIMEOUT_SECONDS`] covers a whole request, and a long streamed
 /// answer outlasts it: a model writing a few thousand tokens takes minutes.
-/// `ureq` has no idle timeout, so a stream gets the ordinary timeout to
-/// connect and receive its headers, then this for the body.
+/// `ureq` has no idle timeout, so a stream gets the ordinary timeout for each
+/// step of sending, then this for the headers (a local server may load the
+/// model before it answers) and this again for the body.
 pub const DEFAULT_STREAM_TIMEOUT_SECONDS: u64 = 600;
 
 /// A blocking HTTP client over `ureq`.
@@ -50,10 +51,10 @@ pub struct UreqClient {
     /// Naming bmlib and a contact address is the polite form those services
     /// document.
     pub user_agent: String,
-    /// Seconds before a request is abandoned. For a stream, the time it may
-    /// take to connect and receive the response headers.
+    /// Seconds before a request is abandoned. For a stream, the limit on each
+    /// step of sending it: connecting, then the headers, then the body.
     pub timeout_seconds: u64,
-    /// Seconds a streamed body may take to arrive in full
+    /// Seconds a stream's response headers may take, and then its body
     /// ([`HttpClient::post_json_stream`]).
     pub stream_timeout_seconds: u64,
 }
@@ -94,19 +95,18 @@ impl UreqClient {
     }
 
     /// The blocking agent a stream runs on: [`UreqClient::timeout_seconds`]
-    /// for each step up to the response headers, then
-    /// [`UreqClient::stream_timeout_seconds`] for the body.
+    /// for each step of sending, then [`UreqClient::stream_timeout_seconds`]
+    /// for the headers and again for the body.
     fn stream_agent(&self) -> Result<ureq::Agent, FetchError> {
         let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
+        let stream = Some(std::time::Duration::from_secs(self.stream_timeout_seconds));
         self.agent_with(
             ureq::Agent::config_builder()
                 .timeout_connect(step)
                 .timeout_send_request(step)
                 .timeout_send_body(step)
-                .timeout_recv_response(step)
-                .timeout_recv_body(Some(std::time::Duration::from_secs(
-                    self.stream_timeout_seconds,
-                ))),
+                .timeout_recv_response(stream)
+                .timeout_recv_body(stream),
         )
     }
 

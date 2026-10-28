@@ -196,6 +196,43 @@ class TestAnthropicProvider:
             self._provider(stream).chat_stream(MESSAGES, on_delta)
         assert stream.closed
 
+    def test_an_sdk_failure_mid_stream_is_a_stream_error(self):
+        class _OverloadedError(Exception):
+            pass
+
+        class _BreakingStream(_FakeStream):
+            def __iter__(self):
+                yield from list(super().__iter__())[:3]
+                raise _OverloadedError("Overloaded")
+
+        stream = _BreakingStream(_events("anthropic/text"))
+        seen: list[StreamDelta] = []
+        with pytest.raises(StreamError, match="the stream failed: Overloaded") as caught:
+            self._provider(stream).chat_stream(MESSAGES, seen.append)
+        assert isinstance(caught.value.__cause__, _OverloadedError)
+        assert stream.closed
+
+    def test_an_exception_from_on_delta_is_not_wrapped(self):
+        stream = _FakeStream(_events("anthropic/text"))
+
+        def on_delta(_delta):
+            raise ValueError("the caller's own")
+
+        with pytest.raises(ValueError, match="the caller's own"):
+            self._provider(stream).chat_stream(MESSAGES, on_delta)
+
+    def test_the_provider_itself_refuses_tools(self):
+        from bmlib.llm import LLMToolDefinition
+
+        provider = self._provider(_FakeStream([]))
+        with pytest.raises(NotImplementedError, match="tool calls"):
+            provider.chat_stream(
+                MESSAGES,
+                lambda _d: None,
+                tools=[LLMToolDefinition(name="f", description="", parameters={})],
+            )
+        provider._client.messages.create.assert_not_called()
+
 
 class TestOpenAICompatibleProvider:
     def _provider(self, cls, stream: _FakeStream):
@@ -223,6 +260,19 @@ class TestOpenAICompatibleProvider:
         assert kwargs["stream"] is True
         assert "stream_options" not in kwargs
 
+    @pytest.mark.parametrize("cls", [OpenAIProvider, MistralProvider])
+    def test_the_provider_itself_refuses_tools(self, cls):
+        from bmlib.llm import LLMToolDefinition
+
+        provider = self._provider(cls, _FakeStream([]))
+        with pytest.raises(NotImplementedError, match="tool calls"):
+            provider.chat_stream(
+                MESSAGES,
+                lambda _d: None,
+                tools=[LLMToolDefinition(name="f", description="", parameters={})],
+            )
+        provider._client.chat.completions.create.assert_not_called()
+
 
 class _RecordingOllamaClient:
     def __init__(self, stream) -> None:
@@ -248,6 +298,19 @@ class TestOllamaProvider:
         assert response.thinking == "Read it."
         assert len(seen) == 3
         assert stream.closed
+
+    def test_the_provider_itself_refuses_tools(self):
+        from bmlib.llm import LLMToolDefinition
+
+        provider = OllamaProvider()
+        provider._client = _RecordingOllamaClient(_FakeStream([]))
+        with pytest.raises(NotImplementedError, match="tool calls"):
+            provider.chat_stream(
+                MESSAGES,
+                lambda _d: None,
+                tools=[LLMToolDefinition(name="f", description="", parameters={})],
+            )
+        assert provider._client.last_kwargs == {}
 
     def test_an_older_sdk_yielding_dicts_is_read_too(self):
         events = _events("ollama/length")
