@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 3**, branch
+_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 3**, PR #554, branch
 `feat/rag-chunker`, worktree `../bmlib-chunker`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
