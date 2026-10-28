@@ -80,6 +80,10 @@ class TestAssessFullText:
             canonical_from_markdown(paper("## Results", BODY, "## Discussion", "x"))
         ).is_full_text
 
+    def test_without_results_or_discussion_it_is_not(self) -> None:
+        result = assess_full_text(canonical_from_markdown(paper("## Methods", BODY)))
+        assert (result.is_full_text, result.body_words) == (False, MIN_BODY_WORDS)
+
     def test_one_word_short_it_is_not(self) -> None:
         short = " ".join(["word"] * (MIN_BODY_WORDS - 1))
         result = assess_full_text(canonical_from_markdown(paper("## Methods", short, "## Results")))
@@ -105,6 +109,14 @@ class TestAssessFullText:
     def test_the_abstract_ends_at_the_next_heading_of_its_level(self) -> None:
         result = assess_full_text(
             canonical_from_markdown(paper("## Abstract", "a b", "## Methods", BODY, "## Results"))
+        )
+        assert result.is_full_text and result.body_words == MIN_BODY_WORDS
+
+    def test_a_subsection_after_the_abstract_is_the_body(self) -> None:
+        result = assess_full_text(
+            canonical_from_markdown(
+                paper("## Abstract", "a", "## Methods", "### Participants", BODY, "## Results")
+            )
         )
         assert result.is_full_text and result.body_words == MIN_BODY_WORDS
 

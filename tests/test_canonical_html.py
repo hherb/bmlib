@@ -107,6 +107,7 @@ class TestTitle:
     def test_an_empty_h1_is_passed_over(self) -> None:
         doc = canonical_from_html('<h1><img src="logo.png"></h1><h1>Real</h1><p>x</p>')
         assert pieces(doc) == ["Real", "x"]
+        assert doc.title_span is not None and doc.span_text(doc.title_span) == "Real"
 
     def test_without_an_h1_the_citation_title_meta_tag(self) -> None:
         doc = canonical_from_html(
@@ -114,6 +115,10 @@ class TestTitle:
             "</head><p>x</p>"
         )
         assert pieces(doc) == ["Meta title", "x"]
+
+    def test_an_empty_citation_title_falls_through_to_the_title_element(self) -> None:
+        doc = canonical_from_html('<title>Page</title><meta name="citation_title" content=" ">')
+        assert pieces(doc) == ["Page"]
 
     def test_without_either_the_title_element(self) -> None:
         assert pieces(canonical_from_html("<title>Page</title><p>x</p>")) == ["Page", "x"]
@@ -166,6 +171,10 @@ class TestTables:
     def test_a_cells_inner_blocks_are_spaced(self) -> None:
         doc = canonical_from_html("<table><tr><td><p>a</p><p>b</p></td><td>c</td></tr></table>")
         assert blocks(doc) == ["a b\tc"]
+
+    def test_a_hidden_cell_is_dropped(self) -> None:
+        doc = canonical_from_html("<table><tr><td>a</td><td hidden>b</td><td>c</td></tr></table>")
+        assert blocks(doc) == ["a\tc"]
 
     def test_an_empty_cell_keeps_its_column(self) -> None:
         doc = canonical_from_html("<table><tr><td></td><td>c</td></tr></table>")

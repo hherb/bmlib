@@ -2828,6 +2828,35 @@
       }
     },
     {
+      "name": "html/title-and-cell-edges",
+      "format": "html",
+      "input": "<head><title>Fallback</title><meta name=\"citation_title\" content=\"  \"></head><body><h1> </h1><table><tr><td>a<td hidden>b<td>c</table></body>",
+      "expected": {
+        "text": "Fallback\n\na\tc",
+        "title_span": {
+          "start": 0,
+          "end": 8
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 10,
+                  "end": 13
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
       "name": "html/empty",
       "format": "html",
       "input": "",

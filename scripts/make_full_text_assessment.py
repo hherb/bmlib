@@ -67,6 +67,11 @@ def written_cases() -> list[tuple[str, str]]:
             f"## 2.1 Statistical methods\n\n{words(n)}\n\n## Trial results:\n\nx",
         ),
         ("no-methods", f"## Introduction\n\n{words(n)}\n\n## Results\n\nx\n\n## Discussion\n\ny"),
+        ("methods-only", f"## Methods\n\n{words(n)}"),
+        (
+            "subsection-after-the-abstract",
+            f"## Abstract\n\na\n\n## Methods\n\n### Participants\n\n{words(n)}\n\n## Results",
+        ),
         ("one-word-short", f"## Methods\n\n{words(n - 2)}\n\n## Results\n\nx"),
         ("exactly-enough", f"## Methods\n\n{words(n - 1)}\n\n## Results\n\nx"),
         (
