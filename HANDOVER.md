@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 4b**, branch
+_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 4b**, PR #556, branch
 `feat/canonical-pdf`, worktree `../bmlib-pdf`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
@@ -40,7 +40,7 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 ## This session: canonical text from a segmented PDF (StudyAnalyzer item 4b)
 
-Plan: `docs/superpowers/plans/2026-10-28-canonical-pdf.md`.
+PR #556. Plan: `docs/superpowers/plans/2026-10-28-canonical-pdf.md`.
 `canonical_from_segmented(document)` in `bmlib.fulltext.canonical` /
 `bmlib::fulltext::canonical::pdf` lays the segmenter's `SegmentedDocument` out
 as a `CanonicalText` (`SourceFormat.PDF`, `"pdf-1"`): detected headings as
