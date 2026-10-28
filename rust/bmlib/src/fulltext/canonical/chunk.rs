@@ -31,8 +31,9 @@
 //! `!` or `?` followed by whitespace ends a sentence unless the token before
 //! it is an abbreviation ([`ABBREVIATIONS`]). Unlike bmlibrarian, `max_chars`
 //! is a hard cap: a longer unit is cut at whitespace, or at the cap where it
-//! has none. Nothing is dropped: every non-whitespace code point of every
-//! block lies in some chunk.
+//! has none (a cut at the cap counts code points, so it can part a combining
+//! mark from its letter). Nothing is dropped: every non-whitespace code point
+//! of every block lies in some chunk.
 
 use std::fmt;
 
@@ -157,7 +158,11 @@ pub fn chunk_canonical(
 /// Each starts and ends on non-whitespace. A sentence ends at a mark of
 /// [`SENTENCE_ENDINGS`] followed by whitespace, unless the token before the
 /// mark is an abbreviation; the span's end always ends one. A span of
-/// whitespace alone has none. The span must lie within `text`.
+/// whitespace alone has none.
+///
+/// # Panics
+///
+/// If `span` reaches past the end of `text`.
 #[must_use]
 pub fn sentence_spans(text: &[char], span: TextSpan) -> Vec<TextSpan> {
     let mut out = Vec::new();
@@ -186,6 +191,10 @@ pub fn sentence_spans(text: &[char], span: TextSpan) -> Vec<TextSpan> {
 /// [`OPENING_MARKS`] stripped. Only an ASCII token can match:
 /// `to_ascii_lowercase` leaves a non-ASCII character as it is (where Python's
 /// `str.lower` maps the Kelvin sign to `k`, which its `isascii` guard refuses).
+///
+/// # Panics
+///
+/// If `mark` is not below `text.len()`.
 #[must_use]
 pub fn is_abbreviation(text: &[char], start: usize, mark: usize) -> bool {
     let mut begin = mark;

@@ -29,8 +29,9 @@ The sizes follow bmlibrarian's ``embeddings/chunk_embedder.py`` (1,000 and
 ``!`` or ``?`` followed by whitespace ends a sentence unless the token before
 it is an abbreviation (:data:`ABBREVIATIONS`). Unlike bmlibrarian,
 ``max_chars`` is a hard cap: a longer unit is cut at whitespace, or at the cap
-where it has none. Nothing is dropped: every non-whitespace code point of
-every block lies in some chunk.
+where it has none (a cut at the cap counts code points, so it can part a
+combining mark from its letter). Nothing is dropped: every non-whitespace code
+point of every block lies in some chunk.
 """
 
 from __future__ import annotations
