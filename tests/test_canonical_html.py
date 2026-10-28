@@ -137,6 +137,12 @@ class TestSections:
         doc = canonical_from_html("<p>lead</p><h2>Methods</h2><p>a</p>")
         assert doc.sections[0].heading_span is None and doc.sections[0].level == 1
 
+    def test_a_space_closes_an_inner_block_too(self) -> None:
+        doc = canonical_from_html(
+            "<h2><div>Results</div>and more</h2><table><tr><td><p>a</p>b</table>"
+        )
+        assert pieces(doc) == ["Results and more", "a b"]
+
     def test_br_in_a_heading_or_a_cell_is_a_space(self) -> None:
         doc = canonical_from_html("<h2>Results<br>and discussion</h2><table><tr><td>a<br>b</table>")
         assert pieces(doc) == ["Results and discussion", "a b"]

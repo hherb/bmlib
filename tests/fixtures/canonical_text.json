@@ -3038,6 +3038,35 @@
       }
     },
     {
+      "name": "html/inner-block-closes-with-a-space",
+      "format": "html",
+      "input": "<h2><div>Results</div>and more</h2><table><tr><td><p>a</p>b<td>c</table>",
+      "expected": {
+        "text": "Results and more\n\na b\tc",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 0,
+              "end": 16
+            },
+            "blocks": [
+              {
+                "kind": "table_row",
+                "span": {
+                  "start": 18,
+                  "end": 23
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "html",
+        "converter_version": "html-1"
+      }
+    },
+    {
       "name": "html/empty",
       "format": "html",
       "input": "",
