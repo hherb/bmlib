@@ -72,6 +72,7 @@ def written_cases() -> list[tuple[str, str]]:
             "subsection-after-the-abstract",
             f"## Abstract\n\na\n\n## Methods\n\n### Participants\n\n{words(n)}\n\n## Results",
         ),
+        ("repeated-headings", "## Methods\n\nx\n\n## Methods\n\ny\n\n## Results"),
         ("one-word-short", f"## Methods\n\n{words(n - 2)}\n\n## Results\n\nx"),
         ("exactly-enough", f"## Methods\n\n{words(n - 1)}\n\n## Results\n\nx"),
         (
