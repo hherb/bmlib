@@ -716,6 +716,14 @@ fn an_anthropic_response_is_read_from_its_blocks() {
         json!({"a": 1})
     );
 
+    // Several thinking blocks join with a blank line, as the Python's do.
+    let body = json!({"content": [{"type": "thinking", "thinking": "one"},
+                                  {"type": "thinking", "thinking": ""},
+                                  {"type": "thinking", "thinking": "two"},
+                                  {"type": "text", "text": "x"}]});
+    let response = parse_anthropic_response(&body, "m").expect("parses");
+    assert_eq!(response.thinking.as_deref(), Some("one\n\ntwo"));
+
     // An empty thinking block is not a trace.
     let body = json!({"content": [{"type": "thinking", "thinking": ""},
                                   {"type": "text", "text": "hi"}]});
