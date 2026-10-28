@@ -50,6 +50,7 @@ from bmlib.fulltext.canonical import (
     CHUNKER_VERSION,
     JATS_CANONICAL_VERSION,
     MARKDOWN_VERSION,
+    PDF_CANONICAL_VERSION,
     PLAIN_TEXT_VERSION,
 )
 from bmlib.fulltext.jats_parser import RENDERER_VERSION
@@ -78,6 +79,19 @@ CANONICAL_SOURCES = (*RENDERER_SOURCES, "canonical/model.py", "canonical/jats.py
 PLAIN_TEXT_SOURCES = ("canonical/model.py", "canonical/plain.py")
 MARKDOWN_SOURCES = (*PLAIN_TEXT_SOURCES, "canonical/markdown.py")
 
+#: What a PDF's canonical text is computed by: the converter, the layout and
+#: the paragraph rule it shares with plain text, and the segmenter and PyMuPDF
+#: line extraction that build the ``SegmentedDocument`` it reads, with what
+#: they import. A segmenter change moves the text as surely as a converter one.
+PDF_SOURCES = (
+    *PLAIN_TEXT_SOURCES,
+    "canonical/pdf.py",
+    "models.py",
+    "_titles.py",
+    "segmenter.py",
+    "pdf_converter.py",
+)
+
 #: What the chunks of a canonical text are computed by (the chunker reads the
 #: model's spans and ``is_white_space``).
 CHUNKER_SOURCES = ("canonical/model.py", "canonical/chunk.py")
@@ -88,6 +102,7 @@ VERSION_CONSTANTS = {
     "canonical/jats.py": "JATS_CANONICAL_VERSION",
     "canonical/plain.py": "PLAIN_TEXT_VERSION",
     "canonical/markdown.py": "MARKDOWN_VERSION",
+    "canonical/pdf.py": "PDF_CANONICAL_VERSION",
     "canonical/chunk.py": "CHUNKER_VERSION",
 }
 
@@ -102,10 +117,11 @@ NOT_RENDERING = {
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-CANONICAL_PINNED = (1, "5ef86753de0d68fd6dcee2fb99514a093d95646875800b2e2ba366d1e9da85e1")
-PLAIN_TEXT_PINNED = (1, "14e07e5b63014e2d2f6d67b24614cba05209cc38f9edcc7ade485f70fb9da4b1")
-MARKDOWN_PINNED = (1, "2dd34ae8d459a3a78b256b884dba14956979aee10b2a73ef798fc32bb4624621")
-CHUNKER_PINNED = (1, "1d126f731f098f70ee0c0762208d88a88971912aa8e1330470e6985253bf1e88")
+CANONICAL_PINNED = (1, "05f203fd176864d2124f858a162e70cdbf7573285cab401f7ef995616df7e4c2")
+PLAIN_TEXT_PINNED = (1, "1c4ea5c0d1cc49260de779aabe1c7b7345262201cfa44c276eddf0b256141bdb")
+MARKDOWN_PINNED = (1, "d9ada3be32e5d7fc146b6c6cd584d70e1c5434cd4d0ac645ad15a1a1b5b74f17")
+PDF_PINNED = (1, "87b523613b161952943868494e70f1a02273bef2b0d604f84f3df749f2d56e53")
+CHUNKER_PINNED = (1, "56caecc361dcdcf83f2253e385b1b5af4879a3604fd7e3622449f91d18be16fc")
 
 PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")
 
@@ -248,9 +264,9 @@ def test_the_canonical_version_moves_with_its_converter() -> None:
         "If the change can move what canonical_from_jats() returns for ANY document,\n"
         "bump JATS_CANONICAL_VERSION in canonical/jats.py, so a stored canonical text\n"
         "and everything pointing into it can tell it is stale; a change to assemble()\n"
-        "in model.py bumps PLAIN_TEXT_VERSION and MARKDOWN_VERSION too. Decide on\n"
-        "RENDERER_VERSION beside it. Either way, then re-pin CANONICAL_PINNED in this\n"
-        f"file to (JATS_CANONICAL_VERSION, {actual[1]!r})."
+        "in model.py bumps PLAIN_TEXT_VERSION, MARKDOWN_VERSION and PDF_CANONICAL_VERSION\n"
+        "too. Decide on RENDERER_VERSION beside it. Either way, then re-pin\n"
+        f"CANONICAL_PINNED in this file to (JATS_CANONICAL_VERSION, {actual[1]!r})."
     )
 
 
@@ -270,6 +286,13 @@ def test_the_canonical_version_moves_with_its_converter() -> None:
             MARKDOWN_SOURCES,
             MARKDOWN_PINNED,
             id="markdown",
+        ),
+        pytest.param(
+            "PDF_CANONICAL_VERSION",
+            PDF_CANONICAL_VERSION,
+            PDF_SOURCES,
+            PDF_PINNED,
+            id="pdf",
         ),
         pytest.param(
             "CHUNKER_VERSION",
@@ -396,8 +419,15 @@ def unclassified_imports(sources: dict[str, str]) -> set[str]:
 
 @pytest.mark.parametrize(
     "names",
-    [RENDERER_SOURCES, CANONICAL_SOURCES, PLAIN_TEXT_SOURCES, MARKDOWN_SOURCES, CHUNKER_SOURCES],
-    ids=["renderer", "jats-canonical", "plain-text", "markdown", "chunker"],
+    [
+        RENDERER_SOURCES,
+        CANONICAL_SOURCES,
+        PLAIN_TEXT_SOURCES,
+        MARKDOWN_SOURCES,
+        PDF_SOURCES,
+        CHUNKER_SOURCES,
+    ],
+    ids=["renderer", "jats-canonical", "plain-text", "markdown", "pdf", "chunker"],
 )
 def test_the_digest_covers_every_module_the_renderer_imports(names: tuple[str, ...]) -> None:
     """A bmlib module a pinned source starts importing must be classified.

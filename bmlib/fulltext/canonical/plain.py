@@ -38,12 +38,11 @@ def split_lines(text: str) -> list[str]:
     return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
-def canonical_from_plain_text(text: str, title: str = "") -> CanonicalText:
-    """Convert plain *text*: paragraphs are separated by blank lines.
+def split_paragraphs(text: str) -> list[BlockDraft]:
+    """*text*'s paragraphs, separated by blank lines, each line joined by a space.
 
-    A line holding only whitespace counts as blank. *title* (the paper's title,
-    known from elsewhere) becomes the title when it is not blank. Everything
-    else is one section, level 1, with no heading.
+    A line holding only whitespace counts as blank, so a run of blank lines
+    separates two paragraphs once and no paragraph is empty.
     """
     paragraphs: list[BlockDraft] = []
     current: list[str] = []
@@ -55,9 +54,19 @@ def canonical_from_plain_text(text: str, title: str = "") -> CanonicalText:
             current = []
     if current:
         paragraphs.append(BlockDraft.paragraph(" ".join(current)))
+    return paragraphs
+
+
+def canonical_from_plain_text(text: str, title: str = "") -> CanonicalText:
+    """Convert plain *text*: paragraphs are separated by blank lines.
+
+    A line holding only whitespace counts as blank. *title* (the paper's title,
+    known from elsewhere) becomes the title when it is not blank. Everything
+    else is one section, level 1, with no heading.
+    """
     return assemble(
         title,
-        [SectionDraft("", TOP_LEVEL, paragraphs)],
+        [SectionDraft("", TOP_LEVEL, split_paragraphs(text))],
         SourceFormat.PLAIN_TEXT,
         f"{SourceFormat.PLAIN_TEXT.value}-{PLAIN_TEXT_VERSION}",
     )

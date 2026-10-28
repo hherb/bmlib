@@ -1799,6 +1799,358 @@
         "source_format": "markdown",
         "converter_version": "markdown-1"
       }
+    },
+    {
+      "name": "pdf/front-matter-headings-and-paragraphs",
+      "format": "pdf",
+      "input": {
+        "title": "Beta-blockers after infarction",
+        "sections": [
+          {
+            "section_type": "front_matter",
+            "title": "Front Matter",
+            "content": "Beta-blockers after infarction\nA. Author, B. Author",
+            "page_start": 0,
+            "page_end": 0
+          },
+          {
+            "section_type": "abstract",
+            "title": "Abstract",
+            "content": "We randomised 120\npatients.\n\nMortality fell.",
+            "page_start": 0,
+            "page_end": 0
+          },
+          {
+            "section_type": "methods",
+            "title": "2. Methods",
+            "content": "",
+            "page_start": 0,
+            "page_end": 0
+          },
+          {
+            "section_type": "results",
+            "title": "Results",
+            "content": "Rates  \t fell\n\n\n \nin both arms.",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "Beta-blockers after infarction\n\nBeta-blockers after infarction A. Author, B. Author\n\nAbstract\n\nWe randomised 120 patients.\n\nMortality fell.\n\n2. Methods\n\nResults\n\nRates fell\n\nin both arms.",
+        "title_span": {
+          "start": 0,
+          "end": 30
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 32,
+                  "end": 83
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 85,
+              "end": 93
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 95,
+                  "end": 122
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 124,
+                  "end": 139
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 141,
+              "end": 151
+            },
+            "blocks": []
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 153,
+              "end": 160
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 162,
+                  "end": 172
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 174,
+                  "end": 187
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
+    },
+    {
+      "name": "pdf/no-headings-fallback-is-untitled",
+      "format": "pdf",
+      "input": {
+        "title": null,
+        "sections": [
+          {
+            "section_type": "unknown",
+            "title": "Full Text",
+            "content": "One paragraph\nacross lines.\n\nAnother.",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "One paragraph across lines.\n\nAnother.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 27
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 29,
+                  "end": 37
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
+    },
+    {
+      "name": "pdf/subsection-one-level-deeper",
+      "format": "pdf",
+      "input": {
+        "title": "T",
+        "sections": [
+          {
+            "section_type": "methods",
+            "title": "Methods",
+            "content": "Overview.",
+            "page_start": 0,
+            "page_end": 0,
+            "subsections": [
+              {
+                "section_type": "methods",
+                "title": "2.1 Participants",
+                "content": "Adults.",
+                "page_start": 0,
+                "page_end": 0
+              }
+            ]
+          },
+          {
+            "section_type": "results",
+            "title": "Results",
+            "content": "Done.",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "T\n\nMethods\n\nOverview.\n\n2.1 Participants\n\nAdults.\n\nResults\n\nDone.",
+        "title_span": {
+          "start": 0,
+          "end": 1
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 3,
+              "end": 10
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 12,
+                  "end": 21
+                }
+              }
+            ]
+          },
+          {
+            "level": 2,
+            "heading_span": {
+              "start": 23,
+              "end": 39
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 41,
+                  "end": 48
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 50,
+              "end": 57
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 59,
+                  "end": 64
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
+    },
+    {
+      "name": "pdf/code-points-not-bytes-or-utf16",
+      "format": "pdf",
+      "input": {
+        "title": "𝛽-blocker trial",
+        "sections": [
+          {
+            "section_type": "results",
+            "title": "Résultats",
+            "content": "𝛽 fell by 3 µg.",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "𝛽-blocker trial\n\nRésultats\n\n𝛽 fell by 3 µg.",
+        "title_span": {
+          "start": 0,
+          "end": 15
+        },
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 17,
+              "end": 26
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 28,
+                  "end": 43
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
+    },
+    {
+      "name": "pdf/blank-title-and-empty-container-dropped",
+      "format": "pdf",
+      "input": {
+        "title": "  ",
+        "sections": [
+          {
+            "section_type": "front_matter",
+            "title": "Front Matter",
+            "content": "\n\n",
+            "page_start": 0,
+            "page_end": 0
+          },
+          {
+            "section_type": "discussion",
+            "title": "Discussion",
+            "content": "It worked.",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "Discussion\n\nIt worked.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 0,
+              "end": 10
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 12,
+                  "end": 22
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
+    },
+    {
+      "name": "pdf/empty-document",
+      "format": "pdf",
+      "input": {},
+      "expected": {
+        "text": "",
+        "title_span": null,
+        "sections": [],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
     }
   ],
   "valid": {

@@ -17,15 +17,18 @@
 //! The shared canonical-text contract, `tests/fixtures/canonical_text.json`.
 //!
 //! The same file Python's `tests/test_canonical_text_contract.py` asserts
-//! against: every converter turns each case's input into exactly the expected
+//! against: every converter turns each case's input (for a PDF, the segmenter's
+//! `SegmentedDocument` as Python's `to_dict()` writes it) into exactly the expected
 //! `CanonicalText`, spans counted in code points, and the expected value
 //! round-trips through `CanonicalText::from_value`. Each of its `refusals` (a
 //! variant of its `valid` value) is refused by both languages alike.
 
 use bmlib::fulltext::canonical::{
-    canonical_from_jats, canonical_from_markdown, canonical_from_plain_text, CanonicalText,
+    canonical_from_jats, canonical_from_markdown, canonical_from_plain_text,
+    canonical_from_segmented, CanonicalText,
 };
 use bmlib::fulltext::jats_reader::parse;
+use bmlib::fulltext::models::SegmentedDocument;
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/canonical_text.json");
@@ -42,6 +45,11 @@ fn cases() -> Vec<Value> {
 }
 
 fn convert(case: &Value) -> CanonicalText {
+    if case["format"] == "pdf" {
+        let document: SegmentedDocument = serde_json::from_value(case["input"].clone())
+            .expect("the case's input is a SegmentedDocument");
+        return canonical_from_segmented(&document);
+    }
     let input = case["input"].as_str().expect("an input string");
     match case["format"].as_str().expect("a format") {
         "plain_text" => canonical_from_plain_text(input, case["title"].as_str().unwrap_or("")),

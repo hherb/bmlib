@@ -9,6 +9,21 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's canonical text from a PDF (StudyAnalyzer item 4b)
+`fulltext::canonical::canonical_from_segmented` and `PDF_CANONICAL_VERSION`,
+`SourceFormat::Pdf` (`"pdf"`), and `split_paragraphs`, which
+`canonical_from_plain_text` now calls, held to Python's by the `pdf` cases of
+`tests/fixtures/canonical_text.json`. Compiled without the `pdf` feature: it
+reads the segmenter's `SegmentedDocument`. A match on `SourceFormat` must
+name the new variant.
+
+### Added — follows Python's canonical-text chunker (StudyAnalyzer item 3)
+`fulltext::canonical::chunk_canonical`, `Chunk`, `ChunkError`,
+`sentence_spans`, `is_abbreviation`, `ABBREVIATIONS`, `CHUNKER_VERSION`,
+`DEFAULT_MAX_CHARS` and `DEFAULT_OVERLAP_CHARS` (PR #554), held to Python's by
+the shared `tests/fixtures/canonical_chunks.json`. Rust's `regex` has no
+lookbehind, so the abbreviation rule is a whole-token check in both languages.
+
 ### Added — follows Python's canonical text (StudyAnalyzer item 4a)
 `fulltext::canonical`: `CanonicalText`, `TextSpan` (code points),
 `CanonicalSection`, `CanonicalBlock`, `BlockKind`, `SourceFormat`,
