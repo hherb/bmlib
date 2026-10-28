@@ -52,7 +52,8 @@ close to bmlibrarian's `chunk_embedder.py`: 1,000 and 100).
 ## Tasks
 
 1. Python `chunk.py` and unit tests (`tests/test_canonical_chunk.py`).
-2. Fixture generated from Python by a scratch script, every expected chunk
-   checked by eye; `tests/test_canonical_chunks_contract.py`.
+2. Fixture generated from Python by `scripts/make_canonical_chunks.py`
+   (committed after review; a test holds it to the fixture), every expected
+   chunk checked by eye; `tests/test_canonical_chunks_contract.py`.
 3. Rust `chunk.rs`, unit tests, `rust/bmlib/tests/canonical_chunks_contract.rs`.
 4. Version pin, CHANGELOG, ROADMAP row, HANDOVER; both languages' gates.

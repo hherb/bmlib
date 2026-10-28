@@ -49,8 +49,9 @@ else at the cap), nothing dropped; overlap is by whole sentences, as in
 bmlibrarian. Sentence ends: bmlibrarian's abbreviation lookbehinds became a
 whole-token check (Rust's `regex` has no lookbehind). Shared contract
 `tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random,
-three refusals; the generator was a scratch script, so a new case is written
-in the same shape and checked by eye). `CHUNKER_VERSION` is pinned against
+three refusals), written by `scripts/make_canonical_chunks.py`: add a case
+there, re-run it and check its stderr by eye, since a test holds the script to
+the fixture. `CHUNKER_VERSION` is pinned against
 `canonical/model.py` and `canonical/chunk.py`, so **an edit to the model now
 trips four pins**. Mutation-checked in both languages. **Next for
 StudyAnalyzer: 4b** (PDF), then 4c (HTML); item 6 (streaming) at any point.
