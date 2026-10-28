@@ -39,7 +39,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from bmlib.fulltext.canonical.model import CanonicalText, TextSpan, is_white_space
+from bmlib.fulltext.canonical.model import CanonicalText, TextSpan, _field, is_white_space
 
 #: Bumped whenever a change can move the chunks of any canonical text, so a
 #: stored chunk (and its embedding) can tell it is stale. Pinned against this
@@ -56,7 +56,8 @@ DEFAULT_OVERLAP_CHARS = 100
 #: The marks that end a sentence when whitespace follows.
 SENTENCE_ENDINGS = frozenset(".!?")
 
-#: Tokens that a full stop does not end a sentence after, compared lower-case.
+#: Tokens after which a ``.``, ``!`` or ``?`` does not end a sentence, compared
+#: lower-case.
 #: bmlibrarian's fourteen, plus ``figs``, ``e.g``, ``i.e``, ``cf`` and ``approx``.
 ABBREVIATIONS = frozenset(
     {
@@ -89,14 +90,30 @@ OPENING_MARKS = frozenset("([{\"'“‘")
 
 @dataclass(frozen=True)
 class Chunk:
-    """One chunk: the index of the section it lies in, and its span."""
+    """One chunk: the index of the section it lies in, and its span.
+
+    It does not carry :data:`CHUNKER_VERSION`; a caller storing chunks records
+    that beside the canonical text's ``converter_version``.
+    """
 
     section_index: int
     span: TextSpan
 
+    def __post_init__(self) -> None:
+        """Refuse a section index that is not a non-negative integer."""
+        if type(self.section_index) is not int or self.section_index < 0:
+            raise ValueError(
+                f"a chunk's section_index must be a non-negative integer, got {self!r}"
+            )
+
     def to_dict(self) -> dict[str, Any]:
         """Return ``{"section_index": …, "span": {"start": …, "end": …}}``."""
         return {"section_index": self.section_index, "span": self.span.to_dict()}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Chunk:
+        """Rebuild a chunk from :meth:`to_dict` output; ``ValueError`` if malformed."""
+        return cls(_field(data, "section_index"), TextSpan.from_dict(_field(data, "span")))
 
 
 def chunk_canonical(
@@ -108,7 +125,9 @@ def chunk_canonical(
 
     Each chunk's span starts and ends on non-whitespace, is at most *max_chars*
     code points long, and lies within one section's blocks. The title and the
-    headings are not chunked; a section's heading is reached by its index.
+    headings are not chunked; a section's heading is reached by its index. So a
+    text whose blocks hold no non-whitespace — a title and headings alone —
+    gives no chunks.
 
     Raises:
         ValueError: if *max_chars* is below 1, *overlap_chars* is negative or
@@ -195,9 +214,10 @@ def _cut(text: str, unit: TextSpan, max_chars: int) -> list[TextSpan]:
 def _pack(units: list[TextSpan], max_chars: int, overlap_chars: int) -> list[TextSpan]:
     """Pack *units* (each within the cap, in order) greedily into chunk spans.
 
-    After a chunk, the next restarts at the first of its units that begins
-    within *overlap_chars* of its end, unless there is none or those units and
-    the next new one would together pass *max_chars*.
+    After a chunk, the next restarts at the first of its units after its first
+    that begins within *overlap_chars* of its end (the first is never carried,
+    so every chunk moves on), unless there is none or those units and the next
+    new one would together pass *max_chars*.
     """
     chunks: list[TextSpan] = []
     first = 0

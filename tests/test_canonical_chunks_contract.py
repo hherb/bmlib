@@ -62,5 +62,5 @@ def test_the_version_and_defaults_are_the_contracts() -> None:
 @pytest.mark.parametrize("refusal", REFUSALS, ids=[r["name"] for r in REFUSALS])
 def test_bad_sizes_are_refused_with_a_value_error(refusal: dict[str, Any]) -> None:
     canonical = CanonicalText.from_dict(CASES[0]["canonical"])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="max_chars"):
         chunk_canonical(canonical, refusal["max_chars"], refusal["overlap_chars"])

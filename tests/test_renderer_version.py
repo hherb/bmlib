@@ -105,7 +105,7 @@ NOT_RENDERING = {
 CANONICAL_PINNED = (1, "5ef86753de0d68fd6dcee2fb99514a093d95646875800b2e2ba366d1e9da85e1")
 PLAIN_TEXT_PINNED = (1, "14e07e5b63014e2d2f6d67b24614cba05209cc38f9edcc7ade485f70fb9da4b1")
 MARKDOWN_PINNED = (1, "2dd34ae8d459a3a78b256b884dba14956979aee10b2a73ef798fc32bb4624621")
-CHUNKER_PINNED = (1, "89c2620c35383235ee7eafca40d74b46051341447db9a9f23c2e0fbe7925917f")
+CHUNKER_PINNED = (1, "1d126f731f098f70ee0c0762208d88a88971912aa8e1330470e6985253bf1e88")
 
 PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")
 
@@ -396,8 +396,8 @@ def unclassified_imports(sources: dict[str, str]) -> set[str]:
 
 @pytest.mark.parametrize(
     "names",
-    [RENDERER_SOURCES, CANONICAL_SOURCES, PLAIN_TEXT_SOURCES, MARKDOWN_SOURCES],
-    ids=["renderer", "jats-canonical", "plain-text", "markdown"],
+    [RENDERER_SOURCES, CANONICAL_SOURCES, PLAIN_TEXT_SOURCES, MARKDOWN_SOURCES, CHUNKER_SOURCES],
+    ids=["renderer", "jats-canonical", "plain-text", "markdown", "chunker"],
 )
 def test_the_digest_covers_every_module_the_renderer_imports(names: tuple[str, ...]) -> None:
     """A bmlib module a pinned source starts importing must be classified.

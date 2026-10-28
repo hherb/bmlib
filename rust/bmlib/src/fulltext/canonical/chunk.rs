@@ -56,7 +56,8 @@ pub const DEFAULT_OVERLAP_CHARS: usize = 100;
 /// The marks that end a sentence when whitespace follows.
 pub const SENTENCE_ENDINGS: [char; 3] = ['.', '!', '?'];
 
-/// Tokens that a full stop does not end a sentence after, compared lower-case.
+/// Tokens after which a `.`, `!` or `?` does not end a sentence, compared
+/// lower-case.
 /// bmlibrarian's fourteen, plus `figs`, `e.g`, `i.e`, `cf` and `approx`.
 pub const ABBREVIATIONS: [&str; 19] = [
     "dr", "mr", "ms", "mrs", "fig", "tab", "vol", "no", "pp", "al", "jr", "sr", "vs", "ca", "figs",
@@ -68,6 +69,9 @@ pub const ABBREVIATIONS: [&str; 19] = [
 pub const OPENING_MARKS: [char; 7] = ['(', '[', '{', '"', '\'', '“', '‘'];
 
 /// One chunk: the index of the section it lies in, and its span.
+///
+/// It does not carry [`CHUNKER_VERSION`]; a caller storing chunks records that
+/// beside the canonical text's `converter_version`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chunk {
     /// Index into [`CanonicalText::sections`].
@@ -113,7 +117,8 @@ impl std::error::Error for ChunkError {}
 /// Each chunk's span starts and ends on non-whitespace, is at most
 /// `max_chars` code points long, and lies within one section's blocks. The
 /// title and the headings are not chunked; a section's heading is reached by
-/// its index.
+/// its index. So a text whose blocks hold no non-whitespace — a title and
+/// headings alone — gives no chunks.
 ///
 /// # Errors
 ///
@@ -194,7 +199,7 @@ pub fn sentence_spans(text: &[char], span: TextSpan) -> Vec<TextSpan> {
 ///
 /// # Panics
 ///
-/// If `mark` is not below `text.len()`.
+/// If `mark` is past `text.len()`.
 #[must_use]
 pub fn is_abbreviation(text: &[char], start: usize, mark: usize) -> bool {
     let mut begin = mark;
@@ -241,9 +246,10 @@ fn cut(text: &[char], unit: TextSpan, max_chars: usize) -> Vec<TextSpan> {
 
 /// Pack `units` (each within the cap, in order) greedily into chunk spans.
 ///
-/// After a chunk, the next restarts at the first of its units that begins
-/// within `overlap_chars` of its end, unless there is none or those units and
-/// the next new one would together pass `max_chars`.
+/// After a chunk, the next restarts at the first of its units after its first
+/// that begins within `overlap_chars` of its end (the first is never carried,
+/// so every chunk moves on), unless there is none or those units and the next
+/// new one would together pass `max_chars`.
 fn pack(units: &[TextSpan], max_chars: usize, overlap_chars: usize) -> Vec<TextSpan> {
     let mut chunks = Vec::new();
     let mut first = 0;

@@ -29,7 +29,8 @@ close to bmlibrarian's `chunk_embedder.py`: 1,000 and 100).
   leading opening brackets and quotes stripped, compared ASCII-case-blind with
   `ABBREVIATIONS` (bmlibrarian's fourteen plus `figs`, `e.g`, `i.e`, `cf`,
   `approx`). A block's end is always a unit's end. "Whitespace" is
-  `is_white_space` from the model, as in both languages already.
+  `is_white_space` from the model in Python and `char::is_whitespace` in Rust,
+  which it is defined to match.
 - **`max_chars` is a hard cap.** A unit longer than it is cut at the last
   whitespace that keeps the piece within the cap, or at the cap itself when
   there is none. Nothing is dropped (house rule 6): every non-whitespace code
@@ -37,15 +38,16 @@ close to bmlibrarian's `chunk_embedder.py`: 1,000 and 100).
   sentence whole instead; a hard cap keeps every chunk inside the embedder's
   window whatever the converter (4b's PDF prose may lack full stops).
 - **Overlap is by whole units**, as in bmlibrarian: the next chunk restarts at
-  the first unit of the last one that begins within `overlap_chars` of its end;
-  none if no such unit, and none if the carried units and the next new one
+  the first unit of the last one, after its first, that begins within
+  `overlap_chars` of its end (the first is never carried, so every chunk moves
+  on); none if no such unit, and none if the carried units and the next new one
   would together pass the cap (so every chunk adds text).
 - **Version.** `CHUNKER_VERSION = 1`, pinned against the chunker's sources in
-  `tests/test_renderer_version.py`; a stored chunk records it beside the
-  canonical text's `converter_version`. The fixture carries it, so Rust must
+  `tests/test_renderer_version.py`; a `Chunk` does not carry it, so a caller
+  storing chunks records it beside the canonical text's `converter_version`. The fixture carries it, so Rust must
   agree.
 - **Refusals.** `max_chars < 1`, `overlap_chars < 0`, `overlap_chars >=
-  max_chars`; the canonical text is validated first.
+  max_chars`, checked first; then the canonical text is validated.
 
 ## Tasks
 

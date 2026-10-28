@@ -207,6 +207,26 @@ class TestChunkCanonical:
             "span": {"start": 3, "end": 5},
         }
 
+    def test_chunk_from_dict_reads_to_dict_back(self) -> None:
+        chunk = Chunk(2, TextSpan(3, 5))
+        assert Chunk.from_dict(chunk.to_dict()) == chunk
+
+    @pytest.mark.parametrize(
+        ("data", "match"),
+        [
+            ({"span": {"start": 3, "end": 5}}, "section_index"),
+            ({"section_index": 0}, "span"),
+            ({"section_index": -1, "span": {"start": 3, "end": 5}}, "non-negative"),
+            ({"section_index": True, "span": {"start": 3, "end": 5}}, "non-negative"),
+            ({"section_index": 0, "span": {"start": 5, "end": 3}}, "reversed"),
+        ],
+    )
+    def test_chunk_from_dict_refuses_a_malformed_chunk(
+        self, data: dict[str, object], match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            Chunk.from_dict(data)
+
 
 class TestInvariants:
     """Over random texts: the cap, the trim, the order, and nothing dropped."""
@@ -217,8 +237,18 @@ class TestInvariants:
         def para() -> str:
             return "".join(rng.choice(self.ALPHABET) for _ in range(rng.randrange(0, 60)))
 
+        def cell() -> str:
+            # Often empty: a row ending in an empty cell ends its block on a tab.
+            alphabet = self.ALPHABET.replace("\t", "")
+            return "".join(rng.choice(alphabet) for _ in range(rng.choice([0, 0, 3, 12])))
+
+        def block() -> BlockDraft:
+            if rng.random() < 0.3:
+                return BlockDraft.row([cell() for _ in range(rng.randrange(1, 4))])
+            return BlockDraft.paragraph(para())
+
         sections = [
-            paragraphs(*(para() for _ in range(rng.randrange(0, 4))), heading=rng.choice(["", "H"]))
+            SectionDraft(rng.choice(["", "H"]), 1, [block() for _ in range(rng.randrange(0, 4))])
             for _ in range(rng.randrange(0, 4))
         ]
         return build(rng.choice(["", "T"]), *sections)

@@ -48,7 +48,7 @@ section, never past `max_chars` (an over-long sentence is cut at whitespace,
 else at the cap), nothing dropped; overlap is by whole sentences, as in
 bmlibrarian. Sentence ends: bmlibrarian's abbreviation lookbehinds became a
 whole-token check (Rust's `regex` has no lookbehind). Shared contract
-`tests/fixtures/canonical_chunks.json` (17 written cases, 20 seeded random,
+`tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random,
 three refusals; the generator was a scratch script, so a new case is written
 in the same shape and checked by eye). `CHUNKER_VERSION` is pinned against
 `canonical/model.py` and `canonical/chunk.py`, so **an edit to the model now

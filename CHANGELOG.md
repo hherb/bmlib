@@ -18,11 +18,12 @@ All notable changes to bmlib are documented here. The format is based on
   never crosses a section, may cross its blocks, and never passes
   `max_chars`: a longer sentence is cut at whitespace, or at the cap where it
   has none, and nothing is dropped. The next chunk carries the previous one's
-  last whole sentences that lie within `overlap_chars` of its end, unless they
-  would leave the next sentence no room. Sizes are bmlibrarian's
+  last whole sentences that lie within `overlap_chars` of its end (never its
+  first), unless they would leave the next sentence no room. `Chunk` has
+  `to_dict`/`from_dict`. Sizes are bmlibrarian's
   `chunk_embedder.py`. `CHUNKER_VERSION` (1) is pinned against `chunk.py` and
   `model.py` in `tests/test_renderer_version.py`. Python and Rust, held by
-  `tests/fixtures/canonical_chunks.json` (17 written cases, 20 seeded random
+  `tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random
   ones, three refusals).
 - **Canonical text: one string per paper, every piece a span** (StudyAnalyzer
   phase 1, item 4a). `bmlib.fulltext.canonical` (Rust
