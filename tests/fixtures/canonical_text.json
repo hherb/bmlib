@@ -1960,7 +1960,7 @@
       }
     },
     {
-      "name": "pdf/subsection-one-level-deeper",
+      "name": "pdf/each-subsection-one-level-deeper",
       "format": "pdf",
       "input": {
         "title": "T",
@@ -1977,7 +1977,16 @@
                 "title": "2.1 Participants",
                 "content": "Adults.",
                 "page_start": 0,
-                "page_end": 0
+                "page_end": 0,
+                "subsections": [
+                  {
+                    "section_type": "methods",
+                    "title": "2.1.1 Consent",
+                    "content": "Written.",
+                    "page_start": 0,
+                    "page_end": 0
+                  }
+                ]
               }
             ]
           },
@@ -1991,7 +2000,7 @@
         ]
       },
       "expected": {
-        "text": "T\n\nMethods\n\nOverview.\n\n2.1 Participants\n\nAdults.\n\nResults\n\nDone.",
+        "text": "T\n\nMethods\n\nOverview.\n\n2.1 Participants\n\nAdults.\n\n2.1.1 Consent\n\nWritten.\n\nResults\n\nDone.",
         "title_span": {
           "start": 0,
           "end": 1
@@ -2030,17 +2039,33 @@
             ]
           },
           {
-            "level": 1,
+            "level": 3,
             "heading_span": {
               "start": 50,
-              "end": 57
+              "end": 63
             },
             "blocks": [
               {
                 "kind": "paragraph",
                 "span": {
-                  "start": 59,
-                  "end": 64
+                  "start": 65,
+                  "end": 73
+                }
+              }
+            ]
+          },
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 75,
+              "end": 82
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 84,
+                  "end": 89
                 }
               }
             ]
@@ -2131,6 +2156,46 @@
                 "span": {
                   "start": 12,
                   "end": 22
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-1"
+      }
+    },
+    {
+      "name": "pdf/line-break-hyphen-kept-before-a-space",
+      "format": "pdf",
+      "input": {
+        "title": null,
+        "sections": [
+          {
+            "section_type": "results",
+            "title": "Results",
+            "content": "A dose-\nresponse curve.",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "Results\n\nA dose- response curve.",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 0,
+              "end": 7
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 9,
+                  "end": 32
                 }
               }
             ]

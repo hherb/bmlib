@@ -42,7 +42,8 @@ starts at the `SegmentedDocument`: `pdf` cases in
 ## Out of scope
 
 - Closing up a word hyphenated across a line break: `dose-` / `response` must
-  stay hyphenated, and nothing in a PDF tells the two apart. `render_html` does
+  keep its hyphen, and nothing in a PDF tells the two apart, so the lines are
+  joined by a space after the hyphen (`dose- response`). `render_html` does
   not close them up either.
 - PDF tables (§5.2: later, measured work). HTML (4c).
 

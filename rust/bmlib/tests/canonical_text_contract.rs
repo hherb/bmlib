@@ -75,6 +75,17 @@ fn every_converter_output_is_the_expected_canonical_text() {
 }
 
 #[test]
+fn the_contract_covers_every_format_it_names() {
+    let mut formats: Vec<String> = cases()
+        .iter()
+        .map(|case| case["format"].as_str().expect("a format").to_string())
+        .collect();
+    formats.sort();
+    formats.dedup();
+    assert_eq!(formats, ["jats", "markdown", "pdf", "plain_text"]);
+}
+
+#[test]
 fn every_expected_value_round_trips() {
     for case in cases() {
         let parsed = CanonicalText::from_value(case["expected"].clone())

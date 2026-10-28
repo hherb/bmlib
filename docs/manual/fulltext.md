@@ -2515,9 +2515,9 @@ doc.converter_version                     # "jats-1"
   `subsections` entry one level deeper; front matter and the no-headings
   fallback are untitled, since "Front Matter" and "Full Text" are bmlib's
   labels and not the paper's; paragraphs are the content's blank-line runs.
-  The text is the extraction's: a table's cells may run together, a word
-  hyphenated across a line stays hyphenated, and a title read off page 1 is
-  in the front matter too. Python extracts with PyMuPDF and Rust with PDFium,
+  The text is the extraction's: a table's cells may run together, a hyphen at
+  a line break is kept with a space after it (`dose- response`), and a title
+  read off page 1 is often in the front matter too. Python extracts with PyMuPDF and Rust with PDFium,
   so the shared fixture holds the two together from the `SegmentedDocument`
   on (its `to_dict()` form).
 - **Versions**: `converter_version` is `"<format>-<n>"` from

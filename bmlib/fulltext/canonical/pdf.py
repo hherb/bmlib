@@ -19,8 +19,9 @@
 The input is :meth:`bmlib.fulltext.SectionSegmenter.segment_document`'s
 output, so this module reads no PDF itself and needs no PDF library. The text
 is taken as the extraction gives it: a table's cells may run together, and a
-word hyphenated across a line break stays hyphenated (``dose-`` / ``response``
-must, and nothing in a PDF tells it from ``random-`` / ``ised``).
+hyphen at a line break is kept, the lines joined by a space (``dose- response``),
+since ``dose-`` / ``response`` must keep it and nothing in a PDF tells it from
+``random-`` / ``ised``.
 """
 
 from __future__ import annotations

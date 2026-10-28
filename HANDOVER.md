@@ -47,9 +47,9 @@ as a `CanonicalText` (`SourceFormat.PDF`, `"pdf-1"`): detected headings as
 printed, front matter and the no-headings fallback untitled (bmlib's labels,
 not the paper's), a hand-built subsection one level deeper, paragraphs at blank
 lines (`split_paragraphs`, factored out of the plain-text converter). The text
-is the extraction's: a line-break hyphen stays, a title read off page 1 is in
-the front matter too. PyMuPDF and PDFium extract differently, so the contract
-(six `pdf` cases in `tests/fixtures/canonical_text.json`) starts at the
+is the extraction's: a line-break hyphen is kept before a space (`dose-
+response`), and a title read off page 1 is often in the front matter too. PyMuPDF and PDFium extract differently, so the contract
+(seven `pdf` cases in `tests/fixtures/canonical_text.json`) starts at the
 `SegmentedDocument`. `PDF_CANONICAL_VERSION` is pinned against the converter,
 the layout, the segmenter and `pdf_converter.py`, so **a segmenter edit now
 trips a pin**, and **a `model.py` edit trips five**. Mutation-checked in both
@@ -132,7 +132,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,875 passing + 111 skipped** on this session's branch
+- **Tests: 7,877 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-28; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for

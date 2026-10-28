@@ -19,9 +19,9 @@
 //! The port of Python's `bmlib.fulltext.canonical.pdf`. The input is
 //! [`SectionSegmenter::segment_document`]'s output, so this module reads no PDF
 //! itself and is compiled without the `pdf` feature. The text is taken as the
-//! extraction gives it: a table's cells may run together, and a word hyphenated
-//! across a line break stays hyphenated (`dose-` / `response` must, and nothing
-//! in a PDF tells it from `random-` / `ised`).
+//! extraction gives it: a table's cells may run together, and a hyphen at a line
+//! break is kept, the lines joined by a space (`dose- response`), since `dose-` /
+//! `response` must keep it and nothing in a PDF tells it from `random-` / `ised`.
 //!
 //! Python extracts lines with PyMuPDF and Rust with PDFium, so the two can
 //! segment the same PDF differently; the shared contract starts at the

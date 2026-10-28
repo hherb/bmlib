@@ -14,8 +14,11 @@ The Python library is documented separately, in the repository's
 `SourceFormat::Pdf` (`"pdf"`), and `split_paragraphs`, which
 `canonical_from_plain_text` now calls, held to Python's by the `pdf` cases of
 `tests/fixtures/canonical_text.json`. Compiled without the `pdf` feature: it
-reads the segmenter's `SegmentedDocument`. A match on `SourceFormat` must
-name the new variant.
+reads the segmenter's `SegmentedDocument`.
+
+### Changed — breaking (item 4b)
+`SourceFormat` gains `Pdf`, so an exhaustive `match` on it must name the new
+variant.
 
 ### Added — follows Python's canonical-text chunker (StudyAnalyzer item 3)
 `fulltext::canonical::chunk_canonical`, `Chunk`, `ChunkError`,

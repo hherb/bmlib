@@ -16,14 +16,15 @@ All notable changes to bmlib are documented here. The format is based on
   content's blank lines. Front matter and the no-headings fallback are
   untitled, their "Front Matter" and "Full Text" being bmlib's labels, so a
   quote can only be located in the paper's own text. The text is taken as the
-  extraction gives it (a word hyphenated across a line break stays so).
+  extraction gives it (a hyphen at a line break is kept, the lines joined by a
+  space).
   Plain text's paragraph rule is now `split_paragraphs`, shared by both
   converters, with no change in output. `PDF_CANONICAL_VERSION` (1) is pinned
   in `tests/test_renderer_version.py` against the converter, the layout, the
   segmenter and the PyMuPDF line extraction, since a segmenter change moves
   the text too; the other canonical pins were re-taken without a bump (a new
   `SourceFormat` member and the refactor move no output). Python and Rust,
-  held by six `pdf` cases in `tests/fixtures/canonical_text.json` whose input
+  held by seven `pdf` cases in `tests/fixtures/canonical_text.json` whose input
   is the `SegmentedDocument`, since PyMuPDF and PDFium extract differently.
 - **Chunks of a canonical text, for retrieval** (StudyAnalyzer phase 1,
   item 3). `chunk_canonical(text, max_chars=1000, overlap_chars=100)` in
