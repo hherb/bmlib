@@ -48,6 +48,7 @@ import pytest
 
 from bmlib.fulltext.canonical import (
     CHUNKER_VERSION,
+    HTML_CANONICAL_VERSION,
     JATS_CANONICAL_VERSION,
     MARKDOWN_VERSION,
     PDF_CANONICAL_VERSION,
@@ -92,6 +93,12 @@ PDF_SOURCES = (
     "pdf_converter.py",
 )
 
+#: What an HTML page's canonical text is computed by: the converter and the
+#: layout. The parser is outside this net: a markupever release (it has no upper
+#: bound) or Rust's next html5ever (#558) can move the output with no pin
+#: firing, so the shared fixture's malformed-markup cases are what catch that.
+HTML_SOURCES = ("canonical/model.py", "canonical/html.py")
+
 #: What the chunks of a canonical text are computed by (the chunker reads the
 #: model's spans and ``is_white_space``).
 CHUNKER_SOURCES = ("canonical/model.py", "canonical/chunk.py")
@@ -103,6 +110,7 @@ VERSION_CONSTANTS = {
     "canonical/plain.py": "PLAIN_TEXT_VERSION",
     "canonical/markdown.py": "MARKDOWN_VERSION",
     "canonical/pdf.py": "PDF_CANONICAL_VERSION",
+    "canonical/html.py": "HTML_CANONICAL_VERSION",
     "canonical/chunk.py": "CHUNKER_VERSION",
 }
 
@@ -117,11 +125,12 @@ NOT_RENDERING = {
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-CANONICAL_PINNED = (1, "05f203fd176864d2124f858a162e70cdbf7573285cab401f7ef995616df7e4c2")
-PLAIN_TEXT_PINNED = (1, "1c4ea5c0d1cc49260de779aabe1c7b7345262201cfa44c276eddf0b256141bdb")
-MARKDOWN_PINNED = (1, "d9ada3be32e5d7fc146b6c6cd584d70e1c5434cd4d0ac645ad15a1a1b5b74f17")
-PDF_PINNED = (1, "87b523613b161952943868494e70f1a02273bef2b0d604f84f3df749f2d56e53")
-CHUNKER_PINNED = (1, "56caecc361dcdcf83f2253e385b1b5af4879a3604fd7e3622449f91d18be16fc")
+CANONICAL_PINNED = (1, "0bdd9bd8ec8b67e290a912bc6d7bccab25ceb91df542251e659b21253dde9643")
+PLAIN_TEXT_PINNED = (1, "0bcaf643207714fffded4b3b666145131f2988cf43fc1a21bf57089997c6a34d")
+MARKDOWN_PINNED = (1, "8b7077cd0ddc7b5803a465044b9531699f550f4e7c914d77858c6c202179115e")
+PDF_PINNED = (1, "49a5b071d85fa0c0d27b5d3a85bcad900f8dd86ff12bc6ec860aa6d757fd5742")
+HTML_PINNED = (1, "bf07e27dfcec51a6951a16fa120d1a0ae2bdcb88b21d1be4ef279466388558b4")
+CHUNKER_PINNED = (1, "ef8ad47f8c4ee52e960c7349272ff39813c62b0f5ac34b2ba09fc5e41771f845")
 
 PINNED = (7, "ab879bda57655964e5a5907565eb67f02b2a03914d8a02c50e6ae7fbc7a079ea")
 
@@ -264,8 +273,9 @@ def test_the_canonical_version_moves_with_its_converter() -> None:
         "If the change can move what canonical_from_jats() returns for ANY document,\n"
         "bump JATS_CANONICAL_VERSION in canonical/jats.py, so a stored canonical text\n"
         "and everything pointing into it can tell it is stale; a change to assemble()\n"
-        "in model.py bumps PLAIN_TEXT_VERSION, MARKDOWN_VERSION and PDF_CANONICAL_VERSION\n"
-        "too. Decide on RENDERER_VERSION beside it. Either way, then re-pin\n"
+        "in model.py bumps PLAIN_TEXT_VERSION, MARKDOWN_VERSION, PDF_CANONICAL_VERSION\n"
+        "and HTML_CANONICAL_VERSION too. Decide on RENDERER_VERSION beside it.\n"
+        "Either way, then re-pin\n"
         f"CANONICAL_PINNED in this file to (JATS_CANONICAL_VERSION, {actual[1]!r})."
     )
 
@@ -293,6 +303,13 @@ def test_the_canonical_version_moves_with_its_converter() -> None:
             PDF_SOURCES,
             PDF_PINNED,
             id="pdf",
+        ),
+        pytest.param(
+            "HTML_CANONICAL_VERSION",
+            HTML_CANONICAL_VERSION,
+            HTML_SOURCES,
+            HTML_PINNED,
+            id="html",
         ),
         pytest.param(
             "CHUNKER_VERSION",

@@ -1,11 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-28 (**this session is StudyAnalyzer's item 4b**, PR #556, branch
-`feat/canonical-pdf`, worktree `../bmlib-pdf`). **0.11.0 is
+_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 4c**, branch
+`feat/canonical-html`, worktree `../bmlib-html`). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
 (#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545 (item 9),
-#547 (item 4a) and #554 (item 3) merged since; all fourteen are unreleased._
+#547 (item 4a), #554 and #555 (item 3) and #556 (item 4b) merged since; all
+sixteen are unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -28,7 +29,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -38,62 +39,51 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: canonical text from a segmented PDF (StudyAnalyzer item 4b)
+## This session: canonical text from HTML, and a full-text check (StudyAnalyzer item 4c)
 
-PR #556. Plan: `docs/superpowers/plans/2026-10-28-canonical-pdf.md`.
-`canonical_from_segmented(document)` in `bmlib.fulltext.canonical` /
-`bmlib::fulltext::canonical::pdf` lays the segmenter's `SegmentedDocument` out
-as a `CanonicalText` (`SourceFormat.PDF`, `"pdf-1"`): detected headings as
-printed, front matter and the no-headings fallback untitled (bmlib's labels,
-not the paper's), a hand-built subsection one level deeper, paragraphs at blank
-lines (`split_paragraphs`, factored out of the plain-text converter). The text
-is the extraction's: a line-break hyphen is kept before a space (`dose-
-response`), and a title read off page 1 is often in the front matter too. PyMuPDF and PDFium extract differently, so the contract
-(seven `pdf` cases in `tests/fixtures/canonical_text.json`) starts at the
-`SegmentedDocument`. `PDF_CANONICAL_VERSION` is pinned against the converter,
-the layout, the segmenter and `pdf_converter.py`, so **a segmenter edit now
-trips a pin**, and **a `model.py` edit trips five**. Mutation-checked in both
-languages. **Next for StudyAnalyzer: 4c** (HTML); item 6 (streaming) at any
-point.
+Plan: `docs/superpowers/plans/2026-10-28-canonical-html.md`.
+`canonical_from_html(html)` (`bmlib.fulltext.canonical.html` /
+`…::canonical::html`, `"html-1"`) reads a page by fixed rules: pruned elements,
+the fullest `<article>` else `<main>` else `<body>`, the first `<h1>` the walk
+reaches as title, headings as sections, `<tr>` as rows. The PR review
+(2026-10-29) made the fullest `<article>` the root only if it holds half the
+body's text, skipped `<head>` when the root falls back to `<html>`, pruned
+`noembed`/`noframes`, kept `hidden="until-found"`, refused bytes, measured
+nested articles in one walk, and pinned `PRUNED`/`BLOCKS` to the fixture's
+`html_elements` in both languages. **html5ever in both
+languages**: markupever (new extra `html`, in `all`) and scraper 0.27 (new
+Cargo feature `html`, off by default; CI's `pdf` test row, a clippy and a doc
+step turn it on). html5lib was the first cut and the pre-PR review refused it:
+it predates `<template>`, `<search>` and the BOM rule, so it built other trees.
+The versions still differ (0.40 / 0.39) until **#558** (after 2026-11-04).
+**Every walk is iterative** (the review aborted the Rust process with 50,000
+nested `<div>`s); html5ever's parse is still quadratic in depth, so the app
+must cap a page's size. **markupever's nodes compare by value and its `!=` is
+not `==`'s negation**: never compare two of its nodes. `assess_full_text(text)`
+is the maintainer's ask (2026-10-28): an abstract landing page converts as
+cleanly as a full text, so a check over any canonical text says whether it
+looks like a whole paper (Methods plus Results or Discussion outside the
+abstract, `MIN_BODY_WORDS` = 1,000 body words). **Unmeasured**: the maintainer
+will report pages that fool it; what the app does with `False` is
+StudyAnalyzer's phase 2. Contract `tests/fixtures/full_text_assessment.json`
+from `scripts/make_full_text_assessment.py` (Markdown input, so it runs
+without the feature). `match_section_type` is public in Python now and differs
+from Rust on U+001C–U+001F and combining marks (**#557**, older than this
+session). **A `segmenter.py` edit trips the PDF pin** but nothing pins
+`assess.py`: a pattern edit moves every assessment, and only
+`full_text_assessment.json` catches it. **A `model.py` edit trips six pins**.
+`assess_full_text` can say `True` for an abstract page (**#560**). Mutation-checked, 29 mutants per language, one equivalent
+each. **Next for StudyAnalyzer**: phase 1 item 6 (streaming) is the last one
+phase 2 needs; 5, 7, 8 after.
 
-**The session before** (PR #554, item 3): `chunk_canonical(text, max_chars,
-overlap_chars)` returns sentence-aware `Chunk`s (a code-point span and a
-`section_index`), never across a section, never past `max_chars`, nothing
-dropped; contract `tests/fixtures/canonical_chunks.json`. Its Rust CHANGELOG
-entry was missing and is added by this session.
+**Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #556 (4b,
+`canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
+PRs #554 and #555 (item 3, `chunk_canonical`, contract
+`canonical_chunks.json` from its committed generator); PR #547 (4a, the model,
+JATS, Markdown, plain text; its reviews left **#548**, **#549**, **#552**,
+**#553**); PR #545 (item 9, `FullTextResult.jats_xml`, the cache's `jats/`).
 
-**Two sessions back** (PR #547, item 4a): `bmlib.fulltext.canonical`, one
-## This session: chunks of a canonical text (StudyAnalyzer item 3)
-
-Plan: `docs/superpowers/plans/2026-10-28-rag-chunker.md`.
-`bmlib.fulltext.canonical.chunk` / `bmlib::fulltext::canonical::chunk`:
-`chunk_canonical(text, max_chars, overlap_chars)` returns `Chunk`s (a
-code-point `TextSpan` and a `section_index`), sentence-aware, never across a
-section, never past `max_chars` (an over-long sentence is cut at whitespace,
-else at the cap), nothing dropped; overlap is by whole sentences, as in
-bmlibrarian. Sentence ends: bmlibrarian's abbreviation lookbehinds became a
-whole-token check (Rust's `regex` has no lookbehind). Shared contract
-`tests/fixtures/canonical_chunks.json` (21 written cases, 20 seeded random,
-three refusals), written by `scripts/make_canonical_chunks.py`: add a case
-there, re-run it and check its stderr by eye, since a test holds the script to
-the fixture. `CHUNKER_VERSION` is pinned against
-`canonical/model.py` and `canonical/chunk.py`, so **an edit to the model now
-trips four pins**. Mutation-checked in both languages. **Next for
-StudyAnalyzer: 4b** (PDF), then 4c (HTML); item 6 (streaming) at any point.
-
-**The session before** (PR #547, item 4a): `bmlib.fulltext.canonical`, one
-string per paper with every title, heading and block a code-point span, from
-JATS, Markdown and plain text; contract `tests/fixtures/canonical_text.json`.
-`JATS_CANONICAL_VERSION` is pinned beside `RENDERER_VERSION` (**a JATS PR
-trips two pins**). Its reviews left **#548**, **#549**, **#552** and **#553**
-open.
-
-**Three sessions back** (PR #545, item 9): `FullTextResult.jats_xml` carries
-the JATS every tier served, the cache keeps it in `jats/`; an old HTML-only
-entry is served with `jats_xml=None`. Shared contract
-`tests/fixtures/fulltext_source.json`.
-
-**Four sessions back** (PR #544, #533): the maintainer chose the work bound. The three `*_is_fast` tests per language
+**PR #544** (#533): the maintainer chose the work bound. The three `*_is_fast` tests per language
 now count the windows scored (Python monkeypatches a counting
 `SequenceMatcher`; Rust counts `set_a` behind `#[cfg(test)]`, so its three
 tests moved into `citations::passage_match`'s unit tests, sharing
@@ -103,21 +93,21 @@ constants. Measured 90/130/10 (Rust; Python +1 for the constructor's
 `set_seq1`), unchanged at 41 kB. Mutation-checked in both languages. No
 library code moves.
 
-**Four and five sessions back** (PRs #542 and #543, #503): the PDF-title sampler
+**PRs #542 and #543** (#503): the PDF-title sampler
 stamps every journal line with `ROW_DEFINITIONS_VERSION` and refuses an
 unstamped journal; the corpus's `biorxiv` rows are a 150-row `/pubs` draw, and
 nothing in `bmlib` moved. The stale unstamped journal in the main checkout was
 moved aside this session.
 
-**Six sessions back** (PR #541, #540): PubMed's bare `Review` is a displaced
+**PR #541** (#540): PubMed's bare `Review` is a displaced
 draw, committed as `tests/data/extractor_abstracts_review.json` and pinned, so
 **an `extractors.py` edit re-measures three corpora**. Adding `Review` to the
 committed strata is still the maintainer's decision.
 
-**Seven sessions back** (PR #539, #453): `systematic_review` reads a review by
+**PR #539** (#453): `systematic_review` reads a review by
 how it searched; "meta-analyses" and "systematically identified" were refused.
 
-**Eight sessions back** (PR #538, #507): a non-ISO `RetractionEvidence.date`
+**PR #538** (#507): a non-ISO `RetractionEvidence.date`
 raises `ValueError`; the Rust/FFI half is **#537**.
 
 **An earlier session** (PR #524, #523 + #522): `notice_pmid` is stored
@@ -151,8 +141,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 7,877 passing + 111 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-28; the embedder's live tests skip
+- **Tests: 8,009 passing + 111 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-29; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #542's session ran
@@ -179,8 +169,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-one open** (`gh issue list --state open --limit 300`, 2026-10-27;
-this session filed and closed none). **#528** and
+**Ninety-seven open** (`gh issue list --state open --limit 300`, 2026-10-29;
+PR #547's #548, #549, #552 and #553 are the four since the last count; this
+session filed **#557** (`match_section_type` parity) and **#558** (scraper
+0.29), and closed none). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI

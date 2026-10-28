@@ -14,23 +14,29 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! One canonical text per paper, built from JATS, Markdown, plain text or a
-//! PDF, and its chunks.
+//! One canonical text per paper, from JATS, Markdown, plain text, a PDF or
+//! HTML (with the `html` feature), and its chunks.
 //!
 //! The port of Python's `bmlib.fulltext.canonical`; see [`model`] for the
 //! layout and the offset unit.
 
+pub mod assess;
 pub mod chunk;
+#[cfg(feature = "html")]
+pub mod html;
 pub mod jats;
 pub mod markdown;
 pub mod model;
 pub mod pdf;
 pub mod plain;
 
+pub use assess::{assess_full_text, count_words, FullTextAssessment, MIN_BODY_WORDS};
 pub use chunk::{
     chunk_canonical, is_abbreviation, sentence_spans, Chunk, ChunkError, ABBREVIATIONS,
     CHUNKER_VERSION, DEFAULT_MAX_CHARS, DEFAULT_OVERLAP_CHARS,
 };
+#[cfg(feature = "html")]
+pub use html::{canonical_from_html, HTML_CANONICAL_VERSION};
 pub use jats::{canonical_from_jats, strip_links, JATS_CANONICAL_VERSION};
 pub use markdown::{canonical_from_markdown, strip_inline, MARKDOWN_VERSION};
 pub use model::{

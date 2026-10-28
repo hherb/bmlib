@@ -70,6 +70,11 @@ fulltext = ["httpx>=0.25"]
 # `# type: ignore[import-untyped]` that switches off checking for the whole
 # of `pdf_converter.py`.
 pdf = ["pymupdf>=1.28.2"]
+# HTML to canonical text (bmlib.fulltext.canonical.html): markupever binds
+# html5ever, the parser the Rust port uses, so a page builds one tree in both
+# languages (html5lib was tried first and predates <template>, <search> and
+# the BOM rule). MIT.
+html = ["markupever>=0.4.0"]
 # In-process embedding (bmlib.embed): compiles llama.cpp on install. The
 # floor is the one version verified against the reference vectors. Not in
 # `all`: it needs a C++ toolchain, which `all` must not.
@@ -87,7 +92,7 @@ dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.0", "types-psycopg2"]
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`. It also
 # excludes `embed`, which compiles llama.cpp: ask for `.[all,embed]`.
-all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf]"]
+all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf,html]"]
 
 # Explicit discovery. Auto-discovery works today but is order-dependent in a
 # flat layout with tests/, docs/ and scripts/ beside the package; naming the

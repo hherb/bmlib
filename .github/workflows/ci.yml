@@ -178,6 +178,9 @@ jobs:
         # The default feature set does not compile `db/postgres.rs` at all, so
         # a warning there would otherwise reach main unseen.
         run: cargo clippy --all-targets --features postgres -- -D warnings
+      - name: clippy (html feature)
+        # Off by default too, so `fulltext/canonical/html.rs` is compiled only here.
+        run: cargo clippy --all-targets --features html -- -D warnings
       - name: clippy (bmlib without default features)
         # What the mobile apps link. A workspace-wide build cannot see it:
         # resolver 2 unifies bmlib's default features back in for every member,
@@ -198,6 +201,7 @@ jobs:
         # is what keeps the count there.
         run: |
           cargo doc --no-deps
+          cargo doc --no-deps --features html
           cargo doc -p bmlib --no-deps --no-default-features
         env:
           RUSTDOCFLAGS: -D warnings
@@ -212,8 +216,11 @@ jobs:
         include:
           - label: default
             args: ""
+          # `html` rides with `pdf`: both are optional readers of a paper, and
+          # the canonical-text contract runs its HTML cases only with it. The
+          # label stays `pdf`, which the PDFium step and the cache key read.
           - label: pdf
-            args: "--features pdf"
+            args: "--features pdf,html"
           # The configuration the mobile apps link (see rust-lint): bmlib
           # without its default features, and bmlib-ffi resolved on its own
           # (bmlib's defaults off), with the HTTP sketch so its tests run too.

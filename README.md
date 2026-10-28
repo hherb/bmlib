@@ -28,6 +28,7 @@ uv pip install -e ".[all,dev]"
 | `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
 | `fulltext` | `pip install bmlib[fulltext]` | `FullTextService` retrieval (httpx). The rest of `bmlib.fulltext` — JATS parser, models, `SectionSegmenter` — needs nothing beyond core |
 | `pdf` | `pip install bmlib[pdf]` | PDF → text conversion (pymupdf) |
+| `html` | `pip install bmlib[html]` | HTML → canonical text, `canonical_from_html` (markupever, html5ever's Python binding) |
 | `embed` | `pip install bmlib[embed]` | In-process embedding, `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all` | `pip install bmlib[all]` | Every runtime extra above but `embed` (**not** `dev`) |

@@ -14,11 +14,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""One canonical text per paper, built from JATS, Markdown, plain text or a PDF, and its chunks.
+"""One canonical text per paper, from JATS, Markdown, plain text, a PDF or HTML, and its chunks.
 
 See :mod:`bmlib.fulltext.canonical.model` for the layout and the offset unit.
 """
 
+from bmlib.fulltext.canonical.assess import (
+    MIN_BODY_WORDS,
+    FullTextAssessment,
+    assess_full_text,
+    count_words,
+)
 from bmlib.fulltext.canonical.chunk import (
     ABBREVIATIONS,
     CHUNKER_VERSION,
@@ -29,6 +35,7 @@ from bmlib.fulltext.canonical.chunk import (
     is_abbreviation,
     sentence_spans,
 )
+from bmlib.fulltext.canonical.html import HTML_CANONICAL_VERSION, canonical_from_html
 from bmlib.fulltext.canonical.jats import (
     JATS_CANONICAL_VERSION,
     canonical_from_jats,
@@ -70,8 +77,10 @@ __all__ = [
     "CHUNKER_VERSION",
     "DEFAULT_MAX_CHARS",
     "DEFAULT_OVERLAP_CHARS",
+    "HTML_CANONICAL_VERSION",
     "JATS_CANONICAL_VERSION",
     "MARKDOWN_VERSION",
+    "MIN_BODY_WORDS",
     "PDF_CANONICAL_VERSION",
     "PLAIN_TEXT_VERSION",
     "TOP_LEVEL",
@@ -81,15 +90,19 @@ __all__ = [
     "CanonicalSection",
     "CanonicalText",
     "Chunk",
+    "FullTextAssessment",
     "SectionDraft",
     "SourceFormat",
     "TextSpan",
     "assemble",
+    "assess_full_text",
+    "canonical_from_html",
     "canonical_from_jats",
     "canonical_from_markdown",
     "canonical_from_plain_text",
     "canonical_from_segmented",
     "chunk_canonical",
+    "count_words",
     "is_abbreviation",
     "is_white_space",
     "normalise_whitespace",

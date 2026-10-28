@@ -9,6 +9,26 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's canonical text from HTML and the full-text check (StudyAnalyzer item 4c)
+`fulltext::canonical::canonical_from_html` and `HTML_CANONICAL_VERSION`
+(`html::PRUNED` and `html::BLOCKS` name the rules), behind the new `html`
+feature, which pulls in `scraper` 0.27 over html5ever 0.39 and `ego-tree` 0.11
+(scraper and ego-tree ISC, html5ever MIT/Apache-2.0; `selectors` and
+`cssparser`, MPL-2.0, come with scraper); `html::MIN_ARTICLE_SHARE`; every walk is iterative over ego-tree's edges, so deep nesting costs
+no stack; html5ever is 0.39 here and 0.40 in Python's markupever until #558; `SourceFormat::Html`
+(`"html"`). `fulltext::canonical::assess_full_text`, which validates its input and
+returns `Result<FullTextAssessment, CanonicalError>` (a stored text that
+fails validation is an error, not a panic), `FullTextAssessment`
+(`#[non_exhaustive]`, built only by `assess_full_text`), `count_words` and
+`MIN_BODY_WORDS`, compiled without the feature. Held to
+Python's by the `html` cases of `tests/fixtures/canonical_text.json` (run only
+with `html`; CI's `pdf` test row now enables it) and by
+`tests/fixtures/full_text_assessment.json`.
+
+### Changed — breaking (item 4c)
+`SourceFormat` gains `Html` and is now `#[non_exhaustive]`, so a `match` on it
+needs a wildcard arm; a format added later is then not a breaking change.
+
 ### Added — follows Python's canonical text from a PDF (StudyAnalyzer item 4b)
 `fulltext::canonical::canonical_from_segmented` and `PDF_CANONICAL_VERSION`,
 `SourceFormat::Pdf` (`"pdf"`), and `split_paragraphs`, which
