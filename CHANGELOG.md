@@ -31,8 +31,9 @@ All notable changes to bmlib are documented here. The format is based on
   once, as `chat()` reads it. The pure reducer, `StreamState` / `run_stream`
   in `bmlib.llm.stream` (`bmlib::llm::stream`), is held to the shared
   contract `tests/fixtures/chat_stream.json` (24 cases); its five
-  native-Ollama cases are Python's alone, since Rust reaches Ollama through
-  its OpenAI-compatible endpoint, as its `chat()` does. Usage on an
+  native-Ollama cases were Python's alone when this landed, since Rust then
+  reached Ollama through its OpenAI-compatible endpoint, as its `chat()` did;
+  that is no longer so (see *Context windows*, below), and all 24 run in Rust. Usage on an
   OpenAI-compatible stream is asked for only from `STREAM_USAGE_PROVIDERS`
   (`openai`, `deepseek`, `ollama`), as some servers refuse `stream_options`;
   Python logs a WARNING when usage asked for never arrives. Rust adds
@@ -48,6 +49,34 @@ All notable changes to bmlib are documented here. The format is based on
   `chat()`'s request in a `_request_kwargs` method both share, and every
   model entry of a provider that streams declares `supports_streaming`.
   Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`.
+- **Context windows, and Ollama's `num_ctx`** (StudyAnalyzer phase 1, item
+  11). `context_window(model, provider=None)` on `LLMClient` (Python) and
+  `LlmClient` (Rust) returns a model's window in tokens, or `None` (unknown:
+  the provider did not say; never a guess). A model the provider does not
+  have is `NoSuchModelError` (`ContextWindowError::NoSuchModel`); any other
+  failure is `ContextWindowError`, unlike `get_model_metadata()`, which
+  swallows errors. Every number is to be read as a **total** (prompt and
+  answer together), although providers state it in different terms and
+  bmlib reports each as given. Sources: Anthropic `max_input_tokens` and
+  Mistral `max_context_length` from `GET /v1/models/{id}`; Gemini
+  `inputTokenLimit` from the native `/models/{id}`; DeepSeek from `/models`;
+  Ollama from `/api/show` (`model_info`, key ending `.context_length`); a
+  number that is not a positive integer up to 2**64-1 is unknown. OpenAI
+  makes no request: a table, `KNOWN_CONTEXT_WINDOWS` / `known_context_window`,
+  of exact ids only (five rows, read from developers.openai.com on
+  2026-10-29), so a dated suffix or other case is unknown. Held to
+  `tests/fixtures/context_window.json` (5 table rows, 16 lookups, 60 metadata
+  cases) in both languages. Ollama only: `num_ctx` on `chat()` and
+  `chat_stream()` (Python kwarg, Rust `ChatRequest.num_ctx:
+  Option<NonZeroU32>`), sent as `options.num_ctx` and set last, so
+  `extra_body` cannot override it; other providers ignore it. Rust adds
+  `HttpClient::get_with_headers` (refusing by default with
+  `FetchError::Config`). **Rust's Ollama now speaks the native `/api/chat`**
+  (see *Changed*), with an NDJSON stream (`ndjson_events`), so all 24
+  `chat_stream.json` cases run in Rust, and `tests/fixtures/ollama_chat.json`
+  (9 requests, 6 responses) holds both languages' request and response
+  mapping. Python's `get_model_metadata()` / `list_models()` still report
+  fallback guesses as windows: #566.
 - **Canonical text from an HTML page, and a full-text check** (StudyAnalyzer
   phase 1, item 4c). `canonical_from_html(html)` in `bmlib.fulltext.canonical`
   (Rust `bmlib::fulltext::canonical`, feature `html`) parses with html5ever in
@@ -210,6 +239,17 @@ All notable changes to bmlib are documented here. The format is based on
   bumped: the renderer is untouched.
 
 ### Changed
+- **Breaking: Rust's Ollama uses `/api/chat` and Python's `anthropic` floor is
+  0.41** (item 11). `ChatRequest` has a new field `num_ctx`, so a struct
+  literal without `..Default::default()` no longer compiles; `Protocol` has a
+  new variant `Ollama` (an exhaustive `match` breaks); `ProtocolError` has a
+  new variant `Malformed(String)`; `parse_response(target, body, messages)`
+  takes the request's messages (Ollama may omit token counts, which are then
+  estimated at 4 characters per token, counted in code points). The `ollama`
+  provider is now `/api/chat` with `options` and `think`, not
+  `/v1/chat/completions`: a proxy or fake server that served only the
+  OpenAI-compatible path must serve `/api/chat`. Python's `anthropic` extra
+  is `>=0.41` (was `>=0.30`), the first release with `models.retrieve`.
 - **`find_passage`'s long-input tests bound work, not wall time** (#533).
   The three `*_is_fast` tests in each language asserted a 2.0 s wall-clock
   budget, and Rust's `long_passage_is_fast` failed once under a parallel
