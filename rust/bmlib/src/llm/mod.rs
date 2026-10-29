@@ -29,6 +29,7 @@
 //! | `llm/client.py` | — | phase 3 |
 
 pub mod client;
+pub mod context_window;
 pub mod data_types;
 pub mod json_repair;
 pub mod pricing;
@@ -44,6 +45,7 @@ pub use client::{
     ProviderSpec, Target, DEFAULT_PROVIDER, DEFAULT_RETRY_BASE_DELAY, ERROR_BODY_LIMIT,
     RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
 };
+pub use context_window::{known_context_window, KNOWN_CONTEXT_WINDOWS};
 pub use data_types::{
     BatchEmbeddingResponse, EmbeddingResponse, LLMMessage, LLMResponse, LLMToolCall,
     LLMToolDefinition, Role,

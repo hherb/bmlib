@@ -1,0 +1,170 @@
+{
+  "table": [
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "window": 1050000,
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "read": "2026-10-29"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6.1-sol",
+      "window": 1050000,
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+      "read": "2026-10-29"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6.1-terra",
+      "window": 1050000,
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+      "read": "2026-10-29"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "window": 1050000,
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "read": "2026-10-29"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "window": 128000,
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o-mini",
+      "read": "2026-10-29"
+    }
+  ],
+  "table_lookups": [
+    {
+      "name": "gpt-6-astra exact",
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "expect": {
+        "window": 1050000
+      }
+    },
+    {
+      "name": "gpt-6-astra dated",
+      "provider": "openai",
+      "model": "gpt-6-astra-2026-10-01",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6-astra upper",
+      "provider": "openai",
+      "model": "GPT-6-ASTRA",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6.1-sol exact",
+      "provider": "openai",
+      "model": "gpt-6.1-sol",
+      "expect": {
+        "window": 1050000
+      }
+    },
+    {
+      "name": "gpt-6.1-sol dated",
+      "provider": "openai",
+      "model": "gpt-6.1-sol-2026-10-01",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6.1-sol upper",
+      "provider": "openai",
+      "model": "GPT-6.1-SOL",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6.1-terra exact",
+      "provider": "openai",
+      "model": "gpt-6.1-terra",
+      "expect": {
+        "window": 1050000
+      }
+    },
+    {
+      "name": "gpt-6.1-terra dated",
+      "provider": "openai",
+      "model": "gpt-6.1-terra-2026-10-01",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6.1-terra upper",
+      "provider": "openai",
+      "model": "GPT-6.1-TERRA",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6-luna exact",
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "expect": {
+        "window": 1050000
+      }
+    },
+    {
+      "name": "gpt-6-luna dated",
+      "provider": "openai",
+      "model": "gpt-6-luna-2026-10-01",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-6-luna upper",
+      "provider": "openai",
+      "model": "GPT-6-LUNA",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-4o-mini exact",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "expect": {
+        "window": 128000
+      }
+    },
+    {
+      "name": "gpt-4o-mini dated",
+      "provider": "openai",
+      "model": "gpt-4o-mini-2026-10-01",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gpt-4o-mini upper",
+      "provider": "openai",
+      "model": "GPT-4O-MINI",
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic id",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "expect": {
+        "unknown": true
+      }
+    }
+  ],
+  "metadata": []
+}
