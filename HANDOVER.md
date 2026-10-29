@@ -68,6 +68,14 @@ model could not reproduce <part> from text provided*. On error:
 `PicoAgent::pico_condenser` for long papers. Without one, oversized text is
 `CondensationFailed`.
 
+Filed from the final review: **#572**, where Python's `json` accepts `NaN`,
+`Infinity` and out-of-range numbers and Rust's serde_json does not, so the same
+reply can succeed in one language and fail in the other (a direction decision,
+pre-existing in `chat_json`). **#573**: a bmlib defect inside `PicoAgent` reads
+as `REQUEST_FAILED`. **#574**: `chat_json(max_retries=0)` names a cause that
+never happened. New, and worth keeping: `tests/test_package_exports.py` checks
+that every package's `__all__` resolves.
+
 ## Since: the manual refresh (PR #569)
 
 Every page of `docs/manual/` was audited against the source, and every
@@ -216,7 +224,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**106 open** (`gh issue list --state open --limit 300`, 2026-10-30; #560–#571 are not yet sorted into the lists below;
+**109 open** (`gh issue list --state open --limit 300`, 2026-10-30; #560–#574 are not yet sorted into the lists below;
 PR #547's #548, #549, #552 and #553 are the four since the last count; this
 session filed **#557** (`match_section_type` parity) and **#558** (scraper
 0.29), and closed none). **#528** and
