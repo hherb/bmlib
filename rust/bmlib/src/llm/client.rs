@@ -28,15 +28,16 @@
 use crate::llm::context_window::{known_context_window, read_context_window, ContextWindowError};
 use crate::llm::data_types::{LLMMessage, LLMResponse, LLMToolDefinition};
 use crate::llm::protocol::{
-    messages_to_anthropic, messages_to_openai, parse_anthropic_response, parse_openai_response,
-    tool_choice_to_anthropic, tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_openai,
-    Protocol,
+    messages_to_anthropic, messages_to_ollama, messages_to_openai, parse_anthropic_response,
+    parse_ollama_response, parse_openai_response, think_to_ollama, tool_choice_to_anthropic,
+    tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_ollama, tool_def_to_openai, Protocol,
 };
 use crate::llm::stream::{run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::io::Read;
+use std::num::NonZeroU32;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -217,7 +218,7 @@ pub fn provider_specs() -> BTreeMap<&'static str, ProviderSpec> {
         },
         ProviderSpec {
             name: "ollama",
-            protocol: Protocol::OpenAi,
+            protocol: Protocol::Ollama,
             base_url: "http://localhost:11434",
             default_model: "llama3.2",
             api_key_env: None,
@@ -251,6 +252,13 @@ pub struct ChatRequest {
     /// Extra top-level body fields, merged last so a caller can set anything a
     /// server accepts without this port knowing the name.
     pub extra_body: Option<Value>,
+    /// The context window, in tokens, to load an Ollama model with, sent as
+    /// `options.num_ctx`. `None` sends nothing, leaving the server's default,
+    /// which is often far smaller than the model's window and silently drops
+    /// the start of a long prompt. **Ignored by the OpenAI and Anthropic
+    /// protocols**: a cloud model's window is the provider's, and the setting
+    /// only lowers what the caller plans with there.
+    pub num_ctx: Option<NonZeroU32>,
 }
 
 impl Default for ChatRequest {
@@ -266,6 +274,7 @@ impl Default for ChatRequest {
             tool_choice: "auto".to_string(),
             think: None,
             extra_body: None,
+            num_ctx: None,
         }
     }
 }
@@ -437,7 +446,13 @@ pub fn resolve_target(
 /// Build the JSON body for a chat call.
 ///
 /// `is_reasoning` switches `max_tokens` to `max_completion_tokens` and **drops
-/// `temperature`**, which OpenAI's o-series rejects rather than ignores.
+/// `temperature`**, which OpenAI's o-series rejects rather than ignores. It is
+/// OpenAI's alone; the other protocols ignore it.
+///
+/// An Ollama body carries `stream: false`, set last so `extra_body` cannot turn
+/// it on (the native API streams by default, and [`LlmClient::chat`] reads one
+/// answer). Its `options` from `extra_body` merge field by field, and the
+/// request's `num_ctx` is set after them, so it cannot be silently replaced.
 #[must_use]
 pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> Value {
     let mut body = Map::new();
@@ -522,14 +537,58 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
                 body.remove("top_p");
             }
         }
+        Protocol::Ollama => {
+            body.insert(
+                "messages".to_string(),
+                json!(messages_to_ollama(&request.messages)),
+            );
+            let mut options = Map::new();
+            options.insert("temperature".to_string(), json!(request.temperature));
+            options.insert("num_predict".to_string(), json!(request.max_tokens));
+            if let Some(top_p) = request.top_p {
+                options.insert("top_p".to_string(), json!(top_p));
+            }
+            body.insert("options".to_string(), Value::Object(options));
+            if request.json_mode {
+                body.insert("format".to_string(), json!("json"));
+            }
+            if let Some(think) = request.think.as_deref() {
+                body.insert("think".to_string(), think_to_ollama(think));
+            }
+            // No `tool_choice`: the native API has none, and the model decides.
+            if let Some(tools) = request.tools.as_ref() {
+                body.insert(
+                    "tools".to_string(),
+                    Value::Array(tools.iter().map(tool_def_to_ollama).collect()),
+                );
+            }
+        }
     }
 
     // Merged **last**, so a caller can set a field this port does not know
     // about — and can override one it does, deliberately.
     if let Some(extra) = request.extra_body.as_ref().and_then(Value::as_object) {
         for (key, value) in extra {
-            body.insert(key.clone(), value.clone());
+            match (body.get_mut(key), value) {
+                (Some(Value::Object(ours)), Value::Object(theirs))
+                    if target.protocol == Protocol::Ollama && key == "options" =>
+                {
+                    ours.extend(theirs.clone());
+                }
+                _ => {
+                    body.insert(key.clone(), value.clone());
+                }
+            }
         }
+    }
+
+    if target.protocol == Protocol::Ollama {
+        if let Some(num_ctx) = request.num_ctx {
+            if let Some(options) = body.get_mut("options").and_then(Value::as_object_mut) {
+                options.insert("num_ctx".to_string(), json!(num_ctx.get()));
+            }
+        }
+        body.insert("stream".to_string(), json!(false));
     }
 
     Value::Object(body)
@@ -623,12 +682,24 @@ pub fn chat_headers(target: &Target) -> BTreeMap<String, String> {
 ///
 /// A body the protocol cannot read — including one carrying an error object,
 /// which many servers return at HTTP 200.
-pub fn parse_response(target: &Target, body: &Value) -> Result<LLMResponse, ChatError> {
-    let parsed = match target.protocol {
-        Protocol::OpenAi => parse_openai_response(body, &target.model),
-        Protocol::Anthropic => parse_anthropic_response(body, &target.model),
-    };
-    parsed.map_err(ChatError::Malformed)
+///
+/// `messages` are the request's: Ollama estimates a token count it did not
+/// report from them.
+pub fn parse_response(
+    target: &Target,
+    body: &Value,
+    messages: &[LLMMessage],
+) -> Result<LLMResponse, ChatError> {
+    match target.protocol {
+        Protocol::OpenAi => {
+            parse_openai_response(body, &target.model).map_err(ChatError::Malformed)
+        }
+        Protocol::Anthropic => {
+            parse_anthropic_response(body, &target.model).map_err(ChatError::Malformed)
+        }
+        Protocol::Ollama => parse_ollama_response(body, &target.model, messages)
+            .map_err(|e| ChatError::Malformed(e.to_string())),
+    }
 }
 
 /// A chat client over an [`HttpClient`].
@@ -744,7 +815,7 @@ impl LlmClient {
         let parsed: Value = serde_json::from_str(text).map_err(|e| {
             ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
         })?;
-        let response = parse_response(&target, &parsed)?;
+        let response = parse_response(&target, &parsed, &request.messages)?;
 
         // **Every successful call is recorded**, which is what makes the tracker's
         // figures mean anything. It was ported, tested and then left unwired: the

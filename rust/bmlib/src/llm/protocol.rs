@@ -16,8 +16,9 @@
 
 //! The wire formats, as pure value transforms.
 //!
-//! bmlib reaches OpenAI-compatible and Anthropic-compatible servers and nothing
-//! else — the Python's seven providers were seven SDKs over two protocols. So
+//! bmlib reaches OpenAI-compatible and Anthropic-compatible servers, and Ollama
+//! over its native API — the Python's seven providers were seven SDKs over
+//! three protocols. So
 //! the protocol is the unit to port, and it is **pure**: a request body is a
 //! value, and a response body is parsed into one. A provider is then a base URL,
 //! a model name and a protocol, with no transport of its own.
@@ -39,6 +40,10 @@ pub enum Protocol {
     OpenAi,
     /// `/v1/messages` — Anthropic.
     Anthropic,
+    /// `/api/chat` — Ollama's native API. Its OpenAI-compatible endpoint drops
+    /// `options`, so a request there cannot set `num_ctx`, and Ollama's small
+    /// default window silently cuts the start of a long prompt.
+    Ollama,
 }
 
 impl Protocol {
@@ -48,6 +53,7 @@ impl Protocol {
         match self {
             Protocol::OpenAi => "/v1/chat/completions",
             Protocol::Anthropic => "/v1/messages",
+            Protocol::Ollama => "/api/chat",
         }
     }
 
@@ -57,17 +63,21 @@ impl Protocol {
         match self {
             Protocol::OpenAi => "/v1/models",
             Protocol::Anthropic => "/v1/models",
+            Protocol::Ollama => "/api/tags",
         }
     }
 
     /// The header a credential is sent in.
     ///
-    /// Anthropic uses `x-api-key` and OpenAI `Authorization: Bearer`; a provider
+    /// Anthropic uses `x-api-key`, and OpenAI and Ollama (a local server needs
+    /// none, a proxy in front of one may) `Authorization: Bearer`; a provider
     /// carrying the wrong one gets a 401 that reads like a bad key.
     #[must_use]
     pub fn auth_header(self, api_key: &str) -> (String, String) {
         match self {
-            Protocol::OpenAi => ("Authorization".to_string(), format!("Bearer {api_key}")),
+            Protocol::OpenAi | Protocol::Ollama => {
+                ("Authorization".to_string(), format!("Bearer {api_key}"))
+            }
             Protocol::Anthropic => ("x-api-key".to_string(), api_key.to_string()),
         }
     }
@@ -79,7 +89,7 @@ impl Protocol {
     #[must_use]
     pub fn extra_headers(self) -> Vec<(&'static str, &'static str)> {
         match self {
-            Protocol::OpenAi => Vec::new(),
+            Protocol::OpenAi | Protocol::Ollama => Vec::new(),
             Protocol::Anthropic => vec![("anthropic-version", ANTHROPIC_VERSION)],
         }
     }
@@ -101,6 +111,10 @@ pub enum ProtocolError {
         /// The text that would not parse.
         raw: String,
     },
+    /// The body was not an answer: a server's error object (Ollama reports a
+    /// rejected request as `{"error": "..."}`, sometimes at HTTP 200) or not a
+    /// JSON object at all. The message quotes the server when it said why.
+    Malformed(String),
 }
 
 impl std::fmt::Display for ProtocolError {
@@ -109,6 +123,7 @@ impl std::fmt::Display for ProtocolError {
             ProtocolError::ToolArguments { tool, raw } => {
                 write!(f, "tool '{tool}' arguments were not a JSON object: {raw}")
             }
+            ProtocolError::Malformed(message) => write!(f, "{message}"),
         }
     }
 }
@@ -671,6 +686,211 @@ pub fn parse_anthropic_response(
         } else {
             Some(thinking_parts.join(crate::llm::stream::THINKING_BLOCK_SEPARATOR))
         },
+    }
+    .with_derived_total())
+}
+
+// ---------------------------------------------------------------------------
+// Ollama (native `/api/chat`)
+// ---------------------------------------------------------------------------
+
+/// Characters per token in Ollama's estimate of a count it did not report:
+/// Python's `CHARS_PER_TOKEN_ESTIMATE`, counted in code points as Python's
+/// `len` counts them.
+pub const OLLAMA_CHARS_PER_TOKEN: usize = 4;
+
+/// Convert messages to Ollama's native shape.
+///
+/// Close to OpenAI's, with two differences that follow Python's provider:
+///
+/// * an assistant turn's tool calls carry their arguments as an **object**, the
+///   form Ollama both sends and expects, not OpenAI's JSON string; and its empty
+///   content stays `""` rather than becoming `null`;
+/// * a tool result carries `tool_call_id` only when it has a non-empty one.
+#[must_use]
+pub fn messages_to_ollama(messages: &[LLMMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|message| {
+            let mut entry = Map::new();
+            entry.insert("role".to_string(), json!(message.role.as_str()));
+            entry.insert("content".to_string(), json!(message.content));
+            match message.role {
+                Role::Tool => {
+                    if let Some(id) = message.tool_call_id.as_ref().filter(|id| !id.is_empty()) {
+                        entry.insert("tool_call_id".to_string(), json!(id));
+                    }
+                }
+                Role::Assistant => {
+                    if let Some(calls) = message.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+                        let calls: Vec<Value> = calls
+                            .iter()
+                            .map(|call| {
+                                json!({
+                                    "id": call.id,
+                                    "type": "function",
+                                    "function": {"name": call.name, "arguments": call.arguments},
+                                })
+                            })
+                            .collect();
+                        entry.insert("tool_calls".to_string(), Value::Array(calls));
+                    }
+                }
+                Role::System | Role::User => {}
+            }
+            Value::Object(entry)
+        })
+        .collect()
+}
+
+/// One tool definition in Ollama's shape, which is OpenAI's nested `function`
+/// form, empty schema default included (see [`tool_def_to_openai`]).
+#[must_use]
+pub fn tool_def_to_ollama(tool: &LLMToolDefinition) -> Value {
+    tool_def_to_openai(tool)
+}
+
+/// The `think` field Ollama is sent for a request's `think` text.
+///
+/// Ollama takes a bool, or an effort level (`"low"`, `"medium"`, `"high"`, for
+/// gpt-oss models). Rust carries `think` as text, where Python's caller passes a
+/// bool, a string or an int, so the text is read back as Python would have sent
+/// it: `"true"` and `"false"` are that bool; an integer is a token budget
+/// (Anthropic's form), which Ollama has no notion of, so it is on unless it is
+/// 0 (Python's `bool(n)`); any other text is an effort level, sent as is.
+#[must_use]
+pub fn think_to_ollama(think: &str) -> Value {
+    match think {
+        "true" => json!(true),
+        "false" => json!(false),
+        other => match other.parse::<i64>() {
+            Ok(budget) => json!(budget != 0),
+            Err(_) => json!(other),
+        },
+    }
+}
+
+/// Read a native tool call's arguments as Python's provider does.
+///
+/// An object is the arguments, and a string is parsed (some models send JSON
+/// text) with non-JSON kept under `_raw`, as [`tool_arguments_from_openai`]
+/// reads them. Anything else is no arguments.
+fn tool_arguments_from_ollama(raw: Option<&Value>) -> Value {
+    match raw {
+        Some(value @ (Value::Object(_) | Value::String(_))) => tool_arguments_from_openai(value),
+        _ => json!({}),
+    }
+}
+
+/// Parse one native `/api/chat` body (with `stream: false`) into a response.
+///
+/// Follows Python's provider, the oracle:
+///
+/// * `message.thinking` is the trace, and an empty one is none;
+/// * a tool call without an id gets `call_{index}`, so the caller can still
+///   correlate the result it sends back;
+/// * `prompt_eval_count` and `eval_count` are the counts, and **only an absent
+///   one is estimated** ([`OLLAMA_CHARS_PER_TOKEN`] code points a token, over
+///   `messages` for the input and the answer for the output): a reported 0, a
+///   fully cached prompt, is a real count;
+/// * the stop reason is `"tool_calls"` when there are any, else `"length"` when
+///   `done_reason` says the output cap was hit, else `"stop"`.
+///
+/// # Errors
+///
+/// [`ProtocolError::Malformed`] for a body that is not a JSON object or that
+/// carries an `error`: Ollama reports a rejected request that way, and reading
+/// it as an empty answer would report it as a model that said nothing.
+pub fn parse_ollama_response(
+    body: &Value,
+    model: &str,
+    messages: &[LLMMessage],
+) -> Result<crate::llm::data_types::LLMResponse, ProtocolError> {
+    if let Some(error) = body.get("error").filter(|e| !e.is_null()) {
+        let detail = error
+            .as_str()
+            .map_or_else(|| error.to_string(), str::to_string);
+        return Err(ProtocolError::Malformed(format!(
+            "the server refused the request (server said: {detail})"
+        )));
+    }
+    if !body.is_object() {
+        return Err(ProtocolError::Malformed(format!(
+            "the response is not a JSON object: {body}"
+        )));
+    }
+
+    let message = body.get("message").unwrap_or(&Value::Null);
+    let content = message
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let thinking = message
+        .get("thinking")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+
+    let tool_calls: Vec<LLMToolCall> = message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .map(|calls| {
+            calls
+                .iter()
+                .enumerate()
+                .map(|(index, raw)| {
+                    let function = raw.get("function").filter(|f| f.is_object()).unwrap_or(raw);
+                    LLMToolCall {
+                        id: raw
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .filter(|id| !id.is_empty())
+                            .map_or_else(|| format!("call_{index}"), str::to_string),
+                        name: function
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        arguments: tool_arguments_from_ollama(function.get("arguments")),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let estimate = |chars: usize| i64::try_from(chars / OLLAMA_CHARS_PER_TOKEN).unwrap_or(i64::MAX);
+    let input_tokens = body
+        .get("prompt_eval_count")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| estimate(messages.iter().map(|m| m.content.chars().count()).sum()));
+    let output_tokens = body
+        .get("eval_count")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| estimate(content.chars().count()));
+
+    let stop_reason = if !tool_calls.is_empty() {
+        "tool_calls"
+    } else if body.get("done_reason").and_then(Value::as_str) == Some("length") {
+        "length"
+    } else {
+        "stop"
+    };
+
+    Ok(crate::llm::data_types::LLMResponse {
+        content,
+        model: model.to_string(),
+        input_tokens,
+        output_tokens,
+        total_tokens: 0,
+        stop_reason: Some(stop_reason.to_string()),
+        duration_seconds: 0.0,
+        tool_calls: if tool_calls.is_empty() {
+            None
+        } else {
+            Some(tool_calls)
+        },
+        thinking,
     }
     .with_derived_total())
 }

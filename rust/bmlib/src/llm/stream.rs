@@ -163,6 +163,9 @@ impl StreamState {
         match self.protocol {
             Protocol::Anthropic => self.apply_anthropic(event),
             Protocol::OpenAi => self.apply_openai(event),
+            // shortcut: Ollama's native stream is newline-delimited JSON, not
+            // SSE, and is not read yet; reading it is the next change.
+            Protocol::Ollama => Err("Ollama's native stream is not read yet".to_string()),
         }
     }
 
@@ -309,6 +312,7 @@ impl StreamState {
             let (name, marker) = match self.protocol {
                 Protocol::Anthropic => ("anthropic", "message_stop"),
                 Protocol::OpenAi => ("openai", "a finish_reason"),
+                Protocol::Ollama => ("ollama", "done"),
             };
             return Err(format!(
                 "the {name} stream ended before {marker}; the answer is incomplete"

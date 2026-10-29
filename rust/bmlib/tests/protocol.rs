@@ -410,6 +410,15 @@ fn each_protocol_puts_the_credential_where_it_belongs() {
     );
     assert_eq!(Protocol::OpenAi.chat_path(), "/v1/chat/completions");
     assert_eq!(Protocol::Anthropic.chat_path(), "/v1/messages");
+    // Ollama's native API, not its OpenAI-compatible one: only the native one
+    // takes `options.num_ctx`.
+    assert_eq!(
+        Protocol::Ollama.auth_header("k"),
+        ("Authorization".to_string(), "Bearer k".to_string())
+    );
+    assert_eq!(Protocol::Ollama.chat_path(), "/api/chat");
+    assert_eq!(Protocol::Ollama.models_path(), "/api/tags");
+    assert!(Protocol::Ollama.extra_headers().is_empty());
     // Anthropic rejects a request without its version header, so it is part of
     // the protocol rather than an optional extra.
     assert!(Protocol::OpenAi.extra_headers().is_empty());

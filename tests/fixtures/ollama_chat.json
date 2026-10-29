@@ -1,0 +1,283 @@
+{
+  "description": "Ollama's native /api/chat, non-streamed. Each request is in neutral form (what a caller passes to chat()) with the body both languages must build, without the 'stream' field Rust adds. Each response is a native body, the request's messages (Ollama's token estimate needs them) and the answer both languages must read from it. Python's OllamaProvider is the oracle.",
+  "requests": [
+    {
+      "name": "plain-chat",
+      "request": {
+        "model": "llama3.2",
+        "messages": [
+          {"role": "system", "content": "Answer from the paper only."},
+          {"role": "user", "content": "Was the trial blinded?"}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 512
+      },
+      "body": {
+        "model": "llama3.2",
+        "messages": [
+          {"role": "system", "content": "Answer from the paper only."},
+          {"role": "user", "content": "Was the trial blinded?"}
+        ],
+        "options": {"temperature": 0.2, "num_predict": 512}
+      }
+    },
+    {
+      "name": "num-ctx-and-top-p",
+      "request": {
+        "model": "qwen3:32b",
+        "messages": [{"role": "user", "content": "Summarise the methods."}],
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "top_p": 0.9,
+        "num_ctx": 32768
+      },
+      "body": {
+        "model": "qwen3:32b",
+        "messages": [{"role": "user", "content": "Summarise the methods."}],
+        "options": {"temperature": 0.7, "num_predict": 4096, "top_p": 0.9, "num_ctx": 32768}
+      }
+    },
+    {
+      "name": "json-mode",
+      "request": {
+        "model": "llama3.2",
+        "messages": [{"role": "user", "content": "Give the PICO as JSON."}],
+        "temperature": 0.1,
+        "max_tokens": 1024,
+        "json_mode": true
+      },
+      "body": {
+        "model": "llama3.2",
+        "messages": [{"role": "user", "content": "Give the PICO as JSON."}],
+        "options": {"temperature": 0.1, "num_predict": 1024},
+        "format": "json"
+      }
+    },
+    {
+      "name": "tools-and-a-tool-call-turn",
+      "request": {
+        "model": "llama3.2",
+        "messages": [
+          {"role": "user", "content": "Add 2 and 3."},
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_a", "name": "add", "arguments": {"a": 2, "b": 3}}]
+          },
+          {"role": "tool", "content": "5", "tool_call_id": "call_a"},
+          {"role": "tool", "content": "no id"}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 256,
+        "tools": [
+          {
+            "name": "add",
+            "description": "Add two numbers",
+            "parameters": {
+              "type": "object",
+              "properties": {"a": {"type": "number"}, "b": {"type": "number"}}
+            }
+          },
+          {"name": "now", "description": "The current time", "parameters": {}}
+        ]
+      },
+      "body": {
+        "model": "llama3.2",
+        "messages": [
+          {"role": "user", "content": "Add 2 and 3."},
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {"id": "call_a", "type": "function", "function": {"name": "add", "arguments": {"a": 2, "b": 3}}}
+            ]
+          },
+          {"role": "tool", "content": "5", "tool_call_id": "call_a"},
+          {"role": "tool", "content": "no id"}
+        ],
+        "options": {"temperature": 0.3, "num_predict": 256},
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "add",
+              "description": "Add two numbers",
+              "parameters": {
+                "type": "object",
+                "properties": {"a": {"type": "number"}, "b": {"type": "number"}}
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "now",
+              "description": "The current time",
+              "parameters": {"type": "object", "properties": {}}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "think-true",
+      "request": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "temperature": 0.6, "max_tokens": 64, "think": true},
+      "body": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "options": {"temperature": 0.6, "num_predict": 64}, "think": true}
+    },
+    {
+      "name": "think-false",
+      "request": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "temperature": 0.6, "max_tokens": 64, "think": false},
+      "body": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "options": {"temperature": 0.6, "num_predict": 64}, "think": false}
+    },
+    {
+      "name": "think-an-effort-level",
+      "request": {"model": "gpt-oss", "messages": [{"role": "user", "content": "Why?"}], "temperature": 0.6, "max_tokens": 64, "think": "high"},
+      "body": {"model": "gpt-oss", "messages": [{"role": "user", "content": "Why?"}], "options": {"temperature": 0.6, "num_predict": 64}, "think": "high"}
+    },
+    {
+      "name": "think-a-budget-is-on",
+      "request": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "temperature": 0.6, "max_tokens": 64, "think": 8000},
+      "body": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "options": {"temperature": 0.6, "num_predict": 64}, "think": true}
+    },
+    {
+      "name": "think-a-zero-budget-is-off",
+      "request": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "temperature": 0.6, "max_tokens": 64, "think": 0},
+      "body": {"model": "qwen3", "messages": [{"role": "user", "content": "Why?"}], "options": {"temperature": 0.6, "num_predict": 64}, "think": false}
+    }
+  ],
+  "responses": [
+    {
+      "name": "plain-answer",
+      "body": {
+        "model": "llama3.2",
+        "message": {"role": "assistant", "content": "Yes, double-blind.", "thinking": ""},
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 12,
+        "eval_count": 5
+      },
+      "messages": [{"role": "user", "content": "Was it blinded?"}],
+      "expected": {
+        "content": "Yes, double-blind.",
+        "thinking": null,
+        "tool_calls": null,
+        "input_tokens": 12,
+        "output_tokens": 5,
+        "stop_reason": "stop"
+      }
+    },
+    {
+      "name": "length",
+      "body": {
+        "model": "llama3.2",
+        "message": {"role": "assistant", "content": "The trial enrolled"},
+        "done": true,
+        "done_reason": "length",
+        "prompt_eval_count": 30,
+        "eval_count": 64
+      },
+      "messages": [{"role": "user", "content": "Describe the trial."}],
+      "expected": {
+        "content": "The trial enrolled",
+        "thinking": null,
+        "tool_calls": null,
+        "input_tokens": 30,
+        "output_tokens": 64,
+        "stop_reason": "length"
+      }
+    },
+    {
+      "name": "counts-absent-are-estimated-in-code-points",
+      "body": {
+        "model": "llama3.2",
+        "message": {"role": "assistant", "content": "Größe über α und β, verblindet."},
+        "done": true,
+        "done_reason": "stop"
+      },
+      "messages": [
+        {"role": "system", "content": "Antworte knapp."},
+        {"role": "user", "content": "Prüfe die Größe: α, β, γ — bitte."}
+      ],
+      "expected": {
+        "content": "Größe über α und β, verblindet.",
+        "thinking": null,
+        "tool_calls": null,
+        "input_tokens": 12,
+        "output_tokens": 7,
+        "stop_reason": "stop"
+      }
+    },
+    {
+      "name": "zero-counts-are-kept",
+      "body": {
+        "model": "llama3.2",
+        "message": {"role": "assistant", "content": "A cached answer."},
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 0,
+        "eval_count": 0
+      },
+      "messages": [{"role": "user", "content": "Ask again, the same question as before."}],
+      "expected": {
+        "content": "A cached answer.",
+        "thinking": null,
+        "tool_calls": null,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "stop_reason": "stop"
+      }
+    },
+    {
+      "name": "thinking",
+      "body": {
+        "model": "qwen3",
+        "message": {"role": "assistant", "content": "Blinded.", "thinking": "Check the methods section."},
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 9,
+        "eval_count": 14
+      },
+      "messages": [{"role": "user", "content": "Blinded?"}],
+      "expected": {
+        "content": "Blinded.",
+        "thinking": "Check the methods section.",
+        "tool_calls": null,
+        "input_tokens": 9,
+        "output_tokens": 14,
+        "stop_reason": "stop"
+      }
+    },
+    {
+      "name": "tool-calls-win-over-length",
+      "body": {
+        "model": "llama3.2",
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"function": {"name": "add", "arguments": {"a": 2, "b": 3}}},
+            {"id": "t-7", "function": {"name": "add", "arguments": "{\"a\": 1, \"b\": 1}"}},
+            {"id": "", "function": {"name": "lookup", "arguments": "not json"}}
+          ]
+        },
+        "done": true,
+        "done_reason": "length",
+        "prompt_eval_count": 20,
+        "eval_count": 10
+      },
+      "messages": [{"role": "user", "content": "Add things."}],
+      "expected": {
+        "content": "",
+        "thinking": null,
+        "tool_calls": [
+          {"id": "call_0", "name": "add", "arguments": {"a": 2, "b": 3}},
+          {"id": "t-7", "name": "add", "arguments": {"a": 1, "b": 1}},
+          {"id": "call_2", "name": "lookup", "arguments": {"_raw": "not json"}}
+        ],
+        "input_tokens": 20,
+        "output_tokens": 10,
+        "stop_reason": "tool_calls"
+      }
+    }
+  ]
+}
