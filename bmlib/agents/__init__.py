@@ -16,7 +16,22 @@
 
 """Agent base class for LLM-powered tasks."""
 
-from bmlib.agents.base import BaseAgent
+from bmlib.agents.base import (
+    BaseAgent,
+    ChatJsonEmpty,
+    ChatJsonError,
+    ChatJsonTruncated,
+    ChatJsonUnparseable,
+    ChatJsonWrongShape,
+)
 from bmlib.agents.metrics import PerformanceMetrics
 
-__all__ = ["BaseAgent", "PerformanceMetrics"]
+__all__ = [
+    "BaseAgent",
+    "ChatJsonEmpty",
+    "ChatJsonError",
+    "ChatJsonTruncated",
+    "ChatJsonUnparseable",
+    "ChatJsonWrongShape",
+    "PerformanceMetrics",
+]
