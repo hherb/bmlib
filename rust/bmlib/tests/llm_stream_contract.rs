@@ -18,9 +18,7 @@
 //!
 //! The same file Python's `tests/test_llm_stream.py` asserts against: each
 //! case's events, run through `run_stream`, give exactly its deltas and its
-//! response, or an error containing its `error`. The `ollama` cases are
-//! Ollama's native stream, which only Python's client reads; they are counted
-//! here by name, so a new protocol cannot be skipped unnoticed.
+//! response, or an error containing its `error`.
 
 use bmlib::llm::{run_stream, ChatError, Protocol, StreamDelta};
 use serde_json::{json, Value};
@@ -33,6 +31,7 @@ fn protocol_of(name: &str) -> Option<Protocol> {
     match name {
         "anthropic" => Some(Protocol::Anthropic),
         "openai" => Some(Protocol::OpenAi),
+        "ollama" => Some(Protocol::Ollama),
         _ => None,
     }
 }
@@ -49,14 +48,11 @@ fn every_case_gives_its_deltas_and_response() {
     let fixture: Value = serde_json::from_str(FIXTURE).expect("the fixture is JSON");
     let mut failures = Vec::new();
     let mut run = 0;
-    let mut python_only = Vec::new();
     for case in fixture["cases"].as_array().expect("a list of cases") {
         let name = case["name"].as_str().expect("a name");
         let protocol_name = case["protocol"].as_str().expect("a protocol");
         let Some(protocol) = protocol_of(protocol_name) else {
-            assert_eq!(protocol_name, "ollama", "{name}: a protocol nobody reads");
-            python_only.push(name);
-            continue;
+            panic!("{name}: a protocol nobody reads: {protocol_name}");
         };
         run += 1;
         let stop_after = case.get("stop_after").and_then(Value::as_u64);
@@ -102,16 +98,6 @@ fn every_case_gives_its_deltas_and_response() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    // Every protocol this port reads has cases, and only `ollama` is skipped.
-    assert_eq!(run, 19, "cases run");
-    assert_eq!(
-        python_only,
-        [
-            "ollama/thinking-text-and-counts",
-            "ollama/length",
-            "ollama/no-done-is-an-error",
-            "ollama/an-error-object-is-an-error",
-            "ollama/a-tool-call-is-an-error",
-        ]
-    );
+    // No case is skipped: every protocol in the fixture is read.
+    assert_eq!(run, 24, "cases run");
 }

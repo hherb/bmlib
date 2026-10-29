@@ -17,16 +17,13 @@
 //! Reading a streamed chat answer, one event at a time.
 //!
 //! The port of `bmlib/llm/stream.py`. A streamed answer arrives as
-//! server-sent events, each carrying a JSON object whose shape depends on the
-//! protocol. [`SseEvents`] splits the wire into those objects' text,
-//! [`StreamState`] reads them in order and hands back the pieces of text and
-//! reasoning each one carries ([`StreamDelta`]), and [`run_stream`] drives the
-//! two and builds the final [`LLMResponse`]. The reducer is held to the shared
+//! server-sent events, or, from Ollama's native API, as one JSON object per
+//! line. Each event carries a JSON object whose shape depends on the protocol.
+//! [`SseEvents`] splits the wire into those objects' text ([`ndjson_events`]
+//! does the same for Ollama), [`StreamState`] reads them in order and hands
+//! back the pieces of text and reasoning each one carries ([`StreamDelta`]),
+//! and [`run_stream`] drives the two and builds the final [`LLMResponse`]. The reducer is held to the shared
 //! contract `tests/fixtures/chat_stream.json`, which the Python reads too.
-//!
-//! Python's client reaches Ollama through its native `/api/chat`, and this
-//! one through its OpenAI-compatible endpoint, as each one's `chat()` does; so
-//! the contract's `ollama` cases are Python's alone.
 //!
 //! **A stream that ends before its end marker is an error**, never a short
 //! answer: a dropped connection would otherwise read as a model that stopped
@@ -48,8 +45,8 @@ pub const CANCELLED_STOP_REASON: &str = "cancelled";
 /// request carries `stream_options: {"include_usage": true}`, and some servers
 /// refuse that field as unknown. So it is sent only to the providers listed
 /// here, whose OpenAI-compatible APIs document it. The Python keeps the same
-/// list; its Ollama provider speaks the native API, so the `ollama` entry
-/// matters only here.
+/// list. Both languages speak Ollama's native API, whose stream reports usage
+/// unasked, so the `ollama` entry has no effect in either.
 pub const STREAM_USAGE_PROVIDERS: &[&str] = &["openai", "deepseek", "ollama"];
 
 /// What joins two of Anthropic's reasoning blocks, as Python's `chat()` joins
@@ -163,6 +160,7 @@ impl StreamState {
         match self.protocol {
             Protocol::Anthropic => self.apply_anthropic(event),
             Protocol::OpenAi => self.apply_openai(event),
+            Protocol::Ollama => self.apply_ollama(event),
         }
     }
 
@@ -295,6 +293,37 @@ impl StreamState {
         Ok(deltas)
     }
 
+    /// Read one chunk of Ollama's native `/api/chat` stream.
+    fn apply_ollama(&mut self, event: &Value) -> Result<Vec<StreamDelta>, String> {
+        if let Some(error) = error_field(event) {
+            return Err(server_error(error));
+        }
+        let message = event.get("message");
+        if message
+            .and_then(|m| m.get("tool_calls"))
+            .and_then(Value::as_array)
+            .is_some_and(|c| !c.is_empty())
+        {
+            return Err(TOOL_CALL_ERROR.to_string());
+        }
+        let mut deltas = Vec::new();
+        self.add(true, text_of(message, "thinking"), &mut deltas);
+        self.add(false, text_of(message, "content"), &mut deltas);
+        if event.get("done").and_then(Value::as_bool) == Some(true) {
+            self.complete = true;
+            // `chat()`'s mapping: only a truncation is told apart from a stop.
+            let length = event.get("done_reason").and_then(Value::as_str) == Some("length");
+            self.stop_reason = Some(if length { "length" } else { "stop" }.to_string());
+            if let Some(prompt) = count_of(Some(event), "prompt_eval_count") {
+                self.input_tokens = prompt;
+            }
+            if let Some(eval) = count_of(Some(event), "eval_count") {
+                self.output_tokens = eval;
+            }
+        }
+        Ok(deltas)
+    }
+
     /// Build the response from everything read.
     ///
     /// A stream the caller stopped (`cancelled`) is not checked for its end
@@ -309,6 +338,7 @@ impl StreamState {
             let (name, marker) = match self.protocol {
                 Protocol::Anthropic => ("anthropic", "message_stop"),
                 Protocol::OpenAi => ("openai", "a finish_reason"),
+                Protocol::Ollama => ("ollama", "done"),
             };
             return Err(format!(
                 "the {name} stream ended before {marker}; the answer is incomplete"
@@ -459,9 +489,55 @@ impl<R: BufRead> Iterator for SseEvents<R> {
     }
 }
 
+/// The JSON object on each line of an Ollama stream, in order.
+///
+/// Ollama's native API streams newline-delimited JSON, not SSE. A line with
+/// only whitespace is skipped, a trailing `\r` is dropped.
+///
+/// # Errors
+///
+/// An item is [`ChatError::Stream`] when the read broke off, a line is not
+/// UTF-8, or a line is not JSON; nothing follows an error.
+pub fn ndjson_events<R: BufRead>(reader: R) -> impl Iterator<Item = Result<Value, ChatError>> {
+    let mut lines = reader.split(b'\n');
+    let mut failed = false;
+    std::iter::from_fn(move || loop {
+        if failed {
+            return None;
+        }
+        let line = match lines.next()? {
+            Ok(line) => line,
+            Err(e) => {
+                failed = true;
+                return Some(Err(ChatError::Stream(format!("the stream failed: {e}"))));
+            }
+        };
+        let parsed = std::str::from_utf8(&line)
+            .map_err(|_| "the stream sent a line that is not UTF-8".to_string())
+            .and_then(|text| {
+                let text = text.trim();
+                if text.is_empty() {
+                    return Ok(None);
+                }
+                serde_json::from_str::<Value>(text)
+                    .map(Some)
+                    .map_err(|e| format!("the stream sent a line that is not JSON: {e}"))
+            });
+        match parsed {
+            Ok(None) => {}
+            Ok(Some(event)) => return Some(Ok(event)),
+            Err(message) => {
+                failed = true;
+                return Some(Err(ChatError::Stream(message)));
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn events(wire: &str) -> Vec<Result<String, ChatError>> {
         SseEvents::new(wire.as_bytes()).collect()
@@ -531,6 +607,33 @@ mod tests {
             ControlFlow::Continue(())
         });
         assert_eq!(got, Err(ChatError::Transport("gone".to_string())));
+    }
+
+    #[test]
+    fn ndjson_skips_blank_lines_and_reads_crlf() {
+        let wire = "{\"a\":1}\r\n\n  \n{\"b\":2}";
+        let got: Vec<_> = ndjson_events(wire.as_bytes()).collect();
+        assert_eq!(got, vec![Ok(json!({"a": 1})), Ok(json!({"b": 2}))]);
+    }
+
+    #[test]
+    fn ndjson_stops_at_a_line_that_is_not_json() {
+        let got: Vec<_> = ndjson_events("nope\n{\"a\":1}\n".as_bytes()).collect();
+        assert_eq!(got.len(), 1);
+        assert!(matches!(&got[0], Err(ChatError::Stream(m)) if m.contains("not JSON")));
+    }
+
+    #[test]
+    fn ndjson_read_failure_is_a_stream_error() {
+        struct Broken;
+        impl std::io::Read for Broken {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("reset"))
+            }
+        }
+        let got: Vec<_> = ndjson_events(std::io::BufReader::new(Broken)).collect();
+        assert_eq!(got.len(), 1);
+        assert!(matches!(&got[0], Err(ChatError::Stream(m)) if m.contains("reset")));
     }
 
     #[test]

@@ -168,6 +168,19 @@ impl HttpClient for UreqClient {
         read_response(agent.get(url).call())
     }
 
+    fn get_with_headers(
+        &self,
+        url: &str,
+        headers: &BTreeMap<String, String>,
+    ) -> Result<HttpResponse, FetchError> {
+        let agent = self.agent()?;
+        let mut request = agent.get(url);
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+        read_response(request.call())
+    }
+
     fn post_json(
         &self,
         url: &str,

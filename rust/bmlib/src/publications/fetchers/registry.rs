@@ -294,6 +294,28 @@ pub trait HttpClient {
     /// from what it does with no connection at all.
     fn get(&self, url: &str) -> Result<HttpResponse, FetchError>;
 
+    /// Issue a GET request carrying headers.
+    ///
+    /// For an API that authenticates a read (a model's metadata). The default
+    /// **refuses**, naming the method, rather than dropping the headers and
+    /// sending an unauthenticated GET: that would come back as a 401 that reads
+    /// as a bad key.
+    ///
+    /// # Errors
+    ///
+    /// [`FetchError::Transport`] when the request never completed, as
+    /// [`HttpClient::get`]; [`FetchError::Config`] when this client cannot send
+    /// headers (the default). A non-success status is a [`HttpResponse`].
+    fn get_with_headers(
+        &self,
+        url: &str,
+        _headers: &std::collections::BTreeMap<String, String>,
+    ) -> Result<HttpResponse, FetchError> {
+        Err(FetchError::Config(format!(
+            "this HttpClient does not implement get_with_headers (GET {url})"
+        )))
+    }
+
     /// Issue a JSON POST.
     ///
     /// The default **refuses**, naming the method, rather than silently issuing a

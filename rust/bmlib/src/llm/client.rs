@@ -25,17 +25,21 @@
 //! `"deepseek:deepseek-chat"` keeps working, and the same defaults, so a caller
 //! who names no model gets what they got before.
 
+use crate::llm::context_window::{known_context_window, read_context_window, ContextWindowError};
 use crate::llm::data_types::{LLMMessage, LLMResponse, LLMToolDefinition};
 use crate::llm::protocol::{
-    messages_to_anthropic, messages_to_openai, parse_anthropic_response, parse_openai_response,
-    tool_choice_to_anthropic, tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_openai,
-    Protocol,
+    messages_to_anthropic, messages_to_ollama, messages_to_openai, parse_anthropic_response,
+    parse_ollama_response, parse_openai_response, think_to_ollama, tool_choice_to_anthropic,
+    tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_ollama, tool_def_to_openai, Protocol,
 };
-use crate::llm::stream::{run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS};
+use crate::llm::stream::{
+    ndjson_events, run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS,
+};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::io::Read;
+use std::num::NonZeroU32;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -216,7 +220,7 @@ pub fn provider_specs() -> BTreeMap<&'static str, ProviderSpec> {
         },
         ProviderSpec {
             name: "ollama",
-            protocol: Protocol::OpenAi,
+            protocol: Protocol::Ollama,
             base_url: "http://localhost:11434",
             default_model: "llama3.2",
             api_key_env: None,
@@ -250,6 +254,13 @@ pub struct ChatRequest {
     /// Extra top-level body fields, merged last so a caller can set anything a
     /// server accepts without this port knowing the name.
     pub extra_body: Option<Value>,
+    /// The context window, in tokens, to load an Ollama model with, sent as
+    /// `options.num_ctx`. `None` sends nothing, leaving the server's default,
+    /// which is often far smaller than the model's window and silently drops
+    /// the start of a long prompt. **Ignored by the OpenAI and Anthropic
+    /// protocols**: a cloud model's window is the provider's, and the setting
+    /// only lowers what the caller plans with there.
+    pub num_ctx: Option<NonZeroU32>,
 }
 
 impl Default for ChatRequest {
@@ -265,6 +276,7 @@ impl Default for ChatRequest {
             tool_choice: "auto".to_string(),
             think: None,
             extra_body: None,
+            num_ctx: None,
         }
     }
 }
@@ -436,7 +448,14 @@ pub fn resolve_target(
 /// Build the JSON body for a chat call.
 ///
 /// `is_reasoning` switches `max_tokens` to `max_completion_tokens` and **drops
-/// `temperature`**, which OpenAI's o-series rejects rather than ignores.
+/// `temperature`**, which OpenAI's o-series rejects rather than ignores. It is
+/// OpenAI's alone; the other protocols ignore it.
+///
+/// An Ollama body carries `stream: false`, set last so `extra_body` cannot turn
+/// it on (the native API streams by default, and [`LlmClient::chat`] reads one
+/// answer). Its `options` from `extra_body` merge field by field (a non-object
+/// one is ignored), and the request's `num_ctx` is set after them, so it cannot
+/// be silently replaced.
 #[must_use]
 pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> Value {
     let mut body = Map::new();
@@ -521,14 +540,60 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
                 body.remove("top_p");
             }
         }
+        Protocol::Ollama => {
+            body.insert(
+                "messages".to_string(),
+                json!(messages_to_ollama(&request.messages)),
+            );
+            let mut options = Map::new();
+            options.insert("temperature".to_string(), json!(request.temperature));
+            options.insert("num_predict".to_string(), json!(request.max_tokens));
+            if let Some(top_p) = request.top_p {
+                options.insert("top_p".to_string(), json!(top_p));
+            }
+            body.insert("options".to_string(), Value::Object(options));
+            if request.json_mode {
+                body.insert("format".to_string(), json!("json"));
+            }
+            if let Some(think) = request.think.as_deref() {
+                body.insert("think".to_string(), think_to_ollama(think));
+            }
+            // No `tool_choice`: the native API has none, and the model decides.
+            if let Some(tools) = request.tools.as_ref() {
+                body.insert(
+                    "tools".to_string(),
+                    Value::Array(tools.iter().map(tool_def_to_ollama).collect()),
+                );
+            }
+        }
     }
 
     // Merged **last**, so a caller can set a field this port does not know
-    // about — and can override one it does, deliberately.
+    // about — and can override one it does, deliberately. The exception is
+    // Ollama's `options`: merged field by field, and **ignored when it is not
+    // an object** (`null`, a string), so it can never replace our options
+    // wholesale and take `num_ctx`, set below, with them.
     if let Some(extra) = request.extra_body.as_ref().and_then(Value::as_object) {
         for (key, value) in extra {
+            if target.protocol == Protocol::Ollama && key == "options" {
+                if let (Some(Value::Object(ours)), Value::Object(theirs)) =
+                    (body.get_mut(key), value)
+                {
+                    ours.extend(theirs.clone());
+                }
+                continue;
+            }
             body.insert(key.clone(), value.clone());
         }
+    }
+
+    if target.protocol == Protocol::Ollama {
+        if let Some(num_ctx) = request.num_ctx {
+            if let Some(options) = body.get_mut("options").and_then(Value::as_object_mut) {
+                options.insert("num_ctx".to_string(), json!(num_ctx.get()));
+            }
+        }
+        body.insert("stream".to_string(), json!(false));
     }
 
     Value::Object(body)
@@ -622,12 +687,24 @@ pub fn chat_headers(target: &Target) -> BTreeMap<String, String> {
 ///
 /// A body the protocol cannot read — including one carrying an error object,
 /// which many servers return at HTTP 200.
-pub fn parse_response(target: &Target, body: &Value) -> Result<LLMResponse, ChatError> {
-    let parsed = match target.protocol {
-        Protocol::OpenAi => parse_openai_response(body, &target.model),
-        Protocol::Anthropic => parse_anthropic_response(body, &target.model),
-    };
-    parsed.map_err(ChatError::Malformed)
+///
+/// `messages` are the request's: Ollama estimates a token count it did not
+/// report from them.
+pub fn parse_response(
+    target: &Target,
+    body: &Value,
+    messages: &[LLMMessage],
+) -> Result<LLMResponse, ChatError> {
+    match target.protocol {
+        Protocol::OpenAi => {
+            parse_openai_response(body, &target.model).map_err(ChatError::Malformed)
+        }
+        Protocol::Anthropic => {
+            parse_anthropic_response(body, &target.model).map_err(ChatError::Malformed)
+        }
+        Protocol::Ollama => parse_ollama_response(body, &target.model, messages)
+            .map_err(|e| ChatError::Malformed(e.to_string())),
+    }
 }
 
 /// A chat client over an [`HttpClient`].
@@ -743,7 +820,7 @@ impl LlmClient {
         let parsed: Value = serde_json::from_str(text).map_err(|e| {
             ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
         })?;
-        let response = parse_response(&target, &parsed)?;
+        let response = parse_response(&target, &parsed, &request.messages)?;
 
         // **Every successful call is recorded**, which is what makes the tracker's
         // figures mean anything. It was ported, tested and then left unwired: the
@@ -810,20 +887,58 @@ impl LlmClient {
         let url = chat_url(&target);
         let stream = self.open_stream(&url, &body, &chat_headers(&target))?;
 
-        let events = SseEvents::new(std::io::BufReader::new(stream.body))
-            .take_while(|data| data.as_deref() != Ok(SSE_DONE))
-            .map(|data| {
-                data.and_then(|d| {
-                    serde_json::from_str::<Value>(&d).map_err(|e| {
-                        ChatError::Stream(format!("{url} streamed an event that is not JSON: {e}"))
-                    })
-                })
-            });
+        let reader = std::io::BufReader::new(stream.body);
+        let events: Box<dyn Iterator<Item = Result<Value, ChatError>>> =
+            if target.protocol == Protocol::Ollama {
+                Box::new(ndjson_events(reader))
+            } else {
+                Box::new(
+                    SseEvents::new(reader)
+                        .take_while(|data| data.as_deref() != Ok(SSE_DONE))
+                        .map(|data| {
+                            data.and_then(|d| {
+                                serde_json::from_str::<Value>(&d).map_err(|e| {
+                                    ChatError::Stream(format!(
+                                        "{url} streamed an event that is not JSON: {e}"
+                                    ))
+                                })
+                            })
+                        }),
+                )
+            };
         let response = run_stream(target.protocol, events, &target.model, on_delta)?;
         // Recorded for a stopped stream too, with the counts the server had
         // sent by then, which understate what it spent.
         record_usage(&target, &response);
         Ok(response)
+    }
+
+    /// Run `send` until it answers, retrying a transport failure or a
+    /// [`RETRYABLE_STATUSES`] status up to [`STREAM_OPEN_ATTEMPTS`] tries, with
+    /// a backoff from [`LlmClient::retry_base_delay`] doubling each time.
+    ///
+    /// Returns the last outcome, retried or not, for the caller to judge:
+    /// shared by opening a stream and by a context-window lookup.
+    /// `status_of` reads the status out of a successful send.
+    fn send_with_retries<T>(
+        &self,
+        mut send: impl FnMut() -> Result<T, FetchError>,
+        status_of: impl Fn(&T) -> u16,
+    ) -> Result<T, FetchError> {
+        let mut attempt = 1;
+        loop {
+            let outcome = send();
+            let retryable = match &outcome {
+                Err(FetchError::Transport(_)) => true,
+                Err(_) => false,
+                Ok(answer) => RETRYABLE_STATUSES.contains(&status_of(answer)),
+            };
+            if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
+                return outcome;
+            }
+            std::thread::sleep(self.retry_base_delay * 2u32.pow(attempt - 1));
+            attempt += 1;
+        }
     }
 
     /// Open a stream, retrying a transport failure or a retryable status.
@@ -836,30 +951,199 @@ impl LlmClient {
         body: &Value,
         headers: &BTreeMap<String, String>,
     ) -> Result<HttpStream, ChatError> {
-        let mut attempt = 1;
-        loop {
-            let outcome = self.client.post_json_stream(url, body, headers);
-            let retryable = match &outcome {
-                Err(FetchError::Transport(_)) => true,
-                Err(_) => false,
-                Ok(stream) => RETRYABLE_STATUSES.contains(&stream.status),
-            };
-            if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
-                let mut stream = outcome.map_err(|e| ChatError::Transport(e.to_string()))?;
-                if !stream.is_success() {
-                    let mut bytes = Vec::new();
-                    // A body that cannot be read is quoted as nothing: the
-                    // status is the error, and the body only explains it.
-                    let _ = (&mut stream.body)
-                        .take(ERROR_BODY_LIMIT)
-                        .read_to_end(&mut bytes);
-                    let text = std::str::from_utf8(&bytes).unwrap_or_default();
-                    return Err(http_error(url, stream.status, text));
-                }
-                return Ok(stream);
-            }
-            std::thread::sleep(self.retry_base_delay * 2u32.pow(attempt - 1));
-            attempt += 1;
+        let mut stream = self
+            .send_with_retries(
+                || self.client.post_json_stream(url, body, headers),
+                |stream| stream.status,
+            )
+            .map_err(|e| ChatError::Transport(e.to_string()))?;
+        if !stream.is_success() {
+            let mut bytes = Vec::new();
+            // A body that cannot be read is quoted as nothing: the
+            // status is the error, and the body only explains it.
+            let _ = (&mut stream.body)
+                .take(ERROR_BODY_LIMIT)
+                .read_to_end(&mut bytes);
+            let text = std::str::from_utf8(&bytes).unwrap_or_default();
+            return Err(http_error(url, stream.status, text));
         }
+        Ok(stream)
+    }
+
+    /// The context window of `model`, in tokens, from the provider.
+    ///
+    /// `model` is parsed as [`LlmClient::chat`]'s is: `"provider:model"`, or a
+    /// bare provider name for its default model. Read the number as input and
+    /// answer **together**: a prompt plus the room left for the reply must fit
+    /// inside it. OpenAI publishes no metadata endpoint, so it answers from
+    /// [`known_context_window`] with no key and no request. Every other
+    /// provider is asked, and the answer is read by [`read_context_window`].
+    /// A transport failure or a [`RETRYABLE_STATUSES`] status is retried like
+    /// opening a stream; a 404 is [`ContextWindowError::NoSuchModel`] at once,
+    /// except from DeepSeek (its list names no model) and from Ollama unless
+    /// its `error` says "not found": those are
+    /// [`ContextWindowError::Transport`].
+    ///
+    /// Routing differs from Python's `LLMClient.context_window(model,
+    /// provider=None)`: here a bare provider name (or `""`) asks that
+    /// provider for its default model, while Python asks the default provider
+    /// about a model of that name.
+    ///
+    /// `Ok(None)` means the provider answered but states no usable window.
+    ///
+    /// # Errors
+    ///
+    /// An unknown provider or a missing key (before any request), a model the
+    /// provider does not have, a transport failure or other refused status, or
+    /// a body that is not JSON ([`ContextWindowError::Malformed`]).
+    pub fn context_window(&self, model: &str) -> Result<Option<u64>, ContextWindowError> {
+        let request = ChatRequest::new(Vec::new()).with_model(model);
+        // Route once with a stand-in key, only to learn the provider: OpenAI
+        // needs no key here, so a missing one must not stop it.
+        let routed = resolve_target(
+            &request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            Some(ROUTING_ONLY_KEY),
+        )
+        .map_err(context_window_routing_error)?;
+        if routed.provider == "openai" {
+            return Ok(known_context_window(&routed.provider, &routed.model));
+        }
+        let target = resolve_target(
+            &request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+        )
+        .map_err(context_window_routing_error)?;
+        let (url, post_body) = context_window_request(&target);
+        let headers = context_window_headers(&target);
+        let response = self
+            .send_with_retries(
+                || match &post_body {
+                    Some(body) => self.client.post_json(&url, body, &headers),
+                    None => self.client.get_with_headers(&url, &headers),
+                },
+                |response| response.status,
+            )
+            .map_err(|e| ContextWindowError::Transport(e.to_string()))?;
+        let text = String::from_utf8_lossy(&response.body);
+        if response.status == HTTP_NOT_FOUND && names_a_missing_model(&target.provider, &text) {
+            return Err(ContextWindowError::NoSuchModel {
+                provider: target.provider,
+                model: target.model,
+            });
+        }
+        if !(200..300).contains(&response.status) {
+            return Err(ContextWindowError::Transport(
+                http_error(&url, response.status, &text).to_string(),
+            ));
+        }
+        let body: Value = serde_json::from_str(&text).map_err(|e| {
+            ContextWindowError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
+        })?;
+        read_context_window(&target.provider, &target.model, &body)
+    }
+}
+
+/// A placeholder credential for routing a model string when the answer needs
+/// no key; never sent anywhere.
+const ROUTING_ONLY_KEY: &str = "unused";
+
+/// Gemini's native API reads its key from this header, not `Authorization`.
+const GEMINI_KEY_HEADER: &str = "x-goog-api-key";
+
+/// A routing failure from `resolve_target`, as a [`ContextWindowError`].
+fn context_window_routing_error(error: ChatError) -> ContextWindowError {
+    match error {
+        ChatError::MissingApiKey { provider, env_var } => {
+            ContextWindowError::MissingApiKey { provider, env_var }
+        }
+        ChatError::UnknownProvider(name) => ContextWindowError::UnknownProvider(name),
+        other => ContextWindowError::Transport(other.to_string()),
+    }
+}
+
+/// The headers a metadata lookup carries: a chat call's, except that Gemini's
+/// native API takes its key in [`GEMINI_KEY_HEADER`].
+fn context_window_headers(target: &Target) -> BTreeMap<String, String> {
+    let mut headers = chat_headers(target);
+    if target.provider == "gemini" {
+        if let Some(key) = headers.remove("Authorization") {
+            headers.insert(
+                GEMINI_KEY_HEADER.to_string(),
+                key.trim_start_matches("Bearer ").to_string(),
+            );
+        }
+    }
+    headers
+}
+
+/// The status that means the provider has no such model.
+const HTTP_NOT_FOUND: u16 = 404;
+
+/// What Ollama's error says when it has no such model (`model 'x' not found`).
+const OLLAMA_MISSING_MODEL_PHRASE: &str = "not found";
+
+/// Whether a 404 from `provider` means "no such model" rather than a wrong
+/// URL. DeepSeek's list endpoint names no model, so its 404 never does.
+/// Ollama answers a wrong base URL (say one ending `/v1`) with a 404 too, so
+/// only an `error` field saying "not found" counts. The others name the model
+/// in the path, so any 404 does.
+fn names_a_missing_model(provider: &str, body: &str) -> bool {
+    match provider {
+        "deepseek" => false,
+        "ollama" => serde_json::from_str::<Value>(body)
+            .ok()
+            .and_then(|v| {
+                v.get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_lowercase)
+            })
+            .is_some_and(|e| e.contains(OLLAMA_MISSING_MODEL_PHRASE)),
+        _ => true,
+    }
+}
+
+/// Characters that stay as they are in a URL path segment: RFC 3986's
+/// unreserved set. Everything else, `/` included, is percent-encoded so a
+/// model id can never add or end a path segment.
+fn is_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
+/// `text` percent-encoded for use as one URL path segment.
+fn percent_encode_segment(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if is_unreserved(byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// The URL, and the JSON body when the lookup is a POST, for asking a
+/// provider about `target.model`. Per-provider because the metadata endpoints
+/// share nothing: the paths differ, Gemini's lives beside its OpenAI-compatible
+/// base rather than under it, and Ollama takes the id in a POST body.
+fn context_window_request(target: &Target) -> (String, Option<Value>) {
+    let base = &target.base_url;
+    let id = percent_encode_segment(&target.model);
+    match target.provider.as_str() {
+        "deepseek" => (format!("{base}/models"), None),
+        "gemini" => {
+            let native = base.strip_suffix("/openai").unwrap_or(base);
+            (format!("{native}/models/{id}"), None)
+        }
+        "ollama" => (
+            format!("{base}/api/show"),
+            Some(json!({ "model": target.model })),
+        ),
+        // anthropic and mistral
+        _ => (format!("{base}/v1/models/{id}"), None),
     }
 }

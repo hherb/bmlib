@@ -393,3 +393,47 @@ fn a_finished_stream_records_its_usage() {
         .expect("the model's usage is recorded");
     assert_eq!((row.input_tokens, row.output_tokens), (12, 7));
 }
+
+const OLLAMA_NDJSON: &str = "{\"message\":{\"role\":\"assistant\",\"content\":\"Blinded\"},\"done\":false}\n\
+\n\
+{\"message\":{\"role\":\"assistant\",\"content\":\", yes.\"},\"done\":false}\r\n\
+{\"message\":{\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":11,\"eval_count\":4}\n";
+
+#[test]
+fn an_ollama_stream_is_read_as_ndjson_and_carries_num_ctx() {
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, OLLAMA_NDJSON)]);
+    let mut request = request("ollama:llama-x");
+    request.num_ctx = std::num::NonZeroU32::new(8192);
+    let (seen, result) = stream(&client(transport.clone()), &request);
+    let response = result.expect("a response");
+    assert_eq!(
+        seen,
+        [
+            StreamDelta::Text("Blinded".to_string()),
+            StreamDelta::Text(", yes.".to_string())
+        ]
+    );
+    assert_eq!(response.content, "Blinded, yes.");
+    assert_eq!((response.input_tokens, response.output_tokens), (11, 4));
+    assert_eq!(response.stop_reason.as_deref(), Some("stop"));
+    let (url, body) = transport.posted().pop().expect("a post");
+    assert!(url.ends_with("/api/chat"), "{url}");
+    assert_eq!(body["stream"], json!(true));
+    assert_eq!(body["options"]["num_ctx"], json!(8192));
+}
+
+#[test]
+fn an_ollama_stream_without_done_is_an_error() {
+    const CUT: &str = "{\"message\":{\"content\":\"Yes\"},\"done\":false}\n";
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, CUT)]);
+    let (seen, result) = stream(&client(transport), &request("ollama:llama-x"));
+    assert_eq!(seen.len(), 1);
+    assert!(matches!(result, Err(ChatError::Stream(m)) if m.contains("ended before done")));
+}
+
+#[test]
+fn an_ollama_line_that_is_not_json_is_a_stream_error() {
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, "not json\n")]);
+    let (_, result) = stream(&client(transport), &request("ollama:llama-x"));
+    assert!(matches!(result, Err(ChatError::Stream(m)) if m.contains("not JSON")));
+}

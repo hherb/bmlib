@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 6**, PR #562, branch
-`feat/llm-streaming`, worktree `../bmlib-stream`). **0.11.0 is
+_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 11**, PR #568, branch
+`feat/context-window`; item 6 was PR #562). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
 (#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545 (item 9),
@@ -39,7 +39,23 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: streamed chat (StudyAnalyzer item 6)
+## This session: context windows (StudyAnalyzer item 11)
+
+PR #568, branch `feat/context-window`. Spec `docs/superpowers/specs/2026-10-29-context-window-design.md`,
+plan `docs/superpowers/plans/2026-10-29-context-window.md`; the CHANGELOG
+entry *Context windows, and Ollama's `num_ctx`* is the argument.
+`context_window()` on both clients; `None` = the provider did not say,
+`NoSuchModel` = a mistyped model; every number is a total. Rust's Ollama
+moved to `/api/chat` (breaking: `ChatRequest.num_ctx`, `Protocol::Ollama`,
+`ProtocolError::Malformed`, `parse_response`'s `messages`); `anthropic>=0.41`.
+Owed: #566 (Python's `get_model_metadata()` guesses).
+**For StudyAnalyzer plan 2b**: the app clamps the user's setting to the
+maximum `context_window()` gives; sends `num_ctx` for Ollama (its default is
+small, whatever the model's window); treats `None` as retrieval mode until the
+user enters a number; and shows `NoSuchModel` as a mistyped model, not an
+outage.
+
+## Previous session: streamed chat (StudyAnalyzer item 6)
 
 PR #562. Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`. `chat_stream(…,
 on_delta)` beside `chat()` in both languages, returning `chat()`'s
@@ -47,10 +63,9 @@ on_delta)` beside `chat()` in both languages, returning `chat()`'s
 (`stop_reason="cancelled"`). **Transport differs, the reducer does not**:
 Python reads its SDKs' events (`to_dict()`, Ollama's `model_dump()`), Rust
 reads SSE off `HttpClient::post_json_stream` (`SseEvents`); both feed
-`StreamState`, held to `tests/fixtures/chat_stream.json`. **Ollama differs by
-design**: Python streams the native `/api/chat` and Rust the OpenAI-compatible
-endpoint, each as its `chat()` does, so the five `ollama` cases are Python's
-and the Rust test names them. A stream without its end marker, or carrying a
+`StreamState`, held to `tests/fixtures/chat_stream.json`. **Ollama** (as of item 11, Rust too
+streams the native `/api/chat`, NDJSON; when this PR landed the five `ollama`
+cases were Python's alone). A stream without its end marker, or carrying a
 tool call or a non-object event, is a `StreamError` / `ChatError::Stream`.
 Tools are refused. Ollama's SDK sends a streamed request only on the first
 `next()`, so that read is outside the `StreamError` wrapper (`_opened`). Python's providers now

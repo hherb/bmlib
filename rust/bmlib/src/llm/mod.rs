@@ -29,6 +29,7 @@
 //! | `llm/client.py` | — | phase 3 |
 
 pub mod client;
+pub mod context_window;
 pub mod data_types;
 pub mod json_repair;
 pub mod pricing;
@@ -44,6 +45,9 @@ pub use client::{
     ProviderSpec, Target, DEFAULT_PROVIDER, DEFAULT_RETRY_BASE_DELAY, ERROR_BODY_LIMIT,
     RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
 };
+pub use context_window::{
+    known_context_window, read_context_window, ContextWindowError, KNOWN_CONTEXT_WINDOWS,
+};
 pub use data_types::{
     BatchEmbeddingResponse, EmbeddingResponse, LLMMessage, LLMResponse, LLMToolCall,
     LLMToolDefinition, Role,
@@ -54,13 +58,15 @@ pub use json_repair::{
     MAX_SALVAGE_MATCHES,
 };
 pub use protocol::{
-    json_dumps_python, messages_to_anthropic, messages_to_openai, parse_anthropic_response,
-    parse_openai_response, reasoning_from_openai, split_think_tags, tool_arguments_from_openai,
-    tool_choice_to_openai, tool_def_to_openai, Protocol, ProtocolError, ANTHROPIC_VERSION,
+    json_dumps_python, messages_to_anthropic, messages_to_ollama, messages_to_openai,
+    parse_anthropic_response, parse_ollama_response, parse_openai_response, reasoning_from_openai,
+    split_think_tags, think_to_ollama, tool_arguments_from_openai, tool_choice_to_openai,
+    tool_def_to_ollama, tool_def_to_openai, Protocol, ProtocolError, ANTHROPIC_VERSION,
+    OLLAMA_CHARS_PER_TOKEN,
 };
 pub use stream::{
-    run_stream, SseEvents, StreamDelta, StreamState, CANCELLED_STOP_REASON, SSE_DONE,
-    STREAM_USAGE_PROVIDERS, THINKING_BLOCK_SEPARATOR,
+    ndjson_events, run_stream, SseEvents, StreamDelta, StreamState, CANCELLED_STOP_REASON,
+    SSE_DONE, STREAM_USAGE_PROVIDERS, THINKING_BLOCK_SEPARATOR,
 };
 pub use text_utils::{
     chunk_text, combine_title_and_text, get_text_with_priority, process_with_map_reduce,

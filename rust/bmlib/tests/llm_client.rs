@@ -377,6 +377,33 @@ fn a_call_posts_to_the_right_path_and_parses_the_answer() {
     );
 }
 
+/// Ollama is reached over its **native** `/api/chat`, not its OpenAI-compatible
+/// endpoint, because only the native one takes `options.num_ctx`; the answer is
+/// read in the native shape.
+#[test]
+fn an_ollama_call_posts_to_the_native_api() {
+    let transport = ScriptedClient::ok(json!({
+        "message": {"role": "assistant", "content": "hello"},
+        "done": true,
+        "done_reason": "stop",
+        "prompt_eval_count": 3,
+        "eval_count": 2
+    }));
+    let client = client(transport.clone());
+    let mut request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("ollama:qwen3");
+    request.num_ctx = std::num::NonZeroU32::new(16384);
+    let response = client.chat(&request).expect("answers");
+    assert_eq!(response.content, "hello");
+    assert_eq!(response.total_tokens, 5);
+    assert_eq!(response.stop_reason.as_deref(), Some("stop"));
+
+    let (url, body, _) = transport.last_request();
+    assert_eq!(url, "http://localhost:11434/api/chat");
+    assert_eq!(body["model"], json!("qwen3"));
+    assert_eq!(body["stream"], json!(false));
+    assert_eq!(body["options"]["num_ctx"], json!(16384));
+}
+
 /// A rejected request reports the server's own words, so a bad model and a bad
 /// key do not read alike.
 #[test]
