@@ -17,13 +17,12 @@
 //! Reading a streamed chat answer, one event at a time.
 //!
 //! The port of `bmlib/llm/stream.py`. A streamed answer arrives as
-//! server-sent events (Ollama's native API: one JSON object per line), each
-//! carrying a JSON object whose shape depends on the protocol. [`SseEvents`]
-//! splits the wire into those objects' text ([`ndjson_events`] does the same
-//! for Ollama),
-//! [`StreamState`] reads them in order and hands back the pieces of text and
-//! reasoning each one carries ([`StreamDelta`]), and [`run_stream`] drives the
-//! two and builds the final [`LLMResponse`]. The reducer is held to the shared
+//! server-sent events, or, from Ollama's native API, as one JSON object per
+//! line. Each event carries a JSON object whose shape depends on the protocol.
+//! [`SseEvents`] splits the wire into those objects' text ([`ndjson_events`]
+//! does the same for Ollama), [`StreamState`] reads them in order and hands
+//! back the pieces of text and reasoning each one carries ([`StreamDelta`]),
+//! and [`run_stream`] drives the two and builds the final [`LLMResponse`]. The reducer is held to the shared
 //! contract `tests/fixtures/chat_stream.json`, which the Python reads too.
 //!
 //! **A stream that ends before its end marker is an error**, never a short

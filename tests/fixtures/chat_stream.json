@@ -1,5 +1,5 @@
 {
-  "description": "The shared streaming-chat contract (StudyAnalyzer item 6). Each case feeds `events` (stream events as JSON objects, in order) through run_stream for `protocol` and states the deltas on_delta receives and the response it returns, or a substring of the error it raises. `stop_after` stops the stream from on_delta after that many deltas. `ollama` is Ollama's native /api/chat stream, which only the Python client reads; Rust reaches Ollama through its OpenAI-compatible endpoint.",
+  "description": "The shared streaming-chat contract (StudyAnalyzer item 6). Each case feeds `events` (stream events as JSON objects, in order) through run_stream for `protocol` and states the deltas on_delta receives and the response it returns, or a substring of the error it raises. `stop_after` stops the stream from on_delta after that many deltas. `ollama` is Ollama's native /api/chat stream (one JSON object per line), which both clients read.",
   "cases": [
     {
       "name": "anthropic/text",
