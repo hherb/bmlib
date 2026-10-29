@@ -32,7 +32,9 @@ use crate::llm::protocol::{
     parse_ollama_response, parse_openai_response, think_to_ollama, tool_choice_to_anthropic,
     tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_ollama, tool_def_to_openai, Protocol,
 };
-use crate::llm::stream::{run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS};
+use crate::llm::stream::{
+    ndjson_events, run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS,
+};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
@@ -885,15 +887,25 @@ impl LlmClient {
         let url = chat_url(&target);
         let stream = self.open_stream(&url, &body, &chat_headers(&target))?;
 
-        let events = SseEvents::new(std::io::BufReader::new(stream.body))
-            .take_while(|data| data.as_deref() != Ok(SSE_DONE))
-            .map(|data| {
-                data.and_then(|d| {
-                    serde_json::from_str::<Value>(&d).map_err(|e| {
-                        ChatError::Stream(format!("{url} streamed an event that is not JSON: {e}"))
-                    })
-                })
-            });
+        let reader = std::io::BufReader::new(stream.body);
+        let events: Box<dyn Iterator<Item = Result<Value, ChatError>>> =
+            if target.protocol == Protocol::Ollama {
+                Box::new(ndjson_events(reader))
+            } else {
+                Box::new(
+                    SseEvents::new(reader)
+                        .take_while(|data| data.as_deref() != Ok(SSE_DONE))
+                        .map(|data| {
+                            data.and_then(|d| {
+                                serde_json::from_str::<Value>(&d).map_err(|e| {
+                                    ChatError::Stream(format!(
+                                        "{url} streamed an event that is not JSON: {e}"
+                                    ))
+                                })
+                            })
+                        }),
+                )
+            };
         let response = run_stream(target.protocol, events, &target.model, on_delta)?;
         // Recorded for a stopped stream too, with the counts the server had
         // sent by then, which understate what it spent.

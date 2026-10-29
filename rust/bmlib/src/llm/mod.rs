@@ -65,8 +65,8 @@ pub use protocol::{
     OLLAMA_CHARS_PER_TOKEN,
 };
 pub use stream::{
-    run_stream, SseEvents, StreamDelta, StreamState, CANCELLED_STOP_REASON, SSE_DONE,
-    STREAM_USAGE_PROVIDERS, THINKING_BLOCK_SEPARATOR,
+    ndjson_events, run_stream, SseEvents, StreamDelta, StreamState, CANCELLED_STOP_REASON,
+    SSE_DONE, STREAM_USAGE_PROVIDERS, THINKING_BLOCK_SEPARATOR,
 };
 pub use text_utils::{
     chunk_text, combine_title_and_text, get_text_with_priority, process_with_map_reduce,
