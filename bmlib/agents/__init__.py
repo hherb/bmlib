@@ -18,20 +18,20 @@
 
 from bmlib.agents.base import (
     BaseAgent,
-    ChatJsonEmpty,
+    ChatJsonEmptyError,
     ChatJsonError,
-    ChatJsonTruncated,
-    ChatJsonUnparseable,
-    ChatJsonWrongShape,
+    ChatJsonTruncatedError,
+    ChatJsonUnparseableError,
+    ChatJsonWrongShapeError,
 )
 from bmlib.agents.metrics import PerformanceMetrics
 
 __all__ = [
     "BaseAgent",
-    "ChatJsonEmpty",
+    "ChatJsonEmptyError",
     "ChatJsonError",
-    "ChatJsonTruncated",
-    "ChatJsonUnparseable",
-    "ChatJsonWrongShape",
+    "ChatJsonTruncatedError",
+    "ChatJsonUnparseableError",
+    "ChatJsonWrongShapeError",
     "PerformanceMetrics",
 ]

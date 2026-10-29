@@ -49,10 +49,10 @@ Python is the reference. Rust is held to it by a whole-agent oracle over scripte
 - Produces:
   ```python
   class ChatJsonError(ValueError): ...          # base; still a ValueError
-  class ChatJsonTruncated(ChatJsonError): ...
-  class ChatJsonWrongShape(ChatJsonError): ...
-  class ChatJsonEmpty(ChatJsonError): ...
-  class ChatJsonUnparseable(ChatJsonError): ...
+  class ChatJsonTruncatedError(ChatJsonError): ...
+  class ChatJsonWrongShapeError(ChatJsonError): ...
+  class ChatJsonEmptyError(ChatJsonError): ...
+  class ChatJsonUnparseableError(ChatJsonError): ...
   ```
   The final raise after the retries are spent uses the class of the **last** attempt's failure: truncated, wrong shape, empty or unparseable. It keeps today's message text unchanged. A provider exception from `self.chat` still propagates as raised.
 
@@ -62,12 +62,12 @@ Python is the reference. Rust is held to it by a whole-agent oracle over scripte
   - `test_wrong_shape_is_wrong_shape`
   - `test_three_empty_replies_are_empty`
   - `test_three_unparseable_replies_are_unparseable`
-  - `test_the_last_failure_names_the_class`: empty, then unparseable, then empty gives `ChatJsonEmpty`.
+  - `test_the_last_failure_names_the_class`: empty, then unparseable, then empty gives `ChatJsonEmptyError`.
   - `test_every_class_is_still_a_value_error`
 
   Each asserts with `pytest.raises(<Class>)`, and the old message substring still matches (e.g. `"unparseable response"`). Patch `bmlib.agents.base.time.sleep`. Use the fake-LLM pattern the file already uses.
 - [ ] **Step 2: Run them.** `env -u VIRTUAL_ENV uv run pytest tests/test_agents.py -k ChatJsonSaysWhy -v`. Expected: FAIL (the names do not exist).
-- [ ] **Step 3: Implement.** Track the class beside `last_error` (e.g. `last_cls: type[ChatJsonError]`). `reject_shape` raises `ChatJsonWrongShape`, and the two truncation raises use `ChatJsonTruncated`. Update the docstring's *Raises*.
+- [ ] **Step 3: Implement.** Track the class beside `last_error` (e.g. `last_cls: type[ChatJsonError]`). `reject_shape` raises `ChatJsonWrongShapeError`, and the two truncation raises use `ChatJsonTruncatedError`. Update the docstring's *Raises*.
 - [ ] **Step 4: Run** `env -u VIRTUAL_ENV uv run pytest tests/test_agents.py tests/test_cochrane_assessor.py tests/test_quality.py -q`. Expected: all PASS, since every existing `except ValueError` still catches.
 - [ ] **Step 5: Commit** `feat(agents): chat_json raises one ValueError subclass per cause`.
 
@@ -208,7 +208,7 @@ Python is the reference. Rust is held to it by a whole-agent oracle over scripte
 
   Both calls follow `CochraneAssessor.assess`. Strip `title` and `text`. If both are empty, raise `PicoError(EMPTY_INPUT)` with no call made. Condense through `condense_text(..., label=title[:60])` when `len(text) > condense_config.max_context_chars`, and on `None` raise `PicoError(CONDENSATION_FAILED)`. Then loop up to 2 attempts:
   - `chat_json(..., require_dict=True)`.
-  - `ChatJsonTruncated` → `TRUNCATED`.
+  - `ChatJsonTruncatedError` → `TRUNCATED`.
   - Any other `ChatJsonError` → `UNUSABLE_REPLY`.
   - Any other `Exception` → `REQUEST_FAILED`.
   - Every raise uses `from exc`.

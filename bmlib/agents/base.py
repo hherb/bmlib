@@ -71,19 +71,19 @@ class ChatJsonError(ValueError):
     """
 
 
-class ChatJsonTruncated(ChatJsonError):
+class ChatJsonTruncatedError(ChatJsonError):
     """The answer hit the output ceiling; raise ``max_tokens``."""
 
 
-class ChatJsonWrongShape(ChatJsonError):
+class ChatJsonWrongShapeError(ChatJsonError):
     """The answer parsed, but not as the JSON object ``require_dict`` asked for."""
 
 
-class ChatJsonEmpty(ChatJsonError):
+class ChatJsonEmptyError(ChatJsonError):
     """The model returned nothing."""
 
 
-class ChatJsonUnparseable(ChatJsonError):
+class ChatJsonUnparseableError(ChatJsonError):
     """The answer did not parse as JSON."""
 
 
@@ -259,8 +259,8 @@ class BaseAgent:
 
         Raises:
             ChatJsonError: A ``ValueError`` subclass naming the cause —
-                :class:`ChatJsonTruncated`, :class:`ChatJsonWrongShape`,
-                :class:`ChatJsonEmpty` or :class:`ChatJsonUnparseable`.  An
+                :class:`ChatJsonTruncatedError`, :class:`ChatJsonWrongShapeError`,
+                :class:`ChatJsonEmptyError` or :class:`ChatJsonUnparseableError`.  An
                 immediate raise (truncation or a wrong shape at temperature 0)
                 names its own cause; one after the retries are spent names the
                 last attempt's.
@@ -268,7 +268,7 @@ class BaseAgent:
         context = f" for {retry_context}" if retry_context else ""
         last_error: str | None = None
         # The class the final raise takes: the last attempt's cause.
-        last_cls: type[ChatJsonError] = ChatJsonUnparseable
+        last_cls: type[ChatJsonError] = ChatJsonUnparseableError
         effective_temperature = temperature if temperature is not None else self.temperature
 
         def reject_shape(parsed: dict | list, attempt: int) -> str:
@@ -293,7 +293,7 @@ class BaseAgent:
             if effective_temperature == 0.0:
                 # Greedy sampling returns the same array from the same
                 # messages, exactly as it reproduces a truncation.
-                raise ChatJsonWrongShape(message) from None
+                raise ChatJsonWrongShapeError(message) from None
             return message
 
         for attempt in range(max_retries):
@@ -330,7 +330,7 @@ class BaseAgent:
                         # never closed, and is the truncation below (#300).
                         return parsed
                     last_error = reject_shape(parsed, attempt)
-                    last_cls = ChatJsonWrongShape
+                    last_cls = ChatJsonWrongShapeError
                     continue
                 budget = max_tokens if max_tokens is not None else self.max_tokens
                 truncated = (
@@ -348,16 +348,16 @@ class BaseAgent:
                 if effective_temperature == 0.0:
                     # Greedy sampling reproduces the identical truncation;
                     # retrying only pays for it again.
-                    raise ChatJsonTruncated(truncated) from None
+                    raise ChatJsonTruncatedError(truncated) from None
                 # A retry at temperature > 0 may sample a shorter completion
                 # that fits.
                 last_error = truncated
-                last_cls = ChatJsonTruncated
+                last_cls = ChatJsonTruncatedError
                 continue
 
             if not content:
                 last_error = "empty response from model"
-                last_cls = ChatJsonEmpty
+                last_cls = ChatJsonEmptyError
                 logger.warning(
                     "LLM returned empty response (attempt %d/%d%s)",
                     attempt + 1,
@@ -370,7 +370,7 @@ class BaseAgent:
                 parsed = self.parse_json(content)
             except ValueError:
                 last_error = "unparseable response"
-                last_cls = ChatJsonUnparseable
+                last_cls = ChatJsonUnparseableError
                 logger.error(
                     "LLM returned unparseable response (attempt %d/%d%s), full response: %s",
                     attempt + 1,
@@ -382,7 +382,7 @@ class BaseAgent:
 
             if require_dict and not isinstance(parsed, dict):
                 last_error = reject_shape(parsed, attempt)
-                last_cls = ChatJsonWrongShape
+                last_cls = ChatJsonWrongShapeError
                 continue
 
             return parsed
