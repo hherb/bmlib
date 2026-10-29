@@ -17,7 +17,9 @@
 //! The shared context-window contract, `tests/fixtures/context_window.json`
 //! (the same file Python's `tests/test_context_window.py` reads).
 
-use bmlib::llm::{known_context_window, KNOWN_CONTEXT_WINDOWS};
+use bmlib::llm::{
+    known_context_window, read_context_window, ContextWindowError, KNOWN_CONTEXT_WINDOWS,
+};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -65,4 +67,41 @@ fn table_lookups() {
         );
         assert_eq!(got, expected, "{}", case["name"]);
     }
+}
+
+#[test]
+fn metadata_cases() {
+    let fx = fixture();
+    for case in fx["metadata"].as_array().unwrap() {
+        let name = &case["name"];
+        let provider = case["provider"].as_str().unwrap();
+        let model = case["model"].as_str().unwrap();
+        let got = read_context_window(provider, model, &case["body"]);
+        if case["expect"]["error"] == "no_such_model" {
+            assert_eq!(
+                got,
+                Err(ContextWindowError::NoSuchModel {
+                    provider: provider.to_string(),
+                    model: model.to_string()
+                }),
+                "{name}"
+            );
+        } else {
+            assert_eq!(got, Ok(case["expect"]["window"].as_u64()), "{name}");
+        }
+    }
+}
+
+#[test]
+fn provider_without_metadata_is_unknown() {
+    assert_eq!(
+        read_context_window("openai", "gpt-4o-mini", &Value::Null),
+        Err(ContextWindowError::UnknownProvider("openai".to_string()))
+    );
+    let msg = ContextWindowError::NoSuchModel {
+        provider: "deepseek".into(),
+        model: "m".into(),
+    }
+    .to_string();
+    assert!(msg.contains("deepseek") && msg.contains("m"));
 }

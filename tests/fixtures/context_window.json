@@ -166,5 +166,611 @@
       }
     }
   ],
-  "metadata": []
+  "metadata": [
+    {
+      "name": "anthropic happy",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5",
+        "max_input_tokens": 1000000
+      },
+      "expect": {
+        "window": 1000000
+      }
+    },
+    {
+      "name": "anthropic field missing",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic true",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5",
+        "max_input_tokens": true
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic zero",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5",
+        "max_input_tokens": 0
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic negative",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5",
+        "max_input_tokens": -1
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic string",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5",
+        "max_input_tokens": "131072"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic float",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "id": "claude-sonnet-5-5",
+        "max_input_tokens": 131072.5
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gemini happy",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro",
+        "inputTokenLimit": 1048576
+      },
+      "expect": {
+        "window": 1048576
+      }
+    },
+    {
+      "name": "gemini field missing",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gemini true",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro",
+        "inputTokenLimit": true
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gemini zero",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro",
+        "inputTokenLimit": 0
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gemini negative",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro",
+        "inputTokenLimit": -1
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gemini string",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro",
+        "inputTokenLimit": "131072"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "gemini float",
+      "provider": "gemini",
+      "model": "gemini-3-pro",
+      "body": {
+        "id": "gemini-3-pro",
+        "inputTokenLimit": 131072.5
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "mistral happy",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest",
+        "max_context_length": 262144
+      },
+      "expect": {
+        "window": 262144
+      }
+    },
+    {
+      "name": "mistral field missing",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "mistral true",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest",
+        "max_context_length": true
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "mistral zero",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest",
+        "max_context_length": 0
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "mistral negative",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest",
+        "max_context_length": -1
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "mistral string",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest",
+        "max_context_length": "131072"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "mistral float",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "body": {
+        "id": "mistral-large-latest",
+        "max_context_length": 131072.5
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek happy",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": 131072
+          }
+        ]
+      },
+      "expect": {
+        "window": 131072
+      }
+    },
+    {
+      "name": "deepseek field missing",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat"
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek true",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": true
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek zero",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": 0
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek negative",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": -1
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek string",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": "131072"
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek float",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": 131072.5
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek id absent",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "context_window": 1
+          }
+        ]
+      },
+      "expect": {
+        "error": "no_such_model"
+      }
+    },
+    {
+      "name": "deepseek empty list",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": []
+      },
+      "expect": {
+        "error": "no_such_model"
+      }
+    },
+    {
+      "name": "ollama happy",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "window": 131072
+      }
+    },
+    {
+      "name": "ollama modelinfo spelling",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "modelinfo": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "window": 131072
+      }
+    },
+    {
+      "name": "ollama no model_info",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {},
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama no architecture",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama architecture not a string",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": 7,
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama key missing",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama"
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama true",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": true
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama zero",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": 0
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama negative",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": -1
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama string",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": "131072"
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama float",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072.5
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama only original_context_length",
+      "provider": "ollama",
+      "model": "mistral3",
+      "body": {
+        "model_info": {
+          "general.architecture": "mistral3",
+          "mistral3.rope.scaling.original_context_length": 32768
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama wrong architecture prefix",
+      "provider": "ollama",
+      "model": "qwen3",
+      "body": {
+        "model_info": {
+          "general.architecture": "qwen3",
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama right key beats original_",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072,
+          "llama.rope.scaling.original_context_length": 8192
+        }
+      },
+      "expect": {
+        "window": 131072
+      }
+    }
+  ]
 }
