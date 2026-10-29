@@ -19,9 +19,11 @@
 
 mod common;
 
+use bmlib::context_processor::llm_processor::ContextModel;
 use bmlib::quality::pico_agent::PicoAgent;
 use bmlib::quality::pico_models::PicoError;
 use common::scripted_chat::ScriptedChat;
+use serde_json::Value;
 
 const REPLY: &str = r#"{"is_suitable": true}"#;
 
@@ -74,4 +76,23 @@ fn a_transport_failure_is_request_failed() {
             "failed after 1 attempt(s): connection refused".to_string()
         ))
     );
+}
+
+struct NoModel;
+
+impl ContextModel for NoModel {
+    fn complete(&self, _: &str, _: f64, _: i64) -> Result<String, String> {
+        Err("unused".to_string())
+    }
+
+    fn complete_json(&self, _: &str, _: f64, _: i64) -> Result<Value, String> {
+        Err("unused".to_string())
+    }
+}
+
+/// The PICO condensation prompts carry both placeholders, so the condenser a
+/// long paper needs can be built: nothing else constructs it.
+#[test]
+fn the_pico_condenser_builds() {
+    PicoAgent::pico_condenser(&NoModel, 0.1, 4096).expect("both prompts carry both placeholders");
 }

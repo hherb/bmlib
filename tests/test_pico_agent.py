@@ -29,6 +29,9 @@ from bmlib.agents import ChatJsonUnparseableError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.pico_agent import (
+    PICO_CONDENSE_CONSOLIDATION_PROMPT,
+    PICO_CONDENSE_EXTRACTION_PROMPT,
+    PICO_CONDENSE_QUERY,
     PICO_PARTS,
     PicoAgent,
     read_extraction,
@@ -152,6 +155,12 @@ class TestReadingAReply:
         data = reply(**{name: part(confidence=None) for name in PICO_PARTS})
 
         assert read_extraction(data, TEXT, SIM).overall_confidence is None
+
+    def test_a_confidence_past_the_float_range_is_unstated(self) -> None:
+        """``json`` reads ``1e400`` written as an integer as an ``int``; it must
+        not escape as ``OverflowError`` past the "result or PicoError" contract."""
+        assert read_part(part(confidence=10**400), TEXT, SIM).confidence is None
+        assert read_suitability({"is_suitable": True, "confidence": 10**400}).confidence is None
 
     def test_confidence_is_clamped(self) -> None:
         assert read_part(part(confidence=1.4), TEXT, SIM).confidence == 1.0
@@ -344,6 +353,11 @@ class TestTheExtraction:
             extraction = agent.extract("A trial", text, min_similarity=SIM)
 
         assert condense.call_args.kwargs["stage"] == "extraction"
+        assert condense.call_args.kwargs["extraction_prompt"] == PICO_CONDENSE_EXTRACTION_PROMPT
+        assert (
+            condense.call_args.kwargs["consolidation_prompt"] == PICO_CONDENSE_CONSOLIDATION_PROMPT
+        )
+        assert condense.call_args.kwargs["query"] == PICO_CONDENSE_QUERY
         assert digest in sent_user_message(agent)
         assert TEXT not in sent_user_message(agent)
         assert extraction.population.state is PicoPartState.VERIFIED
@@ -501,3 +515,14 @@ def test_the_mean_is_a_plain_left_to_right_sum() -> None:
 
     # 0.8500000000000001, where a compensated sum gives 0.85.
     assert read_extraction(data, TEXT, SIM).overall_confidence == (((0.9 + 0.9) + 0.9) + 0.7) / 4
+
+
+def test_offsets_index_the_text_as_passed() -> None:
+    """A caller highlights ``text[start:end]`` in the text it passed; a leading
+    newline must not shift every highlight by one."""
+    text = "\n  " + TEXT
+
+    extraction = make_agent(reply()).extract("A trial", text, min_similarity=SIM)
+
+    citation = extraction.population.citations[0]
+    assert text[citation.start : citation.end] == "Adults aged 40-65"

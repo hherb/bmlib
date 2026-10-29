@@ -53,7 +53,7 @@ discarded for low confidence or truncated, and `PicoError` names the cause.
 On the way, `chat_json()` gained one `ValueError` subclass per cause
 (`ChatJson*Error`), and the Cochrane condensation became
 `_condense.condense_text` / `LlmCondenser::with_prompts`. **The first oracle to
-run a whole agent** (`rust/oracle/dump_pico_agent.py`, 20 cases) compares the
+run a whole agent** (`rust/oracle/dump_pico_agent.py`, 23 cases) compares the
 results and the messages sent; it caught Python's `sum()` compensating on
 3.12+ only. `python_strip` moved to Rust's `pyvalue`, and `ScriptedChat` moved to
 `rust/bmlib/tests/common/`.
@@ -188,7 +188,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,345 passing + 111 skipped** on this session's branch
+- **Tests: 8,365 passing + 111 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for

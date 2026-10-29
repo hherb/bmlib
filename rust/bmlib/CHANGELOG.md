@@ -9,6 +9,23 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's PICO agent (StudyAnalyzer item 7)
+`quality::PicoAgent` (`check_suitability`, `extract(title, text,
+min_similarity)`, `pico_condenser`), `quality::pico_models` (`PicoExtraction`,
+`PicoPart`, `PicoPartState`, `PicoCitation`, `PicoSuitability`, and `PicoError`,
+`#[non_exhaustive]`, whose `kind()` is Python's `PicoErrorKind` value), the
+pure readers `verify_quotes`, `read_part`, `read_extraction` and
+`read_suitability`, and the eight prompt constants. Citation offsets are
+`char` indices into `text` as passed. `LlmCondenser::with_prompts` builds the
+Cochrane map-reduce over another agent's prompts and query. Held to Python by
+`tests/pico_oracle.rs` over `rust/oracle/dump_pico_agent.py`: whole agent runs
+on scripted replies, comparing results, the messages sent, the model-call count
+and every prompt constant.
+
+### Changed (item 7)
+`cochrane_assessor`'s refusal rules for a digest are `condense_checked`, shared
+with the PICO agent; the Cochrane assessor's behaviour and note are unchanged.
+
 ### Added — follows Python's canonical text from HTML and the full-text check (StudyAnalyzer item 4c)
 `fulltext::canonical::canonical_from_html` and `HTML_CANONICAL_VERSION`
 (`html::PRUNED` and `html::BLOCKS` name the rules), behind the new `html`

@@ -505,8 +505,8 @@ class PicoAgent(BaseAgent):
         Args:
             title: The paper's title.
             text: The paper's text.  Citation offsets are code points into it,
-                stripped of leading and trailing whitespace; a caller who wants
-                a quote from the title found includes the title here.
+                exactly as passed; a caller who wants a quote from the title
+                found includes the title here.
             min_similarity: How close a quote must be to a span of *text* to
                 count as found — :func:`~bmlib.citations.find_passage`'s
                 threshold.  Required: it is set by measurement, by the caller.
@@ -519,7 +519,9 @@ class PicoAgent(BaseAgent):
             PicoError: Naming why no breakdown could be made.
         """
         similarity = _check_similarity(min_similarity)
-        original = (text or "").strip()
+        # Quotes are located in the text as passed, unstripped, so an offset
+        # indexes the string the caller will highlight.
+        original = text or ""
         title, sent, notes, condensed_from, status = self._prepare(title, text, "extraction")
         extraction = self._ask(
             EXTRACTION_TASK_PROMPT,

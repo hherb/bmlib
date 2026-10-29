@@ -128,13 +128,18 @@ def as_float(value: object, field: str | None = None) -> float | None:
     """Return *value* as a finite ``float``, or ``None``.
 
     A numeric string is parsed, as ``float()`` always did here; a ``bool``
-    and anything non-finite are refused.
+    and anything non-finite are refused — an ``int`` past the double range
+    included, which ``json`` reads at any size and ``float()`` refuses with
+    ``OverflowError`` rather than returning infinity.
     """
     result: float | None = None
     if isinstance(value, bool):
         result = None
     elif isinstance(value, (int, float)):
-        result = float(value)
+        try:
+            result = float(value)
+        except OverflowError:
+            result = None
     elif isinstance(value, str):
         try:
             result = float(value)

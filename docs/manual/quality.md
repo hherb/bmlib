@@ -965,7 +965,7 @@ extract(title: str | None, text: str | None, *, min_similarity: float) -> PicoEx
 ```
 
 - **`min_similarity` is required and has no default.** It is `find_passage`'s threshold: how close a quote must be to a span of the text to count as found. It is set by measurement, by the caller. A value outside (0, 1], NaN or a `bool` raises `ValueError` before any request.
-- **Citation offsets are code points into `text` after `str.strip()`.** Quotes are searched in `text` only, never in `title`; a caller who wants a title quote found puts the title in `text` (a `CanonicalText.text` already starts with it).
+- **Citation offsets are code points into `text` exactly as passed**, so `text[c.start:c.end]` is the passage to highlight. Quotes are searched in `text` only, never in `title`; a caller who wants a title quote found puts the title in `text` (a `CanonicalText.text` already starts with it).
 - **The caller chooses the text.** An abstract keeps the suitability check cheap; the full text gives the extraction its evidence.
 
 ### What a part reports

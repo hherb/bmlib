@@ -12,6 +12,9 @@ condenses: the map-reduce's ``process`` is patched to return the digest with
 Rust test hands the same result to ``condense_checked`` through a fake
 ``Condenser``.
 
+A ``prompts`` case dumps the eight prompt constants, the condensation's
+included, since the patched map-reduce never renders those.
+
 Each value carries the result's ``to_dict()`` (or the error's kind) and the
 messages every model call was sent, so a prompt that drifts in one language
 fails the oracle.  ``time.sleep`` is patched out: ``chat_json``'s backoff
@@ -33,6 +36,7 @@ from bmlib.context_processor import (
     ProcessingStatus,
 )
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality import pico_agent
 from bmlib.quality.pico_agent import PicoAgent
 from bmlib.quality.pico_models import PicoError
 
@@ -53,7 +57,24 @@ def _client(replies: list[str], stop_reasons: list[str | None]) -> MagicMock:
     return llm
 
 
+#: Every prompt the agent can send, the condensation's included: the runs pin
+#: the two it sends whole, and only this case reaches the three the patched
+#: map-reduce never renders.
+PROMPTS = (
+    "PICO_SYSTEM_PROMPT",
+    "SUITABILITY_TASK_PROMPT",
+    "SUITABILITY_RESPONSE_FORMAT",
+    "EXTRACTION_TASK_PROMPT",
+    "EXTRACTION_RESPONSE_FORMAT",
+    "PICO_CONDENSE_QUERY",
+    "PICO_CONDENSE_EXTRACTION_PROMPT",
+    "PICO_CONDENSE_CONSOLIDATION_PROMPT",
+)
+
+
 def run(case: dict[str, Any]) -> dict[str, Any]:
+    if case["fn"] == "prompts":
+        return {name: getattr(pico_agent, name) for name in PROMPTS}
     args = case["args"]
     llm = _client(args["replies"], args.get("stop_reasons", []))
     kwargs: dict[str, Any] = {}

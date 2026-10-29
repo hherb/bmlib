@@ -30,7 +30,11 @@ use bmlib::context_processor::{
 };
 use bmlib::llm::LLMResponse;
 use bmlib::quality::cochrane_assessor::Condenser;
-use bmlib::quality::pico_agent::PicoAgent;
+use bmlib::quality::pico_agent::{
+    PicoAgent, EXTRACTION_RESPONSE_FORMAT, EXTRACTION_TASK_PROMPT,
+    PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_QUERY,
+    PICO_SYSTEM_PROMPT, SUITABILITY_RESPONSE_FORMAT, SUITABILITY_TASK_PROMPT,
+};
 use common::scripted_chat::{Script, ScriptedChat};
 use serde_json::{json, Value};
 
@@ -169,6 +173,25 @@ fn the_rust_agent_agrees_with_the_python_one() {
             "{}: the dumper failed: {}",
             want["name"], want["error"]
         );
+        if case["fn"] == "prompts" {
+            // The three condensation prompts reach no run (the map-reduce is
+            // faked on both sides), so they are compared here, with the rest.
+            assert_eq!(
+                want["value"],
+                json!({
+                    "PICO_SYSTEM_PROMPT": PICO_SYSTEM_PROMPT,
+                    "SUITABILITY_TASK_PROMPT": SUITABILITY_TASK_PROMPT,
+                    "SUITABILITY_RESPONSE_FORMAT": SUITABILITY_RESPONSE_FORMAT,
+                    "EXTRACTION_TASK_PROMPT": EXTRACTION_TASK_PROMPT,
+                    "EXTRACTION_RESPONSE_FORMAT": EXTRACTION_RESPONSE_FORMAT,
+                    "PICO_CONDENSE_QUERY": PICO_CONDENSE_QUERY,
+                    "PICO_CONDENSE_EXTRACTION_PROMPT": PICO_CONDENSE_EXTRACTION_PROMPT,
+                    "PICO_CONDENSE_CONSOLIDATION_PROMPT": PICO_CONDENSE_CONSOLIDATION_PROMPT,
+                }),
+                "the prompts differ from Python's"
+            );
+            continue;
+        }
         let got = run(case);
         assert_eq!(
             got["result"], want["value"]["result"],

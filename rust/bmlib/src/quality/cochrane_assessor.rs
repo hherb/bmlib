@@ -884,9 +884,21 @@ pub(crate) fn condense_checked(
 
     let digest = result.final_result.content.trim().to_string();
     if digest.is_empty() {
+        // A prompt over an empty string returns a confident judgement of no
+        // paper at all.
         return None;
     }
 
+    // `result.status` says how the harness's own run ended — `truncated`
+    // means the recursion ceiling was hit, `partial` means a batch failed —
+    // it does not say whether the digest that came out the other end
+    // actually fits. In particular `truncated` names the recursion ceiling,
+    // not the content size: the harness returns whatever the last level held
+    // once `max_recursion_depth` is reached, oversized or not. So this checks
+    // the same thing `context_processor` checks about itself — the measured
+    // length of what is about to be sent — rather than trusting the status to
+    // imply it; a status check would not have caught a digest that overflows
+    // the budget it was supposed to fit.
     if digest.chars().count() > config.max_context_chars {
         return None;
     }
@@ -902,6 +914,14 @@ pub(crate) fn condense_checked(
     Some((digest, notes, result.status))
 }
 
+/// Pick the Cochrane study label, without guessing a surname.
+///
+/// // QUIRK: the fallbacks are Python's two different emptiness tests. An empty
+/// `study_id` string falls back (`if study_id:` is truthiness), but a
+/// `document_id` of **0** does not (`if document_id is not None` is presence),
+/// so a caller whose row ids start at 0 gets `"Study 0"` rather than the title.
+/// Reproduced because the two tests are what the Python wrote, and a port that
+/// unified them would relabel a study.
 fn resolve_study_id(study_id: Option<&str>, document_id: Option<i64>, title: &str) -> String {
     if let Some(study_id) = study_id.filter(|id| !id.is_empty()) {
         return study_id.to_string();

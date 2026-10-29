@@ -30,7 +30,7 @@ All notable changes to bmlib are documented here. The format is based on
   outage and suggests another model for unusable replies. A reply missing a
   part is asked for once more. Held to Python by a new oracle that runs
   **whole agent runs** over scripted replies (`rust/oracle/dump_pico_agent.py`,
-  20 cases), comparing results and the messages sent. It caught one
+  23 cases), comparing results, the messages sent and every prompt constant. It caught one
   divergence: Python's `sum()` compensates its rounding on 3.12+ and not on
   3.11, so the mean is a plain left-to-right sum in both languages. Upstream's
   batch loop, exports, statistics and summary formatter are not ported (app
@@ -41,6 +41,15 @@ All notable changes to bmlib are documented here. The format is based on
   — each still a `ValueError`, so every existing handler is untouched; the
   final raise after the retries names the last attempt's cause. The messages
   are unchanged. Rust's `ChatJsonError` already had these variants.
+- **Every package's `__all__` resolves**, checked by
+  `tests/test_package_exports.py` over every `bmlib` package, after this
+  branch's re-sorted `bmlib.quality.__all__` briefly turned two comments into
+  members and broke `from bmlib.quality import *`.
+- **`_json_fields.as_float` refuses an integer past the double range.**
+  Python's `json` reads an integer of any size, and `float()` of one past
+  1.8e308 raises `OverflowError`, which escaped every quality reader (the
+  Cochrane assessor's confidence too); it now reads as unstated, as infinity
+  already did.
 - **Condensation takes any prompts.** `bmlib.quality._condense.condense_text`
   (private) is the Cochrane assessor's condensation with its prompts, query
   and note wording as arguments, and Rust's `LlmCondenser::with_prompts`

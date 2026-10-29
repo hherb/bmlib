@@ -326,8 +326,10 @@ pub fn read_extraction(
         parts.push(part);
     }
 
-    // A correctly identified absence must not pull the mean down. Summed in
-    // PICO order, as Python's `sum()` does, so the two agree bit for bit.
+    // A correctly identified absence must not pull the mean down. Summed left
+    // to right in PICO order, as Python's hand-rolled loop is (Python avoids
+    // `sum()`, which compensates its rounding on 3.12+), so the two agree bit
+    // for bit.
     let values: Vec<f64> = parts
         .iter()
         .filter(|part| part.state != PicoPartState::NotReported)
@@ -509,8 +511,7 @@ impl<'a> PicoAgent<'a> {
 
     /// Extract the paper's PICO and verify each part's quotes against `text`.
     ///
-    /// Citation offsets are `char` indices into `text` stripped as Python's
-    /// `str.strip()` strips it.
+    /// Citation offsets are `char` indices into `text` exactly as passed.
     ///
     /// # Errors
     ///
@@ -527,7 +528,9 @@ impl<'a> PicoAgent<'a> {
         if !(min_similarity > 0.0 && min_similarity <= 1.0) {
             return Err(PicoError::InvalidSimilarity(min_similarity));
         }
-        let original = python_strip(text).to_string();
+        // Quotes are located in the text as passed, unstripped, so an offset
+        // indexes the string the caller will highlight.
+        let original = text;
         let (title, sent, notes, condensed_from, status) =
             self.prepare(title, text, "extraction")?;
         let label = format!("PICO extraction of {}", repr_prefix(&title));
@@ -537,7 +540,7 @@ impl<'a> PicoAgent<'a> {
             EXTRACTION_RESPONSE_FORMAT,
             &title,
             &sent,
-            |data| read_extraction(data, &original, min_similarity),
+            |data| read_extraction(data, original, min_similarity),
             &label,
         )?;
         extraction.condensed_from_chars = condensed_from;
