@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from bmlib.llm.providers.base import ModelMetadata, ModelPricing
+from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
 
 
@@ -46,11 +46,13 @@ class DeepSeekProvider(OpenAICompatibleProvider):
             display_name="DeepSeek-V3 (Chat)",
             context_window=64_000,
             pricing=ModelPricing(input_cost=0.27, output_cost=1.10),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
         ModelMetadata(
             model_id="deepseek-reasoner",
             display_name="DeepSeek-R1 (Reasoner)",
             context_window=64_000,
             pricing=ModelPricing(input_cost=0.55, output_cost=2.19),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]

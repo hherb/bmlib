@@ -31,13 +31,41 @@ use crate::llm::protocol::{
     tool_choice_to_anthropic, tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_openai,
     Protocol,
 };
-use crate::publications::fetchers::registry::HttpClient;
+use crate::llm::stream::{run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS};
+use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
+use std::io::Read;
+use std::ops::ControlFlow;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// The provider a model string with no prefix is routed to.
 pub const DEFAULT_PROVIDER: &str = "anthropic";
+
+/// How many times [`LlmClient::chat_stream`] tries to open a stream.
+///
+/// As many tries as Python's Anthropic and OpenAI SDKs make by default (one
+/// try and two retries; ollama-python retries nothing); which failures are
+/// retried, and the backoff, are this port's own (the SDKs also retry 408 and
+/// 409 and honour `Retry-After`). Only opening is retried: once a delta has
+/// reached the caller, a retry would show them a second answer after the
+/// first. Every [`FetchError::Transport`] is retried, since it does not say
+/// which step failed; a timeout waiting for the response headers is one, so a
+/// request the server was already answering can be sent again, as the SDKs
+/// send it again. Any other `FetchError` (a client that cannot stream, a body
+/// that cannot be encoded) would fail the same way again, so it is not.
+pub const STREAM_OPEN_ATTEMPTS: u32 = 3;
+
+/// The statuses on which opening a stream is retried: rate limiting, server
+/// failures, and Anthropic's 529 "overloaded".
+pub const RETRYABLE_STATUSES: &[u16] = &[429, 500, 502, 503, 504, 529];
+
+/// How much of a refused stream's body is read to quote in the error.
+pub const ERROR_BODY_LIMIT: u64 = 64 * 1024;
+
+/// The wait before the first retry; each later one doubles it.
+pub const DEFAULT_RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// Providers whose chat path accepts OpenAI-style tool calling.
 ///
@@ -260,7 +288,11 @@ impl ChatRequest {
 }
 
 /// What a chat call refused.
+///
+/// `#[non_exhaustive]`, so a variant added later is not a breaking change; a
+/// `match` on it needs a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ChatError {
     /// The named provider is not in the registry.
     UnknownProvider(String),
@@ -286,6 +318,15 @@ pub enum ChatError {
     Transport(String),
     /// The server's answer could not be used.
     Malformed(String),
+    /// A stream failed after it opened or ended before the answer was
+    /// complete: an `error` event (the server's message is quoted), a read
+    /// that broke off, an event that is not UTF-8, not JSON or not an object,
+    /// a tool call, or a missing end marker. The deltas already delivered are
+    /// what arrived of an incomplete answer.
+    Stream(String),
+    /// Tools were passed to [`LlmClient::chat_stream`], which does not carry
+    /// tool calls; refused rather than sent without them.
+    StreamingToolsUnsupported,
 }
 
 impl std::fmt::Display for ChatError {
@@ -301,6 +342,11 @@ impl std::fmt::Display for ChatError {
             }
             ChatError::Transport(message) => write!(f, "{message}"),
             ChatError::Malformed(message) => write!(f, "{message}"),
+            ChatError::Stream(message) => write!(f, "{message}"),
+            ChatError::StreamingToolsUnsupported => write!(
+                f,
+                "chat_stream does not carry tool calls; use chat() for a request with tools"
+            ),
         }
     }
 }
@@ -468,6 +514,11 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
                     "thinking".to_string(),
                     json!({"type": "enabled", "budget_tokens": budget}),
                 );
+                // The API rejects non-default sampling parameters while
+                // thinking is enabled, so they are omitted, as the Python's
+                // provider omits them.
+                body.remove("temperature");
+                body.remove("top_p");
             }
         }
     }
@@ -481,6 +532,67 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
     }
 
     Value::Object(body)
+}
+
+/// Build the JSON body for a streamed chat call.
+///
+/// [`chat_body`]'s body with `stream: true`, set after the caller's
+/// `extra_body` so it cannot be turned off, and `stream_options` asking for
+/// usage when the provider is in [`STREAM_USAGE_PROVIDERS`].
+#[must_use]
+pub fn chat_stream_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> Value {
+    let mut body = chat_body(request, target, is_reasoning);
+    if let Some(fields) = body.as_object_mut() {
+        fields.insert("stream".to_string(), json!(true));
+        if target.protocol == Protocol::OpenAi
+            && STREAM_USAGE_PROVIDERS.contains(&target.provider.as_str())
+        {
+            fields.insert("stream_options".to_string(), json!({"include_usage": true}));
+        }
+    }
+    body
+}
+
+/// The error for a rejected chat call, quoting the server when it said why.
+///
+/// A bare status code makes a bad model and a bad key read alike, so the
+/// server's `error.message` is used, else up to 200 characters of its body.
+/// **The body is a human-readable diagnostic and never parsed as data**, so a
+/// body that is not UTF-8 is quoted as nothing rather than lossily.
+fn http_error(url: &str, status: u16, text: &str) -> ChatError {
+    let detail = serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| text.chars().take(200).collect());
+    ChatError::Transport(format!("{url} returned HTTP {status}: {detail}"))
+}
+
+/// Record a finished call's tokens and cost in the process's token tracker.
+///
+/// The model is recorded as `provider:model`, which is the Python's own
+/// spelling and what makes a summary attributable to a provider. The cost is
+/// this port's `calculate_cost`, which prices an unknown model at its
+/// provider's fallback rather than at zero.
+fn record_usage(target: &Target, response: &LLMResponse) {
+    let cost = crate::llm::pricing::calculate_cost(
+        &target.provider,
+        &target.model,
+        response.input_tokens,
+        response.output_tokens,
+    );
+    crate::llm::token_tracker::with_token_tracker(|tracker| {
+        tracker.record_usage(
+            &format!("{}:{}", target.provider, target.model),
+            response.input_tokens,
+            response.output_tokens,
+            cost,
+        );
+    });
 }
 
 /// Build the URL a chat call is posted to.
@@ -560,6 +672,9 @@ pub struct LlmClient {
     pub api_key: Option<String>,
     /// The output cap at which a model is treated as a reasoning model.
     pub reasoning_model_prefixes: Vec<String>,
+    /// The wait before the first retry of opening a stream; each later one
+    /// doubles it. Zero in a test, so the backoff is not spent.
+    pub retry_base_delay: Duration,
 }
 
 impl LlmClient {
@@ -576,6 +691,7 @@ impl LlmClient {
             // model a reasoning model" is not derivable from a model string and
             // guessing wrong sends a 400.
             reasoning_model_prefixes: vec!["o1".to_string(), "o3".to_string(), "o4".to_string()],
+            retry_base_delay: DEFAULT_RETRY_BASE_DELAY,
         }
     }
 
@@ -611,27 +727,11 @@ impl LlmClient {
             .map_err(|e| ChatError::Transport(e.to_string()))?;
 
         if !response.is_success() {
-            // The server's own words, when it sent any: a bare status code makes
-            // a bad model and a bad key read alike.
-            //
             // **`text_or_empty` because this is a human-readable diagnostic and
-            // never parsed as data.** An error body is quoted for an operator;
-            // when it is not valid UTF-8 there is no text to quote, and a lossy
-            // decode would put U+FFFD where the server's words should be.
-            let text = response.text_or_empty();
-            let detail = serde_json::from_str::<Value>(text)
-                .ok()
-                .and_then(|v| {
-                    v.get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-                .unwrap_or_else(|| text.chars().take(200).collect());
-            return Err(ChatError::Transport(format!(
-                "{url} returned HTTP {}: {detail}",
-                response.status
-            )));
+            // never parsed as data.** When it is not valid UTF-8 there is no
+            // text to quote, and a lossy decode would put U+FFFD where the
+            // server's words should be.
+            return Err(http_error(&url, response.status, response.text_or_empty()));
         }
 
         // A JSON body must be UTF-8; one that is not is the malformed answer
@@ -656,25 +756,110 @@ impl LlmClient {
         // tokens, and counting it would inflate the totals with calls that
         // produced nothing.
         //
-        // The model is recorded as `provider:model`, which is the Python's own
-        // spelling and what makes a summary attributable to a provider. The cost
-        // is this port's `calculate_cost`, which prices an unknown model at its
-        // provider's fallback rather than at zero.
-        let cost = crate::llm::pricing::calculate_cost(
-            &target.provider,
-            &target.model,
-            response.input_tokens,
-            response.output_tokens,
-        );
-        crate::llm::token_tracker::with_token_tracker(|tracker| {
-            tracker.record_usage(
-                &format!("{}:{}", target.provider, target.model),
-                response.input_tokens,
-                response.output_tokens,
-                cost,
-            );
-        });
-
+        record_usage(&target, &response);
         Ok(response)
+    }
+
+    /// Run a chat call and stream the answer as the model writes it.
+    ///
+    /// Routes and builds the request as [`LlmClient::chat`] does, then calls
+    /// `on_delta` once per [`StreamDelta`], in order, and returns the same
+    /// [`LLMResponse`] once the stream ends, recording its usage.
+    ///
+    /// `on_delta` returning [`ControlFlow::Break`] stops the stream: the
+    /// connection is closed and the response holds what arrived, with
+    /// `stop_reason` `"cancelled"` (or the server's own, when its end marker
+    /// came with the last delta).
+    ///
+    /// What differs from `chat`: tools are refused, and a tool call that
+    /// arrives anyway (tools sent through `extra_body`) fails the stream; the
+    /// content is exactly what was streamed; and an OpenAI-compatible server
+    /// reports usage only when asked, which only [`STREAM_USAGE_PROVIDERS`]
+    /// are, so elsewhere the counts are 0 unless the server sends them
+    /// unasked. A stopped stream reports the counts the server had sent when
+    /// it stopped (Anthropic's input count is exact and its output count
+    /// partial; an OpenAI-compatible server usually sends usage in its last
+    /// chunk, so usually none). A failed stream records no usage, as a failed
+    /// `chat` records none. Python logs usage asked for and never sent; this
+    /// port has no logger, so it is 0 here without a line.
+    ///
+    /// Opening the stream is retried on a [`FetchError::Transport`] or a
+    /// [`RETRYABLE_STATUSES`] status, up to [`STREAM_OPEN_ATTEMPTS`] tries, with
+    /// a backoff from [`LlmClient::retry_base_delay`] doubling each time.
+    ///
+    /// # Errors
+    ///
+    /// A routing failure, tools ([`ChatError::StreamingToolsUnsupported`]), a
+    /// transport failure (a client that cannot stream among them), a rejected
+    /// request, or a stream that failed or ended early ([`ChatError::Stream`]).
+    pub fn chat_stream(
+        &self,
+        request: &ChatRequest,
+        on_delta: &mut dyn FnMut(&StreamDelta) -> ControlFlow<()>,
+    ) -> Result<LLMResponse, ChatError> {
+        if request.tools.is_some() {
+            return Err(ChatError::StreamingToolsUnsupported);
+        }
+        let target = resolve_target(
+            request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+        )?;
+        let body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        let url = chat_url(&target);
+        let stream = self.open_stream(&url, &body, &chat_headers(&target))?;
+
+        let events = SseEvents::new(std::io::BufReader::new(stream.body))
+            .take_while(|data| data.as_deref() != Ok(SSE_DONE))
+            .map(|data| {
+                data.and_then(|d| {
+                    serde_json::from_str::<Value>(&d).map_err(|e| {
+                        ChatError::Stream(format!("{url} streamed an event that is not JSON: {e}"))
+                    })
+                })
+            });
+        let response = run_stream(target.protocol, events, &target.model, on_delta)?;
+        // Recorded for a stopped stream too, with the counts the server had
+        // sent by then, which understate what it spent.
+        record_usage(&target, &response);
+        Ok(response)
+    }
+
+    /// Open a stream, retrying a transport failure or a retryable status.
+    ///
+    /// The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
+    /// bytes: it only explains the status.
+    fn open_stream(
+        &self,
+        url: &str,
+        body: &Value,
+        headers: &BTreeMap<String, String>,
+    ) -> Result<HttpStream, ChatError> {
+        let mut attempt = 1;
+        loop {
+            let outcome = self.client.post_json_stream(url, body, headers);
+            let retryable = match &outcome {
+                Err(FetchError::Transport(_)) => true,
+                Err(_) => false,
+                Ok(stream) => RETRYABLE_STATUSES.contains(&stream.status),
+            };
+            if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
+                let mut stream = outcome.map_err(|e| ChatError::Transport(e.to_string()))?;
+                if !stream.is_success() {
+                    let mut bytes = Vec::new();
+                    // A body that cannot be read is quoted as nothing: the
+                    // status is the error, and the body only explains it.
+                    let _ = (&mut stream.body)
+                        .take(ERROR_BODY_LIMIT)
+                        .read_to_end(&mut bytes);
+                    let text = std::str::from_utf8(&bytes).unwrap_or_default();
+                    return Err(http_error(url, stream.status, text));
+                }
+                return Ok(stream);
+            }
+            std::thread::sleep(self.retry_base_delay * 2u32.pow(attempt - 1));
+            attempt += 1;
+        }
     }
 }

@@ -47,6 +47,6 @@ pub use pubmed::{
 pub use reconcile::{reconcile_delivery, Reconciliation, SHORTFALL_FAILURE_RATIO};
 pub use registry::{
     builtin_descriptors, builtin_registry, CountingSink, FetchError, FetchOutcome, FetchRequest,
-    FetchSink, Fetcher, HttpClient, HttpResponse, PartDisposition, Progress, Registry, ResumeState,
-    UnknownSource,
+    FetchSink, Fetcher, HttpClient, HttpResponse, HttpStream, PartDisposition, Progress, Registry,
+    ResumeState, UnknownSource,
 };

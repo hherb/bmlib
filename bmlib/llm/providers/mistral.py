@@ -50,6 +50,7 @@ class MistralProvider(OpenAICompatibleProvider):
             context_window=128_000,
             pricing=ModelPricing(input_cost=2.0, output_cost=6.0),
             capabilities=ProviderCapabilities(
+                supports_streaming=True,
                 supports_vision=True,
                 supports_function_calling=True,
                 supports_system_messages=True,
@@ -61,11 +62,13 @@ class MistralProvider(OpenAICompatibleProvider):
             display_name="Mistral Small",
             context_window=128_000,
             pricing=ModelPricing(input_cost=0.1, output_cost=0.3),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
         ModelMetadata(
             model_id="codestral-latest",
             display_name="Codestral",
             context_window=256_000,
             pricing=ModelPricing(input_cost=0.3, output_cost=0.9),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]

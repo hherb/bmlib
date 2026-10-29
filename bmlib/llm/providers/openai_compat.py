@@ -42,6 +42,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 from bmlib.llm.data_types import (
@@ -56,6 +57,15 @@ from bmlib.llm.providers.base import (
     ModelPricing,
     ProviderCapabilities,
     _sdk_import_failed,
+)
+from bmlib.llm.stream import (
+    CANCELLED_STOP_REASON,
+    STREAM_USAGE_PROVIDERS,
+    StreamDelta,
+    closing_stream,
+    refuse_tools,
+    run_stream,
+    sdk_events,
 )
 from bmlib.llm.utils import extract_json
 
@@ -150,63 +160,9 @@ class OpenAICompatibleProvider(BaseProvider):
     ) -> LLMResponse:
         model = model or self.default_model
         client = self._get_client()
-
-        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
+        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
-        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
-        tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
         think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
-        extra_body: dict[str, Any] | None = kwargs.get("extra_body")  # type: ignore[assignment]
-
-        openai_messages = _convert_messages_to_openai(messages)
-
-        request_kwargs: dict[str, object] = {
-            "model": model,
-            "messages": openai_messages,
-        }
-        # Reasoning models (e.g. OpenAI o1/o3) reject ``max_tokens`` (they
-        # require ``max_completion_tokens``) and only accept the default
-        # temperature. Branch on a provider-overridable hook.
-        if self._is_reasoning_model(model):
-            request_kwargs["max_completion_tokens"] = max_tokens
-        else:
-            request_kwargs["max_tokens"] = max_tokens
-            request_kwargs["temperature"] = temperature
-            if top_p is not None:
-                request_kwargs["top_p"] = top_p
-        if json_mode:
-            request_kwargs["response_format"] = {"type": "json_object"}
-
-        # Tool calling: convert LLMToolDefinition to OpenAI's nested
-        # function-spec format and pass tools + tool_choice through to
-        # the SDK. tool_choice maps from the bmlib canonical strings
-        # ("auto"/"required"/"none"/"any" or a specific tool name) to
-        # OpenAI's expected shape.
-        if tools is not None:
-            request_kwargs["tools"] = [_convert_tool_def_to_openai(t) for t in tools]
-            request_kwargs["tool_choice"] = _convert_tool_choice_to_openai(tool_choice)
-
-        # Cross-provider ``think`` kwarg: an effort-level string maps to
-        # ``reasoning_effort`` on reasoning models. Anything else has no
-        # OpenAI-compatible request parameter — it is deliberately NOT
-        # forwarded (unknown parameters make many servers return 400).
-        # Server-specific knobs go through ``extra_body`` instead.
-        if think is not None:
-            if isinstance(think, str) and self._is_reasoning_model(model):
-                request_kwargs["reasoning_effort"] = think
-            elif think:
-                logger.debug(
-                    "%s: no native request mapping for think=%r; not forwarded "
-                    "(reasoning output is still extracted from the response; "
-                    "use extra_body for server-specific thinking parameters)",
-                    self.PROVIDER_NAME,
-                    think,
-                )
-
-        # Escape hatch for server-specific parameters (e.g. vLLM's
-        # chat_template_kwargs); the OpenAI SDK merges it into the JSON body.
-        if extra_body is not None:
-            request_kwargs["extra_body"] = extra_body
 
         response = client.chat.completions.create(**request_kwargs)
 
@@ -268,6 +224,121 @@ class OpenAICompatibleProvider(BaseProvider):
             thinking=thinking,
         )
 
+    def _request_kwargs(
+        self,
+        messages: list[LLMMessage],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        kwargs: dict[str, object],
+    ) -> dict[str, object]:
+        """Build the ``chat.completions.create`` arguments :meth:`chat` and
+        :meth:`chat_stream` send, from their arguments and extra options."""
+        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
+        json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
+        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
+        tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
+        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
+        extra_body: dict[str, Any] | None = kwargs.get("extra_body")  # type: ignore[assignment]
+
+        openai_messages = _convert_messages_to_openai(messages)
+
+        request_kwargs: dict[str, object] = {
+            "model": model,
+            "messages": openai_messages,
+        }
+        # Reasoning models (e.g. OpenAI o1/o3) reject ``max_tokens`` (they
+        # require ``max_completion_tokens``) and only accept the default
+        # temperature. Branch on a provider-overridable hook.
+        if self._is_reasoning_model(model):
+            request_kwargs["max_completion_tokens"] = max_tokens
+        else:
+            request_kwargs["max_tokens"] = max_tokens
+            request_kwargs["temperature"] = temperature
+            if top_p is not None:
+                request_kwargs["top_p"] = top_p
+        if json_mode:
+            request_kwargs["response_format"] = {"type": "json_object"}
+
+        # Tool calling: convert LLMToolDefinition to OpenAI's nested
+        # function-spec format and pass tools + tool_choice through to
+        # the SDK. tool_choice maps from the bmlib canonical strings
+        # ("auto"/"required"/"none"/"any" or a specific tool name) to
+        # OpenAI's expected shape.
+        if tools is not None:
+            request_kwargs["tools"] = [_convert_tool_def_to_openai(t) for t in tools]
+            request_kwargs["tool_choice"] = _convert_tool_choice_to_openai(tool_choice)
+
+        # Cross-provider ``think`` kwarg: an effort-level string maps to
+        # ``reasoning_effort`` on reasoning models. Anything else has no
+        # OpenAI-compatible request parameter — it is deliberately NOT
+        # forwarded (unknown parameters make many servers return 400).
+        # Server-specific knobs go through ``extra_body`` instead.
+        if think is not None:
+            if isinstance(think, str) and self._is_reasoning_model(model):
+                request_kwargs["reasoning_effort"] = think
+            elif think:
+                logger.debug(
+                    "%s: no native request mapping for think=%r; not forwarded "
+                    "(reasoning output is still extracted from the response; "
+                    "use extra_body for server-specific thinking parameters)",
+                    self.PROVIDER_NAME,
+                    think,
+                )
+
+        # Escape hatch for server-specific parameters (e.g. vLLM's
+        # chat_template_kwargs); the OpenAI SDK merges it into the JSON body.
+        if extra_body is not None:
+            request_kwargs["extra_body"] = extra_body
+
+        return request_kwargs
+
+    def chat_stream(
+        self,
+        messages: list[LLMMessage],
+        on_delta: Callable[[StreamDelta], object],
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        **kwargs: object,
+    ) -> LLMResponse:
+        """Stream a chat answer from the OpenAI-compatible endpoint.
+
+        Sends the request :meth:`chat` would, with ``stream=True``, and reads
+        the chunks through :func:`~bmlib.llm.stream.run_stream`. Usage is
+        asked for only from :data:`~bmlib.llm.stream.STREAM_USAGE_PROVIDERS`;
+        elsewhere it is read if the server sends it unasked, else 0. Usage
+        asked for and not sent by the end is logged at WARNING, since it is
+        then recorded as 0. The SDK retries opening the stream itself.
+
+        Raises:
+            NotImplementedError: If *tools* is passed.
+            StreamError: If the stream fails after it opens or ends early.
+        """
+        refuse_tools(kwargs)
+        model = model or self.default_model
+        client = self._get_client()
+        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
+        request_kwargs["stream"] = True
+        if self.PROVIDER_NAME in STREAM_USAGE_PROVIDERS:
+            request_kwargs["stream_options"] = {"include_usage": True}
+        with closing_stream(client.chat.completions.create(**request_kwargs)) as stream:
+            response = run_stream(
+                "openai", sdk_events(stream, lambda c: c.to_dict()), model, on_delta
+            )
+        # Every prompt costs at least one input token, so 0 is "not sent".
+        if (
+            "stream_options" in request_kwargs
+            and response.input_tokens == 0
+            and response.stop_reason != CANCELLED_STOP_REASON
+        ):
+            logger.warning(
+                "%s was asked for usage on a stream of %s and sent none; recorded as 0 tokens",
+                self.PROVIDER_NAME,
+                model,
+            )
+        return response
+
     # --- Model listing ---
 
     def _known_context_window(self, model_id: str) -> int:
@@ -302,6 +373,7 @@ class OpenAICompatibleProvider(BaseProvider):
                         context_window=ctx,
                         pricing=pricing,
                         capabilities=ProviderCapabilities(
+                            supports_streaming=True,
                             supports_system_messages=True,
                             max_context_window=ctx,
                         ),

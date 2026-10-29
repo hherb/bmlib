@@ -53,6 +53,7 @@ class OpenAIProvider(OpenAICompatibleProvider):
             context_window=128_000,
             pricing=ModelPricing(input_cost=2.50, output_cost=10.0),
             capabilities=ProviderCapabilities(
+                supports_streaming=True,
                 supports_vision=True,
                 supports_function_calling=True,
                 supports_system_messages=True,
@@ -64,12 +65,14 @@ class OpenAIProvider(OpenAICompatibleProvider):
             display_name="GPT-4o Mini",
             context_window=128_000,
             pricing=ModelPricing(input_cost=0.15, output_cost=0.60),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
         ModelMetadata(
             model_id="o3-mini",
             display_name="o3-mini",
             context_window=200_000,
             pricing=ModelPricing(input_cost=1.10, output_cost=4.40),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]
 

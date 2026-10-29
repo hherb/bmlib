@@ -316,6 +316,61 @@ pub trait HttpClient {
             "this HttpClient does not implement post_json (POST {url})"
         )))
     }
+
+    /// Issue a JSON POST and hand back the body as it arrives.
+    ///
+    /// For a streamed answer (server-sent events), which
+    /// [`HttpClient::post_json`] would hold back until the server closed the
+    /// connection. The default **refuses**, naming the method, for the reason
+    /// `post_json`'s does: a client that cannot stream should say so rather
+    /// than make a caller's progress display wait for the whole answer.
+    ///
+    /// # Errors
+    ///
+    /// [`FetchError::Transport`] when the request never got a response, and
+    /// [`FetchError::Config`] when it could not be made at all: this client
+    /// cannot stream (the default), or the body could not be encoded. A
+    /// caller may retry the first and not the second. A non-success status is
+    /// an [`HttpStream`] whose body holds the server's error, the same
+    /// contract as `post_json`.
+    fn post_json_stream(
+        &self,
+        url: &str,
+        _body: &serde_json::Value,
+        _headers: &std::collections::BTreeMap<String, String>,
+    ) -> Result<HttpStream, FetchError> {
+        Err(FetchError::Config(format!(
+            "this HttpClient does not implement post_json_stream (POST {url})"
+        )))
+    }
+}
+
+/// A response whose body is read as it arrives.
+///
+/// What [`HttpClient::post_json_stream`] returns. The body is a reader, not
+/// bytes, because a streamed answer is consumed while the server is still
+/// writing it; reading it to the end is reading the whole answer.
+pub struct HttpStream {
+    /// The HTTP status code.
+    pub status: u16,
+    /// The body, read as the server sends it.
+    pub body: Box<dyn std::io::Read + Send>,
+}
+
+impl HttpStream {
+    /// Whether the status is a success.
+    #[must_use]
+    pub fn is_success(&self) -> bool {
+        (200..300).contains(&self.status)
+    }
+}
+
+impl std::fmt::Debug for HttpStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpStream")
+            .field("status", &self.status)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A response body and its status.

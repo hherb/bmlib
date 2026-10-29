@@ -1,0 +1,346 @@
+{
+  "description": "The shared streaming-chat contract (StudyAnalyzer item 6). Each case feeds `events` (stream events as JSON objects, in order) through run_stream for `protocol` and states the deltas on_delta receives and the response it returns, or a substring of the error it raises. `stop_after` stops the stream from on_delta after that many deltas. `ollama` is Ollama's native /api/chat stream, which only the Python client reads; Rust reaches Ollama through its OpenAI-compatible endpoint.",
+  "cases": [
+    {
+      "name": "anthropic/text",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "claude-x", "stop_reason": null, "usage": {"input_tokens": 12, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "ping"},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "The trial "}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "was blinded."}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 7}},
+        {"type": "message_stop"}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "The trial "},
+        {"kind": "text", "text": "was blinded."}
+      ],
+      "response": {"content": "The trial was blinded.", "thinking": null, "input_tokens": 12, "output_tokens": 7, "stop_reason": "end_turn"}
+    },
+    {
+      "name": "anthropic/thinking-then-text",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 30, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Look at "}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Methods."}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "c2ln"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Yes."}},
+        {"type": "content_block_stop", "index": 1},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}},
+        {"type": "message_stop"}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "Look at "},
+        {"kind": "thinking", "text": "Methods."},
+        {"kind": "text", "text": "Yes."}
+      ],
+      "response": {"content": "Yes.", "thinking": "Look at Methods.", "input_tokens": 30, "output_tokens": 20, "stop_reason": "end_turn"}
+    },
+    {
+      "name": "anthropic/two-thinking-blocks-join-with-a-blank-line",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 5, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "first"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "redacted_thinking", "data": "ZW5j"}},
+        {"type": "content_block_stop", "index": 1},
+        {"type": "content_block_start", "index": 2, "content_block": {"type": "thinking", "thinking": ""}},
+        {"type": "content_block_stop", "index": 2},
+        {"type": "content_block_start", "index": 3, "content_block": {"type": "thinking", "thinking": ""}},
+        {"type": "content_block_delta", "index": 3, "delta": {"type": "thinking_delta", "thinking": "second"}},
+        {"type": "content_block_stop", "index": 3},
+        {"type": "content_block_start", "index": 4, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 4, "delta": {"type": "text_delta", "text": "Done."}},
+        {"type": "content_block_stop", "index": 4},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 9}},
+        {"type": "message_stop"}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "first"},
+        {"kind": "thinking", "text": "second"},
+        {"kind": "text", "text": "Done."}
+      ],
+      "response": {"content": "Done.", "thinking": "first\n\nsecond", "input_tokens": 5, "output_tokens": 9, "stop_reason": "end_turn"}
+    },
+    {
+      "name": "anthropic/an-empty-delta-is-not-sent-and-a-block-may-open-with-text",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 3, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": "Hel"}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "lo"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 2}},
+        {"type": "message_stop"}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Hel"},
+        {"kind": "text", "text": "lo"}
+      ],
+      "response": {"content": "Hello", "thinking": null, "input_tokens": 3, "output_tokens": 2, "stop_reason": "max_tokens"}
+    },
+    {
+      "name": "anthropic/no-message-stop-is-an-error",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 3, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Part"}}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Part"}
+      ],
+      "error": "ended before message_stop"
+    },
+    {
+      "name": "anthropic/an-error-event-is-an-error",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 3, "output_tokens": 1}}},
+        {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+      ],
+      "deltas": [],
+      "error": "server said: Overloaded"
+    },
+    {
+      "name": "anthropic/stopped-by-the-caller",
+      "protocol": "anthropic",
+      "stop_after": 1,
+      "events": [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 8, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "One"}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": " two"}}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "One"}
+      ],
+      "response": {"content": "One", "thinking": null, "input_tokens": 8, "output_tokens": 1, "stop_reason": "cancelled"}
+    },
+    {
+      "name": "anthropic/a-tool-use-block-is-an-error",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"id": "msg_7", "type": "message", "role": "assistant", "content": [], "model": "claude-x", "stop_reason": null, "usage": {"input_tokens": 30, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Let me check."}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {}}}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Let me check."}
+      ],
+      "error": "the stream carried a tool call"
+    },
+    {
+      "name": "anthropic/an-event-that-is-not-an-object-is-an-error",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"id": "msg_8", "type": "message", "role": "assistant", "content": [], "model": "claude-x", "stop_reason": null, "usage": {"input_tokens": 5, "output_tokens": 1}}},
+        "overloaded"
+      ],
+      "deltas": [],
+      "error": "not a JSON object"
+    },
+    {
+      "name": "openai/text-and-a-usage-chunk",
+      "protocol": "openai",
+      "events": [
+        {"id": "c1", "object": "chat.completion.chunk", "model": "gpt-x", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]},
+        {"id": "c1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": "Forty"}, "finish_reason": null}]},
+        {"id": "c1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": " patients."}, "finish_reason": null}]},
+        {"id": "c1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": null},
+        {"id": "c1", "object": "chat.completion.chunk", "choices": [], "usage": {"prompt_tokens": 40, "completion_tokens": 4, "total_tokens": 44}}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Forty"},
+        {"kind": "text", "text": " patients."}
+      ],
+      "response": {"content": "Forty patients.", "thinking": null, "input_tokens": 40, "output_tokens": 4, "stop_reason": "stop"}
+    },
+    {
+      "name": "openai/reasoning-content",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "reasoning_content": "Check "}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": null, "reasoning_content": "the table."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "No."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 6}}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "Check "},
+        {"kind": "thinking", "text": "the table."},
+        {"kind": "text", "text": "No."}
+      ],
+      "response": {"content": "No.", "thinking": "Check the table.", "input_tokens": 10, "output_tokens": 6, "stop_reason": "stop"}
+    },
+    {
+      "name": "openai/reasoning-field",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "", "reasoning": "Hmm."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "Yes."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "length"}]}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "Hmm."},
+        {"kind": "text", "text": "Yes."}
+      ],
+      "response": {"content": "Yes.", "thinking": "Hmm.", "input_tokens": 0, "output_tokens": 0, "stop_reason": "length"}
+    },
+    {
+      "name": "openai/no-finish-reason-is-an-error",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "Half"}, "finish_reason": null}]}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Half"}
+      ],
+      "error": "ended before a finish_reason"
+    },
+    {
+      "name": "openai/an-error-object-is-an-error",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "Half"}, "finish_reason": null}]},
+        {"error": {"message": "Rate limit reached", "type": "requests"}}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Half"}
+      ],
+      "error": "server said: Rate limit reached"
+    },
+    {
+      "name": "openai/stopped-by-the-caller",
+      "protocol": "openai",
+      "stop_after": 2,
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "b"}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "c"}, "finish_reason": null}]}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "a"},
+        {"kind": "text", "text": "b"}
+      ],
+      "response": {"content": "ab", "thinking": null, "input_tokens": 0, "output_tokens": 0, "stop_reason": "cancelled"}
+    },
+    {
+      "name": "openai/both-reasoning-fields-are-read-once",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "reasoning_content": "Check.", "reasoning": "Check."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "No."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop"}]}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "Check."},
+        {"kind": "text", "text": "No."}
+      ],
+      "response": {"content": "No.", "thinking": "Check.", "input_tokens": 0, "output_tokens": 0, "stop_reason": "stop"}
+    },
+    {
+      "name": "openai/a-tool-call-is-an-error",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": ""}}]}, "finish_reason": null}]}
+      ],
+      "deltas": [],
+      "error": "the stream carried a tool call"
+    },
+    {
+      "name": "openai/an-event-that-is-not-an-object-is-an-error",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "Half"}, "finish_reason": null}]},
+        42
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Half"}
+      ],
+      "error": "not a JSON object"
+    },
+    {
+      "name": "openai/stopped-on-the-chunk-that-ends-it-keeps-its-finish-reason",
+      "protocol": "openai",
+      "stop_after": 2,
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "b"}, "finish_reason": "length"}]}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "a"},
+        {"kind": "text", "text": "b"}
+      ],
+      "response": {"content": "ab", "thinking": null, "input_tokens": 0, "output_tokens": 0, "stop_reason": "length"}
+    },
+    {
+      "name": "ollama/thinking-text-and-counts",
+      "protocol": "ollama",
+      "events": [
+        {"model": "llama3.2", "message": {"role": "assistant", "content": "", "thinking": "Read it."}, "done": false},
+        {"model": "llama3.2", "message": {"role": "assistant", "content": "It was ", "thinking": null}, "done": false},
+        {"model": "llama3.2", "message": {"role": "assistant", "content": "an RCT."}, "done": false},
+        {"model": "llama3.2", "message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "stop", "prompt_eval_count": 50, "eval_count": 9}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "Read it."},
+        {"kind": "text", "text": "It was "},
+        {"kind": "text", "text": "an RCT."}
+      ],
+      "response": {"content": "It was an RCT.", "thinking": "Read it.", "input_tokens": 50, "output_tokens": 9, "stop_reason": "stop"}
+    },
+    {
+      "name": "ollama/length",
+      "protocol": "ollama",
+      "events": [
+        {"message": {"role": "assistant", "content": "Cut"}, "done": false},
+        {"message": {"role": "assistant", "content": ""}, "done": true, "done_reason": "length", "prompt_eval_count": 4, "eval_count": 1}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Cut"}
+      ],
+      "response": {"content": "Cut", "thinking": null, "input_tokens": 4, "output_tokens": 1, "stop_reason": "length"}
+    },
+    {
+      "name": "ollama/no-done-is-an-error",
+      "protocol": "ollama",
+      "events": [
+        {"message": {"role": "assistant", "content": "Cut"}, "done": false}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Cut"}
+      ],
+      "error": "ended before done"
+    },
+    {
+      "name": "ollama/an-error-object-is-an-error",
+      "protocol": "ollama",
+      "events": [
+        {"error": "model 'nope' not found"}
+      ],
+      "deltas": [],
+      "error": "server said: model 'nope' not found"
+    },
+    {
+      "name": "ollama/a-tool-call-is-an-error",
+      "protocol": "ollama",
+      "events": [
+        {"model": "llama3.2", "created_at": "2026-10-29T00:00:00Z", "message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "lookup", "arguments": {}}}]}, "done": false}
+      ],
+      "deltas": [],
+      "error": "the stream carried a tool call"
+    }
+  ]
+}

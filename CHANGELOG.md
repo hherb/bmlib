@@ -7,6 +7,47 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Streamed chat** (StudyAnalyzer phase 1, item 6). `chat_stream(…,
+  on_delta)` beside `chat()` on `LLMClient` (Python: the Anthropic,
+  OpenAI-compatible and Ollama providers; a third-party provider's
+  `BaseProvider.chat_stream` raises `NotImplementedError` rather than fall
+  back to `chat()`) and `LlmClient` (Rust). It calls `on_delta` once per
+  `StreamDelta` (text, or a separated reasoning trace) and returns the same
+  `LLMResponse`, recording its usage. `on_delta` returning `False`
+  (`ControlFlow::Break`) stops the stream, with `stop_reason="cancelled"`, or
+  the server's own when its end marker came with the last delta. A request
+  refused before the stream opens raises what `chat()` would (Ollama's lazy
+  stream included: a missing model is `ResponseError`, a stopped server
+  `ConnectionError`). A stream that fails after it opens (an error event, a
+  broken connection, an event that is not a JSON object; in Python the SDK's
+  exception is the `__cause__`), carries a tool call, or ends before its end
+  marker is a `StreamError` (`ChatError::Stream`), never a short answer.
+  Tools are refused before sending: in Python by the client and every
+  built-in provider's `chat_stream` (`NotImplementedError`), in Rust by
+  `LlmClient` (`ChatError::StreamingToolsUnsupported`); a tool call that
+  arrives anyway (tools sent through `extra_body`) fails the stream. The
+  content is exactly what was streamed, with no `<think>` splitting or JSON
+  repair; a server sending both `reasoning_content` and `reasoning` is read
+  once, as `chat()` reads it. The pure reducer, `StreamState` / `run_stream`
+  in `bmlib.llm.stream` (`bmlib::llm::stream`), is held to the shared
+  contract `tests/fixtures/chat_stream.json` (24 cases); its five
+  native-Ollama cases are Python's alone, since Rust reaches Ollama through
+  its OpenAI-compatible endpoint, as its `chat()` does. Usage on an
+  OpenAI-compatible stream is asked for only from `STREAM_USAGE_PROVIDERS`
+  (`openai`, `deepseek`, `ollama`), as some servers refuse `stream_options`;
+  Python logs a WARNING when usage asked for never arrives. Rust adds
+  `HttpClient::post_json_stream` (refusing by default with
+  `FetchError::Config`, which is not retried) and `HttpStream`; `UreqClient`
+  gives each step of sending a stream's request `timeout_seconds`, and the
+  response headers and then the body `stream_timeout_seconds` (600) each,
+  since the 45-second global timeout would cut a long answer off and a local
+  server may load the model first; `SseEvents` reads the wire;
+  `LlmClient::chat_stream` retries opening (a `FetchError::Transport` or
+  429/500/502/503/504/529) up to three tries with backoff from
+  `retry_base_delay`, never after the first byte. Python's providers build
+  `chat()`'s request in a `_request_kwargs` method both share, and every
+  model entry of a provider that streams declares `supports_streaming`.
+  Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`.
 - **Canonical text from an HTML page, and a full-text check** (StudyAnalyzer
   phase 1, item 4c). `canonical_from_html(html)` in `bmlib.fulltext.canonical`
   (Rust `bmlib::fulltext::canonical`, feature `html`) parses with html5ever in
@@ -271,6 +312,16 @@ All notable changes to bmlib are documented here. The format is based on
   extractor output sees `study_type` move as above.
 
 ### Fixed
+- **Rust: `ChatError` is `#[non_exhaustive]`** and gains `Stream` and
+  `StreamingToolsUnsupported`: a downstream `match` listing every variant
+  needs a wildcard arm, once, and later variants will not break it.
+- **Rust: Anthropic's extended thinking drops `temperature` and `top_p`**,
+  which the API rejects while thinking is enabled; `chat_body` sent both, so
+  any Rust request with `think` set was refused. Python's provider already
+  omitted them.
+- **Rust: every Anthropic thinking block is kept**, joined with a blank line
+  as Python's provider joins them; `parse_anthropic_response` kept only the
+  first.
 - **A retraction evidence date that is not ISO is refused** (#507).
   `RetractionEvidence.date` is compared as text, so a date such as
   `05/15/2020` from an app's own storage sorted as older than every ISO date

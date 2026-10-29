@@ -604,7 +604,7 @@ pub fn parse_anthropic_response(
         })?;
 
     let mut text = String::new();
-    let mut thinking: Option<String> = None;
+    let mut thinking_parts: Vec<&str> = Vec::new();
     let mut tool_calls: Vec<LLMToolCall> = Vec::new();
 
     for block in blocks {
@@ -615,12 +615,11 @@ pub fn parse_anthropic_response(
                 }
             }
             Some("thinking") => {
-                // An **empty** trace is not a trace; the first real one wins.
-                if thinking.is_none() {
-                    if let Some(trace) = block.get("thinking").and_then(Value::as_str) {
-                        if !trace.is_empty() {
-                            thinking = Some(trace.to_string());
-                        }
+                // An **empty** trace is not a trace. Several blocks join with a
+                // blank line, as the Python's provider and the stream join them.
+                if let Some(trace) = block.get("thinking").and_then(Value::as_str) {
+                    if !trace.is_empty() {
+                        thinking_parts.push(trace);
                     }
                 }
             }
@@ -667,7 +666,11 @@ pub fn parse_anthropic_response(
         } else {
             Some(tool_calls)
         },
-        thinking,
+        thinking: if thinking_parts.is_empty() {
+            None
+        } else {
+            Some(thinking_parts.join(crate::llm::stream::THINKING_BLOCK_SEPARATOR))
+        },
     }
     .with_derived_total())
 }
