@@ -30,6 +30,7 @@ from bmlib.context_processor import (
     ProcessingStatus,
 )
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality._condense import condense_text
 from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_HIGH,
@@ -529,3 +530,64 @@ class TestPublicExports:
         assert "CochraneAssessor" in quality.__all__
         assert "collapse_risk_of_bias" in quality.__all__
         assert quality.CochraneAssessor is CochraneAssessor
+
+
+class TestTheCondensationHelper:
+    """``condense_text`` is the Cochrane assessor's condensation, taken out so
+    a second agent can run it with its own prompts."""
+
+    @staticmethod
+    def _stub_result(content: str, status: ProcessingStatus) -> ProcessingResult:
+        return ProcessingResult(
+            final_result=ExtractionResult(content=content, confidence=1.0),
+            status=status,
+            total_items_processed=1,
+            batches_created=1,
+            recursion_levels_used=0,
+            successful_batches=1,
+        )
+
+    def test_condense_text_refuses_an_oversized_digest(self) -> None:
+        agent = make_assessor()
+        oversized = self._stub_result("x" * 300, ProcessingStatus.COMPLETED)
+        with patch.object(LLMChunkProcessor, "process", return_value=oversized):
+            assert (
+                condense_text(
+                    agent,
+                    "y" * 500,
+                    "a study",
+                    ProcessingConfig(max_context_chars=200),
+                    extraction_prompt="E {query} {content}",
+                    consolidation_prompt="C {query} {content}",
+                    query="Q",
+                    stage="extraction",
+                )
+                is None
+            )
+
+    def test_condense_text_runs_its_own_prompts_and_names_its_stage(self) -> None:
+        agent = make_assessor()
+        partial = self._stub_result("digest", ProcessingStatus.PARTIAL)
+        with (
+            patch.object(LLMChunkProcessor, "__init__", return_value=None) as init,
+            patch.object(LLMChunkProcessor, "process", return_value=partial) as process,
+        ):
+            condensed = condense_text(
+                agent,
+                "y" * 500,
+                "a study",
+                ProcessingConfig(max_context_chars=200),
+                extraction_prompt="E {query} {content}",
+                consolidation_prompt="C {query} {content}",
+                query="the PICO query",
+                stage="extraction",
+            )
+
+        assert init.call_args.kwargs["extraction_prompt"] == "E {query} {content}"
+        assert init.call_args.kwargs["consolidation_prompt"] == "C {query} {content}"
+        assert process.call_args.kwargs["query"] == "the PICO query"
+        assert condensed is not None
+        assert condensed[1] == [
+            "Source text was condensed before extraction; the condensation finished "
+            "with status partial, so the digest may be incomplete."
+        ]

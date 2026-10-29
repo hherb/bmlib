@@ -382,6 +382,8 @@ pub trait Condenser {
 /// and tested; what was absent was the three lines that bind them.
 pub struct LlmCondenser<'a> {
     model: &'a dyn ContextModel,
+    templates: PromptTemplates,
+    query: &'static str,
     temperature: f64,
     max_tokens: i64,
 }
@@ -400,9 +402,35 @@ impl<'a> LlmCondenser<'a> {
         temperature: f64,
         max_tokens: i64,
     ) -> Result<Self, String> {
-        condense_templates().validate()?;
+        Self::with_prompts(
+            model,
+            condense_templates(),
+            CONDENSE_QUERY,
+            temperature,
+            max_tokens,
+        )
+    }
+
+    /// Condense through `model` over another agent's prompts and query.
+    ///
+    /// The PICO agent's case: the same map-reduce, gathering different
+    /// evidence. [`LlmCondenser::new`] is this over the Cochrane prompts.
+    ///
+    /// # Errors
+    ///
+    /// Either template lacking a placeholder, as for [`LlmCondenser::new`].
+    pub fn with_prompts(
+        model: &'a dyn ContextModel,
+        templates: PromptTemplates,
+        query: &'static str,
+        temperature: f64,
+        max_tokens: i64,
+    ) -> Result<Self, String> {
+        templates.validate()?;
         Ok(LlmCondenser {
             model,
+            templates,
+            query,
             temperature,
             max_tokens,
         })
@@ -428,13 +456,13 @@ impl Condenser for LlmCondenser<'_> {
         // flag at its default, so every level is a plain completion.
         match LlmChunkProcessor::new(
             self.model,
-            condense_templates(),
+            self.templates.clone(),
             config.clone(),
             false,
             self.temperature,
             self.max_tokens,
         ) {
-            Ok(processor) => processor.process(text, CONDENSE_QUERY),
+            Ok(processor) => processor.process(text, self.query),
             // The configuration reached `CochraneAssessor::new` already
             // validated, so this is unreachable for the assessor's own path —
             // but a `Condenser` is public and a caller can hand it any
@@ -824,53 +852,56 @@ impl<'a> CochraneAssessor<'a> {
         label: &str,
     ) -> Option<(String, Vec<String>, ProcessingStatus)> {
         let condenser = self.condenser.as_mut()?;
-        let result = condenser.condense(text, label, &self.condense_config);
-
-        if result.status == ProcessingStatus::Failed {
-            return None;
-        }
-
-        let digest = result.final_result.content.trim().to_string();
-        if digest.is_empty() {
-            // The Cochrane prompt over an empty string returns a confident
-            // nine-domain assessment of no paper at all.
-            return None;
-        }
-
-        // `result.status` says how the harness's own run ended — `truncated`
-        // means the recursion ceiling was hit, `partial` means a batch failed —
-        // it does not say whether the digest that came out the other end
-        // actually fits. In particular `truncated` names the recursion ceiling,
-        // not the content size: the harness returns whatever the last level held
-        // once `max_recursion_depth` is reached, oversized or not. So this checks
-        // the same thing `context_processor` checks about itself — the measured
-        // length of what is about to be sent — rather than trusting the status to
-        // imply it; a status check would not have caught a digest that overflows
-        // the budget it was supposed to fit.
-        if digest.chars().count() > self.condense_config.max_context_chars {
-            return None;
-        }
-
-        let mut notes: Vec<String> = Vec::new();
-        if result.status != ProcessingStatus::Completed {
-            notes.push(format!(
-                "Source text was condensed before assessment; the condensation finished with \
-                 status {}, so the digest may be incomplete.",
-                result.status.as_str()
-            ));
-        }
-        Some((digest, notes, result.status))
+        condense_checked(
+            &mut **condenser,
+            text,
+            label,
+            &self.condense_config,
+            "assessment",
+        )
     }
 }
 
-/// Pick the Cochrane study label, without guessing a surname.
+/// Run `condenser` and apply the rules every agent applies to its digest.
 ///
-/// // QUIRK: the fallbacks are Python's two different emptiness tests. An empty
-/// `study_id` string falls back (`if study_id:` is truthiness), but a
-/// `document_id` of **0** does not (`if document_id is not None` is presence),
-/// so a caller whose row ids start at 0 gets `"Study 0"` rather than the title.
-/// Reproduced because the two tests are what the Python wrote, and a port that
-/// unified them would relabel a study.
+/// A failed run, an empty digest and a digest that still exceeds
+/// `config.max_context_chars` are all refused (`None`). A run that did not
+/// complete cleanly carries a note naming `stage` (`"assessment"`,
+/// `"extraction"`), so each agent's stored note keeps its wording. Python's
+/// `bmlib.quality._condense.condense_text`.
+pub(crate) fn condense_checked(
+    condenser: &mut dyn Condenser,
+    text: &str,
+    label: &str,
+    config: &ProcessingConfig,
+    stage: &str,
+) -> Option<(String, Vec<String>, ProcessingStatus)> {
+    let result = condenser.condense(text, label, config);
+
+    if result.status == ProcessingStatus::Failed {
+        return None;
+    }
+
+    let digest = result.final_result.content.trim().to_string();
+    if digest.is_empty() {
+        return None;
+    }
+
+    if digest.chars().count() > config.max_context_chars {
+        return None;
+    }
+
+    let mut notes: Vec<String> = Vec::new();
+    if result.status != ProcessingStatus::Completed {
+        notes.push(format!(
+            "Source text was condensed before {stage}; the condensation finished with \
+             status {}, so the digest may be incomplete.",
+            result.status.as_str()
+        ));
+    }
+    Some((digest, notes, result.status))
+}
+
 fn resolve_study_id(study_id: Option<&str>, document_id: Option<i64>, title: &str) -> String {
     if let Some(study_id) = study_id.filter(|id| !id.is_empty()) {
         return study_id.to_string();

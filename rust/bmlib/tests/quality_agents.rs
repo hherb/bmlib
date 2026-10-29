@@ -26,7 +26,7 @@
 use std::collections::BTreeMap;
 
 use bmlib::agents::{chat_json, ChatJsonError, ChatJsonOutcome, ChatSource};
-use bmlib::context_processor::llm_processor::ContextModel;
+use bmlib::context_processor::llm_processor::{ContextModel, PromptTemplates};
 use bmlib::context_processor::{
     ExtractionResult, ProcessingConfig, ProcessingResult, ProcessingStatus,
     DEFAULT_MAX_CONTEXT_CHARS,
@@ -1704,4 +1704,40 @@ fn a_condenser_handed_an_invalid_configuration_fails_the_run() {
     assert_eq!(result.status, ProcessingStatus::Failed);
     let message = result.error_message.clone().unwrap_or_default();
     assert!(message.contains("confidence"), "{message:?}");
+}
+
+/// A second agent condenses through the same map-reduce with its own prompts
+/// and query (the PICO agent's case).
+#[test]
+fn llm_condenser_with_prompts_uses_its_own_query() {
+    let model = MapReduceModel::new(&"M".repeat(100), "SHORT");
+    let templates = PromptTemplates {
+        extraction_prompt: "PICO MAP {query} :: {content}".to_string(),
+        consolidation_prompt: "Merge these extracted passages {query} :: {content}".to_string(),
+    };
+    let mut condenser = LlmCondenser::with_prompts(&model, templates, "the PICO query", 0.1, 4096)
+        .expect("both templates carry both placeholders");
+
+    let result = condenser.condense(
+        &"x".repeat(1_000),
+        "a study",
+        &ProcessingConfig::default().with_max_context_chars(200),
+    );
+
+    assert!(result.final_result.content.contains("SHORT"));
+    let prompts = model.prompts();
+    assert!(prompts
+        .iter()
+        .any(|p| p.starts_with("PICO MAP the PICO query")));
+    assert!(prompts.iter().all(|p| p.contains("the PICO query")));
+}
+
+#[test]
+fn llm_condenser_with_prompts_refuses_a_template_without_its_placeholders() {
+    let model = MapReduceModel::new("d", "d");
+    let templates = PromptTemplates {
+        extraction_prompt: "no placeholders".to_string(),
+        consolidation_prompt: "{query} {content}".to_string(),
+    };
+    assert!(LlmCondenser::with_prompts(&model, templates, "q", 0.1, 4096).is_err());
 }
