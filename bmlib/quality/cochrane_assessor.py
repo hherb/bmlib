@@ -43,7 +43,7 @@ from typing import Any
 from bmlib.agents.base import BaseAgent
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
-from bmlib.quality._condense import condense_text
+from bmlib.quality._condense import CondensationRefused, condense_text
 from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_UNCLEAR,
@@ -580,16 +580,21 @@ class CochraneAssessor(BaseAgent):
             produced nothing to judge, or produced a digest that still does
             not fit ``condense_config.max_context_chars``.
         """
-        return condense_text(
-            self,
-            text,
-            label,
-            self.condense_config,
-            extraction_prompt=CONDENSE_EXTRACTION_PROMPT,
-            consolidation_prompt=CONDENSE_CONSOLIDATION_PROMPT,
-            query=CONDENSE_QUERY,
-            stage="assessment",
-        )
+        try:
+            return condense_text(
+                self,
+                text,
+                label,
+                self.condense_config,
+                extraction_prompt=CONDENSE_EXTRACTION_PROMPT,
+                consolidation_prompt=CONDENSE_CONSOLIDATION_PROMPT,
+                query=CONDENSE_QUERY,
+                stage="assessment",
+            )
+        except CondensationRefused:
+            # ``condense_text`` has logged the reason; this agent's contract
+            # is ``None``.
+            return None
 
     # --- Parsing ---
 

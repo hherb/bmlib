@@ -50,7 +50,7 @@ from bmlib.agents.base import BaseAgent, ChatJsonError, ChatJsonTruncatedError
 from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig
 from bmlib.llm import LLMClient
-from bmlib.quality._condense import condense_text
+from bmlib.quality._condense import CondensationRefused, condense_text
 from bmlib.quality._json_fields import as_bool, as_text
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
 from bmlib.quality.pico_models import (
@@ -61,6 +61,7 @@ from bmlib.quality.pico_models import (
     PicoPart,
     PicoPartState,
     PicoSuitability,
+    mean_confidence,
 )
 from bmlib.templates import TemplateEngine
 
@@ -69,8 +70,8 @@ logger = logging.getLogger(__name__)
 #: The four parts, in the order they are read, reported and averaged.
 PICO_PARTS: tuple[str, ...] = ("population", "intervention", "comparison", "outcome")
 
-#: How many times a reply that parses but cannot be read is asked for again —
-#: the Cochrane assessor's ``_ASSESSMENT_ATTEMPTS``.
+#: How many times a question is asked when its reply parses but cannot be read
+#: (so it is asked once more) — the Cochrane assessor's ``_ASSESSMENT_ATTEMPTS``.
 _READ_ATTEMPTS = 2
 
 _T = TypeVar("_T")
@@ -361,18 +362,6 @@ def read_extraction(data: dict[str, Any], text: str, min_similarity: float) -> P
         except ValueError as exc:
             raise ValueError(f"{name}: {exc}") from None
 
-    # A correctly identified absence must not pull the mean down.  Summed left
-    # to right in PICO order, by hand: ``sum()`` compensates its rounding since
-    # Python 3.12 and does not on 3.11, so it would answer differently across
-    # the versions bmlib supports — and differently from the Rust port's fold.
-    total = 0.0
-    count = 0
-    for part in parts.values():
-        if part.state is not PicoPartState.NOT_REPORTED and part.confidence is not None:
-            total += part.confidence
-            count += 1
-    overall = total / count if count else None
-
     return PicoExtraction(
         population=parts["population"],
         intervention=parts["intervention"],
@@ -380,7 +369,7 @@ def read_extraction(data: dict[str, Any], text: str, min_similarity: float) -> P
         outcome=parts["outcome"],
         study_type=as_text(data.get("study_type"), "study_type"),
         sample_size=as_text(data.get("sample_size"), "sample_size"),
-        overall_confidence=overall,
+        overall_confidence=mean_confidence(list(parts.values())),
     )
 
 
@@ -429,10 +418,12 @@ class PicoAgent(BaseAgent):
     has a PICO at all, and :meth:`extract` extracts it.  A caller may run the
     extraction whatever the check answered.
 
-    Each call either returns its result or raises :class:`PicoError`, whose
+    Each call either returns its result or raises :class:`PicoError` (or, from
+    :meth:`extract`, ``ValueError`` for a bad ``min_similarity``), whose
     ``kind`` says why — so an app can retry an outage, ask for a larger
     ``max_tokens`` after a truncation, and suggest another model when the
-    replies are unusable.
+    replies are unusable.  An outage during the condensation of a long text
+    is ``CONDENSATION_FAILED``, its message naming the failed map-reduce.
 
     Args:
         llm: The client requests go through.
@@ -554,23 +545,23 @@ class PicoAgent(BaseAgent):
         if len(text) <= self.condense_config.max_context_chars:
             return title, text, [], None, None
 
-        condensed = condense_text(
-            self,
-            text,
-            title[:60],
-            self.condense_config,
-            extraction_prompt=PICO_CONDENSE_EXTRACTION_PROMPT,
-            consolidation_prompt=PICO_CONDENSE_CONSOLIDATION_PROMPT,
-            query=PICO_CONDENSE_QUERY,
-            stage=stage,
-        )
-        if condensed is None:
+        try:
+            digest, notes, status = condense_text(
+                self,
+                text,
+                title[:60],
+                self.condense_config,
+                extraction_prompt=PICO_CONDENSE_EXTRACTION_PROMPT,
+                consolidation_prompt=PICO_CONDENSE_CONSOLIDATION_PROMPT,
+                query=PICO_CONDENSE_QUERY,
+                stage=stage,
+            )
+        except CondensationRefused as exc:
             raise PicoError(
                 PicoErrorKind.CONDENSATION_FAILED,
-                f"a {len(text)}-character text could not be condensed to "
-                f"{self.condense_config.max_context_chars} characters",
-            )
-        digest, notes, status = condensed
+                f"a {len(text)}-character text could not be condensed to fit "
+                f"{self.condense_config.max_context_chars} characters: {exc}",
+            ) from exc
         return title, digest, notes, len(text), status.value
 
     def _ask(
@@ -595,7 +586,7 @@ class PicoAgent(BaseAgent):
         )
         messages = [self.system_msg(PICO_SYSTEM_PROMPT), self.user_msg(prompt)]
 
-        problem = ""
+        problem: ValueError | None = None
         for attempt in range(_READ_ATTEMPTS):
             try:
                 data = self.chat_json(messages, retry_context=label, require_dict=True)
@@ -608,15 +599,15 @@ class PicoAgent(BaseAgent):
             try:
                 return read(data)
             except ValueError as exc:
-                problem = str(exc)
+                problem = exc
                 logger.warning(
                     "Unusable reply for %s (attempt %d/%d): %s",
                     label,
                     attempt + 1,
                     _READ_ATTEMPTS,
-                    problem,
+                    exc,
                 )
         raise PicoError(
             PicoErrorKind.UNUSABLE_REPLY,
             f"{label}: {_READ_ATTEMPTS} replies could not be read: {problem}",
-        )
+        ) from problem

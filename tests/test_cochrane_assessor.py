@@ -22,6 +22,8 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from bmlib.context_processor import (
     ExtractionResult,
     LLMChunkProcessor,
@@ -30,7 +32,7 @@ from bmlib.context_processor import (
     ProcessingStatus,
 )
 from bmlib.llm.data_types import LLMResponse
-from bmlib.quality._condense import condense_text
+from bmlib.quality._condense import CondensationRefused, condense_text
 from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_HIGH,
@@ -406,7 +408,12 @@ class TestTheDigestSizeGuaranteeIsEnforced:
         digest, notes, status = condensed
         assert digest == "x" * 199
         assert status is ProcessingStatus.TRUNCATED
-        assert notes  # TRUNCATED still records the degradation note
+        # TRUNCATED still records the degradation note, in the wording a
+        # stored assessment has always carried.
+        assert notes == [
+            "Source text was condensed before assessment; the condensation finished "
+            "with status truncated, so the digest may be incomplete."
+        ]
 
 
 class TestBothCondensationDegradationBranchesReachTheAssessment:
@@ -547,23 +554,39 @@ class TestTheCondensationHelper:
             successful_batches=1,
         )
 
-    def test_condense_text_refuses_an_oversized_digest(self) -> None:
+    @pytest.mark.parametrize(
+        ("content", "status", "reason"),
+        [
+            (
+                "x" * 300,
+                ProcessingStatus.COMPLETED,
+                "the digest is 300 characters, over the 200-character budget (status: completed)",
+            ),
+            (" \n ", ProcessingStatus.COMPLETED, "the map-reduce produced an empty digest"),
+            ("", ProcessingStatus.FAILED, "the map-reduce failed: every batch failed"),
+        ],
+    )
+    def test_condense_text_says_why_it_refuses(
+        self, content: str, status: ProcessingStatus, reason: str
+    ) -> None:
         agent = make_assessor()
-        oversized = self._stub_result("x" * 300, ProcessingStatus.COMPLETED)
-        with patch.object(LLMChunkProcessor, "process", return_value=oversized):
-            assert (
-                condense_text(
-                    agent,
-                    "y" * 500,
-                    "a study",
-                    ProcessingConfig(max_context_chars=200),
-                    extraction_prompt="E {query} {content}",
-                    consolidation_prompt="C {query} {content}",
-                    query="Q",
-                    stage="extraction",
-                )
-                is None
+        stub = self._stub_result(content, status)
+        stub.error_message = "every batch failed"
+        with (
+            patch.object(LLMChunkProcessor, "process", return_value=stub),
+            pytest.raises(CondensationRefused) as caught,
+        ):
+            condense_text(
+                agent,
+                "y" * 500,
+                "a study",
+                ProcessingConfig(max_context_chars=200),
+                extraction_prompt="E {query} {content}",
+                consolidation_prompt="C {query} {content}",
+                query="Q",
+                stage="extraction",
             )
+        assert str(caught.value) == reason
 
     def test_condense_text_runs_its_own_prompts_and_names_its_stage(self) -> None:
         agent = make_assessor()

@@ -228,6 +228,32 @@ class TestChatJsonSaysWhy:
         with pytest.raises(ChatJsonEmptyError):
             agent.chat_json([agent.user_msg("x")])
 
+    def test_a_retried_wrong_shape_ends_wrong_shape(self, _sleep):
+        """At temperature > 0 a wrong shape is retried, and the class names the
+        last attempt's cause, not the default."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response("[1, 2]")
+        with pytest.raises(ChatJsonWrongShapeError, match="Failed after 3 attempts"):
+            agent.chat_json([agent.user_msg("x")], require_dict=True, temperature=0.5)
+
+    def test_unparseable_after_another_cause_ends_unparseable(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response(""),
+            _make_response(""),
+            _make_response("not json"),
+        ]
+        with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
+            agent.chat_json([agent.user_msg("x")])
+
+    def test_a_truncated_complete_reply_of_the_wrong_shape_is_wrong_shape(self, _sleep):
+        """Hitting the ceiling with complete JSON is no truncation; an array
+        there is the shape failure it is."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _truncated("[1, 2]")
+        with pytest.raises(ChatJsonWrongShapeError, match="expected a JSON object"):
+            agent.chat_json([agent.user_msg("x")], require_dict=True, temperature=0.5)
+
     def test_every_class_is_still_a_value_error(self, _sleep):
         for cls in (
             ChatJsonTruncatedError,

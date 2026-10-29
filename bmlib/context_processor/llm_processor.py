@@ -33,6 +33,7 @@ import re
 from typing import Any
 
 from bmlib.agents import BaseAgent
+from bmlib.agents.base import _TRUNCATION_STOP_REASONS
 from bmlib.context_processor.base import IterativeContextProcessor, ProgressCallback
 from bmlib.context_processor.data_types import (
     ConsolidatedItem,
@@ -270,7 +271,8 @@ class LLMChunkProcessor(IterativeContextProcessor):
             The model's answer, with its confidence when it reported one.
 
         Raises:
-            RuntimeError: If the model call fails. The base class records it
+            RuntimeError: If the model call fails, or a plain completion
+                stopped at the output ceiling. The base class records it
                 against the batch.
         """
         level = batch_metadata.get("recursion_level", 0)
@@ -288,6 +290,12 @@ class LLMChunkProcessor(IterativeContextProcessor):
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 )
+                # A completion cut at the output ceiling is a lost passage, not
+                # an answer; ``chat_json`` refuses it on the structured path.
+                if response.stop_reason in _TRUNCATION_STOP_REASONS:
+                    raise RuntimeError(
+                        f"the response was truncated (stop_reason={response.stop_reason!r})"
+                    )
                 content = response.content.strip()
                 confidence = DEFAULT_EXTRACTION_CONFIDENCE
                 findings = []

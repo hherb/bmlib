@@ -562,26 +562,24 @@ impl<'a> PicoAgent<'a> {
         }
 
         let label: String = title.chars().take(60).collect();
-        let refused = || {
-            PicoError::CondensationFailed(format!(
-                "a {length}-character text could not be condensed to {} characters",
-                self.condense_config.max_context_chars
-            ))
-        };
         let Some(condenser) = self.condenser.as_mut() else {
             return Err(PicoError::CondensationFailed(
                 "no condenser configured".to_string(),
             ));
         };
-        let Some((digest, notes, status)) = condense_checked(
+        let (digest, notes, status) = condense_checked(
             &mut **condenser,
             &text,
             &label,
             &self.condense_config,
             stage,
-        ) else {
-            return Err(refused());
-        };
+        )
+        .map_err(|reason| {
+            PicoError::CondensationFailed(format!(
+                "a {length}-character text could not be condensed to fit {} characters: {reason}",
+                self.condense_config.max_context_chars
+            ))
+        })?;
         Ok((
             title,
             digest,

@@ -35,6 +35,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class CondensationRefused(Exception):
+    """The map-reduce produced no digest an agent may judge; the message says why.
+
+    The reason is the caller's to report: a provider failure and a digest
+    that does not fit call for different remedies.
+    """
+
+
 def condense_text(
     agent: BaseAgent,
     text: str,
@@ -45,7 +53,7 @@ def condense_text(
     consolidation_prompt: str,
     query: str,
     stage: str,
-) -> tuple[str, list[str], ProcessingStatus] | None:
+) -> tuple[str, list[str], ProcessingStatus]:
     """Reduce oversized text to an evidence digest that fits one context.
 
     Runs :class:`~bmlib.context_processor.LLMChunkProcessor` with *agent*, so
@@ -62,13 +70,16 @@ def condense_text(
         consolidation_prompt: The reduce prompt.
         query: What the evidence is gathered for.
         stage: Names what the digest is for in the note a degraded run
-            carries (``"assessment"``, ``"extraction"``), so an agent's
-            stored note keeps its wording.
+            carries (e.g. ``"assessment"``, ``"extraction"``, ``"the
+            suitability check"``), so an agent's stored note keeps its wording.
 
     Returns:
-        ``(digest, notes, status)``, or ``None`` when the run failed,
-        produced nothing to judge, or produced a digest that still does
-        not fit ``config.max_context_chars``.
+        ``(digest, notes, status)``.
+
+    Raises:
+        CondensationRefused: The run failed (a provider failure during the
+            map-reduce included), produced nothing to judge, or produced a
+            digest that still does not fit ``config.max_context_chars``.
     """
     processor = LLMChunkProcessor(
         agent=agent,
@@ -79,15 +90,17 @@ def condense_text(
     result = processor.process([text], query=query)
 
     if result.status is ProcessingStatus.FAILED:
-        logger.error("Could not condense the text of %s: %s", label, result.error_message)
-        return None
+        reason = f"the map-reduce failed: {result.error_message}"
+        logger.warning("Could not condense the text of %s: %s", label, reason)
+        raise CondensationRefused(reason)
 
     digest = result.final_result.content.strip()
     if not digest:
         # A prompt over an empty string returns a confident judgement of no
         # paper at all.
-        logger.error("Condensing the text of %s produced an empty digest", label)
-        return None
+        reason = "the map-reduce produced an empty digest"
+        logger.warning("Could not condense the text of %s: %s", label, reason)
+        raise CondensationRefused(reason)
 
     # ``result.status`` says how the harness's own run ended — TRUNCATED
     # means the recursion ceiling was hit, PARTIAL means a batch failed —
@@ -101,15 +114,12 @@ def condense_text(
     # imply it; a status check would not have caught a digest that
     # overflows the budget it was supposed to fit.
     if len(digest) > config.max_context_chars:
-        logger.error(
-            "Condensing the text of %s produced a %d-char digest that still "
-            "exceeds the %d-char budget (status: %s); refusing to judge it",
-            label,
-            len(digest),
-            config.max_context_chars,
-            result.status.value,
+        reason = (
+            f"the digest is {len(digest)} characters, over the "
+            f"{config.max_context_chars}-character budget (status: {result.status.value})"
         )
-        return None
+        logger.warning("Could not condense the text of %s: %s", label, reason)
+        raise CondensationRefused(reason)
 
     notes: list[str] = []
     if result.status is not ProcessingStatus.COMPLETED:

@@ -25,9 +25,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.agents import ChatJsonUnparseableError
+from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality._condense import CondensationRefused
 from bmlib.quality.pico_agent import (
     PICO_CONDENSE_CONSOLIDATION_PROMPT,
     PICO_CONDENSE_EXTRACTION_PROMPT,
@@ -43,6 +44,7 @@ from bmlib.quality.pico_models import (
     PicoError,
     PicoErrorKind,
     PicoExtraction,
+    PicoPart,
     PicoPartState,
     PicoSuitability,
 )
@@ -369,13 +371,33 @@ class TestTheExtraction:
         agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
 
         with (
-            patch("bmlib.quality.pico_agent.condense_text", return_value=None),
+            patch(
+                "bmlib.quality.pico_agent.condense_text",
+                side_effect=CondensationRefused("the map-reduce produced an empty digest"),
+            ),
             pytest.raises(PicoError) as caught,
         ):
             agent.extract("A trial", "x" * 500, min_similarity=SIM)
 
         assert caught.value.kind is PicoErrorKind.CONDENSATION_FAILED
+        assert str(caught.value) == (
+            "a 500-character text could not be condensed to fit 100 characters: "
+            "the map-reduce produced an empty digest"
+        )
+        assert isinstance(caught.value.__cause__, CondensationRefused)
         assert agent.llm.chat.call_count == 0
+
+    def test_an_outage_during_condensation_reads_as_a_failed_run(self) -> None:
+        """An outage on a long paper says the map-reduce failed, not that the
+        text would not fit the budget."""
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm.chat = MagicMock(side_effect=ConnectionError("the server is down"))
+
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.CONDENSATION_FAILED
+        assert ": the map-reduce failed: No batch produced a result: " in str(caught.value)
 
     def test_the_text_is_sent_whole(self) -> None:
         text = "word " * 8_000
@@ -526,3 +548,228 @@ def test_offsets_index_the_text_as_passed() -> None:
 
     citation = extraction.population.citations[0]
     assert text[citation.start : citation.end] == "Adults aged 40-65"
+
+
+#: Similarity 0.848 against ``TEXT`` (measured): found at 0.8, not at 0.9.
+FUZZY_QUOTE = "adults between 40 and 65 were randomised to metformin"
+
+
+class TestTheThresholdIsTheCallers:
+    """The fuzzy match is what the verification exists for, so the caller's
+    threshold is shown to decide it, and the citation says it was fuzzy."""
+
+    def test_a_paraphrase_is_found_below_the_callers_threshold(self) -> None:
+        result = read_part(part(quotes=[FUZZY_QUOTE]), TEXT, 0.8)
+
+        assert result.state is PicoPartState.VERIFIED
+        (citation,) = result.citations
+        assert (citation.start, citation.end) == (0, 46)
+        assert citation.text == "Adults aged 40-65 were randomised to metformin"
+        assert citation.exact is False
+        assert citation.similarity == pytest.approx(0.8484848484848485)
+
+    def test_the_same_paraphrase_is_lost_above_it(self) -> None:
+        result = read_part(part(quotes=[FUZZY_QUOTE]), TEXT, 0.9)
+
+        assert result.state is PicoPartState.UNVERIFIED
+        assert result.citations == []
+        assert result.quotes_not_found == [FUZZY_QUOTE]
+
+    def test_the_agent_passes_the_callers_threshold_on(self) -> None:
+        fuzzy = reply(population=part(quotes=[FUZZY_QUOTE]))
+
+        low = make_agent(fuzzy).extract("A trial", TEXT, min_similarity=0.8)
+        high = make_agent(fuzzy).extract("A trial", TEXT, min_similarity=0.9)
+
+        assert low.population.state is PicoPartState.VERIFIED
+        assert high.population.state is PicoPartState.UNVERIFIED
+
+    def test_a_threshold_of_one_is_accepted(self) -> None:
+        extraction = make_agent(reply()).extract("A trial", TEXT, min_similarity=1.0)
+        assert extraction.population.state is PicoPartState.VERIFIED
+
+    @pytest.mark.parametrize("bad", ["0.9", None, True, 0.0, 1.5, float("nan")])
+    def test_a_threshold_that_is_not_a_number_in_range_is_refused(self, bad: Any) -> None:
+        agent = make_agent(reply())
+        with pytest.raises(ValueError, match="min_similarity"):
+            agent.extract("A trial", TEXT, min_similarity=bad)
+        assert agent.llm.chat.call_count == 0
+
+
+class TestWhatAReplyGives:
+    def test_citations_keep_the_quotes_order(self) -> None:
+        result = read_part(part(quotes=["placebo", "metformin"]), TEXT, SIM)
+        assert [c.text for c in result.citations] == ["placebo", "metformin"]
+
+    def test_an_unverified_part_counts_in_the_mean(self) -> None:
+        extraction = read_extraction(
+            reply(outcome=part(confidence=0.5, quotes=["lost words"])), TEXT, SIM
+        )
+        assert extraction.outcome.state is PicoPartState.UNVERIFIED
+        assert extraction.overall_confidence == pytest.approx((0.9 * 3 + 0.5) / 4)
+
+    def test_a_not_reported_part_keeps_its_confidence_out_of_the_mean(self) -> None:
+        extraction = read_extraction(
+            reply(comparison=part(reported=False, confidence=0.2)), TEXT, SIM
+        )
+        assert extraction.comparison.confidence == 0.2
+        assert extraction.overall_confidence == pytest.approx(0.9)
+
+    def test_an_array_reply_is_unusable(self) -> None:
+        agent = make_agent("[1, 2]")
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", TEXT, min_similarity=SIM)
+        assert caught.value.kind is PicoErrorKind.UNUSABLE_REPLY
+        assert isinstance(caught.value.__cause__, ChatJsonWrongShapeError)
+        assert agent.llm.chat.call_count == 3
+
+    def test_two_unreadable_replies_chain_the_last_problem(self) -> None:
+        agent = make_agent(reply(outcome=None))
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", TEXT, min_similarity=SIM)
+        assert caught.value.kind is PicoErrorKind.UNUSABLE_REPLY
+        assert isinstance(caught.value.__cause__, ValueError)
+        assert str(caught.value.__cause__) == "outcome: expected an object, got NoneType"
+        assert agent.llm.chat.call_count == 2
+
+    def test_the_input_is_stripped_before_it_is_sent(self) -> None:
+        agent = make_agent(reply())
+        agent.extract("  A trial \n", "\n  " + TEXT + "  \n", min_similarity=SIM)
+        assert "Paper Title: A trial\n\nPaper Text:\n" + TEXT + "\n\n" in sent_user_message(agent)
+
+    def test_text_exactly_at_the_budget_is_sent_whole(self) -> None:
+        agent = make_agent(reply(), condense_config=ProcessingConfig(max_context_chars=len(TEXT)))
+        with patch("bmlib.quality.pico_agent.condense_text") as condense:
+            extraction = agent.extract("A trial", TEXT, min_similarity=SIM)
+        condense.assert_not_called()
+        assert extraction.condensed_from_chars is None
+
+    def test_a_condensed_suitability_check_carries_the_note(self) -> None:
+        note = "Source text was condensed before the suitability check; ..."
+        agent = make_agent(
+            {"is_suitable": True}, condense_config=ProcessingConfig(max_context_chars=10)
+        )
+        with patch(
+            "bmlib.quality.pico_agent.condense_text",
+            return_value=("a digest", [note], ProcessingStatus.PARTIAL),
+        ) as condense:
+            suitability = agent.check_suitability("A trial", TEXT)
+        assert condense.call_args.kwargs["stage"] == "the suitability check"
+        assert suitability.notes == [note]
+        assert suitability.condensation_status == "partial"
+        assert suitability.condensed_from_chars == len(TEXT)
+
+    def test_the_error_kinds_have_their_stored_values(self) -> None:
+        assert {kind.name: kind.value for kind in PicoErrorKind} == {
+            "EMPTY_INPUT": "empty_input",
+            "REQUEST_FAILED": "request_failed",
+            "TRUNCATED": "truncated",
+            "UNUSABLE_REPLY": "unusable_reply",
+            "CONDENSATION_FAILED": "condensation_failed",
+        }
+
+
+class TestStoredResults:
+    """``from_dict`` reads what ``to_dict`` wrote and refuses anything else."""
+
+    @staticmethod
+    def _extraction() -> PicoExtraction:
+        extraction = read_extraction(
+            reply(
+                population=part(quotes=[FUZZY_QUOTE, 7, "  "]),
+                comparison=part(reported=False),
+                outcome=part(quotes=["lost words"]),
+            ),
+            TEXT,
+            0.8,
+        )
+        extraction.condensed_from_chars = 90_000
+        extraction.condensation_status = "partial"
+        extraction.notes = ["a note"]
+        return extraction
+
+    def test_every_field_survives_json(self) -> None:
+        extraction = self._extraction()
+        assert extraction.population.quotes_dropped == 2
+        assert extraction.population.citations[0].exact is False
+        suitability = read_suitability(
+            {
+                "is_suitable": False,
+                "is_intervention_study": True,
+                "has_comparison": False,
+                "study_type": "case series",
+                "confidence": 0.7,
+                "rationale": "No comparison group.",
+            }
+        )
+        suitability.condensed_from_chars = 70_000
+        suitability.condensation_status = "completed"
+        suitability.notes = ["n"]
+
+        assert PicoExtraction.from_dict(json.loads(json.dumps(extraction.to_dict()))) == extraction
+        assert (
+            PicoSuitability.from_dict(json.loads(json.dumps(suitability.to_dict()))) == suitability
+        )
+
+    @pytest.mark.parametrize(
+        ("path", "value", "match"),
+        [
+            (("population", "state"), "verified-ish", "PicoPartState"),
+            (("outcome", "state"), "verified", "carries 0 citation"),
+            (("comparison", "quotes_not_found"), ["q"], "not-reported part carries no quotes"),
+            (("population", "confidence"), "0.9", "'confidence' is a str"),
+            (("population", "confidence"), True, "'confidence' is a bool"),
+            (("population", "confidence"), 3, "number in \\[0, 1\\]"),
+            (("population", "quotes_not_found"), "abc", "'quotes_not_found' is a str"),
+            (("population", "quotes_dropped"), -1, "must not be negative"),
+            (("population", "citations"), None, "'citations' is a NoneType"),
+            (("population", "description"), None, "'description' is a NoneType"),
+            (("notes",), "hi", "'notes' is a str"),
+            (("overall_confidence",), 0.1, "not the mean of its parts"),
+        ],
+    )
+    def test_a_corrupt_extraction_is_refused(
+        self, path: tuple[str, ...], value: Any, match: str
+    ) -> None:
+        data = self._extraction().to_dict()
+        target = data
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        with pytest.raises(ValueError, match=match):
+            PicoExtraction.from_dict(data)
+
+    @pytest.mark.parametrize(
+        ("key", "value", "match"),
+        [
+            ("start", 5, "invalid span"),
+            ("text", "too short", "invalid span"),
+            ("similarity", 1.5, "similarity must be in"),
+            ("exact", True, "an exact match has similarity 1.0"),
+            ("start", "0", "'start' is a str"),
+        ],
+    )
+    def test_a_corrupt_citation_is_refused(self, key: str, value: Any, match: str) -> None:
+        data = self._extraction().to_dict()
+        data["population"]["citations"][0][key] = value
+        with pytest.raises(ValueError, match=match):
+            PicoExtraction.from_dict(data)
+
+    @pytest.mark.parametrize(
+        ("key", "value", "match"),
+        [
+            ("is_suitable", "no", "'is_suitable' is a str"),
+            ("is_suitable", None, "'is_suitable' is a NoneType"),
+            ("has_comparison", 1, "'has_comparison' is a int"),
+            ("confidence", 1.2, "number in \\[0, 1\\]"),
+        ],
+    )
+    def test_a_corrupt_suitability_is_refused(self, key: str, value: Any, match: str) -> None:
+        data = read_suitability({"is_suitable": True}).to_dict()
+        data[key] = value
+        with pytest.raises(ValueError, match=match):
+            PicoSuitability.from_dict(data)
+
+    def test_a_part_cannot_be_built_verified_without_a_citation(self) -> None:
+        with pytest.raises(ValueError, match="carries 0 citation"):
+            PicoPart("d", PicoPartState.VERIFIED, 0.5)
