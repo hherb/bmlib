@@ -42,23 +42,231 @@ original text, never the digest.  Nothing is discarded for low confidence.
 from __future__ import annotations
 
 import logging
-from typing import Any
+import math
+from collections.abc import Callable
+from typing import Any, TypeVar
 
+from bmlib.agents.base import BaseAgent, ChatJsonError, ChatJsonTruncatedError
 from bmlib.citations import find_passage
+from bmlib.context_processor import ProcessingConfig
+from bmlib.llm import LLMClient
+from bmlib.quality._condense import condense_text
 from bmlib.quality._json_fields import as_bool, as_text
-from bmlib.quality.cochrane_assessor import clamped_confidence
+from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
 from bmlib.quality.pico_models import (
     PicoCitation,
+    PicoError,
+    PicoErrorKind,
     PicoExtraction,
     PicoPart,
     PicoPartState,
     PicoSuitability,
 )
+from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
 
 #: The four parts, in the order they are read, reported and averaged.
 PICO_PARTS: tuple[str, ...] = ("population", "intervention", "comparison", "outcome")
+
+#: How many times a reply that parses but cannot be read is asked for again —
+#: the Cochrane assessor's ``_ASSESSMENT_ATTEMPTS``.
+_READ_ATTEMPTS = 2
+
+_T = TypeVar("_T")
+
+
+# --- Prompts (byte-identical in the Rust port) ---
+
+PICO_SYSTEM_PROMPT = """\
+You are an expert in clinical research methodology and evidence-based \
+medicine.
+
+CRITICAL RULES:
+1. Base everything ONLY on what is ACTUALLY PRESENT in the text
+2. DO NOT invent, assume, or fabricate any information
+3. Describe THIS study, not studies it references
+4. Return ONLY valid JSON, no explanation"""
+
+
+SUITABILITY_TASK_PROMPT = """\
+Determine whether the document below is an INTERVENTION STUDY suitable for \
+PICO (Population, Intervention, Comparison, Outcome) extraction.
+
+A document is SUITABLE if it is:
+- A randomized controlled trial (RCT)
+- A clinical trial with an intervention
+- A cohort study with an intervention or exposure
+- A case-control study
+- A comparative effectiveness study
+- Any primary research testing an intervention, treatment, or exposure
+
+A document is NOT SUITABLE if it is:
+- A systematic review or meta-analysis (it reviews other studies and does not \
+test an intervention itself)
+- A narrative review or literature review
+- An editorial, commentary, or opinion piece
+- A case report or case series (no comparison group)
+- A cross-sectional survey (no intervention)
+- A basic science or laboratory study (not clinical)
+- A qualitative study without quantifiable outcomes
+
+KEY INDICATORS of an intervention study:
+- It tests a specific treatment, drug, procedure, or intervention
+- It has a defined patient population or study participants
+- It includes a control or comparison group (or a baseline comparison)
+- It measures specific outcomes or endpoints
+- It reports results from actual participants, not a review of literature
+
+Assess:
+1. is_intervention_study: does this study test an intervention, treatment or \
+exposure on participants?
+2. has_comparison: does it have a control or comparison group?
+3. is_suitable: should PICO components be extracted? (true for an \
+intervention study)
+4. confidence: how confident you are in this assessment (0.0-1.0)
+5. rationale: a brief explanation (2-3 sentences)
+6. study_type: the type of study (e.g. "RCT", "cohort study", "systematic \
+review", "case-control study")
+
+Do not confuse a systematic review (which reviews other studies) with primary \
+research. Look for evidence of actual participant enrollment and intervention. \
+If uncertain, lean towards NOT SUITABLE and say why in the rationale."""
+
+
+SUITABILITY_RESPONSE_FORMAT = """\
+Respond with JSON in exactly this shape:
+
+{
+    "is_intervention_study": true,
+    "has_comparison": true,
+    "is_suitable": true,
+    "confidence": 0.9,
+    "rationale": "This is an RCT testing intervention X in population Y with control group Z.",
+    "study_type": "randomized controlled trial"
+}"""
+
+
+EXTRACTION_TASK_PROMPT = """\
+Extract the PICO components (Population, Intervention, Comparison, Outcome) \
+from the research paper below.
+
+For EACH of the four components give:
+- description: what the paper says, specific and close to its wording
+- reported: false ONLY when the paper says nothing about this component; \
+otherwise true
+- confidence: 0.0-1.0, using the scale below
+- quotes: 1-3 passages copied VERBATIM from the paper that support the \
+description. Copy them character for character; do not paraphrase, shorten \
+with ellipses, or join sentences. Give no quotes when reported is false.
+
+1. Population (P): who was studied — demographics (age, sex, condition), \
+inclusion and exclusion criteria, setting.
+   Example: "Adults aged 40-65 with type 2 diabetes and HbA1c > 7%, recruited \
+from primary care clinics"
+
+2. Intervention (I): what was done to the study population — the treatment, \
+procedure or exposure, with dose, frequency and duration where stated.
+   Example: "Metformin 1000mg twice daily for 12 weeks"
+
+3. Comparison (C): what the intervention was compared against — placebo, \
+standard care, no treatment, or an alternative intervention.
+   Example: "Placebo tablets twice daily for 12 weeks"
+   A study the paper describes as single-arm or uncontrolled HAS a reported \
+comparison: say there was no comparison group, set reported to true, and \
+quote the passage that says so.
+
+4. Outcome (O): what was measured — primary and secondary outcomes, how they \
+were measured, and when.
+   Example: "Change in HbA1c from baseline to 12 weeks (primary); fasting \
+glucose and body weight (secondary)"
+
+Also give:
+- study_type: the study design if clear (RCT, cohort study, case-control, \
+cross-sectional, ...), or null
+- sample_size: the number of participants if stated (e.g. "N=150"), or null
+
+Confidence scale:
+- 1.0 = explicitly stated, no ambiguity
+- 0.8 = clearly stated but some details missing
+- 0.6 = can be inferred but not explicitly stated
+- 0.4 = partially mentioned, significant uncertainty
+- 0.2 = barely mentioned, high uncertainty"""
+
+
+EXTRACTION_RESPONSE_FORMAT = """\
+Respond with JSON in exactly this shape:
+
+{
+    "population": {
+        "description": "who was studied",
+        "reported": true,
+        "confidence": 0.9,
+        "quotes": ["a passage copied verbatim from the paper"]
+    },
+    "intervention": {
+        "description": "what was done",
+        "reported": true,
+        "confidence": 0.9,
+        "quotes": ["a passage copied verbatim from the paper"]
+    },
+    "comparison": {
+        "description": "what it was compared against",
+        "reported": true,
+        "confidence": 0.9,
+        "quotes": ["a passage copied verbatim from the paper"]
+    },
+    "outcome": {
+        "description": "what was measured",
+        "reported": true,
+        "confidence": 0.9,
+        "quotes": ["a passage copied verbatim from the paper"]
+    },
+    "study_type": "randomized controlled trial",
+    "sample_size": "N=150"
+}"""
+
+
+PICO_CONDENSE_QUERY = (
+    "Everything needed to identify the study's PICO: the study design; who was "
+    "studied (age, sex, condition, inclusion and exclusion criteria, setting) "
+    "and how many; the intervention (treatment, dose, frequency, duration); "
+    "what it was compared against, or that there was no comparison group; and "
+    "the outcomes measured, how, and when."
+)
+
+PICO_CONDENSE_EXTRACTION_PROMPT = """\
+Extract VERBATIM every passage of this paper that bears on the following.
+
+Needed: {query}
+
+Paper section:
+{content}
+
+INSTRUCTIONS:
+- Copy the passages character for character; do not paraphrase or shorten \
+them, since each will be checked against the paper word for word
+- Keep numbers, doses, group sizes and timepoints exactly
+- Say nothing about what the text does not report
+- Return plain text
+
+Extracted passages:"""
+
+PICO_CONDENSE_CONSOLIDATION_PROMPT = """\
+Merge these extracted passages into one collection of passages.
+
+Needed: {query}
+
+Extracted passages:
+{content}
+
+INSTRUCTIONS:
+- Keep every passage VERBATIM, character for character; drop only exact \
+duplicates
+- Preserve numbers, doses, group sizes and timepoints exactly
+- Return plain text
+
+Consolidated passages:"""
 
 
 # --- Reading a reply ---
@@ -191,3 +399,217 @@ def read_suitability(data: dict[str, Any]) -> PicoSuitability:
         confidence=clamped_confidence(data.get("confidence")),
         rationale=as_text(data.get("rationale"), "rationale"),
     )
+
+
+# --- The agent ---
+
+
+def _check_similarity(min_similarity: object) -> float:
+    """Refuse a threshold :func:`~bmlib.citations.find_passage` would refuse.
+
+    Checked before any model call, so a caller's mistake costs no request.
+    """
+    if (
+        isinstance(min_similarity, bool)
+        or not isinstance(min_similarity, int | float)
+        or math.isnan(min_similarity)
+        or not 0.0 < min_similarity <= 1.0
+    ):
+        raise ValueError(f"min_similarity must be a number in (0, 1], got {min_similarity!r}")
+    return float(min_similarity)
+
+
+class PicoAgent(BaseAgent):
+    """Extracts a study's PICO, every part backed by passages of the paper.
+
+    Two independent calls: :meth:`check_suitability` says whether the paper
+    has a PICO at all, and :meth:`extract` extracts it.  A caller may run the
+    extraction whatever the check answered.
+
+    Each call either returns its result or raises :class:`PicoError`, whose
+    ``kind`` says why — so an app can retry an outage, ask for a larger
+    ``max_tokens`` after a truncation, and suggest another model when the
+    replies are unusable.
+
+    Args:
+        llm: The client requests go through.
+        model: The ``"provider:model"`` string.
+        template_engine: Unused by this agent; accepted as every agent does.
+        temperature: Sampling temperature.
+        max_tokens: The reply's output ceiling.
+        condense_config: The budget beyond which text is condensed first;
+            ``max_context_chars`` defaults to the Cochrane assessor's
+            :data:`~bmlib.quality.cochrane_assessor.DEFAULT_CONDENSE_THRESHOLD_CHARS`.
+    """
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        model: str,
+        template_engine: TemplateEngine | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
+        condense_config: ProcessingConfig | None = None,
+    ) -> None:
+        super().__init__(
+            llm=llm,
+            model=model,
+            template_engine=template_engine,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        self.condense_config = condense_config or ProcessingConfig(
+            max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
+        )
+
+    def check_suitability(self, title: str | None, text: str | None) -> PicoSuitability:
+        """Say whether the paper is an intervention study with a PICO.
+
+        The caller chooses the text: an abstract keeps the check cheap.  Text
+        too long for one context is condensed, never cut.
+
+        Args:
+            title: The paper's title.
+            text: The text to judge.
+
+        Returns:
+            The answer.  Only ``is_suitable`` is required of the model.
+
+        Raises:
+            PicoError: Naming why no answer could be made.
+        """
+        title, text, notes, condensed_from, status = self._prepare(title, text, "suitability")
+        suitability = self._ask(
+            SUITABILITY_TASK_PROMPT,
+            SUITABILITY_RESPONSE_FORMAT,
+            title,
+            text,
+            read_suitability,
+            f"PICO suitability check of {title[:60]!r}",
+        )
+        suitability.condensed_from_chars = condensed_from
+        suitability.condensation_status = status
+        suitability.notes = notes
+        return suitability
+
+    def extract(
+        self, title: str | None, text: str | None, *, min_similarity: float
+    ) -> PicoExtraction:
+        """Extract the paper's PICO and verify each part's quotes.
+
+        Args:
+            title: The paper's title.
+            text: The paper's text.  Citation offsets are code points into it,
+                stripped of leading and trailing whitespace; a caller who wants
+                a quote from the title found includes the title here.
+            min_similarity: How close a quote must be to a span of *text* to
+                count as found — :func:`~bmlib.citations.find_passage`'s
+                threshold.  Required: it is set by measurement, by the caller.
+
+        Returns:
+            The breakdown.  Nothing is discarded for low confidence.
+
+        Raises:
+            ValueError: *min_similarity* is not a number in (0, 1].
+            PicoError: Naming why no breakdown could be made.
+        """
+        similarity = _check_similarity(min_similarity)
+        original = (text or "").strip()
+        title, sent, notes, condensed_from, status = self._prepare(title, text, "extraction")
+        extraction = self._ask(
+            EXTRACTION_TASK_PROMPT,
+            EXTRACTION_RESPONSE_FORMAT,
+            title,
+            sent,
+            # Quotes are verified against the paper, never the digest: a quote
+            # the condensation paraphrased is caught here like any other.
+            lambda data: read_extraction(data, original, similarity),
+            f"PICO extraction of {title[:60]!r}",
+        )
+        extraction.condensed_from_chars = condensed_from
+        extraction.condensation_status = status
+        extraction.notes = notes
+        return extraction
+
+    def _prepare(
+        self, title: str | None, text: str | None, stage: str
+    ) -> tuple[str, str, list[str], int | None, str | None]:
+        """Strip the input, refuse an empty one, condense an oversized one.
+
+        Returns:
+            ``(title, text_to_send, notes, condensed_from_chars,
+            condensation_status)``.
+        """
+        title = (title or "").strip()
+        text = (text or "").strip()
+        if not title and not text:
+            raise PicoError(PicoErrorKind.EMPTY_INPUT, "both the title and the text are empty")
+        if len(text) <= self.condense_config.max_context_chars:
+            return title, text, [], None, None
+
+        condensed = condense_text(
+            self,
+            text,
+            title[:60],
+            self.condense_config,
+            extraction_prompt=PICO_CONDENSE_EXTRACTION_PROMPT,
+            consolidation_prompt=PICO_CONDENSE_CONSOLIDATION_PROMPT,
+            query=PICO_CONDENSE_QUERY,
+            stage=stage,
+        )
+        if condensed is None:
+            raise PicoError(
+                PicoErrorKind.CONDENSATION_FAILED,
+                f"a {len(text)}-character text could not be condensed to "
+                f"{self.condense_config.max_context_chars} characters",
+            )
+        digest, notes, status = condensed
+        return title, digest, notes, len(text), status.value
+
+    def _ask(
+        self,
+        task: str,
+        response_format: str,
+        title: str,
+        text: str,
+        read: Callable[[dict[str, Any]], _T],
+        label: str,
+    ) -> _T:
+        """Send one question and read the reply, retrying an unreadable one."""
+        # Concatenated, never ``str.format``ted: braces in a paper are text.
+        prompt = (
+            task
+            + "\n\nPaper Title: "
+            + title
+            + "\n\nPaper Text:\n"
+            + text
+            + "\n\n"
+            + response_format
+        )
+        messages = [self.system_msg(PICO_SYSTEM_PROMPT), self.user_msg(prompt)]
+
+        problem = ""
+        for attempt in range(_READ_ATTEMPTS):
+            try:
+                data = self.chat_json(messages, retry_context=label, require_dict=True)
+            except ChatJsonTruncatedError as exc:
+                raise PicoError(PicoErrorKind.TRUNCATED, str(exc)) from exc
+            except ChatJsonError as exc:
+                raise PicoError(PicoErrorKind.UNUSABLE_REPLY, str(exc)) from exc
+            except Exception as exc:
+                raise PicoError(PicoErrorKind.REQUEST_FAILED, str(exc)) from exc
+            try:
+                return read(data)
+            except ValueError as exc:
+                problem = str(exc)
+                logger.warning(
+                    "Unusable reply for %s (attempt %d/%d): %s",
+                    label,
+                    attempt + 1,
+                    _READ_ATTEMPTS,
+                    problem,
+                )
+        raise PicoError(
+            PicoErrorKind.UNUSABLE_REPLY,
+            f"{label}: {_READ_ATTEMPTS} replies could not be read: {problem}",
+        )

@@ -54,18 +54,23 @@ from bmlib.quality.extractors import (
     extract_study_type,
 )
 from bmlib.quality.manager import QualityManager
+from bmlib.quality.pico_agent import PICO_PARTS, PicoAgent, verify_quotes
+from bmlib.quality.pico_models import (
+    PicoCitation,
+    PicoError,
+    PicoErrorKind,
+    PicoExtraction,
+    PicoPart,
+    PicoPartState,
+    PicoSuitability,
+)
 from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
 
 __all__ = [
+    "# Cochrane-aligned models",
+    "# Rule-based extractors + audit-trail scoring models",
+    "AssessmentDetail",
     "BiasRisk",
-    "QualityAssessment",
-    "QualityFilter",
-    "QualityManager",
-    "QualityTier",
-    "StudyDesign",
-    "DESIGN_TO_TIER",
-    "DESIGN_TO_SCORE",
-    # Cochrane-aligned models
     "CochraneAssessor",
     "CochraneInterventions",
     "CochraneNotes",
@@ -74,14 +79,29 @@ __all__ = [
     "CochraneRiskOfBias",
     "CochraneStudyAssessment",
     "CochraneStudyCharacteristics",
+    "DESIGN_TO_SCORE",
+    "DESIGN_TO_TIER",
+    "DimensionScore",
+    "PICO_PARTS",
+    "PicoAgent",
+    "PicoCitation",
+    "PicoError",
+    "PicoErrorKind",
+    "PicoExtraction",
+    "PicoPart",
+    "PicoPartState",
+    "PicoSuitability",
+    "QualityAssessment",
+    "QualityFilter",
+    "QualityManager",
+    "QualityTier",
     "RiskOfBiasItem",
     "RiskOfBiasJudgement",
+    "StudyDesign",
     "collapse_risk_of_bias",
     "create_default_cochrane_risk_of_bias",
     "create_default_risk_of_bias_item",
-    # Rule-based extractors + audit-trail scoring models
-    "AssessmentDetail",
-    "DimensionScore",
     "extract_sample_size_dimension",
     "extract_study_type",
+    "verify_quotes",
 ]
