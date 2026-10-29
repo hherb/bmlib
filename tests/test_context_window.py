@@ -5,14 +5,25 @@
 # it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for ``LLMClient.context_window`` and each provider's lookup.
-
-Every SDK client is a fake: no network access.
-"""
+"""Tests for the known context-window table, held to
+``tests/fixtures/context_window.json`` (the Rust port reads the same file),
+the reader of provider metadata, and ``LLMClient.context_window`` with each
+provider's lookup (fake SDK clients, no network)."""
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -20,13 +31,72 @@ import pytest
 
 from bmlib.llm import context_window as cw
 from bmlib.llm.client import LLMClient
-from bmlib.llm.context_window import ContextWindowError, NoSuchModelError
+from bmlib.llm.context_window import (
+    KNOWN_CONTEXT_WINDOWS,
+    ContextWindowError,
+    NoSuchModelError,
+    known_context_window,
+    read_context_window,
+)
 from bmlib.llm.providers.anthropic import AnthropicProvider
 from bmlib.llm.providers.deepseek import DeepSeekProvider
 from bmlib.llm.providers.gemini import GeminiProvider
 from bmlib.llm.providers.mistral import MistralProvider
 from bmlib.llm.providers.ollama import OllamaProvider
 from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "context_window.json").read_text())
+
+
+def test_table_matches_the_fixture():
+    rows = {(r["provider"], r["model"], r["window"]) for r in FIXTURE["table"]}
+    assert len(rows) == len(FIXTURE["table"])
+    assert rows == {(p, m, w) for (p, m), w in KNOWN_CONTEXT_WINDOWS.items()}
+
+
+@pytest.mark.parametrize("case", FIXTURE["table_lookups"], ids=lambda c: c["name"])
+def test_table_lookups(case):
+    expected = None if case["expect"].get("unknown") else case["expect"]["window"]
+    assert known_context_window(case["provider"], case["model"]) == expected
+
+
+@pytest.mark.parametrize("case", FIXTURE["metadata"], ids=lambda c: c["name"])
+def test_metadata_cases(case):
+    expect = case["expect"]
+    args = (case["provider"], case["model"], case["body"])
+    if expect.get("error") == "no_such_model":
+        with pytest.raises(NoSuchModelError) as exc:
+            read_context_window(*args)
+        assert exc.value.provider == case["provider"]
+        assert exc.value.model == case["model"]
+    else:
+        want = None if expect.get("unknown") else expect["window"]
+        assert read_context_window(*args) == want
+
+
+def test_provider_without_metadata_is_a_value_error():
+    with pytest.raises(ValueError):
+        read_context_window("openai", "gpt-4o-mini", {})
+
+
+def test_missing_field_logs_info(caplog):
+    with caplog.at_level(logging.INFO, logger="bmlib.llm.context_window"):
+        assert read_context_window("anthropic", "m", {}) is None
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
+    assert "max_input_tokens" in caplog.text
+
+
+def test_refused_value_logs_warning_quoting_it(caplog):
+    with caplog.at_level(logging.INFO, logger="bmlib.llm.context_window"):
+        assert read_context_window("anthropic", "m", {"max_input_tokens": "131072"}) is None
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert "'131072'" in caplog.text
+
+
+def test_wrong_typed_body_logs_warning(caplog):
+    with caplog.at_level(logging.INFO, logger="bmlib.llm.context_window"):
+        assert read_context_window("anthropic", "m", None) is None
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
 
 
 class _Dumpable:
