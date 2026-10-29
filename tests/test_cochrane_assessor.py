@@ -32,7 +32,7 @@ from bmlib.context_processor import (
     ProcessingStatus,
 )
 from bmlib.llm.data_types import LLMResponse
-from bmlib.quality._condense import CondensationRefused, condense_text
+from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_HIGH,
@@ -574,7 +574,7 @@ class TestTheCondensationHelper:
         stub.error_message = "every batch failed"
         with (
             patch.object(LLMChunkProcessor, "process", return_value=stub),
-            pytest.raises(CondensationRefused) as caught,
+            pytest.raises(CondensationRefusedError) as caught,
         ):
             condense_text(
                 agent,

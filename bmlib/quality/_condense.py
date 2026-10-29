@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class CondensationRefused(Exception):
+class CondensationRefusedError(Exception):
     """The map-reduce produced no digest an agent may judge; the message says why.
 
     The reason is the caller's to report: a provider failure and a digest
@@ -77,7 +77,7 @@ def condense_text(
         ``(digest, notes, status)``.
 
     Raises:
-        CondensationRefused: The run failed (a provider failure during the
+        CondensationRefusedError: The run failed (a provider failure during the
             map-reduce included), produced nothing to judge, or produced a
             digest that still does not fit ``config.max_context_chars``.
     """
@@ -92,7 +92,7 @@ def condense_text(
     if result.status is ProcessingStatus.FAILED:
         reason = f"the map-reduce failed: {result.error_message}"
         logger.warning("Could not condense the text of %s: %s", label, reason)
-        raise CondensationRefused(reason)
+        raise CondensationRefusedError(reason)
 
     digest = result.final_result.content.strip()
     if not digest:
@@ -100,7 +100,7 @@ def condense_text(
         # paper at all.
         reason = "the map-reduce produced an empty digest"
         logger.warning("Could not condense the text of %s: %s", label, reason)
-        raise CondensationRefused(reason)
+        raise CondensationRefusedError(reason)
 
     # ``result.status`` says how the harness's own run ended — TRUNCATED
     # means the recursion ceiling was hit, PARTIAL means a batch failed —
@@ -119,7 +119,7 @@ def condense_text(
             f"{config.max_context_chars}-character budget (status: {result.status.value})"
         )
         logger.warning("Could not condense the text of %s: %s", label, reason)
-        raise CondensationRefused(reason)
+        raise CondensationRefusedError(reason)
 
     notes: list[str] = []
     if result.status is not ProcessingStatus.COMPLETED:

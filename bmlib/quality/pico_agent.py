@@ -50,7 +50,7 @@ from bmlib.agents.base import BaseAgent, ChatJsonError, ChatJsonTruncatedError
 from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig
 from bmlib.llm import LLMClient
-from bmlib.quality._condense import CondensationRefused, condense_text
+from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_bool, as_text
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
 from bmlib.quality.pico_models import (
@@ -556,7 +556,7 @@ class PicoAgent(BaseAgent):
                 query=PICO_CONDENSE_QUERY,
                 stage=stage,
             )
-        except CondensationRefused as exc:
+        except CondensationRefusedError as exc:
             raise PicoError(
                 PicoErrorKind.CONDENSATION_FAILED,
                 f"a {len(text)}-character text could not be condensed to fit "

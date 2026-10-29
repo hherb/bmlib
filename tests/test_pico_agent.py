@@ -28,7 +28,7 @@ import pytest
 from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
-from bmlib.quality._condense import CondensationRefused
+from bmlib.quality._condense import CondensationRefusedError
 from bmlib.quality.pico_agent import (
     PICO_CONDENSE_CONSOLIDATION_PROMPT,
     PICO_CONDENSE_EXTRACTION_PROMPT,
@@ -373,7 +373,7 @@ class TestTheExtraction:
         with (
             patch(
                 "bmlib.quality.pico_agent.condense_text",
-                side_effect=CondensationRefused("the map-reduce produced an empty digest"),
+                side_effect=CondensationRefusedError("the map-reduce produced an empty digest"),
             ),
             pytest.raises(PicoError) as caught,
         ):
@@ -384,7 +384,7 @@ class TestTheExtraction:
             "a 500-character text could not be condensed to fit 100 characters: "
             "the map-reduce produced an empty digest"
         )
-        assert isinstance(caught.value.__cause__, CondensationRefused)
+        assert isinstance(caught.value.__cause__, CondensationRefusedError)
         assert agent.llm.chat.call_count == 0
 
     def test_an_outage_during_condensation_reads_as_a_failed_run(self) -> None:

@@ -43,7 +43,7 @@ from typing import Any
 from bmlib.agents.base import BaseAgent
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
-from bmlib.quality._condense import CondensationRefused, condense_text
+from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_UNCLEAR,
@@ -591,7 +591,7 @@ class CochraneAssessor(BaseAgent):
                 query=CONDENSE_QUERY,
                 stage="assessment",
             )
-        except CondensationRefused:
+        except CondensationRefusedError:
             # ``condense_text`` has logged the reason; this agent's contract
             # is ``None``.
             return None
