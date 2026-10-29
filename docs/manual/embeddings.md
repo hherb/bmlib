@@ -1,9 +1,11 @@
-# `bmlib.embed` — in-process embeddings
+# `bmlib.embed` — in-process embeddings *(unreleased)*
 
 Turns text into 256-dimension unit vectors without a server, using our own GGUF
 conversion of Snowflake's arctic-embed-l-v2.0 through llama-cpp-python.
-Install with `pip install 'bmlib[embed]'` (this compiles llama.cpp, so `embed`
-is not part of `bmlib[all]`: ask for it explicitly).
+Install with `pip install 'bmlib[embed]'` (llama-cpp-python>=0.3.36; this
+compiles llama.cpp, so `embed` is not part of `bmlib[all]`: ask for it
+explicitly, e.g. `bmlib[all,embed]`). Only `Embedder` needs the extra: the
+constants, the vector rules and the model download are stdlib only.
 
 ## The model
 
@@ -35,6 +37,17 @@ its size and sha256 match; nothing that fails the check is kept
   and `DownloadCancelled` is raised. Returning `None` or `True` carries on.
 - A `ModelFile` must name a 40-hex revision, a bare file name, a positive size
   and a lower-case sha256; anything else is a `ValueError` when it is built.
+  Its fields are `repo`, `revision`, `file`, `size` and `sha256`; `url()` is
+  the revision-pinned Hugging Face URL.
+- `download_model(model, directory, progress=None)` returns the final path
+  (`directory / model.file`), creating `directory` if missing. A network or
+  file-system failure is an `OSError` (`URLError` included). It sends
+  `User-Agent: bmlib/<version>`.
+
+`verify_model(path, model)` is the check alone: the size, then the streamed
+sha256, raising `SizeMismatchError` / `ChecksumMismatchError` (or `OSError`
+if the file cannot be read) and returning `None` when the file is the pinned
+one.
 
 ## Embedding
 
@@ -43,13 +56,37 @@ docs = embedder.embed_documents(["Aspirin lowers risk...", "Insulin resistance..
 query = embedder.embed_query("what treats malaria")
 ```
 
+`Embedder(model_path, *, gpu_layers=-1)` loads the GGUF; `gpu_layers` is the
+number of layers offloaded to the GPU (-1 for all).
+
 - `embed_documents` embeds texts as given.
-- `embed_query` prepends `"query: "` first, because the model was trained with
+- `embed_query` prepends `QUERY_PREFIX` (`"query: "`) first, because the model was trained with
   that prefix on search queries; documents carry none.
 - Both return `list[list[float]]` / `list[float]` of `EMBEDDING_DIM` (256)
   values, unit length. The model's native vector is longer; the first 256
   values are kept and re-normalised (Matryoshka truncation). Every stored vector
   must therefore be 256 long.
+
+## Vector rules
+
+The pure half of the module, shared with the Rust crate and pinned by
+`tests/fixtures/embedding_contract.json`, which both test suites read:
+
+| Name | What it is |
+|------|------------|
+| `EMBEDDING_DIM` | 256, the length of every vector returned |
+| `MAX_TOKENS` | 8192, the longest text embedded (in tokens, BOS included) |
+| `QUERY_PREFIX` | `"query: "` |
+| `query_text(query)` | `QUERY_PREFIX + query`, the text `embed_query` embeds |
+| `check_texts(texts)` | Returns `None`, or raises `EmptyTextError` for the first empty or whitespace-only text |
+| `truncate_and_normalize(vector)` | The first 256 values scaled to unit length; values past 256 are dropped unread. Raises `VectorError` for a vector shorter than 256, a NaN or infinite kept value, or a kept norm below `1e-12` (or overflowing) *(unreleased — #530: a non-finite value used to pass through and a zero head came back as a zero "unit" vector)* |
+
+```python
+from bmlib.embed import query_text, truncate_and_normalize
+
+query_text("what treats malaria")                         # "query: what treats malaria"
+truncate_and_normalize([3.0, 4.0] + [0.0] * 300)[:2]      # [0.6, 0.8]
+```
 
 ## Errors
 
@@ -58,7 +95,8 @@ Every failure of a call given a list of texts is an `EmbedError`; its
 Each kind is a subclass of its own, named after the Rust variant it mirrors
 *(unreleased — #532)*:
 
-- `EmptyTextError` (also a `ValueError`): an empty or whitespace-only text.
+- `EmptyTextError` (also a `ValueError`): an empty or whitespace-only text,
+  checked before anything is embedded; an empty query is index 0.
 - `TextTooLongError`: a text over `MAX_TOKENS` (8192) tokens; `.tokens` is its
   count. It is refused, never cut short.
 - `EmbedError` itself, with `.index`: a text that cannot be tokenized — one

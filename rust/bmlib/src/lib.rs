@@ -75,3 +75,11 @@ pub mod transparency;
 mod pyvalue;
 
 pub use db::{Db, DbError, Row, Value};
+
+/// The manual's `rust` blocks (`docs/manual/`), compiled and run as doc-tests
+/// so an example cannot drift from the API. Its examples open SQLite.
+#[cfg(all(doctest, feature = "sqlite"))]
+mod manual {
+    #[doc = include_str!("../docs/manual/db.md")]
+    struct Db;
+}

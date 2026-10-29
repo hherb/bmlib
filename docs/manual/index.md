@@ -4,6 +4,8 @@
 
 bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
+A Rust port lives in `rust/bmlib/`; its manual is [`rust/bmlib/docs/manual/`](../../rust/bmlib/docs/manual/index.md).
+
 ## Installation
 
 ```bash
@@ -26,25 +28,26 @@ pip install -e ".[all,dev]"
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
 | `fulltext`       | `pip install bmlib[fulltext]`      | `FullTextService` retrieval (httpx). The JATS parser, the models and `SectionSegmenter` need nothing beyond core |
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
+| `html`           | `pip install bmlib[html]`          | `canonical_from_html()` — an HTML page's main content as canonical text (markupever, html5ever) *(unreleased)* |
 | `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`)|
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all`            | `pip install bmlib[all]`           | Every runtime extra above but `embed` (**not** `dev`)  |
 
 ## Module Overview
 
-bmlib is organised into ten modules, each with a focused responsibility:
+bmlib is organised into eleven modules, each with a focused responsibility:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | [`bmlib.db`](database.md) | Thin database abstraction over DB-API connections (SQLite + PostgreSQL) | [database.md](database.md) |
-| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, tool calling, embeddings, reasoning traces, JSON repair, text chunking | [llm.md](llm.md) |
+| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, streamed chat *(unreleased)*, tool calling, embeddings, reasoning traces, JSON repair, text chunking | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
 | [`bmlib.context_processor`](context_processor.md) | Hierarchical map-reduce over content that exceeds one context window | [context_processor.md](context_processor.md) |
 | [`bmlib.quality`](quality.md) | 4-tier quality assessment pipeline (metadata → LLM classifier → deep assessment → Cochrane risk of bias), rule-based extractors | [quality.md](quality.md) |
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, PubMed, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
-| [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching | [fulltext.md](fulltext.md) |
+| [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching; `bmlib.fulltext.canonical` — one canonical text per paper from JATS, Markdown, plain text, a segmented PDF or HTML, with retrieval chunks *(unreleased)* | [fulltext.md](fulltext.md) |
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building (pure stdlib) | [citations.md](citations.md) |
 | [`bmlib.embed`](embeddings.md) | In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download | [embeddings.md](embeddings.md) |
 
