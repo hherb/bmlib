@@ -32,7 +32,7 @@ use crate::llm::protocol::{
     Protocol,
 };
 use crate::llm::stream::{run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS};
-use crate::publications::fetchers::registry::{HttpClient, HttpStream};
+use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -46,19 +46,23 @@ pub const DEFAULT_PROVIDER: &str = "anthropic";
 /// How many times [`LlmClient::chat_stream`] tries to open a stream.
 ///
 /// As many tries as Python's Anthropic and OpenAI SDKs make by default (one
-/// and two retries); which failures are retried, and the backoff, are this
-/// port's own (the SDKs also retry 408 and 409 and honour `Retry-After`).
-/// Only opening is retried: once a delta has reached the caller, a retry
-/// would show them a second answer after the first. Every transport failure
-/// is retried, since [`FetchError`](crate::publications::fetchers::FetchError)
-/// does not say which step failed; a timeout waiting for the headers is one,
-/// so a request the server was already answering can be sent again, as the
-/// SDKs send it again.
+/// try and two retries; ollama-python retries nothing); which failures are
+/// retried, and the backoff, are this port's own (the SDKs also retry 408 and
+/// 409 and honour `Retry-After`). Only opening is retried: once a delta has
+/// reached the caller, a retry would show them a second answer after the
+/// first. Every [`FetchError::Transport`] is retried, since it does not say
+/// which step failed; a timeout waiting for the response headers is one, so a
+/// request the server was already answering can be sent again, as the SDKs
+/// send it again. Any other `FetchError` (a client that cannot stream, a body
+/// that cannot be encoded) would fail the same way again, so it is not.
 pub const STREAM_OPEN_ATTEMPTS: u32 = 3;
 
 /// The statuses on which opening a stream is retried: rate limiting, server
 /// failures, and Anthropic's 529 "overloaded".
 pub const RETRYABLE_STATUSES: &[u16] = &[429, 500, 502, 503, 504, 529];
+
+/// How much of a refused stream's body is read to quote in the error.
+pub const ERROR_BODY_LIMIT: u64 = 64 * 1024;
 
 /// The wait before the first retry; each later one doubles it.
 pub const DEFAULT_RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
@@ -284,7 +288,11 @@ impl ChatRequest {
 }
 
 /// What a chat call refused.
+///
+/// `#[non_exhaustive]`, so a variant added later is not a breaking change; a
+/// `match` on it needs a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ChatError {
     /// The named provider is not in the registry.
     UnknownProvider(String),
@@ -312,8 +320,9 @@ pub enum ChatError {
     Malformed(String),
     /// A stream failed after it opened or ended before the answer was
     /// complete: an `error` event (the server's message is quoted), a read
-    /// that broke off, or a missing end marker. The deltas already delivered
-    /// are what arrived of an incomplete answer.
+    /// that broke off, an event that is not UTF-8, not JSON or not an object,
+    /// a tool call, or a missing end marker. The deltas already delivered are
+    /// what arrived of an incomplete answer.
     Stream(String),
     /// Tools were passed to [`LlmClient::chat_stream`], which does not carry
     /// tool calls; refused rather than sent without them.
@@ -759,26 +768,30 @@ impl LlmClient {
     ///
     /// `on_delta` returning [`ControlFlow::Break`] stops the stream: the
     /// connection is closed and the response holds what arrived, with
-    /// `stop_reason` `"cancelled"`.
+    /// `stop_reason` `"cancelled"` (or the server's own, when its end marker
+    /// came with the last delta).
     ///
-    /// What differs from `chat`: tools are refused; the content is exactly
-    /// what was streamed; and an OpenAI-compatible server reports usage only
-    /// when asked, which only [`STREAM_USAGE_PROVIDERS`] are, so elsewhere the
-    /// counts are 0 unless the server sends them unasked. A stopped stream
-    /// reports the counts the server had sent when it stopped (Anthropic's
-    /// input count is exact and its output count partial; an OpenAI-compatible
-    /// server reports usage last, so none). A failed stream records no usage,
-    /// as a failed `chat` records none.
+    /// What differs from `chat`: tools are refused, and a tool call that
+    /// arrives anyway (tools sent through `extra_body`) fails the stream; the
+    /// content is exactly what was streamed; and an OpenAI-compatible server
+    /// reports usage only when asked, which only [`STREAM_USAGE_PROVIDERS`]
+    /// are, so elsewhere the counts are 0 unless the server sends them
+    /// unasked. A stopped stream reports the counts the server had sent when
+    /// it stopped (Anthropic's input count is exact and its output count
+    /// partial; an OpenAI-compatible server usually sends usage in its last
+    /// chunk, so usually none). A failed stream records no usage, as a failed
+    /// `chat` records none. Python logs usage asked for and never sent; this
+    /// port has no logger, so it is 0 here without a line.
     ///
-    /// Opening the stream is retried on a transport failure or a
+    /// Opening the stream is retried on a [`FetchError::Transport`] or a
     /// [`RETRYABLE_STATUSES`] status, up to [`STREAM_OPEN_ATTEMPTS`] tries, with
     /// a backoff from [`LlmClient::retry_base_delay`] doubling each time.
     ///
     /// # Errors
     ///
     /// A routing failure, tools ([`ChatError::StreamingToolsUnsupported`]), a
-    /// transport failure, a rejected request, an event that is not JSON, or a
-    /// stream that failed or ended early ([`ChatError::Stream`]).
+    /// transport failure (a client that cannot stream among them), a rejected
+    /// request, or a stream that failed or ended early ([`ChatError::Stream`]).
     pub fn chat_stream(
         &self,
         request: &ChatRequest,
@@ -802,9 +815,7 @@ impl LlmClient {
             .map(|data| {
                 data.and_then(|d| {
                     serde_json::from_str::<Value>(&d).map_err(|e| {
-                        ChatError::Malformed(format!(
-                            "{url} streamed an event that is not JSON: {e}"
-                        ))
+                        ChatError::Stream(format!("{url} streamed an event that is not JSON: {e}"))
                     })
                 })
             });
@@ -816,6 +827,9 @@ impl LlmClient {
     }
 
     /// Open a stream, retrying a transport failure or a retryable status.
+    ///
+    /// The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
+    /// bytes: it only explains the status.
     fn open_stream(
         &self,
         url: &str,
@@ -826,7 +840,8 @@ impl LlmClient {
         loop {
             let outcome = self.client.post_json_stream(url, body, headers);
             let retryable = match &outcome {
-                Err(_) => true,
+                Err(FetchError::Transport(_)) => true,
+                Err(_) => false,
                 Ok(stream) => RETRYABLE_STATUSES.contains(&stream.status),
             };
             if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
@@ -835,7 +850,9 @@ impl LlmClient {
                     let mut bytes = Vec::new();
                     // A body that cannot be read is quoted as nothing: the
                     // status is the error, and the body only explains it.
-                    let _ = stream.body.read_to_end(&mut bytes);
+                    let _ = (&mut stream.body)
+                        .take(ERROR_BODY_LIMIT)
+                        .read_to_end(&mut bytes);
                     let text = std::str::from_utf8(&bytes).unwrap_or_default();
                     return Err(http_error(url, stream.status, text));
                 }

@@ -36,8 +36,8 @@ pub const DEFAULT_TIMEOUT_SECONDS: u64 = 45;
 /// [`DEFAULT_TIMEOUT_SECONDS`] covers a whole request, and a long streamed
 /// answer outlasts it: a model writing a few thousand tokens takes minutes.
 /// `ureq` has no idle timeout, so a stream gets the ordinary timeout for each
-/// step of sending, then this for the headers (a local server may load the
-/// model before it answers) and this again for the body.
+/// step of sending the request, then this for the response headers (a local
+/// server may load the model before it answers) and this again for the body.
 pub const DEFAULT_STREAM_TIMEOUT_SECONDS: u64 = 600;
 
 /// A blocking HTTP client over `ureq`.
@@ -52,7 +52,8 @@ pub struct UreqClient {
     /// document.
     pub user_agent: String,
     /// Seconds before a request is abandoned. For a stream, the limit on each
-    /// step of sending it: connecting, then the headers, then the body.
+    /// step of sending it: connecting, then the request headers, then the
+    /// request body.
     pub timeout_seconds: u64,
     /// Seconds a stream's response headers may take, and then its body
     /// ([`HttpClient::post_json_stream`]).
@@ -96,7 +97,7 @@ impl UreqClient {
 
     /// The blocking agent a stream runs on: [`UreqClient::timeout_seconds`]
     /// for each step of sending, then [`UreqClient::stream_timeout_seconds`]
-    /// for the headers and again for the body.
+    /// for the response headers and again for the response body.
     fn stream_agent(&self) -> Result<ureq::Agent, FetchError> {
         let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
         let stream = Some(std::time::Duration::from_secs(self.stream_timeout_seconds));
@@ -197,9 +198,9 @@ impl HttpClient for UreqClient {
         for (name, value) in headers {
             request = request.header(name, value);
         }
-        let payload = serde_json::to_string(body).map_err(|e| {
-            FetchError::Transport(format!("could not encode the request body: {e}"))
-        })?;
+        // `Config`, not `Transport`: sending it again would fail the same way.
+        let payload = serde_json::to_string(body)
+            .map_err(|e| FetchError::Config(format!("could not encode the request body: {e}")))?;
         let response = match request.send(payload) {
             Ok(response) => response,
             // As in `read_response`: unreachable with `http_status_as_error`

@@ -49,16 +49,21 @@ Python reads its SDKs' events (`to_dict()`, Ollama's `model_dump()`), Rust
 reads SSE off `HttpClient::post_json_stream` (`SseEvents`); both feed
 `StreamState`, held to `tests/fixtures/chat_stream.json`. **Ollama differs by
 design**: Python streams the native `/api/chat` and Rust the OpenAI-compatible
-endpoint, each as its `chat()` does, so the four `ollama` cases are Python's
-and the Rust test names them. A stream without its end marker is a
-`StreamError` / `ChatError::Stream`. Tools are refused. Python's providers now
+endpoint, each as its `chat()` does, so the five `ollama` cases are Python's
+and the Rust test names them. A stream without its end marker, or carrying a
+tool call or a non-object event, is a `StreamError` / `ChatError::Stream`.
+Tools are refused. Ollama's SDK sends a streamed request only on the first
+`next()`, so that read is outside the `StreamError` wrapper (`_opened`). Python's providers now
 build `chat()`'s request in `_request_kwargs`, shared with `chat_stream`.
-Rust's `UreqClient` gives a stream `stream_timeout_seconds` (600) for its body;
-`chat_stream` retries opening, never after the first byte. **Rust's `chat()`
-retries nothing**, where Python's SDKs retry twice (**#561**). Fixed on the
+Rust's `UreqClient` gives a stream's response headers and body
+`stream_timeout_seconds` (600) each; `chat_stream` retries opening on a
+`FetchError::Transport` or a retryable status, never after the first byte.
+`ChatError` is now `#[non_exhaustive]`. **Rust's `chat()` retries nothing**,
+where Python's Anthropic and OpenAI SDKs retry twice (**#561**). Fixed on the
 way, in Rust's `chat()`: Anthropic `think` sent `temperature`, which the API
 refuses, and only the first reasoning block was kept. The
-reducer is mutation-checked in both languages. **Next for StudyAnalyzer**:
+reducer is mutation-checked in both languages, and the PR's review fixes
+were checked the same way (14 Python and 11 Rust mutants, all killed). **Next for StudyAnalyzer**:
 phase 2 can start; items 5, 7, 8 are not blocking.
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,

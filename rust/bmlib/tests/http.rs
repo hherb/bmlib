@@ -278,3 +278,96 @@ fn the_test_helper_matches_the_real_shape() {
     assert_eq!(real, helper);
     let _ = handle.join();
 }
+
+/// A one-shot server that waits `pause` before its response headers and again
+/// before the body, as a local model server loads the model and then writes.
+/// It drains the request first, for `serve_once`'s reason.
+fn serve_slowly(
+    pause: std::time::Duration,
+    body: &'static str,
+) -> (String, std::thread::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let request = read_request(&stream);
+        std::thread::sleep(pause);
+        let head = format!(
+            "HTTP/1.1 200 X\r\nContent-Length: {}\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = stream.write_all(head.as_bytes());
+        let _ = stream.flush();
+        std::thread::sleep(pause);
+        let _ = stream.write_all(body.as_bytes());
+        let _ = stream.flush();
+        request
+    });
+    (format!("http://127.0.0.1:{port}/path"), handle)
+}
+
+fn read_all(stream: bmlib::publications::fetchers::HttpStream) -> std::io::Result<String> {
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut { stream.body }, &mut text)?;
+    Ok(text)
+}
+
+/// A streamed POST carries its headers and body, and hands back the body.
+#[test]
+fn a_stream_post_sends_headers_and_hands_back_the_body() {
+    let (url, handle) = serve_once(200, "data: a\n\n");
+    let headers = BTreeMap::from([("x-api-key".to_string(), "k".to_string())]);
+    let stream = UreqClient::new()
+        .post_json_stream(&url, &serde_json::json!({"stream": true}), &headers)
+        .expect("answers");
+    assert_eq!(stream.status, 200);
+    assert_eq!(read_all(stream).expect("the body"), "data: a\n\n");
+    let request = handle.join().expect("server").to_ascii_lowercase();
+    assert!(request.contains("x-api-key: k"), "{request}");
+    assert!(request.contains("{\"stream\":true}"), "{request}");
+}
+
+/// A refused stream is a status whose body can be quoted, not an error.
+#[test]
+fn a_refused_stream_carries_its_status_and_body() {
+    let (url, handle) = serve_once(401, "bad key");
+    let stream = UreqClient::new()
+        .post_json_stream(&url, &serde_json::json!({}), &BTreeMap::new())
+        .expect("a response");
+    assert_eq!(stream.status, 401);
+    assert_eq!(read_all(stream).expect("the body"), "bad key");
+    handle.join().expect("server");
+}
+
+/// A stream's response headers and body each get `stream_timeout_seconds`,
+/// not the ordinary timeout a long answer would outlast.
+#[test]
+fn a_stream_may_outlast_the_ordinary_timeout() {
+    let (url, handle) = serve_slowly(std::time::Duration::from_millis(1_500), "data: a\n\n");
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let stream = client
+        .post_json_stream(&url, &serde_json::json!({}), &BTreeMap::new())
+        .expect("the headers within the stream timeout");
+    assert_eq!(read_all(stream).expect("the body within it"), "data: a\n\n");
+    handle.join().expect("server");
+}
+
+/// ...and that timeout still holds.
+#[test]
+fn a_stream_still_times_out() {
+    let (url, _handle) = serve_slowly(std::time::Duration::from_millis(2_500), "data: a\n\n");
+    let client = UreqClient {
+        timeout_seconds: 30,
+        stream_timeout_seconds: 1,
+        ..UreqClient::new()
+    };
+    let outcome = client.post_json_stream(&url, &serde_json::json!({}), &BTreeMap::new());
+    assert!(
+        matches!(outcome, Err(FetchError::Transport(_))),
+        "{outcome:?}"
+    );
+}

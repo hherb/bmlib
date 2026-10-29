@@ -14,29 +14,39 @@ All notable changes to bmlib are documented here. The format is based on
   back to `chat()`) and `LlmClient` (Rust). It calls `on_delta` once per
   `StreamDelta` (text, or a separated reasoning trace) and returns the same
   `LLMResponse`, recording its usage. `on_delta` returning `False`
-  (`ControlFlow::Break`) stops the stream, with `stop_reason="cancelled"`. A
-  stream that fails after it opens (an error event, a broken connection; in
-  Python the SDK's exception is the `__cause__`) or ends before its end
-  marker is a `StreamError` (`ChatError::Stream`), never a short answer. Tools are
-  refused, by every provider's `chat_stream` too
-  (`ChatError::StreamingToolsUnsupported`); the content is exactly what
-  was streamed, with no `<think>` splitting or JSON repair. The pure reducer,
-  `StreamState` / `run_stream` in `bmlib.llm.stream` (`bmlib::llm::stream`),
-  is held to the shared contract `tests/fixtures/chat_stream.json` (17
-  cases); its four native-Ollama cases are Python's alone, since Rust reaches
-  Ollama through its OpenAI-compatible endpoint, as its `chat()` does. Usage
-  on an OpenAI-compatible stream is asked for only from
-  `STREAM_USAGE_PROVIDERS` (`openai`, `deepseek`, `ollama`), as some servers
-  refuse `stream_options`. Rust adds `HttpClient::post_json_stream` (refusing
-  by default) and `HttpStream`; `UreqClient` gives each step of sending a
-  stream `timeout_seconds`, and its headers and then its body
-  `stream_timeout_seconds` (600) each, since the 45-second global timeout would
-  cut a long answer off and a local server may load the model first;
-  `SseEvents` reads the wire; `LlmClient::chat_stream` retries opening (a
-  transport failure or 429/500/502/503/504/529) up to three tries with
-  backoff from `retry_base_delay`, never after the first byte. Python's
-  providers build `chat()`'s request in a `_request_kwargs` method both share,
-  and now declare `supports_streaming`.
+  (`ControlFlow::Break`) stops the stream, with `stop_reason="cancelled"`, or
+  the server's own when its end marker came with the last delta. A request
+  refused before the stream opens raises what `chat()` would (Ollama's lazy
+  stream included: a missing model is `ResponseError`, a stopped server
+  `ConnectionError`). A stream that fails after it opens (an error event, a
+  broken connection, an event that is not a JSON object; in Python the SDK's
+  exception is the `__cause__`), carries a tool call, or ends before its end
+  marker is a `StreamError` (`ChatError::Stream`), never a short answer.
+  Tools are refused before sending: in Python by the client and every
+  built-in provider's `chat_stream` (`NotImplementedError`), in Rust by
+  `LlmClient` (`ChatError::StreamingToolsUnsupported`); a tool call that
+  arrives anyway (tools sent through `extra_body`) fails the stream. The
+  content is exactly what was streamed, with no `<think>` splitting or JSON
+  repair; a server sending both `reasoning_content` and `reasoning` is read
+  once, as `chat()` reads it. The pure reducer, `StreamState` / `run_stream`
+  in `bmlib.llm.stream` (`bmlib::llm::stream`), is held to the shared
+  contract `tests/fixtures/chat_stream.json` (24 cases); its five
+  native-Ollama cases are Python's alone, since Rust reaches Ollama through
+  its OpenAI-compatible endpoint, as its `chat()` does. Usage on an
+  OpenAI-compatible stream is asked for only from `STREAM_USAGE_PROVIDERS`
+  (`openai`, `deepseek`, `ollama`), as some servers refuse `stream_options`;
+  Python logs a WARNING when usage asked for never arrives. Rust adds
+  `HttpClient::post_json_stream` (refusing by default with
+  `FetchError::Config`, which is not retried) and `HttpStream`; `UreqClient`
+  gives each step of sending a stream's request `timeout_seconds`, and the
+  response headers and then the body `stream_timeout_seconds` (600) each,
+  since the 45-second global timeout would cut a long answer off and a local
+  server may load the model first; `SseEvents` reads the wire;
+  `LlmClient::chat_stream` retries opening (a `FetchError::Transport` or
+  429/500/502/503/504/529) up to three tries with backoff from
+  `retry_base_delay`, never after the first byte. Python's providers build
+  `chat()`'s request in a `_request_kwargs` method both share, and every
+  model entry of a provider that streams declares `supports_streaming`.
   Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`.
 - **Canonical text from an HTML page, and a full-text check** (StudyAnalyzer
   phase 1, item 4c). `canonical_from_html(html)` in `bmlib.fulltext.canonical`
@@ -302,6 +312,9 @@ All notable changes to bmlib are documented here. The format is based on
   extractor output sees `study_type` move as above.
 
 ### Fixed
+- **Rust: `ChatError` is `#[non_exhaustive]`** and gains `Stream` and
+  `StreamingToolsUnsupported`: a downstream `match` listing every variant
+  needs a wildcard arm, once, and later variants will not break it.
 - **Rust: Anthropic's extended thinking drops `temperature` and `top_p`**,
   which the API rejects while thinking is enabled; `chat_body` sent both, so
   any Rust request with `think` set was refused. Python's provider already

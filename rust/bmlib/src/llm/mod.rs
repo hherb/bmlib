@@ -41,8 +41,8 @@ pub mod utils;
 pub use client::{
     chat_body, chat_headers, chat_stream_body, chat_url, parse_model_string, parse_response,
     provider_specs, resolve_target, supports_tools, ChatError, ChatRequest, LlmClient,
-    ProviderSpec, Target, DEFAULT_PROVIDER, DEFAULT_RETRY_BASE_DELAY, RETRYABLE_STATUSES,
-    STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
+    ProviderSpec, Target, DEFAULT_PROVIDER, DEFAULT_RETRY_BASE_DELAY, ERROR_BODY_LIMIT,
+    RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
 };
 pub use data_types::{
     BatchEmbeddingResponse, EmbeddingResponse, LLMMessage, LLMResponse, LLMToolCall,

@@ -418,7 +418,7 @@ class TestOllamaOpensAsChatDoes:
         return stream()
 
     def test_a_missing_model_raises_what_chat_raises(self):
-        import ollama
+        ollama = pytest.importorskip("ollama")
 
         provider = OllamaProvider()
         provider._client = _RecordingOllamaClient(
@@ -429,7 +429,7 @@ class TestOllamaOpensAsChatDoes:
         assert not isinstance(caught.value, StreamError)
 
     def test_a_server_that_is_not_running_is_a_connection_error(self):
-        import httpx
+        httpx = pytest.importorskip("httpx")
 
         provider = OllamaProvider()
         provider._client = _RecordingOllamaClient(

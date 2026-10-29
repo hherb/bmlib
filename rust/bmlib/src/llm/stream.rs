@@ -59,6 +59,12 @@ pub const THINKING_BLOCK_SEPARATOR: &str = "\n\n";
 /// The data an OpenAI-compatible server sends as its stream's last event.
 pub const SSE_DONE: &str = "[DONE]";
 
+/// Why a stream carrying a tool call fails rather than dropping it: tools
+/// can reach the server without [`ChatRequest::tools`](crate::llm::ChatRequest)
+/// (through `extra_body`), and a dropped call would read as prose.
+const TOOL_CALL_ERROR: &str = "the stream carried a tool call, which chat_stream does not read; \
+                               use chat() for a request with tools";
+
 /// One piece of a streamed answer, never empty.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamDelta {
@@ -146,8 +152,14 @@ impl StreamState {
     ///
     /// # Errors
     ///
-    /// The event is the server reporting a failure; the message quotes it.
+    /// The event is the server reporting a failure (the message quotes it),
+    /// is not a JSON object, or carries a tool call.
     pub fn apply(&mut self, event: &Value) -> Result<Vec<StreamDelta>, String> {
+        if !event.is_object() {
+            return Err(format!(
+                "the stream sent an event that is not a JSON object: {event}"
+            ));
+        }
         match self.protocol {
             Protocol::Anthropic => self.apply_anthropic(event),
             Protocol::OpenAi => self.apply_openai(event),
@@ -193,6 +205,9 @@ impl StreamState {
                         self.add(true, text_of(block, "thinking"), &mut deltas);
                     }
                     Some("text") => self.add(false, text_of(block, "text"), &mut deltas),
+                    Some(kind) if kind.ends_with("tool_use") => {
+                        return Err(TOOL_CALL_ERROR.to_string());
+                    }
                     // `redacted_thinking` is encrypted: nothing readable.
                     _ => {}
                 }
@@ -249,11 +264,21 @@ impl StreamState {
             .and_then(|c| c.first())
         {
             let delta = choice.get("delta");
-            // DeepSeek and vLLM name the reasoning `reasoning_content`,
-            // OpenRouter-style servers and Ollama `reasoning`.
-            for key in ["reasoning_content", "reasoning"] {
-                self.add(true, text_of(delta, key), &mut deltas);
+            let tool_calls = delta.and_then(|d| d.get("tool_calls"));
+            if tool_calls
+                .and_then(Value::as_array)
+                .is_some_and(|c| !c.is_empty())
+            {
+                return Err(TOOL_CALL_ERROR.to_string());
             }
+            // DeepSeek and vLLM name the reasoning `reasoning_content`,
+            // OpenRouter-style servers and Ollama `reasoning`. The first that
+            // is set is read, as `chat()` reads it: a server may send both.
+            let reasoning = match text_of(delta, "reasoning_content") {
+                "" => text_of(delta, "reasoning"),
+                text => text,
+            };
+            self.add(true, reasoning, &mut deltas);
             self.add(false, text_of(delta, "content"), &mut deltas);
             if let Some(finish) = choice.get("finish_reason").and_then(Value::as_str) {
                 self.stop_reason = Some(finish.to_string());
@@ -273,7 +298,8 @@ impl StreamState {
     /// Build the response from everything read.
     ///
     /// A stream the caller stopped (`cancelled`) is not checked for its end
-    /// marker, and its `stop_reason` is [`CANCELLED_STOP_REASON`].
+    /// marker, and its `stop_reason` is [`CANCELLED_STOP_REASON`], unless the
+    /// end marker had already arrived, when the server's own reason is kept.
     ///
     /// # Errors
     ///
@@ -301,7 +327,7 @@ impl StreamState {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
             total_tokens: 0,
-            stop_reason: if cancelled {
+            stop_reason: if cancelled && !self.complete {
                 Some(CANCELLED_STOP_REASON.to_string())
             } else {
                 self.stop_reason
@@ -322,14 +348,16 @@ impl StreamState {
 ///
 /// `on_delta` returning [`ControlFlow::Break`] stops the stream: no further
 /// event is read, and the response holds what arrived, with `stop_reason`
-/// [`CANCELLED_STOP_REASON`]. Closing the connection is the caller's job
-/// (dropping the reader closes it).
+/// [`CANCELLED_STOP_REASON`] (or the server's own, when the end marker came in
+/// the event that carried the last delta). Closing the connection is the
+/// caller's job (dropping the reader closes it).
 ///
 /// # Errors
 ///
 /// An event the transport could not deliver (passed through as it came), the
-/// server reporting a failure mid-stream, or a stream ending before its end
-/// marker ([`ChatError::Stream`]).
+/// server reporting a failure mid-stream, an event that is not a JSON object
+/// or carries a tool call, or a stream ending before its end marker
+/// ([`ChatError::Stream`]).
 pub fn run_stream<I>(
     protocol: Protocol,
     events: I,
@@ -378,9 +406,9 @@ impl<R: BufRead> SseEvents<R> {
 }
 
 impl<R: BufRead> Iterator for SseEvents<R> {
-    /// An event's data, a read that broke off ([`ChatError::Stream`]: the
-    /// stream had opened, as Python's providers report it), or a line that is
-    /// not UTF-8 ([`ChatError::Malformed`]). Nothing follows an error.
+    /// An event's data, or a read that broke off or a line that is not UTF-8
+    /// ([`ChatError::Stream`]: the stream had opened, as Python's providers
+    /// report either). Nothing follows an error.
     type Item = Result<String, ChatError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -404,7 +432,7 @@ impl<R: BufRead> Iterator for SseEvents<R> {
             }
             let Ok(text) = std::str::from_utf8(&line) else {
                 self.finished = true;
-                return Some(Err(ChatError::Malformed(
+                return Some(Err(ChatError::Stream(
                     "the stream sent a line that is not UTF-8".to_string(),
                 )));
             };
@@ -480,7 +508,7 @@ mod tests {
         let wire: &[u8] = b"data: \xff\n\ndata: x\n\n";
         let got: Vec<_> = SseEvents::new(wire).collect();
         assert_eq!(got.len(), 1);
-        assert!(matches!(&got[0], Err(ChatError::Malformed(m)) if m.contains("UTF-8")));
+        assert!(matches!(&got[0], Err(ChatError::Stream(m)) if m.contains("UTF-8")));
     }
 
     #[test]

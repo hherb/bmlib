@@ -327,16 +327,19 @@ pub trait HttpClient {
     ///
     /// # Errors
     ///
-    /// [`FetchError::Transport`] when the request never got a response. A
-    /// non-success status is an [`HttpStream`] whose body holds the server's
-    /// error, the same contract as `post_json`.
+    /// [`FetchError::Transport`] when the request never got a response, and
+    /// [`FetchError::Config`] when it could not be made at all: this client
+    /// cannot stream (the default), or the body could not be encoded. A
+    /// caller may retry the first and not the second. A non-success status is
+    /// an [`HttpStream`] whose body holds the server's error, the same
+    /// contract as `post_json`.
     fn post_json_stream(
         &self,
         url: &str,
         _body: &serde_json::Value,
         _headers: &std::collections::BTreeMap<String, String>,
     ) -> Result<HttpStream, FetchError> {
-        Err(FetchError::Transport(format!(
+        Err(FetchError::Config(format!(
             "this HttpClient does not implement post_json_stream (POST {url})"
         )))
     }

@@ -103,7 +103,7 @@ fn every_case_gives_its_deltas_and_response() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     // Every protocol this port reads has cases, and only `ollama` is skipped.
-    assert!(run >= 10, "only {run} cases ran");
+    assert_eq!(run, 19, "cases run");
     assert_eq!(
         python_only,
         [
@@ -111,6 +111,7 @@ fn every_case_gives_its_deltas_and_response() {
             "ollama/length",
             "ollama/no-done-is-an-error",
             "ollama/an-error-object-is-an-error",
+            "ollama/a-tool-call-is-an-error",
         ]
     );
 }

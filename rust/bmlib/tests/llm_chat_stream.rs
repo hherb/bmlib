@@ -22,7 +22,8 @@
 
 use bmlib::llm::{
     chat_stream_body, resolve_target, with_token_tracker, ChatError, ChatRequest, LLMMessage,
-    LLMToolDefinition, LlmClient, StreamDelta, RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS,
+    LLMToolDefinition, LlmClient, StreamDelta, ERROR_BODY_LIMIT, RETRYABLE_STATUSES,
+    STREAM_OPEN_ATTEMPTS,
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse, HttpStream};
 use serde_json::{json, Value};
@@ -35,6 +36,8 @@ use std::time::Duration;
 enum Answer {
     Status(u16, &'static str),
     Unreachable,
+    /// The request could not be made at all (`FetchError::Config`).
+    CannotSend,
 }
 
 /// A transport that answers each stream with the next scripted answer and
@@ -42,6 +45,7 @@ enum Answer {
 struct ScriptedStreams {
     answers: Mutex<VecDeque<Answer>>,
     posted: Mutex<Vec<(String, Value)>>,
+    headers: Mutex<Vec<BTreeMap<String, String>>>,
 }
 
 impl ScriptedStreams {
@@ -49,6 +53,7 @@ impl ScriptedStreams {
         Arc::new(ScriptedStreams {
             answers: Mutex::new(answers.into()),
             posted: Mutex::new(Vec::new()),
+            headers: Mutex::new(Vec::new()),
         })
     }
 
@@ -66,8 +71,9 @@ impl HttpClient for ScriptedStreams {
         &self,
         url: &str,
         body: &Value,
-        _headers: &BTreeMap<String, String>,
+        headers: &BTreeMap<String, String>,
     ) -> Result<HttpStream, FetchError> {
+        self.headers.lock().expect("lock").push(headers.clone());
         self.posted
             .lock()
             .expect("lock")
@@ -80,6 +86,7 @@ impl HttpClient for ScriptedStreams {
             Some(Answer::Unreachable) | None => {
                 Err(FetchError::Transport("connection refused".to_string()))
             }
+            Some(Answer::CannotSend) => Err(FetchError::Config("cannot stream".to_string())),
         }
     }
 }
@@ -193,10 +200,91 @@ fn a_stream_cut_off_before_its_end_marker_is_an_error() {
 }
 
 #[test]
-fn an_event_that_is_not_json_is_malformed() {
+fn an_event_that_is_not_json_is_a_stream_error() {
     let transport = ScriptedStreams::new(vec![Answer::Status(200, "data: {nope\n\n")]);
     let (_, result) = stream(&client(transport), &request("openai:gpt-x"));
-    assert!(matches!(result, Err(ChatError::Malformed(m)) if m.contains("not JSON")));
+    assert!(matches!(result, Err(ChatError::Stream(m)) if m.contains("not JSON")));
+}
+
+#[test]
+fn a_line_that_is_not_utf8_is_a_stream_error() {
+    struct NotUtf8;
+    impl HttpClient for NotUtf8 {
+        fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {
+            unreachable!()
+        }
+        fn post_json_stream(
+            &self,
+            _url: &str,
+            _body: &Value,
+            _headers: &BTreeMap<String, String>,
+        ) -> Result<HttpStream, FetchError> {
+            Ok(HttpStream {
+                status: 200,
+                body: Box::new(&b"data: \xff\n\n"[..]),
+            })
+        }
+    }
+    let mut client = LlmClient::new(Arc::new(NotUtf8));
+    client.api_key = Some("k".to_string());
+    let (_, result) = stream(&client, &request("openai:gpt-x"));
+    assert!(matches!(result, Err(ChatError::Stream(m)) if m.contains("not UTF-8")));
+}
+
+#[test]
+fn the_request_carries_the_providers_credentials() {
+    let transport = ScriptedStreams::new(vec![
+        Answer::Status(200, ANTHROPIC_SSE),
+        Answer::Status(200, OPENAI_SSE),
+    ]);
+    let client = client(transport.clone());
+    stream(&client, &request("anthropic:claude-x"))
+        .1
+        .expect("anthropic");
+    stream(&client, &request("openai:gpt-x")).1.expect("openai");
+    let headers = transport.headers.lock().expect("lock").clone();
+    assert_eq!(headers[0].get("x-api-key").map(String::as_str), Some("k"));
+    assert!(headers[0].contains_key("anthropic-version"));
+    assert_eq!(
+        headers[1].get("Authorization").map(String::as_str),
+        Some("Bearer k")
+    );
+}
+
+#[test]
+fn nothing_is_retried_once_the_stream_has_opened() {
+    const CUT: &str = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Yes\"}}]}\n\n";
+    let transport = ScriptedStreams::new(vec![
+        Answer::Status(200, CUT),
+        Answer::Status(200, OPENAI_SSE),
+    ]);
+    let (seen, result) = stream(&client(transport.clone()), &request("openai:gpt-x"));
+    assert_eq!(seen, [StreamDelta::Text("Yes".to_string())]);
+    assert!(matches!(result, Err(ChatError::Stream(_))));
+    assert_eq!(transport.posted().len(), 1);
+}
+
+#[test]
+fn a_request_that_cannot_be_sent_is_not_retried() {
+    let transport =
+        ScriptedStreams::new(vec![Answer::CannotSend, Answer::Status(200, ANTHROPIC_SSE)]);
+    let (_, result) = stream(&client(transport.clone()), &request("anthropic:claude-x"));
+    assert!(matches!(&result, Err(ChatError::Transport(m)) if m.contains("cannot stream")));
+    assert_eq!(transport.posted().len(), 1);
+}
+
+#[test]
+fn a_refused_requests_body_is_read_only_so_far() {
+    let message = "x".repeat(2 * ERROR_BODY_LIMIT as usize);
+    let body: &'static str =
+        Box::leak(format!("{{\"error\":{{\"message\":\"{message}\"}}}}").into_boxed_str());
+    let transport = ScriptedStreams::new(vec![Answer::Status(400, body)]);
+    let (_, result) = stream(&client(transport), &request("anthropic:claude-x"));
+    // Cut short, the body is no longer JSON, so its first 200 characters are quoted.
+    assert!(
+        matches!(&result, Err(ChatError::Transport(m)) if m.len() < 1_000),
+        "{result:?}"
+    );
 }
 
 #[test]
@@ -274,6 +362,22 @@ fn a_client_that_cannot_stream_says_so() {
     assert!(
         matches!(&result, Err(ChatError::Transport(m)) if m.contains("does not implement post_json_stream"))
     );
+}
+
+#[test]
+fn a_stopped_stream_records_the_usage_sent_so_far() {
+    let model = "anthropic:claude-stream-stop-usage-test";
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, ANTHROPIC_SSE)]);
+    let response = client(transport)
+        .chat_stream(&request(model), &mut |_| ControlFlow::Break(()))
+        .expect("a response");
+    assert_eq!(response.stop_reason.as_deref(), Some("cancelled"));
+    let usage = with_token_tracker(|tracker| tracker.get_summary());
+    let row = usage
+        .by_model
+        .get(model)
+        .expect("the model's usage is recorded");
+    assert_eq!((row.input_tokens, row.output_tokens), (12, 1));
 }
 
 #[test]
