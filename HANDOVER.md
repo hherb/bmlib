@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 7, the PICO
-agent**, branch `feat/pico-agent`; item 11 was PR #568, item 6 PR #562).
+agent**, PR #575, branch `feat/pico-agent`; item 11 was PR #568, item 6 PR #562).
 **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526
 (`find_passage`), #531 (the embedder), #534 (#530), #535 (#532), #536 (#500),
 #538 (#507), #539 (#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545
@@ -42,7 +42,7 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 ## This session: the PICO agent (StudyAnalyzer item 7)
 
-Branch `feat/pico-agent`. Spec `docs/superpowers/specs/2026-10-30-pico-agent-design.md`
+PR #575, branch `feat/pico-agent`. Spec `docs/superpowers/specs/2026-10-30-pico-agent-design.md`
 (the maintainer's decisions), plan `docs/superpowers/plans/2026-10-30-pico-agent.md`;
 the CHANGELOG entry *The PICO agent, with verified quotes* is the argument.
 `PicoAgent` in `bmlib.quality` and `bmlib::quality`: `check_suitability()`
