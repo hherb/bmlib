@@ -30,10 +30,12 @@ use std::num::NonZeroU32;
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/ollama_chat.json");
 
+/// The shared fixture, parsed.
 fn fixture() -> Value {
     serde_json::from_str(FIXTURE).expect("the fixture is JSON")
 }
 
+/// The fixture's messages as Rust `LLMMessage`s, through their serde form.
 fn messages(raw: &Value) -> Vec<LLMMessage> {
     serde_json::from_value(raw.clone()).expect("the fixture's messages")
 }
@@ -63,6 +65,8 @@ fn chat_request(neutral: &Value) -> ChatRequest {
     request
 }
 
+/// The body `chat_body` builds for `request`, after checking it routes to
+/// Ollama's native protocol (no key needed, as for a local server).
 fn body_for(request: &ChatRequest) -> Value {
     let target = resolve_target(request, "anthropic", None, None).expect("routes to ollama");
     assert_eq!(target.protocol, Protocol::Ollama);
@@ -131,6 +135,24 @@ fn extra_body_options_merge_and_num_ctx_wins() {
     );
     assert_eq!(body["keep_alive"], json!("5m"));
     assert_eq!(body["stream"], json!(false));
+}
+
+/// A non-object `extra_body.options` is ignored, so it cannot replace the
+/// request's options wholesale and take `num_ctx` with them.
+#[test]
+fn a_non_object_extra_body_options_is_ignored() {
+    let mut request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("ollama:qwen3");
+    request.temperature = 0.2;
+    request.max_tokens = 128;
+    request.num_ctx = NonZeroU32::new(32768);
+    for options in [Value::Null, json!("big")] {
+        request.extra_body = Some(json!({ "options": options }));
+        assert_eq!(
+            body_for(&request)["options"],
+            json!({"temperature": 0.2, "num_predict": 128, "num_ctx": 32768}),
+            "extra_body options {options}"
+        );
+    }
 }
 
 /// Without `num_ctx`, a caller's own `options.num_ctx` stands.

@@ -56,9 +56,11 @@ class _FakeClient:
     """Stands in for ``ollama.Client``: answers every chat with one body."""
 
     def __init__(self, body: dict) -> None:
+        """Remember the native body every chat answers with."""
         self._body = body
 
     def chat(self, **kwargs: object) -> dict:
+        """Return the scripted native body, whatever was asked."""
         return self._body
 
 

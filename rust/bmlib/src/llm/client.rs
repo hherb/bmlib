@@ -451,8 +451,9 @@ pub fn resolve_target(
 ///
 /// An Ollama body carries `stream: false`, set last so `extra_body` cannot turn
 /// it on (the native API streams by default, and [`LlmClient::chat`] reads one
-/// answer). Its `options` from `extra_body` merge field by field, and the
-/// request's `num_ctx` is set after them, so it cannot be silently replaced.
+/// answer). Its `options` from `extra_body` merge field by field (a non-object
+/// one is ignored), and the request's `num_ctx` is set after them, so it cannot
+/// be silently replaced.
 #[must_use]
 pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> Value {
     let mut body = Map::new();
@@ -566,19 +567,21 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
     }
 
     // Merged **last**, so a caller can set a field this port does not know
-    // about — and can override one it does, deliberately.
+    // about — and can override one it does, deliberately. The exception is
+    // Ollama's `options`: merged field by field, and **ignored when it is not
+    // an object** (`null`, a string), so it can never replace our options
+    // wholesale and take `num_ctx`, set below, with them.
     if let Some(extra) = request.extra_body.as_ref().and_then(Value::as_object) {
         for (key, value) in extra {
-            match (body.get_mut(key), value) {
-                (Some(Value::Object(ours)), Value::Object(theirs))
-                    if target.protocol == Protocol::Ollama && key == "options" =>
+            if target.protocol == Protocol::Ollama && key == "options" {
+                if let (Some(Value::Object(ours)), Value::Object(theirs)) =
+                    (body.get_mut(key), value)
                 {
                     ours.extend(theirs.clone());
                 }
-                _ => {
-                    body.insert(key.clone(), value.clone());
-                }
+                continue;
             }
+            body.insert(key.clone(), value.clone());
         }
     }
 
