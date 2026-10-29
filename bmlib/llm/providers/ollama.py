@@ -37,6 +37,12 @@ from functools import partial
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from bmlib.llm.context_window import (
+    ContextWindowError,
+    NoSuchModelError,
+    as_dict,
+    fetch_context_window,
+)
 from bmlib.llm.data_types import (
     BatchEmbeddingResponse,
     EmbeddingResponse,
@@ -119,6 +125,9 @@ _FREE_PRICING = ModelPricing(0.0, 0.0)
 # request size and server-side memory for large corpora; callers wanting a
 # single round-trip regardless of size can pass ``max_batch_size=len(texts)``.
 DEFAULT_EMBED_BATCH_SIZE = 256
+
+HTTP_NOT_FOUND = 404
+HTTP_SERVER_ERROR = 500
 
 
 def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
@@ -378,6 +387,49 @@ class OllamaProvider(BaseProvider):
                 raise ImportError(_sdk_import_failed("ollama", exc)) from exc
         return self._client
 
+    # --- Context window ---
+
+    def context_window(self, model: str) -> int | None:
+        """The model's trained context window, from the server's ``show``.
+
+        This is the window the model supports, not the one it is loaded with
+        (that is ``num_ctx``). A 404 is :class:`NoSuchModelError`; a
+        connection failure or 5xx is retried with backoff; any other refusal
+        is not.
+
+        Raises:
+            NoSuchModelError: The server has no such model.
+            ContextWindowError: The request failed.
+        """
+        import httpx
+        import ollama
+
+        client = self._get_client()
+
+        def fetch() -> object:
+            try:
+                return as_dict(client.show(model))
+            except ollama.ResponseError as exc:
+                if exc.status_code == HTTP_NOT_FOUND:
+                    raise NoSuchModelError(
+                        f"ollama has no model {model!r}", provider=self.PROVIDER_NAME, model=model
+                    ) from exc
+                if exc.status_code < HTTP_SERVER_ERROR:
+                    # Any other refusal will not change on a retry.
+                    raise ContextWindowError(
+                        f"ollama refused the lookup for {model!r}: {exc}",
+                        provider=self.PROVIDER_NAME,
+                        model=model,
+                    ) from exc
+                raise
+
+        return fetch_context_window(
+            self.PROVIDER_NAME,
+            model,
+            fetch,
+            retry_on=(ollama.ResponseError, ConnectionError, httpx.TransportError),
+        )
+
     # --- Core operations ---
 
     def chat(
@@ -398,7 +450,12 @@ class OllamaProvider(BaseProvider):
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
             **kwargs: Extra options (``top_p``, ``json_mode``, ``think``,
-                ``tools``, ``tool_choice``).
+                ``tools``, ``tool_choice``, ``num_ctx``). ``num_ctx`` is a
+                positive ``int``: the context window, in tokens, to load the
+                model with. Without it Ollama uses its own default, which
+                is often far smaller than the model's window and silently
+                drops the start of a long prompt. Anything else raises
+                :class:`ValueError`.
         """
         model = model or self.default_model
         client = self._get_client()
@@ -506,6 +563,12 @@ class OllamaProvider(BaseProvider):
         }
         if top_p is not None:
             options["top_p"] = top_p
+        num_ctx = kwargs.get("num_ctx")
+        if num_ctx is not None:
+            # bool is an int in Python; True would ask for a 1-token window.
+            if isinstance(num_ctx, bool) or not isinstance(num_ctx, int) or num_ctx <= 0:
+                raise ValueError(f"num_ctx must be a positive integer, got {num_ctx!r}")
+            options["num_ctx"] = num_ctx
 
         request_kwargs: dict[str, object] = {
             "model": model,
@@ -550,6 +613,8 @@ class OllamaProvider(BaseProvider):
         :func:`~bmlib.llm.stream.run_stream`. Unlike :meth:`chat`, a stream
         whose last chunk carries no token counts reports 0 rather than an
         estimate; Ollama sends them on every completed stream.
+
+        Takes ``num_ctx`` as :meth:`chat` does.
 
         Raises:
             NotImplementedError: If *tools* is passed.

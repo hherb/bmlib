@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+from bmlib.llm.context_window import as_dict, fetch_context_window
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
 
@@ -56,3 +57,20 @@ class DeepSeekProvider(OpenAICompatibleProvider):
             capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]
+
+    def context_window(self, model: str) -> int | None:
+        """The model's ``context_window``, from the one-body model list.
+
+        DeepSeek has no per-model endpoint, so this lists them all. The openai
+        SDK retries transient failures itself, so no backoff here.
+
+        Raises:
+            NoSuchModelError: The list has no such model.
+            ContextWindowError: The request failed.
+        """
+        client = self._get_client()
+        return fetch_context_window(
+            self.PROVIDER_NAME,
+            model,
+            lambda: {"data": [as_dict(m) for m in client.models.list()]},
+        )

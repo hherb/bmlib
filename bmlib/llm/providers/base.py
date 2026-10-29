@@ -27,6 +27,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from bmlib.llm.context_window import known_context_window
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -212,6 +214,21 @@ class BaseProvider(ABC):
         return (input_tokens / 1_000_000) * pricing.input_cost + (
             output_tokens / 1_000_000
         ) * pricing.output_cost
+
+    # --- Context window ---
+
+    def context_window(self, model: str) -> int | None:
+        """The context window of *model* in tokens, or ``None`` if unknown.
+
+        Input and answer together (see :meth:`LLMClient.context_window`).
+        The default asks bmlib's table of known windows and makes no request;
+        providers whose API states a window override it.
+
+        Raises:
+            ContextWindowError: An override could not fetch the metadata.
+            NoSuchModelError: The provider has no such model.
+        """
+        return known_context_window(self.PROVIDER_NAME, model)
 
     # --- Utility ---
 

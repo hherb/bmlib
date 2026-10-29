@@ -147,6 +147,13 @@ class LLMClient:
         or errors on the parameter — is between the provider and the
         model; bmlib does not pre-validate it.
 
+        Context window
+        --------------
+        Pass ``num_ctx=`` (a positive ``int``) to have Ollama load the model
+        with that window in tokens; without it Ollama uses its own, often
+        much smaller, default. Other providers ignore it. See
+        :meth:`context_window` for the window a model supports.
+
         Tool calling
         ------------
         Pass *tools* to allow the model to invoke functions you define.
@@ -244,6 +251,8 @@ class LLMClient:
         ``kind="text"`` for the answer, ``kind="thinking"`` for a separated
         reasoning trace (pass ``think=`` as for :meth:`chat`). It returns the
         same :class:`LLMResponse` once the stream ends, and records its usage.
+
+        Pass ``num_ctx=`` as for :meth:`chat`.
 
         Stopping
         --------
@@ -446,6 +455,29 @@ class LLMClient:
             return p.get_model_metadata(model)
         except Exception:
             return None
+
+    def context_window(self, model: str, provider: str | None = None) -> int | None:
+        """Return *model*'s context window in tokens, or ``None`` if unknown.
+
+        Routes ``"provider:model"`` as :meth:`get_model_metadata` does. The
+        number is what a request may hold in total: **read it as input and
+        answer together**, so a prompt that fills it leaves no room to reply.
+        Providers state it in different terms (Anthropic and Gemini give the
+        input limit; Ollama the trained window), and bmlib reports each as
+        given. ``None`` means the provider did not say; it is not a guess.
+
+        Unlike :meth:`get_model_metadata` this does not swallow errors: a
+        wrong window silently truncates or overflows a prompt, so a failure
+        must reach the caller.
+
+        Raises:
+            NoSuchModelError: The provider has no such model.
+            ContextWindowError: The metadata could not be fetched.
+        """
+        if provider is None and ":" in model:
+            provider, model = model.split(":", 1)
+        provider = (provider or self.default_provider).lower()
+        return self._get_provider(provider).context_window(model)
 
     def get_provider_info(self, provider: str) -> dict[str, object]:
         """Return a dict of provider metadata (name, URLs, capabilities).

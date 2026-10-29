@@ -28,8 +28,9 @@ wrong window silently truncates or overflows a prompt.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from typing import Any
+import time
+from collections.abc import Callable, Mapping
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,16 @@ MAX_WINDOW = 2**64 - 1
 #: Ollama keys: the architecture names the prefix of the window's key.
 OLLAMA_ARCHITECTURE_KEY = "general.architecture"
 OLLAMA_WINDOW_KEY_SUFFIX = ".context_length"
+
+
+#: A lookup that fails in a way worth retrying (a dropped connection, a 5xx) is
+#: tried this many times in all before it is reported.
+CONTEXT_LOOKUP_ATTEMPTS = 3
+
+#: Seconds before the first retry; each further retry waits twice as long.
+CONTEXT_LOOKUP_BASE_DELAY_SECONDS = 1.0
+
+T = TypeVar("T")
 
 
 class ContextWindowError(RuntimeError):
@@ -171,3 +182,72 @@ def read_context_window(provider: str, model: str, body: Any) -> int | None:
             return None
         return _field(provider, model, info, arch + OLLAMA_WINDOW_KEY_SUFFIX)
     raise ValueError(f"{provider!r} has no model metadata to read a context window from")
+
+
+def with_backoff(call: Callable[[], T], retry_on: tuple[type[BaseException], ...]) -> T:
+    """Call ``call()``, retrying on ``retry_on`` with exponential backoff.
+
+    Makes up to :data:`CONTEXT_LOOKUP_ATTEMPTS` attempts, sleeping
+    ``CONTEXT_LOOKUP_BASE_DELAY_SECONDS * 2**attempt`` between them (not after
+    the last). The final failure is re-raised as it came; an exception not in
+    ``retry_on`` is never retried, because a refusal will not change on a
+    second ask.
+    """
+    for attempt in range(CONTEXT_LOOKUP_ATTEMPTS):
+        try:
+            return call()
+        except retry_on as exc:
+            if attempt == CONTEXT_LOOKUP_ATTEMPTS - 1:
+                raise
+            delay = CONTEXT_LOOKUP_BASE_DELAY_SECONDS * 2**attempt
+            logger.warning("context-window lookup failed (%s); retrying in %.1fs", exc, delay)
+            time.sleep(delay)
+    raise AssertionError("unreachable: the last attempt returns or raises")  # pragma: no cover
+
+
+def as_dict(obj: Any) -> Any:
+    """Turn an SDK model object into the plain dict ``read_context_window`` reads.
+
+    A dict is returned as is; the openai and anthropic SDK models offer
+    ``to_dict()``, pydantic models (ollama's ``ShowResponse``) ``model_dump()``.
+    Anything else is returned unchanged, so the reader reports it as unknown.
+    """
+    for method in ("to_dict", "model_dump"):
+        convert = getattr(obj, method, None)
+        if callable(convert):
+            return convert()
+    return obj
+
+
+def fetch_context_window(
+    provider: str,
+    model: str,
+    fetch: Callable[[], Any],
+    *,
+    not_found: tuple[type[BaseException], ...] = (),
+    retry_on: tuple[type[BaseException], ...] = (),
+) -> int | None:
+    """Fetch a provider's metadata with ``fetch`` and read the window from it.
+
+    ``fetch`` returns the body ``read_context_window`` takes. It is retried
+    (see :func:`with_backoff`) only on ``retry_on``. A ``not_found`` exception
+    becomes :class:`NoSuchModelError`; any other failure, once retries are
+    spent, becomes :class:`ContextWindowError` naming the provider and model.
+    Both are chained to the original. A :class:`ContextWindowError` raised by
+    ``fetch`` itself passes through.
+    """
+    try:
+        body = with_backoff(fetch, retry_on) if retry_on else fetch()
+    except ContextWindowError:
+        raise
+    except not_found as exc:
+        raise NoSuchModelError(
+            f"{provider} has no model {model!r}", provider=provider, model=model
+        ) from exc
+    except Exception as exc:
+        raise ContextWindowError(
+            f"could not fetch {provider}'s context window for {model!r}: {exc}",
+            provider=provider,
+            model=model,
+        ) from exc
+    return read_context_window(provider, model, body)

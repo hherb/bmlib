@@ -25,6 +25,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from bmlib.llm.context_window import as_dict, fetch_context_window
 from bmlib.llm.data_types import (
     LLMMessage,
     LLMResponse,
@@ -152,6 +153,25 @@ class AnthropicProvider(BaseProvider):
         return self._client
 
     # --- Core operations ---
+
+    def context_window(self, model: str) -> int | None:
+        """The model's ``max_input_tokens``, from ``models.retrieve``.
+
+        The SDK retries transient failures itself, so no backoff here.
+
+        Raises:
+            NoSuchModelError: The API has no such model.
+            ContextWindowError: The request failed.
+        """
+        import anthropic
+
+        client = self._get_client()
+        return fetch_context_window(
+            self.PROVIDER_NAME,
+            model,
+            lambda: as_dict(client.models.retrieve(model)),
+            not_found=(anthropic.NotFoundError,),
+        )
 
     def chat(
         self,

@@ -464,3 +464,45 @@ class TestClientThinkPassthrough:
         )
         assert fake.last_kwargs["think"] is True
         assert resp.thinking == "trace"
+
+
+# ---------------------------------------------------------------------------
+# num_ctx (Ollama's context-window option)
+# ---------------------------------------------------------------------------
+
+
+class TestOllamaNumCtx:
+    _MSGS = [LLMMessage(role="user", content="q")]
+
+    def test_ollama_num_ctx_reaches_options(self):
+        provider = _ollama_provider({"message": {"content": "a"}})
+        provider.chat(self._MSGS, num_ctx=16384)
+        assert provider._client.last_kwargs["options"]["num_ctx"] == 16384
+
+    def test_ollama_num_ctx_reaches_options_on_stream(self):
+        class _Stream(list):
+            def close(self):
+                pass
+
+        provider = _ollama_provider(_Stream([{"message": {"content": "a"}, "done": True}]))
+        provider.chat_stream(self._MSGS, lambda _d: None, num_ctx=16384)
+        assert provider._client.last_kwargs["options"]["num_ctx"] == 16384
+
+    def test_ollama_num_ctx_absent_by_default(self):
+        provider = _ollama_provider({"message": {"content": "a"}})
+        provider.chat(self._MSGS)
+        provider.chat(self._MSGS, num_ctx=None)
+        assert "num_ctx" not in provider._client.last_kwargs["options"]
+
+    @pytest.mark.parametrize("bad", [True, False, 0, -1, 1.5, "8192"])
+    def test_ollama_num_ctx_refuses_bool_and_zero(self, bad):
+        provider = _ollama_provider({"message": {"content": "a"}})
+        with pytest.raises(ValueError, match="num_ctx"):
+            provider.chat(self._MSGS, num_ctx=bad)
+        assert provider._client.last_kwargs == {}  # nothing was sent
+
+    def test_openai_ignores_num_ctx(self):
+        provider = _compat_provider()
+        provider.chat(self._MSGS, num_ctx=16384)
+        assert "num_ctx" not in _compat_request(provider)
+        assert "options" not in _compat_request(provider)

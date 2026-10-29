@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+from bmlib.llm.context_window import as_dict, fetch_context_window
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
 
@@ -72,3 +73,22 @@ class MistralProvider(OpenAICompatibleProvider):
             capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]
+
+    def context_window(self, model: str) -> int | None:
+        """The model's ``max_context_length``, from ``GET /models/{id}``.
+
+        The openai SDK retries transient failures itself, so no backoff here.
+
+        Raises:
+            NoSuchModelError: Mistral has no such model.
+            ContextWindowError: The request failed.
+        """
+        import openai
+
+        client = self._get_client()
+        return fetch_context_window(
+            self.PROVIDER_NAME,
+            model,
+            lambda: as_dict(client.models.retrieve(model)),
+            not_found=(openai.NotFoundError,),
+        )

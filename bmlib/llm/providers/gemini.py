@@ -18,8 +18,24 @@
 
 from __future__ import annotations
 
+from bmlib.llm.context_window import (
+    ContextWindowError,
+    NoSuchModelError,
+    fetch_context_window,
+)
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
+
+HTTP_NOT_FOUND = 404
+HTTP_TOO_MANY_REQUESTS = 429
+HTTP_SERVER_ERROR = 500
+HTTP_ERROR = 400
+
+LOOKUP_TIMEOUT_SECONDS = 30.0
+
+#: The OpenAI-compatible base URL ends in this; the model metadata lives
+#: on the native API one level up.
+OPENAI_SUFFIX = "/openai"
 
 
 class GeminiProvider(OpenAICompatibleProvider):
@@ -80,3 +96,48 @@ class GeminiProvider(OpenAICompatibleProvider):
             capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]
+
+    def context_window(self, model: str) -> int | None:
+        """The model's ``inputTokenLimit``, from the native ``models.get``.
+
+        The OpenAI-compatible endpoint lists no windows, so this asks the
+        native API (the base URL without its ``/openai``). A 404 is
+        :class:`NoSuchModelError`; a 429, a 5xx or a transport error is
+        retried with backoff; any other refusal is not.
+
+        Raises:
+            NoSuchModelError: Gemini has no such model.
+            ContextWindowError: The request failed.
+        """
+        import httpx
+
+        native = self._base_url.rstrip("/").removesuffix(OPENAI_SUFFIX)
+
+        def fetch() -> object:
+            resp = httpx.get(
+                f"{native}/models/{model}",
+                headers={"x-goog-api-key": self._api_key or ""},
+                timeout=LOOKUP_TIMEOUT_SECONDS,
+            )
+            if resp.status_code == HTTP_NOT_FOUND:
+                raise NoSuchModelError(
+                    f"gemini has no model {model!r}", provider=self.PROVIDER_NAME, model=model
+                )
+            status = resp.status_code
+            if status == HTTP_TOO_MANY_REQUESTS or status >= HTTP_SERVER_ERROR:
+                resp.raise_for_status()  # HTTPStatusError: retried
+            elif status >= HTTP_ERROR:
+                # Any other refusal (400, 403) will not change on a retry.
+                raise ContextWindowError(
+                    f"gemini refused the lookup for {model!r}: HTTP {status}",
+                    provider=self.PROVIDER_NAME,
+                    model=model,
+                )
+            return resp.json()
+
+        return fetch_context_window(
+            self.PROVIDER_NAME,
+            model,
+            fetch,
+            retry_on=(httpx.HTTPStatusError, httpx.TransportError),
+        )

@@ -52,7 +52,7 @@ Changelog = "https://github.com/hherb/bmlib/blob/main/CHANGELOG.md"
 Issues = "https://github.com/hherb/bmlib/issues"
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.30"]
+anthropic = ["anthropic>=0.41"]
 ollama = ["ollama>=0.3"]
 openai = ["openai>=1.0"]
 postgresql = ["psycopg2-binary>=2.9"]
