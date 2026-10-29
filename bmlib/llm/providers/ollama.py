@@ -129,6 +129,15 @@ DEFAULT_EMBED_BATCH_SIZE = 256
 HTTP_NOT_FOUND = 404
 HTTP_SERVER_ERROR = 500
 
+# What Ollama's error says when it has no such model ("model 'x' not found").
+# Any other 404 (say a base URL ending ``/v1``) is a wrong address, not a
+# missing model.
+MISSING_MODEL_PHRASE = "not found"
+
+# The largest ``num_ctx`` accepted: Rust types it as a u32, so Python refuses
+# what Rust cannot express.
+MAX_NUM_CTX = 2**32 - 1
+
 
 def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
     """Extract a field from a dict or Pydantic-model response.
@@ -393,9 +402,10 @@ class OllamaProvider(BaseProvider):
         """The model's trained context window, from the server's ``show``.
 
         This is the window the model supports, not the one it is loaded with
-        (that is ``num_ctx``). A 404 is :class:`NoSuchModelError`; a
-        connection failure or 5xx is retried with backoff; any other refusal
-        is not.
+        (that is ``num_ctx``). A 404 whose message says "not found" is
+        :class:`NoSuchModelError`; any other 404 is a wrong address and a
+        :class:`ContextWindowError`. A connection failure or 5xx is retried
+        with backoff; any other refusal is not.
 
         Raises:
             NoSuchModelError: The server has no such model.
@@ -410,7 +420,10 @@ class OllamaProvider(BaseProvider):
             try:
                 return as_dict(client.show(model))
             except ollama.ResponseError as exc:
-                if exc.status_code == HTTP_NOT_FOUND:
+                if (
+                    exc.status_code == HTTP_NOT_FOUND
+                    and MISSING_MODEL_PHRASE in str(exc.error).lower()
+                ):
                     raise NoSuchModelError(
                         f"ollama has no model {model!r}", provider=self.PROVIDER_NAME, model=model
                     ) from exc
@@ -566,8 +579,14 @@ class OllamaProvider(BaseProvider):
         num_ctx = kwargs.get("num_ctx")
         if num_ctx is not None:
             # bool is an int in Python; True would ask for a 1-token window.
-            if isinstance(num_ctx, bool) or not isinstance(num_ctx, int) or num_ctx <= 0:
-                raise ValueError(f"num_ctx must be a positive integer, got {num_ctx!r}")
+            if (
+                isinstance(num_ctx, bool)
+                or not isinstance(num_ctx, int)
+                or not 0 < num_ctx <= MAX_NUM_CTX
+            ):
+                raise ValueError(
+                    f"num_ctx must be a positive integer of at most {MAX_NUM_CTX}, got {num_ctx!r}"
+                )
             options["num_ctx"] = num_ctx
 
         request_kwargs: dict[str, object] = {

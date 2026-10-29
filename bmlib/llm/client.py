@@ -470,7 +470,15 @@ class LLMClient:
         wrong window silently truncates or overflows a prompt, so a failure
         must reach the caller.
 
+        Routing differs from Rust's ``LlmClient::context_window(model)``:
+        here a bare name (or ``""``) is a model of the default provider, while
+        Rust reads a bare provider name as that provider's default model.
+
         Raises:
+            ValueError: ``provider`` is not a known provider.
+            ImportError: The provider's SDK is not installed.
+            Exception: The provider SDK's own error, when its API key is
+                missing.
             NoSuchModelError: The provider has no such model.
             ContextWindowError: The metadata could not be fetched.
         """

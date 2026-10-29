@@ -153,7 +153,7 @@ class TestClientRouting:
         assert client.context_window("gpt-4o-mini") == 128_000  # default provider
 
     def test_unknown_provider_propagates(self):
-        with pytest.raises(Exception):  # noqa: B017 - whatever _get_provider raises
+        with pytest.raises(ValueError, match="Unknown provider"):
             LLMClient().context_window("nosuchprovider:m")
 
     def test_openai_context_window_needs_no_request(self):
@@ -219,6 +219,15 @@ class TestOpenAICompatible:
         ]
         p._client = SimpleNamespace(models=_Models(list_=listed))
         assert p.context_window("deepseek-chat") == 128_000
+
+    def test_deepseek_404_is_a_transport_error(self):
+        import openai
+
+        p = DeepSeekProvider(api_key="k")
+        p._client = SimpleNamespace(models=_Models(raises=_not_found(openai.NotFoundError)))
+        with pytest.raises(ContextWindowError) as ei:
+            p.context_window("deepseek-chat")
+        assert not isinstance(ei.value, NoSuchModelError)
 
     def test_deepseek_absent_model(self):
         p = DeepSeekProvider(api_key="k")
@@ -343,6 +352,20 @@ class TestOllamaLookup:
         with pytest.raises(NoSuchModelError):
             p.context_window("m")
         assert p._client.calls == 1
+
+    def test_404_without_not_found_is_a_transport_error(self):
+        ollama = pytest.importorskip("ollama")
+        p = self._p([ollama.ResponseError("<html>404 page</html>", 404)])
+        with pytest.raises(ContextWindowError) as ei:
+            p.context_window("m")
+        assert not isinstance(ei.value, NoSuchModelError)
+        assert p._client.calls == 1
+
+    def test_404_with_ollamas_wording_is_no_such_model(self):
+        ollama = pytest.importorskip("ollama")
+        p = self._p([ollama.ResponseError("model 'x' not found", 404)])
+        with pytest.raises(NoSuchModelError):
+            p.context_window("x")
 
     def test_5xx_retried_other_status_not(self):
         ollama = pytest.importorskip("ollama")

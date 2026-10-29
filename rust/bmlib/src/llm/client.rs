@@ -979,7 +979,15 @@ impl LlmClient {
     /// [`known_context_window`] with no key and no request. Every other
     /// provider is asked, and the answer is read by [`read_context_window`].
     /// A transport failure or a [`RETRYABLE_STATUSES`] status is retried like
-    /// opening a stream; a 404 is [`ContextWindowError::NoSuchModel`] at once.
+    /// opening a stream; a 404 is [`ContextWindowError::NoSuchModel`] at once,
+    /// except from DeepSeek (its list names no model) and from Ollama unless
+    /// its `error` says "not found": those are
+    /// [`ContextWindowError::Transport`].
+    ///
+    /// Routing differs from Python's `LLMClient.context_window(model,
+    /// provider=None)`: here a bare provider name (or `""`) asks that
+    /// provider for its default model, while Python asks the default provider
+    /// about a model of that name.
     ///
     /// `Ok(None)` means the provider answered but states no usable window.
     ///
@@ -1021,7 +1029,7 @@ impl LlmClient {
             )
             .map_err(|e| ContextWindowError::Transport(e.to_string()))?;
         let text = String::from_utf8_lossy(&response.body);
-        if response.status == HTTP_NOT_FOUND {
+        if response.status == HTTP_NOT_FOUND && names_a_missing_model(&target.provider, &text) {
             return Err(ContextWindowError::NoSuchModel {
                 provider: target.provider,
                 model: target.model,
@@ -1074,6 +1082,29 @@ fn context_window_headers(target: &Target) -> BTreeMap<String, String> {
 
 /// The status that means the provider has no such model.
 const HTTP_NOT_FOUND: u16 = 404;
+
+/// What Ollama's error says when it has no such model (`model 'x' not found`).
+const OLLAMA_MISSING_MODEL_PHRASE: &str = "not found";
+
+/// Whether a 404 from `provider` means "no such model" rather than a wrong
+/// URL. DeepSeek's list endpoint names no model, so its 404 never does.
+/// Ollama answers a wrong base URL (say one ending `/v1`) with a 404 too, so
+/// only an `error` field saying "not found" counts. The others name the model
+/// in the path, so any 404 does.
+fn names_a_missing_model(provider: &str, body: &str) -> bool {
+    match provider {
+        "deepseek" => false,
+        "ollama" => serde_json::from_str::<Value>(body)
+            .ok()
+            .and_then(|v| {
+                v.get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_lowercase)
+            })
+            .is_some_and(|e| e.contains(OLLAMA_MISSING_MODEL_PHRASE)),
+        _ => true,
+    }
+}
 
 /// Characters that stay as they are in a URL path segment: RFC 3986's
 /// unreserved set. Everything else, `/` included, is percent-encoded so a

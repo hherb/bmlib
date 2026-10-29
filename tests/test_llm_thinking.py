@@ -479,6 +479,14 @@ class TestOllamaNumCtx:
         provider.chat(self._MSGS, num_ctx=16384)
         assert provider._client.last_kwargs["options"]["num_ctx"] == 16384
 
+    def test_ollama_num_ctx_above_u32_is_refused(self):
+        from bmlib.llm.providers.ollama import MAX_NUM_CTX
+
+        provider = _ollama_provider({"message": {"content": "a"}})
+        provider.chat(self._MSGS, num_ctx=MAX_NUM_CTX)
+        with pytest.raises(ValueError, match="num_ctx"):
+            provider.chat(self._MSGS, num_ctx=MAX_NUM_CTX + 1)
+
     def test_ollama_num_ctx_reaches_options_on_stream(self):
         class _Stream(list):
             def close(self):

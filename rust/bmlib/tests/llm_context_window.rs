@@ -324,6 +324,40 @@ fn a_404_is_no_such_model_after_one_call() {
 }
 
 #[test]
+fn a_deepseek_404_is_a_transport_error() {
+    let t = Scripted::new(vec![Ok((404, "{}".into()))]);
+    assert!(matches!(
+        client(t.clone()).context_window("deepseek:gone"),
+        Err(ContextWindowError::Transport(_))
+    ));
+    assert_eq!(t.calls(), 1);
+}
+
+#[test]
+fn an_ollama_404_saying_not_found_is_no_such_model() {
+    let t = Scripted::new(vec![Ok((
+        404,
+        json!({"error": "model 'x' not found"}).to_string(),
+    ))]);
+    assert_eq!(
+        client(t).context_window("ollama:x"),
+        Err(ContextWindowError::NoSuchModel {
+            provider: "ollama".into(),
+            model: "x".into()
+        })
+    );
+}
+
+#[test]
+fn an_ollama_404_with_an_html_body_is_a_transport_error() {
+    let t = Scripted::new(vec![Ok((404, "<html>404 page not found</html>".into()))]);
+    assert!(matches!(
+        client(t).context_window("ollama:x"),
+        Err(ContextWindowError::Transport(_))
+    ));
+}
+
+#[test]
 fn a_retryable_status_is_retried_then_succeeds() {
     let t = Scripted::new(vec![
         Ok((503, "busy".into())),
