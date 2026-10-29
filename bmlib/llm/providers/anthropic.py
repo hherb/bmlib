@@ -38,7 +38,13 @@ from bmlib.llm.providers.base import (
     ProviderCapabilities,
     _sdk_import_failed,
 )
-from bmlib.llm.stream import StreamDelta, refuse_tools, run_stream, sdk_events
+from bmlib.llm.stream import (
+    StreamDelta,
+    closing_stream,
+    refuse_tools,
+    run_stream,
+    sdk_events,
+)
 from bmlib.llm.utils import extract_json
 
 logger = logging.getLogger(__name__)
@@ -308,13 +314,10 @@ class AnthropicProvider(BaseProvider):
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
-        stream = client.messages.create(**request_kwargs, stream=True)
-        try:
+        with closing_stream(client.messages.create(**request_kwargs, stream=True)) as stream:
             return run_stream(
                 "anthropic", sdk_events(stream, lambda e: e.to_dict()), model, on_delta
             )
-        finally:
-            stream.close()
 
     # --- Model listing ---
 
@@ -366,6 +369,7 @@ class AnthropicProvider(BaseProvider):
                     display_name=mid,
                     context_window=DEFAULT_CONTEXT_WINDOW,
                     pricing=p,
+                    capabilities=ProviderCapabilities(supports_streaming=True),
                 )
                 for mid, p in self.MODEL_PRICING.items()
             ]

@@ -25,13 +25,14 @@ exposed through the OpenAI compatibility layer.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
 import re
 import time
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from functools import partial
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -51,7 +52,13 @@ from bmlib.llm.providers.base import (
     ProviderCapabilities,
     _sdk_import_failed,
 )
-from bmlib.llm.stream import StreamDelta, refuse_tools, run_stream, sdk_events
+from bmlib.llm.stream import (
+    StreamDelta,
+    closing_stream,
+    refuse_tools,
+    run_stream,
+    sdk_events,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +292,27 @@ class _LazyOllamaModelMetadata(ModelMetadata):
             ),
             (),
         )
+
+
+def _opened(stream: Iterable[Any]) -> Iterator[Any]:
+    """Open ollama-python's stream as :meth:`OllamaProvider.chat` would.
+
+    The SDK sends a streamed request only on the first ``next()``, so that
+    call is the request being refused or not, and it raises what ``chat()``
+    raises rather than :class:`~bmlib.llm.stream.StreamError`. The SDK's
+    stream path leaves a refused connection as ``httpx.ConnectError``, which
+    its ``chat()`` turns into ``ConnectionError``; so this does too.
+    """
+    import httpx  # ollama-python's own transport, installed with it
+
+    iterator = iter(stream)
+    try:
+        first = next(iterator)
+    except StopIteration:
+        return iter(())
+    except httpx.ConnectError as exc:
+        raise ConnectionError(f"failed to connect to Ollama: {exc}") from exc
+    return itertools.chain([first], iterator)
 
 
 class OllamaProvider(BaseProvider):
@@ -525,19 +553,21 @@ class OllamaProvider(BaseProvider):
 
         Raises:
             NotImplementedError: If *tools* is passed.
+            ConnectionError: If the server cannot be reached, as :meth:`chat`.
+            ollama.ResponseError: If the server refuses the request, as
+                :meth:`chat`.
             StreamError: If the stream fails after it opens or ends early.
         """
         refuse_tools(kwargs)
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
-        stream = client.chat(**request_kwargs, stream=True)
-        try:
+        with closing_stream(client.chat(**request_kwargs, stream=True)) as stream:
             # ollama >=0.4 yields Pydantic models; older versions yield dicts.
-            events = sdk_events(stream, lambda c: c.model_dump() if hasattr(c, "model_dump") else c)
+            events = sdk_events(
+                _opened(stream), lambda c: c.model_dump() if hasattr(c, "model_dump") else c
+            )
             return run_stream("ollama", events, model, on_delta)
-        finally:
-            stream.close()
 
     def embed(
         self,
@@ -903,6 +933,7 @@ class OllamaProvider(BaseProvider):
                 display_name=model_name,
                 context_window=FALLBACK_CONTEXT_WINDOW,
                 pricing=_FREE_PRICING,
+                capabilities=ProviderCapabilities(supports_streaming=True),
             )
 
     def _resolve_context_window(self, model_name: str) -> int:

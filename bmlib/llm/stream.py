@@ -39,9 +39,10 @@ early.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, TypeVar, get_args
 
 from bmlib.llm.data_types import LLMResponse
 
@@ -51,7 +52,7 @@ StreamProtocol = Literal["anthropic", "openai", "ollama"]
 DeltaKind = Literal["text", "thinking"]
 """What a delta adds to: the answer, or the model's separated reasoning."""
 
-STREAM_PROTOCOLS: tuple[str, ...] = ("anthropic", "openai", "ollama")
+STREAM_PROTOCOLS: tuple[str, ...] = get_args(StreamProtocol)
 """Every protocol :class:`StreamState` accepts."""
 
 CANCELLED_STOP_REASON = "cancelled"
@@ -85,12 +86,39 @@ class StreamError(RuntimeError):
     """
 
 
+class _Closable(Protocol):
+    def close(self) -> None: ...
+
+
+_StreamT = TypeVar("_StreamT", bound=_Closable)
+
+
+@contextlib.contextmanager
+def closing_stream(stream: _StreamT) -> Iterator[_StreamT]:
+    """Close *stream* on the way out, without hiding why the way out was taken.
+
+    A plain ``finally: stream.close()`` lets a ``close()`` that raises replace
+    the :class:`StreamError` or ``on_delta`` exception already propagating.
+    So on that path a failing ``close()`` is suppressed; after a complete
+    answer it raises, as nothing else would report it.
+    """
+    try:
+        yield stream
+    except BaseException:
+        with contextlib.suppress(Exception):
+            stream.close()
+        raise
+    stream.close()
+
+
 def refuse_tools(kwargs: Mapping[str, object]) -> None:
     """Refuse a streamed request that carries tools.
 
     A stream does not carry tool calls back, so tools sent with it would be
     dropped silently and the caller would read prose as the model choosing
-    not to call them. Every ``chat_stream`` calls this before sending.
+    not to call them. Every built-in provider's ``chat_stream`` calls this
+    before sending. Tools that reach the server some other way (``extra_body``)
+    are caught when a tool call arrives, as a :class:`StreamError`.
 
     Raises:
         NotImplementedError: If ``kwargs["tools"]`` is set.
@@ -109,8 +137,9 @@ def sdk_events(
     The SDKs raise their own exceptions for an error event or a broken
     connection mid-stream; wrapping them here gives a caller one exception
     for "the stream failed after it opened", as the Rust port's
-    ``ChatError::Stream`` is. Only the iteration is wrapped: an exception
-    ``on_delta`` raises is outside this generator and propagates unchanged.
+    ``ChatError::Stream`` is. Only the SDK's own iteration is wrapped: an
+    exception *dump* raises is bmlib's and propagates unchanged, as does one
+    ``on_delta`` raises, which is outside this generator.
 
     Args:
         stream: The SDK's stream object.
@@ -119,11 +148,15 @@ def sdk_events(
     Raises:
         StreamError: Whatever the SDK raised while streaming, as its cause.
     """
-    try:
-        for event in stream:
-            yield dump(event)
-    except Exception as exc:
-        raise StreamError(f"the stream failed: {exc}") from exc
+    iterator = iter(stream)
+    while True:
+        try:
+            event = next(iterator)
+        except StopIteration:
+            return
+        except Exception as exc:
+            raise StreamError(f"the stream failed: {exc}") from exc
+        yield dump(event)
 
 
 @dataclass(frozen=True)
@@ -138,6 +171,12 @@ class StreamDelta:
 
     kind: DeltaKind
     text: str
+
+    def __post_init__(self) -> None:
+        if self.kind not in get_args(DeltaKind):
+            raise ValueError(f"unknown delta kind {self.kind!r}")
+        if not self.text:
+            raise ValueError("a delta's text is never empty")
 
 
 def _field(obj: object, key: str) -> Any:
@@ -179,11 +218,20 @@ def _server_error(error: object) -> StreamError:
     return StreamError(f"the stream failed{detail}")
 
 
+_TOOL_CALL_ERROR = (
+    "the stream carried a tool call, which chat_stream does not read; "
+    "use chat() for a request with tools"
+)
+"""Why a stream carrying a tool call fails rather than dropping it."""
+
+
 class StreamState:
     """The answer so far, built from a stream's events in order.
 
     Feed every event to :meth:`apply`, which returns the deltas it carries,
-    then call :meth:`finish` for the response.
+    then call :meth:`finish` once for the response. The state is private, so
+    nothing outside can mark an incomplete stream complete, and it is spent by
+    :meth:`finish`: a later :meth:`apply` or :meth:`finish` raises.
 
     Args:
         protocol: One of :data:`STREAM_PROTOCOLS`.
@@ -192,30 +240,44 @@ class StreamState:
         ValueError: If *protocol* is not one this reader knows.
     """
 
-    def __init__(self, protocol: str) -> None:
+    def __init__(self, protocol: StreamProtocol) -> None:
         if protocol not in STREAM_PROTOCOLS:
             raise ValueError(
                 f"unknown stream protocol {protocol!r}; expected one of {STREAM_PROTOCOLS}"
             )
-        self.protocol = protocol
-        self.content = ""
+        self._protocol = protocol
+        self._content = ""
         # One entry per reasoning block (Anthropic) or a single running one.
-        self.thinking_parts: list[str] = []
-        self.input_tokens = 0
-        self.output_tokens = 0
-        self.stop_reason: str | None = None
+        self._thinking_parts: list[str] = []
+        self._input_tokens = 0
+        self._output_tokens = 0
+        self._stop_reason: str | None = None
         # Whether the protocol's end marker has arrived.
-        self.complete = False
+        self._complete = False
+        self._finished = False
+
+    @property
+    def complete(self) -> bool:
+        """Whether the protocol's end marker has arrived."""
+        return self._complete
 
     def apply(self, event: Mapping[str, Any]) -> list[StreamDelta]:
         """Read one event and return the deltas it carries, in order.
 
         Raises:
-            StreamError: If the event is the server reporting a failure.
+            StreamError: If the event is the server reporting a failure, is
+                not a JSON object, or carries a tool call.
+            RuntimeError: If :meth:`finish` was already called.
         """
-        if self.protocol == "anthropic":
+        if self._finished:
+            raise RuntimeError("this stream's response was already built")
+        if not isinstance(event, Mapping):
+            raise StreamError(
+                f"the stream sent an event that is not a JSON object: {type(event).__name__}"
+            )
+        if self._protocol == "anthropic":
             return self._apply_anthropic(event)
-        if self.protocol == "openai":
+        if self._protocol == "openai":
             return self._apply_openai(event)
         return self._apply_ollama(event)
 
@@ -227,11 +289,11 @@ class StreamState:
         if not text:
             return
         if kind == "text":
-            self.content += text
-        elif self.thinking_parts:
-            self.thinking_parts[-1] += text
+            self._content += text
+        elif self._thinking_parts:
+            self._thinking_parts[-1] += text
         else:
-            self.thinking_parts.append(text)
+            self._thinking_parts.append(text)
         deltas.append(StreamDelta(kind, text))
 
     def _apply_anthropic(self, event: Mapping[str, Any]) -> list[StreamDelta]:
@@ -248,10 +310,12 @@ class StreamState:
             block_type = _field(block, "type")
             if block_type == "thinking":
                 # A new block starts a new part, so two blocks stay separate.
-                self.thinking_parts.append("")
+                self._thinking_parts.append("")
                 self._add("thinking", _text(block, "thinking"), deltas)
             elif block_type == "text":
                 self._add("text", _text(block, "text"), deltas)
+            elif isinstance(block_type, str) and block_type.endswith("tool_use"):
+                raise StreamError(_TOOL_CALL_ERROR)
             # `redacted_thinking` is encrypted: nothing readable to pass on.
         elif kind == "content_block_delta":
             delta = _field(event, "delta")
@@ -264,10 +328,10 @@ class StreamState:
         elif kind == "message_delta":
             stop = _field(_field(event, "delta"), "stop_reason")
             if isinstance(stop, str):
-                self.stop_reason = stop
+                self._stop_reason = stop
             self._read_anthropic_usage(_field(event, "usage"))
         elif kind == "message_stop":
-            self.complete = True
+            self._complete = True
         # `ping` and `content_block_stop` carry nothing to keep.
         return deltas
 
@@ -278,10 +342,10 @@ class StreamState:
         """
         input_tokens = _count(usage, "input_tokens")
         if input_tokens is not None:
-            self.input_tokens = input_tokens
+            self._input_tokens = input_tokens
         output_tokens = _count(usage, "output_tokens")
         if output_tokens is not None:
-            self.output_tokens = output_tokens
+            self._output_tokens = output_tokens
 
     def _apply_openai(self, event: Mapping[str, Any]) -> list[StreamDelta]:
         """Read one OpenAI-compatible ``chat.completion.chunk``."""
@@ -294,22 +358,25 @@ class StreamState:
         if isinstance(choices, list) and choices:
             choice = choices[0]
             delta = _field(choice, "delta")
+            if _field(delta, "tool_calls"):
+                raise StreamError(_TOOL_CALL_ERROR)
             # DeepSeek and vLLM name the reasoning `reasoning_content`,
-            # OpenRouter-style servers and Ollama `reasoning`.
-            for key in ("reasoning_content", "reasoning"):
-                self._add("thinking", _text(delta, key), deltas)
+            # OpenRouter-style servers and Ollama `reasoning`. The first that
+            # is set is read, as `chat()` reads it: a server may send both.
+            reasoning = _text(delta, "reasoning_content") or _text(delta, "reasoning")
+            self._add("thinking", reasoning, deltas)
             self._add("text", _text(delta, "content"), deltas)
             finish = _field(choice, "finish_reason")
             if isinstance(finish, str):
-                self.stop_reason = finish
-                self.complete = True
+                self._stop_reason = finish
+                self._complete = True
         usage = _field(event, "usage")
         prompt_tokens = _count(usage, "prompt_tokens")
         if prompt_tokens is not None:
-            self.input_tokens = prompt_tokens
+            self._input_tokens = prompt_tokens
         completion_tokens = _count(usage, "completion_tokens")
         if completion_tokens is not None:
-            self.output_tokens = completion_tokens
+            self._output_tokens = completion_tokens
         return deltas
 
     def _apply_ollama(self, event: Mapping[str, Any]) -> list[StreamDelta]:
@@ -319,18 +386,20 @@ class StreamState:
         if error is not None:
             raise _server_error(error)
         message = _field(event, "message")
+        if _field(message, "tool_calls"):
+            raise StreamError(_TOOL_CALL_ERROR)
         self._add("thinking", _text(message, "thinking"), deltas)
         self._add("text", _text(message, "content"), deltas)
         if _field(event, "done") is True:
-            self.complete = True
+            self._complete = True
             # `chat()`'s mapping: only a truncation is told apart from a stop.
-            self.stop_reason = "length" if _field(event, "done_reason") == "length" else "stop"
+            self._stop_reason = "length" if _field(event, "done_reason") == "length" else "stop"
             prompt_tokens = _count(event, "prompt_eval_count")
             if prompt_tokens is not None:
-                self.input_tokens = prompt_tokens
+                self._input_tokens = prompt_tokens
             eval_tokens = _count(event, "eval_count")
             if eval_tokens is not None:
-                self.output_tokens = eval_tokens
+                self._output_tokens = eval_tokens
         return deltas
 
     def finish(self, model: str, *, cancelled: bool = False) -> LLMResponse:
@@ -340,33 +409,39 @@ class StreamState:
             model: The model name the response reports.
             cancelled: Whether the caller stopped the stream. A stopped stream
                 is not checked for its end marker, and its ``stop_reason`` is
-                :data:`CANCELLED_STOP_REASON`.
+                :data:`CANCELLED_STOP_REASON`, unless the end marker had
+                already arrived, when the server's own reason is kept.
 
         Raises:
             StreamError: If the stream ended before its end marker.
+            RuntimeError: If the response was already built.
         """
-        if not cancelled and not self.complete:
+        if self._finished:
+            raise RuntimeError("this stream's response was already built")
+        self._finished = True
+        if not cancelled and not self._complete:
             marker = {
                 "anthropic": "message_stop",
                 "openai": "a finish_reason",
                 "ollama": "done",
-            }[self.protocol]
+            }[self._protocol]
             raise StreamError(
-                f"the {self.protocol} stream ended before {marker}; the answer is incomplete"
+                f"the {self._protocol} stream ended before {marker}; the answer is incomplete"
             )
-        thinking = THINKING_BLOCK_SEPARATOR.join(part for part in self.thinking_parts if part)
+        thinking = THINKING_BLOCK_SEPARATOR.join(part for part in self._thinking_parts if part)
+        stopped_early = cancelled and not self._complete
         return LLMResponse(
-            content=self.content,
+            content=self._content,
             model=model,
-            input_tokens=self.input_tokens,
-            output_tokens=self.output_tokens,
-            stop_reason=CANCELLED_STOP_REASON if cancelled else self.stop_reason,
+            input_tokens=self._input_tokens,
+            output_tokens=self._output_tokens,
+            stop_reason=CANCELLED_STOP_REASON if stopped_early else self._stop_reason,
             thinking=thinking or None,
         )
 
 
 def run_stream(
-    protocol: str,
+    protocol: StreamProtocol,
     events: Iterable[Mapping[str, Any]],
     model: str,
     on_delta: Callable[[StreamDelta], object],
@@ -375,8 +450,10 @@ def run_stream(
 
     *on_delta* returning ``False`` (exactly ``False``, not merely falsy) stops
     the stream: no further event is read and the response holds what arrived,
-    with ``stop_reason`` :data:`CANCELLED_STOP_REASON`. Any other return value
-    carries on. Closing the underlying connection is the caller's job.
+    with ``stop_reason`` :data:`CANCELLED_STOP_REASON` (or the server's own,
+    when the end marker came in the event that carried the last delta). Any
+    other return value carries on. Closing the underlying connection is the
+    caller's job.
 
     Args:
         protocol: One of :data:`STREAM_PROTOCOLS`.
@@ -385,8 +462,9 @@ def run_stream(
         on_delta: Called once per delta, in order.
 
     Raises:
-        StreamError: If the server reports a failure mid-stream or the stream
-            ends before its end marker.
+        StreamError: If the server reports a failure mid-stream, an event is
+            not a JSON object or carries a tool call, or the stream ends
+            before its end marker.
         ValueError: If *protocol* is unknown.
     """
     state = StreamState(protocol)

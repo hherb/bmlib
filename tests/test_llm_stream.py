@@ -34,6 +34,8 @@ from bmlib.llm import (
 )
 from bmlib.llm.providers.anthropic import AnthropicProvider
 from bmlib.llm.providers.base import BaseProvider
+from bmlib.llm.providers.deepseek import DeepSeekProvider
+from bmlib.llm.providers.gemini import GeminiProvider
 from bmlib.llm.providers.mistral import MistralProvider
 from bmlib.llm.providers.ollama import OllamaProvider
 from bmlib.llm.providers.openai_provider import OpenAIProvider
@@ -121,6 +123,29 @@ class TestRunStream:
         assert response.stop_reason == CANCELLED_STOP_REASON
 
 
+class TestTheTypesRefuseWhatCannotBe:
+    @pytest.mark.parametrize(("kind", "text"), [("reasoning", "x"), ("text", "")])
+    def test_a_delta_is_text_or_thinking_and_never_empty(self, kind, text):
+        with pytest.raises(ValueError):
+            StreamDelta(kind, text)  # type: ignore[arg-type]
+
+    def test_completeness_cannot_be_set_from_outside(self):
+        state = StreamState("openai")
+        with pytest.raises(AttributeError):
+            state.complete = True  # type: ignore[misc]
+        with pytest.raises(StreamError, match="ended before a finish_reason"):
+            state.finish("m")
+
+    def test_a_state_is_spent_by_finish(self):
+        state = StreamState("openai")
+        state.apply({"choices": [{"delta": {"content": "a"}, "finish_reason": "stop"}]})
+        assert state.finish("m").content == "a"
+        with pytest.raises(RuntimeError, match="already built"):
+            state.apply({"choices": [{"delta": {"content": "b"}}]})
+        with pytest.raises(RuntimeError, match="already built"):
+            state.finish("m")
+
+
 # ---------------------------------------------------------------------------
 # Providers, over fake SDK clients
 # ---------------------------------------------------------------------------
@@ -185,41 +210,6 @@ class TestAnthropicProvider:
         with pytest.raises(StreamError, match="ended before message_stop"):
             self._provider(stream).chat_stream(MESSAGES, lambda _d: None)
         assert stream.closed
-
-    def test_the_stream_is_closed_when_on_delta_raises(self):
-        stream = _FakeStream(_events("anthropic/text"))
-
-        def on_delta(_delta):
-            raise KeyboardInterrupt
-
-        with pytest.raises(KeyboardInterrupt):
-            self._provider(stream).chat_stream(MESSAGES, on_delta)
-        assert stream.closed
-
-    def test_an_sdk_failure_mid_stream_is_a_stream_error(self):
-        class _OverloadedError(Exception):
-            pass
-
-        class _BreakingStream(_FakeStream):
-            def __iter__(self):
-                yield from list(super().__iter__())[:3]
-                raise _OverloadedError("Overloaded")
-
-        stream = _BreakingStream(_events("anthropic/text"))
-        seen: list[StreamDelta] = []
-        with pytest.raises(StreamError, match="the stream failed: Overloaded") as caught:
-            self._provider(stream).chat_stream(MESSAGES, seen.append)
-        assert isinstance(caught.value.__cause__, _OverloadedError)
-        assert stream.closed
-
-    def test_an_exception_from_on_delta_is_not_wrapped(self):
-        stream = _FakeStream(_events("anthropic/text"))
-
-        def on_delta(_delta):
-            raise ValueError("the caller's own")
-
-        with pytest.raises(ValueError, match="the caller's own"):
-            self._provider(stream).chat_stream(MESSAGES, on_delta)
 
     def test_the_provider_itself_refuses_tools(self):
         from bmlib.llm import LLMToolDefinition
@@ -329,6 +319,202 @@ class TestOllamaProvider:
         assert stream.closed
 
 
+_PROVIDER_CASES = {
+    "anthropic": ("anthropic/text", "to_dict"),
+    "openai": ("openai/text-and-a-usage-chunk", "to_dict"),
+    "ollama": ("ollama/thinking-text-and-counts", "model_dump"),
+}
+
+
+def _over(kind: str, stream):
+    """A provider of *kind* whose SDK client hands back *stream*."""
+    if kind == "anthropic":
+        provider = AnthropicProvider(api_key="test-key")
+        provider._client = MagicMock()
+        provider._client.messages.create.return_value = stream
+    elif kind == "openai":
+        provider = OpenAIProvider(api_key="test-key")
+        provider._client = MagicMock()
+        provider._client.chat.completions.create.return_value = stream
+    else:
+        provider = OllamaProvider()
+        provider._client = _RecordingOllamaClient(stream)
+    return provider
+
+
+class _OverloadedError(Exception):
+    pass
+
+
+class _BreakingStream(_FakeStream):
+    """Delivers two events, then the SDK raises."""
+
+    def __iter__(self):
+        yield from list(super().__iter__())[:2]
+        raise _OverloadedError("Overloaded")
+
+
+class _CloseFails(_FakeStream):
+    def close(self) -> None:
+        self.closed = True
+        raise OSError("close failed")
+
+
+@pytest.mark.parametrize("kind", list(_PROVIDER_CASES))
+class TestEveryProviderWrapsOnlyItsSDK:
+    def _stream(self, kind: str, cls=_FakeStream):
+        name, dump = _PROVIDER_CASES[kind]
+        return cls(_events(name), dump=dump)
+
+    def test_an_sdk_failure_mid_stream_is_a_stream_error(self, kind):
+        stream = self._stream(kind, _BreakingStream)
+        seen: list[StreamDelta] = []
+        with pytest.raises(StreamError, match="the stream failed: Overloaded") as caught:
+            _over(kind, stream).chat_stream(MESSAGES, seen.append)
+        assert isinstance(caught.value.__cause__, _OverloadedError)
+        assert stream.closed
+
+    def test_an_exception_from_on_delta_is_not_wrapped(self, kind):
+        stream = self._stream(kind)
+
+        def on_delta(_delta):
+            raise ValueError("the caller's own")
+
+        with pytest.raises(ValueError, match="the caller's own"):
+            _over(kind, stream).chat_stream(MESSAGES, on_delta)
+        assert stream.closed
+
+    def test_a_close_that_fails_does_not_hide_the_failure(self, kind):
+        stream = self._stream(kind, _CloseFails)
+
+        def on_delta(_delta):
+            raise ValueError("the caller's own")
+
+        with pytest.raises(ValueError, match="the caller's own"):
+            _over(kind, stream).chat_stream(MESSAGES, on_delta)
+        assert stream.closed
+
+    def test_a_close_that_fails_after_a_whole_answer_is_reported(self, kind):
+        with pytest.raises(OSError, match="close failed"):
+            _over(kind, self._stream(kind, _CloseFails)).chat_stream(MESSAGES, lambda _d: None)
+
+
+@pytest.mark.parametrize("kind", ["anthropic", "openai"])
+def test_a_failure_in_bmlibs_own_dump_is_not_a_stream_error(kind):
+    stream = _FakeStream(_events(_PROVIDER_CASES[kind][0]), dump="not_to_dict")
+    with pytest.raises(AttributeError, match="to_dict"):
+        _over(kind, stream).chat_stream(MESSAGES, lambda _d: None)
+
+
+class TestOllamaOpensAsChatDoes:
+    """ollama-python sends a streamed request only on the first ``next()``."""
+
+    @staticmethod
+    def _lazy(exc: Exception):
+        def stream():
+            raise exc
+            yield  # pragma: no cover - makes this a generator
+
+        return stream()
+
+    def test_a_missing_model_raises_what_chat_raises(self):
+        import ollama
+
+        provider = OllamaProvider()
+        provider._client = _RecordingOllamaClient(
+            self._lazy(ollama.ResponseError("model 'x' not found", 404))
+        )
+        with pytest.raises(ollama.ResponseError, match="not found") as caught:
+            provider.chat_stream(MESSAGES, lambda _d: None)
+        assert not isinstance(caught.value, StreamError)
+
+    def test_a_server_that_is_not_running_is_a_connection_error(self):
+        import httpx
+
+        provider = OllamaProvider()
+        provider._client = _RecordingOllamaClient(
+            self._lazy(httpx.ConnectError("connection refused"))
+        )
+        with pytest.raises(ConnectionError, match="failed to connect to Ollama"):
+            provider.chat_stream(MESSAGES, lambda _d: None)
+
+    def test_an_empty_stream_is_incomplete(self):
+        provider = OllamaProvider()
+        provider._client = _RecordingOllamaClient(_FakeStream([], dump="model_dump"))
+        with pytest.raises(StreamError, match="ended before done"):
+            provider.chat_stream(MESSAGES, lambda _d: None)
+
+
+class TestUsageAskedForAndNotSent:
+    _LOGGER = "bmlib.llm.providers.openai_compat"
+    _NO_USAGE = "openai/both-reasoning-fields-are-read-once"
+
+    def test_is_a_warning(self, caplog):
+        provider = _over("openai", _FakeStream(_events(self._NO_USAGE)))
+        with caplog.at_level("WARNING", logger=self._LOGGER):
+            response = provider.chat_stream(MESSAGES, lambda _d: None, model="gpt-x")
+        assert response.input_tokens == 0
+        assert [r.getMessage() for r in caplog.records] == [
+            "openai was asked for usage on a stream of gpt-x and sent none; recorded as 0 tokens"
+        ]
+
+    def test_a_provider_not_asked_is_not_warned_about(self, caplog):
+        provider = MistralProvider(api_key="test-key")
+        provider._client = MagicMock()
+        provider._client.chat.completions.create.return_value = _FakeStream(_events(self._NO_USAGE))
+        with caplog.at_level("WARNING", logger=self._LOGGER):
+            provider.chat_stream(MESSAGES, lambda _d: None)
+        assert caplog.records == []
+
+    def test_a_stopped_stream_is_not_warned_about(self, caplog):
+        provider = _over("openai", _FakeStream(_events(self._NO_USAGE)))
+        with caplog.at_level("WARNING", logger=self._LOGGER):
+            provider.chat_stream(MESSAGES, lambda _d: False)
+        assert caplog.records == []
+
+    def test_usage_that_arrives_is_not_warned_about(self, caplog):
+        provider = _over("openai", _FakeStream(_events("openai/text-and-a-usage-chunk")))
+        with caplog.at_level("WARNING", logger=self._LOGGER):
+            provider.chat_stream(MESSAGES, lambda _d: None)
+        assert caplog.records == []
+
+
+class TestSupportsStreamingSaysWhatTheProviderDoes:
+    """Every metadata entry a provider hands out says whether it streams."""
+
+    @staticmethod
+    def _streams(cls) -> bool:
+        return cls.chat_stream is not BaseProvider.chat_stream
+
+    @pytest.mark.parametrize(
+        "cls", [OpenAIProvider, MistralProvider, DeepSeekProvider, GeminiProvider]
+    )
+    def test_every_fallback_model(self, cls):
+        assert self._streams(cls)
+        assert [m.capabilities.supports_streaming for m in cls.FALLBACK_MODELS] == [True] * len(
+            cls.FALLBACK_MODELS
+        )
+
+    def test_anthropics_models_when_listing_fails(self):
+        provider = AnthropicProvider(api_key="test-key")
+        provider._client = MagicMock()
+        provider._client.models.list.side_effect = RuntimeError("down")
+        models = provider.list_models(force_refresh=True)
+        assert models
+        assert all(m.capabilities.supports_streaming for m in models)
+
+    def test_ollamas_model_when_show_fails(self):
+        provider = OllamaProvider()
+        provider._client = MagicMock()
+        provider._client.show.side_effect = RuntimeError("down")
+        metadata = provider.get_model_metadata("llama3.2")
+        assert metadata is not None
+        assert metadata.capabilities.supports_streaming
+
+    def test_a_provider_that_cannot_stream_does_not_claim_to(self):
+        assert not self._streams(_NonStreamingProvider)
+
+
 # ---------------------------------------------------------------------------
 # LLMClient
 # ---------------------------------------------------------------------------
@@ -377,6 +563,17 @@ class TestLLMClient:
         summary = get_token_tracker().get_summary()
         assert summary.total_input_tokens == 12
         assert summary.total_output_tokens == 7
+        reset_token_tracker()
+
+    def test_a_stopped_stream_records_the_usage_sent_so_far(self):
+        reset_token_tracker()
+        provider = _over("anthropic", _FakeStream(_events("anthropic/text")))
+        response = self._client_over(provider).chat_stream(
+            MESSAGES, lambda _d: False, model="anthropic:claude-x"
+        )
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        summary = get_token_tracker().get_summary()
+        assert (summary.total_input_tokens, summary.total_output_tokens) == (12, 1)
         reset_token_tracker()
 
     def test_tools_are_refused_not_dropped(self):

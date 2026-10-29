@@ -249,12 +249,15 @@ class LLMClient:
         --------
         *on_delta* returning ``False`` stops the stream: the connection is
         closed and the response holds what arrived, with ``stop_reason``
-        ``"cancelled"``. Any other return value (``None`` included) carries
+        ``"cancelled"`` (or the server's own, when its end marker came with
+        the last delta). Any other return value (``None`` included) carries
         on. An exception *on_delta* raises propagates, closing the stream.
 
         What differs from :meth:`chat`
         -------------------------------
-        * **No tools.** Passing ``tools=`` raises, rather than dropping them.
+        * **No tools.** Passing ``tools=`` raises, rather than dropping them;
+          a tool call that arrives anyway (tools sent through ``extra_body``)
+          is a :class:`~bmlib.llm.stream.StreamError`.
         * The content is exactly what was streamed: no ``<think>``-tag
           splitting and no JSON repair under *json_mode*. *json_mode* is still
           sent where the protocol has a field for it (OpenAI-compatible
@@ -262,9 +265,10 @@ class LLMClient:
           there it does nothing on a stream.
         * A stopped stream reports the token counts the server had sent when
           it stopped: Anthropic's input count is exact and its output count
-          partial, and an OpenAI-compatible server, which reports usage last,
-          has sent none. A stream that fails records no usage, as a failed
-          :meth:`chat` records none.
+          partial; an OpenAI-compatible server usually sends usage in its
+          last chunk, and native Ollama on its ``done`` chunk, so those have
+          usually sent none. A stream that fails records no usage, as a
+          failed :meth:`chat` records none.
         * OpenAI-compatible servers report token usage on a stream only when
           asked, and only :data:`~bmlib.llm.stream.STREAM_USAGE_PROVIDERS` are
           asked; elsewhere the counts are 0 unless the server sends them.
@@ -274,7 +278,9 @@ class LLMClient:
                 cannot stream.
             StreamError: If the stream fails after it opens (the server
                 reports an error, or the connection breaks; the SDK's
-                exception is the ``__cause__``) or ends before its end marker.
+                exception is the ``__cause__``), sends an event that is not
+                a JSON object or carries a tool call, or ends before its end
+                marker.
                 The deltas already delivered are what arrived of an
                 incomplete answer. A request refused before the stream opens
                 raises what :meth:`chat` would.

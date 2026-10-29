@@ -128,6 +128,31 @@
       "response": {"content": "One", "thinking": null, "input_tokens": 8, "output_tokens": 1, "stop_reason": "cancelled"}
     },
     {
+      "name": "anthropic/a-tool-use-block-is-an-error",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"id": "msg_7", "type": "message", "role": "assistant", "content": [], "model": "claude-x", "stop_reason": null, "usage": {"input_tokens": 30, "output_tokens": 1}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Let me check."}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {}}}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Let me check."}
+      ],
+      "error": "the stream carried a tool call"
+    },
+    {
+      "name": "anthropic/an-event-that-is-not-an-object-is-an-error",
+      "protocol": "anthropic",
+      "events": [
+        {"type": "message_start", "message": {"id": "msg_8", "type": "message", "role": "assistant", "content": [], "model": "claude-x", "stop_reason": null, "usage": {"input_tokens": 5, "output_tokens": 1}}},
+        "overloaded"
+      ],
+      "deltas": [],
+      "error": "not a JSON object"
+    },
+    {
       "name": "openai/text-and-a-usage-chunk",
       "protocol": "openai",
       "events": [
@@ -212,6 +237,55 @@
       "response": {"content": "ab", "thinking": null, "input_tokens": 0, "output_tokens": 0, "stop_reason": "cancelled"}
     },
     {
+      "name": "openai/both-reasoning-fields-are-read-once",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "reasoning_content": "Check.", "reasoning": "Check."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "No."}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop"}]}
+      ],
+      "deltas": [
+        {"kind": "thinking", "text": "Check."},
+        {"kind": "text", "text": "No."}
+      ],
+      "response": {"content": "No.", "thinking": "Check.", "input_tokens": 0, "output_tokens": 0, "stop_reason": "stop"}
+    },
+    {
+      "name": "openai/a-tool-call-is-an-error",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": ""}}]}, "finish_reason": null}]}
+      ],
+      "deltas": [],
+      "error": "the stream carried a tool call"
+    },
+    {
+      "name": "openai/an-event-that-is-not-an-object-is-an-error",
+      "protocol": "openai",
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "Half"}, "finish_reason": null}]},
+        42
+      ],
+      "deltas": [
+        {"kind": "text", "text": "Half"}
+      ],
+      "error": "not a JSON object"
+    },
+    {
+      "name": "openai/stopped-on-the-chunk-that-ends-it-keeps-its-finish-reason",
+      "protocol": "openai",
+      "stop_after": 2,
+      "events": [
+        {"choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": null}]},
+        {"choices": [{"index": 0, "delta": {"content": "b"}, "finish_reason": "length"}]}
+      ],
+      "deltas": [
+        {"kind": "text", "text": "a"},
+        {"kind": "text", "text": "b"}
+      ],
+      "response": {"content": "ab", "thinking": null, "input_tokens": 0, "output_tokens": 0, "stop_reason": "length"}
+    },
+    {
       "name": "ollama/thinking-text-and-counts",
       "protocol": "ollama",
       "events": [
@@ -258,6 +332,15 @@
       ],
       "deltas": [],
       "error": "server said: model 'nope' not found"
+    },
+    {
+      "name": "ollama/a-tool-call-is-an-error",
+      "protocol": "ollama",
+      "events": [
+        {"model": "llama3.2", "created_at": "2026-10-29T00:00:00Z", "message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "lookup", "arguments": {}}}]}, "done": false}
+      ],
+      "deltas": [],
+      "error": "the stream carried a tool call"
     }
   ]
 }

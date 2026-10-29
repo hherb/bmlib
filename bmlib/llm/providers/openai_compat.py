@@ -59,8 +59,10 @@ from bmlib.llm.providers.base import (
     _sdk_import_failed,
 )
 from bmlib.llm.stream import (
+    CANCELLED_STOP_REASON,
     STREAM_USAGE_PROVIDERS,
     StreamDelta,
+    closing_stream,
     refuse_tools,
     run_stream,
     sdk_events,
@@ -305,8 +307,9 @@ class OpenAICompatibleProvider(BaseProvider):
         Sends the request :meth:`chat` would, with ``stream=True``, and reads
         the chunks through :func:`~bmlib.llm.stream.run_stream`. Usage is
         asked for only from :data:`~bmlib.llm.stream.STREAM_USAGE_PROVIDERS`;
-        elsewhere it is read if the server sends it unasked, else 0. The SDK
-        retries opening the stream itself.
+        elsewhere it is read if the server sends it unasked, else 0. Usage
+        asked for and not sent by the end is logged at WARNING, since it is
+        then recorded as 0. The SDK retries opening the stream itself.
 
         Raises:
             NotImplementedError: If *tools* is passed.
@@ -319,11 +322,22 @@ class OpenAICompatibleProvider(BaseProvider):
         request_kwargs["stream"] = True
         if self.PROVIDER_NAME in STREAM_USAGE_PROVIDERS:
             request_kwargs["stream_options"] = {"include_usage": True}
-        stream = client.chat.completions.create(**request_kwargs)
-        try:
-            return run_stream("openai", sdk_events(stream, lambda c: c.to_dict()), model, on_delta)
-        finally:
-            stream.close()
+        with closing_stream(client.chat.completions.create(**request_kwargs)) as stream:
+            response = run_stream(
+                "openai", sdk_events(stream, lambda c: c.to_dict()), model, on_delta
+            )
+        # Every prompt costs at least one input token, so 0 is "not sent".
+        if (
+            "stream_options" in request_kwargs
+            and response.input_tokens == 0
+            and response.stop_reason != CANCELLED_STOP_REASON
+        ):
+            logger.warning(
+                "%s was asked for usage on a stream of %s and sent none; recorded as 0 tokens",
+                self.PROVIDER_NAME,
+                model,
+            )
+        return response
 
     # --- Model listing ---
 

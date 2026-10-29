@@ -63,17 +63,20 @@ class GeminiProvider(OpenAICompatibleProvider):
             display_name="Gemini 1.5 Pro",
             context_window=2_000_000,
             pricing=ModelPricing(input_cost=1.25, output_cost=5.0),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
         ModelMetadata(
             model_id="gemini-2.5-pro-preview-05-06",
             display_name="Gemini 2.5 Pro Preview",
             context_window=1_000_000,
             pricing=ModelPricing(input_cost=1.25, output_cost=10.0),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
         ModelMetadata(
             model_id="gemini-2.5-flash-preview-05-20",
             display_name="Gemini 2.5 Flash Preview",
             context_window=1_000_000,
             pricing=ModelPricing(input_cost=0.15, output_cost=0.60),
+            capabilities=ProviderCapabilities(supports_streaming=True),
         ),
     ]
