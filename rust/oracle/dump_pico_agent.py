@@ -58,8 +58,8 @@ def _client(replies: list[str], stop_reasons: list[str | None]) -> MagicMock:
 
 
 #: Every prompt the agent can send, the condensation's included: the runs pin
-#: the two it sends whole, and only this case reaches the three the patched
-#: map-reduce never renders.
+#: the five a run sends (the system prompt, and each call's task and format),
+#: and only this case reaches the three the patched map-reduce never renders.
 PROMPTS = (
     "PICO_SYSTEM_PROMPT",
     "SUITABILITY_TASK_PROMPT",

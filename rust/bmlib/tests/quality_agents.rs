@@ -18,7 +18,7 @@
 //!
 //! Tiers 2, 3 and 4 never hold a client: each takes a
 //! [`JsonChat`] whose default production implementation is
-//! [`LlmChat`]. The scripted implementation below is a real
+//! [`LlmChat`]. The scripted implementation (in `common::scripted_chat`) is a real
 //! [`ChatSource`] underneath, so the retry, truncation and `require_dict` rules
 //! the tiers inherit are [`bmlib::agents::chat_json`]'s and not a test double's
 //! — a script that answered `Ok`/`Err` directly would test nothing about them.

@@ -164,7 +164,10 @@ fn the_rust_agent_agrees_with_the_python_one() {
     let cases: Vec<Value> = serde_json::from_str(CASES).expect("cases");
     let expected: Vec<Value> = serde_json::from_str(EXPECTED).expect("expected");
     assert_eq!(cases.len(), expected.len());
-    assert!(cases.len() >= 18, "the corpus has shrunk");
+    assert!(
+        cases.len() >= 34,
+        "the corpus has shrunk below its 34 cases"
+    );
 
     for (case, want) in cases.iter().zip(&expected) {
         assert_eq!(case["name"], want["name"]);
