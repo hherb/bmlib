@@ -1054,7 +1054,7 @@ fn parse_risk_of_bias(rob_data: &Value) -> CochraneRiskOfBias {
 /// A refused value that was present is logged at WARNING, as Python logs it:
 /// an unstated confidence is kept under any `min_confidence` bar, so the line is
 /// the only trace that the model answered one.
-fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
+pub(crate) fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
     let value = value.filter(|value| !value.is_null())?;
     let Some(confidence) = json_fields::as_float(Some(value)) else {
         warn(&format!(

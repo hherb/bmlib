@@ -75,6 +75,8 @@ mod json_fields;
 pub mod llm_parsers;
 pub mod manager;
 pub mod metadata_filter;
+pub mod pico_agent;
+pub mod pico_models;
 pub mod quality_agent;
 pub mod scoring_models;
 pub mod study_classifier;
@@ -115,6 +117,12 @@ pub use extractors::{
     DEFAULT_STUDY_TYPE_KEYWORDS, DENIAL_LOOKAROUND, EXCLUSION_CONTEXT_WINDOW,
     POWER_CALCULATION_KEYWORDS, POWER_CALCULATION_PATTERNS, SAMPLE_SIZE_PATTERNS,
     SINGULAR_ONLY_STUDY_TYPES, STUDY_TYPE_EXCLUSIONS, STUDY_TYPE_PATTERNS, STUDY_TYPE_PRIORITY,
+};
+pub use pico_agent::{
+    read_extraction, read_part, read_suitability, verify_quotes, QuoteCheck, PICO_PARTS,
+};
+pub use pico_models::{
+    PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoSuitability,
 };
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use scoring_models::{
