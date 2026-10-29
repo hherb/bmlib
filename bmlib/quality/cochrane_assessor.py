@@ -659,7 +659,7 @@ class CochraneAssessor(BaseAgent):
         )
 
 
-def _clamped_confidence(value: object) -> float | None:
+def clamped_confidence(value: object) -> float | None:
     """Read the model's confidence, clamped to 0.0–1.0.
 
     A model reporting 1.4 would outrank every honest result and defeat
@@ -676,6 +676,10 @@ def _clamped_confidence(value: object) -> float | None:
         logger.warning("Model reported an unusable confidence %r; recording none", value)
         return None
     return min(1.0, max(0.0, confidence))
+
+
+#: The name the Cochrane reader has always called it by; the PICO agent shares it.
+_clamped_confidence = clamped_confidence
 
 
 def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
