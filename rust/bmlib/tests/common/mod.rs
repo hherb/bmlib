@@ -34,6 +34,7 @@
 pub mod oracle;
 pub mod pg_sim;
 pub mod pubmed_sim;
+pub mod scripted_chat;
 pub mod sink;
 
 use bmlib::db::{open_memory, Db};

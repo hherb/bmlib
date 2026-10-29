@@ -25,15 +25,14 @@
 
 use std::collections::BTreeMap;
 
-use bmlib::agents::{chat_json, ChatJsonError, ChatJsonOutcome, ChatSource};
 use bmlib::context_processor::llm_processor::{ContextModel, PromptTemplates};
 use bmlib::context_processor::{
     ExtractionResult, ProcessingConfig, ProcessingResult, ProcessingStatus,
     DEFAULT_MAX_CONTEXT_CHARS,
 };
-use bmlib::llm::{LLMMessage, LLMResponse, LlmClient};
+use bmlib::llm::LlmClient;
 use bmlib::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
-use bmlib::quality::agent_chat::{format_template, JsonChat};
+use bmlib::quality::agent_chat::format_template;
 use bmlib::quality::cochrane_assessor::{
     parse_cochrane_assessment, render_condense_consolidation, render_condense_extraction,
     AssessOptions, CochraneAssessor, Condenser, LlmCondenser, StudyInput,
@@ -43,117 +42,9 @@ use bmlib::quality::quality_agent::QualityAgent;
 use bmlib::quality::study_classifier::StudyClassifier;
 use serde_json::{json, Value};
 
-// ---------------------------------------------------------------------------
-// The scripted source
-// ---------------------------------------------------------------------------
+mod common;
 
-/// One response per call, repeating the last, and a record of the backoffs.
-struct Script {
-    responses: Vec<Result<LLMResponse, String>>,
-    calls: usize,
-    backoffs: Vec<usize>,
-}
-
-impl Script {
-    fn new(responses: Vec<Result<LLMResponse, String>>) -> Self {
-        Script {
-            responses,
-            calls: 0,
-            backoffs: Vec::new(),
-        }
-    }
-
-    /// A source answering `content` with `stop_reason`, forever.
-    fn answering(content: &str, stop_reason: Option<&str>) -> Self {
-        Script::new(vec![Ok(response(content, stop_reason))])
-    }
-}
-
-fn response(content: &str, stop_reason: Option<&str>) -> LLMResponse {
-    LLMResponse {
-        content: content.to_string(),
-        stop_reason: stop_reason.map(str::to_string),
-        ..Default::default()
-    }
-}
-
-impl ChatSource for Script {
-    fn chat(&mut self, _attempt: usize) -> Result<LLMResponse, String> {
-        let index = self.calls.min(self.responses.len().saturating_sub(1));
-        self.calls += 1;
-        self.responses[index].clone()
-    }
-
-    fn backoff(&mut self, attempt: usize) {
-        self.backoffs.push(attempt);
-    }
-}
-
-/// What one tier asked for.
-#[derive(Debug, Clone, PartialEq)]
-struct Call {
-    temperature: f64,
-    max_tokens: i64,
-    max_retries: usize,
-    require_dict: bool,
-}
-
-/// A [`JsonChat`] that is really [`bmlib::agents::chat_json`] over a [`Script`].
-struct ScriptedChat {
-    source: Script,
-    seen: Vec<Vec<LLMMessage>>,
-    calls: Vec<Call>,
-}
-
-impl ScriptedChat {
-    fn new(source: Script) -> Self {
-        ScriptedChat {
-            source,
-            seen: Vec::new(),
-            calls: Vec::new(),
-        }
-    }
-
-    fn answering(content: &str, stop_reason: Option<&str>) -> Self {
-        ScriptedChat::new(Script::answering(content, stop_reason))
-    }
-
-    /// The user turn of the last call, or `""` when nothing was sent.
-    fn last_user_message(&self) -> &str {
-        self.seen
-            .last()
-            .and_then(|messages| messages.iter().find(|m| m.role == bmlib::llm::Role::User))
-            .map(|m| m.content.as_str())
-            .unwrap_or("")
-    }
-}
-
-impl JsonChat for ScriptedChat {
-    fn chat_json(
-        &mut self,
-        messages: &[LLMMessage],
-        temperature: f64,
-        max_tokens: i64,
-        max_retries: usize,
-        require_dict: bool,
-    ) -> Result<ChatJsonOutcome, ChatJsonError> {
-        self.seen.push(messages.to_vec());
-        self.calls.push(Call {
-            temperature,
-            max_tokens,
-            max_retries,
-            require_dict,
-        });
-        chat_json(
-            &mut self.source,
-            max_retries,
-            temperature,
-            Some(max_tokens),
-            max_tokens,
-            require_dict,
-        )
-    }
-}
+use common::scripted_chat::{response, Call, Script, ScriptedChat};
 
 // ---------------------------------------------------------------------------
 // Tier 2 — the classifier
