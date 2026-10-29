@@ -771,6 +771,224 @@
       "expect": {
         "window": 131072
       }
+    },
+    {
+      "name": "anthropic above u64 max",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "max_input_tokens": 18446744073709551616
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic u64 max",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "max_input_tokens": 18446744073709551615
+      },
+      "expect": {
+        "window": 18446744073709551615
+      }
+    },
+    {
+      "name": "anthropic 131072.0",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": {
+        "max_input_tokens": 131072.0
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic null body",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": null,
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "anthropic list body",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "body": [
+        {
+          "max_input_tokens": 1000
+        }
+      ],
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama empty model_info plus modelinfo",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": {},
+        "modelinfo": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama null model_info plus modelinfo",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": null,
+        "modelinfo": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "window": 131072
+      }
+    },
+    {
+      "name": "ollama list model_info",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": [
+          {
+            "general.architecture": "llama",
+            "llama.context_length": 131072
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama string model_info",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": "x"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "ollama list model_info plus modelinfo",
+      "provider": "ollama",
+      "model": "llama3.1",
+      "body": {
+        "model_info": [
+          1
+        ],
+        "modelinfo": {
+          "general.architecture": "llama",
+          "llama.context_length": 131072
+        }
+      },
+      "expect": {
+        "window": 131072
+      }
+    },
+    {
+      "name": "deepseek data dict",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": {
+          "id": "deepseek-chat",
+          "context_window": 5
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek data string",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": "deepseek-chat"
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek null body",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": null,
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "deepseek non-object entry first",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          null,
+          "deepseek-chat",
+          7,
+          {
+            "id": "deepseek-chat",
+            "context_window": 131072
+          }
+        ]
+      },
+      "expect": {
+        "window": 131072
+      }
+    },
+    {
+      "name": "deepseek duplicate ids first wins",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "deepseek-chat",
+            "context_window": 1000
+          },
+          {
+            "id": "deepseek-chat",
+            "context_window": 2000
+          }
+        ]
+      },
+      "expect": {
+        "window": 1000
+      }
+    },
+    {
+      "name": "deepseek window null",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "body": {
+        "data": [
+          {
+            "id": "deepseek-chat",
+            "context_window": null
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
     }
   ]
 }

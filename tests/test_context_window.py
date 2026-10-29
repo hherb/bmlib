@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -63,3 +64,23 @@ def test_metadata_cases(case):
 def test_provider_without_metadata_is_a_value_error():
     with pytest.raises(ValueError):
         read_context_window("openai", "gpt-4o-mini", {})
+
+
+def test_missing_field_logs_info(caplog):
+    with caplog.at_level(logging.INFO, logger="bmlib.llm.context_window"):
+        assert read_context_window("anthropic", "m", {}) is None
+    assert [r.levelno for r in caplog.records] == [logging.INFO]
+    assert "max_input_tokens" in caplog.text
+
+
+def test_refused_value_logs_warning_quoting_it(caplog):
+    with caplog.at_level(logging.INFO, logger="bmlib.llm.context_window"):
+        assert read_context_window("anthropic", "m", {"max_input_tokens": "131072"}) is None
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert "'131072'" in caplog.text
+
+
+def test_wrong_typed_body_logs_warning(caplog):
+    with caplog.at_level(logging.INFO, logger="bmlib.llm.context_window"):
+        assert read_context_window("anthropic", "m", None) is None
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]

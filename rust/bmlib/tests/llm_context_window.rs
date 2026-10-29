@@ -98,10 +98,16 @@ fn provider_without_metadata_is_unknown() {
         read_context_window("openai", "gpt-4o-mini", &Value::Null),
         Err(ContextWindowError::UnknownProvider("openai".to_string()))
     );
-    let msg = ContextWindowError::NoSuchModel {
+    let shown = |e: ContextWindowError| e.to_string();
+    let msg = shown(ContextWindowError::NoSuchModel {
         provider: "deepseek".into(),
-        model: "m".into(),
-    }
-    .to_string();
-    assert!(msg.contains("deepseek") && msg.contains("m"));
+        model: "zz-model-9".into(),
+    });
+    assert!(msg.contains("deepseek") && msg.contains("zz-model-9"));
+    assert!(shown(ContextWindowError::UnknownProvider("openai".into())).contains("openai"));
+    let msg = shown(ContextWindowError::MissingApiKey {
+        provider: "mistral".into(),
+        env_var: "MISTRAL_KEY_X".into(),
+    });
+    assert!(msg.contains("mistral") && msg.contains("MISTRAL_KEY_X"));
 }

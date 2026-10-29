@@ -134,9 +134,14 @@ pub fn read_context_window(
     }
     match provider {
         "deepseek" => {
-            let entry = body["data"]
-                .as_array()
-                .and_then(|list| list.iter().find(|e| e["id"] == model))
+            // A `data` of the wrong type is unknown, not "no such model".
+            let Some(list) = body["data"].as_array() else {
+                return Ok(None);
+            };
+            // Non-object entries never match; with duplicate ids the first wins.
+            let entry = list
+                .iter()
+                .find(|e| e.is_object() && e["id"] == model)
                 .ok_or_else(|| ContextWindowError::NoSuchModel {
                     provider: provider.to_string(),
                     model: model.to_string(),
@@ -145,12 +150,17 @@ pub fn read_context_window(
         }
         "ollama" => {
             // `modelinfo` is the spelling the ollama client library exposes.
-            let info = body.get("model_info").or_else(|| body.get("modelinfo"));
-            let Some(arch) = info.and_then(|i| i[OLLAMA_ARCHITECTURE_KEY].as_str()) else {
+            let info = ["model_info", "modelinfo"]
+                .iter()
+                .filter_map(|k| body.get(k))
+                .find(|v| v.is_object());
+            let Some(info) = info else {
                 return Ok(None);
             };
-            let key = format!("{arch}{OLLAMA_WINDOW_KEY_SUFFIX}");
-            Ok(info.and_then(|i| field(i, &key)))
+            let Some(arch) = info[OLLAMA_ARCHITECTURE_KEY].as_str() else {
+                return Ok(None);
+            };
+            Ok(field(info, &format!("{arch}{OLLAMA_WINDOW_KEY_SUFFIX}")))
         }
         other => Err(ContextWindowError::UnknownProvider(other.to_string())),
     }

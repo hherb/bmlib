@@ -62,6 +62,9 @@ _FIELD_BY_PROVIDER: Mapping[str, str] = {
 #: DeepSeek lists every model in one body; this is the per-model field.
 DEEPSEEK_WINDOW_FIELD = "context_window"
 
+#: Largest count Rust's ``u64`` holds; Python refuses more so both agree.
+MAX_WINDOW = 2**64 - 1
+
 #: Ollama keys: the architecture names the prefix of the window's key.
 OLLAMA_ARCHITECTURE_KEY = "general.architecture"
 OLLAMA_WINDOW_KEY_SUFFIX = ".context_length"
@@ -87,11 +90,11 @@ class NoSuchModelError(ContextWindowError):
 def _as_count(provider: str, model: str, what: str, value: Any) -> int | None:
     """Return ``value`` if it is a positive integer count, else ``None``.
 
-    A bool, float, string, zero or negative number is refused (WARNING, quoting
-    the value): a wrong window silently truncates or overflows a prompt, so
-    "unknown" is the honest answer.
+    A bool, float, string, zero, negative or beyond-:data:`MAX_WINDOW` number
+    is refused (WARNING, quoting the value): a wrong window silently truncates
+    or overflows a prompt, so "unknown" is the honest answer.
     """
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+    if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MAX_WINDOW:
         return value
     logger.warning(
         "%s/%s: %s is %r, not a token count; window unknown", provider, model, what, value
@@ -99,20 +102,36 @@ def _as_count(provider: str, model: str, what: str, value: Any) -> int | None:
     return None
 
 
-def _field(provider: str, model: str, body: Mapping[str, Any], name: str) -> int | None:
-    """Read ``name`` from ``body`` as a count; absent is unknown (INFO)."""
-    if name not in body:
+def _wrong_type(provider: str, model: str, what: str, value: Any) -> None:
+    """Log (WARNING) that ``what`` is not the JSON object it should be."""
+    logger.warning(
+        "%s/%s: %s is %r, not a JSON object; window unknown", provider, model, what, value
+    )
+
+
+def _field(provider: str, model: str, obj: Any, name: str) -> int | None:
+    """Read ``name`` from the object ``obj`` as a count.
+
+    An absent field is unknown (INFO); a wrong-typed ``obj`` or a refused
+    value is unknown (WARNING).
+    """
+    if not isinstance(obj, Mapping):
+        _wrong_type(provider, model, "metadata", obj)
+        return None
+    if name not in obj:
         logger.info("%s/%s: metadata has no %r; window unknown", provider, model, name)
         return None
-    return _as_count(provider, model, repr(name), body[name])
+    return _as_count(provider, model, repr(name), obj[name])
 
 
-def read_context_window(provider: str, model: str, body: Mapping[str, Any]) -> int | None:
+def read_context_window(provider: str, model: str, body: Any) -> int | None:
     """Read ``model``'s context window (tokens) out of a provider's metadata.
 
     ``body`` is the JSON the provider returned: the model object (anthropic,
     gemini, mistral), the model list (deepseek) or ``/api/show`` (ollama).
-    Returns ``None`` when the body does not state a usable window.
+    Returns ``None`` when the body does not state a usable window, including
+    when ``body``, ``data`` or ``model_info`` is not the JSON type it should
+    be. Never raises for the shape of valid JSON.
 
     Raises:
         NoSuchModelError: deepseek's list has no entry for ``model``.
@@ -121,7 +140,12 @@ def read_context_window(provider: str, model: str, body: Mapping[str, Any]) -> i
     if provider in _FIELD_BY_PROVIDER:
         return _field(provider, model, body, _FIELD_BY_PROVIDER[provider])
     if provider == "deepseek":
-        entry = next((e for e in body.get("data") or [] if e.get("id") == model), None)
+        data = body.get("data") if isinstance(body, Mapping) else None
+        if not isinstance(data, list):
+            _wrong_type(provider, model, "data", data)
+            return None
+        # Non-object entries are skipped; with duplicate ids the first wins.
+        entry = next((e for e in data if isinstance(e, Mapping) and e.get("id") == model), None)
         if entry is None:
             raise NoSuchModelError(
                 f"deepseek has no model {model!r}", provider=provider, model=model
@@ -129,7 +153,13 @@ def read_context_window(provider: str, model: str, body: Mapping[str, Any]) -> i
         return _field(provider, model, entry, DEEPSEEK_WINDOW_FIELD)
     if provider == "ollama":
         # ``modelinfo`` is the spelling the ollama client library exposes.
-        info = body.get("model_info") or body.get("modelinfo") or {}
+        candidates = (
+            [body.get(k) for k in ("model_info", "modelinfo")] if isinstance(body, Mapping) else []
+        )
+        info = next((c for c in candidates if isinstance(c, Mapping)), None)
+        if info is None:
+            _wrong_type(provider, model, "model_info", candidates)
+            return None
         arch = info.get(OLLAMA_ARCHITECTURE_KEY)
         if not isinstance(arch, str):
             logger.info(
