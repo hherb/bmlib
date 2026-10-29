@@ -1,6 +1,8 @@
 # bmlib.templates — Prompt Template Engine
 
-Jinja2-based template engine for loading and rendering prompt files from disk. Supports a user-override directory with fallback to package-shipped defaults, enabling prompt customisation without modifying installed code.
+Jinja2-based template engine for loading and rendering prompt files from disk. Supports a user-override directory with fallback to a directory of defaults, enabling prompt customisation without modifying installed code.
+
+**bmlib ships no templates of its own.** Both directories belong to the caller: `default_dir` is your application's own prompt directory, never a path inside bmlib.
 
 ## Installation
 
@@ -29,13 +31,15 @@ class TemplateEngine:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `user_dir` | `Path \| None` | `None` | User override directory (checked first). Paths are expanded via `expanduser()`. |
-| `default_dir` | `Path \| None` | `None` | Package default directory (fallback). |
+| `user_dir` | `Path \| None` | `None` | User override directory (checked first). Expanded via `expanduser()`. |
+| `default_dir` | `Path \| None` | `None` | Your application's default directory (fallback). Expanded via `expanduser()`. |
+
+Both are stored, expanded, as `engine.user_dir` / `engine.default_dir`. Autoescape is off and trailing newlines are kept (see [Template Syntax](#template-syntax)).
 
 **Resolution order** when rendering a template named `"scoring.txt"`:
 
 1. `<user_dir>/scoring.txt` — user's customised version
-2. `<default_dir>/scoring.txt` — package-shipped default
+2. `<default_dir>/scoring.txt` — your application's default
 
 This lets users override any prompt without touching installed code.
 
@@ -134,9 +138,9 @@ else:
 def install_defaults(self) -> None
 ```
 
-Copy all default templates to the user directory. Skips templates that already exist in the user directory (never overwrites). Only copies files with extensions `.txt`, `.j2`, or `.jinja2`.
+Copy every template directly in `default_dir` (no recursion) to the user directory. Skips templates that already exist in the user directory (never overwrites). Only copies files whose suffix is exactly `.txt`, `.j2`, or `.jinja2`.
 
-Requires both `user_dir` and `default_dir` to be set. Creates `user_dir` if it doesn't exist.
+Creates `user_dir` if it doesn't exist. Doing nothing is reported, at two levels *(0.11.0, #73)*: with `user_dir` or `default_dir` unset the call is a no-op logged at `DEBUG` (a legitimate way to use the engine), while a `default_dir` that is not a directory — a typo, or a path not yet created — is a no-op logged at `WARNING`, since otherwise it would report success having installed nothing.
 
 Each copy is **atomic** and **byte for byte** *(0.11.0, #73)*. It is written to a temporary file beside the target and published with `os.replace`, so a copy interrupted partway — a full disk, a killed process — leaves nothing behind rather than a truncated template. That is what makes the skip above safe: a half-written template would satisfy "already exists" and never be repaired, and Jinja2 would render whatever survived, which is not a `TemplateNotFound` but a prompt missing its second half.
 
@@ -147,6 +151,8 @@ Templates are scanned in sorted order, so which ones are installed before a fail
 **A symlink whose target is missing is skipped, not overwritten** *(0.11.0, #73)*. `Path.exists()` follows symlinks, so a prompt you have symlinked onto a volume that happens to be unmounted looks absent — and publishing over it would replace the link itself. Such a destination is left alone and reported at `WARNING`, because until that target is back, rendering falls back to the default with your own version unreachable.
 
 **Raises `OSError`** from the first copy that fails, leaving the templates after it uninstalled. Call it again to install whatever is still missing — the loop is self-repairing by design, so the exception is worth acting on but not worth fearing. The exception names the template it could not write, not the temporary file it was staged through.
+
+No filename headroom is reserved for the temporary name (#103): it is 38 characters longer than the target's, so a default template whose name exceeds about 217 characters (255 − 38) fails here with `ENAMETOOLONG`. That is deliberate — shortening the name would rename the template, and `render()` would no longer find it — and the failure is loud and names the template.
 
 A killed process can leave a hidden `.<name>.<hex>.tmp` file in the user directory. It is inert — nothing scans that directory — but nothing sweeps it either, so it is yours to delete if you notice one.
 

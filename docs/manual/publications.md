@@ -14,12 +14,12 @@ Requires `httpx` for HTTP requests to external APIs.
 
 | Submodule | Contents | Role |
 |-----------|----------|------|
-| `models` | `Publication`, `FullTextSource`, `DownloadDay`, `FetchResult`, `SyncProgress`, `SyncReport`, `FetchedRecord`, `SourceDescriptor`, `SourceParam`, `RetractionNature`, `RetractionNotice` | Data models |
+| `models` | `Publication`, `FullTextSource`, `Grant`, `AuthorAffiliation`, `DownloadDay`, `PartCheckpoint`, `FetchResult`, `SyncProgress`, `SyncReport`, `FetchedRecord`, `SourceDescriptor`, `SourceParam`, `RetractionNature`, `RetractionNotice` | Data models |
 | `schema` | `SCHEMA_SQL`, `ensure_schema()` | Table definitions |
-| `storage` | `store_publication()`, `get_publication_by_doi()`, `get_publication_by_pmid()`, `add_fulltext_source()` | De-duplicating writes and lookups |
+| `storage` | `store_publication()`, `get_publication_by_doi()`, `get_publication_by_pmid()`, `get_grants()`, `get_author_affiliations()`, `add_fulltext_source()` | De-duplicating writes and lookups |
 | `sync` | `sync()` | The sole orchestration entry point |
-| `retractions` | `parse_retraction_watch_csv()`, `import_retraction_watch_export()`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
-| `retraction_status` | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()` | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status) |
+| `retractions` | `parse_retraction_watch_csv()`, `import_retraction_watch_export()`, `RetractionImport`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
+| `retraction_status` *(unreleased)* | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()`, and their types (`RetractionEvidence`, `RetractionVerdict`, `CrossrefResult`, …) | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status-unreleased) |
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
 
@@ -80,7 +80,7 @@ from bmlib.publications import (
 )
 ```
 
-The list above is the complete `bmlib.publications.__all__`. The fetcher functions themselves are not re-exported at package level and must be imported from their submodules:
+The list above is the complete `bmlib.publications.__all__`. Nothing in `retraction_status` is re-exported either; import it from `bmlib.publications.retraction_status` (see [Retraction status](#retraction-status-unreleased)). The fetcher functions themselves are not re-exported at package level and must be imported from their submodules:
 
 ```python
 from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
@@ -1807,7 +1807,12 @@ rather than duplicating them — every column except `record_id` and
 `created_at` is overwritten from the new file, since the CSV is the source of
 truth. Identifiers are normalised with the same functions
 `store_publication()` uses, so a DOI stored here matches any case or prefix
-variant looked up later.
+variant looked up later. *(unreleased)* A PMID — the paper's and the
+notice's own alike (#504, #523) — is stored as ASCII digits without leading
+zeros (bmlib#470's rule), so `"00069063"` is stored as `"69063"` and a padded
+PMID on either side matches. Re-store existing rows to canonicalise them. A
+PMID that is not ASCII digits is stored whitespace-stripped and logged at
+`WARNING` with a count: no lookup can find it.
 
 Runs inside one `transaction(conn)`: called standalone it commits once;
 called inside a caller's open `transaction(conn)` block it joins that block
@@ -1854,6 +1859,9 @@ Everything is one transaction, and each refusal below raises `ValueError` and
 writes nothing:
 
 - **No usable row**, which would answer "no notices" for every paper.
+- **A connection `transaction()` cannot make atomic** — `TransactionModeError`,
+  a `ValueError` subclass (see
+  [`require_transaction_control()`](database.md#require_transaction_control)).
 - **A row shorter than the header**, which is what a download cut part-way
   through a row leaves (see [Malformed CSV](#parse_retraction_watch_csv)).
 - **No notice carries a findable paper DOI, none a PMID, or no findable one a
@@ -1914,6 +1922,14 @@ no usable identifier is a programming error, not an empty result: returning
 paper it knows nothing about as not retracted, which is the worst failure
 this feature can have.
 
+*(unreleased, #504)* **A PMID is read by bmlib#470's rule**: it is looked up
+as ASCII digits without leading zeros, so `pmid="000069063"` finds a notice
+stored as `"69063"`. A `pmid` that is given, is not blank or a sentinel, and
+is still not ASCII digits (`"PMC123"`, `"12a"`) raises `ValueError` **whatever
+the DOI** — a DOI-only lookup misses a notice the export holds under the PMID
+alone and would still read as consulted. A sentinel `pmid` beside a usable
+`doi` is simply ignored, and the DOI decides.
+
 ### `is_retracted`
 
 ```python
@@ -1966,7 +1982,7 @@ if is_retracted(lookup_retractions(conn, doi="10.1016/j.anbehav.2009.11.027")):
 
 ---
 
-## Retraction status
+## Retraction status *(unreleased)*
 
 `is_retracted()` answers from Retraction Watch alone, and Retraction Watch
 alone misses retractions. Measured 2026-10-18 (issue #504): 77 of 197
@@ -2077,6 +2093,62 @@ to):
   notice of a nature bmlib does not know is read the same way. An unknown
   relation `source` makes that DOI `unreachable` rather than being guessed,
   since the source decides whether the guard applies.
+
+### API reference
+
+All names below live in `bmlib.publications.retraction_status`; none is
+re-exported from `bmlib.publications`. Every function is pure — no
+connection, no network.
+
+```python
+def retraction_status(
+    *,
+    doi: str | None,
+    export: Sequence[RetractionEvidence] | None,
+    crossref: CrossrefResult | None,
+    publication_types: Iterable[str] = (),
+) -> RetractionVerdict
+
+def evidence_from_notices(notices: Iterable[RetractionNotice]) -> list[RetractionEvidence]
+def crossref_key(doi: str | None) -> str | None
+def crossref_retraction_requests(
+    dois: Iterable[str], mailto: str | None = None
+) -> CrossrefRequests
+def parse_crossref_retraction_response(
+    status: int, body: bytes | str, requested_dois: Iterable[str]
+) -> dict[str, CrossrefResult]
+```
+
+| Name | What it does |
+|------|--------------|
+| `retraction_status()` | The rule above. `doi=None` means Crossref cannot have answered, so the paper is never `clear`; `crossref=None` means Crossref was not asked. `publication_types` must be a sequence of strings — one joined string raises `TypeError`. |
+| `evidence_from_notices()` | Maps stored `RetractionNotice`s onto `RetractionEvidence` (`source=RETRACTION_WATCH_EXPORT`, the notice DOI normalised, `raw_kind` = the export's wording). Raises `ValueError` for a `retraction_date` that is not ISO (#507). |
+| `crossref_key()` | The key `parse_crossref_retraction_response()` files a DOI's result under: the DOI with its doi.org prefix and whitespace stripped, lower-cased. |
+| `crossref_retraction_requests()` | Normalises and de-duplicates `dois`, then packs them in order into batches of at most `CROSSREF_BATCH_MAX_DOIS` (50) whose URL stays within `CROSSREF_URL_MAX_CHARS` (4,000; a single longer DOI gets a batch of its own). Each URL asks `CROSSREF_WORKS_URL` for `select=DOI,update-to,updated-by`, with `mailto` appended if given. |
+| `parse_crossref_retraction_response()` | One batch's answer, keyed by `crossref_key()`, one `CrossrefResult` per requested DOI. Pass the HTTP status, the raw body and the batch's `dois`. |
+
+**Types.** All are frozen dataclasses or `StrEnum`s; the dataclasses carry
+`to_dict()` (the fixture's shape), and `RetractionEvidence` a `from_dict()`
+that raises on an unknown source or kind.
+
+| Type | Fields / members |
+|------|------------------|
+| `RetractionStatus` | `RETRACTED`, `CONCERN`, `CLEAR`, `UNCHECKED` |
+| `RetractionVerdict` | `status`, `deciding: RetractionEvidence \| None`, `unanswered: tuple[RetractionLookup, ...]`. A verdict that contradicts itself (a `clear` with `unanswered`, a `retracted` resting on a concern) raises `ValueError` on construction. |
+| `RetractionLookup` | `RETRACTION_WATCH_EXPORT`, `CROSSREF` — the lookups that must answer before a paper is `clear`. The PubMed label is not one. |
+| `RetractionEvidence` | `source: RetractionSource`, `kind: RetractionKind`, `date`, `notice_doi`, `record_id`, `raw_kind` (all `str \| None`). `date` must be `None`, `""` (undated) or ISO `yyyy`, `yyyy-mm` or a real `yyyy-mm-dd`, of a real `str` type, else `ValueError` *(#507)*. |
+| `RetractionSource` | `RETRACTION_WATCH_EXPORT`, `CROSSREF_RETRACTION_WATCH`, `CROSSREF_PUBLISHER`, `PUBMED_LABEL` |
+| `RetractionKind` | Crossref's twelve `type` values (`RETRACTION`, `WITHDRAWAL`, `REMOVAL`, `PARTIAL_RETRACTION`, `EXPRESSION_OF_CONCERN`, `CORRECTION`, `ERRATUM`, `CORRIGENDUM`, `ADDENDUM`, `CLARIFICATION`, `NEW_VERSION`, `NEW_EDITION`), plus `REINSTATEMENT` and `OTHER` |
+| `CrossrefResult` | `outcome: CrossrefOutcome`, `evidence`, `retraction_targets`, `reason`, `doi`. `doi`, `evidence` and `retraction_targets` only when `SERVED` (`doi` always then), `reason` exactly when `UNREACHABLE` (its wording is not part of the contract); anything else raises `ValueError`. |
+| `CrossrefOutcome` | `SERVED`, `NOT_KNOWN`, `UNREACHABLE` |
+| `CrossrefBatch` | `url`, `dois: tuple[str, ...]` (normalised) |
+| `CrossrefRequests` | `batches: tuple[CrossrefBatch, ...]`, `unsendable: tuple[str, ...]` |
+
+Module constants: `RETRACTION_FAMILY` (retraction, withdrawal, removal),
+`CONCERN_KINDS` (expression of concern, partial retraction),
+`NON_DECIDING_KINDS`, `PUBMED_RETRACTED_LABELS`
+(`{"retracted publication", "d016441"}`, compared case-folded),
+`CROSSREF_WORKS_URL`, `CROSSREF_BATCH_MAX_DOIS`, `CROSSREF_URL_MAX_CHARS`.
 
 The phone apps reach the same functions through `bmlib-ffi`, and keep the
 export as a Rust-built `RetractionIndex` file rather than in SQLite — see

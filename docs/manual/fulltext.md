@@ -8,6 +8,7 @@ Full-text retrieval for biomedical literature. Provides a multi-tier retrieval c
 pip install bmlib                   # JATSParser, FullTextCache, SectionSegmenter, models
 pip install bmlib[fulltext]         # + FullTextService retrieval (httpx)
 pip install bmlib[pdf]              # + PDF → text conversion (pymupdf)
+pip install bmlib[html]             # + canonical_from_html() (markupever; unreleased)
 ```
 
 Only `FullTextService` needs `httpx`, and it is resolved on first access, so `import bmlib.fulltext` loads no httpx and does not even load `service` — the parser, the models, the cache and the segmenter all import on core bmlib alone. Constructing the service without the extra raises `ImportError: httpx is required for full-text retrieval, but importing it failed (No module named 'httpx'). Install with: pip install bmlib[fulltext]`. The parenthesised cause is what was actually raised, so a *broken* httpx install is not misreported as an absent one. `pymupdf` is required **only** for `PyMuPDFConverter`; everything else in the module works without it.
@@ -19,10 +20,10 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 | `service` | `FullTextService`, `FullTextError` | Yes |
 | `jats_parser` | `JATSParser` | Yes — used by the service to render XML |
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
-| `models` | `FullTextResult`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
-| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
+| `models` | `FullTextResult`, `ContentKind`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
+| `pdf_converter` | `ConversionResult`, `PDFConverter`, `LayoutExtractor`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
 | `segmenter` | `SectionSegmenter`, heading-detection patterns, `match_section_type()` | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()`; `assess_full_text()` classifies headings with `match_section_type()` |
-| `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `canonical_from_html()`, `assess_full_text()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
+| `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `canonical_from_html()`, `assess_full_text()`, `chunk_canonical()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
 > When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
@@ -33,20 +34,30 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 
 ```python
 from bmlib.fulltext import (
-    # Service
+    # Service (resolved on first access; needs bmlib[fulltext])
     FullTextService,
     FullTextError,
+    FullTextUnavailableError,
     # Parser
     JATSParser,
     # Cache
     FullTextCache,
     # PDF conversion
     ConversionResult,
+    LayoutExtractor,
     PDFConverter,
     PyMuPDFConverter,
     get_converter,
     list_converters,
+    render_html,
+    # Section segmentation
+    SectionSegmenter,
+    Section,
+    SectionType,
+    SegmentedDocument,
+    TextBlock,
     # Data models
+    ContentKind,
     FullTextResult,
     FullTextSourceEntry,
     JATSArticle,
@@ -55,23 +66,22 @@ from bmlib.fulltext import (
     JATSBodySection,
     JATSFigureInfo,
     JATSTableInfo,
+    JATSFundingAward,
+    JATSFundingSource,
     JATSReferenceInfo,
-    # PDF conversion
-    ConversionResult,
-    PDFConverter,
-    PyMuPDFConverter,
-    get_converter,
-    list_converters,
-    render_html,
 )
 ```
 
-The list above is the complete `bmlib.fulltext.__all__` (18 names). A few public symbols are **not** re-exported at package level and must be imported from their submodule:
+The list above is the complete `bmlib.fulltext.__all__` (29 names). A few public symbols are **not** re-exported at package level and must be imported from their submodule:
 
 ```python
 from bmlib.fulltext.cache import sanitize_identifier
 from bmlib.fulltext.pdf_converter import CONVERTER_PYMUPDF, DEFAULT_CONVERTER
+from bmlib.fulltext.jats_parser import RENDERER_VERSION
+from bmlib.fulltext.segmenter import match_section_type
 ```
+
+The canonical-text API is its own subpackage, `bmlib.fulltext.canonical`, and is not re-exported from `bmlib.fulltext`; see [Canonical text](#canonical-text-unreleased) for its 40 names.
 
 ---
 
@@ -173,6 +183,7 @@ class FullTextService:
         timeout: float = 30.0,
         cache: FullTextCache | None = None,
         convert_pdfs: bool = True,
+        ncbi_api_key: str | None = None,
     ) -> None: ...
 
     def fetch_fulltext(
@@ -464,7 +475,9 @@ So is an exhibit's, a formula's, a reference's and a footnote's `<label>`, and
 the journal title: a no-break, thin or hair space the publisher put between
 `Figure` and `1` reads as a plain space, as it already did in a caption
 *(unreleased, #516)*. So is a cited `<source>`, the journal a reference names
-*(unreleased, #518)*.
+*(unreleased, #518)*. `RENDERER_VERSION` is **7** at this writing: 4 for
+#497's `associated-data` section, 5 for #514, 6 for #516, 7 for #518, so a
+cache written by 0.11.0 is re-fetched once after an upgrade.
 
 **An exhibit the publisher did not number is rendered without one** *(changed,
 0.11.0 — #162)*. `to_html()` used to fill a missing `<label>` with
@@ -1964,7 +1977,7 @@ Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html
 
 `get_html()` and `get_abstract()` strip the line again, and return `None` for an entry stamped with an **older** version than `bmlib.fulltext.jats_parser.RENDERER_VERSION` — including every entry written by a bmlib before the stamp, which carries none — unless called with `stale_ok=True`. An entry stamped **newer** is served, so two stamp-aware bmlib versions (or this library and a port that lags it, once the port reads the stamp) sharing one directory converge on the newer rendering rather than each discarding the other's writes. A reader that does not know the stamp — a bmlib before it, or the Rust port until #436 — serves the line as a leading HTML comment. A first line that names the stamp but cannot be read as one (a BOM, a respaced line) is read as unstamped, and its deletion is logged at `WARNING`, since it may be a newer writer's spelling. `stale_entries()` reports the stale entries and `discard_stale()` deletes them; how `FullTextService` uses the two is in [the operational notes](#operational-notes). A PDF is the publisher's bytes rather than a rendering, and is not stamped. **Upgrading therefore re-fetches every article whose HTML (or, beside a PDF, abstract) an earlier bmlib cached**, at its next lookup. `abstracts/` is itself new in 0.11.0 (#305), so a cache written by 0.10.0 holds none. No cached PDF is deleted, though an article holding a PDF and an abstract may re-download its PDF in that re-fetch.
 
-Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/` — and only the first is suppressed by `exist_ok=True`. `abstracts/` is created by the first `save_abstract()`, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
+Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/`, each with `exist_ok=True`, so only a directory that cannot be created raises. `abstracts/` is created by the first `save_abstract()` and `jats/` by the first `save_jats()` *(unreleased)*, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
 
 ```python
 class FullTextCache:
@@ -2005,15 +2018,18 @@ class FullTextCache:
 | `get_html(id, *, stale_ok=False)` | `str \| None` | Returns the cached HTML content without its stamp, or `None` — also `None` for an entry an older renderer wrote, unless `stale_ok`; such an entry stays on disk until `discard_stale()` *(0.11.0)* |
 | `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`, behind the renderer stamp; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(0.11.0)* |
 | `get_abstract(id, *, stale_ok=False)` | `str \| None` | Returns that abstract, or `None`; stale and raising exactly as `get_html()` is *(0.11.0)* |
+| `save_jats(data, id)` | `str` | Save the JATS bytes an HTML entry (or an abstract beside a PDF) was rendered from, as served, in `jats/`; not stamped, since it is the publisher's bytes and not a rendering. Returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(unreleased)* |
+| `get_jats(id)` | `bytes \| None` | Returns those bytes, or `None` — also beside an HTML entry an earlier bmlib wrote, which cached no XML. Raises `OSError` if the entry cannot be read; `FullTextService` reports that, moves it aside and serves the HTML with `jats_xml=None` *(unreleased)* |
+| `has_html(id)` | `bool` | Whether an HTML entry is on disk, readable or not; reads nothing, so a stale or unreadable entry counts. The service asks it so an abstract's XML never replaces an HTML entry's in `jats/` *(unreleased)* |
 | `stale_entries(id)` | `list[str]` | The rendered entries for the identifier (HTML, then abstract) an older renderer wrote; reads only. A current or newer entry and the PDF are never stale. Raises as `get_html()` does — an undecodable entry is `quarantine()`'s case, not a stale one *(0.11.0)* |
 | `discard_stale(id)` | `list[str]` | Delete those entries; returns the paths removed, each logged at `INFO`. Raises as `stale_entries()` does, and `OSError` if an entry cannot be removed — a read-only cache directory *(0.11.0)* |
 | `quarantine(id)` | `list[str]` | Rename any entry for the identifier that cannot be read to `<name>.corrupt`; returns the paths moved. A readable entry is left alone |
-| `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF and abstract (missing ones are ignored) |
-| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/` and `abstracts/`, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` exists only once used — where a missing `pdfs/` or `html/` used to raise *(0.11.0)* |
+| `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF, abstract and JATS *(JATS unreleased)* (missing ones are ignored) |
+| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/`, `abstracts/` and `jats/` *(unreleased)*, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` and `jats/` exist only once used — where a missing `pdfs/` or `html/` used to raise *(0.11.0)* |
 
 PDF validation uses magic-byte checking against `PDF_MAGIC_BYTES = b"%PDF"`. Non-PDF data is **rejected with a warning log and a `None` return** — no exception is raised.
 
-All three saves are **atomic**: the bytes go to a uniquely-named temporary file beside the target and are published with `os.replace`, so a write that runs out of space raises `OSError` and leaves the previous entry intact instead of a truncated one. The temporary file is dot-prefixed and removed on failure; `clear()` sweeps up any left by a killed process. The file's permissions are those an ordinary write would produce (0666 filtered by the umask), so a cache directory shared between users keeps working.
+All four saves are **atomic**: the bytes go to a uniquely-named temporary file beside the target and are published with `os.replace`, so a write that runs out of space raises `OSError` and leaves the previous entry intact instead of a truncated one. The temporary file is dot-prefixed and removed on failure; `clear()` sweeps up any left by a killed process. The file's permissions are those an ordinary write would produce (0666 filtered by the umask), so a cache directory shared between users keeps working.
 
 **Every save can raise `OSError`**, and for a direct caller this is a real change rather than a relocation: a bare `write_text` under delayed allocation *returned a path* on a disk that was about to fill, leaving a truncated file behind. `FullTextService` catches it at every call site and reports it once per service.
 
@@ -2072,11 +2088,13 @@ fulltext_cache/
 ├── html/
 │   ├── 10.1234_example_7ddfc9f2f4.html
 │   └── PMC7614751.html
-└── abstracts/            (created on first use)
-    └── 10.1101_2024.01.01.573000_75b26bb777.html
+├── abstracts/            (created on first use)
+│   └── 10.1101_2024.01.01.573000_75b26bb777.html
+└── jats/                 (created on first use; unreleased)
+    └── 10.1234_example_7ddfc9f2f4.xml
 ```
 
-Every file in `html/` and `abstracts/` opens with the renderer stamp line described above *(0.11.0)*; a file in `pdfs/` is the PDF as served.
+Every file in `html/` and `abstracts/` opens with the renderer stamp line described above *(0.11.0)*; a file in `pdfs/` is the PDF as served, and one in `jats/` the XML as served.
 
 The hashed names come from `FullTextService`, which always sanitizes the `identifier` it is given. The bare `PMC7614751.html` is what a direct `cache.save_html(html, "PMC7614751")` produces — the identifier already matches `[\w.\-]+`, so it is used verbatim. The same string routed through the service would instead land in `PMC7614751_158cdf8b74.html`, so pick one access path per identifier and stay with it.
 
@@ -2573,6 +2591,105 @@ doc.converter_version                     # "jats-1"
   (Rust: `CanonicalError`), both languages refusing the same list
   (`refusals` in the shared fixture).
 
+### Chunks for retrieval *(unreleased)*
+
+`chunk_canonical(text, max_chars=DEFAULT_MAX_CHARS, overlap_chars=DEFAULT_OVERLAP_CHARS)`
+splits a `CanonicalText` into `Chunk`s for embedding, section by section in
+document order. A `Chunk` is the `section_index` it lies in and a `TextSpan`
+into the canonical text, so a hit points into the same text as everything else.
+
+```python
+from bmlib.fulltext.canonical import CHUNKER_VERSION, canonical_from_markdown, chunk_canonical
+
+doc = canonical_from_markdown(
+    "# A trial\n\n## Methods\n\nWe enrolled 40 patients (see Fig. 2). Dose was 5 mg.\n\n"
+    "## Results\n\nMortality fell."
+)
+for chunk in chunk_canonical(doc, max_chars=40, overlap_chars=20):
+    heading = doc.sections[chunk.section_index].heading_span
+    print(doc.span_text(heading), "|", doc.span_text(chunk.span))
+# Methods | We enrolled 40 patients (see Fig. 2).
+# Methods | Dose was 5 mg.
+# Results | Mortality fell.
+```
+
+- **Sentences**: a block splits at a `.`, `!` or `?` followed by whitespace,
+  unless the token before the mark (leading `([{"'“‘` stripped, ASCII only,
+  compared lower-case) is in `ABBREVIATIONS` — bmlibrarian's
+  `adaptive_chunker_optimized.py` list as a whole-token check, plus `figs`,
+  `e.g`, `i.e`, `cf` and `approx`. So `(see Fig. 2)` does not end a sentence.
+- **Packing**: a section's sentences are packed in order into chunks of at
+  most `max_chars` code points. A chunk never crosses a section, may cross its
+  blocks, and starts and ends on non-whitespace. `max_chars` is a **hard cap**,
+  unlike bmlibrarian's: a longer sentence is cut at whitespace, or at the cap
+  where it has none (counting code points, so a cut can part a combining mark
+  from its letter). Nothing is dropped — every non-whitespace code point of
+  every block lies in some chunk.
+- **Overlap**: the next chunk starts with the previous one's last whole
+  sentences that lie within `overlap_chars` of its end (never its first
+  sentence), unless they would leave the next sentence no room.
+- **Not chunked**: the title and the headings; reach a chunk's heading through
+  `section_index`. A text of a title and headings alone gives no chunks.
+- **Sizes**: `DEFAULT_MAX_CHARS` (1000) and `DEFAULT_OVERLAP_CHARS` (100),
+  bmlibrarian's `chunk_embedder.py`. `ValueError` if `max_chars < 1`,
+  `overlap_chars` is negative or not below `max_chars`, either is not an
+  `int` (a `bool` included), or the text fails `validate()`.
+- **Storing them**: `Chunk.to_dict()` / `from_dict()`
+  (`{"section_index": …, "span": {"start": …, "end": …}}`; `ValueError` for a
+  malformed value or a negative index). A chunk does not carry
+  `CHUNKER_VERSION` (1, pinned in `tests/test_renderer_version.py` and bumped
+  whenever any chunk can move); store it beside the canonical text's
+  `converter_version`, since either moving makes a stored chunk and its
+  embedding stale. Python and Rust are held together by
+  `tests/fixtures/canonical_chunks.json`.
+
+### Canonical model reference *(unreleased)*
+
+All model types are frozen dataclasses except `SectionDraft`.
+
+| Name | What it is |
+|------|------------|
+| `CanonicalText` | `text`, `title_span: TextSpan \| None`, `sections: tuple[CanonicalSection, ...]`, `source_format`, `converter_version`. `span_text(span)` (`ValueError` outside the text), `spans()` (every span, title first, in order), `validate()`, `to_dict()` / `from_dict()` |
+| `CanonicalSection` | `level` (`TOP_LEVEL` is 1), `heading_span: TextSpan \| None`, `blocks: tuple[CanonicalBlock, ...]`. Sections are a flat list in document order; one nests under the nearest earlier section with a lower `level`, and levels may skip (Markdown `#` then `###`) |
+| `CanonicalBlock` | `kind: BlockKind`, `span: TextSpan` |
+| `TextSpan` | `start`, `end`: half-open code-point range. Construction raises `ValueError` unless both are `int` and `0 <= start <= end`; `to_dict()` / `from_dict()` |
+| `BlockKind` | `PARAGRAPH` (`"paragraph"`), `TABLE_ROW` (`"table_row"`) |
+| `SourceFormat` | `JATS`, `MARKDOWN`, `PLAIN_TEXT`, `PDF`, `HTML`; the value is the `converter_version` prefix (`"plain_text"`, …) |
+| `BlockDraft` | A block before layout: `kind`, `text`. `BlockDraft.paragraph(text)`; `BlockDraft.row(cells)` normalises each cell and joins them with `CELL_SEPARATOR`, keeping an empty cell's place (a row of empty cells is an empty block, dropped) |
+| `SectionDraft` | `heading` (`""` for none), `level`, `blocks: list[BlockDraft]` |
+| `assemble(title, sections, source_format, converter_version)` | The one layout every converter hands its drafts to: collapses whitespace in title, headings and paragraphs, drops empty blocks and sections left with neither heading nor blocks, records every span, and returns a validated `CanonicalText` (`ValueError` for a level below `TOP_LEVEL`). A caller with its own format can use it too |
+| `BLOCK_SEPARATOR`, `CELL_SEPARATOR`, `TOP_LEVEL` | `"\n\n"`, `"\t"`, `1` |
+
+```python
+from bmlib.fulltext.canonical import TOP_LEVEL, BlockDraft, SectionDraft, SourceFormat, assemble
+
+doc = assemble(
+    "My  paper",
+    [SectionDraft("Results", TOP_LEVEL, [
+        BlockDraft.paragraph("Mortality\n fell."),
+        BlockDraft.row(["Arm", " n "]),
+    ])],
+    SourceFormat.PLAIN_TEXT,
+    "plain_text-1",
+)
+doc.text   # 'My paper\n\nResults\n\nMortality fell.\n\nArm\tn'
+```
+
+The helpers the converters share are public too:
+
+| Name | Does |
+|------|------|
+| `is_white_space(ch)` | Unicode `White_Space`, as Rust decides it: `str.isspace()` less U+001C–U+001F |
+| `normalise_whitespace(text)` | Each run of `is_white_space` characters to one space, then trimmed |
+| `count_words(text)` | Runs of non-`is_white_space` characters; what `body_words` counts |
+| `split_lines(text)` | Lines, `\r\n` and a lone `\r` read as `\n` |
+| `split_paragraphs(text)` | `BlockDraft` paragraphs separated by blank (whitespace-only) lines, each line joined by a space; plain text's and the PDF converter's rule |
+| `strip_inline(text)` | Inline Markdown markup removed (emphasis, code spans, links, images, autolinks, escapes), as the Markdown converter reads it |
+| `strip_links(text)` | Each `[text](#id)` cross-reference link the JATS reader wrote reduced to its text; a link whose target does not start with `#` is kept |
+| `sentence_spans(text, span)` | The sentences of `text[span.start:span.end]` by the chunker's rule, as spans into `text`, each starting and ending on non-whitespace |
+| `is_abbreviation(text, start, mark)` | Whether the token before `text[mark]`, not reaching back past `start`, is in `ABBREVIATIONS` |
+| `ABBREVIATIONS` | The chunker's frozenset of abbreviation tokens (lower-case, no final `.`) |
+
 ## FullTextError and FullTextUnavailableError
 
 ```python
@@ -2597,7 +2714,7 @@ Helpers called directly (e.g. `JATSParser`) may raise their own exceptions uncha
 
 ## Integration Example
 
-The service, cache and — separately — the PDF converter, in one workflow. Note that the conversion step is an explicit call by the caller; the service does not perform it.
+The service, cache and — separately — the PDF converter, in one workflow. The service already extracts a cached PDF into `html` when `bmlib[pdf]` is installed (`content_kind="extracted"`); the explicit conversion below covers `convert_pdfs=False` or a missing extra.
 
 ```python
 from pathlib import Path

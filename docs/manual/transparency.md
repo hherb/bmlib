@@ -365,7 +365,7 @@ A statement is found by any of three routes:
 
 A whitespace-only tagged section proves nothing and does not suppress the fallback, so an untagged disclosure elsewhere in the document is still found. `SCORE_COI_DISCLOSED` is credited exactly once no matter how many routes fire.
 
-A PubMed statement can arrive *after* the full-text scan has already appended `"No COI disclosure found in full text"` or either `"COI disclosure status unknown (…)"` line. All of them would then contradict `coi_disclosed=True`, so they are removed and `"COI disclosure found in PubMed record"` is appended in their place — the indicator list never has to be reconciled against the field.
+A PubMed statement can arrive *after* the full-text scan has already appended `"No COI disclosure found in full text"` or `"COI disclosure status unknown"`. Either would then contradict `coi_disclosed=True`, so it is removed and `"COI disclosure found in PubMed record"` is appended in their place — the indicator list never has to be reconciled against the field.
 
 The converse does **not** hold: a PubMed record *without* `<CoiStatement>` leaves `coi_disclosed` alone. Absence there means the publisher supplied no statement to PubMed, not that the paper carries none, and demoting `None` to `False` would trigger the missing-COI downgrade on no evidence.
 
@@ -450,7 +450,7 @@ Run transparency analysis for a single document. At least one of `pmid` or `doi`
 
 **Returns:** `TransparencyResult`
 
-**Raises:** `ImportError` if `httpx` is not installed. `ValueError` if `pmid` is non-blank and not ASCII digits once stripped, is all zeros, or is a negative integer; `TypeError` if it is neither `None`, a `str` nor an integer, or is a `bool` *(0.11.0 — #470)*, or if `doi` is neither `None` nor a `str` *(0.11.0 — #475)*; an object only claiming `str` as its class (`Mock(spec=str)`, a proxy) is not one, where the DOI's `TypeError` named `str.strip` and the PMID's was a `ValueError` *(unreleased — #500)*. Both are raised before any request and even when analysis is disabled, a bad `pmid` even with a usable `doi` beside it.
+**Raises:** `ImportError` if `httpx` is not installed. `ValueError` if `pmid` is non-blank and not ASCII digits once stripped, is all zeros, or is a negative integer; `TypeError` if it is neither `None`, a `str` nor an integer, or is a `bool` *(0.11.0 — #470)*, or if `doi` is neither `None` nor a `str` *(0.11.0 — #475)*; an object only claiming `str` as its class (`Mock(spec=str)`, a proxy) is not one, where the DOI's `TypeError` named `str.strip` and the PMID's was a `ValueError`; a `str` subclass is still text, and its value is read rather than its `__str__` *(unreleased — #500)*. Both are raised before any request and even when analysis is disabled, a bad `pmid` even with a usable `doi` beside it.
 
 **Why a malformed PMID raises** *(0.11.0 — #470)*. NCBI's efetch reads every run of digits in an id as a PMID of its own (probed 2026-10-16). Passed as a PMID, the PMCID `PMC7745181` fetched PMID 7745181, an unrelated article. `33301246.5` fetched two records and `v2 33301246` put PMID 2 first. The step then read the first record, and Europe PMC finds nothing for any of these shapes. So the other article's COI statement, trial registrations and grants were stored as this paper's, with `pubmed_status = read` and no log line. Of the shapes probed, only the digit-free `abc` drew a 400. `0` is refused because PMIDs start at 1: sent as a string it named no article, and with a `doi` beside it it displaced the PMID the Europe PMC record carried. A shape NCBI happens to read as meant (`PMID:33301246`) is refused too: stripping a prefix is a guess about what the caller meant.
 
@@ -1030,7 +1030,7 @@ Registration is established from two sources, and the structured one wins.
 
 ### PubMed `<DataBankList>` — preferred
 
-When the PubMed record lists a trial-registry databank, that is the publisher asserting *this* paper's registration, so it is trusted directly and the abstract heuristic below is not consulted at all. `DataBankName` is matched case-insensitively against a curated set of registry names PubMed emits — ClinicalTrials.gov, ISRCTN, EudraCT, ANZCTR, ChiCTR, CRiS, CTRI, DRKS, IRCT, JapicCTI, JMACCT, JPRN, jRCT, NTR, PACTR, ReBec, REPEC, RPCEC, SLCTR, TCTR, UMIN-CTR, UMIN CTR. Both UMIN spellings are kept: NLM's table spells the registry with a space, but the hyphenated form appears in older PubMed records. A `DataBankList` entry naming a data-deposition repository instead — GENBANK, PDB, SRA, Dryad, … — is not a trial registration, but it is not ignored either: see [Data Availability Detection](#data-availability-detection) for what it is worth.
+When the PubMed record lists a trial-registry databank, that is the publisher asserting *this* paper's registration, so it is trusted directly and the abstract heuristic below is not consulted at all. `DataBankName` is matched case-insensitively against a curated set of registry names PubMed emits — ClinicalTrials.gov, ISRCTN, EudraCT, ANZCTR, ChiCTR, CRiS, CTRI, DRKS, IRCT (also as "Iran Registry of Clinical Trials"), JapicCTI, JMACCT, JPRN, jRCT, NTR, PACTR, ReBec, REPEC, RPCEC, SLCTR, TCTR, UMIN-CTR, UMIN CTR. Both UMIN spellings are kept: NLM's table spells the registry with a space, but the hyphenated form appears in older PubMed records. A `DataBankList` entry naming a data-deposition repository instead — GENBANK, PDB, SRA, Dryad, … — is not a trial registration, but it is not ignored either: see [Data Availability Detection](#data-availability-detection) for what it is worth.
 
 Two consequences worth knowing:
 
@@ -1092,9 +1092,10 @@ TransparencyResult(
     risk_level=TransparencyRisk.UNKNOWN,
     risk_indicators=["Transparency APIs unreachable — score not determinable"],
     unknown_reason=TransparencyUnknownReason.UNREACHABLE,
-    coi_disclosed=None,
+    coi_disclosed=...,          # read off the carrier: None, since no body was read
     full_text_status=...,       # what the run recorded, read off the carrier
     trial_results_status=...,   # likewise
+    pubmed_status=...,          # likewise: REQUEST_FAILED or SEARCH_FAILED (#227)
 )
 ```
 

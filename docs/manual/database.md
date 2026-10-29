@@ -491,7 +491,7 @@ with transaction(conn):
 # If either raises, both are rolled back.
 ```
 
-#### Joining an already-open transaction (SQLite) — changed in 0.3.0
+#### Joining an already-open transaction (SQLite) — changed in 0.4.0
 
 sqlite3 auto-begins a transaction before DML, so the connection may already
 hold uncommitted writes when a `transaction()` block is entered. In that case
@@ -515,75 +515,15 @@ with transaction(conn):                  # outer block owns the commit
 # Everything commits here, once.
 ```
 
-**Breaking change (0.3.0):** previously a `transaction()` block entered while
+**Breaking change (0.4.0):** previously a `transaction()` block entered while
 the connection already held uncommitted writes committed on success — taking
 the caller's pending writes with it. Code that relied on `transaction()` as a
 durability checkpoint after bare `execute()` writes must now commit
 explicitly (or wrap the whole batch in an outer `transaction()`). The same
 applies to `run_migrations()` when called with a transaction already open —
 it uses `transaction()` internally, so the caller's enclosing transaction
-owns the commit. On PostgreSQL the old connection-wide commit behaviour is
-unchanged (no savepoint nesting is implemented there).
-
----
-
-## Migrations
-
-### `Migration`
-
-```python
-@dataclass
-class Migration:
-    version: int                  # sequential integer (1, 2, 3, ...), unique
-    name: str                     # short descriptive name, e.g. "initial_schema"
-    up: Callable[[Any], None]     # takes a DB-API connection, applies the DDL
-```
-
-A single database migration.
-
----
-
-### `run_migrations`
-
-```python
-def run_migrations(conn: Any, migrations: list[Migration]) -> int
-```
-
-Apply all pending migrations in version order. Applied versions are tracked
-in a `schema_version` table (created on first run). Each migration runs
-inside `transaction()`, so a failed migration is rolled back atomically and
-re-running is safe — already-applied versions are skipped.
-
-**Returns:** Number of migrations applied.
-
-**Example:**
-
-```python
-from bmlib.db import Migration, connect_sqlite, create_tables, run_migrations
-
-def _m001_initial(conn):
-    create_tables(conn, "CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY, doi TEXT);")
-
-def _m002_add_title(conn):
-    execute(conn, "ALTER TABLE papers ADD COLUMN title TEXT")
-
-MIGRATIONS = [
-    Migration(1, "initial_schema", _m001_initial),
-    Migration(2, "add_title", _m002_add_title),
-]
-
-conn = connect_sqlite("~/.myapp/data.db")
-applied = run_migrations(conn, MIGRATIONS)
-```
-
-Because each migration runs inside `transaction()`, calling
-`run_migrations()` while the connection already holds an open SQLite
-transaction joins it via a savepoint — the caller's enclosing transaction
-then owns the commit (see [`transaction`](#transaction), changed in 0.3.0).
-
-The module also provides `get_applied_versions(conn) -> set[int]`
-(importable from `bmlib.db.migrations`) to inspect which versions have been
-applied.
+owns the commit. PostgreSQL kept its connection-wide commit until 0.6.0,
+which gave it the same savepoint nesting.
 
 ---
 
@@ -797,6 +737,8 @@ Each pending migration runs inside a **single** `transaction(conn)` block that c
 | `migrations` | `list[Migration]` | *(required)* | Migrations to consider. Order in the list does not matter; they are sorted by `version`. |
 
 **Returns:** The number of migrations actually applied.
+
+**Raises:** [`TransactionModeError`](#require_transaction_control) *(0.11.0, #449's review)* on a connection `transaction()` cannot honour, before any migration runs: from the `create_tables()` that makes `schema_version` on a fresh database, otherwise from the first pending migration's `transaction()` block (with nothing pending it returns `0` without checking). Before 0.11.0 a Python 3.12+ `sqlite3` connection opened with `autocommit=False` applied nothing durably and raised nothing. An exception raised by a migration's `up` propagates after that migration's block has rolled back; those applied before it keep their own commits (or, called inside an open transaction, are left to its owner).
 
 **Example:**
 

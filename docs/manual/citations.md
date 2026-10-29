@@ -56,7 +56,7 @@ Statins lower LDL [1,2] in most patients.
 
 The appended list begins directly with `\n---` (upstream-faithful), so a document that does not end with a blank line puts the `---` rule immediately under the last line — which markdown renders as a setext heading. End your text with a blank line if you want the rule to render as a rule.
 
-`build_references()` is the same operation without the appended list — it returns `(formatted_text, references)` where `references` is a `list[FormattedReference]` you can render yourself.
+`format_document(text, metadata, style=DEFAULT_CITATION_STYLE, include_reference_list=True, combine_sequential=True)` — pass `include_reference_list=False` for the replaced text alone. `build_references()` is the same operation without the appended list — it returns `(formatted_text, references)` where `references` is a `list[FormattedReference]` you can render yourself.
 
 ## The marker format
 
@@ -91,6 +91,8 @@ All pure functions over the text, from `bmlib.citations`:
 | `replace_citation_with_number(text, document_id, number)` | One document's markers → `[N]` |
 | `replace_all_citations_with_numbers(text, id_to_number)` | All mapped markers → `[N]`; unmapped markers stay |
 
+`CITATION_PATTERN` is the compiled regex every function above uses — `\[@id:(\d+):([^\]]+)\]`, group 1 the id digits and group 2 the label — for callers scanning text themselves.
+
 ## Citation styles
 
 `CitationStyle` has four members; `DEFAULT_CITATION_STYLE` is `VANCOUVER`. One reference formatted per style, from the same metadata:
@@ -116,7 +118,9 @@ formatter.style = CitationStyle.VANCOUVER    # switch in place
 formatter.format_inline_citation(metadata, number=4)   # "[4]"
 ```
 
-The style classes (`VancouverFormatter`, `APAFormatter`, `HarvardFormatter`, `ChicagoFormatter`) are public for callers that want exactly one style; `CitationFormatter.get_available_styles()` and `get_style_description()` support building a style picker.
+The style classes (`VancouverFormatter`, `APAFormatter`, `HarvardFormatter`, `ChicagoFormatter`) are public for callers that want exactly one style; each subclasses the abstract `BaseFormatter`, whose two abstract methods — `format_reference(metadata, number=None)` and `format_inline_citation(metadata, number=None)` — are what a custom style implements. `CitationFormatter` adds `format_reference_list(references)` (the markdown list `format_document()` appends), and its class methods `get_available_styles()` and `get_style_description(style)` support building a style picker.
+
+`author_surname(author)` is the surname rule every style and `generate_label()` share: everything before the comma for `"Surname, Firstname"`, the last word for `"Firstname Surname"` (so `"John van Smith"` gives `"Smith"` — particles survive only in the inverted form), and `"Unknown"` for a blank name.
 
 Journal names are italicised with markdown asterisks — the output is markdown, not plain text.
 
@@ -141,7 +145,7 @@ missing = find_missing_documents(text, metadata)   # one Citation per unresolved
 
 Check `find_missing_documents()` before publishing output — a placeholder in a reference list is visible, but it is still a placeholder.
 
-## Locating quoted passages
+## Locating quoted passages *(unreleased)*
 
 LLMs asked to quote a passage "verbatim" often change whitespace, case or a punctuation mark. `find_passage()` finds where the quote really is in the source and returns the source's own wording for that span, so you can store the original text instead of the model's copy.
 
@@ -158,6 +162,27 @@ if match.matched:
 - **Whole words only, for an exact match:** an occurrence that starts or ends inside a word (`HR 0.9` in `HR 0.95`, `effective` in `ineffective`) or inside one source character (`=` in `≠`, `f` in `ﬁ`, `2` in `½`) is not exact. The search moves on to the next occurrence and then to the fuzzy search, which scores the source's whole word: `HR 0.9` against `HR 0.95` is 12/13 ≈ 0.92, rejected at 0.95, and a quote ending on `=` where the source has `≠` is accepted at 0.9 only as a fuzzy match whose `text` shows the `≠`.
 - **`similarity` 0.0** means no candidate location was found at all: the passage or the text is empty, the passage is too long to reach the threshold, none of its fragments occur there, or every fragment that does occur is too common (more than 64 times) to locate it. The last is a false reject when a window would have cleared the threshold (#529). A near miss reports its real similarity below `min_similarity`.
 - `exact` is true when the normalised quote occurs verbatim on whole words and whole source characters (similarity 1.0).
+- `min_similarity` must be in `(0, 1]`; anything else, NaN, or a `bool` (which would pass as `1.0`) is a `ValueError`. A `passage` or `text` that is not a `str` is a `TypeError`.
+
+`find_passage(passage, text, min_similarity)` returns a `PassageMatch`, a frozen dataclass:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `similarity` | `float` | Best similarity found, in `[0, 1]` — reported even when the match is rejected |
+| `start` | `int \| None` | Start index of the span in the original `text`; `None` when rejected |
+| `end` | `int \| None` | End index (exclusive); `None` when rejected |
+| `text` | `str \| None` | `text[start:end]` — the source's own wording; `None` when rejected |
+| `exact` | `bool` | Found verbatim after normalisation, on whole words and whole source characters; only ever with similarity 1.0 |
+
+`matched` is a property, `text is not None`. Construction enforces the invariants: `start`, `end` and `text` are all set (a non-empty span whose length is `len(text)`) or all `None`, and `exact` needs similarity 1.0 and a span — anything else is a `ValueError`.
+
+The normalisation is public, for callers that need to compare text the way the search does:
+
+| Function | Returns |
+|----------|---------|
+| `fold_char(char)` | One character folded: typographic quotes and dashes to ASCII, NFKD (`"ﬁ"` → `"fi"`, `"²"` → `"2"`), combining marks dropped except negation overlays (`"≠"` stays `"≠"`), lowercased; `""` for a character dropped entirely (a combining mark, soft hyphen, zero-width character) |
+| `normalize_with_offsets(text)` | `(normalised, offsets)`: every character folded, ends trimmed, each internal whitespace run one space; `offsets[i]` is the index in `text` of the character that produced `normalised[i]` (`"  A  ﬁx"` → `("a fix", [2, 3, 5, 5, 6])`) |
+| `occurs_once(fragment, text)` | Whether the normalised `fragment` is non-empty and occurs exactly once in the normalised `text`. Overlapping occurrences and occurrences inside a longer word count, so it asks whether a fragment is unambiguous, not whether `find_passage` would match it. `TypeError` for a non-string |
 
 This section applies to the Rust crate too: `bmlib::citations::find_passage` returns the same span and the same similarity as Python, held to it by the shared fixture `tests/fixtures/passage_match.json` and a differential oracle, for text whose code points both Unicode versions assign (Rust's tables are newer than Python's, and a character assigned since can fold differently). In Rust the span is `Option<PassageSpan>` (`start`, `end`, `text`) and its offsets are `char` indices (Unicode code points, as Python's string indices), not byte offsets; an invalid `min_similarity` (or NaN) is an `Err(InvalidSimilarity)`.
 
@@ -172,7 +197,7 @@ if let Some(span) = &found.span {
 
 ## Differences from bmlibrarian
 
-`find_passage` came from bmlibrarian's `utils/passage_match.py` with one behaviour change: upstream accepted an exact match that started or ended inside a word or inside one source character (`HR 0.9` in `HR 0.95`, `=` in `≠`), and bmlib does not (see above). The rest of this section is about the 2026-08 port of the citation markers and reference builder.
+*(unreleased)* `find_passage` came from bmlibrarian's `utils/passage_match.py` with one behaviour change: upstream accepted an exact match that started or ended inside a word or inside one source character (`HR 0.9` in `HR 0.95`, `=` in `≠`), and bmlib does not (see above). The rest of this section is about the 2026-08 port of the citation markers and reference builder.
 
 The port is output-faithful to upstream's code, with six defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
 
