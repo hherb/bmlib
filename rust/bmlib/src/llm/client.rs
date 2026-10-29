@@ -25,6 +25,7 @@
 //! `"deepseek:deepseek-chat"` keeps working, and the same defaults, so a caller
 //! who names no model gets what they got before.
 
+use crate::llm::context_window::{known_context_window, read_context_window, ContextWindowError};
 use crate::llm::data_types::{LLMMessage, LLMResponse, LLMToolDefinition};
 use crate::llm::protocol::{
     messages_to_anthropic, messages_to_openai, parse_anthropic_response, parse_openai_response,
@@ -826,6 +827,34 @@ impl LlmClient {
         Ok(response)
     }
 
+    /// Run `send` until it answers, retrying a transport failure or a
+    /// [`RETRYABLE_STATUSES`] status up to [`STREAM_OPEN_ATTEMPTS`] tries, with
+    /// a backoff from [`LlmClient::retry_base_delay`] doubling each time.
+    ///
+    /// Returns the last outcome, retried or not, for the caller to judge:
+    /// shared by opening a stream and by a context-window lookup.
+    /// `status_of` reads the status out of a successful send.
+    fn send_with_retries<T>(
+        &self,
+        mut send: impl FnMut() -> Result<T, FetchError>,
+        status_of: impl Fn(&T) -> u16,
+    ) -> Result<T, FetchError> {
+        let mut attempt = 1;
+        loop {
+            let outcome = send();
+            let retryable = match &outcome {
+                Err(FetchError::Transport(_)) => true,
+                Err(_) => false,
+                Ok(answer) => RETRYABLE_STATUSES.contains(&status_of(answer)),
+            };
+            if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
+                return outcome;
+            }
+            std::thread::sleep(self.retry_base_delay * 2u32.pow(attempt - 1));
+            attempt += 1;
+        }
+    }
+
     /// Open a stream, retrying a transport failure or a retryable status.
     ///
     /// The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
@@ -836,30 +865,168 @@ impl LlmClient {
         body: &Value,
         headers: &BTreeMap<String, String>,
     ) -> Result<HttpStream, ChatError> {
-        let mut attempt = 1;
-        loop {
-            let outcome = self.client.post_json_stream(url, body, headers);
-            let retryable = match &outcome {
-                Err(FetchError::Transport(_)) => true,
-                Err(_) => false,
-                Ok(stream) => RETRYABLE_STATUSES.contains(&stream.status),
-            };
-            if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
-                let mut stream = outcome.map_err(|e| ChatError::Transport(e.to_string()))?;
-                if !stream.is_success() {
-                    let mut bytes = Vec::new();
-                    // A body that cannot be read is quoted as nothing: the
-                    // status is the error, and the body only explains it.
-                    let _ = (&mut stream.body)
-                        .take(ERROR_BODY_LIMIT)
-                        .read_to_end(&mut bytes);
-                    let text = std::str::from_utf8(&bytes).unwrap_or_default();
-                    return Err(http_error(url, stream.status, text));
-                }
-                return Ok(stream);
-            }
-            std::thread::sleep(self.retry_base_delay * 2u32.pow(attempt - 1));
-            attempt += 1;
+        let mut stream = self
+            .send_with_retries(
+                || self.client.post_json_stream(url, body, headers),
+                |stream| stream.status,
+            )
+            .map_err(|e| ChatError::Transport(e.to_string()))?;
+        if !stream.is_success() {
+            let mut bytes = Vec::new();
+            // A body that cannot be read is quoted as nothing: the
+            // status is the error, and the body only explains it.
+            let _ = (&mut stream.body)
+                .take(ERROR_BODY_LIMIT)
+                .read_to_end(&mut bytes);
+            let text = std::str::from_utf8(&bytes).unwrap_or_default();
+            return Err(http_error(url, stream.status, text));
         }
+        Ok(stream)
+    }
+
+    /// The context window of `model`, in tokens, from the provider.
+    ///
+    /// `model` is parsed as [`LlmClient::chat`]'s is: `"provider:model"`, or a
+    /// bare provider name for its default model. Read the number as input and
+    /// answer **together**: a prompt plus the room left for the reply must fit
+    /// inside it. OpenAI publishes no metadata endpoint, so it answers from
+    /// [`known_context_window`] with no key and no request. Every other
+    /// provider is asked, and the answer is read by [`read_context_window`].
+    /// A transport failure or a [`RETRYABLE_STATUSES`] status is retried like
+    /// opening a stream; a 404 is [`ContextWindowError::NoSuchModel`] at once.
+    ///
+    /// `Ok(None)` means the provider answered but states no usable window.
+    ///
+    /// # Errors
+    ///
+    /// An unknown provider or a missing key (before any request), a model the
+    /// provider does not have, a transport failure or other refused status, or
+    /// a body that is not JSON ([`ContextWindowError::Malformed`]).
+    pub fn context_window(&self, model: &str) -> Result<Option<u64>, ContextWindowError> {
+        let request = ChatRequest::new(Vec::new()).with_model(model);
+        // Route once with a stand-in key, only to learn the provider: OpenAI
+        // needs no key here, so a missing one must not stop it.
+        let routed = resolve_target(
+            &request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            Some(ROUTING_ONLY_KEY),
+        )
+        .map_err(context_window_routing_error)?;
+        if routed.provider == "openai" {
+            return Ok(known_context_window(&routed.provider, &routed.model));
+        }
+        let target = resolve_target(
+            &request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+        )
+        .map_err(context_window_routing_error)?;
+        let (url, post_body) = context_window_request(&target);
+        let headers = context_window_headers(&target);
+        let response = self
+            .send_with_retries(
+                || match &post_body {
+                    Some(body) => self.client.post_json(&url, body, &headers),
+                    None => self.client.get_with_headers(&url, &headers),
+                },
+                |response| response.status,
+            )
+            .map_err(|e| ContextWindowError::Transport(e.to_string()))?;
+        let text = String::from_utf8_lossy(&response.body);
+        if response.status == HTTP_NOT_FOUND {
+            return Err(ContextWindowError::NoSuchModel {
+                provider: target.provider,
+                model: target.model,
+            });
+        }
+        if !(200..300).contains(&response.status) {
+            return Err(ContextWindowError::Transport(
+                http_error(&url, response.status, &text).to_string(),
+            ));
+        }
+        let body: Value = serde_json::from_str(&text).map_err(|e| {
+            ContextWindowError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
+        })?;
+        read_context_window(&target.provider, &target.model, &body)
+    }
+}
+
+/// A placeholder credential for routing a model string when the answer needs
+/// no key; never sent anywhere.
+const ROUTING_ONLY_KEY: &str = "unused";
+
+/// Gemini's native API reads its key from this header, not `Authorization`.
+const GEMINI_KEY_HEADER: &str = "x-goog-api-key";
+
+/// A routing failure from `resolve_target`, as a [`ContextWindowError`].
+fn context_window_routing_error(error: ChatError) -> ContextWindowError {
+    match error {
+        ChatError::MissingApiKey { provider, env_var } => {
+            ContextWindowError::MissingApiKey { provider, env_var }
+        }
+        ChatError::UnknownProvider(name) => ContextWindowError::UnknownProvider(name),
+        other => ContextWindowError::Transport(other.to_string()),
+    }
+}
+
+/// The headers a metadata lookup carries: a chat call's, except that Gemini's
+/// native API takes its key in [`GEMINI_KEY_HEADER`].
+fn context_window_headers(target: &Target) -> BTreeMap<String, String> {
+    let mut headers = chat_headers(target);
+    if target.provider == "gemini" {
+        if let Some(key) = headers.remove("Authorization") {
+            headers.insert(
+                GEMINI_KEY_HEADER.to_string(),
+                key.trim_start_matches("Bearer ").to_string(),
+            );
+        }
+    }
+    headers
+}
+
+/// The status that means the provider has no such model.
+const HTTP_NOT_FOUND: u16 = 404;
+
+/// Characters that stay as they are in a URL path segment: RFC 3986's
+/// unreserved set. Everything else, `/` included, is percent-encoded so a
+/// model id can never add or end a path segment.
+fn is_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
+/// `text` percent-encoded for use as one URL path segment.
+fn percent_encode_segment(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if is_unreserved(byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// The URL, and the JSON body when the lookup is a POST, for asking a
+/// provider about `target.model`. Per-provider because the metadata endpoints
+/// share nothing: the paths differ, Gemini's lives beside its OpenAI-compatible
+/// base rather than under it, and Ollama takes the id in a POST body.
+fn context_window_request(target: &Target) -> (String, Option<Value>) {
+    let base = &target.base_url;
+    let id = percent_encode_segment(&target.model);
+    match target.provider.as_str() {
+        "deepseek" => (format!("{base}/models"), None),
+        "gemini" => {
+            let native = base.strip_suffix("/openai").unwrap_or(base);
+            (format!("{native}/models/{id}"), None)
+        }
+        "ollama" => (
+            format!("{base}/api/show"),
+            Some(json!({ "model": target.model })),
+        ),
+        // anthropic and mistral
+        _ => (format!("{base}/v1/models/{id}"), None),
     }
 }
