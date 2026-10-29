@@ -7,6 +7,44 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The PICO agent, with verified quotes** (StudyAnalyzer phase 1, item 7).
+  `bmlib.quality.PicoAgent` (Rust: `bmlib::quality::PicoAgent`) ports
+  bmlibrarian's PICO agent as two independent calls: `check_suitability()`
+  (is this an intervention study with a PICO?) and `extract()` (population,
+  intervention, comparison, outcome, study type, sample size). **Every part
+  carries the passages that back it**: the model copies quotes, each is
+  located by `find_passage` in the caller's text, and the paper's own span is
+  kept. A part none of whose quotes is found is `UNVERIFIED`, its description
+  kept for a reader to judge under an *Unsure* label (the maintainer's
+  decision); a part the paper does not state is `NOT_REPORTED` and needs no
+  quote; a single-arm study's comparison is reported, with its quote.
+  `min_similarity` is required, with no default (StudyAnalyzer measures it).
+  Unlike upstream, **nothing is discarded for low confidence** (upstream cut
+  at 0.5), the overall confidence is bmlib's mean over the reported parts
+  rather than the model's, and **nothing is truncated**: the suitability
+  check no longer cuts at 3,000 characters, and oversized text is condensed
+  by the Cochrane assessor's map-reduce over verbatim-quote prompts, with
+  quotes still verified against the original. A failure raises `PicoError`
+  (Rust: `Err(PicoError)`) naming its cause — empty input, request failed,
+  truncated, unusable reply, condensation failed — so an app retries an
+  outage and suggests another model for unusable replies. A reply missing a
+  part is asked for once more. Held to Python by a new oracle that runs
+  **whole agent runs** over scripted replies (`rust/oracle/dump_pico_agent.py`,
+  20 cases), comparing results and the messages sent. It caught one
+  divergence: Python's `sum()` compensates its rounding on 3.12+ and not on
+  3.11, so the mean is a plain left-to-right sum in both languages. Upstream's
+  batch loop, exports, statistics and summary formatter are not ported (app
+  concerns). Design: `docs/superpowers/specs/2026-10-30-pico-agent-design.md`.
+- **`chat_json()` says which failure it was.** `BaseAgent.chat_json()` raises
+  a `ChatJsonError` subclass — `ChatJsonTruncatedError`,
+  `ChatJsonWrongShapeError`, `ChatJsonEmptyError`, `ChatJsonUnparseableError`
+  — each still a `ValueError`, so every existing handler is untouched; the
+  final raise after the retries names the last attempt's cause. The messages
+  are unchanged. Rust's `ChatJsonError` already had these variants.
+- **Condensation takes any prompts.** `bmlib.quality._condense.condense_text`
+  (private) is the Cochrane assessor's condensation with its prompts, query
+  and note wording as arguments, and Rust's `LlmCondenser::with_prompts`
+  likewise; the Cochrane assessor's behaviour and stored note are unchanged.
 - **Streamed chat** (StudyAnalyzer phase 1, item 6). `chat_stream(…,
   on_delta)` beside `chat()` on `LLMClient` (Python: the Anthropic,
   OpenAI-compatible and Ollama providers; a third-party provider's

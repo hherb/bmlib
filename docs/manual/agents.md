@@ -20,7 +20,15 @@ The package is two files, `bmlib/agents/base.py` and `bmlib/agents/metrics.py`, 
 ## Imports
 
 ```python
-from bmlib.agents import BaseAgent, PerformanceMetrics
+from bmlib.agents import (
+    BaseAgent,
+    ChatJsonEmptyError,
+    ChatJsonError,
+    ChatJsonTruncatedError,
+    ChatJsonUnparseableError,
+    ChatJsonWrongShapeError,
+    PerformanceMetrics,
+)
 ```
 
 ---
@@ -258,6 +266,19 @@ A wrong shape is not a parse failure, and the two are reported separately: `chat
 This mirrors the truncation policy deliberately: two adjacent branches in one method must not sit on opposite rules for the same reason. It matters for a caller pinning temperature 0 for reproducibility — which is exactly the caller most likely to want `require_dict`.
 
 ---
+
+#### Which failure it was *(unreleased)*
+
+Every way `chat_json()` gives up raises a subclass of `ChatJsonError`, itself a `ValueError`, so an existing `except ValueError` still catches all of them:
+
+| Class | Cause |
+|---|---|
+| `ChatJsonTruncatedError` | The reply hit the output ceiling. Raise `max_tokens`. |
+| `ChatJsonWrongShapeError` | The reply parsed, but not as the object `require_dict` asked for. |
+| `ChatJsonEmptyError` | The model returned nothing. |
+| `ChatJsonUnparseableError` | The reply did not parse as JSON. |
+
+An immediate raise (a truncation or a wrong shape at temperature 0) names its own cause; the raise after the retries are spent names the **last** attempt's. The message text is unchanged. A provider's own exception still propagates as raised, not wrapped. The classes mirror the Rust port's `ChatJsonError` variants, less `Transport`. Import them from `bmlib.agents`.
 
 ### `BaseAgent.render_template`
 

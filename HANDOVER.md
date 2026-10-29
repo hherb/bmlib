@@ -1,12 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 11**, PR #568, branch
-`feat/context-window`; item 6 was PR #562). **0.11.0 is
-released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
-(the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
-(#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545 (item 9),
-#547 (item 4a), #554 and #555 (item 3), #556 (item 4b) and #559 (item 4c)
-merged since; all seventeen are unreleased._
+_Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 7, the PICO
+agent**, branch `feat/pico-agent`; item 11 was PR #568, item 6 PR #562).
+**0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526
+(`find_passage`), #531 (the embedder), #534 (#530), #535 (#532), #536 (#500),
+#538 (#507), #539 (#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545
+(item 9), #547 (item 4a), #554 and #555 (item 3), #556 (item 4b), #559 (item
+4c), #562 (item 6), #568 (item 11) and #569 (the manual) merged since; all are
+unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -39,6 +40,34 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
+## This session: the PICO agent (StudyAnalyzer item 7)
+
+Branch `feat/pico-agent`. Spec `docs/superpowers/specs/2026-10-30-pico-agent-design.md`
+(the maintainer's decisions), plan `docs/superpowers/plans/2026-10-30-pico-agent.md`;
+the CHANGELOG entry *The PICO agent, with verified quotes* is the argument.
+`PicoAgent` in `bmlib.quality` and `bmlib::quality`: `check_suitability()`
+and `extract(…, min_similarity)` are independent calls. Each part's quotes are
+located by `find_passage` and kept as the paper's spans; a part is
+`VERIFIED`, `UNVERIFIED` (description kept) or `NOT_REPORTED`. Nothing is
+discarded for low confidence or truncated, and `PicoError` names the cause.
+On the way, `chat_json()` gained one `ValueError` subclass per cause
+(`ChatJson*Error`), and the Cochrane condensation became
+`_condense.condense_text` / `LlmCondenser::with_prompts`. **The first oracle to
+run a whole agent** (`rust/oracle/dump_pico_agent.py`, 20 cases) compares the
+results and the messages sent; it caught Python's `sum()` compensating on
+3.12+ only. `python_strip` moved to Rust's `pyvalue`, and `ScriptedChat` moved to
+`rust/bmlib/tests/common/`.
+
+**For StudyAnalyzer plan 2c**: run `check_suitability` on the abstract, then show
+a "not suitable" answer plainly with a *run anyway* action that calls
+`extract`. Pass `CanonicalText.text` as `text`, since offsets index it, and pass
+`min_similarity` from plan 2b's measurement. Label an `UNVERIFIED` part *Unsure –
+model could not reproduce <part> from text provided*. On error:
+`REQUEST_FAILED` is retried, `UNUSABLE_REPLY` suggests another model,
+`TRUNCATED` asks for a larger `max_tokens`. In Rust, configure
+`PicoAgent::pico_condenser` for long papers. Without one, oversized text is
+`CondensationFailed`.
+
 ## Since: the manual refresh (PR #569)
 
 Every page of `docs/manual/` was audited against the source, and every
@@ -49,7 +78,7 @@ with `db.md` as the template. Filed: **#570** (`context_processor` stores a
 null `extracted_content` as `"None"`) and **#571** (stale docs outside the
 manual).
 
-## Previous session: context windows (StudyAnalyzer item 11)
+## Earlier: context windows (StudyAnalyzer item 11)
 
 PR #568, branch `feat/context-window`. Spec `docs/superpowers/specs/2026-10-29-context-window-design.md`,
 plan `docs/superpowers/plans/2026-10-29-context-window.md`; the CHANGELOG
@@ -89,7 +118,7 @@ way, in Rust's `chat()`: Anthropic `think` sent `temperature`, which the API
 refuses, and only the first reasoning block was kept. The
 reducer is mutation-checked in both languages, and the PR's review fixes
 were checked the same way (14 Python and 11 Rust mutants, all killed). **Next for StudyAnalyzer**:
-phase 2 can start; items 5, 7, 8 are not blocking.
+phase 2 can start; items 5 and 8 remain in bmlib (item 7 is this session).
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
@@ -159,8 +188,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,009 passing + 111 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-29; the embedder's live tests skip
+- **Tests: 8,345 passing + 111 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #542's session ran

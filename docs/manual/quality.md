@@ -22,6 +22,8 @@ Tier 2 runs by default when Tier 1's metadata result is not confident enough (`u
 | `quality_agent` | Tier 3 — `QualityAgent` | Yes |
 | `cochrane_assessor` | Tier 4 — `CochraneAssessor` | Yes |
 | `manager` | `QualityManager` orchestrator | Yes |
+| `pico_agent` | `PicoAgent` — the PICO breakdown, its parts backed by verified quotes *(unreleased)* | **No — called directly** |
+| `pico_models` | `PicoExtraction`, `PicoPart`, `PicoSuitability`, `PicoError` *(unreleased)* | **No — produced by `pico_agent`** |
 | `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses, plus `collapse_risk_of_bias()` | **Yes — produced by `cochrane_assessor`, bridged onto `BiasRisk`** |
 | `cochrane_formatter` | Markdown / HTML Cochrane table renderers | **No — standalone** |
 | `extractors` | Rule-based, LLM-free extraction functions | **No — standalone** |
@@ -58,6 +60,17 @@ from bmlib.quality import (
     DimensionScore,
     extract_study_type,
     extract_sample_size_dimension,
+    # The PICO agent (unreleased)
+    PICO_PARTS,
+    PicoAgent,
+    PicoCitation,
+    PicoError,
+    PicoErrorKind,
+    PicoExtraction,
+    PicoPart,
+    PicoPartState,
+    PicoSuitability,
+    verify_quotes,
 )
 ```
 
@@ -904,6 +917,94 @@ result.cochrane_assessment    # the full table + RoB, or None if Tier 4 failed
 ```
 
 ---
+
+## PICO agent *(unreleased)*
+
+`PicoAgent` (`bmlib.quality.pico_agent`) breaks a study down into its **P**opulation, **I**ntervention, **C**omparison and **O**utcome, plus study type and sample size. It is a port of bmlibrarian's PICO agent (StudyAnalyzer item 7) with one difference that matters: **every part carries the passages of the paper that back it**, located by [`find_passage`](citations.md) in the text you passed. A citation is the paper's own span and wording, never the model's copy. The design is `docs/superpowers/specs/2026-10-30-pico-agent-design.md`.
+
+It answers two questions, as two independent calls:
+
+```python
+from bmlib.quality import PicoAgent, PicoError, PicoErrorKind, PicoPartState
+
+agent = PicoAgent(llm=client, model="anthropic:claude-sonnet-5-5")
+
+suitability = agent.check_suitability(title, abstract)   # is there a PICO at all?
+if not suitability.is_suitable:
+    print(suitability.study_type, suitability.rationale)  # e.g. a systematic review
+
+try:
+    pico = agent.extract(title, full_text, min_similarity=0.9)
+except PicoError as exc:
+    if exc.kind is PicoErrorKind.REQUEST_FAILED:
+        ...  # the provider was unreachable: retry later
+
+for name in ("population", "intervention", "comparison", "outcome"):
+    part = getattr(pico, name)
+    if part.state is PicoPartState.UNVERIFIED:
+        print(f"Unsure: the model could not reproduce {name} from the text")
+    print(part.description, [(c.start, c.end) for c in part.citations])
+```
+
+The extraction can run whatever the check answered: a reader may ask for it anyway.
+
+### `PicoAgent`
+
+```python
+PicoAgent(
+    llm: LLMClient,
+    model: str,
+    template_engine: TemplateEngine | None = None,   # unused; accepted as every agent does
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    condense_config: ProcessingConfig | None = None,  # max_context_chars defaults to 48,000
+)
+
+check_suitability(title: str | None, text: str | None) -> PicoSuitability
+extract(title: str | None, text: str | None, *, min_similarity: float) -> PicoExtraction
+```
+
+- **`min_similarity` is required and has no default.** It is `find_passage`'s threshold: how close a quote must be to a span of the text to count as found. It is set by measurement, by the caller. A value outside (0, 1], NaN or a `bool` raises `ValueError` before any request.
+- **Citation offsets are code points into `text` after `str.strip()`.** Quotes are searched in `text` only, never in `title`; a caller who wants a title quote found puts the title in `text` (a `CanonicalText.text` already starts with it).
+- **The caller chooses the text.** An abstract keeps the suitability check cheap; the full text gives the extraction its evidence.
+
+### What a part reports
+
+| `PicoPartState` | Meaning |
+|---|---|
+| `VERIFIED` | At least one of the model's quotes was found. `citations` holds the paper's spans; any quotes not found are kept verbatim in `quotes_not_found`, so an app can say *"1 quote could not be found in the paper"*. |
+| `UNVERIFIED` | The model described the part but none of its quotes was found, or it gave none. **The `description` is kept**: show it under an *Unsure* label and let the reader decide. |
+| `NOT_REPORTED` | The model says the paper does not state this part. An honest absence, needing no quote. A single-arm study's comparison is *reported* ("no comparison group", with its quote). |
+
+`PicoPart` carries `description`, `state`, `confidence` (clamped to 0–1, `None` when unreadable), `citations` (`PicoCitation`: `start`, `end`, `text`, `similarity`, `exact`), `quotes_not_found` and `quotes_dropped` (quotes that were not usable text: not a string, blank, or a `quotes` value that was not a list).
+
+`PicoExtraction` adds `study_type` and `sample_size` (plain strings, not verified) and `overall_confidence`: the mean of the confidences of the parts that are reported and carry one, so a correctly identified absence does not pull it down; `None` when none does. **Nothing is discarded for low confidence**, unlike upstream's 0.5 cut.
+
+`PicoSuitability` requires only `is_suitable` of the model; `is_intervention_study`, `has_comparison`, `study_type`, `confidence` and `rationale` are `None` when absent or of the wrong type.
+
+Both results carry `condensed_from_chars`, `condensation_status` and `notes`, as `CochraneStudyAssessment` does.
+
+### Failures
+
+A call returns its result or raises `PicoError`, whose `kind` (`PicoErrorKind`) says why:
+
+| Kind | Cause | What helps |
+|---|---|---|
+| `EMPTY_INPUT` | Title and text both empty; no request made | Pass the paper |
+| `REQUEST_FAILED` | The provider raised (unreachable, refused) | Retry later |
+| `TRUNCATED` | The reply hit `max_tokens` | Raise `max_tokens` |
+| `UNUSABLE_REPLY` | Empty, unparseable, or missing a required field after the retries | Another model |
+| `CONDENSATION_FAILED` | Too long for one context, and the digest failed or still does not fit | A larger budget, or another model |
+
+The cause is chained as `__cause__`. A reply missing a part (or a suitability reply without a boolean `is_suitable`) is asked for again once, as the Cochrane assessor retries an unusable parse.
+
+### Long papers
+
+Nothing is truncated. Text over `condense_config.max_context_chars` is condensed first by the [Cochrane assessor's map-reduce](#condensing-oversized-text), over prompts that ask for **verbatim** passages; the extraction then runs once over the digest. **Quotes are always verified against the original text**, so a quote the digest paraphrased is caught and its part is `UNVERIFIED`.
+
+### The Rust port
+
+`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` for the case Python raises as `ValueError`). Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
 
 ## Cochrane Formatters
 
