@@ -487,3 +487,17 @@ class TestTheSuitabilityCheck:
 
         assert copy.kind is PicoErrorKind.TRUNCATED
         assert str(copy) == "cut off"
+
+
+def test_the_mean_is_a_plain_left_to_right_sum() -> None:
+    """``sum()`` compensates its rounding on 3.12+ and not on 3.11; the mean
+    must not depend on the interpreter (nor differ from the Rust port)."""
+    data = reply(
+        population=part(confidence=0.9),
+        intervention=part(confidence=0.9),
+        comparison=part(confidence=0.9),
+        outcome=part(confidence=0.7),
+    )
+
+    # 0.8500000000000001, where a compensated sum gives 0.85.
+    assert read_extraction(data, TEXT, SIM).overall_confidence == (((0.9 + 0.9) + 0.9) + 0.7) / 4

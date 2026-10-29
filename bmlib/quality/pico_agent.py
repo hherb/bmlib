@@ -361,14 +361,17 @@ def read_extraction(data: dict[str, Any], text: str, min_similarity: float) -> P
         except ValueError as exc:
             raise ValueError(f"{name}: {exc}") from None
 
-    # A correctly identified absence must not pull the mean down.  The sum is
-    # taken in PICO order so the Rust port reproduces it bit for bit.
-    values = [
-        part.confidence
-        for part in parts.values()
-        if part.state is not PicoPartState.NOT_REPORTED and part.confidence is not None
-    ]
-    overall = sum(values) / len(values) if values else None
+    # A correctly identified absence must not pull the mean down.  Summed left
+    # to right in PICO order, by hand: ``sum()`` compensates its rounding since
+    # Python 3.12 and does not on 3.11, so it would answer differently across
+    # the versions bmlib supports — and differently from the Rust port's fold.
+    total = 0.0
+    count = 0
+    for part in parts.values():
+        if part.state is not PicoPartState.NOT_REPORTED and part.confidence is not None:
+            total += part.confidence
+            count += 1
+    overall = total / count if count else None
 
     return PicoExtraction(
         population=parts["population"],
@@ -478,7 +481,9 @@ class PicoAgent(BaseAgent):
         Raises:
             PicoError: Naming why no answer could be made.
         """
-        title, text, notes, condensed_from, status = self._prepare(title, text, "suitability")
+        title, text, notes, condensed_from, status = self._prepare(
+            title, text, "the suitability check"
+        )
         suitability = self._ask(
             SUITABILITY_TASK_PROMPT,
             SUITABILITY_RESPONSE_FORMAT,

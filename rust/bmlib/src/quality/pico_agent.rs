@@ -491,7 +491,7 @@ impl<'a> PicoAgent<'a> {
         text: &str,
     ) -> Result<PicoSuitability, PicoError> {
         let (title, sent, notes, condensed_from, status) =
-            self.prepare(title, text, "suitability")?;
+            self.prepare(title, text, "the suitability check")?;
         let label = format!("PICO suitability check of {}", repr_prefix(&title));
         let mut suitability = self.ask(
             SUITABILITY_TASK_PROMPT,
