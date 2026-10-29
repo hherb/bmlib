@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 11**, branch
+_Last updated: 2026-10-29 (**this session is StudyAnalyzer's item 11**, PR #568, branch
 `feat/context-window`; item 6 was PR #562). **0.11.0 is
 released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526 (`find_passage`), #531
 (the embedder), #534 (#530), #535 (#532), #536 (#500), #538 (#507), #539
@@ -41,7 +41,7 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 ## This session: context windows (StudyAnalyzer item 11)
 
-Branch `feat/context-window`. Spec `docs/superpowers/specs/2026-10-29-context-window-design.md`,
+PR #568, branch `feat/context-window`. Spec `docs/superpowers/specs/2026-10-29-context-window-design.md`,
 plan `docs/superpowers/plans/2026-10-29-context-window.md`; the CHANGELOG
 entry *Context windows, and Ollama's `num_ctx`* is the argument.
 `context_window()` on both clients; `None` = the provider did not say,
