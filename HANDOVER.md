@@ -39,7 +39,17 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: context windows (StudyAnalyzer item 11)
+## Since: the manual refresh (PR #569)
+
+Every page of `docs/manual/` was audited against the source, and every
+exported name is now on its page. A Rust manual was started at
+`rust/bmlib/docs/manual/`: `index.md` and `db.md`, compiled as doctests.
+**Its next pages are `citations`, `embed`, `llm` and `fulltext::canonical`**,
+with `db.md` as the template. Filed: **#570** (`context_processor` stores a
+null `extracted_content` as `"None"`) and **#571** (stale docs outside the
+manual).
+
+## Previous session: context windows (StudyAnalyzer item 11)
 
 PR #568, branch `feat/context-window`. Spec `docs/superpowers/specs/2026-10-29-context-window-design.md`,
 plan `docs/superpowers/plans/2026-10-29-context-window.md`; the CHANGELOG
@@ -177,7 +187,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-seven open** (`gh issue list --state open --limit 300`, 2026-10-29;
+**106 open** (`gh issue list --state open --limit 300`, 2026-10-30; #560–#571 are not yet sorted into the lists below;
 PR #547's #548, #549, #552 and #553 are the four since the last count; this
 session filed **#557** (`match_section_type` parity) and **#558** (scraper
 0.29), and closed none). **#528** and
