@@ -683,7 +683,8 @@ def clamped_confidence(value: object) -> float | None:
     return min(1.0, max(0.0, confidence))
 
 
-#: The name the Cochrane reader has always called it by; the PICO agent shares it.
+#: The name the Cochrane reader and its tests have always used; the PICO agent
+#: imports the public ``clamped_confidence``.
 _clamped_confidence = clamped_confidence
 
 

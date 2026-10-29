@@ -982,7 +982,9 @@ extract(title: str | None, text: str | None, *, min_similarity: float) -> PicoEx
 
 `PicoSuitability` requires only `is_suitable` of the model; `is_intervention_study`, `has_comparison`, `study_type`, `confidence` and `rationale` are `None` when absent or of the wrong type.
 
-Both results carry `condensed_from_chars`, `condensation_status` and `notes`, as `CochraneStudyAssessment` does.
+Both results carry `condensed_from_chars` (the stripped text's length in characters), `condensation_status` and `notes`, as `CochraneStudyAssessment` carries `condensed_from_chars`, `condensation_status` and `assessment_notes`.
+
+**A stored result is read back exactly or refused.** `from_dict()` reads what `to_dict()` wrote and raises `ValueError` naming the field for anything else: a field absent or of the wrong type (`"is_suitable": "no"`, a confidence given as `"0.9"`, `notes` as a string), a citation whose span breaks `PassageMatch`'s rules, or an `overall_confidence` that is not the mean of its parts. `PicoPart` is frozen and checked on construction: it is `VERIFIED` exactly when it carries a citation, a `NOT_REPORTED` part carries no quotes, and its confidence is `None` or a number in [0, 1].
 
 ### Failures
 
@@ -991,20 +993,20 @@ A call returns its result or raises `PicoError`, whose `kind` (`PicoErrorKind`) 
 | Kind | Cause | What helps |
 |---|---|---|
 | `EMPTY_INPUT` | Title and text both empty; no request made | Pass the paper |
-| `REQUEST_FAILED` | The provider raised (unreachable, refused) | Retry later |
+| `REQUEST_FAILED` | The request raised: the provider unreachable or refusing, though any other exception from the request lands here too (#573) | Retry later |
 | `TRUNCATED` | The reply hit `max_tokens` | Raise `max_tokens` |
-| `UNUSABLE_REPLY` | Empty, unparseable, or missing a required field after the retries | Another model |
-| `CONDENSATION_FAILED` | Too long for one context, and the digest failed or still does not fit | A larger budget, or another model |
+| `UNUSABLE_REPLY` | Empty, unparseable, not a JSON object, or missing a required field after the retries | Another model |
+| `CONDENSATION_FAILED` | Too long for one context, and the map-reduce produced no digest that fits; the message says why — the run failed (a provider outage during it included), the digest was empty, or it is still over the budget | Retry for an outage; a larger budget or another model otherwise |
 
-The cause is chained as `__cause__`. A reply missing a part (or a suitability reply without a boolean `is_suitable`) is asked for again once, as the Cochrane assessor retries an unusable parse.
+Every kind but `EMPTY_INPUT` chains the exception that caused it as `__cause__`: the provider's exception, the `ChatJson*Error`, the last reply's reading problem, or the condensation's refusal. A reply missing a part (or a suitability reply without a boolean `is_suitable`) is asked for again once, as the Cochrane assessor retries an unusable parse.
 
 ### Long papers
 
-Nothing is truncated. Text over `condense_config.max_context_chars` is condensed first by the [Cochrane assessor's map-reduce](#condensing-oversized-text), over prompts that ask for **verbatim** passages; the extraction then runs once over the digest. **Quotes are always verified against the original text**, so a quote the digest paraphrased is caught and its part is `UNVERIFIED`.
+Nothing is truncated. Text over `condense_config.max_context_chars` is condensed first by the [Cochrane assessor's map-reduce](#condensing-oversized-text), over prompts that ask for **verbatim** passages; the extraction then runs once over the digest. A map or reduce reply cut at `max_tokens` fails its batch, so a digest that lost passages is marked `partial` (with a note) or refused, never stored as `completed`. **Quotes are always verified against the original text**, so a quote the digest paraphrased is caught and its part is `UNVERIFIED`.
 
 ### The Rust port
 
-`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` for the case Python raises as `ValueError`). Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
+`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` for the case Python raises as `ValueError`). Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. A `ContextModel` must return `Err` for a completion that stopped at the output ceiling, since only the implementation sees the stop reason. The Rust models have no `from_json`, so the refusals on reading a stored result are Python's. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
 
 ## Cochrane Formatters
 

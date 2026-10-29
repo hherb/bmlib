@@ -36,8 +36,8 @@ use crate::quality::pico_models::{
     PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoSuitability,
 };
 
-/// How many times a reply that parses but cannot be read is asked for again —
-/// the Cochrane assessor's `ASSESSMENT_ATTEMPTS`.
+/// How many times a question is asked when its reply parses but cannot be read
+/// (so it is asked once more) — the Cochrane assessor's `ASSESSMENT_ATTEMPTS`.
 const READ_ATTEMPTS: usize = 2;
 
 /// The four parts, in the order they are read, reported and averaged.

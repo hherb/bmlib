@@ -128,8 +128,9 @@ class TestTheHelpers:
             ("nan", None),
             (float("nan"), None),
             (float("-inf"), None),
-            # Python's json reads an integer of any size; float() of one past
-            # the double range raises OverflowError, which escaped the reader.
+            # Python's json reads an integer far past the double range (up to
+            # the 4,300-digit limit); float() of one raises OverflowError,
+            # which escaped the reader.
             pytest.param(10**400, None, id="int-past-the-float-range"),
             pytest.param(-(10**400), None, id="negative-int-past-the-float-range"),
             (None, None),

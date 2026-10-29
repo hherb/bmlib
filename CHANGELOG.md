@@ -27,10 +27,15 @@ All notable changes to bmlib are documented here. The format is based on
   quotes still verified against the original. A failure raises `PicoError`
   (Rust: `Err(PicoError)`) naming its cause — empty input, request failed,
   truncated, unusable reply, condensation failed — so an app retries an
-  outage and suggests another model for unusable replies. A reply missing a
-  part is asked for once more. Held to Python by a new oracle that runs
+  outage and suggests another model for unusable replies; an outage during
+  the condensation of a long text is `CONDENSATION_FAILED`, whose message
+  names the failed map-reduce. A reply missing a part is asked for once more.
+  A stored result is read back exactly or refused: `from_dict()` raises
+  `ValueError` naming the field for anything `to_dict()` did not write
+  (`"is_suitable": "no"` used to read as true), and `PicoPart` is frozen and
+  `VERIFIED` exactly when it carries a citation. Held to Python by a new oracle that runs
   **whole agent runs** over scripted replies (`rust/oracle/dump_pico_agent.py`,
-  23 cases), comparing results, the messages sent and every prompt constant. It caught one
+  34 cases), comparing results, the messages sent and every prompt constant. It caught one
   divergence: Python's `sum()` compensates its rounding on 3.12+ and not on
   3.11, so the mean is a plain left-to-right sum in both languages. Upstream's
   batch loop, exports, statistics and summary formatter are not ported (app
@@ -46,14 +51,21 @@ All notable changes to bmlib are documented here. The format is based on
   branch's re-sorted `bmlib.quality.__all__` briefly turned two comments into
   members and broke `from bmlib.quality import *`.
 - **`_json_fields.as_float` refuses an integer past the double range.**
-  Python's `json` reads an integer of any size, and `float()` of one past
+  Python's `json` reads an integer far past it (up to the 4,300-digit
+  conversion limit), and `float()` of one past
   1.8e308 raises `OverflowError`, which escaped every quality reader (the
   Cochrane assessor's confidence too); it now reads as unstated, as infinity
   already did.
 - **Condensation takes any prompts.** `bmlib.quality._condense.condense_text`
   (private) is the Cochrane assessor's condensation with its prompts, query
   and note wording as arguments, and Rust's `LlmCondenser::with_prompts`
-  likewise; the Cochrane assessor's behaviour and stored note are unchanged.
+  likewise; the Cochrane assessor's stored note is unchanged. A refused digest
+  raises the private `CondensationRefusedError` naming why (the run failed,
+  the digest was empty, or it is over the budget), and the line it logs is a
+  WARNING where the Cochrane assessor's was an ERROR, none of the three being
+  bmlib's defect. Rust's refusal strips the digest as Python's `str.strip()`
+  does: `str::trim` kept U+001C–U+001F, so a digest of those alone reached the
+  model in Rust and was refused in Python.
 - **Streamed chat** (StudyAnalyzer phase 1, item 6). `chat_stream(…,
   on_delta)` beside `chat()` on `LLMClient` (Python: the Anthropic,
   OpenAI-compatible and Ollama providers; a third-party provider's
@@ -287,6 +299,15 @@ All notable changes to bmlib are documented here. The format is based on
   bumped: the renderer is untouched.
 
 ### Changed
+- **A condensation pass cut at `max_tokens` fails its batch.**
+  `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or
+  reduce reply that hit the output ceiling was kept as a whole extraction and
+  the run reported `completed` with passages lost — likeliest for the PICO
+  agent, whose map prompt asks for passages verbatim, and reachable by the
+  Cochrane assessor too. Such a batch now fails (`max_tokens` or `length`, as
+  `chat_json` reads them), so the run is `partial` with its note, or failed
+  and refused. Rust's `ContextModel::complete` returns only the text, so its
+  documented contract now says an implementation returns `Err` for one.
 - **Breaking: Rust's Ollama uses `/api/chat` and Python's `anthropic` floor is
   0.41** (item 11). `ChatRequest` has a new field `num_ctx`, so a struct
   literal without `..Default::default()` no longer compiles; `Protocol` has a

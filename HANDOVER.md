@@ -53,7 +53,7 @@ discarded for low confidence or truncated, and `PicoError` names the cause.
 On the way, `chat_json()` gained one `ValueError` subclass per cause
 (`ChatJson*Error`), and the Cochrane condensation became
 `_condense.condense_text` / `LlmCondenser::with_prompts`. **The first oracle to
-run a whole agent** (`rust/oracle/dump_pico_agent.py`, 23 cases) compares the
+run a whole agent** (`rust/oracle/dump_pico_agent.py`, 34 cases) compares the
 results and the messages sent; it caught Python's `sum()` compensating on
 3.12+ only. `python_strip` moved to Rust's `pyvalue`, and `ScriptedChat` moved to
 `rust/bmlib/tests/common/`.
@@ -64,7 +64,10 @@ a "not suitable" answer plainly with a *run anyway* action that calls
 `min_similarity` from plan 2b's measurement. Label an `UNVERIFIED` part *Unsure –
 model could not reproduce <part> from text provided*. On error:
 `REQUEST_FAILED` is retried, `UNUSABLE_REPLY` suggests another model,
-`TRUNCATED` asks for a larger `max_tokens`. In Rust, configure
+`TRUNCATED` asks for a larger `max_tokens`, and `CONDENSATION_FAILED` on a long
+paper may be an outage too — its message names a failed map-reduce (#576 would
+name the cause). A stored run is read back with `from_dict()`, which refuses a
+record `to_dict()` did not write. In Rust, configure
 `PicoAgent::pico_condenser` for long papers. Without one, oversized text is
 `CondensationFailed`.
 
@@ -75,6 +78,19 @@ pre-existing in `chat_json`). **#573**: a bmlib defect inside `PicoAgent` reads
 as `REQUEST_FAILED`. **#574**: `chat_json(max_retries=0)` names a cause that
 never happened. New, and worth keeping: `tests/test_package_exports.py` checks
 that every package's `__all__` resolves.
+
+**The PR review's fixes** (same PR): a map or reduce reply cut at `max_tokens`
+now fails its batch in `LLMChunkProcessor` (Cochrane's too; Rust's
+`ContextModel::complete` documents the same contract); a refused digest says
+why (`CondensationRefusedError`, logged at WARNING, no longer ERROR); every
+`from_dict` refuses a corrupt record and `PicoPart` is frozen with its state
+checked against its citations; Rust strips a digest as Python does. Eleven
+oracle cases cover the fuzzy match at the caller's threshold, an array reply,
+null quotes and each condensation refusal. Filed for a decision: **#576** (a
+failed map-reduce's message drops each batch's cause), **#577** (quotes in the
+wrong shape, or beside `reported: false`, leave no trace), **#578** (a numeric
+`sample_size` reads as `None`; an empty description is accepted); #573 gained
+two findings.
 
 ## Since: the manual refresh (PR #569)
 
@@ -224,7 +240,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**109 open** (`gh issue list --state open --limit 300`, 2026-10-30; #560–#574 are not yet sorted into the lists below;
+**112 open** (`gh issue list --state open --limit 300`, 2026-10-30; #560–#578 are not yet sorted into the lists below;
 PR #547's #548, #549, #552 and #553 are the four since the last count; this
 session filed **#557** (`match_section_type` parity) and **#558** (scraper
 0.29), and closed none). **#528** and

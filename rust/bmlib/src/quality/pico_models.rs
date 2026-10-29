@@ -66,10 +66,13 @@ pub enum PicoError {
     RequestFailed(String),
     /// The reply hit the output ceiling; raise `max_tokens`.
     Truncated(String),
-    /// The reply was empty, did not parse, or lacked a required field; another
-    /// model may do better.
+    /// The reply was empty, did not parse, was not a JSON object, or lacked a
+    /// required field; another model may do better.
     UnusableReply(String),
-    /// The text was too long for one context and could not be condensed to fit.
+    /// The text was too long for one context and the map-reduce condensing it
+    /// produced no digest that fits (or no condenser was configured). The
+    /// message says why: a failed run (a provider outage during it included,
+    /// so retrying may help), an empty digest, or one still over the budget.
     CondensationFailed(String),
     /// `min_similarity` was not a number in (0, 1].
     InvalidSimilarity(f64),
@@ -189,7 +192,7 @@ pub struct PicoExtraction {
     pub sample_size: Option<String>,
     /// The mean confidence of the reported parts carrying one.
     pub overall_confidence: Option<f64>,
-    /// The text's length in characters when it was condensed first.
+    /// The stripped text's length in characters when it was condensed first.
     pub condensed_from_chars: Option<i64>,
     /// The condensation's `ProcessingStatus` value, when condensed.
     pub condensation_status: Option<String>,

@@ -25,6 +25,13 @@ and every prompt constant.
 ### Changed (item 7)
 `cochrane_assessor`'s refusal rules for a digest are `condense_checked`, shared
 with the PICO agent; the Cochrane assessor's behaviour and note are unchanged.
+A refusal returns its reason, which `PicoError::CondensationFailed` carries, as
+Python's message does. The digest is stripped as Python's `str.strip()` strips
+it (`pyvalue::python_strip`): `str::trim` kept U+001C–U+001F, so a digest of
+those alone was sent to the model where Python refused it.
+`ContextModel::complete` documents that a completion stopped at the output
+ceiling is an `Err`, as Python's processor now fails such a batch. The PICO
+oracle has 34 cases.
 
 ### Added — follows Python's canonical text from HTML and the full-text check (StudyAnalyzer item 4c)
 `fulltext::canonical::canonical_from_html` and `HTML_CANONICAL_VERSION`
