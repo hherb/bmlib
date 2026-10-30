@@ -66,6 +66,12 @@ def unit(seed: int) -> list[float]:
     return truncate_and_normalize([rng.gauss(0.0, 1.0) for _ in range(EMBEDDING_DIM)])
 
 
+def unit_of(values: list[float]) -> list[float]:
+    """``values`` scaled to unit length, whatever their count."""
+    norm = math.sqrt(math.fsum(v * v for v in values))
+    return [v / norm for v in values]
+
+
 def encode_cases() -> list[dict[str, Any]]:
     """Vectors offered for storage: their blob, or refused."""
     base = unit(1)
@@ -78,6 +84,9 @@ def encode_cases() -> list[dict[str, Any]]:
         ("norm-half", [x * 0.5 for x in base]),
         ("too-few-values", base[:-1]),
         ("too-many-values", base + [0.0]),
+        # Unit length, so only the length check refuses them.
+        ("too-few-values-unit-length", unit_of(base[:-1])),
+        ("too-many-values-unit-length", base[:-1] + [0.0, base[-1]]),
         ("nan", [math.nan] + base[1:]),
         ("infinity", [math.inf] + base[1:]),
         ("past-binary32-range", [1e39] + base[1:]),
