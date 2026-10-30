@@ -154,7 +154,10 @@ class ChunkSetLabel:
         values: dict[str, Any] = {}
         for f in fields(cls):
             value = data.get(f.name) if isinstance(data, dict) else None
-            if type(value) is not types.get(f.name, str):
+            # A version is a u32, as the Rust port reads it.
+            if type(value) is not types.get(f.name, str) or (
+                type(value) is int and not 0 <= value < 2**32
+            ):
                 raise ValueError(f"a chunk set label's {f.name} is {value!r}")
             values[f.name] = value
         return cls(**values)
@@ -332,6 +335,8 @@ def index_paper(
         ValueError: For an empty or non-``str`` key, or a lone surrogate.
         UnidentifiedEmbedderError: If the embedder carries no model.
         IndexingCancelled: If ``on_progress`` returned ``False``.
+        VectorError: If the embedder returned the wrong number of vectors, or
+            one that would not be stored.
         EmbedError: As the embedder raises it.
     """
     _check_key(key)

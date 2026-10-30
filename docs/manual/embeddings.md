@@ -176,7 +176,10 @@ for hit in search(conn, "pmid:12345", canonical, "Was the trial blinded?", embed
 - `delete_paper(conn, key)` removes a set; an absent key is not an error.
 
 `search` reads the label and the rows in one statement, so a re-index by
-another process while it runs is seen whole or not at all. The question's
+another process while it runs is seen whole or not at all. Two processes
+indexing the same key at once leave one whole set, the later writer's; on
+PostgreSQL, if the key had no set yet, the later one can instead fail with the
+driver's unique-violation error (reasoned, not measured), and can be retried. The question's
 vector is held to the stored vectors' rules (`VectorError` otherwise).
 
 `key` is the caller's own identifier, any non-empty `str`. `embedder` is

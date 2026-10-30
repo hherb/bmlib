@@ -35,7 +35,7 @@ from typing import Any
 import pytest
 
 import bmlib.embed.store
-from bmlib.db import connect_sqlite, execute, fetch_all, fetch_scalar, placeholder
+from bmlib.db import connect_sqlite, execute, fetch_all, fetch_scalar, is_sqlite, placeholder
 from bmlib.embed import (
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
@@ -534,6 +534,19 @@ def test_a_set_recording_no_chunks_beside_rows_is_corrupt(conn: Any) -> None:
     paper = _paper(3)
     index_paper(conn, "k", paper, FakeEmbedder())
     execute(conn, "UPDATE embedded_chunk_sets SET chunk_count = 0")
+    conn.commit()
+    with pytest.raises(CorruptChunkSetError):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+@pytest.mark.parametrize("version", [-1, 2**32])
+def test_a_stored_version_out_of_range_is_corrupt(conn: Any, version: int) -> None:
+    # As Rust reads it: a version is a u32, so anything else is not a label.
+    if version >= 2**31 and not is_sqlite(conn):
+        pytest.skip("PostgreSQL's INTEGER cannot hold it, so the case cannot arise there")
+    paper = _paper(2)
+    index_paper(conn, "k", paper, FakeEmbedder())
+    execute(conn, f"UPDATE embedded_chunk_sets SET recipe_version = {placeholder(conn)}", [version])
     conn.commit()
     with pytest.raises(CorruptChunkSetError):
         search(conn, "k", paper, "q", FakeEmbedder(), 3)

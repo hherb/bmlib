@@ -591,3 +591,15 @@ fn a_set_recording_no_chunks_beside_rows_is_corrupt() {
         Value::from(0_i64),
     );
 }
+
+#[test]
+fn a_stored_version_out_of_range_is_corrupt() {
+    corrupt_after(
+        "UPDATE embedded_chunk_sets SET recipe_version = ?",
+        Value::from(-1_i64),
+    );
+    corrupt_after(
+        "UPDATE embedded_chunk_sets SET recipe_version = ?",
+        Value::from(1_i64 << 32),
+    );
+}
