@@ -133,7 +133,7 @@ BOOK = (
 
 
 def epmc_hit(
-    ppr: str = "PPR1325930", *, doi: str | None = "10.21203/rs.3.rs-1/v1"
+    ppr: str = "PPR1325930", *, doi: str | None = "10.21203/rs.3.rs-1/v1", pmid: str | None = None
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
         "id": ppr,
@@ -152,6 +152,8 @@ def epmc_hit(
     }
     if doi:
         record["doi"] = doi
+    if pmid:
+        record["pmid"] = pmid
     return {"hitCount": 1, "resultList": {"result": [record]}}
 
 
@@ -268,6 +270,61 @@ def cases() -> list[tuple[str, dict[str, Any], list[dict[str, Any]]]]:
             [status(404), ok(article_set(article("123")))],
         ),
         ("caller-doi-disagrees", {"pmid": "123", "doi": "10.1/caller"}, [status(404), ok(found)]),
+        (
+            "pmid-lookup-pubmed-down-keeps-openalex-pmc-id",
+            {"pmid": "123"},
+            [ok(work(pmid="123", pmcid="7745181")), status(503)],
+        ),
+        (
+            "doi-lookup-pubmed-lacks-the-pmc-id",
+            {"doi": "10.1/x"},
+            [ok(work(pmid="123", pmcid="7745181")), ok(found)],
+        ),
+        (
+            "pmid-and-doi-pubmed-holds-another-doi",
+            {"pmid": "123", "doi": "10.1/x"},
+            [ok(work(pmid="123")), ok(article_set(article("123", doi="10.1/journal")))],
+        ),
+        (
+            "pmc-id-and-doi-pubmed-holds-another-doi",
+            {"pmc_id": "PMC7745181", "doi": "10.1/x"},
+            [
+                ok(work(pmid="123", pmcid="7745181")),
+                ok(article_set(article("123", doi="10.1/journal"))),
+            ],
+        ),
+        (
+            "merged-preprint-pubmed-lacks-the-pmc-id",
+            {"doi": PREPRINT},
+            [
+                ok(MERGED_WORK),
+                ok(article_set(article("32511329", doi="10.1038/S41586-020-2286-9"))),
+            ],
+        ),
+        ("openalex-doi-upper-case", {"doi": "10.1/x"}, [ok(work(doi="10.1/X"))]),
+        ("openalex-pmid-non-ascii", {"doi": "10.1/x"}, [ok(work(pmid="١٢٣"))]),
+        (
+            "pubmed-book-of-another-pmid",
+            {"pmid": "123"},
+            [ok(work(pmid="123")), ok(article_set(BOOK.replace("123", "999")))],
+        ),
+        (
+            "ppr-first-result-not-an-object",
+            {"ppr_id": "PPR1325930"},
+            [ok({"hitCount": 1, "resultList": {"result": [1]}})],
+        ),
+        # Escaped in the body, which serde_json refuses and Python now does too.
+        ("ppr-doi-lone-surrogate", {"ppr_id": "PPR1325930"}, [ok(epmc_hit(doi="10.1/\ud800x"))]),
+        (
+            "ppr-pmid-not-digits",
+            {"ppr_id": "PPR1325930"},
+            [ok(epmc_hit(pmid="PMC12")), ok(work(doi="10.21203/rs.3.rs-1/v1"))],
+        ),
+        (
+            "ppr-pmid-leading-zeros",
+            {"ppr_id": "PPR1325930"},
+            [ok(epmc_hit(pmid="0077")), ok(work(doi="10.21203/rs.3.rs-1/v1"))],
+        ),
         ("doi-with-reserved-characters", {"doi": "https://doi.org/10.1/a?b#c d"}, [status(404)]),
         ("doi-non-ascii", {"doi": "10.1/é"}, [status(404)]),
         ("invalid-pmid", {"pmid": "12a"}, []),
@@ -275,6 +332,7 @@ def cases() -> list[tuple[str, dict[str, Any], list[dict[str, Any]]]]:
         ("invalid-pmid-non-ascii", {"pmid": "١٢٣"}, []),
         ("invalid-pmc-id", {"pmc_id": "PMC١٢٣"}, []),
         ("invalid-ppr-id", {"ppr_id": "PR12"}, []),
+        ("invalid-ppr-id-non-ascii", {"ppr_id": "PPR١٢٣"}, []),
         ("no-identifier", {"pmid": "  ", "doi": "", "pmc_id": " "}, []),
     ]
 

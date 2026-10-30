@@ -39,6 +39,8 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 _PPR_ID = re.compile(r"PPR[0-9]+")
 _PMC_ID = re.compile(r"PMC[0-9]+")
 
+_PMID = re.compile(r"[0-9]+")
+
 # The abstract is JATS-like markup that is not XML — the measured record
 # carries a raw `&` — so tags are stripped by rule rather than parsed.
 _BLOCK_TAG = re.compile(r"</?(?:title|p)\b[^>]*>")
@@ -65,6 +67,16 @@ def _string(value: Any, key: str) -> str | None:
         return None
     found = value.get(key)
     return found if isinstance(found, str) and found else None
+
+
+def _pmid(raw: Any) -> str | None:
+    """``raw["pmid"]`` as a PMID: ASCII digits less leading zeros, else ``None``.
+
+    It enters a lookup's record whenever PubMed supplied none, so it is held to
+    the rule a caller's PMID is (#470).
+    """
+    found = _string(raw, "pmid")
+    return (found.lstrip("0") or None) if found and _PMID.fullmatch(found) else None
 
 
 def _list(value: Any, key: str) -> list[Any]:
@@ -158,7 +170,7 @@ def normalize_europepmc(raw: dict[str, Any]) -> FetchedRecord:
         title=_string(raw, "title") or "",
         source="europepmc",
         doi=_string(raw, "doi"),
-        pmid=_string(raw, "pmid"),
+        pmid=_pmid(raw),
         pmc_id=pmc_id,
         abstract=_abstract(abstract_raw if isinstance(abstract_raw, str) else None),
         authors=authors,

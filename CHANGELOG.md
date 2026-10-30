@@ -33,12 +33,18 @@ All notable changes to bmlib are documented here. The format is based on
   `book_record`, `not_asked` — so an outage never reads as "no such paper", and
   one source failing still returns the others' record. Identifiers are checked
   before any request (`ValueError` naming the argument); nothing is retried.
-  Python and Rust are held together by `tests/fixtures/record_lookup.json` (44
+  Python and Rust are held together by `tests/fixtures/record_lookup.json` (60
   cases, every outcome at every source that can give it), written by
   `scripts/make_record_lookup_fixture.py`. On the way: the new
   `normalize_europepmc` / `fetchers::europepmc::normalize` reads one Europe PMC
   hit (its abstract stripped of tags by rule, since the measured body carries a
-  raw `&` and is not XML), and `FetchedRecord` gains `to_dict()` / `from_dict()`.
+  raw `&` and is not XML, and its `pmid` kept only as ASCII digits), and
+  `FetchedRecord` gains `to_dict()` / `from_dict()`, which refuses a field of
+  the wrong type by name. A 200's body is read as UTF-8 whatever charset it
+  declares, as Rust reads it (a declared `rot13` raised `TypeError` out of the
+  lookup), and a body carrying an escaped lone surrogate is `unreadable` in
+  both languages (Python's raised `UnicodeEncodeError` once a DOI reached the
+  URL); a caller's DOI holding one is a `ValueError`.
 - **The PICO agent, with verified quotes** (StudyAnalyzer phase 1, item 7).
   `bmlib.quality.PicoAgent` (Rust: `bmlib::quality::PicoAgent`) ports
   bmlibrarian's PICO agent as two independent calls: `check_suitability()`
@@ -359,7 +365,7 @@ All notable changes to bmlib are documented here. The format is based on
   every field type-checked, as Rust does, so such a record is stored without
   that field. Also: an empty `publication_date` is `None` in Python as it was
   in Rust, and an `is_oa` that is not a JSON boolean is `False` (Python's
-  `bool("no")` was `True`). 23 oracle cases hold the two languages to agreeing.
+  `bool("no")` was `True`). 23 new oracle cases hold the two languages to agreeing.
   Found building StudyAnalyzer's item 5, which shares the normaliser.
 - **A condensation pass cut at `max_tokens` fails its batch.**
   `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or

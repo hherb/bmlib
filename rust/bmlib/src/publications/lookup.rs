@@ -29,10 +29,13 @@
 //!   DOI the other two are asked by.
 //! - **A preprint OpenAlex merged with its journal version** returns the
 //!   preprint's own record, the journal version named in
-//!   [`RecordLookup::published_version`] and not in the record.
+//!   [`RecordLookup::published_version`] and not in the record. A DOI or PPR
+//!   lookup PubMed did not confirm keeps OpenAlex's PMID and PMC ID out of the
+//!   record, since for a merged preprint they are the journal version's.
 //!
 //! Each source's outcome is reported apart ([`SourceOutcome`]), so an outage
-//! never reads as "no such paper". Nothing is retried. Held to the Python by
+//! never reads as "no such paper". Nothing is retried. A body is read as UTF-8
+//! whatever charset it declares. Held to the Python by
 //! `tests/fixtures/record_lookup.json`.
 
 use serde_json::Value;
@@ -65,7 +68,8 @@ pub enum SourceOutcome {
     OtherRecord,
     /// The PMID is a Bookshelf chapter, which the PubMed parser reads nothing from.
     BookRecord,
-    /// Nothing to ask by: PubMed with no PMID, Europe PMC with no PPR accession.
+    /// Nothing to ask by: PubMed with no PMID, OpenAlex with no PMID, PMC ID or
+    /// DOI, Europe PMC with no PPR accession.
     NotAsked,
 }
 
@@ -98,9 +102,9 @@ pub struct SourceReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedVersion {
     /// Its PMID.
-    pub pmid: Option<String>,
+    pub pmid: String,
     /// Its DOI, as PubMed holds it.
-    pub doi: Option<String>,
+    pub doi: String,
     /// Its PMC ID.
     pub pmc_id: Option<String>,
 }
@@ -267,7 +271,6 @@ fn with_query(url: &str, params: &[(&str, &str)]) -> String {
     format!("{url}?{}", query.join("&"))
 }
 
-/// The body of a 200, or the report for anything else.
 /// The body of a 200, or the report for anything else — except a status in
 /// `answers`, which is the source's own reply and is returned as `Ok(Err(status))`
 /// for the caller to judge, with nothing logged (OpenAlex's 404 is "not held").
@@ -293,6 +296,7 @@ fn get_text_or_answer(
         .map_err(|_| report(SourceOutcome::Unreadable, "the body is not UTF-8 text"))
 }
 
+/// The body of a 200, or the report for anything else.
 fn get_text(http: &dyn HttpClient, url: &str) -> Result<String, SourceReport> {
     get_text_or_answer(http, url, &[]).map(|answer| answer.unwrap_or_default())
 }
@@ -615,29 +619,29 @@ pub fn lookup_record(
     };
 
     let mut published_version = None;
-    let is_published_version = pmid.is_none()
-        && pmc_id.is_none()
-        && lookup_doi.is_some()
-        && oa.is_some()
-        && pm
-            .as_ref()
-            .and_then(|r| r.doi.as_deref())
-            .is_some_and(|d| normalize_doi(Some(d)) != lookup_doi);
-    let candidates: Vec<FetchedRecord> = match (is_published_version, &pm, &oa) {
-        (true, Some(pm), Some(oa)) => {
-            published_version = Some(PublishedVersion {
-                pmid: pm.pmid.clone(),
-                doi: pm.doi.clone(),
-                pmc_id: pm.pmc_id.clone().or_else(|| oa.pmc_id.clone()),
-            });
+    // PubMed's DOI, when it is not the one the lookup was made by.
+    let published_doi = pm
+        .as_ref()
+        .and_then(|r| r.doi.clone())
+        .filter(|d| normalize_doi(Some(d)) != lookup_doi);
+    let is_published_version =
+        pmid.is_none() && pmc_id.is_none() && lookup_doi.is_some() && oa.is_some();
+    let published = (is_published_version, &pm, &oa, published_doi, &pubmed_pmid);
+    let candidates: Vec<FetchedRecord> = match published {
+        (true, Some(pm), Some(oa), Some(doi), Some(pubmed_pmid)) => {
+            // `pubmed_pmid` is `pm`'s own PMID, #474's rule having matched it.
             pm_report = report(
                 SourceOutcome::Found,
                 format!(
-                    "PMID {} is a published version (DOI {}), returned as published_version",
-                    pm.pmid.as_deref().unwrap_or_default(),
-                    pm.doi.as_deref().unwrap_or_default()
+                    "PMID {pubmed_pmid} is a published version (DOI {doi}), \
+                     returned as published_version"
                 ),
             );
+            published_version = Some(PublishedVersion {
+                pmid: pubmed_pmid.clone(),
+                doi,
+                pmc_id: pm.pmc_id.clone().or_else(|| oa.pmc_id.clone()),
+            });
             let mut preprint = oa.clone();
             preprint.pmid = None;
             preprint.pmc_id = None;

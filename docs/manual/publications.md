@@ -219,7 +219,7 @@ class FetchedRecord:
 
 `sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)), and `pmc_id` is stored as `Publication.pmcid`. `extras` is **not** persisted — if you need it, capture it in an `on_record` callback.
 
-`to_dict()` / `from_dict()` *(unreleased)* serialise a record with one key per field, in declaration order, nested entries through their own `to_dict()`; `from_dict()` raises `ValueError` for a dictionary carrying any other set of keys.
+`to_dict()` / `from_dict()` *(unreleased)* serialise a record with one key per field, in declaration order, nested entries through their own `to_dict()`; `from_dict()` raises `ValueError` for a dictionary carrying any other set of keys, or a field of the wrong type, naming the field — a nested entry must be exactly what its own `to_dict()` writes.
 
 The last two fields are declared after `extras` rather than beside the content fields they read best beside, because downstream projects construct `FetchedRecord` positionally: inserting a field anywhere but the end shifts every later argument silently.
 
@@ -1655,7 +1655,7 @@ def lookup_record(
 
 The record is PubMed's if found, else Europe PMC's, else OpenAlex's. Each empty identifier is then filled from the caller, then from the other sources, and every other source's full-text entry whose URL is not already there is appended; `is_open_access` is true if any source says so. **The lookup's identity is the first given of PMID, PMC ID, PPR, DOI**; the caller's other identifiers fill only empty fields, and one disagreeing with the record's is logged at WARNING and the record's kept.
 
-**Identifiers are checked before any request**, raising `ValueError` naming the argument: a PMID is ASCII digits, not all zeros, sent without leading zeros (`transparency`'s caller rule, #470); a PMC ID is `PMC` + ASCII digits, the prefix optional and case-folded; a PPR is `PPR` + ASCII digits, case-folded; a DOI is prefix-stripped and lower-cased, its shape not checked (#475). A blank one is none, none at all is the same `ValueError`, and a value that is not text is a `TypeError`.
+**Identifiers are checked before any request**, raising `ValueError` naming the argument: a PMID is ASCII digits, not all zeros, sent without leading zeros (`transparency`'s caller rule, #470); a PMC ID is `PMC` + ASCII digits, the prefix optional and case-folded; a PPR is `PPR` + ASCII digits, case-folded; a DOI is prefix-stripped and lower-cased, its shape not checked (#475), but one holding a lone surrogate, which no URL can carry, is refused. A blank one is none, none at all is the same `ValueError`, and a value that is not text is a `TypeError`.
 
 **A preprint OpenAlex merged with its journal version** (measured 2026-10-30: bioRxiv's `10.1101/2020.03.22.002386` carries the Nature paper's PMID and PMC ID) returns **the preprint's own record**: where the lookup's identity is a DOI or a PPR and the PubMed record reached through OpenAlex's PMID carries a different DOI, that PMID and OpenAlex's PMC ID are the published version's. The record is then Europe PMC's for a PPR, else OpenAlex's without its PMID and PMC ID and with only its `submittedVersion` locations, and the journal version's identifiers are returned as `RecordLookup.published_version`, never in the record. A PubMed record carrying no DOI is taken as the same paper — so a merged preprint whose journal record carries no DOI still returns the journal's record, the rule having nothing to compare.
 
@@ -1668,7 +1668,7 @@ The record is PubMed's if found, else Europe PMC's, else OpenAlex's. Each empty 
 | `found` | the source answered with the paper |
 | `not_found` | the source's own "not held": OpenAlex's 404, PubMed's empty `<PubmedArticleSet>`, Europe PMC's empty result list |
 | `request_failed` | no answer — no connection, a timeout, any other non-200. **Worth a retry**; never read as "no such paper" |
-| `unreadable` | a 200 whose body bmlib cannot read: not JSON or XML, not an object, a root other than `<PubmedArticleSet>`, an envelope of the wrong shape |
+| `unreadable` | a 200 whose body bmlib cannot read: not UTF-8 (a body is read as UTF-8 whatever charset it declares, in both languages), not JSON or XML, carrying an escaped lone surrogate, not an object, a root other than `<PubmedArticleSet>`, an envelope of the wrong shape |
 | `other_record` | served, but not the paper asked about: efetch with no `<PubmedArticle>` carrying the PMID sent, or an OpenAlex work not carrying the identifier it was looked up by (whose PMID is then not followed) |
 | `book_record` | the PMID is a Bookshelf chapter (`<PubmedBookArticle>`), which the PubMed parser reads nothing from; another source's record is used |
 | `not_asked` | nothing to ask by: PubMed with no PMID, OpenAlex with no PMID, PMC ID or DOI, Europe PMC with no PPR |

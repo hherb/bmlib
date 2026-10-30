@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -52,7 +53,7 @@ DOCTYPE = (
 class FakeResponse:
     def __init__(self, status_code: int, text: str) -> None:
         self.status_code = status_code
-        self.text = text
+        self.content = text.encode("utf-8")
 
 
 class FakeClient:
@@ -266,6 +267,91 @@ class TestTheSources:
     def test_a_bug_type_from_the_client_propagates(self):
         with pytest.raises(TypeError):
             lookup_record(FakeClient(TypeError("bmlib is wrong")), email=EMAIL, pmid="1")
+
+
+class TestTheBodyIsReadAsUtf8:
+    @pytest.mark.parametrize("charset", ["rot13", "base64", "latin-1"])
+    def test_a_declared_charset_is_not_trusted(self, charset):
+        # rot13 and base64 do not decode bytes to text: response.text raised.
+        answer = httpx.Response(
+            200,
+            headers={"content-type": f"application/json; charset={charset}"},
+            content=json.dumps(work(title="Café")).encode("utf-8"),
+        )
+        result = lookup_record(FakeClient(answer), email=EMAIL, doi="10.1/x")
+        assert result.openalex.outcome is SourceOutcome.FOUND
+        assert result.record is not None and result.record.title == "Café"
+
+    @pytest.mark.parametrize("source", ["openalex", "pubmed", "europepmc"])
+    def test_a_body_that_is_not_utf8_is_unreadable(self, source):
+        bad = httpx.Response(200, content=b'{"title": "a\xff"}')
+        answers = {
+            "openalex": (dict(pmid="123"), [bad, ok(article_set(article("123")))]),
+            "pubmed": (dict(pmid="123"), [status(404), bad]),
+            "europepmc": (dict(ppr_id="PPR1"), [bad]),
+        }
+        kwargs, scripted = answers[source]
+        result = lookup_record(FakeClient(*scripted), email=EMAIL, **kwargs)
+        report = getattr(result, source)
+        assert report == lookup.SourceReport(SourceOutcome.UNREADABLE, "the body is not UTF-8 text")
+
+    def test_json_nested_past_the_decoder_is_unreadable(self):
+        result = lookup_record(FakeClient(ok("[" * 100_000)), email=EMAIL, doi="10.1/x")
+        assert result.openalex == lookup.SourceReport(
+            SourceOutcome.UNREADABLE, "the body is not JSON"
+        )
+
+    def test_a_lone_surrogate_in_a_body_is_unreadable(self):
+        # It raised UnicodeEncodeError out of quote() once Europe PMC's DOI reached it.
+        client = FakeClient(ok(epmc_hit(doi="10.1/\ud800x")))
+        result = lookup_record(client, email=EMAIL, ppr_id="PPR1325930")
+        assert result.europepmc == lookup.SourceReport(
+            SourceOutcome.UNREADABLE, "the body carries a lone surrogate"
+        )
+        assert result.record is None and len(client.requests) == 1
+
+    def test_a_callers_doi_with_a_lone_surrogate_raises_before_any_request(self):
+        client = FakeClient()
+        with pytest.raises(ValueError, match=r"^doi '10\.1/\\ud800' carries a lone surrogate$"):
+            lookup_record(client, email=EMAIL, ppr_id="PPR1", doi="10.1/\ud800")
+        assert client.requests == []
+
+
+class TestTheLogLevels:
+    def test_a_source_that_could_not_be_used_warns_and_an_answer_does_not(self, caplog):
+        client = FakeClient(ok(work(pmid="123")), status(503))
+        with caplog.at_level(logging.DEBUG, logger="bmlib.publications.lookup"):
+            lookup_record(client, email=EMAIL, pmid="123")
+        assert caplog.record_tuples == [
+            (
+                "bmlib.publications.lookup",
+                logging.DEBUG,
+                "lookup_record: europepmc: not_asked (no PPR accession)",
+            ),
+            ("bmlib.publications.lookup", logging.DEBUG, "lookup_record: openalex: found"),
+            (
+                "bmlib.publications.lookup",
+                logging.WARNING,
+                "lookup_record: pubmed: request_failed (HTTP 503)",
+            ),
+        ]
+
+    def test_dois_differing_only_in_case_do_not_warn(self, caplog):
+        client = FakeClient(status(404), ok(article_set(article("123", doi="10.1/X"))))
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.lookup"):
+            lookup_record(client, email=EMAIL, pmid="123", doi="10.1/x")
+        assert caplog.records == []
+
+
+def test_a_full_text_source_two_records_carry_is_listed_once():
+    entry = FullTextSourceEntry(url="https://repo/x.pdf", format="pdf", source="pubmed")
+    twin = FullTextSourceEntry(url="https://repo/x.pdf", format="pdf", source="openalex")
+    from bmlib.publications.models import FetchedRecord
+
+    base = FetchedRecord(title="T", source="pubmed", fulltext_sources=[entry])
+    other = FetchedRecord(title="T", source="openalex", fulltext_sources=[twin])
+    caller = {"pmid": None, "doi": None, "pmc_id": None}
+    assert lookup._assemble(base, [other], caller, None).fulltext_sources == [entry]
 
 
 class TestEachOutcome:
@@ -522,6 +608,73 @@ class TestSerialisation:
         data[key] = "x"
         with pytest.raises(ValueError):
             FetchedRecord.from_dict(data)
+
+    @pytest.mark.parametrize(
+        ("key", "value", "message"),
+        [
+            ("title", 5, "FetchedRecord.title is not text"),
+            ("pmid", ["x"], "FetchedRecord.pmid is not text or None"),
+            ("authors", "abc", "FetchedRecord.authors is not a list of text"),
+            ("keywords", [1], "FetchedRecord.keywords is not a list of text"),
+            ("is_open_access", "false", "FetchedRecord.is_open_access is not a boolean"),
+            ("extras", "s", "FetchedRecord.extras is not an object"),
+            ("grants", ["x"], "FetchedRecord.grants[0] is not an entry"),
+            ("grants", [{}], "FetchedRecord.grants[0] is not an entry"),
+            ("fulltext_sources", [{"url": 1}], "FetchedRecord.fulltext_sources[0] is not an entry"),
+            ("author_affiliations", [None], "FetchedRecord.author_affiliations[0] is not an entry"),
+        ],
+    )
+    def test_a_fetched_record_field_of_the_wrong_type_is_named(self, key, value, message):
+        from bmlib.publications.models import FetchedRecord
+
+        data = FetchedRecord(title="T", source="s").to_dict()
+        data[key] = value
+        with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+            FetchedRecord.from_dict(data)
+
+    def test_a_source_report_names_a_member_or_raises(self):
+        assert lookup.SourceReport("found", "x").outcome is SourceOutcome.FOUND  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            lookup.SourceReport("maybe", "x")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="^a SourceReport message is text$"):
+            lookup.SourceReport(SourceOutcome.FOUND, 5)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        ("record", "published", "found", "message"),
+        [
+            (True, False, (), "a RecordLookup carries a record exactly"),
+            (False, False, ("openalex",), "a RecordLookup carries a record exactly"),
+            (True, True, ("openalex",), "a published version is named only beside"),
+            (False, True, (), "a published version is named only beside"),
+        ],
+    )
+    def test_a_lookup_that_contradicts_itself_is_refused(self, record, published, found, message):
+        from bmlib.publications.models import FetchedRecord
+
+        reports = {
+            source: lookup.SourceReport(
+                SourceOutcome.FOUND if source in found else SourceOutcome.NOT_FOUND, ""
+            )
+            for source in ("pubmed", "openalex", "europepmc")
+        }
+        with pytest.raises(ValueError, match=f"^{message}"):
+            RecordLookup(
+                record=FetchedRecord(title="T", source="s") if record else None,
+                published_version=PublishedVersion("1", "10.1/x", None) if published else None,
+                **reports,
+            )
+
+    @pytest.mark.parametrize(
+        "published",
+        [
+            {"pmid": 5, "doi": "d", "pmc_id": None},
+            {"pmid": "1", "doi": None, "pmc_id": None},
+            {"pmid": "1", "doi": "d", "pmc_id": {}},
+        ],
+    )
+    def test_a_published_version_of_the_wrong_type_is_refused(self, published):
+        with pytest.raises(ValueError, match="^a PublishedVersion's"):
+            PublishedVersion(**published)
 
     def test_a_fetched_record_round_trips(self):
         from bmlib.publications.models import FetchedRecord

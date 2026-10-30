@@ -55,7 +55,7 @@ ahead of Tier 3's link; Python and Rust.
 open-access locations), Europe PMC for a PPR (its `fullTextXML` as an `xml`
 source). A preprint OpenAlex merged with its journal version returns the
 preprint, the journal version in `published_version`. Seven per-source
-outcomes; `tests/fixtures/record_lookup.json` (44 cases, from
+outcomes; `tests/fixtures/record_lookup.json` (60 cases, from
 `scripts/make_record_lookup_fixture.py`) holds Rust to it. On the way:
 OpenAlex's normaliser reads `ids.pmcid` (**the OpenAlex sync now stores
 `pmcid`**) and reads every field type-checked in Python as Rust did (a
@@ -67,6 +67,13 @@ outage decided which version the record named). Filed from it: **#581** (an
 unconfirmed merged preprint keeps the journal version's *locations* — a
 decision), **#582** (the normalisers drop a wrong-typed field silently; #209's
 question) and **#583** (OpenAlex abstract tie order differs between languages).
+**The second review's fixes**: a 200's body is read as UTF-8 whatever its
+declared charset (a `rot13` one raised `TypeError` out of the lookup), a lone
+surrogate in a body or the caller's DOI is refused (it raised
+`UnicodeEncodeError` from `quote()`), `FetchedRecord.from_dict` names a
+wrong-typed field, Europe PMC's `pmid` must be ASCII digits, and 13 fixture
+cases pin what 21 of 25 mutations survived. Filed from it: **#585** (which
+`SourceOutcome`s are worth a retry — a decision).
 
 **For StudyAnalyzer plan 2a** (its *Metadata waits for bmlib item 5*): call
 `lookup_record` with the app's identifiers — **a PPR accession as `ppr_id`**,

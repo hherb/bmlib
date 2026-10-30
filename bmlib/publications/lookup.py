@@ -40,9 +40,11 @@ Every source's outcome is reported apart (:class:`SourceOutcome`), so an
 outage never reads as "no such paper", and one source failing still returns
 the others' record. Nothing is retried. Rust's ``bmlib::publications::lookup``
 is held to the same results by ``tests/fixtures/record_lookup.json`` — on the
-inputs it covers: Python's ``json`` also accepts ``NaN``, an escaped lone
-surrogate and deeper nesting than serde_json's 128 levels, so such a body is
-``unreadable`` in Rust alone (#572's direction; no draw has seen one).
+inputs it covers: Python's ``json`` also accepts ``NaN`` and deeper nesting
+than serde_json's 128 levels, so such a body is ``unreadable`` in Rust alone
+(#572's direction; no draw has seen one). A body is read as UTF-8 whatever its
+declared charset, and one carrying an escaped lone surrogate is ``unreadable``,
+in both languages.
 """
 
 from __future__ import annotations
@@ -99,7 +101,8 @@ class SourceOutcome(StrEnum):
     OTHER_RECORD = "other_record"
     #: The PMID is a Bookshelf chapter, which the PubMed parser reads nothing from.
     BOOK_RECORD = "book_record"
-    #: Nothing to ask by: PubMed with no PMID, Europe PMC with no PPR accession.
+    #: Nothing to ask by: PubMed with no PMID, OpenAlex with no PMID, PMC ID or
+    #: DOI, Europe PMC with no PPR accession.
     NOT_ASKED = "not_asked"
 
 
@@ -110,6 +113,13 @@ class SourceReport:
     outcome: SourceOutcome
     message: str
 
+    def __post_init__(self) -> None:
+        # A bare string names a member or raises ValueError here, rather than
+        # constructing and failing later in to_dict().
+        object.__setattr__(self, "outcome", SourceOutcome(self.outcome))
+        if not isinstance(self.message, str):
+            raise ValueError("a SourceReport message is text")
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
         return {"outcome": self.outcome.value, "message": self.message}
@@ -119,18 +129,22 @@ class SourceReport:
         """Deserialise from :meth:`to_dict`; ``ValueError`` for anything else."""
         if not isinstance(data, dict) or set(data) != {"outcome", "message"}:
             raise ValueError("not a SourceReport.to_dict() record")
-        if not isinstance(data["message"], str):
-            raise ValueError("a SourceReport message is text")
-        return cls(SourceOutcome(data["outcome"]), data["message"])
+        return cls(data["outcome"], data["message"])
 
 
 @dataclass(frozen=True)
 class PublishedVersion:
     """The journal version of a preprint, named beside the preprint's record."""
 
-    pmid: str | None
-    doi: str | None
+    pmid: str
+    doi: str
     pmc_id: str | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.pmid, str) or not isinstance(self.doi, str):
+            raise ValueError("a PublishedVersion's pmid and doi are text")
+        if self.pmc_id is not None and not isinstance(self.pmc_id, str):
+            raise ValueError("a PublishedVersion's pmc_id is text or None")
 
 
 @dataclass(frozen=True)
@@ -142,6 +156,20 @@ class RecordLookup:
     pubmed: SourceReport
     openalex: SourceReport
     europepmc: SourceReport
+
+    def __post_init__(self) -> None:
+        found = any(
+            report.outcome is SourceOutcome.FOUND
+            for report in (self.pubmed, self.openalex, self.europepmc)
+        )
+        if (self.record is not None) != found:
+            raise ValueError("a RecordLookup carries a record exactly when a source found it")
+        if self.published_version is not None and not (
+            self.record is not None
+            and self.pubmed.outcome is SourceOutcome.FOUND
+            and self.openalex.outcome is SourceOutcome.FOUND
+        ):
+            raise ValueError("a published version is named only beside a record both sources found")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
@@ -230,8 +258,21 @@ def _lookup_ppr_id(ppr_id: object) -> str | None:
 
 
 def _lookup_doi(doi: object) -> str | None:
-    """The caller's DOI, prefix-stripped and case-folded; no shape check (#475)."""
-    return _normalize_doi(_caller_text(doi, "doi"))
+    """The caller's DOI, prefix-stripped and case-folded; no shape check (#475),
+    but a lone surrogate, which no URL can carry, is refused."""
+    text = _caller_text(doi, "doi")
+    if text is not None and not _is_text(text):
+        raise ValueError(f"doi {doi!r} carries a lone surrogate")
+    return _normalize_doi(text)
+
+
+def _is_text(value: object) -> bool:
+    """Whether *value*, a decoded JSON value, holds no lone surrogate."""
+    try:
+        json.dumps(value, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -269,12 +310,33 @@ def _get(client: Any, source: str, url: str, params: dict[str, Any]) -> Any | So
     return response
 
 
-def _json_object(source: str, text: str) -> dict[str, Any] | SourceReport:
+def _body_text(source: str, response: Any) -> str | SourceReport:
+    """A 200's body as UTF-8 text, or an ``UNREADABLE`` report.
+
+    Strict, and whatever charset the response declares, as Rust's
+    ``String::from_utf8`` reads it: all three sources serve UTF-8, and
+    ``response.text`` raised out of :func:`lookup_record` for a declared codec
+    that does not decode bytes to text (``rot13``), #463's shape.
+    """
+    try:
+        return str(response.content, "utf-8")
+    except UnicodeDecodeError:
+        return _report(source, SourceOutcome.UNREADABLE, "the body is not UTF-8 text")
+
+
+def _json_object(source: str, response: Any) -> dict[str, Any] | SourceReport:
     """The body as a JSON object, or an ``UNREADABLE`` report."""
+    text = _body_text(source, response)
+    if isinstance(text, SourceReport):
+        return text
     try:
         body = json.loads(text)
     except (ValueError, RecursionError):
         return _report(source, SourceOutcome.UNREADABLE, "the body is not JSON")
+    if not _is_text(body):
+        # serde_json refuses an escaped lone surrogate, and no URL can carry
+        # one: a DOI holding it raised out of quote().
+        return _report(source, SourceOutcome.UNREADABLE, "the body carries a lone surrogate")
     if not isinstance(body, dict):
         return _report(
             source,
@@ -306,7 +368,7 @@ def _ask_europepmc(client: Any, ppr_id: str) -> tuple[SourceReport, FetchedRecor
         return response, None
     if response.status_code != 200:
         return _report(source, SourceOutcome.REQUEST_FAILED, f"HTTP {response.status_code}"), None
-    body = _json_object(source, response.text)
+    body = _json_object(source, response)
     if isinstance(body, SourceReport):
         return body, None
     result_list = body.get("resultList")
@@ -348,7 +410,7 @@ def _ask_openalex(
         return _report(source, SourceOutcome.NOT_FOUND, message), None
     if response.status_code != 200:
         return _report(source, SourceOutcome.REQUEST_FAILED, f"HTTP {response.status_code}"), None
-    body = _json_object(source, response.text)
+    body = _json_object(source, response)
     if isinstance(body, SourceReport):
         return body, None
     record = normalize_openalex(body)
@@ -376,8 +438,11 @@ def _ask_pubmed(
         return response, None
     if response.status_code != 200:
         return _report(source, SourceOutcome.REQUEST_FAILED, f"HTTP {response.status_code}"), None
+    text = _body_text(source, response)
+    if isinstance(text, SourceReport):
+        return text, None
     try:
-        root = ET.fromstring(response.text)
+        root = ET.fromstring(text)
     except (ET.ParseError, ValueError):
         return _report(source, SourceOutcome.UNREADABLE, "the body is not XML"), None
     if root.tag != "PubmedArticleSet":
@@ -465,7 +530,8 @@ def lookup_record(
 
     Args:
         client: An httpx-style client (``client.get(url, params=...)``
-            returning a response with ``status_code`` and ``text``). Its
+            returning a response with ``status_code`` and ``content``, the
+            body's bytes, read as UTF-8). Its
             timeouts and headers are the caller's.
         pmid: A PMID: ASCII digits, not all zeros, whitespace stripped.
         doi: A DOI, with or without a ``doi:`` / ``https://doi.org/`` prefix;
@@ -481,13 +547,19 @@ def lookup_record(
         version of a preprint OpenAlex merged with it, and each source's
         outcome. The lookup's identity is the first given of PMID, PMC ID,
         PPR and DOI; the caller's other identifiers fill only empty fields,
-        a disagreement being logged at WARNING and the record's kept.
+        a disagreement being logged at WARNING and the record's kept. A DOI
+        or PPR lookup PubMed did not confirm keeps OpenAlex's PMID and PMC
+        ID out of the record, since for a merged preprint they are the
+        journal version's.
 
     Raises:
         ValueError: An identifier is malformed, or none is given (a blank one
             is none). Raised before any request.
-        TypeError: An identifier is not text; or the client raised a type
-            that can only mean bmlib is wrong.
+        TypeError: An identifier is not text.
+
+    The client's own ``TypeError``, ``AttributeError``, ``NameError``,
+    ``KeyError`` or ``IndexError`` propagates as raised, since it can only
+    mean bmlib is wrong.
     """
     caller = {
         "pmid": _lookup_pmid(pmid),
@@ -537,12 +609,14 @@ def lookup_record(
         and _normalize_doi(pm.doi) != lookup_doi
     )
     if is_published_version:
-        assert oa is not None and pm is not None  # narrowed for mypy
-        published = PublishedVersion(pm.pmid, pm.doi, pm.pmc_id or oa.pmc_id)
+        assert oa is not None and pm is not None and pm.doi and pubmed_pmid  # for mypy
+        # pubmed_pmid is pm's own PMID, #474's rule having matched it.
+        published = PublishedVersion(pubmed_pmid, pm.doi, pm.pmc_id or oa.pmc_id)
         pm_report = _report(
             "pubmed",
             SourceOutcome.FOUND,
-            f"PMID {pm.pmid} is a published version (DOI {pm.doi}), returned as published_version",
+            f"PMID {pubmed_pmid} is a published version (DOI {pm.doi}), "
+            "returned as published_version",
         )
         preprint = dataclasses.replace(
             oa,

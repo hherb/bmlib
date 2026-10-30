@@ -158,7 +158,12 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
         .map(str::to_string)
         .collect();
     record.doi = text(raw, "doi");
-    record.pmid = text(raw, "pmid");
+    // Held to a caller's PMID rule (#470): it enters a lookup's record
+    // whenever PubMed supplied none.
+    record.pmid = text(raw, "pmid")
+        .filter(|p| p.bytes().all(|b| b.is_ascii_digit()))
+        .map(|p| p.trim_start_matches('0').to_string())
+        .filter(|p| !p.is_empty());
     record.pmc_id = pmc_id;
     record.abstract_text = raw
         .get("abstractText")

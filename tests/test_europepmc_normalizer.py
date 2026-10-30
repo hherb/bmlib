@@ -167,3 +167,12 @@ class TestAWrongTypedFieldCostsThatField:
     def test_a_wrong_typed_author_is_skipped(self):
         raw = _with(authorList={"author": ["x", {"lastName": 5, "fullName": "Doe J"}]})
         assert normalize_europepmc(raw).authors == ["Doe J"]
+
+
+@pytest.mark.parametrize(
+    ("pmid", "expected"),
+    [("123", "123"), ("0077", "77"), ("000", None), ("PMC12", None), ("12a", None), ("١٢٣", None)],
+)
+def test_a_pmid_is_ascii_digits_or_none(pmid, expected):
+    # It enters a lookup's record whenever PubMed supplied none (#470's rule).
+    assert normalize_europepmc(_with(pmid=pmid)).pmid == expected
