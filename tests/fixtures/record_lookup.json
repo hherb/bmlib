@@ -1,0 +1,2956 @@
+{
+ "email": "a@b.c",
+ "cases": [
+  {
+   "name": "found-everywhere",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\", \"pmcid\": \"https://www.ncbi.nlm.nih.gov/pmc/articles/7745181\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": "PMC7745181",
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "api-keys-are-sent",
+   "input": {
+    "pmid": "123",
+    "ncbi_api_key": "nk",
+    "openalex_api_key": "ok"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c",
+       "api_key": "ok"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml",
+       "api_key": "nk"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-only",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-only",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-supplies-the-pmid",
+   "input": {
+    "doi": "10.1/X"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-pmid-with-leading-zeros",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/000123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-pmid-not-digits",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/12a\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "12a",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pmc-id-asks-openalex-by-pmcid",
+   "input": {
+    "pmc_id": "pmc7745181"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\", \"pmcid\": \"https://www.ncbi.nlm.nih.gov/pmc/articles/7745181\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmcid:PMC7745181",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": "PMC7745181",
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "neither",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_found"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-503",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 503,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "request_failed"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-transport",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "raises": "transport"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "request_failed"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-not-json",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "<html>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "unreadable"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-a-list",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "[]"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "unreadable"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-other-record",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/other\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/9\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "other_record"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "openalex-other-pmid",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/124\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "other_record"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-503",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 503,
+     "body": "<!doctype html><title>Not Found</title>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "request_failed"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-transport",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "raises": "transport"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "request_failed"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-not-xml",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "not xml"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "unreadable"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-wrong-root",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<eFetchResult><ERROR>x</ERROR></eFetchResult>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "unreadable"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-other-pmid",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">999</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">999</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "other_record"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-book",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedBookArticle><BookDocument><PMID Version=\"1\">123</PMID></BookDocument></PubmedBookArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "book_record"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-match-beside-others",
+   "input": {
+    "pmid": "123"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">999</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">999</ArticleId></ArticleIdList></PubmedData></PubmedArticle><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": null,
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-found",
+   "input": {
+    "ppr_id": "ppr1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 1, \"resultList\": {\"result\": [{\"id\": \"PPR1325930\", \"source\": \"PPR\", \"title\": \"The preprint\", \"authorList\": {\"author\": [{\"fullName\": \"Thapa S\", \"firstName\": \"Shabnam\", \"lastName\": \"Thapa\"}]}, \"abstractText\": \"<title>Abstract</title><p>W&W <bold>works</bold>.</p>\", \"bookOrReportDetails\": {\"publisher\": \"Research Square\"}, \"firstPublicationDate\": \"2026-09-23\", \"pubTypeList\": {\"pubType\": [\"Preprint\"]}, \"inEPMC\": \"Y\", \"isOpenAccess\": \"Y\", \"license\": \"cc by\", \"doi\": \"10.21203/rs.3.rs-1/v1\"}]}}"
+    },
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.21203/rs.3.rs-1/v1\", \"ids\": {\"openalex\": \"https://openalex.org/W1\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     },
+     {
+      "url": "https://api.openalex.org/works/doi:10.21203/rs.3.rs-1/v1",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "The preprint",
+      "source": "europepmc",
+      "doi": "10.21203/rs.3.rs-1/v1",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": "Abstract\n\nW&W works.",
+      "authors": [
+       "Thapa, Shabnam"
+      ],
+      "journal": "Research Square",
+      "publication_date": "2026-09-23",
+      "keywords": [],
+      "publication_types": [
+       "Preprint"
+      ],
+      "is_open_access": true,
+      "license": "cc by",
+      "fulltext_sources": [
+       {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PPR1325930/fullTextXML",
+        "format": "xml",
+        "source": "europepmc",
+        "open_access": true
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {
+       "ppr_id": "PPR1325930"
+      },
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "found"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-without-a-doi",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 1, \"resultList\": {\"result\": [{\"id\": \"PPR1325930\", \"source\": \"PPR\", \"title\": \"The preprint\", \"authorList\": {\"author\": [{\"fullName\": \"Thapa S\", \"firstName\": \"Shabnam\", \"lastName\": \"Thapa\"}]}, \"abstractText\": \"<title>Abstract</title><p>W&W <bold>works</bold>.</p>\", \"bookOrReportDetails\": {\"publisher\": \"Research Square\"}, \"firstPublicationDate\": \"2026-09-23\", \"pubTypeList\": {\"pubType\": [\"Preprint\"]}, \"inEPMC\": \"Y\", \"isOpenAccess\": \"Y\", \"license\": \"cc by\"}]}}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "The preprint",
+      "source": "europepmc",
+      "doi": null,
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": "Abstract\n\nW&W works.",
+      "authors": [
+       "Thapa, Shabnam"
+      ],
+      "journal": "Research Square",
+      "publication_date": "2026-09-23",
+      "keywords": [],
+      "publication_types": [
+       "Preprint"
+      ],
+      "is_open_access": true,
+      "license": "cc by",
+      "fulltext_sources": [
+       {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PPR1325930/fullTextXML",
+        "format": "xml",
+        "source": "europepmc",
+        "open_access": true
+       }
+      ],
+      "extras": {
+       "ppr_id": "PPR1325930"
+      },
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_asked"
+     },
+     "europepmc": {
+      "outcome": "found"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-not-found",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 0, \"resultList\": {\"result\": []}}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_asked"
+     },
+     "europepmc": {
+      "outcome": "not_found"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-unreadable",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"resultList\": null}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_asked"
+     },
+     "europepmc": {
+      "outcome": "unreadable"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-other-record",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 1, \"resultList\": {\"result\": [{\"id\": \"PPR9\", \"source\": \"PPR\", \"title\": \"The preprint\", \"authorList\": {\"author\": [{\"fullName\": \"Thapa S\", \"firstName\": \"Shabnam\", \"lastName\": \"Thapa\"}]}, \"abstractText\": \"<title>Abstract</title><p>W&W <bold>works</bold>.</p>\", \"bookOrReportDetails\": {\"publisher\": \"Research Square\"}, \"firstPublicationDate\": \"2026-09-23\", \"pubTypeList\": {\"pubType\": [\"Preprint\"]}, \"inEPMC\": \"Y\", \"isOpenAccess\": \"Y\", \"license\": \"cc by\", \"doi\": \"10.21203/rs.3.rs-1/v1\"}]}}"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_asked"
+     },
+     "europepmc": {
+      "outcome": "other_record"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-503",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 503,
+     "body": "<!doctype html><title>Not Found</title>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_asked"
+     },
+     "europepmc": {
+      "outcome": "request_failed"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-transport",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "raises": "transport"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_asked"
+     },
+     "europepmc": {
+      "outcome": "request_failed"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-beside-a-pmid",
+   "input": {
+    "pmid": "123",
+    "ppr_id": "PPR5"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 0, \"resultList\": {\"result\": []}}"
+    },
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR5 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     },
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       }
+      ],
+      "extras": {
+       "ppr_id": "PPR5"
+      },
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_found"
+     }
+    }
+   }
+  },
+  {
+   "name": "merged-preprint",
+   "input": {
+    "doi": "10.1101/2020.03.22.002386"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1101/2020.03.22.002386\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/32511329\", \"pmcid\": \"https://www.ncbi.nlm.nih.gov/pmc/articles/7239059\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"pdf_url\": \"https://biorxiv/x.pdf\", \"version\": \"submittedVersion\", \"is_oa\": true}, {\"pdf_url\": \"https://nature/x.pdf\", \"version\": \"publishedVersion\", \"is_oa\": true}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">32511329</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">32511329</ArticleId><ArticleId IdType=\"doi\">10.1038/S41586-020-2286-9</ArticleId><ArticleId IdType=\"pmc\">PMC7239059</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1101/2020.03.22.002386",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "32511329",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1101/2020.03.22.002386",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://biorxiv/x.pdf",
+        "format": "pdf",
+        "source": "unknown",
+        "open_access": true,
+        "version": "preprint"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": {
+      "pmid": "32511329",
+      "doi": "10.1038/S41586-020-2286-9",
+      "pmc_id": "PMC7239059"
+     },
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-with-a-published-version",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 1, \"resultList\": {\"result\": [{\"id\": \"PPR1325930\", \"source\": \"PPR\", \"title\": \"The preprint\", \"authorList\": {\"author\": [{\"fullName\": \"Thapa S\", \"firstName\": \"Shabnam\", \"lastName\": \"Thapa\"}]}, \"abstractText\": \"<title>Abstract</title><p>W&W <bold>works</bold>.</p>\", \"bookOrReportDetails\": {\"publisher\": \"Research Square\"}, \"firstPublicationDate\": \"2026-09-23\", \"pubTypeList\": {\"pubType\": [\"Preprint\"]}, \"inEPMC\": \"Y\", \"isOpenAccess\": \"Y\", \"license\": \"cc by\", \"doi\": \"10.21203/rs.3.rs-1/v1\"}]}}"
+    },
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.21203/rs.3.rs-1/v1\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/77\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">77</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">77</ArticleId><ArticleId IdType=\"doi\">10.1/published</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     },
+     {
+      "url": "https://api.openalex.org/works/doi:10.21203/rs.3.rs-1/v1",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "77",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "The preprint",
+      "source": "europepmc",
+      "doi": "10.21203/rs.3.rs-1/v1",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": "Abstract\n\nW&W works.",
+      "authors": [
+       "Thapa, Shabnam"
+      ],
+      "journal": "Research Square",
+      "publication_date": "2026-09-23",
+      "keywords": [],
+      "publication_types": [
+       "Preprint"
+      ],
+      "is_open_access": true,
+      "license": "cc by",
+      "fulltext_sources": [
+       {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PPR1325930/fullTextXML",
+        "format": "xml",
+        "source": "europepmc",
+        "open_access": true
+       }
+      ],
+      "extras": {
+       "ppr_id": "PPR1325930"
+      },
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": {
+      "pmid": "77",
+      "doi": "10.1/published",
+      "pmc_id": null
+     },
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "found"
+     }
+    }
+   }
+  },
+  {
+   "name": "same-doi-in-another-case",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "pubmed-record-without-a-doi",
+   "input": {
+    "doi": "10.1/x"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1/x\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/123\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/x",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/x",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "caller-doi-fills-an-empty-field",
+   "input": {
+    "pmid": "123",
+    "doi": "10.1/Given"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/given",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "caller-doi-disagrees",
+   "input": {
+    "pmid": "123",
+    "doi": "10.1/caller"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID Version=\"1\">123</PMID><Article><Journal><JournalIssue><PubDate><Year>2024</Year><Month>Jun</Month></PubDate></JournalIssue><Title>The Journal</Title></Journal><ArticleTitle>Effects of H<sub>2</sub>O</ArticleTitle><Abstract><AbstractText Label=\"Background\">Why *it* matters.</AbstractText></Abstract><AuthorList><Author><LastName>Smith</LastName><ForeName>Jo</ForeName><AffiliationInfo><Affiliation>A University</Affiliation></AffiliationInfo></Author></AuthorList><GrantList><Grant><GrantID>R01</GrantID><Agency>NIH</Agency><Country>United States</Country></Grant></GrantList><PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType=\"pubmed\">123</ArticleId><ArticleId IdType=\"doi\">10.1/X</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/pmid:123",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "123",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "Effects of H~2~O",
+      "source": "pubmed",
+      "doi": "10.1/X",
+      "pmid": "123",
+      "pmc_id": null,
+      "abstract": "**BACKGROUND:** Why \\*it\\* matters.",
+      "authors": [
+       "Smith, Jo"
+      ],
+      "journal": "The Journal",
+      "publication_date": "2024-06",
+      "keywords": [],
+      "publication_types": [
+       "Journal Article"
+      ],
+      "is_open_access": false,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://doi.org/10.1/X",
+        "format": "html",
+        "source": "publisher",
+        "open_access": false
+       }
+      ],
+      "extras": {},
+      "grants": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "United States"
+       }
+      ],
+      "author_affiliations": [
+       {
+        "id": null,
+        "publication_id": 0,
+        "source": "",
+        "author": "Smith, Jo",
+        "affiliation": "A University",
+        "position": 0
+       }
+      ]
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "found"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "doi-with-reserved-characters",
+   "input": {
+    "doi": "https://doi.org/10.1/a?b#c d"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/a%3Fb%23c%20d",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "doi-non-ascii",
+   "input": {
+    "doi": "10.1/é"
+   },
+   "responses": [
+    {
+     "status": 404,
+     "body": "<!doctype html><title>Not Found</title>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1/%C3%A9",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     }
+    ],
+    "result": {
+     "record": null,
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_asked"
+     },
+     "openalex": {
+      "outcome": "not_found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "invalid-pmid",
+   "input": {
+    "pmid": "12a"
+   },
+   "responses": [],
+   "expected": {
+    "requests": [],
+    "error": "invalid",
+    "argument": "pmid"
+   }
+  },
+  {
+   "name": "invalid-pmid-all-zeros",
+   "input": {
+    "pmid": "000"
+   },
+   "responses": [],
+   "expected": {
+    "requests": [],
+    "error": "invalid",
+    "argument": "pmid"
+   }
+  },
+  {
+   "name": "invalid-pmid-non-ascii",
+   "input": {
+    "pmid": "١٢٣"
+   },
+   "responses": [],
+   "expected": {
+    "requests": [],
+    "error": "invalid",
+    "argument": "pmid"
+   }
+  },
+  {
+   "name": "invalid-pmc-id",
+   "input": {
+    "pmc_id": "PMC١٢٣"
+   },
+   "responses": [],
+   "expected": {
+    "requests": [],
+    "error": "invalid",
+    "argument": "pmc_id"
+   }
+  },
+  {
+   "name": "invalid-ppr-id",
+   "input": {
+    "ppr_id": "PR12"
+   },
+   "responses": [],
+   "expected": {
+    "requests": [],
+    "error": "invalid",
+    "argument": "ppr_id"
+   }
+  },
+  {
+   "name": "no-identifier",
+   "input": {
+    "pmid": "  ",
+    "doi": "",
+    "pmc_id": " "
+   },
+   "responses": [],
+   "expected": {
+    "requests": [],
+    "error": "no_identifier"
+   }
+  }
+ ]
+}
