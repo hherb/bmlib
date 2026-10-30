@@ -755,6 +755,85 @@ fn an_html_source_returns_a_web_url_without_fetching_it() {
     );
 }
 
+fn html_entry(url: &str, source: &str) -> FullTextSourceEntry {
+    FullTextSourceEntry {
+        url: url.to_string(),
+        format: "html".to_string(),
+        source: source.to_string(),
+        open_access: false,
+        version: None,
+    }
+}
+
+/// #579: an html entry used to return at once, so PubMed's `doi.org` link
+/// beat Europe PMC's full text for every record carrying a DOI.
+#[test]
+fn an_html_source_does_not_stop_the_pmc_tier() {
+    let client = ScriptedClient::always(HttpResponse::ok_text(FULL_JATS));
+    let service = service(client);
+    let mut request = request();
+    request.fulltext_sources = vec![html_entry("https://doi.org/10.1/x", "publisher")];
+    request.pmc_id = Some("PMC123".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.web_url, None);
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+}
+
+#[test]
+fn an_html_source_is_the_link_when_nothing_else_serves() {
+    let client = ScriptedClient::always(HttpResponse::from_bytes(500, Vec::new()));
+    let service = service(client.clone());
+    let mut request = request();
+    request.fulltext_sources = vec![html_entry("https://ex/page", "pmc")];
+    request.doi = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("a link");
+    assert!(client.call_count() > 0, "the tiers after Tier 0 were asked");
+    // The caller's link, ahead of Tier 3's https://doi.org/10.1/x.
+    assert_eq!(
+        (result.source.as_str(), result.web_url.as_deref()),
+        ("pmc", Some("https://ex/page"))
+    );
+}
+
+#[test]
+fn the_first_html_source_is_the_one_held() {
+    let service = service(ScriptedClient::new(vec![]));
+    let mut request = request();
+    request.fulltext_sources = vec![
+        html_entry("https://ex/first", "a"),
+        html_entry("https://ex/second", "b"),
+    ];
+
+    let result = service.fetch_fulltext(&request).expect("a link");
+    assert_eq!(
+        (result.source.as_str(), result.web_url.as_deref()),
+        ("a", Some("https://ex/first"))
+    );
+}
+
+#[test]
+fn a_held_link_rides_on_a_held_abstract() {
+    let service = service(ScriptedClient::new(vec![ok(ABSTRACT_ONLY_JATS)]));
+    let mut request = request();
+    request.fulltext_sources = vec![
+        html_entry("https://ex/page", "pmc"),
+        FullTextSourceEntry {
+            url: "https://ex/jats.xml".to_string(),
+            format: "xml".to_string(),
+            source: "medrxiv".to_string(),
+            open_access: true,
+            version: None,
+        },
+    ];
+
+    let result = service.fetch_fulltext(&request).expect("the abstract");
+    assert_eq!(result.content_kind, ContentKind::Abstract);
+    assert_eq!(result.web_url.as_deref(), Some("https://ex/page"));
+}
+
 // ---------------------------------------------------------------------------
 // The Europe PMC chain
 // ---------------------------------------------------------------------------
