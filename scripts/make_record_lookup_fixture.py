@@ -236,6 +236,17 @@ def cases() -> list[tuple[str, dict[str, Any], list[dict[str, Any]]]]:
             [ok(EMPTY_EPMC), status(404), ok(found)],
         ),
         ("merged-preprint", {"doi": PREPRINT}, [ok(MERGED_WORK), ok(PUBLISHED)]),
+        ("merged-preprint-pubmed-down", {"doi": PREPRINT}, [ok(MERGED_WORK), status(503)]),
+        ("merged-preprint-pubmed-empty", {"doi": PREPRINT}, [ok(MERGED_WORK), ok(article_set())]),
+        (
+            "ppr-merged-pubmed-down",
+            {"ppr_id": "PPR1325930"},
+            [
+                ok(epmc_hit()),
+                ok(work(doi="10.21203/rs.3.rs-1/v1", pmid="77", pmcid="88")),
+                status(503),
+            ],
+        ),
         (
             "ppr-with-a-published-version",
             {"ppr_id": "PPR1325930"},

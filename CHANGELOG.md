@@ -26,7 +26,9 @@ All notable changes to bmlib are documented here. The format is based on
   version** (bioRxiv's `10.1101/2020.03.22.002386` carries the Nature paper's
   PMID and PMC ID) returns the preprint's own record, the journal version's
   identifiers in `RecordLookup.published_version` and never in the record (the
-  maintainer's choice). Each source reports one of seven outcomes —
+  maintainer's choice), and a DOI or PPR lookup PubMed did not confirm carries
+  neither OpenAlex's PMID nor its PMC ID, so an outage cannot decide which
+  version the record names. Each source reports one of seven outcomes —
   `found`, `not_found`, `request_failed`, `unreadable`, `other_record`,
   `book_record`, `not_asked` — so an outage never reads as "no such paper", and
   one source failing still returns the others' record. Identifiers are checked
@@ -349,7 +351,9 @@ All notable changes to bmlib are documented here. The format is based on
   only that field.** OpenAlex serves `ids.pmcid` as a PMC article URL with no
   `PMC` prefix (`…/pmc/articles/7745181`, measured 2026-10-30), and both
   languages dropped it, so the OpenAlex **sync now stores `pmcid`** where it
-  stored nothing. And Python raised `AttributeError` on any nested field of the
+  stored nothing — for a preprint OpenAlex merged with its journal version that
+  is the journal version's PMC ID, as the row's `pmid` already was. And Python
+  raised `AttributeError` on any nested field of the
   wrong type (an `ids` list, a string `author`), failing the record's whole page
   and so its day, where Rust's port read the field as absent: Python now reads
   every field type-checked, as Rust does, so such a record is stored without

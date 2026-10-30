@@ -268,10 +268,20 @@ fn with_query(url: &str, params: &[(&str, &str)]) -> String {
 }
 
 /// The body of a 200, or the report for anything else.
-fn get_text(http: &dyn HttpClient, url: &str) -> Result<String, SourceReport> {
+/// The body of a 200, or the report for anything else — except a status in
+/// `answers`, which is the source's own reply and is returned as `Ok(Err(status))`
+/// for the caller to judge, with nothing logged (OpenAlex's 404 is "not held").
+fn get_text_or_answer(
+    http: &dyn HttpClient,
+    url: &str,
+    answers: &[u16],
+) -> Result<Result<String, u16>, SourceReport> {
     let response = http
         .get(url)
         .map_err(|error| report(SourceOutcome::RequestFailed, error.to_string()))?;
+    if answers.contains(&response.status) {
+        return Ok(Err(response.status));
+    }
     if response.status != 200 {
         return Err(report(
             SourceOutcome::RequestFailed,
@@ -279,7 +289,12 @@ fn get_text(http: &dyn HttpClient, url: &str) -> Result<String, SourceReport> {
         ));
     }
     String::from_utf8(response.body)
+        .map(Ok)
         .map_err(|_| report(SourceOutcome::Unreadable, "the body is not UTF-8 text"))
+}
+
+fn get_text(http: &dyn HttpClient, url: &str) -> Result<String, SourceReport> {
+    get_text_or_answer(http, url, &[]).map(|answer| answer.unwrap_or_default())
 }
 
 fn json_object(text: &str) -> Result<Value, SourceReport> {
@@ -363,9 +378,9 @@ fn ask_openalex(
         params.push(("api_key", api_key));
     }
     let url = with_query(&format!("{OPENALEX_WORKS_URL}/{key}"), &params);
-    let text = match get_text(http, &url) {
-        Ok(text) => text,
-        Err(failed) if failed.message == "HTTP 404" => {
+    let text = match get_text_or_answer(http, &url, &[404]) {
+        Ok(Ok(text)) => text,
+        Ok(Err(_)) => {
             let message = format!("OpenAlex holds no work for {kind}:{value}");
             return (report(SourceOutcome::NotFound, message), None);
         }
@@ -631,7 +646,20 @@ pub fn lookup_record(
                 .retain(|e| e.get("version").and_then(Value::as_str) == Some("preprint"));
             epmc.clone().into_iter().chain([preprint]).collect()
         }
-        _ => [pm, epmc, oa].into_iter().flatten().collect(),
+        _ => {
+            let mut oa = oa;
+            if pm.is_none() && pmid.is_none() && pmc_id.is_none() {
+                // Asked by a DOI, OpenAlex's PMID and PMC ID may be a merged
+                // journal version's, and only PubMed's record — its DOI compared
+                // above — can tell; unconfirmed, they stay out, so an outage
+                // cannot decide which version the record names (PR review).
+                if let Some(work) = oa.as_mut() {
+                    work.pmid = None;
+                    work.pmc_id = None;
+                }
+            }
+            [pm, epmc, oa].into_iter().flatten().collect()
+        }
     };
     let caller = [
         (Field::Pmid, pmid.as_ref()),

@@ -39,7 +39,10 @@ in short:
 Every source's outcome is reported apart (:class:`SourceOutcome`), so an
 outage never reads as "no such paper", and one source failing still returns
 the others' record. Nothing is retried. Rust's ``bmlib::publications::lookup``
-is held to the same results by ``tests/fixtures/record_lookup.json``.
+is held to the same results by ``tests/fixtures/record_lookup.json`` — on the
+inputs it covers: Python's ``json`` also accepts ``NaN``, an escaped lone
+surrogate and deeper nesting than serde_json's 128 levels, so such a body is
+``unreadable`` in Rust alone (#572's direction; no draw has seen one).
 """
 
 from __future__ import annotations
@@ -253,7 +256,10 @@ def _report(source: str, outcome: SourceOutcome, message: str) -> SourceReport:
 
 
 def _get(client: Any, source: str, url: str, params: dict[str, Any]) -> Any | SourceReport:
-    """The response, or a ``REQUEST_FAILED`` report for anything but a 200."""
+    """The response, or a ``REQUEST_FAILED`` report when the client raised.
+
+    The status is the caller's to judge: OpenAlex's 404 is an answer.
+    """
     try:
         response = client.get(url, params=params)
     except _BUG_TYPES:
@@ -546,6 +552,12 @@ def lookup_record(
         )
         candidates: list[FetchedRecord | None] = [epmc, preprint] if epmc else [preprint]
     else:
+        if oa is not None and pm is None and caller["pmid"] is None and caller["pmc_id"] is None:
+            # Asked by a DOI, OpenAlex's PMID and PMC ID may be a merged journal
+            # version's, and only PubMed's record — its DOI compared above — can
+            # tell; unconfirmed, they stay out, so an outage cannot decide which
+            # version the record names (PR review). The locations are kept.
+            oa = dataclasses.replace(oa, pmid=None, pmc_id=None)
         candidates = [pm, epmc, oa]
     found = [r for r in candidates if r is not None]
     record = _assemble(found[0], found[1:], caller, ppr) if found else None

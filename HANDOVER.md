@@ -61,7 +61,12 @@ OpenAlex's normaliser reads `ids.pmcid` (**the OpenAlex sync now stores
 `pmcid`**) and reads every field type-checked in Python as Rust did (a
 wrong-typed field no longer fails its page); `normalize_europepmc` is new;
 `FetchedRecord` has `to_dict`/`from_dict`; three stale manual lines claiming
-`pmc_id` is not persisted were fixed.
+`pmc_id` is not persisted were fixed. **The final review's fix**: a DOI or PPR
+lookup PubMed did not confirm carries neither OpenAlex's PMID nor PMC ID (an
+outage decided which version the record named). Filed from it: **#581** (an
+unconfirmed merged preprint keeps the journal version's *locations* — a
+decision), **#582** (the normalisers drop a wrong-typed field silently; #209's
+question) and **#583** (OpenAlex abstract tie order differs between languages).
 
 **For StudyAnalyzer plan 2a** (its *Metadata waits for bmlib item 5*): call
 `lookup_record` with the app's identifiers — **a PPR accession as `ppr_id`**,
@@ -205,7 +210,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,539 passing + 111 skipped** on `feat/record-lookup`
+- **Tests: 8,546 passing + 111 skipped** on `feat/record-lookup`
   (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
@@ -233,7 +238,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**113 open** (`gh issue list --state open --limit 300`, 2026-10-30, #579 among them until PR #580 merges; #560–#578 are not yet sorted into the lists below;
+**116 open** (`gh issue list --state open --limit 300`, 2026-10-30, #579 among them until PR #580 merges, and #581–#583 from this session; #560–#578 are not yet sorted into the lists below;
 PR #547's #548, #549, #552 and #553 are the four since the last count; this
 session filed **#557** (`match_section_type` parity) and **#558** (scraper
 0.29), and closed none). **#528** and

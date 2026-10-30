@@ -626,7 +626,7 @@
       "title": "OpenAlex title",
       "source": "openalex",
       "doi": "10.1/x",
-      "pmid": "12a",
+      "pmid": null,
       "pmc_id": null,
       "abstract": null,
       "authors": [
@@ -2318,6 +2318,274 @@
      },
      "europepmc": {
       "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "merged-preprint-pubmed-down",
+   "input": {
+    "doi": "10.1101/2020.03.22.002386"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1101/2020.03.22.002386\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/32511329\", \"pmcid\": \"https://www.ncbi.nlm.nih.gov/pmc/articles/7239059\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"pdf_url\": \"https://biorxiv/x.pdf\", \"version\": \"submittedVersion\", \"is_oa\": true}, {\"pdf_url\": \"https://nature/x.pdf\", \"version\": \"publishedVersion\", \"is_oa\": true}]}"
+    },
+    {
+     "status": 503,
+     "body": "<!doctype html><title>Not Found</title>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1101/2020.03.22.002386",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "32511329",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1101/2020.03.22.002386",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://biorxiv/x.pdf",
+        "format": "pdf",
+        "source": "unknown",
+        "open_access": true,
+        "version": "preprint"
+       },
+       {
+        "url": "https://nature/x.pdf",
+        "format": "pdf",
+        "source": "unknown",
+        "open_access": true,
+        "version": "published"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "request_failed"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "merged-preprint-pubmed-empty",
+   "input": {
+    "doi": "10.1101/2020.03.22.002386"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.1101/2020.03.22.002386\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/32511329\", \"pmcid\": \"https://www.ncbi.nlm.nih.gov/pmc/articles/7239059\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"pdf_url\": \"https://biorxiv/x.pdf\", \"version\": \"submittedVersion\", \"is_oa\": true}, {\"pdf_url\": \"https://nature/x.pdf\", \"version\": \"publishedVersion\", \"is_oa\": true}]}"
+    },
+    {
+     "status": 200,
+     "body": "<?xml version=\"1.0\" ?>\n<!DOCTYPE PubmedArticleSet PUBLIC \"-//NLM//DTD PubMedArticle, 1st January 2025//EN\" \"https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd\">\n<PubmedArticleSet></PubmedArticleSet>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://api.openalex.org/works/doi:10.1101/2020.03.22.002386",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "32511329",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "OpenAlex title",
+      "source": "openalex",
+      "doi": "10.1101/2020.03.22.002386",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": null,
+      "authors": [
+       "Jo Smith"
+      ],
+      "journal": "A Venue",
+      "publication_date": "2024-06-15",
+      "keywords": [],
+      "publication_types": [],
+      "is_open_access": true,
+      "license": null,
+      "fulltext_sources": [
+       {
+        "url": "https://biorxiv/x.pdf",
+        "format": "pdf",
+        "source": "unknown",
+        "open_access": true,
+        "version": "preprint"
+       },
+       {
+        "url": "https://nature/x.pdf",
+        "format": "pdf",
+        "source": "unknown",
+        "open_access": true,
+        "version": "published"
+       }
+      ],
+      "extras": {},
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "not_found"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "not_asked"
+     }
+    }
+   }
+  },
+  {
+   "name": "ppr-merged-pubmed-down",
+   "input": {
+    "ppr_id": "PPR1325930"
+   },
+   "responses": [
+    {
+     "status": 200,
+     "body": "{\"hitCount\": 1, \"resultList\": {\"result\": [{\"id\": \"PPR1325930\", \"source\": \"PPR\", \"title\": \"The preprint\", \"authorList\": {\"author\": [{\"fullName\": \"Thapa S\", \"firstName\": \"Shabnam\", \"lastName\": \"Thapa\"}]}, \"abstractText\": \"<title>Abstract</title><p>W&W <bold>works</bold>.</p>\", \"bookOrReportDetails\": {\"publisher\": \"Research Square\"}, \"firstPublicationDate\": \"2026-09-23\", \"pubTypeList\": {\"pubType\": [\"Preprint\"]}, \"inEPMC\": \"Y\", \"isOpenAccess\": \"Y\", \"license\": \"cc by\", \"doi\": \"10.21203/rs.3.rs-1/v1\"}]}}"
+    },
+    {
+     "status": 200,
+     "body": "{\"id\": \"https://openalex.org/W1\", \"doi\": \"https://doi.org/10.21203/rs.3.rs-1/v1\", \"ids\": {\"openalex\": \"https://openalex.org/W1\", \"pmid\": \"https://pubmed.ncbi.nlm.nih.gov/77\", \"pmcid\": \"https://www.ncbi.nlm.nih.gov/pmc/articles/88\"}, \"title\": \"OpenAlex title\", \"authorships\": [{\"author\": {\"display_name\": \"Jo Smith\"}}], \"primary_location\": {\"source\": {\"display_name\": \"A Venue\"}}, \"publication_date\": \"2024-06-15\", \"open_access\": {\"is_oa\": true}, \"locations\": [{\"source\": {\"display_name\": \"A Repository\"}, \"landing_page_url\": \"https://repo/x\", \"pdf_url\": \"https://repo/x.pdf\", \"is_oa\": true, \"version\": \"acceptedVersion\"}]}"
+    },
+    {
+     "status": 503,
+     "body": "<!doctype html><title>Not Found</title>"
+    }
+   ],
+   "expected": {
+    "requests": [
+     {
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+       "query": "EXT_ID:PPR1325930 AND SRC:PPR",
+       "resultType": "core",
+       "format": "json"
+      }
+     },
+     {
+      "url": "https://api.openalex.org/works/doi:10.21203/rs.3.rs-1/v1",
+      "params": {
+       "mailto": "a@b.c"
+      }
+     },
+     {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": {
+       "db": "pubmed",
+       "id": "77",
+       "retmode": "xml"
+      }
+     }
+    ],
+    "result": {
+     "record": {
+      "title": "The preprint",
+      "source": "europepmc",
+      "doi": "10.21203/rs.3.rs-1/v1",
+      "pmid": null,
+      "pmc_id": null,
+      "abstract": "Abstract\n\nW&W works.",
+      "authors": [
+       "Thapa, Shabnam"
+      ],
+      "journal": "Research Square",
+      "publication_date": "2026-09-23",
+      "keywords": [],
+      "publication_types": [
+       "Preprint"
+      ],
+      "is_open_access": true,
+      "license": "cc by",
+      "fulltext_sources": [
+       {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PPR1325930/fullTextXML",
+        "format": "xml",
+        "source": "europepmc",
+        "open_access": true
+       },
+       {
+        "url": "https://repo/x",
+        "format": "html",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       },
+       {
+        "url": "https://repo/x.pdf",
+        "format": "pdf",
+        "source": "A Repository",
+        "open_access": true,
+        "version": "accepted"
+       }
+      ],
+      "extras": {
+       "ppr_id": "PPR1325930"
+      },
+      "grants": [],
+      "author_affiliations": []
+     },
+     "published_version": null,
+     "pubmed": {
+      "outcome": "request_failed"
+     },
+     "openalex": {
+      "outcome": "found"
+     },
+     "europepmc": {
+      "outcome": "found"
      }
     }
    }

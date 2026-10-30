@@ -401,6 +401,30 @@ class TestAPreprint:
             "returned as published_version"
         )
 
+    @pytest.mark.parametrize(
+        "pubmed_answer",
+        [status(503), ok(article_set()), ok(article_set(article("999")))],
+        ids=["outage", "not-found", "other-record"],
+    )
+    def test_an_unconfirmed_pmid_does_not_enter_a_doi_lookups_record(self, pubmed_answer):
+        # A merged work's PMID and PMC ID are the journal version's; only a
+        # PubMed record compared against the DOI can say so, so without one
+        # they stay out (PR review: an outage decided which version you got).
+        preprint = "10.1101/2020.03.22.002386"
+        client = FakeClient(ok(work(doi=preprint, pmid="32511329", pmcid="7239059")), pubmed_answer)
+        result = lookup_record(client, email=EMAIL, doi=preprint)
+
+        record = result.record
+        assert record is not None and record.source == "openalex"
+        assert (record.doi, record.pmid, record.pmc_id) == (preprint, None, None)
+        assert result.published_version is None
+
+    def test_an_unconfirmed_pmid_still_enters_a_pmc_lookups_record(self):
+        # Asked by PMC ID, the work carries that PMC ID, so its PMID is that paper's.
+        client = FakeClient(ok(work(pmid="123", pmcid="7745181")), status(503))
+        result = lookup_record(client, email=EMAIL, pmc_id="PMC7745181")
+        assert result.record is not None and result.record.pmid == "123"
+
     def test_the_dois_compare_case_folded(self):
         client = FakeClient(
             ok(work(doi="10.1/x", pmid="123")), ok(article_set(article("123", doi="10.1/X")))
@@ -489,6 +513,15 @@ class TestSerialisation:
             RecordLookup.from_dict(data)
         with pytest.raises(ValueError):
             RecordLookup.from_dict({"record": None})
+
+    @pytest.mark.parametrize("key", ["fulltext_sources", "grants", "author_affiliations"])
+    def test_a_fetched_record_with_a_malformed_list_is_a_value_error(self, key):
+        from bmlib.publications.models import FetchedRecord
+
+        data = FetchedRecord(title="T", source="s").to_dict()
+        data[key] = "x"
+        with pytest.raises(ValueError):
+            FetchedRecord.from_dict(data)
 
     def test_a_fetched_record_round_trips(self):
         from bmlib.publications.models import FetchedRecord

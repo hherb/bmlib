@@ -676,7 +676,12 @@ class FetchedRecord:
         from bmlib.fulltext.models import FullTextSourceEntry
 
         expected = {f.name for f in fields(cls)}
-        if not isinstance(data, dict) or set(data) != expected:
+        lists = ("fulltext_sources", "grants", "author_affiliations")
+        if (
+            not isinstance(data, dict)
+            or set(data) != expected
+            or not all(isinstance(data[key], list) for key in lists)
+        ):
             raise ValueError("not a FetchedRecord.to_dict() record")
         values = dict(data)
         values["fulltext_sources"] = [
