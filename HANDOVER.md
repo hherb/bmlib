@@ -41,11 +41,36 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 Spec `docs/superpowers/specs/2026-10-30-record-lookup-design.md` (the
 maintainer's decisions), plan `docs/superpowers/plans/2026-10-30-record-lookup.md`.
-**Part 1 (#579)**: `FullTextService`'s Tier 0 returned a caller's `html`
-source at once, so every PubMed record's `doi.org` link ended the chain before
-Europe PMC ran (BioMedicalNews's paper view hit it). The first `html` entry is
-now held and used only once every tier that can fetch text has failed, ahead
-of Tier 3's link; Python and Rust.
+Two PRs: **#580** (part 1, closes #579) and the lookup PR stacked on it.
+
+**Part 1 (#579, PR #580)**: `FullTextService`'s Tier 0 returned a caller's
+`html` source at once, so every PubMed record's `doi.org` link ended the chain
+before Europe PMC ran (BioMedicalNews's paper view hit it). The first `html`
+entry is now held and used only once every tier that can fetch text has failed,
+ahead of Tier 3's link; Python and Rust.
+
+**Part 2, the lookup**: `lookup_record()` in `bmlib.publications` and
+`bmlib::publications::lookup` — a PMID, DOI, PMC ID or PPR accession in, a
+`FetchedRecord` out. PubMed first, OpenAlex always (its identifiers and
+open-access locations), Europe PMC for a PPR (its `fullTextXML` as an `xml`
+source). A preprint OpenAlex merged with its journal version returns the
+preprint, the journal version in `published_version`. Seven per-source
+outcomes; `tests/fixtures/record_lookup.json` (44 cases, from
+`scripts/make_record_lookup_fixture.py`) holds Rust to it. On the way:
+OpenAlex's normaliser reads `ids.pmcid` (**the OpenAlex sync now stores
+`pmcid`**) and reads every field type-checked in Python as Rust did (a
+wrong-typed field no longer fails its page); `normalize_europepmc` is new;
+`FetchedRecord` has `to_dict`/`from_dict`; three stale manual lines claiming
+`pmc_id` is not persisted were fixed.
+
+**For StudyAnalyzer plan 2a** (its *Metadata waits for bmlib item 5*): call
+`lookup_record` with the app's identifiers — **a PPR accession as `ppr_id`**,
+not in `pmid` as its `Identifiers` holds it — and hand the record's
+`fulltext_sources`, `pmc_id`, `doi` and `pmid` to `fetch_fulltext`. Show
+`published_version` as "a published version exists"; a `request_failed` at any
+source is worth a retry and never means "no such paper". In Rust, call it with
+`&LookupRequest { …, email }` over the app's `HttpClient`. **Item 8 (vector
+storage) is the last StudyAnalyzer item left in bmlib.**
 
 ## Previous session: the PICO agent (StudyAnalyzer item 7)
 
@@ -180,7 +205,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,365 passing + 111 skipped** on this session's branch
+- **Tests: 8,539 passing + 111 skipped** on `feat/record-lookup`
   (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
@@ -208,7 +233,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**112 open** (`gh issue list --state open --limit 300`, 2026-10-30; #560–#578 are not yet sorted into the lists below;
+**113 open** (`gh issue list --state open --limit 300`, 2026-10-30, #579 among them until PR #580 merges; #560–#578 are not yet sorted into the lists below;
 PR #547's #548, #549, #552 and #553 are the four since the last count; this
 session filed **#557** (`match_section_type` parity) and **#558** (scraper
 0.29), and closed none). **#528** and

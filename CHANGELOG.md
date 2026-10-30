@@ -7,6 +7,36 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **One paper's record by identifier** (StudyAnalyzer phase 1, item 5; spec
+  `docs/superpowers/specs/2026-10-30-record-lookup-design.md`, plan beside it).
+  `bmlib.publications.lookup_record()` (Rust:
+  `bmlib::publications::lookup::lookup_record`) takes any of a PMID, a DOI, a
+  PMC ID and a Europe PMC preprint accession (`PPR` + digits) and returns the
+  paper's `FetchedRecord`, built for `FullTextService.fetch_fulltext`: getting
+  as much full text as possible was the maintainer's first requirement, so
+  every identifier and open-access location the record misses is a tier of the
+  chain that never runs. **PubMed first** (one efetch, the matching
+  `<PubmedArticle>` only, #474's rule), **OpenAlex always** (by the first of
+  PMID, PMC ID, DOI — measured 2026-10-30 to answer `pmid:`, `pmcid:` and
+  `doi:` alike and an unknown id with a plain 404), adding only identifiers and
+  open-access locations where PubMed has the paper, and **Europe PMC for a
+  `PPR` accession**, which neither other source knows; a preprint Europe PMC
+  holds gains an `xml` source for its `fullTextXML`, the only route
+  `FullTextService` has to it. **A preprint OpenAlex merged with its journal
+  version** (bioRxiv's `10.1101/2020.03.22.002386` carries the Nature paper's
+  PMID and PMC ID) returns the preprint's own record, the journal version's
+  identifiers in `RecordLookup.published_version` and never in the record (the
+  maintainer's choice). Each source reports one of seven outcomes —
+  `found`, `not_found`, `request_failed`, `unreadable`, `other_record`,
+  `book_record`, `not_asked` — so an outage never reads as "no such paper", and
+  one source failing still returns the others' record. Identifiers are checked
+  before any request (`ValueError` naming the argument); nothing is retried.
+  Python and Rust are held together by `tests/fixtures/record_lookup.json` (44
+  cases, every outcome at every source that can give it), written by
+  `scripts/make_record_lookup_fixture.py`. On the way: the new
+  `normalize_europepmc` / `fetchers::europepmc::normalize` reads one Europe PMC
+  hit (its abstract stripped of tags by rule, since the measured body carries a
+  raw `&` and is not XML), and `FetchedRecord` gains `to_dict()` / `from_dict()`.
 - **The PICO agent, with verified quotes** (StudyAnalyzer phase 1, item 7).
   `bmlib.quality.PicoAgent` (Rust: `bmlib::quality::PicoAgent`) ports
   bmlibrarian's PICO agent as two independent calls: `check_suitability()`
