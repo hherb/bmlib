@@ -315,6 +315,18 @@ All notable changes to bmlib are documented here. The format is based on
   JATS abstract was also held, the result's `source` names where the abstract
   came from rather than the link's source, which used to be stamped on an
   abstract it did not serve. Python and Rust alike.
+- **The OpenAlex normaliser reads the PMC ID, and a wrong-typed field costs
+  only that field.** OpenAlex serves `ids.pmcid` as a PMC article URL with no
+  `PMC` prefix (`…/pmc/articles/7745181`, measured 2026-10-30), and both
+  languages dropped it, so the OpenAlex **sync now stores `pmcid`** where it
+  stored nothing. And Python raised `AttributeError` on any nested field of the
+  wrong type (an `ids` list, a string `author`), failing the record's whole page
+  and so its day, where Rust's port read the field as absent: Python now reads
+  every field type-checked, as Rust does, so such a record is stored without
+  that field. Also: an empty `publication_date` is `None` in Python as it was
+  in Rust, and an `is_oa` that is not a JSON boolean is `False` (Python's
+  `bool("no")` was `True`). 23 oracle cases hold the two languages to agreeing.
+  Found building StudyAnalyzer's item 5, which shares the normaliser.
 - **A condensation pass cut at `max_tokens` fails its batch.**
   `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or
   reduce reply that hit the output ceiling was kept as a whole extraction and
