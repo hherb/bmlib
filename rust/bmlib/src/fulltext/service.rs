@@ -1544,10 +1544,12 @@ impl FullTextService {
         let mut failures = TierFailures::reported(&on_bug);
 
         // Tier 0: fetcher-provided sources.
+        let mut held_link: Option<FullTextSourceEntry> = None;
         if !request.fulltext_sources.is_empty() {
-            let (result, held_back) =
+            let (result, held_back, link) =
                 self.try_known_sources(&request.fulltext_sources, cache_id, &mut failures);
             abstract_only = held_back;
+            held_link = link;
             if let Some(result) = result {
                 return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
             }
@@ -1679,7 +1681,16 @@ impl FullTextService {
         // earlier, keep its abstract and hang the link off it — the reader gets
         // both, rather than a bare link.
         let mut web_url: Option<String> = None;
-        if let Some(doi) = doi {
+        let mut link_source = if doi.is_some() { "doi" } else { "pubmed" };
+        if let Some(link) = &held_link {
+            // The caller's link ahead of bmlib's guess at one (#579).
+            self.info(format!(
+                "Falling back to the caller's link from {}",
+                link.source
+            ));
+            web_url = Some(link.url.clone());
+            link_source = &link.source;
+        } else if let Some(doi) = doi {
             self.info(format!("Falling back to DOI URL for {doi}"));
             // QUIRK: the DOI is interpolated raw here while Unpaywall's URL
             // percent-encodes it (`quote(doi, safe="")`). A DOI carrying a
@@ -1741,7 +1752,7 @@ impl FullTextService {
             ))),
             Some(url) => Ok(FullTextResult {
                 web_url: Some(url),
-                ..empty_result(if doi.is_some() { "doi" } else { "pubmed" })
+                ..empty_result(link_source)
             }),
         }
     }
@@ -1820,13 +1831,18 @@ impl FullTextService {
 
     /// Try fetcher-provided full-text sources in priority order.
     ///
-    /// Priority: xml (JATS) > pdf > html, and the sort is stable so two entries
-    /// of one format keep the order the fetcher gave them.
+    /// Priority: xml (JATS) > pdf, and the sort is stable so two entries of one
+    /// format keep the order the fetcher gave them; an html entry is held, never
+    /// fetched.
     ///
-    /// Returns `(result, abstract_only)`. `result` is the best source that
-    /// worked — JATS full text, a PDF, or a link — or `None` when every entry
+    /// Returns `(result, abstract_only, held_link)`. `result` is the best source
+    /// that worked — JATS full text or a PDF — or `None` when every entry
     /// failed; only a [`ContentKind::Fulltext`] means article text was actually
-    /// retrieved. `abstract_only` holds a body-less JATS rendering if one was
+    /// retrieved. `held_link` is the first html entry: a link and not text, so
+    /// it ends nothing here, and the caller uses it only once every tier that
+    /// can fetch text has failed (#579). Returned at once, it put a publisher
+    /// link ahead of Europe PMC's full text for every PubMed record carrying a
+    /// DOI. `abstract_only` holds a body-less JATS rendering if one was
     /// seen. It is never worth stopping on, because a publisher that serves an
     /// abstract-only JATS (medRxiv does) generally serves the complete article
     /// as a PDF alongside it.
@@ -1835,7 +1851,11 @@ impl FullTextService {
         sources: &[FullTextSourceEntry],
         cache_id: Option<&str>,
         failures: &mut TierFailures<'_>,
-    ) -> (Option<FullTextResult>, Option<FullTextResult>) {
+    ) -> (
+        Option<FullTextResult>,
+        Option<FullTextResult>,
+        Option<FullTextSourceEntry>,
+    ) {
         let priority = |format: &str| match format {
             "xml" => 0,
             "pdf" => 1,
@@ -1846,6 +1866,7 @@ impl FullTextService {
         sorted.sort_by_key(|entry| priority(&entry.format));
 
         let mut abstract_only: Option<FullTextResult> = None;
+        let mut held_link: Option<FullTextSourceEntry> = None;
         for entry in sorted {
             if entry.format == "xml" {
                 match self.fetch_jats_xml(&entry.url) {
@@ -1868,6 +1889,7 @@ impl FullTextService {
                         return (
                             Some(fulltext_result(&entry.source, html, Some(xml))),
                             abstract_only,
+                            held_link,
                         );
                     }
                     Err(fault) => {
@@ -1891,16 +1913,15 @@ impl FullTextService {
                     &mut result,
                     PdfOrigin::KnownSource,
                 );
-                return (Some(result), abstract_only);
+                return (Some(result), abstract_only, held_link);
             } else if entry.format == "html" {
-                self.info(format!("HTML source from {}", entry.source));
-                return (
-                    Some(FullTextResult {
-                        web_url: Some(entry.url.clone()),
-                        ..empty_result(&entry.source)
-                    }),
-                    abstract_only,
-                );
+                self.info(format!(
+                    "HTML source from {}, held as a last resort",
+                    entry.source
+                ));
+                if held_link.is_none() {
+                    held_link = Some(entry.clone());
+                }
             }
             // QUIRK: an entry whose `format` is not one of the three matches no
             // branch, so the loop moves on with nothing logged and nothing
@@ -1911,7 +1932,7 @@ impl FullTextService {
             // An unknown format matches no branch and the loop continues.
         }
 
-        (None, abstract_only)
+        (None, abstract_only, held_link)
     }
 
     // --- Cache helpers ------------------------------------------------------

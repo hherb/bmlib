@@ -811,9 +811,9 @@ class FullTextService:
                 ID, DOI or PMID was given — a blank or whitespace-only *pmid*
                 or *doi* being none; or ``"Nothing retrieved and no DOI or
                 PMID to fall back on — …"`` when identifiers were given,
-                nothing was retrieved, and there is no usable DOI or PMID to
-                build a link from, which includes a refused *pmid* or *doi*
-                given alone. Every tier
+                nothing was retrieved, and there is no held ``html`` source and
+                no usable DOI or PMID to build a link from, which includes a
+                refused *pmid* or *doi* given alone. Every tier
                 failure is swallowed and counted on the exhaustion report.
 
         Tries:
@@ -821,7 +821,8 @@ class FullTextService:
               what it would serve was rendered by an older bmlib (#172), the
               chain below runs instead, and the older rendering is returned
               (``source="cached"``) only if the chain returns less.
-          0.  Known sources from fetcher (JATS XML > PDF > HTML)
+          0.  Known sources from fetcher (JATS XML > PDF); the first HTML
+              entry is held for step 3 (#579)
           1a. Europe PMC XML (known PMC ID)
           1c. NCBI PMC efetch for that ID, when Europe PMC gave no body
           1b. Discover a PMC ID via Europe PMC search — when there is no
@@ -832,7 +833,7 @@ class FullTextService:
                failed known ID may be superseded by the search hit alone
           1d. Europe PMC PDF render URL (free PDF when XML unavailable)
           2.  Unpaywall PDF URL
-          3.  DOI / PubMed URL fallback
+          3.  The held HTML link, else the DOI / PubMed URL fallback
         """
         # The caller's PMID, canonical, or refused (issue #478). Ahead of the
         # cache check, so the refusal is reported on a cache hit too: a caller
@@ -1206,8 +1207,9 @@ class FullTextService:
             failures.record(refusal)
 
         # Tier 0: Try fetcher-provided sources
+        held_link: FullTextSourceEntry | None = None
         if fulltext_sources:
-            result, abstract_only = self._try_known_sources(
+            result, abstract_only, held_link = self._try_known_sources(
                 fulltext_sources, cache_id=cache_id, failures=failures
             )
             if result is not None:
@@ -1309,7 +1311,12 @@ class FullTextService:
         # earlier, keep its abstract and hang the link off it — the reader
         # gets both, rather than a bare link.
         web_url = None
-        if doi:
+        link_source = "doi" if doi else "pubmed"
+        if held_link is not None:
+            # The caller's link ahead of bmlib's guess at one (#579).
+            logger.info("Falling back to the caller's link from %s", held_link.source)
+            web_url, link_source = held_link.url, held_link.source
+        elif doi:
             logger.info("Falling back to DOI URL for %s", doi)
             web_url = f"{DOI_BASE}/{doi}"
         elif pmid:
@@ -1363,7 +1370,7 @@ class FullTextService:
                 f"Nothing retrieved and no DOI or PMID to fall back on — {failures.describe()}"
             )
 
-        return FullTextResult(source="doi" if doi else "pubmed", web_url=web_url)
+        return FullTextResult(source=link_source, web_url=web_url)
 
     def _with_abstract_fallback(
         self,
@@ -1535,10 +1542,10 @@ class FullTextService:
         *,
         cache_id: str | None = None,
         failures: _TierFailures,
-    ) -> tuple[FullTextResult | None, FullTextResult | None]:
+    ) -> tuple[FullTextResult | None, FullTextResult | None, FullTextSourceEntry | None]:
         """Try fetcher-provided fulltext sources in priority order.
 
-        Priority: xml (JATS) > pdf > html.
+        Priority: xml (JATS) > pdf; an html entry is held, never fetched.
 
         Args:
             sources: The fetcher's known source URLs.
@@ -1549,10 +1556,15 @@ class FullTextService:
                 was simply offered nothing.
 
         Returns:
-            A tuple of ``(result, abstract_only)``. ``result`` is the best
-            source that worked — JATS full text, a PDF, or a link — or
+            A tuple of ``(result, abstract_only, held_link)``. ``result`` is
+            the best source that worked — JATS full text or a PDF — or
             ``None`` when every entry failed; only a ``content_kind`` of
             ``"fulltext"`` means article text was actually retrieved.
+            ``held_link`` is the first ``html`` entry: a link and not text,
+            so it ends nothing here, and the caller uses it only once every
+            tier that can fetch text has failed (#579). Returned at once, it
+            put a publisher link ahead of Europe PMC's full text for every
+            PubMed record carrying a DOI.
             ``abstract_only`` holds a body-less JATS rendering if one was
             seen. It is never worth stopping on, because a publisher that
             serves an abstract-only JATS (medRxiv does) generally serves the
@@ -1566,6 +1578,7 @@ class FullTextService:
         )
 
         abstract_only: FullTextResult | None = None
+        held_link: FullTextSourceEntry | None = None
         for entry in sorted_sources:
             try:
                 if entry.format == "xml":
@@ -1594,15 +1607,17 @@ class FullTextService:
                             source=entry.source, html=html, content_kind="fulltext", jats_xml=xml
                         ),
                         abstract_only,
+                        held_link,
                     )
                 elif entry.format == "pdf":
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)
                     self._download_and_cache_pdf(entry.url, cache_id, result, origin="known_source")
-                    return result, abstract_only
+                    return result, abstract_only, held_link
                 elif entry.format == "html":
-                    logger.info("HTML source from %s", entry.source)
-                    return FullTextResult(source=entry.source, web_url=entry.url), abstract_only
+                    logger.info("HTML source from %s, held as a last resort", entry.source)
+                    if held_link is None:
+                        held_link = entry
             except Exception as exc:
                 logger.debug(
                     "Known source %s (%s) failed",
@@ -1613,7 +1628,7 @@ class FullTextService:
                 failures.record(exc)
                 continue
 
-        return None, abstract_only
+        return None, abstract_only, held_link
 
     # --- Cache helpers --------------------------------------------------------
 

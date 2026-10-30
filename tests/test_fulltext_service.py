@@ -312,7 +312,7 @@ class TestKnownSources:
         assert result.source == "europepmc"
 
     def test_html_source_returns_web_url(self):
-        """HTML sources should be returned as web_url."""
+        """An html source with nothing else to try is the link, and is not fetched."""
         sources = [
             FullTextSourceEntry(
                 url="https://pmc.ncbi.nlm.nih.gov/PMC123/", format="html", source="pmc"
@@ -320,10 +320,78 @@ class TestKnownSources:
         ]
 
         service = FullTextService(email="test@example.com")
-        result = service.fetch_fulltext(fulltext_sources=sources)
+        with patch.object(service, "_http_get") as http_get:
+            result = service.fetch_fulltext(fulltext_sources=sources)
 
         assert result.source == "pmc"
         assert result.web_url == "https://pmc.ncbi.nlm.nih.gov/PMC123/"
+        assert http_get.call_count == 0
+
+    def test_an_html_source_does_not_stop_the_pmc_tier(self):
+        # #579: an html entry used to return at once, so PubMed's doi.org link
+        # beat Europe PMC's full text for every record carrying a DOI.
+        served = MagicMock(status_code=200, content=(FIXTURES / "sample_article.xml").read_bytes())
+        sources = [
+            FullTextSourceEntry(url="https://doi.org/10.1/x", format="html", source="publisher"),
+        ]
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=served):
+            result = service.fetch_fulltext(fulltext_sources=sources, pmc_id="PMC123")
+
+        assert result.source == "europepmc"
+        assert result.web_url is None
+        assert result.html
+
+    def test_an_html_source_is_the_link_when_nothing_else_serves(self, caplog):
+        sources = [FullTextSourceEntry(url="https://ex/page", format="html", source="pmc")]
+
+        service = FullTextService(email="test@example.com")
+        with (
+            patch.object(service, "_http_get", return_value=MagicMock(status_code=500)) as http_get,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(fulltext_sources=sources, doi="10.1/x")
+
+        assert any(
+            r.getMessage().startswith(
+                "No full text found for doi=10.1/x pmid= — nothing was retrieved;"
+            )
+            for r in caplog.records
+        )
+
+        assert http_get.call_count > 0  # the tiers after Tier 0 were asked
+        # The caller's link, ahead of Tier 3's https://doi.org/10.1/x.
+        assert (result.source, result.web_url) == ("pmc", "https://ex/page")
+
+    def test_the_first_html_source_is_the_one_held(self):
+        sources = [
+            FullTextSourceEntry(url="https://ex/first", format="html", source="a"),
+            FullTextSourceEntry(url="https://ex/second", format="html", source="b"),
+        ]
+
+        service = FullTextService(email="test@example.com")
+        result = service.fetch_fulltext(fulltext_sources=sources)
+
+        assert (result.source, result.web_url) == ("a", "https://ex/first")
+
+    def test_a_held_link_rides_on_a_held_abstract(self):
+        bodyless = MagicMock(
+            status_code=200, content=(FIXTURES / "abstract_only_article.xml").read_bytes()
+        )
+        sources = [
+            FullTextSourceEntry(url="https://ex/page", format="html", source="pmc"),
+            FullTextSourceEntry(url="https://ex/jats.xml", format="xml", source="medrxiv"),
+        ]
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=bodyless):
+            result = service.fetch_fulltext(fulltext_sources=sources)
+
+        assert result.content_kind == "abstract"
+        assert result.web_url == "https://ex/page"
+        # The abstract's own source; the link's ("pmc") was stamped on it before #579.
+        assert result.source == "medrxiv"
 
 
 class TestFullTextSourceEntry:
@@ -5674,9 +5742,10 @@ class TestTheCallersPmidIsCanonicalOrRefused:
     def test_a_refused_pmid_is_reported_even_when_a_known_source_serves(self, caplog):
         # Ahead of Tier 0: a successful fetch must not hide bad caller data.
         service = FullTextService(email="test@example.com")
-        source = FullTextSourceEntry(url="https://example.org/a.html", format="html", source="x")
-        served = MagicMock(status_code=200, text="<html><body>Full text</body></html>")
-        served.headers = {"content-type": "text/html"}
+        # A pdf entry, since an html one is held rather than an answer (#579).
+        source = FullTextSourceEntry(url="https://example.org/a.pdf", format="pdf", source="x")
+        served = MagicMock(status_code=200, content=b"%PDF-1.4")
+        served.headers = {"content-type": "application/pdf"}
         with (
             patch.object(service, "_http_get", return_value=served),
             caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
