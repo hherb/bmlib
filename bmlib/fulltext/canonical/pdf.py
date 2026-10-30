@@ -21,28 +21,56 @@ output, so this module reads no PDF itself and needs no PDF library. The text
 is taken as the extraction gives it: a table's cells may run together, and a
 hyphen at a line break is kept, the lines joined by a space (``dose- response``),
 since ``dose-`` / ``response`` must keep it and nothing in a PDF tells it from
-``random-`` / ``ised``.
+``random-`` / ``ised``. A **soft** hyphen (U+00AD) is the exception, because it
+says so: one that ends a line inside a paragraph is removed with the break after
+it (``preva\u00ad`` / ``lent`` gives ``prevalent``). Only a PDF that maps its
+line-end hyphens to U+00AD carries one; most typeset an ordinary ``-``.
 """
 
 from __future__ import annotations
 
 from bmlib.fulltext.canonical.model import (
     TOP_LEVEL,
+    BlockDraft,
     CanonicalText,
     SectionDraft,
     SourceFormat,
     assemble,
+    is_white_space,
 )
 from bmlib.fulltext.canonical.plain import split_paragraphs
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument
 
 #: Bumped whenever this converter, :func:`assemble`, or the segmenter and
 #: extraction feeding it can lay a PDF's text out differently.
-PDF_CANONICAL_VERSION = 1
+PDF_CANONICAL_VERSION = 2
 
 #: The segmenter's containers, whose headings ("Front Matter", "Full Text")
 #: bmlib makes up rather than reads from the page.
 _UNPRINTED_HEADINGS = frozenset({SectionType.FRONT_MATTER, SectionType.UNKNOWN})
+
+SOFT_HYPHEN = "\u00ad"
+
+
+def join_soft_hyphens(text: str) -> str:
+    """*text* with each soft hyphen followed by white space removed, with that space.
+
+    A paragraph's lines are joined by a space, so a word the PDF broke at a soft
+    hyphen arrives as ``preva\u00ad lent``; this gives ``prevalent``. A soft
+    hyphen anywhere else is kept. White space is :func:`is_white_space`'s, as
+    Rust decides it.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        if text[i] == SOFT_HYPHEN and i + 1 < len(text) and is_white_space(text[i + 1]):
+            i += 1
+            while i < len(text) and is_white_space(text[i]):
+                i += 1
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
 
 
 def canonical_from_segmented(document: SegmentedDocument) -> CanonicalText:
@@ -57,13 +85,17 @@ def canonical_from_segmented(document: SegmentedDocument) -> CanonicalText:
     ``section_type``, so any ``FRONT_MATTER`` or ``UNKNOWN`` section is untitled,
     a hand-built one too; the segmenter makes ``UNKNOWN`` only for the
     fallback. Paragraphs are the content's blank-line-separated runs
-    (:func:`split_paragraphs`).
+    (:func:`split_paragraphs`), each with :func:`join_soft_hyphens` applied.
     """
     drafts: list[SectionDraft] = []
 
     def add(section: Section, level: int) -> None:
         heading = "" if section.section_type in _UNPRINTED_HEADINGS else section.title
-        drafts.append(SectionDraft(heading, level, split_paragraphs(section.content)))
+        paragraphs = [
+            BlockDraft.paragraph(join_soft_hyphens(p.text))
+            for p in split_paragraphs(section.content)
+        ]
+        drafts.append(SectionDraft(heading, level, paragraphs))
         for subsection in section.subsections:
             add(subsection, level + 1)
 

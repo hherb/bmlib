@@ -1912,7 +1912,7 @@
           }
         ],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
       }
     },
     {
@@ -1956,7 +1956,7 @@
           }
         ],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
       }
     },
     {
@@ -2072,7 +2072,7 @@
           }
         ],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
       }
     },
     {
@@ -2115,7 +2115,7 @@
           }
         ],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
       }
     },
     {
@@ -2162,7 +2162,7 @@
           }
         ],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
       }
     },
     {
@@ -2202,7 +2202,47 @@
           }
         ],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
+      }
+    },
+    {
+      "name": "pdf/line-end-soft-hyphen-joined",
+      "format": "pdf",
+      "input": {
+        "title": null,
+        "sections": [
+          {
+            "section_type": "results",
+            "title": "Results",
+            "content": "It was preva­\nlent and spe­  \ncific, not mid­word or dose-\nresponse.­",
+            "page_start": 0,
+            "page_end": 0
+          }
+        ]
+      },
+      "expected": {
+        "text": "Results\n\nIt was prevalent and specific, not mid­word or dose- response.­",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": {
+              "start": 0,
+              "end": 7
+            },
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 9,
+                  "end": 72
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "pdf",
+        "converter_version": "pdf-2"
       }
     },
     {
@@ -2214,7 +2254,7 @@
         "title_span": null,
         "sections": [],
         "source_format": "pdf",
-        "converter_version": "pdf-1"
+        "converter_version": "pdf-2"
       }
     },
     {

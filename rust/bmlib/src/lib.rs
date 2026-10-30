@@ -36,7 +36,7 @@
 //! carries the analysis, the dependency policy and the phase order. All four
 //! phases are complete: [`db`] and the pure modules; `publications`; the LLM
 //! protocols, [`agents`] and the LLM quality tiers; then `jats_parser`,
-//! [`transparency`] and [`fulltext`], with PDFium behind a wrapper.
+//! [`transparency`] and [`fulltext`], with MuPDF behind a wrapper.
 //!
 //! What remains open is narrow, and the repository's `HANDOVER_RUST.md` is the
 //! register of it: no differential oracle for [`db`], whose rules are pinned by

@@ -9,6 +9,41 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — breaking: the `pdf` feature extracts with MuPDF (#590)
+`fulltext::pdfium_backend` (`PdfiumExtractor`, `PdfiumPdfExtractor`, the
+font-name guesses `font_name_is_bold`/`font_name_is_italic` and their
+constants) is gone; `fulltext::mupdf_backend` has `MupdfExtractor` and
+`MupdfPdfExtractor` (both `new()`, holding nothing), over the `mupdf` crate
+(`=0.8.0`, MuPDF 1.27.2, `default-features = false` with `base14-fonts`) — the
+engine Python's PyMuPDF binds, compiled from source and linked statically, so
+`pdfium-bundled`'s download and `PDFIUM_BUNDLED_CACHE_DIR` are gone too, and a
+sandboxed app loads nothing at run time. PDFium reported every line-end hyphen
+as U+0002 (4,282 in 143 of 151 corpus PDFs) and duplicated characters where
+its text segments overlapped (`ther\x02 r\x02 apy`); MuPDF reports neither.
+The backend reads a line as `get_text("dict")` does: PyMuPDF's flags (199,
+and 195 for page text, both clipping to the clip path within the mediabox),
+its span grouping (size, font flags with the superscript bit, character flags
+less `SYNTHETIC`, colour, font name) and dominant-span rule, bold and italic
+from MuPDF's own font flags, the font name as its bytes in Latin-1 less a
+subset tag (`Font::name` panics on a name that is not UTF-8, and a corpus PDF
+carries an EUC-KR one; `pymupdf_font_name`), characters whose box misses the
+page dropped, the line's box the kept characters' union, and annotations and
+widgets run after the page contents (`Page::to_text_page` runs the contents
+alone, and three figure labels in one corpus PDF are `FreeText`
+annotations). Over that 151-PDF corpus 143 PDFs give PyMuPDF 1.28.5's lines
+exactly, with every font, size, bold and italic identical, and 149 give
+PyMuPDF 1.27.2's (the same MuPDF release): the rest are combining accents
+placed either side of a space (the version gap), glyphs with no Unicode in two
+PDFs, and line boxes round maths fonts. Not read: the bidirectional level and
+PyMuPDF's rotation reset, so a rotated page's boxes are in the rotated frame.
+`tests/pdf_extraction_contract.rs` holds it to Python from a committed PDF's
+bytes. The `pdf` feature now needs a C compiler and libclang (bindgen), and
+CI lints it.
+
+### Changed — follows Python's soft-hyphen join (#590)
+`fulltext::canonical::join_soft_hyphens`, applied to every paragraph by
+`canonical_from_segmented`; `PDF_CANONICAL_VERSION` is 2.
+
 ### Added — follows Python's chunk store (StudyAnalyzer item 8)
 `embed::store` (`ensure_schema`, `index_paper`, `search`, `delete_paper`, the
 `ChunkEmbedder` trait, `ChunkHit`, `ChunkSetLabel`, `LabelField`, `StoreError`

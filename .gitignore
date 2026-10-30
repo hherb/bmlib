@@ -29,7 +29,7 @@ target/
 # (a sandbox that permits writes only under the repository).
 .cargo-home/
 
-# The downloaded PDFium binary, when PDFIUM_BUNDLED_CACHE_DIR is pointed inside
-# the workspace — which a sandbox that denies the platform default requires. It
-# is a ~10 MB fetched artefact, not source, and the `pdf` feature re-fetches it.
+# The downloaded PDFium binary of the Rust `pdf` feature before #590, which
+# moved it to MuPDF, linked statically. Kept ignored so an old checkout's cache
+# does not show as untracked.
 .pdfium-cache/

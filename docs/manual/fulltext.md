@@ -2536,9 +2536,20 @@ doc.converter_version                     # "jats-1"
   labels and not the paper's; paragraphs are the content's blank-line runs.
   The text is the extraction's: a table's cells may run together, a hyphen at
   a line break is kept with a space after it (`dose- response`), and a title
-  read off page 1 is often in the front matter too. Python extracts with PyMuPDF and Rust with PDFium,
-  so the shared fixture holds the two together from the `SegmentedDocument`
-  on (its `to_dict()` form).
+  read off page 1 is often in the front matter too. A **soft** hyphen
+  (U+00AD) followed by white space inside a paragraph is removed with that
+  space (`preva\u00ad` / `lent` gives `prevalent`; `join_soft_hyphens`), since
+  it says the word was broken; only a PDF that maps its breaks to U+00AD
+  carries one *(unreleased, `"pdf-2"`)*. Both languages extract with MuPDF —
+  Python through PyMuPDF, Rust through the `mupdf` crate (PDFium until #590,
+  *unreleased*) — so two fixtures hold them together: one from the
+  `SegmentedDocument` on (its `to_dict()` form), and `pdf_extraction.json`
+  from a committed PDF's bytes to the blocks and the canonical text. The two
+  MuPDF builds are different releases (the crate bundles 1.27.2, `pymupdf`
+  is at 1.28 or later), so a line's box may differ slightly, and over #590's
+  151-PDF corpus 143 PDFs gave identical lines; the rest differ in combining
+  accents placed before or after a space, in glyphs with no Unicode, and in
+  the boxes of lines holding a maths font.
 - **HTML** (extra `html`; Rust feature `html`): `canonical_from_html(html)`
   takes the page as text and reads it by fixed rules. Script, style,
   navigation (`nav`, `aside`), forms, media, `svg`, `template`, `noscript`,

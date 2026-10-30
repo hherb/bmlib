@@ -22,15 +22,19 @@
 //! extraction gives it: a table's cells may run together, and a hyphen at a line
 //! break is kept, the lines joined by a space (`dose- response`), since `dose-` /
 //! `response` must keep it and nothing in a PDF tells it from `random-` / `ised`.
+//! A **soft** hyphen (U+00AD) is the exception, because it says so: one that ends
+//! a line inside a paragraph is removed with the break after it (`preva\u{ad}` /
+//! `lent` gives `prevalent`; [`join_soft_hyphens`]).
 //!
-//! Python extracts lines with PyMuPDF and Rust with PDFium, so the two can
-//! segment the same PDF differently; the shared contract starts at the
-//! [`SegmentedDocument`].
+//! Both languages extract with MuPDF (Rust through the `mupdf` crate, behind the
+//! `pdf` feature). The shared contract starts at the [`SegmentedDocument`], and
+//! `tests/fixtures/pdf_extraction.json` holds the two to the same blocks from a
+//! committed PDF's bytes.
 //!
 //! [`SectionSegmenter::segment_document`]: crate::fulltext::segmenter::SectionSegmenter::segment_document
 
 use crate::fulltext::canonical::model::{
-    assemble, CanonicalText, SectionDraft, SourceFormat, TOP_LEVEL,
+    assemble, BlockDraft, CanonicalText, SectionDraft, SourceFormat, TOP_LEVEL,
 };
 use crate::fulltext::canonical::plain::split_paragraphs;
 use crate::fulltext::models::{Section, SectionType, SegmentedDocument};
@@ -40,7 +44,31 @@ use crate::fulltext::models::{Section, SectionType, SegmentedDocument};
 /// against a digest of its own converter, segmenter and extraction; a change to
 /// the Rust segmenter alone is held only by the shared contract and the
 /// segmenter's own oracle.
-pub const PDF_CANONICAL_VERSION: u32 = 1;
+pub const PDF_CANONICAL_VERSION: u32 = 2;
+
+/// The soft hyphen, U+00AD.
+pub const SOFT_HYPHEN: char = '\u{ad}';
+
+/// `text` with each soft hyphen followed by white space removed, with that space.
+///
+/// A paragraph's lines are joined by a space, so a word the PDF broke at a soft
+/// hyphen arrives as `preva\u{ad} lent`; this gives `prevalent`. A soft hyphen
+/// anywhere else is kept.
+#[must_use]
+pub fn join_soft_hyphens(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == SOFT_HYPHEN && chars.peek().is_some_and(|c| c.is_whitespace()) {
+            while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                chars.next();
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
 
 /// Whether `kind` is one of the segmenter's containers, whose headings ("Front
 /// Matter", "Full Text") bmlib makes up rather than reads from the page.
@@ -55,11 +83,11 @@ fn add(section: &Section, level: usize, drafts: &mut Vec<SectionDraft>) {
     } else {
         section.title.as_str()
     };
-    drafts.push(SectionDraft::new(
-        heading,
-        level,
-        split_paragraphs(&section.content),
-    ));
+    let paragraphs = split_paragraphs(&section.content)
+        .into_iter()
+        .map(|paragraph| BlockDraft::paragraph(join_soft_hyphens(&paragraph.text)))
+        .collect();
+    drafts.push(SectionDraft::new(heading, level, paragraphs));
     for subsection in &section.subsections {
         add(subsection, level + 1, drafts);
     }
@@ -75,7 +103,8 @@ fn add(section: &Section, level: usize, drafts: &mut Vec<SectionDraft>) {
 /// not the paper's. That is keyed on `section_type`, so any `FrontMatter` or
 /// `Unknown` section is untitled, a hand-built one too; the segmenter makes
 /// `Unknown` only for the fallback. Paragraphs are the content's
-/// blank-line-separated runs ([`split_paragraphs`]).
+/// blank-line-separated runs ([`split_paragraphs`]), each with
+/// [`join_soft_hyphens`] applied.
 #[must_use]
 pub fn canonical_from_segmented(document: &SegmentedDocument) -> CanonicalText {
     let mut drafts = Vec::new();
@@ -120,7 +149,7 @@ mod tests {
         };
         let doc = canonical_from_segmented(&document);
         assert_eq!(doc.text, "By A. Author\n\nBody.\n\n2. Methods\n\nWe did.");
-        assert_eq!(doc.converter_version, "pdf-1");
+        assert_eq!(doc.converter_version, "pdf-2");
     }
 
     /// A first-page line at height `y`, 12 points tall.
@@ -156,6 +185,25 @@ mod tests {
             "A randomised trial\n\nA randomised trial\n\nWe randomised 120 patients.\n\n\
              Methods\n\nDosing was fixed.\n\nFollow-up was a year."
         );
+    }
+
+    #[test]
+    fn a_soft_hyphen_ending_a_line_joins_the_word() {
+        let document = SegmentedDocument {
+            sections: vec![section(
+                SectionType::Results,
+                "Results",
+                "It was preva\u{ad}\nlent, spe\u{ad}  \ncific and dose-\nresponse.\u{ad}",
+            )],
+            ..SegmentedDocument::default()
+        };
+        assert_eq!(
+            canonical_from_segmented(&document).text,
+            "Results\n\nIt was prevalent, specific and dose- response.\u{ad}"
+        );
+        // Only one followed by white space: a mid-word one is the PDF's own.
+        assert_eq!(join_soft_hyphens("a\u{ad}b c\u{ad}"), "a\u{ad}b c\u{ad}");
+        assert_eq!(join_soft_hyphens("a\u{ad}\u{3000}b"), "ab");
     }
 
     #[test]

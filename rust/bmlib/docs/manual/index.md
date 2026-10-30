@@ -32,7 +32,7 @@ cargo add bmlib --no-default-features
 |---|---|---|---|
 | `sqlite` | on | `rusqlite` (SQLite bundled) | `db::open_memory`, `db::open_path`, the `Db` impl for `rusqlite::Connection` |
 | `http-ureq` | on | `ureq` | `bmlib::http::UreqClient`, the real `HttpClient`. Without it a caller injects its own transport |
-| `pdf` | off | `pdfium-render`, `pdfium-bundled` | PDF → text. Downloads a prebuilt PDFium at build time |
+| `pdf` | off | `mupdf` | PDF → text with MuPDF, the engine PyMuPDF binds. Compiled from source and linked statically (a C compiler and libclang) |
 | `html` | off | `scraper`, `ego-tree` | `fulltext::canonical`'s HTML → canonical text (html5ever, as Python's `html` extra) |
 | `postgres` | off | `postgres` | `db::connect_postgresql`. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present |
 | `embed` | off | `llama-cpp-2` | `embed::Embedder` and model verification; the download also needs `http-ureq`. Builds llama.cpp (cmake and a C++ compiler) |
@@ -101,7 +101,7 @@ investigated non-fixes: those are specification, not defects.
 
 ```bash
 cargo test                      # opens no socket
-cargo test --features pdf       # + the PDFium tests over real PDFs
+cargo test --features pdf       # + the MuPDF tests and the PDF-bytes contract
 BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live
 BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1
 ```

@@ -44,5 +44,5 @@ pub use model::{
     CanonicalText, SectionDraft, SourceFormat, TextSpan, BLOCK_SEPARATOR, CELL_SEPARATOR,
     TOP_LEVEL,
 };
-pub use pdf::{canonical_from_segmented, PDF_CANONICAL_VERSION};
+pub use pdf::{canonical_from_segmented, join_soft_hyphens, PDF_CANONICAL_VERSION};
 pub use plain::{canonical_from_plain_text, split_lines, split_paragraphs, PLAIN_TEXT_VERSION};

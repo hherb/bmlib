@@ -62,7 +62,11 @@ from bmlib.fulltext.canonical.model import (
     is_white_space,
     normalise_whitespace,
 )
-from bmlib.fulltext.canonical.pdf import PDF_CANONICAL_VERSION, canonical_from_segmented
+from bmlib.fulltext.canonical.pdf import (
+    PDF_CANONICAL_VERSION,
+    canonical_from_segmented,
+    join_soft_hyphens,
+)
 from bmlib.fulltext.canonical.plain import (
     PLAIN_TEXT_VERSION,
     canonical_from_plain_text,
@@ -105,6 +109,7 @@ __all__ = [
     "count_words",
     "is_abbreviation",
     "is_white_space",
+    "join_soft_hyphens",
     "normalise_whitespace",
     "sentence_spans",
     "split_lines",

@@ -6,6 +6,34 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **A soft hyphen that ends a line joins its word** (#590, `"pdf-2"`, the
+  maintainer's call). `canonical_from_segmented` removed nothing, so a PDF
+  that maps its line-end hyphens to U+00AD gave `preva\u00ad lent`, and the
+  soft hyphen showed as a box. Each paragraph now passes through
+  `join_soft_hyphens` (exported from `bmlib.fulltext.canonical`, and in Rust),
+  which removes a U+00AD followed by white space together with that space; a
+  soft hyphen anywhere else is kept, and a hard line-end hyphen keeps the
+  existing rule (`dose- response`), since nothing in a PDF tells `dose-` from
+  `random-`. `PDF_CANONICAL_VERSION` is 2, so a stored PDF canonical text reads
+  as laid out by an older converter. Most PDFs typeset the break with an
+  ordinary `-`: over #590's 151-PDF corpus PyMuPDF reports 198 soft hyphens,
+  in 4 files. Python and Rust; `canonical_text.json` gains a case.
+
+### Added
+- **A PDF-extraction contract from a PDF's bytes** (#590).
+  `tests/fixtures/pdf_extraction.pdf`, written byte for byte by
+  `scripts/make_pdf_extraction_fixture.py` (two pages; unembedded Helvetica,
+  Helvetica-Bold and Times-Italic; two words broken at a soft hyphen through an
+  `/Encoding` `/Differences` entry; a hard line-end hyphen), and
+  `pdf_extraction.json`, the blocks PyMuPDF reads from it and the canonical
+  text the segmenter and `canonical_from_segmented` make of them. Python's
+  `tests/test_pdf_extraction_contract.py` and Rust's
+  `pdf_extraction_contract.rs` both assert it, geometry within 0.01 pt since
+  the two MuPDF builds are different releases; the existing contract starts
+  at the `SegmentedDocument`, so nothing held the two extractions together
+  before.
+
 ### Fixed
 - **A stored span is the chunker's, or the set is corrupt** (#587, from PR
   #586's review). `search` checked a stored row's section and span only
