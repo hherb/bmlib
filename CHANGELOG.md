@@ -11,7 +11,9 @@ All notable changes to bmlib are documented here. The format is based on
   #586's review). `search` checked a stored row's section and span only
   against the text's bounds, so a span rewritten in bounds — chunk 4 stored as
   `(0, 3)` — was returned as chunk 4's passage at chunk 4's score. The label
-  already pins the text and `CHUNKER_VERSION`, so `search` now rebuilds the
+  already pins the text's bytes, `CHUNKER_VERSION` and the converter's version
+  (not the sections: a hand-built text with the indexed text and converter
+  version but other sections is refused as corrupt too), so `search` now rebuilds the
   chunks with `chunk_canonical` and refuses the set (`CorruptChunkSetError`,
   Rust `StoreError::Corrupt`) unless every stored `(section, start, end)` is
   the rebuilt chunk's and the set holds as many chunks as the text makes;

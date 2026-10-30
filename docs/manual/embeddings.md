@@ -209,7 +209,9 @@ Errors, all `ChunkSetError` subclasses of `ValueError` (and picklable):
 `NotIndexedError` (no set under `key`, its attribute), `StaleChunkSetError`,
 `CorruptChunkSetError` (a row that cannot be part of the set — its count, an
 index, a section or span other than the one `chunk_canonical` makes of the
-text *(unreleased)*, a vector that is not a blob of 1,024 bytes of
+text *(unreleased)* — which is also what a hand-built text with the indexed
+text and converter version but other sections meets, the label hashing the
+text and not its sections — a vector that is not a blob of 1,024 bytes of
 finite values of unit length; never scored), `UnidentifiedEmbedderError` (an embedder with no
 `model`, refused before anything is embedded or read) and `IndexingCancelled`.
 An empty or non-`str` key, a `k` that is not a positive integer and a text

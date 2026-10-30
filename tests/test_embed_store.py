@@ -68,6 +68,7 @@ from bmlib.embed.store import (
     NotIndexedError,
     StaleChunkSetError,
     UnidentifiedEmbedderError,
+    current_label,
     decode_vector,
     delete_paper,
     encode_vector,
@@ -79,6 +80,7 @@ from bmlib.embed.store import (
     search,
 )
 from bmlib.fulltext.canonical import (
+    CanonicalSection,
     CanonicalText,
     TextSpan,
     canonical_from_markdown,
@@ -692,6 +694,25 @@ def test_a_set_emptied_of_rows_and_count_is_corrupt(conn: Any) -> None:
     conn.commit()
     with pytest.raises(CorruptChunkSetError, match="records 0 chunks"):
         search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+def test_a_text_sectioned_otherwise_is_refused(conn: Any) -> None:
+    # The label hashes the text and not its sections, so this passes the label
+    # and is refused by the chunk check, as corrupt, rather than ranked.
+    paper = _two_sections()
+    index_paper(conn, "k", paper, FakeEmbedder())
+    first, second = paper.sections
+    resectioned = dataclasses.replace(
+        paper,
+        sections=(
+            first,
+            dataclasses.replace(second, blocks=second.blocks[:1]),
+            CanonicalSection(second.level, None, second.blocks[1:]),
+        ),
+    )
+    assert current_label(resectioned, FakeEmbedder()) == current_label(paper, FakeEmbedder())
+    with pytest.raises(CorruptChunkSetError, match="the text makes"):
+        search(conn, "k", resectioned, "q", FakeEmbedder(), 3)
 
 
 def test_every_hit_is_a_chunk_the_chunker_makes(conn: Any) -> None:

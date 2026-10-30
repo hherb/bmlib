@@ -524,11 +524,12 @@ pub fn index_paper(
 ///
 /// # Errors
 ///
-/// [`StoreError::InvalidArgument`] for an empty key or a `k` of 0,
-/// [`StoreError::UnidentifiedEmbedder`], [`StoreError::NotIndexed`],
-/// [`StoreError::Stale`], [`StoreError::Corrupt`], [`StoreError::Vector`]
-/// (the question's vector would not be stored), [`StoreError::Embed`] or
-/// [`StoreError::Db`].
+/// [`StoreError::InvalidArgument`] for an empty key, a `k` of 0 or a chunker
+/// failure, [`StoreError::UnidentifiedEmbedder`], [`StoreError::NotIndexed`],
+/// [`StoreError::Stale`], [`StoreError::Corrupt`] (including a stored chunk
+/// other than the one `chunk_canonical` makes of `canonical`),
+/// [`StoreError::Vector`] (the question's vector would not be stored),
+/// [`StoreError::Embed`] or [`StoreError::Db`].
 pub fn search(
     db: &mut dyn Db,
     key: &str,
@@ -577,8 +578,10 @@ pub fn search(
             "the set for {key:?} records {count} chunks, not its rows"
         )));
     }
-    // The label pins the text and the chunker, so the chunks are the chunker's
-    // own: a stored span in bounds but rewritten was returned as its chunk.
+    // The label pins the text's bytes, the chunker and the converter's version
+    // (held to its code by test_renderer_version.py), not the sections, so a
+    // hand-built text sectioned otherwise lands here as corrupt too. Checked
+    // against bounds alone, a stored span rewritten in bounds was returned.
     let expected = chunk_canonical(canonical, DEFAULT_MAX_CHARS, DEFAULT_OVERLAP_CHARS)
         .map_err(|e| StoreError::InvalidArgument(e.to_string()))?;
     if expected.len() != rows.len() {

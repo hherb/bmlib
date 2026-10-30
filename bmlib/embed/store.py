@@ -420,7 +420,8 @@ def search(
         UnidentifiedEmbedderError: If the embedder carries no model.
         NotIndexedError: If no set is stored under ``key``.
         StaleChunkSetError: If the stored label differs from the current one.
-        CorruptChunkSetError: If a stored row cannot be read as part of the set.
+        CorruptChunkSetError: If a stored row cannot be read as part of the set,
+            or is not a chunk ``chunk_canonical`` makes of ``canonical``.
         VectorError: If the question's vector would not be stored.
         EmbedError: As the embedder raises it.
     """
@@ -457,8 +458,10 @@ def search(
         or [r["chunk_index"] for r in chunks] != list(range(count))
     ):
         raise CorruptChunkSetError(f"the set for {key!r} records {count!r} chunks, not its rows")
-    # The label pins the text and the chunker, so the chunks are the chunker's
-    # own: a stored span in bounds but rewritten was returned as its chunk.
+    # The label pins the text's bytes, the chunker and the converter's version
+    # (held to its code by test_renderer_version.py), not the sections, so a
+    # hand-built text sectioned otherwise lands here as corrupt too. Checked
+    # against bounds alone, a stored span rewritten in bounds was returned.
     expected = chunk_canonical(canonical)
     if len(expected) != count:
         raise CorruptChunkSetError(

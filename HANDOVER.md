@@ -41,7 +41,8 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 The CHANGELOG's two *Fixed* entries at the top of `[Unreleased]` are the
 argument. `search` rebuilds the chunks with `chunk_canonical` (the label pins
-the text and the chunker) and refuses a set unless every stored
+the text's bytes, the chunker and the converter's version — not the sections,
+so a hand-built text sectioned otherwise is refused as corrupt too) and refuses a set unless every stored
 `(section, start, end)` is the rebuilt chunk's and the counts agree — which
 also caught a set whose rows and count were both zeroed. Python and Rust; the
 spans are still stored, so no schema change. `rust/bmlib/tests/vector_store.rs`
