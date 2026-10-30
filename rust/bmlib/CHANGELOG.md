@@ -9,6 +9,30 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's PICO agent (StudyAnalyzer item 7)
+`quality::PicoAgent` (`check_suitability`, `extract(title, text,
+min_similarity)`, `pico_condenser`), `quality::pico_models` (`PicoExtraction`,
+`PicoPart`, `PicoPartState`, `PicoCitation`, `PicoSuitability`, and `PicoError`,
+`#[non_exhaustive]`, whose `kind()` is Python's `PicoErrorKind` value), the
+pure readers `verify_quotes`, `read_part`, `read_extraction` and
+`read_suitability`, and the eight prompt constants. Citation offsets are
+`char` indices into `text` as passed. `LlmCondenser::with_prompts` builds the
+Cochrane map-reduce over another agent's prompts and query. Held to Python by
+`tests/pico_oracle.rs` over `rust/oracle/dump_pico_agent.py`: whole agent runs
+on scripted replies, comparing results, the messages sent, the model-call count
+and every prompt constant.
+
+### Changed (item 7)
+`cochrane_assessor`'s refusal rules for a digest are `condense_checked`, shared
+with the PICO agent; the Cochrane assessor's behaviour and note are unchanged.
+A refusal returns its reason, which `PicoError::CondensationFailed` carries, as
+Python's message does. The digest is stripped as Python's `str.strip()` strips
+it (`pyvalue::python_strip`): `str::trim` kept U+001C–U+001F, so a digest of
+those alone was sent to the model where Python refused it.
+`ContextModel::complete` documents that a completion stopped at the output
+ceiling is an `Err`, as Python's processor now fails such a batch. The PICO
+oracle has 34 cases.
+
 ### Added — follows Python's canonical text from HTML and the full-text check (StudyAnalyzer item 4c)
 `fulltext::canonical::canonical_from_html` and `HTML_CANONICAL_VERSION`
 (`html::PRUNED` and `html::BLOCKS` name the rules), behind the new `html`

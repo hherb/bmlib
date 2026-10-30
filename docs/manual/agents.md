@@ -20,7 +20,15 @@ The package is two files, `bmlib/agents/base.py` and `bmlib/agents/metrics.py`, 
 ## Imports
 
 ```python
-from bmlib.agents import BaseAgent, PerformanceMetrics
+from bmlib.agents import (
+    BaseAgent,
+    ChatJsonEmptyError,
+    ChatJsonError,
+    ChatJsonTruncatedError,
+    ChatJsonUnparseableError,
+    ChatJsonWrongShapeError,
+    PerformanceMetrics,
+)
 ```
 
 ---
@@ -193,7 +201,7 @@ The truncation check runs **first on every attempt** — before the empty-conten
 | **Complete despite truncation** | `stop_reason` is a truncation reason, but the content is complete JSON **as written** — it parses directly or as a whole span (stages 1–2 of [`parse_json()`](#baseagentparse_json)), with no repair and no fragment | The parsed value is **returned as-is**. A truncation `stop_reason` is not automatically a failure. |
 | **Truncated at temperature 0** | Content is not complete as written and the effective temperature is exactly `0.0` | Raises `ValueError` **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. |
 | **Truncated above temperature 0** | Content is not complete as written and the effective temperature is `> 0` | Logged at ERROR with the full response, then falls into the normal retry path — a resample may produce a shorter completion that fits. The truncation message is kept as `last_error`, so the final exhaustion error names truncation as the real cause. |
-| **Exhaustion** | All `max_retries` attempts consumed | Raises `ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")`, where `context` is `" for <retry_context>"`, or empty. |
+| **Exhaustion** | All `max_retries` attempts consumed | Raises `ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")`, where `context` is `" for <retry_context>"`, or empty — *(unreleased)* the `ChatJson*Error` subclass naming the last attempt's cause; see [Which failure it was](#which-failure-it-was-unreleased). |
 
 The effective temperature is `temperature if temperature is not None else self.temperature` — an agent constructed with `temperature=0.0` gets the no-retry policy even when the call site passes nothing.
 
@@ -258,6 +266,19 @@ A wrong shape is not a parse failure, and the two are reported separately: `chat
 This mirrors the truncation policy deliberately: two adjacent branches in one method must not sit on opposite rules for the same reason. It matters for a caller pinning temperature 0 for reproducibility — which is exactly the caller most likely to want `require_dict`.
 
 ---
+
+#### Which failure it was *(unreleased)*
+
+Every way `chat_json()` gives up raises a subclass of `ChatJsonError`, itself a `ValueError`, so an existing `except ValueError` still catches all of them:
+
+| Class | Cause |
+|---|---|
+| `ChatJsonTruncatedError` | The reply hit the output ceiling. Raise `max_tokens`. |
+| `ChatJsonWrongShapeError` | The reply parsed, but not as the object `require_dict` asked for. |
+| `ChatJsonEmptyError` | The model returned nothing. |
+| `ChatJsonUnparseableError` | The reply did not parse as JSON. |
+
+An immediate raise (a truncation or a wrong shape at temperature 0) names its own cause; the raise after the retries are spent names the **last** attempt's. The message text is unchanged. A provider's own exception still propagates as raised, not wrapped. The classes mirror the Rust port's `ChatJsonError` variants, less `Transport`. Import them from `bmlib.agents`.
 
 ### `BaseAgent.render_template`
 

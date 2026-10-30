@@ -206,6 +206,25 @@ class TestExtraction:
         assert result.status is ProcessingStatus.FAILED
         assert result.failed_batches == [0]
 
+    @pytest.mark.parametrize("stop_reason", ["max_tokens", "length"])
+    def test_a_truncated_completion_fails_its_batch(self, stop_reason: str) -> None:
+        """A completion cut at the output ceiling has lost passages, so it is
+        a failed batch, not a digest that reads as complete."""
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(
+            return_value=LLMResponse(
+                content="the first half of a pass",
+                model="test:model",
+                input_tokens=1,
+                output_tokens=1,
+                stop_reason=stop_reason,
+            )
+        )
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+        assert result.status is ProcessingStatus.FAILED
+        assert result.failed_batches == [0]
+        assert result.content == ""
+
     def test_extraction_is_counted_by_the_agent_metrics(self) -> None:
         agent = make_agent("ok")
         LLMChunkProcessor(agent).process(["chunk"], query="q")

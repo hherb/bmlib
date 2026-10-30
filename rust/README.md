@@ -187,6 +187,7 @@ registry, and `.gitignore` covers it.
 | `llm/providers/*`, `llm/client` | 3,281 lines | 2 files | **ported** as one client over two protocols; a provider is a row of data |
 | `agents/base`, `agents/metrics` | 843 lines | 2 files | **ported** — the retry/truncation loop and the metrics report (fixes #300) |
 | `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 15 named tests + 56 oracle cases (all strict since round 43) |
+| `quality/pico_agent`, `pico_models` | 903 lines | 2 files | **ported**, follows Python's StudyAnalyzer item 7 — `PicoAgent` (suitability check and extraction, quotes verified by `find_passage`), `PicoAgent::pico_condenser` over `LlmCondenser::with_prompts`. 5 named tests + 5 unit tests + 23 oracle cases of whole agent runs (results, messages sent, model-call count, every prompt constant) |
 | `quality/metadata_filter`, `manager` | 461 lines | 2 files | **ported** — Tier 1's mapping, the tiering rule, the Cochrane enrichment. 12 named tests + 27 oracle cases |
 | `quality/extractors` | 896 lines | 1 file | **ported** — a transcription of Python's own rule tables through `fancy-regex`, whose `is_denied` / `_find_power_mention` / `_find_ci_mention` are Python's. The port's three corrections (#294, #297, #298) are retired: Python's extractor audit adopted two and **refused the third**, and the window defect #366 found is fixed. 22 named tests + 4 unit tests + 636 oracle cases (three corrected); follows Python's #367 (RCT patterns, singular `rct` keywords) |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
@@ -307,6 +308,10 @@ rust/oracle/quality_cases.json    636 cases — #294's, #297's and #298's
                                   Python's extractor audit landed, and three
                                   character-class divergences take their place
                                   (see below)
+rust/oracle/dump_pico_agent.py    runs whole PicoAgent runs over scripted model
+                                  replies (the first agent-level dumper)
+rust/oracle/pico_agent_cases.json 23 cases — results, the messages sent and
+                                  every prompt constant
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
 rust/oracle/model_cases.json      53 cases, all diffed strictly
 rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_models

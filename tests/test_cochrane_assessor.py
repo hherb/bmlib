@@ -22,6 +22,8 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from bmlib.context_processor import (
     ExtractionResult,
     LLMChunkProcessor,
@@ -30,6 +32,7 @@ from bmlib.context_processor import (
     ProcessingStatus,
 )
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_HIGH,
@@ -405,7 +408,12 @@ class TestTheDigestSizeGuaranteeIsEnforced:
         digest, notes, status = condensed
         assert digest == "x" * 199
         assert status is ProcessingStatus.TRUNCATED
-        assert notes  # TRUNCATED still records the degradation note
+        # TRUNCATED still records the degradation note, in the wording a
+        # stored assessment has always carried.
+        assert notes == [
+            "Source text was condensed before assessment; the condensation finished "
+            "with status truncated, so the digest may be incomplete."
+        ]
 
 
 class TestBothCondensationDegradationBranchesReachTheAssessment:
@@ -529,3 +537,80 @@ class TestPublicExports:
         assert "CochraneAssessor" in quality.__all__
         assert "collapse_risk_of_bias" in quality.__all__
         assert quality.CochraneAssessor is CochraneAssessor
+
+
+class TestTheCondensationHelper:
+    """``condense_text`` is the Cochrane assessor's condensation, taken out so
+    a second agent can run it with its own prompts."""
+
+    @staticmethod
+    def _stub_result(content: str, status: ProcessingStatus) -> ProcessingResult:
+        return ProcessingResult(
+            final_result=ExtractionResult(content=content, confidence=1.0),
+            status=status,
+            total_items_processed=1,
+            batches_created=1,
+            recursion_levels_used=0,
+            successful_batches=1,
+        )
+
+    @pytest.mark.parametrize(
+        ("content", "status", "reason"),
+        [
+            (
+                "x" * 300,
+                ProcessingStatus.COMPLETED,
+                "the digest is 300 characters, over the 200-character budget (status: completed)",
+            ),
+            (" \n ", ProcessingStatus.COMPLETED, "the map-reduce produced an empty digest"),
+            ("", ProcessingStatus.FAILED, "the map-reduce failed: every batch failed"),
+        ],
+    )
+    def test_condense_text_says_why_it_refuses(
+        self, content: str, status: ProcessingStatus, reason: str
+    ) -> None:
+        agent = make_assessor()
+        stub = self._stub_result(content, status)
+        stub.error_message = "every batch failed"
+        with (
+            patch.object(LLMChunkProcessor, "process", return_value=stub),
+            pytest.raises(CondensationRefusedError) as caught,
+        ):
+            condense_text(
+                agent,
+                "y" * 500,
+                "a study",
+                ProcessingConfig(max_context_chars=200),
+                extraction_prompt="E {query} {content}",
+                consolidation_prompt="C {query} {content}",
+                query="Q",
+                stage="extraction",
+            )
+        assert str(caught.value) == reason
+
+    def test_condense_text_runs_its_own_prompts_and_names_its_stage(self) -> None:
+        agent = make_assessor()
+        partial = self._stub_result("digest", ProcessingStatus.PARTIAL)
+        with (
+            patch.object(LLMChunkProcessor, "__init__", return_value=None) as init,
+            patch.object(LLMChunkProcessor, "process", return_value=partial) as process,
+        ):
+            condensed = condense_text(
+                agent,
+                "y" * 500,
+                "a study",
+                ProcessingConfig(max_context_chars=200),
+                extraction_prompt="E {query} {content}",
+                consolidation_prompt="C {query} {content}",
+                query="the PICO query",
+                stage="extraction",
+            )
+
+        assert init.call_args.kwargs["extraction_prompt"] == "E {query} {content}"
+        assert init.call_args.kwargs["consolidation_prompt"] == "C {query} {content}"
+        assert process.call_args.kwargs["query"] == "the PICO query"
+        assert condensed is not None
+        assert condensed[1] == [
+            "Source text was condensed before extraction; the condensation finished "
+            "with status partial, so the digest may be incomplete."
+        ]

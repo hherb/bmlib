@@ -220,7 +220,10 @@ pub trait ContextModel {
     ///
     /// # Errors
     ///
-    /// Whatever the transport reports.
+    /// Whatever the transport reports, **and a completion that stopped at the
+    /// output ceiling**: Python's processor fails such a batch (its stop reason
+    /// is `max_tokens` or `length`), since a cut-off pass has lost passages, and
+    /// only the implementation sees the stop reason.
     fn complete(&self, prompt: &str, temperature: f64, max_tokens: i64) -> Result<String, String>;
 
     /// A JSON-mode completion, read as the structured extraction shape.

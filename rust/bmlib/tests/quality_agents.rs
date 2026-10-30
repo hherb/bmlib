@@ -18,22 +18,21 @@
 //!
 //! Tiers 2, 3 and 4 never hold a client: each takes a
 //! [`JsonChat`] whose default production implementation is
-//! [`LlmChat`]. The scripted implementation below is a real
+//! [`LlmChat`]. The scripted implementation (in `common::scripted_chat`) is a real
 //! [`ChatSource`] underneath, so the retry, truncation and `require_dict` rules
 //! the tiers inherit are [`bmlib::agents::chat_json`]'s and not a test double's
 //! — a script that answered `Ok`/`Err` directly would test nothing about them.
 
 use std::collections::BTreeMap;
 
-use bmlib::agents::{chat_json, ChatJsonError, ChatJsonOutcome, ChatSource};
-use bmlib::context_processor::llm_processor::ContextModel;
+use bmlib::context_processor::llm_processor::{ContextModel, PromptTemplates};
 use bmlib::context_processor::{
     ExtractionResult, ProcessingConfig, ProcessingResult, ProcessingStatus,
     DEFAULT_MAX_CONTEXT_CHARS,
 };
-use bmlib::llm::{LLMMessage, LLMResponse, LlmClient};
+use bmlib::llm::LlmClient;
 use bmlib::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
-use bmlib::quality::agent_chat::{format_template, JsonChat};
+use bmlib::quality::agent_chat::format_template;
 use bmlib::quality::cochrane_assessor::{
     parse_cochrane_assessment, render_condense_consolidation, render_condense_extraction,
     AssessOptions, CochraneAssessor, Condenser, LlmCondenser, StudyInput,
@@ -43,117 +42,9 @@ use bmlib::quality::quality_agent::QualityAgent;
 use bmlib::quality::study_classifier::StudyClassifier;
 use serde_json::{json, Value};
 
-// ---------------------------------------------------------------------------
-// The scripted source
-// ---------------------------------------------------------------------------
+mod common;
 
-/// One response per call, repeating the last, and a record of the backoffs.
-struct Script {
-    responses: Vec<Result<LLMResponse, String>>,
-    calls: usize,
-    backoffs: Vec<usize>,
-}
-
-impl Script {
-    fn new(responses: Vec<Result<LLMResponse, String>>) -> Self {
-        Script {
-            responses,
-            calls: 0,
-            backoffs: Vec::new(),
-        }
-    }
-
-    /// A source answering `content` with `stop_reason`, forever.
-    fn answering(content: &str, stop_reason: Option<&str>) -> Self {
-        Script::new(vec![Ok(response(content, stop_reason))])
-    }
-}
-
-fn response(content: &str, stop_reason: Option<&str>) -> LLMResponse {
-    LLMResponse {
-        content: content.to_string(),
-        stop_reason: stop_reason.map(str::to_string),
-        ..Default::default()
-    }
-}
-
-impl ChatSource for Script {
-    fn chat(&mut self, _attempt: usize) -> Result<LLMResponse, String> {
-        let index = self.calls.min(self.responses.len().saturating_sub(1));
-        self.calls += 1;
-        self.responses[index].clone()
-    }
-
-    fn backoff(&mut self, attempt: usize) {
-        self.backoffs.push(attempt);
-    }
-}
-
-/// What one tier asked for.
-#[derive(Debug, Clone, PartialEq)]
-struct Call {
-    temperature: f64,
-    max_tokens: i64,
-    max_retries: usize,
-    require_dict: bool,
-}
-
-/// A [`JsonChat`] that is really [`bmlib::agents::chat_json`] over a [`Script`].
-struct ScriptedChat {
-    source: Script,
-    seen: Vec<Vec<LLMMessage>>,
-    calls: Vec<Call>,
-}
-
-impl ScriptedChat {
-    fn new(source: Script) -> Self {
-        ScriptedChat {
-            source,
-            seen: Vec::new(),
-            calls: Vec::new(),
-        }
-    }
-
-    fn answering(content: &str, stop_reason: Option<&str>) -> Self {
-        ScriptedChat::new(Script::answering(content, stop_reason))
-    }
-
-    /// The user turn of the last call, or `""` when nothing was sent.
-    fn last_user_message(&self) -> &str {
-        self.seen
-            .last()
-            .and_then(|messages| messages.iter().find(|m| m.role == bmlib::llm::Role::User))
-            .map(|m| m.content.as_str())
-            .unwrap_or("")
-    }
-}
-
-impl JsonChat for ScriptedChat {
-    fn chat_json(
-        &mut self,
-        messages: &[LLMMessage],
-        temperature: f64,
-        max_tokens: i64,
-        max_retries: usize,
-        require_dict: bool,
-    ) -> Result<ChatJsonOutcome, ChatJsonError> {
-        self.seen.push(messages.to_vec());
-        self.calls.push(Call {
-            temperature,
-            max_tokens,
-            max_retries,
-            require_dict,
-        });
-        chat_json(
-            &mut self.source,
-            max_retries,
-            temperature,
-            Some(max_tokens),
-            max_tokens,
-            require_dict,
-        )
-    }
-}
+use common::scripted_chat::{response, Call, Script, ScriptedChat};
 
 // ---------------------------------------------------------------------------
 // Tier 2 — the classifier
@@ -1704,4 +1595,40 @@ fn a_condenser_handed_an_invalid_configuration_fails_the_run() {
     assert_eq!(result.status, ProcessingStatus::Failed);
     let message = result.error_message.clone().unwrap_or_default();
     assert!(message.contains("confidence"), "{message:?}");
+}
+
+/// A second agent condenses through the same map-reduce with its own prompts
+/// and query (the PICO agent's case).
+#[test]
+fn llm_condenser_with_prompts_uses_its_own_query() {
+    let model = MapReduceModel::new(&"M".repeat(100), "SHORT");
+    let templates = PromptTemplates {
+        extraction_prompt: "PICO MAP {query} :: {content}".to_string(),
+        consolidation_prompt: "Merge these extracted passages {query} :: {content}".to_string(),
+    };
+    let mut condenser = LlmCondenser::with_prompts(&model, templates, "the PICO query", 0.1, 4096)
+        .expect("both templates carry both placeholders");
+
+    let result = condenser.condense(
+        &"x".repeat(1_000),
+        "a study",
+        &ProcessingConfig::default().with_max_context_chars(200),
+    );
+
+    assert!(result.final_result.content.contains("SHORT"));
+    let prompts = model.prompts();
+    assert!(prompts
+        .iter()
+        .any(|p| p.starts_with("PICO MAP the PICO query")));
+    assert!(prompts.iter().all(|p| p.contains("the PICO query")));
+}
+
+#[test]
+fn llm_condenser_with_prompts_refuses_a_template_without_its_placeholders() {
+    let model = MapReduceModel::new("d", "d");
+    let templates = PromptTemplates {
+        extraction_prompt: "no placeholders".to_string(),
+        consolidation_prompt: "{query} {content}".to_string(),
+    };
+    assert!(LlmCondenser::with_prompts(&model, templates, "q", 0.1, 4096).is_err());
 }

@@ -54,6 +54,16 @@ from bmlib.quality.extractors import (
     extract_study_type,
 )
 from bmlib.quality.manager import QualityManager
+from bmlib.quality.pico_agent import PICO_PARTS, PicoAgent, verify_quotes
+from bmlib.quality.pico_models import (
+    PicoCitation,
+    PicoError,
+    PicoErrorKind,
+    PicoExtraction,
+    PicoPart,
+    PicoPartState,
+    PicoSuitability,
+)
 from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
 
 __all__ = [
@@ -84,4 +94,15 @@ __all__ = [
     "DimensionScore",
     "extract_sample_size_dimension",
     "extract_study_type",
+    # The PICO agent
+    "PICO_PARTS",
+    "PicoAgent",
+    "PicoCitation",
+    "PicoError",
+    "PicoErrorKind",
+    "PicoExtraction",
+    "PicoPart",
+    "PicoPartState",
+    "PicoSuitability",
+    "verify_quotes",
 ]

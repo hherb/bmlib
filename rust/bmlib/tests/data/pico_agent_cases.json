@@ -1,0 +1,423 @@
+[
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "all_verified"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"Mortality\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"all-cause mortality at five years\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "one_part_unverified"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"Adults aged 40-65\", \"older people in nursing homes were studied\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "found_and_lost_in_one_part"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"None\", \"reported\": false, \"confidence\": 0.1, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "not_reported_with_quotes"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": \"metformin\"}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "quotes_bare_string"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40-65 were enrolled\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"given metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "𝛼-blockers 🙂: adults aged 40-65 were enrolled and given metformin.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "astral_before_quote"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"No comparison group: single-arm\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"This single-arm study had no control group\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "This single-arm study had no control group. Adults aged 40-65 took metformin.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "single_arm_comparison_reported"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40\\u201365\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"study_type\": \"RCT\", \"sample_size\": null}",
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "missing_part_then_whole"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40\\u201365\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"study_type\": \"RCT\", \"sample_size\": null}",
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40\\u201365\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "missing_part_twice"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "this is not JSON"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "unparseable_three_times"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": "
+      ],
+      "stop_reasons": [
+        "max_tokens"
+      ],
+      "temperature": 0.0,
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "truncated_at_zero"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "\u001c ",
+      "title": "  "
+    },
+    "fn": "extract",
+    "name": "empty_input"
+  },
+  {
+    "args": {
+      "digest": "Middle-aged adults received a drug.",
+      "max_context_chars": 100,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Preamble sentence here. Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "condensed_quote_found_in_original"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"P\", \"reported\": true, \"confidence\": 0.3, \"quotes\": [\"Adults aged 40-65\"]}, \"intervention\": {\"description\": \"I\", \"reported\": true, \"confidence\": 1.7, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"C\", \"reported\": false, \"confidence\": 0.0, \"quotes\": []}, \"outcome\": {\"description\": \"O\", \"reported\": true, \"confidence\": null, \"quotes\": [\"HbA1c\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "overall_confidence_mean"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults\", \"reported\": \"yes\", \"confidence\": true, \"quotes\": [3, \"  \", \"Adults aged 40-65\", \"adults AGED 40-65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": 7, \"sample_size\": \"N=120\"}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "odd_values_inside_a_reply"
+  },
+  {
+    "args": {
+      "replies": [
+        "{\"is_intervention_study\": true, \"has_comparison\": true, \"is_suitable\": true, \"confidence\": 0.9, \"rationale\": \"An RCT.\", \"study_type\": \"randomized controlled trial\"}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "suitability",
+    "name": "suitable_rct"
+  },
+  {
+    "args": {
+      "replies": [
+        "{\"is_intervention_study\": false, \"has_comparison\": false, \"is_suitable\": false, \"confidence\": 0.95, \"rationale\": \"A systematic review.\", \"study_type\": \"systematic review\"}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "suitability",
+    "name": "unsuitable_review"
+  },
+  {
+    "args": {
+      "replies": [
+        "{\"is_suitable\": true, \"is_intervention_study\": \"yes\", \"has_comparison\": 1, \"confidence\": \"high\", \"rationale\": null, \"study_type\": 3}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "suitability",
+    "name": "suitability_wrong_types"
+  },
+  {
+    "args": {
+      "replies": [
+        "{\"is_suitable\": \"yes\"}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "suitability",
+    "name": "suitability_is_suitable_not_bool"
+  },
+  {
+    "args": {
+      "digest": "A digest.",
+      "digest_status": "partial",
+      "max_context_chars": 100,
+      "replies": [
+        "{\"is_suitable\": true}"
+      ],
+      "text": "Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. Long abstract sentence. ",
+      "title": "A trial"
+    },
+    "fn": "suitability",
+    "name": "suitability_condensed_partial"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "\n \u001c Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.\n",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "leading_whitespace_offsets"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40–65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "   ",
+      "title": "A trial of metformin"
+    },
+    "fn": "extract",
+    "name": "blank_text_with_title"
+  },
+  {
+    "args": {
+      "min_similarity": 0.8,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults between 40 and 65 were randomised to metformin\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "fuzzy_quote_found_below_threshold"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults between 40 and 65 were randomised to metformin\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "fuzzy_quote_lost_above_threshold"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "[1, 2]"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "array_reply"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults\", \"reported\": true, \"confidence\": 0.9, \"quotes\": null}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9}, \"comparison\": {\"description\": \"Placebo\", \"confidence\": 0.8, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.7, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": null, \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "null_absent_quotes_and_absent_reported"
+  },
+  {
+    "args": {
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40-65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": 3, \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "description_not_text_twice"
+  },
+  {
+    "args": {
+      "digest": "",
+      "digest_status": "failed",
+      "max_context_chars": 40,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40-65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "condensation_run_failed"
+  },
+  {
+    "args": {
+      "digest": " \u001c\n\u001f ",
+      "max_context_chars": 40,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40-65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "condensation_digest_blank"
+  },
+  {
+    "args": {
+      "digest": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "digest_status": "truncated",
+      "max_context_chars": 40,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40-65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "condensation_digest_oversized"
+  },
+  {
+    "args": {
+      "digest": "Adults 40-65; metformin; placebo.",
+      "digest_status": "partial",
+      "max_context_chars": 40,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Adults aged 40 to 65\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"adults aged 40-65\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "condensed_extraction_partial_note"
+  },
+  {
+    "args": {
+      "max_context_chars": 81,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Older women\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"\\u00c4ltere Patientinnen (\\u2265 65 Jahre)\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"Metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"Placebo\"]}, \"outcome\": {\"description\": \"Unclear\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"12 Wochen\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Ältere Patientinnen (≥ 65 Jahre) erhielten Metformin oder Placebo über 12 Wochen.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "non_ascii_at_the_budget_sent_whole"
+  },
+  {
+    "args": {
+      "digest": "Ältere Patientinnen erhielten Metformin.",
+      "max_context_chars": 80,
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"population\": {\"description\": \"Older women\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"\\u00c4ltere Patientinnen (\\u2265 65 Jahre)\"]}, \"intervention\": {\"description\": \"Metformin\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"metformin\"]}, \"comparison\": {\"description\": \"Placebo\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"placebo\"]}, \"outcome\": {\"description\": \"HbA1c\", \"reported\": true, \"confidence\": 0.9, \"quotes\": [\"HbA1c was measured\"]}, \"study_type\": \"RCT\", \"sample_size\": null}"
+      ],
+      "text": "Ältere Patientinnen (≥ 65 Jahre) erhielten Metformin oder Placebo über 12 Wochen.",
+      "title": "A trial"
+    },
+    "fn": "extract",
+    "name": "non_ascii_condensed"
+  },
+  {
+    "args": {},
+    "fn": "prompts",
+    "name": "prompts"
+  }
+]

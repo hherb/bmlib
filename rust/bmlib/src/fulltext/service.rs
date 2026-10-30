@@ -98,7 +98,7 @@ use crate::fulltext::models::{
     JATSBodySection, JATSFundingAward, JATSReferenceInfo,
 };
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
-use crate::pyvalue::{python_repr, python_str, truthy};
+use crate::pyvalue::{python_repr, python_str, python_strip, truthy};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -439,12 +439,6 @@ pub fn entry_is_free(entry: &Map<String, Value>) -> bool {
             _ => false,
         },
     }
-}
-
-/// Python's `str.strip()`: whitespace by `str.isspace`, which unlike
-/// `char::is_whitespace` also holds U+001C-U+001F (PR #499's review).
-fn python_strip(text: &str) -> &str {
-    text.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
 }
 
 /// What the Europe PMC search found: `(pmc_id, pdf_render_url, hit_doi)`.

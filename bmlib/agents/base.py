@@ -60,6 +60,33 @@ logger = logging.getLogger(__name__)
 _TRUNCATION_STOP_REASONS = ("max_tokens", "length")
 
 
+class ChatJsonError(ValueError):
+    """Why :meth:`BaseAgent.chat_json` gave up.
+
+    A ``ValueError``, as every failure of that method always was, so existing
+    ``except ValueError`` handlers are untouched.  The subclasses name the
+    cause so a caller acts on a type rather than on message wording — the
+    variants of the Rust port's ``ChatJsonError``, less ``Transport``: a
+    provider's own exception still propagates as raised.
+    """
+
+
+class ChatJsonTruncatedError(ChatJsonError):
+    """The answer hit the output ceiling; raise ``max_tokens``."""
+
+
+class ChatJsonWrongShapeError(ChatJsonError):
+    """The answer parsed, but not as the JSON object ``require_dict`` asked for."""
+
+
+class ChatJsonEmptyError(ChatJsonError):
+    """The model returned nothing."""
+
+
+class ChatJsonUnparseableError(ChatJsonError):
+    """The answer did not parse as JSON."""
+
+
 class BaseAgent:
     """Base class for LLM-powered agents.
 
@@ -231,11 +258,17 @@ class BaseAgent:
             and the model answered with a top-level array.
 
         Raises:
-            ValueError: On truncation, on a wrong shape under
-                *require_dict*, or after all retries are exhausted.
+            ChatJsonError: A ``ValueError`` subclass naming the cause —
+                :class:`ChatJsonTruncatedError`, :class:`ChatJsonWrongShapeError`,
+                :class:`ChatJsonEmptyError` or :class:`ChatJsonUnparseableError`.  An
+                immediate raise (truncation or a wrong shape at temperature 0)
+                names its own cause; one after the retries are spent names the
+                last attempt's.
         """
         context = f" for {retry_context}" if retry_context else ""
         last_error: str | None = None
+        # The class the final raise takes: the last attempt's cause.
+        last_cls: type[ChatJsonError] = ChatJsonUnparseableError
         effective_temperature = temperature if temperature is not None else self.temperature
 
         def reject_shape(parsed: dict | list, attempt: int) -> str:
@@ -260,7 +293,7 @@ class BaseAgent:
             if effective_temperature == 0.0:
                 # Greedy sampling returns the same array from the same
                 # messages, exactly as it reproduces a truncation.
-                raise ValueError(message) from None
+                raise ChatJsonWrongShapeError(message) from None
             return message
 
         for attempt in range(max_retries):
@@ -297,6 +330,7 @@ class BaseAgent:
                         # never closed, and is the truncation below (#300).
                         return parsed
                     last_error = reject_shape(parsed, attempt)
+                    last_cls = ChatJsonWrongShapeError
                     continue
                 budget = max_tokens if max_tokens is not None else self.max_tokens
                 truncated = (
@@ -314,14 +348,16 @@ class BaseAgent:
                 if effective_temperature == 0.0:
                     # Greedy sampling reproduces the identical truncation;
                     # retrying only pays for it again.
-                    raise ValueError(truncated) from None
+                    raise ChatJsonTruncatedError(truncated) from None
                 # A retry at temperature > 0 may sample a shorter completion
                 # that fits.
                 last_error = truncated
+                last_cls = ChatJsonTruncatedError
                 continue
 
             if not content:
                 last_error = "empty response from model"
+                last_cls = ChatJsonEmptyError
                 logger.warning(
                     "LLM returned empty response (attempt %d/%d%s)",
                     attempt + 1,
@@ -334,6 +370,7 @@ class BaseAgent:
                 parsed = self.parse_json(content)
             except ValueError:
                 last_error = "unparseable response"
+                last_cls = ChatJsonUnparseableError
                 logger.error(
                     "LLM returned unparseable response (attempt %d/%d%s), full response: %s",
                     attempt + 1,
@@ -345,11 +382,12 @@ class BaseAgent:
 
             if require_dict and not isinstance(parsed, dict):
                 last_error = reject_shape(parsed, attempt)
+                last_cls = ChatJsonWrongShapeError
                 continue
 
             return parsed
 
-        raise ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")
+        raise last_cls(f"Failed after {max_retries} attempts{context}: {last_error}")
 
     # --- Performance metrics ---
 

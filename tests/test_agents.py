@@ -23,7 +23,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.agents.base import BaseAgent
+from bmlib.agents.base import (
+    BaseAgent,
+    ChatJsonEmptyError,
+    ChatJsonError,
+    ChatJsonTruncatedError,
+    ChatJsonUnparseableError,
+    ChatJsonWrongShapeError,
+)
 from bmlib.agents.metrics import PerformanceMetrics
 from bmlib.llm.data_types import BatchEmbeddingResponse, EmbeddingResponse, LLMResponse
 
@@ -167,6 +174,95 @@ def _make_response(content: str) -> LLMResponse:
 def _make_agent() -> BaseAgent:
     mock_llm = MagicMock()
     return BaseAgent(llm=mock_llm, model="test:model")
+
+
+def _truncated(content: str) -> LLMResponse:
+    return LLMResponse(
+        content=content, model="test", input_tokens=0, output_tokens=0, stop_reason="max_tokens"
+    )
+
+
+@patch("bmlib.agents.base.time.sleep")
+class TestChatJsonSaysWhy:
+    """Each way ``chat_json`` gives up is its own ``ValueError`` subclass, so a
+    caller can tell a truncation from an unparseable answer without reading
+    the message."""
+
+    def test_truncation_at_temperature_zero_is_truncated(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _truncated('{"a": ')
+        with pytest.raises(ChatJsonTruncatedError, match="raise max_tokens"):
+            agent.chat_json([agent.user_msg("x")], temperature=0.0)
+
+    def test_retried_truncation_ends_truncated(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _truncated('{"a": ')
+        with pytest.raises(ChatJsonTruncatedError, match="Failed after 3 attempts"):
+            agent.chat_json([agent.user_msg("x")], temperature=0.5)
+
+    def test_wrong_shape_is_wrong_shape(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response("[1, 2]")
+        with pytest.raises(ChatJsonWrongShapeError, match="expected a JSON object"):
+            agent.chat_json([agent.user_msg("x")], require_dict=True, temperature=0.0)
+
+    def test_three_empty_replies_are_empty(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response("   ")
+        with pytest.raises(ChatJsonEmptyError, match="empty response from model"):
+            agent.chat_json([agent.user_msg("x")])
+
+    def test_three_unparseable_replies_are_unparseable(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response("not json at all")
+        with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
+            agent.chat_json([agent.user_msg("x")])
+
+    def test_the_last_failure_names_the_class(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response(""),
+            _make_response("not json"),
+            _make_response(""),
+        ]
+        with pytest.raises(ChatJsonEmptyError):
+            agent.chat_json([agent.user_msg("x")])
+
+    def test_a_retried_wrong_shape_ends_wrong_shape(self, _sleep):
+        """At temperature > 0 a wrong shape is retried, and the class names the
+        last attempt's cause, not the default."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response("[1, 2]")
+        with pytest.raises(ChatJsonWrongShapeError, match="Failed after 3 attempts"):
+            agent.chat_json([agent.user_msg("x")], require_dict=True, temperature=0.5)
+
+    def test_unparseable_after_another_cause_ends_unparseable(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response(""),
+            _make_response(""),
+            _make_response("not json"),
+        ]
+        with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
+            agent.chat_json([agent.user_msg("x")])
+
+    def test_a_truncated_complete_reply_of_the_wrong_shape_is_wrong_shape(self, _sleep):
+        """Hitting the ceiling with complete JSON is no truncation; an array
+        there is the shape failure it is."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _truncated("[1, 2]")
+        with pytest.raises(ChatJsonWrongShapeError, match="expected a JSON object"):
+            agent.chat_json([agent.user_msg("x")], require_dict=True, temperature=0.5)
+
+    def test_every_class_is_still_a_value_error(self, _sleep):
+        for cls in (
+            ChatJsonTruncatedError,
+            ChatJsonWrongShapeError,
+            ChatJsonEmptyError,
+            ChatJsonUnparseableError,
+        ):
+            assert issubclass(cls, ChatJsonError)
+            assert issubclass(cls, ValueError)
 
 
 class TestChatJson:

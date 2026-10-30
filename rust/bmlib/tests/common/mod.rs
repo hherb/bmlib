@@ -34,12 +34,18 @@
 pub mod oracle;
 pub mod pg_sim;
 pub mod pubmed_sim;
+pub mod scripted_chat;
 pub mod sink;
 
+// The two backends need the `sqlite` feature; the scripted chat does not, and
+// the quality tests that use it run under `--no-default-features` too.
+#[cfg(feature = "sqlite")]
 use bmlib::db::{open_memory, Db};
+#[cfg(feature = "sqlite")]
 use pg_sim::PgSim;
 
 /// Run `body` against a real SQLite connection.
+#[cfg(feature = "sqlite")]
 pub fn on_sqlite(body: impl FnOnce(&mut dyn Db)) {
     let mut conn = open_memory().expect("open in-memory sqlite");
     body(&mut conn);
@@ -49,6 +55,7 @@ pub fn on_sqlite(body: impl FnOnce(&mut dyn Db)) {
 ///
 /// Not a PostgreSQL backend — see [`pg_sim`] for what it does and does not
 /// simulate.
+#[cfg(feature = "sqlite")]
 pub fn on_pg_semantics(body: impl FnOnce(&mut dyn Db)) {
     let mut conn = PgSim::new(open_memory().expect("open in-memory sqlite"));
     body(&mut conn);

@@ -55,7 +55,7 @@
 use crate::context_processor::llm_processor::{ContextModel, LlmChunkProcessor, PromptTemplates};
 use crate::context_processor::{ProcessingConfig, ProcessingResult, ProcessingStatus};
 use crate::llm::LLMMessage;
-use crate::pyvalue::{python_str, truthy};
+use crate::pyvalue::{python_str, python_strip, truthy};
 use crate::quality::agent_chat::{format_template, JsonChat};
 use crate::quality::cochrane_models::{
     CochraneInterventions, CochraneNotes, CochraneOutcomes, CochraneParticipants,
@@ -345,35 +345,37 @@ pub fn render_condense_consolidation(query: &str, content: &str) -> String {
 
 /// Reduces oversized text to an evidence digest that fits one context.
 ///
-/// The Python's `_condense` runs `LLMChunkProcessor` with the assessor as its
-/// agent. [`LlmCondenser`] below is that class, over the two rendered prompts
-/// above and the query [`CONDENSE_QUERY`] states, and it is what a caller wants
-/// unless they have their own map-reduce.
+/// Python's `condense_text` runs `LLMChunkProcessor` with the agent as its
+/// agent. [`LlmCondenser`] below is that class — over the Cochrane prompts
+/// and [`CONDENSE_QUERY`] by default, or another agent's through
+/// [`LlmCondenser::with_prompts`] — and it is what a caller wants unless they
+/// have their own map-reduce.
 ///
-/// A caller *may* supply one: [`CochraneAssessor`] applies the Python's checks
-/// to whatever a condenser returns — a failed run, an empty digest and a digest
-/// that still does not fit are all refused there — so a different map-reduce is
-/// judged by the same rules and sends the same bytes if it uses these
-/// prompts.
+/// A caller *may* supply one: every agent applies the Python's checks to
+/// whatever a condenser returns, in `condense_checked` — a failed run, an
+/// empty digest and a digest that still does not fit are all refused there —
+/// so a different map-reduce is judged by the same rules and sends the same
+/// bytes if it uses these prompts.
 pub trait Condenser {
-    /// Condense `text` for the study named by `label`.
+    /// Condense `text` for the paper named by `label`.
     ///
-    /// `config` is the assessor's own [`ProcessingConfig`], so an implementation
-    /// batches to the same budget the assessor measures the digest against.
+    /// `config` is the calling agent's own [`ProcessingConfig`], so an
+    /// implementation batches to the same budget the agent measures the digest
+    /// against.
     fn condense(&mut self, text: &str, label: &str, config: &ProcessingConfig) -> ProcessingResult;
 }
 
 /// The map-reduce the [`Condenser`] seam exists for, for real.
 ///
-/// Python's `_condense` runs `LLMChunkProcessor` with the assessor itself as the
-/// agent. This is that half: the ported harness
+/// Python's `condense_text` runs `LLMChunkProcessor` with the agent itself as
+/// the agent. This is that half: the ported harness
 /// ([`LlmChunkProcessor`])
-/// driven by a [`ContextModel`], over the two prompts
-/// [`render_condense_extraction`] renders and the query [`CONDENSE_QUERY`]
-/// states. [`CochraneAssessor`] keeps the *rules* it applies to the result —
-/// a failed run, an empty digest and an oversized digest are refused there, not
-/// here — so a caller who supplies their own `Condenser` is judged by the same
-/// rules as this one.
+/// driven by a [`ContextModel`], over two prompts and a query — the Cochrane
+/// ones [`render_condense_extraction`] renders and [`CONDENSE_QUERY`] states,
+/// or another agent's. The *rules* applied to the result live in
+/// `condense_checked` — a failed run, an empty digest and an oversized digest
+/// are refused there, not here — so a caller who supplies their own
+/// `Condenser` is judged by the same rules as this one.
 ///
 /// **Until this existed the seam had no production implementation at all**: the
 /// only `Condenser` in the crate was a test stub, so "the condensation
@@ -382,6 +384,8 @@ pub trait Condenser {
 /// and tested; what was absent was the three lines that bind them.
 pub struct LlmCondenser<'a> {
     model: &'a dyn ContextModel,
+    templates: PromptTemplates,
+    query: &'static str,
     temperature: f64,
     max_tokens: i64,
 }
@@ -400,9 +404,35 @@ impl<'a> LlmCondenser<'a> {
         temperature: f64,
         max_tokens: i64,
     ) -> Result<Self, String> {
-        condense_templates().validate()?;
+        Self::with_prompts(
+            model,
+            condense_templates(),
+            CONDENSE_QUERY,
+            temperature,
+            max_tokens,
+        )
+    }
+
+    /// Condense through `model` over another agent's prompts and query.
+    ///
+    /// The PICO agent's case: the same map-reduce, gathering different
+    /// evidence. [`LlmCondenser::new`] is this over the Cochrane prompts.
+    ///
+    /// # Errors
+    ///
+    /// Either template lacking a placeholder, as for [`LlmCondenser::new`].
+    pub fn with_prompts(
+        model: &'a dyn ContextModel,
+        templates: PromptTemplates,
+        query: &'static str,
+        temperature: f64,
+        max_tokens: i64,
+    ) -> Result<Self, String> {
+        templates.validate()?;
         Ok(LlmCondenser {
             model,
+            templates,
+            query,
             temperature,
             max_tokens,
         })
@@ -428,17 +458,16 @@ impl Condenser for LlmCondenser<'_> {
         // flag at its default, so every level is a plain completion.
         match LlmChunkProcessor::new(
             self.model,
-            condense_templates(),
+            self.templates.clone(),
             config.clone(),
             false,
             self.temperature,
             self.max_tokens,
         ) {
-            Ok(processor) => processor.process(text, CONDENSE_QUERY),
-            // The configuration reached `CochraneAssessor::new` already
-            // validated, so this is unreachable for the assessor's own path —
-            // but a `Condenser` is public and a caller can hand it any
-            // configuration, so the refusal is a result rather than a panic.
+            Ok(processor) => processor.process(text, self.query),
+            // Neither agent's `with_condense_config` validates, and a
+            // `Condenser` is public, so a caller can hand this any
+            // configuration: the refusal is a result rather than a panic.
             Err(error) => ProcessingResult::failed(error),
         }
     }
@@ -824,43 +853,86 @@ impl<'a> CochraneAssessor<'a> {
         label: &str,
     ) -> Option<(String, Vec<String>, ProcessingStatus)> {
         let condenser = self.condenser.as_mut()?;
-        let result = condenser.condense(text, label, &self.condense_config);
-
-        if result.status == ProcessingStatus::Failed {
-            return None;
-        }
-
-        let digest = result.final_result.content.trim().to_string();
-        if digest.is_empty() {
-            // The Cochrane prompt over an empty string returns a confident
-            // nine-domain assessment of no paper at all.
-            return None;
-        }
-
-        // `result.status` says how the harness's own run ended — `truncated`
-        // means the recursion ceiling was hit, `partial` means a batch failed —
-        // it does not say whether the digest that came out the other end
-        // actually fits. In particular `truncated` names the recursion ceiling,
-        // not the content size: the harness returns whatever the last level held
-        // once `max_recursion_depth` is reached, oversized or not. So this checks
-        // the same thing `context_processor` checks about itself — the measured
-        // length of what is about to be sent — rather than trusting the status to
-        // imply it; a status check would not have caught a digest that overflows
-        // the budget it was supposed to fit.
-        if digest.chars().count() > self.condense_config.max_context_chars {
-            return None;
-        }
-
-        let mut notes: Vec<String> = Vec::new();
-        if result.status != ProcessingStatus::Completed {
-            notes.push(format!(
-                "Source text was condensed before assessment; the condensation finished with \
-                 status {}, so the digest may be incomplete.",
-                result.status.as_str()
-            ));
-        }
-        Some((digest, notes, result.status))
+        condense_checked(
+            &mut **condenser,
+            text,
+            label,
+            &self.condense_config,
+            "assessment",
+        )
+        .ok()
     }
+}
+
+/// Run `condenser` and apply the rules every agent applies to its digest.
+///
+/// A failed run (a provider failure during the map-reduce included), an empty
+/// digest and a digest that still exceeds `config.max_context_chars` are all
+/// refused, the `Err` saying which, worded as Python's `CondensationRefused`.
+/// A run that did not complete cleanly carries a note naming `stage` (e.g.
+/// `"assessment"`, `"extraction"`, `"the suitability check"`), so each
+/// agent's stored note keeps its wording. Python's
+/// `bmlib.quality._condense.condense_text`.
+///
+/// # Errors
+///
+/// The reason the digest was refused.
+pub(crate) fn condense_checked(
+    condenser: &mut dyn Condenser,
+    text: &str,
+    label: &str,
+    config: &ProcessingConfig,
+    stage: &str,
+) -> Result<(String, Vec<String>, ProcessingStatus), String> {
+    let result = condenser.condense(text, label, config);
+
+    if result.status == ProcessingStatus::Failed {
+        // Python interpolates the `Optional[str]`, so an absent message reads
+        // `None` there too.
+        return Err(format!(
+            "the map-reduce failed: {}",
+            result.error_message.as_deref().unwrap_or("None")
+        ));
+    }
+
+    // Python's `str.strip()`, which also strips U+001C-U+001F; `str::trim`
+    // does not.
+    let digest = python_strip(&result.final_result.content).to_string();
+    if digest.is_empty() {
+        // A prompt over an empty string returns a confident judgement of no
+        // paper at all.
+        return Err("the map-reduce produced an empty digest".to_string());
+    }
+
+    // `result.status` says how the harness's own run ended — `truncated`
+    // means the recursion ceiling was hit, `partial` means a batch failed —
+    // it does not say whether the digest that came out the other end
+    // actually fits. In particular `truncated` names the recursion ceiling,
+    // not the content size: the harness returns whatever the last level held
+    // once `max_recursion_depth` is reached, oversized or not. So this checks
+    // the same thing `context_processor` checks about itself — the measured
+    // length of what is about to be sent — rather than trusting the status to
+    // imply it; a status check would not have caught a digest that overflows
+    // the budget it was supposed to fit.
+    let digest_length = digest.chars().count();
+    if digest_length > config.max_context_chars {
+        return Err(format!(
+            "the digest is {digest_length} characters, over the {}-character budget \
+             (status: {})",
+            config.max_context_chars,
+            result.status.as_str()
+        ));
+    }
+
+    let mut notes: Vec<String> = Vec::new();
+    if result.status != ProcessingStatus::Completed {
+        notes.push(format!(
+            "Source text was condensed before {stage}; the condensation finished with \
+             status {}, so the digest may be incomplete.",
+            result.status.as_str()
+        ));
+    }
+    Ok((digest, notes, result.status))
 }
 
 /// Pick the Cochrane study label, without guessing a surname.
@@ -1023,7 +1095,7 @@ fn parse_risk_of_bias(rob_data: &Value) -> CochraneRiskOfBias {
 /// A refused value that was present is logged at WARNING, as Python logs it:
 /// an unstated confidence is kept under any `min_confidence` bar, so the line is
 /// the only trace that the model answered one.
-fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
+pub(crate) fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
     let value = value.filter(|value| !value.is_null())?;
     let Some(confidence) = json_fields::as_float(Some(value)) else {
         warn(&format!(

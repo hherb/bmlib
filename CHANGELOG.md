@@ -7,6 +7,65 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The PICO agent, with verified quotes** (StudyAnalyzer phase 1, item 7).
+  `bmlib.quality.PicoAgent` (Rust: `bmlib::quality::PicoAgent`) ports
+  bmlibrarian's PICO agent as two independent calls: `check_suitability()`
+  (is this an intervention study with a PICO?) and `extract()` (population,
+  intervention, comparison, outcome, study type, sample size). **Every part
+  carries the passages that back it**: the model copies quotes, each is
+  located by `find_passage` in the caller's text, and the paper's own span is
+  kept. A part none of whose quotes is found is `UNVERIFIED`, its description
+  kept for a reader to judge under an *Unsure* label (the maintainer's
+  decision); a part the paper does not state is `NOT_REPORTED` and needs no
+  quote; a single-arm study's comparison is reported, with its quote.
+  `min_similarity` is required, with no default (StudyAnalyzer measures it).
+  Unlike upstream, **nothing is discarded for low confidence** (upstream cut
+  at 0.5), the overall confidence is bmlib's mean over the reported parts
+  rather than the model's, and **nothing is truncated**: the suitability
+  check no longer cuts at 3,000 characters, and oversized text is condensed
+  by the Cochrane assessor's map-reduce over verbatim-quote prompts, with
+  quotes still verified against the original. A failure raises `PicoError`
+  (Rust: `Err(PicoError)`) naming its cause — empty input, request failed,
+  truncated, unusable reply, condensation failed — so an app retries an
+  outage and suggests another model for unusable replies; an outage during
+  the condensation of a long text is `CONDENSATION_FAILED`, whose message
+  names the failed map-reduce. A reply missing a part is asked for once more.
+  A stored result is read back exactly or refused: `from_dict()` raises
+  `ValueError` naming the field for anything `to_dict()` did not write
+  (`"is_suitable": "no"` used to read as true), and `PicoPart` is frozen and
+  `VERIFIED` exactly when it carries a citation. Held to Python by a new oracle that runs
+  **whole agent runs** over scripted replies (`rust/oracle/dump_pico_agent.py`,
+  34 cases), comparing results, the messages sent and every prompt constant. It caught one
+  divergence: Python's `sum()` compensates its rounding on 3.12+ and not on
+  3.11, so the mean is a plain left-to-right sum in both languages. Upstream's
+  batch loop, exports, statistics and summary formatter are not ported (app
+  concerns). Design: `docs/superpowers/specs/2026-10-30-pico-agent-design.md`.
+- **`chat_json()` says which failure it was.** `BaseAgent.chat_json()` raises
+  a `ChatJsonError` subclass — `ChatJsonTruncatedError`,
+  `ChatJsonWrongShapeError`, `ChatJsonEmptyError`, `ChatJsonUnparseableError`
+  — each still a `ValueError`, so every existing handler is untouched; the
+  final raise after the retries names the last attempt's cause. The messages
+  are unchanged. Rust's `ChatJsonError` already had these variants.
+- **Every package's `__all__` resolves**, checked by
+  `tests/test_package_exports.py` over every `bmlib` package, after this
+  branch's re-sorted `bmlib.quality.__all__` briefly turned two comments into
+  members and broke `from bmlib.quality import *`.
+- **`_json_fields.as_float` refuses an integer past the double range.**
+  Python's `json` reads an integer far past it (up to the 4,300-digit
+  conversion limit), and `float()` of one past
+  1.8e308 raises `OverflowError`, which escaped every quality reader (the
+  Cochrane assessor's confidence too); it now reads as unstated, as infinity
+  already did.
+- **Condensation takes any prompts.** `bmlib.quality._condense.condense_text`
+  (private) is the Cochrane assessor's condensation with its prompts, query
+  and note wording as arguments, and Rust's `LlmCondenser::with_prompts`
+  likewise; the Cochrane assessor's stored note is unchanged. A refused digest
+  raises the private `CondensationRefusedError` naming why (the run failed,
+  the digest was empty, or it is over the budget), and the line it logs is a
+  WARNING where the Cochrane assessor's was an ERROR, none of the three being
+  bmlib's defect. Rust's refusal strips the digest as Python's `str.strip()`
+  does: `str::trim` kept U+001C–U+001F, so a digest of those alone reached the
+  model in Rust and was refused in Python.
 - **Streamed chat** (StudyAnalyzer phase 1, item 6). `chat_stream(…,
   on_delta)` beside `chat()` on `LLMClient` (Python: the Anthropic,
   OpenAI-compatible and Ollama providers; a third-party provider's
@@ -240,6 +299,15 @@ All notable changes to bmlib are documented here. The format is based on
   bumped: the renderer is untouched.
 
 ### Changed
+- **A condensation pass cut at `max_tokens` fails its batch.**
+  `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or
+  reduce reply that hit the output ceiling was kept as a whole extraction and
+  the run reported `completed` with passages lost — likeliest for the PICO
+  agent, whose map prompt asks for passages verbatim, and reachable by the
+  Cochrane assessor too. Such a batch now fails (`max_tokens` or `length`, as
+  `chat_json` reads them), so the run is `partial` with its note, or failed
+  and refused. Rust's `ContextModel::complete` returns only the text, so its
+  documented contract now says an implementation returns `Err` for one.
 - **Breaking: Rust's Ollama uses `/api/chat` and Python's `anthropic` floor is
   0.41** (item 11). `ChatRequest` has a new field `num_ctx`, so a struct
   literal without `..Default::default()` no longer compiles; `Protocol` has a

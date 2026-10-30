@@ -41,8 +41,9 @@ from collections.abc import Callable
 from typing import Any
 
 from bmlib.agents.base import BaseAgent
-from bmlib.context_processor import LLMChunkProcessor, ProcessingConfig, ProcessingStatus
+from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
+from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_UNCLEAR,
@@ -567,10 +568,8 @@ class CochraneAssessor(BaseAgent):
     def _condense(self, text: str, label: str) -> tuple[str, list[str], ProcessingStatus] | None:
         """Reduce oversized text to an evidence digest that fits one context.
 
-        Runs :class:`~bmlib.context_processor.LLMChunkProcessor` with this
-        agent, so token accounting, retries and JSON repair are the ones the
-        rest of bmlib uses.  The judgement is made once, afterwards, over the
-        digest — no per-chunk judgements are made and none are merged.
+        :func:`bmlib.quality._condense.condense_text` over the Cochrane
+        prompts; see it for the refusals.
 
         Args:
             text: The oversized text.
@@ -581,55 +580,21 @@ class CochraneAssessor(BaseAgent):
             produced nothing to judge, or produced a digest that still does
             not fit ``condense_config.max_context_chars``.
         """
-        processor = LLMChunkProcessor(
-            agent=self,
-            extraction_prompt=CONDENSE_EXTRACTION_PROMPT,
-            consolidation_prompt=CONDENSE_CONSOLIDATION_PROMPT,
-            config=self.condense_config,
-        )
-        result = processor.process([text], query=CONDENSE_QUERY)
-
-        if result.status is ProcessingStatus.FAILED:
-            logger.error("Could not condense the text of %s: %s", label, result.error_message)
-            return None
-
-        digest = result.final_result.content.strip()
-        if not digest:
-            # The Cochrane prompt over an empty string returns a confident
-            # nine-domain assessment of no paper at all.
-            logger.error("Condensing the text of %s produced an empty digest", label)
-            return None
-
-        # ``result.status`` says how the harness's own run ended — TRUNCATED
-        # means the recursion ceiling was hit, PARTIAL means a batch failed —
-        # it does not say whether the digest that came out the other end
-        # actually fits.  In particular TRUNCATED names the recursion
-        # ceiling, not the content size: ``_merge_results()`` returns
-        # whatever the last level held once ``max_recursion_depth`` is
-        # reached, oversized or not.  So this checks the same thing
-        # ``context_processor`` checks about itself — the measured length of
-        # what is about to be sent — rather than trusting the status to
-        # imply it; a status check would not have caught a digest that
-        # overflows the budget it was supposed to fit.
-        if len(digest) > self.condense_config.max_context_chars:
-            logger.error(
-                "Condensing the text of %s produced a %d-char digest that still "
-                "exceeds the %d-char budget (status: %s); refusing to judge it",
+        try:
+            return condense_text(
+                self,
+                text,
                 label,
-                len(digest),
-                self.condense_config.max_context_chars,
-                result.status.value,
+                self.condense_config,
+                extraction_prompt=CONDENSE_EXTRACTION_PROMPT,
+                consolidation_prompt=CONDENSE_CONSOLIDATION_PROMPT,
+                query=CONDENSE_QUERY,
+                stage="assessment",
             )
+        except CondensationRefusedError:
+            # ``condense_text`` has logged the reason; this agent's contract
+            # is ``None``.
             return None
-
-        notes: list[str] = []
-        if result.status is not ProcessingStatus.COMPLETED:
-            notes.append(
-                f"Source text was condensed before assessment; the condensation "
-                f"finished with status {result.status.value}, so the digest may be "
-                f"incomplete."
-            )
-        return digest, notes, result.status
 
     # --- Parsing ---
 
@@ -699,7 +664,7 @@ class CochraneAssessor(BaseAgent):
         )
 
 
-def _clamped_confidence(value: object) -> float | None:
+def clamped_confidence(value: object) -> float | None:
     """Read the model's confidence, clamped to 0.0–1.0.
 
     A model reporting 1.4 would outrank every honest result and defeat
@@ -716,6 +681,11 @@ def _clamped_confidence(value: object) -> float | None:
         logger.warning("Model reported an unusable confidence %r; recording none", value)
         return None
     return min(1.0, max(0.0, confidence))
+
+
+#: The name the Cochrane reader and its tests have always used; the PICO agent
+#: imports the public ``clamped_confidence``.
+_clamped_confidence = clamped_confidence
 
 
 def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
