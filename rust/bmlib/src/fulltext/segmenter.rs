@@ -50,6 +50,131 @@ pub const TITLE_SIZE_RATIO: f64 = 1.5;
 /// paragraphs; the leading **within** a paragraph is smaller.
 pub const PARAGRAPH_GAP_RATIO: f64 = 1.5;
 
+/// Page furniture (#591): a line whose text, digits aside, recurs at one height
+/// on at least this share of the document's pages — and on at least
+/// [`FURNITURE_MIN_PAGES`] of them — is a running head, a footer, a page number
+/// or a licence stamp.
+///
+/// Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal PDFs): the
+/// furniture found sits from 0.35 to 1.0 of the pages (an odd/even running head
+/// at 0.43-0.46), content repeating at one height below 0.3 (list numbering,
+/// "Figure 2", table cells, at most 0.27), and the threshold moves the lines
+/// dropped by 2% between 0.3 and 0.6.
+pub const FURNITURE_PAGE_RATIO: f64 = 0.4;
+
+/// The fewest pages a line must recur on to be furniture, whatever the share.
+pub const FURNITURE_MIN_PAGES: usize = 3;
+
+/// How far apart, in points, two lines' tops may be and still be one height.
+pub const FURNITURE_Y_TOLERANCE: f64 = 2.0;
+
+/// A page number has at most this many digits.
+const PAGE_NUMBER_MAX_DIGITS: usize = 6;
+
+/// `text` with every run of ASCII digits replaced by `#`.
+fn mask_digits(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_run = false;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            if !in_run {
+                out.push('#');
+            }
+            in_run = true;
+        } else {
+            out.push(ch);
+            in_run = false;
+        }
+    }
+    out
+}
+
+/// A page number's value, if `text` is a bare number short enough to be one.
+fn bare_number(text: &str) -> Option<i64> {
+    if text.is_empty()
+        || text.len() > PAGE_NUMBER_MAX_DIGITS
+        || !text.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    text.parse().ok()
+}
+
+/// The indexes of `blocks` that are page furniture.
+///
+/// A line is furniture when its text with every run of ASCII digits replaced by
+/// `#` (so "Page 3 of 12" and "Page 4 of 12" agree) recurs on at least
+/// `max(FURNITURE_MIN_PAGES, ceil(FURNITURE_PAGE_RATIO * pages))` pages at one
+/// height: lines with the same masked text are taken in order of their `y`, a
+/// run of them whose tops lie within [`FURNITURE_Y_TOLERANCE`] of the previous
+/// one is one height, and every line in a run reaching that many pages is
+/// furniture. The pages are `max(page_num) + 1`. A run of bare numbers is
+/// furniture only if each number is its page's index plus one constant, which
+/// is what a page number is and a manuscript's line numbers and a table's
+/// values are not.
+#[must_use]
+pub fn page_furniture(blocks: &[TextBlock]) -> std::collections::BTreeSet<usize> {
+    let mut furniture = std::collections::BTreeSet::new();
+    let Some(last_page) = blocks.iter().map(|b| b.page_num).max() else {
+        return furniture;
+    };
+    let pages = (last_page + 1) as f64;
+    let needed = FURNITURE_MIN_PAGES.max((FURNITURE_PAGE_RATIO * pages).ceil() as usize);
+    let mut by_text: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for (i, block) in blocks.iter().enumerate() {
+        by_text.entry(mask_digits(&block.text)).or_default().push(i);
+    }
+    for mut members in by_text.into_values() {
+        members.sort_by(|&a, &b| blocks[a].y.total_cmp(&blocks[b].y).then(a.cmp(&b)));
+        let mut run: Vec<usize> = Vec::new();
+        for i in members {
+            if let Some(&previous) = run.last() {
+                if blocks[i].y - blocks[previous].y > FURNITURE_Y_TOLERANCE {
+                    furniture.extend(furniture_run(blocks, &run, needed));
+                    run.clear();
+                }
+            }
+            run.push(i);
+        }
+        furniture.extend(furniture_run(blocks, &run, needed));
+    }
+    furniture
+}
+
+/// `run` if it is furniture (see [`page_furniture`]), else nothing.
+fn furniture_run(blocks: &[TextBlock], run: &[usize], needed: usize) -> Vec<usize> {
+    let pages: std::collections::BTreeSet<i64> = run.iter().map(|&i| blocks[i].page_num).collect();
+    if pages.len() < needed {
+        return Vec::new();
+    }
+    let numbers: Vec<Option<i64>> = run.iter().map(|&i| bare_number(&blocks[i].text)).collect();
+    if numbers.iter().any(Option::is_some) {
+        let offsets: std::collections::BTreeSet<Option<i64>> = run
+            .iter()
+            .zip(&numbers)
+            .map(|(&i, n)| n.map(|n| n - blocks[i].page_num))
+            .collect();
+        // A non-number in the run is a second offset (`None`) beside the numbers'.
+        if offsets.len() != 1 {
+            return Vec::new();
+        }
+    }
+    run.to_vec()
+}
+
+/// `blocks` without their [`page_furniture`], in order.
+#[must_use]
+pub fn drop_page_furniture(blocks: &[TextBlock]) -> Vec<TextBlock> {
+    let furniture = page_furniture(blocks);
+    blocks
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !furniture.contains(i))
+        .map(|(_, b)| b.clone())
+        .collect()
+}
+
 /// Median font size of `blocks`, ignoring non-positive sizes.
 ///
 /// The **median, not the mean**, so headings and footnotes cannot drag the
@@ -489,7 +614,9 @@ impl SectionSegmenter {
     ///
     /// With no blocks, a document with no sections; with blocks but no detected
     /// headings, **one `UNKNOWN` section titled `"Full Text"`** at 0.5
-    /// confidence.
+    /// confidence. Page furniture ([`page_furniture`]) is set aside first, so a
+    /// running head or a page number is in no section and a paragraph a page
+    /// break interrupted reads on.
     #[must_use]
     pub fn segment_document(
         &self,
@@ -498,6 +625,8 @@ impl SectionSegmenter {
         metadata_title: Option<&str>,
         metadata: serde_json::Value,
     ) -> SegmentedDocument {
+        let kept = drop_page_furniture(blocks);
+        let blocks = kept.as_slice();
         let median = median_font_size(blocks);
         let markers = identify_section_markers(
             blocks,

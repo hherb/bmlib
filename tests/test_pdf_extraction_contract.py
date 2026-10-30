@@ -82,7 +82,11 @@ def test_the_contract_carries_the_shapes_it_is_for() -> None:
         ("Helvetica-Bold", True, False),
         ("Times-Italic", False, True),
     }
-    assert {b["page_num"] for b in CONTRACT["blocks"]} == {0, 1}
+    assert {b["page_num"] for b in CONTRACT["blocks"]} == {0, 1, 2}
+    # A running head and a page number on every page, set aside by the
+    # segmenter (#591), and the sentence the last page break interrupts.
+    assert sum(t == "Smith et al. A soft hyphen trial" for t in texts) == 3
+    assert [t for t in texts if t.isdigit()] == ["1", "2", "3"]
     # The five-span line, whose font only the superscript split makes italic.
     assert "Cultures of Escherichia coli were grown1 overnight." in texts
 
@@ -93,6 +97,8 @@ def test_the_segmented_blocks_are_the_expected_canonical_text() -> None:
     assert canonical.to_dict() == CONTRACT["canonical"]
     assert "prevalent" in canonical.text and "specific" in canonical.text
     assert "dose- response" in canonical.text and "­" not in canonical.text
+    assert "Smith et al." not in canonical.text
+    assert "The effect held across every site we visited." in canonical.text
 
 
 def test_the_generator_still_builds_the_pdf() -> None:

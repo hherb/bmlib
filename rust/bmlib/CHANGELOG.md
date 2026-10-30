@@ -9,6 +9,13 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — follows Python's page furniture (#591)
+`fulltext::segmenter::page_furniture` and `drop_page_furniture`, with
+`FURNITURE_PAGE_RATIO`, `FURNITURE_MIN_PAGES` and `FURNITURE_Y_TOLERANCE`;
+`segment_document` sets furniture aside first. `PDF_CANONICAL_VERSION` is 3.
+Over 231 PDFs' Python blocks the two segmenters give the same canonical text
+in every one.
+
 ### Changed — breaking: the `pdf` feature extracts with MuPDF (#590)
 `fulltext::pdfium_backend` (`PdfiumExtractor`, `PdfiumPdfExtractor`, the
 font-name guesses `font_name_is_bold`/`font_name_is_italic` and their

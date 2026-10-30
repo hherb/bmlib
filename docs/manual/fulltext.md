@@ -2321,6 +2321,38 @@ if methods is not None:
 print(document.to_markdown())
 ```
 
+### Page furniture *(unreleased)*
+
+Before anything else, `segment_document` sets aside **page furniture**
+(#591): running heads, footers, page numbers and licence stamps, which
+otherwise land inside the section content wherever a page breaks — splitting
+the paragraph that crosses the break, and putting the same boilerplate into a
+retrieval index once per page. `page_furniture(blocks)` returns the indexes
+it sets aside and `drop_page_furniture(blocks)` the rest, both in
+`bmlib.fulltext.segmenter` (not re-exported). A line is furniture when its
+text with every run of ASCII digits read as `#` ("Page 3 of 12" and "Page 4
+of 12" agree) recurs at one height — tops within `FURNITURE_Y_TOLERANCE`
+(2 pt) of each other — on at least `FURNITURE_PAGE_RATIO` (0.4) of the pages
+and on at least `FURNITURE_MIN_PAGES` (3) of them. A bare number counts only
+if it is its page's index plus a constant, so a page number is furniture and a
+manuscript's line numbers are not. With the furniture gone, a paragraph a page
+break interrupted reads on, the page-boundary gap being negative.
+
+The rule was measured over 231 PDFs (150 bioRxiv/medRxiv, 80 open-access
+journal PDFs reached through Unpaywall, one *J Popul Ther Clin Pharmacol*
+article): it sets aside 50,781 of 355,282 lines in 212 of them, 99.3% of them
+with no kept line beyond them on their page; the furniture found recurs on
+0.35 to 1.0 of a document's pages (an odd/even running head at 0.43–0.46),
+content repeating at one height on at most 0.27, and moving the threshold
+from 0.3 to 0.6 moves the lines set aside by 2%. Because the furniture no
+longer sits in the body, the **median font size** the heading and title rules
+compare against is the body's: in 7 of the 231 PDFs a body sentence the old
+median (dragged to 8 pt by bioRxiv's stamp) had promoted to a heading is
+prose again, and in 3 the font-size title fallback no longer clears 1.5× the
+median (the title stays in the front matter; pass the known title as
+`metadata["title"]`). A running head on fewer than three pages — an odd/even
+head in a document of five pages or fewer — is not caught.
+
 ### How sections are found
 
 A line is a candidate heading when its font size clears the document's
@@ -2591,7 +2623,8 @@ doc.converter_version                     # "jats-1"
   whose *Cited by* or *Similar articles* list is long enough can pass (#560).
 - **Versions**: `converter_version` is `"<format>-<n>"` from
   `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION`, `PLAIN_TEXT_VERSION`,
-  `PDF_CANONICAL_VERSION` (which moves with the segmenter too) and
+  `PDF_CANONICAL_VERSION` (which moves with the segmenter too: `"pdf-3"` sets
+  page furniture aside, *unreleased*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.

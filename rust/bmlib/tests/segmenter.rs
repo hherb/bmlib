@@ -23,9 +23,10 @@
 
 use bmlib::fulltext::models::{Section, SectionType, TextBlock};
 use bmlib::fulltext::segmenter::{
-    extract_title, is_potential_header, join_blocks, match_section_type, median_font_size,
-    SectionSegmenter, DEFAULT_FONT_SIZE, FALLBACK_CONFIDENCE, MAX_HEADING_CHARS,
-    PARTIAL_MATCH_CONFIDENCE, SECTION_PATTERNS,
+    drop_page_furniture, extract_title, is_potential_header, join_blocks, match_section_type,
+    median_font_size, page_furniture, SectionSegmenter, DEFAULT_FONT_SIZE, FALLBACK_CONFIDENCE,
+    FURNITURE_MIN_PAGES, FURNITURE_PAGE_RATIO, MAX_HEADING_CHARS, PARTIAL_MATCH_CONFIDENCE,
+    SECTION_PATTERNS,
 };
 use serde_json::{json, Value};
 
@@ -508,4 +509,162 @@ fn the_container_confidences_are_distinct() {
     // No blocks at all is no sections.
     let document = SectionSegmenter::default().segment_document(&[], "", None, json!({}));
     assert!(document.sections.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Page furniture (#591), the same rules Python's `TestPageFurniture` names
+// ---------------------------------------------------------------------------
+
+fn line(text: &str, page: i64, y: f64) -> TextBlock {
+    TextBlock {
+        text: text.to_string(),
+        page_num: page,
+        y,
+        ..base_block()
+    }
+}
+
+const BODY: [&str; 8] = [
+    "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+];
+
+/// `pages` pages of two body lines and a page number, the first `head_on` of
+/// them under a running head.
+fn paged(pages: i64, head_on: i64) -> Vec<TextBlock> {
+    let mut blocks = Vec::new();
+    for page in 0..pages {
+        if page < head_on {
+            blocks.push(line("Smith et al. A trial 2024", page, 30.0));
+        }
+        blocks.push(line(
+            &format!("{} reports", BODY[page as usize]),
+            page,
+            100.0,
+        ));
+        blocks.push(line(
+            &format!("{} replies", BODY[page as usize]),
+            page,
+            114.0,
+        ));
+        blocks.push(line(&(page + 101).to_string(), page, 760.0));
+    }
+    blocks
+}
+
+fn furniture_texts(blocks: &[TextBlock]) -> Vec<String> {
+    page_furniture(blocks)
+        .into_iter()
+        .map(|i| blocks[i].text.clone())
+        .collect()
+}
+
+#[test]
+fn a_running_head_and_a_page_number_are_furniture() {
+    let mut texts = furniture_texts(&paged(4, 4));
+    texts.sort();
+    assert_eq!(
+        texts,
+        [
+            "101",
+            "102",
+            "103",
+            "104",
+            "Smith et al. A trial 2024",
+            "Smith et al. A trial 2024",
+            "Smith et al. A trial 2024",
+            "Smith et al. A trial 2024"
+        ]
+    );
+}
+
+#[test]
+fn digits_aside_the_text_must_agree() {
+    let blocks: Vec<TextBlock> = (0..4)
+        // A run of digits is one `#`, so page 9 and page 10 agree.
+        .map(|p| line(&format!("Page {} of 11", p + 8), p, 760.0))
+        .collect();
+    assert_eq!(page_furniture(&blocks).len(), 4);
+}
+
+#[test]
+fn the_height_must_agree_within_the_tolerance() {
+    let moved: Vec<TextBlock> = (0..4)
+        .map(|p| line("Running head", p, 30.0 + 1.5 * p as f64))
+        .collect();
+    assert_eq!(page_furniture(&moved).len(), 4);
+    let apart: Vec<TextBlock> = (0..4)
+        .map(|p| line("Running head", p, 30.0 + 10.0 * p as f64))
+        .collect();
+    assert!(page_furniture(&apart).is_empty());
+}
+
+#[test]
+fn the_share_of_pages_decides() {
+    assert_eq!((FURNITURE_PAGE_RATIO, FURNITURE_MIN_PAGES), (0.4, 3));
+    let heads = |blocks: &[TextBlock]| {
+        furniture_texts(blocks)
+            .iter()
+            .filter(|t| t.starts_with("Smith"))
+            .count()
+    };
+    assert_eq!(heads(&paged(8, 4)), 4); // ceil(3.2) = 4 of 8
+    assert_eq!(heads(&paged(8, 3)), 0);
+    assert!(page_furniture(&paged(2, 2)).is_empty());
+}
+
+#[test]
+fn line_numbers_are_not_page_numbers() {
+    let restarting: Vec<TextBlock> = (0..4)
+        .flat_map(|p| (0..3).map(move |j| line(&(j + 1).to_string(), p, 100.0 + 14.0 * j as f64)))
+        .collect();
+    let running: Vec<TextBlock> = (0..4)
+        .flat_map(|p| {
+            (0..3).map(move |j| line(&(3 * p + j + 1).to_string(), p, 100.0 + 14.0 * j as f64))
+        })
+        .collect();
+    assert!(page_furniture(&restarting).is_empty());
+    assert!(page_furniture(&running).is_empty());
+}
+
+#[test]
+fn a_number_and_a_literal_hash_at_one_height_are_not_page_numbers() {
+    let blocks: Vec<TextBlock> = (0..4)
+        .map(|p| {
+            let text = if p == 0 {
+                "#".to_string()
+            } else {
+                (p + 1).to_string()
+            };
+            line(&text, p, 760.0)
+        })
+        .collect();
+    assert!(page_furniture(&blocks).is_empty());
+}
+
+#[test]
+fn the_segmenter_sets_furniture_aside_and_rejoins_the_paragraph() {
+    let mut blocks = paged(3, 3);
+    blocks[2] = line("The trial enrolled", 0, 114.0);
+    blocks[5] = line("patients for a year.", 1, 100.0);
+    let document = SectionSegmenter::default().segment_document(&blocks, "", None, json!({}));
+    let content: Vec<&str> = document
+        .sections
+        .iter()
+        .map(|s| s.content.as_str())
+        .collect();
+    let content = content.join("\n");
+    assert!(
+        !content.contains("Smith et al.") && !content.contains("101"),
+        "{content}"
+    );
+    assert!(
+        content.contains("The trial enrolled\npatients for a year."),
+        "{content}"
+    );
+    let kept = drop_page_furniture(&blocks);
+    assert!(
+        kept.iter().all(|b| b.y == 100.0 || b.y == 114.0),
+        "{kept:?}"
+    );
+    assert_eq!(kept.len(), 6);
 }

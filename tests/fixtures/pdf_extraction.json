@@ -1,8 +1,20 @@
 {
   "pdf": "pdf_extraction.pdf",
-  "pdf_sha256": "de60f3882399586f00a0e0a4113bd0ff671b70414dce6411fde09dc6f1d7137e",
+  "pdf_sha256": "48301c7edafa22849c61f9713b39d52ac4ee79284178c1c7a73a1e75b02c02f1",
   "geometry_tolerance": 0.01,
   "blocks": [
+    {
+      "text": "Smith et al. A soft hyphen trial",
+      "page_num": 0,
+      "font_size": 8.0,
+      "font_name": "Times-Italic",
+      "is_bold": false,
+      "is_italic": true,
+      "x": 72.0,
+      "y": 24.392000198364258,
+      "width": 97.55999755859375,
+      "height": 9.767999649047852
+    },
     {
       "text": "A soft hyphen trial",
       "page_num": 0,
@@ -76,6 +88,30 @@
       "height": 17.740005493164062
     },
     {
+      "text": "1",
+      "page_num": 0,
+      "font_size": 8.0,
+      "font_name": "Helvetica",
+      "is_bold": false,
+      "is_italic": false,
+      "x": 300.0,
+      "y": 743.4000244140625,
+      "width": 4.447998046875,
+      "height": 10.99200439453125
+    },
+    {
+      "text": "Smith et al. A soft hyphen trial",
+      "page_num": 1,
+      "font_size": 8.0,
+      "font_name": "Times-Italic",
+      "is_bold": false,
+      "is_italic": true,
+      "x": 72.0,
+      "y": 24.392000198364258,
+      "width": 97.55999755859375,
+      "height": 9.767999649047852
+    },
+    {
       "text": "Results",
       "page_num": 1,
       "font_size": 12.0,
@@ -124,7 +160,7 @@
       "height": 16.524002075195312
     },
     {
-      "text": "It held.",
+      "text": "The effect held across",
       "page_num": 1,
       "font_size": 10.0,
       "font_name": "Helvetica",
@@ -132,12 +168,60 @@
       "is_italic": false,
       "x": 72.0,
       "y": 141.25,
-      "width": 30.019989013671875,
+      "width": 98.37997436523438,
       "height": 13.740005493164062
+    },
+    {
+      "text": "2",
+      "page_num": 1,
+      "font_size": 8.0,
+      "font_name": "Helvetica",
+      "is_bold": false,
+      "is_italic": false,
+      "x": 300.0,
+      "y": 743.4000244140625,
+      "width": 4.447998046875,
+      "height": 10.99200439453125
+    },
+    {
+      "text": "Smith et al. A soft hyphen trial",
+      "page_num": 2,
+      "font_size": 8.0,
+      "font_name": "Times-Italic",
+      "is_bold": false,
+      "is_italic": true,
+      "x": 72.0,
+      "y": 24.392000198364258,
+      "width": 97.55999755859375,
+      "height": 9.767999649047852
+    },
+    {
+      "text": "every site we visited.",
+      "page_num": 2,
+      "font_size": 10.0,
+      "font_name": "Helvetica",
+      "is_bold": false,
+      "is_italic": false,
+      "x": 72.0,
+      "y": 61.25,
+      "width": 92.24998474121094,
+      "height": 13.739997863769531
+    },
+    {
+      "text": "3",
+      "page_num": 2,
+      "font_size": 8.0,
+      "font_name": "Helvetica",
+      "is_bold": false,
+      "is_italic": false,
+      "x": 300.0,
+      "y": 743.4000244140625,
+      "width": 4.447998046875,
+      "height": 10.99200439453125
     }
   ],
   "canonical": {
-    "text": "A soft hyphen trial\n\nA soft hyphen trial\n\nWe found the condition prevalent in adults, with a dose- response curve that rose steadily.\n\nMethods\n\nCultures of Escherichia coli were grown1 overnight.\n\nResults\n\nGrowth was specific to the treated arm.\n\nDiscussion\n\nIt held.",
+    "text": "A soft hyphen trial\n\nA soft hyphen trial\n\nWe found the condition prevalent in adults, with a dose- response curve that rose steadily.\n\nMethods\n\nCultures of Escherichia coli were grown1 overnight.\n\nResults\n\nGrowth was specific to the treated arm.\n\nDiscussion\n\nThe effect held across every site we visited.",
     "title_span": {
       "start": 0,
       "end": 19
@@ -206,13 +290,13 @@
             "kind": "paragraph",
             "span": {
               "start": 259,
-              "end": 267
+              "end": 304
             }
           }
         ]
       }
     ],
     "source_format": "pdf",
-    "converter_version": "pdf-2"
+    "converter_version": "pdf-3"
   }
 }

@@ -44,7 +44,7 @@ from bmlib.fulltext.models import Section, SectionType, SegmentedDocument
 
 #: Bumped whenever this converter, :func:`assemble`, or the segmenter and
 #: extraction feeding it can lay a PDF's text out differently.
-PDF_CANONICAL_VERSION = 2
+PDF_CANONICAL_VERSION = 3
 
 #: The segmenter's containers, whose headings ("Front Matter", "Full Text")
 #: bmlib makes up rather than reads from the page.

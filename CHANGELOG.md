@@ -7,6 +7,28 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- **The segmenter sets page furniture aside** (#591, `"pdf-3"`).
+  `SectionSegmenter.segment_document` put a page's running head, footer,
+  page number and licence stamp into the section content wherever a page
+  broke, so a paragraph crossing the break was split around *"Comparison of
+  the effects of ivermectin… 88"* and *"J Popul Ther Clin Pharmacol Vol
+  29(1)…"* — a quote across the break could not be located, and the chunker
+  indexed the boilerplate once per page. `page_furniture` /
+  `drop_page_furniture` (in `bmlib.fulltext.segmenter`, Python and Rust) run
+  first: a line whose text, every run of ASCII digits read as `#`, recurs
+  within 2 pt of one height on at least 0.4 of the pages and at least three
+  of them is furniture, and a bare number only if it is its page's index plus
+  a constant (a page number, not a manuscript's line numbers). Measured over
+  231 PDFs (bioRxiv/medRxiv and Unpaywall journal PDFs): 50,781 of 355,282
+  lines set aside in 212 PDFs, 99.3% of them with no kept line beyond them on
+  their page, and no line inspected was content; canonical text moves in 212, every
+  word lost a word of a set-aside line except a page-1 title the font-size
+  fallback no longer reaches (3 PDFs, the words kept in the front matter) and
+  one page number taken for a title. The median font size is now the body's,
+  so in 7 PDFs a body sentence the furniture had promoted to a heading is
+  prose again. Python and Rust segment the same blocks identically on all 231.
+  `PDF_CANONICAL_VERSION` is 3; the PDF-bytes contract gains a third page,
+  a running head and page numbers.
 - **A soft hyphen that ends a line joins its word** (#590, `"pdf-2"`, the
   maintainer's call). `canonical_from_segmented` removed nothing, so a PDF
   that maps its line-end hyphens to U+00AD gave `preva\u00ad lent`, the soft

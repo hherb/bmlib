@@ -105,6 +105,12 @@ fn the_segmented_blocks_are_the_expected_canonical_text() {
     );
     assert!(canonical.text.contains("prevalent") && canonical.text.contains("specific"));
     assert!(canonical.text.contains("dose- response") && !canonical.text.contains('\u{ad}'));
+    // The running head and the page numbers set aside (#591), the sentence the
+    // last page break interrupts read on.
+    assert!(!canonical.text.contains("Smith et al."));
+    assert!(canonical
+        .text
+        .contains("The effect held across every site we visited."));
 }
 
 /// The PDF is the one the generator writes (its digest is in the fixture), so
