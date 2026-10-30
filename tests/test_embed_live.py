@@ -36,12 +36,15 @@ from pathlib import Path
 import pytest
 
 from bmlib.embed import (
+    ARCTIC_EMBED_L_V2_F16,
+    ARCTIC_EMBED_L_V2_Q8_0,
     EMBEDDING_DIM,
     MAX_TOKENS,
     BatchDecodeError,
     Embedder,
     EmbedError,
     EmptyTextError,
+    ModelFile,
     ModelLoadError,
     TextTooLongError,
     UnusableOutputError,
@@ -54,6 +57,14 @@ MODEL = os.environ.get("BMLIB_EMBED_MODEL")
 REFERENCE = Path(__file__).parent / "fixtures" / "embedding_reference.json"
 
 live = pytest.mark.skipif(not MODEL, reason="BMLIB_EMBED_MODEL is not set")
+
+
+def _pinned(path: Path) -> ModelFile:
+    """The pinned model file ``path`` is, by name: claiming F16 for any file was #586's defect."""
+    for model in (ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0):
+        if model.file == path.name:
+            return model
+    pytest.skip(f"{path.name} is not a pinned model file")
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -414,3 +425,77 @@ def test_every_embedder_error_survives_pickling(error: EmbedError) -> None:
         error.args,
         repr(vars(error)),
     )
+
+
+@pytest.fixture
+def fake_llama_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "llama_cpp", _FakeLlamaModule(EMBEDDING_DIM))
+
+
+def test_a_path_built_embedder_has_no_model(fake_llama_module: None, tmp_path: Path) -> None:
+    assert Embedder(tmp_path / "model.gguf").model is None
+
+
+def test_from_model_carries_the_model_file(fake_llama_module: None, tmp_path: Path) -> None:
+    embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_F16, tmp_path / "model.gguf")
+    assert embedder.model is ARCTIC_EMBED_L_V2_F16
+
+
+def test_from_model_does_not_hash(
+    fake_llama_module: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    import bmlib.embed.model
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("from_model hashed the model file")
+
+    monkeypatch.setattr(bmlib.embed.model, "verify_model", refuse)
+    monkeypatch.setattr(hashlib, "sha256", refuse)
+    Embedder.from_model(ARCTIC_EMBED_L_V2_F16, tmp_path / "model.gguf")
+
+
+def _file_of(path: Path, size: int) -> Path:
+    with path.open("wb") as f:
+        f.truncate(size)  # sparse: no gigabyte is written
+    return path
+
+
+def test_from_model_refuses_a_file_of_another_size(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The F16 file loaded as Q8_0 stored F16 vectors under Q8_0's sha256.
+    module = _FakeLlamaModule(EMBEDDING_DIM)
+    loads: list[object] = []
+    module.Llama = lambda **kwargs: loads.append(kwargs) or module  # type: ignore[method-assign]
+    monkeypatch.setitem(sys.modules, "llama_cpp", module)
+    path = _file_of(tmp_path / "model.gguf", ARCTIC_EMBED_L_V2_F16.size)
+    with pytest.raises(ModelLoadError, match=f"is {ARCTIC_EMBED_L_V2_F16.size} bytes, not the"):
+        Embedder.from_model(ARCTIC_EMBED_L_V2_Q8_0, path)
+    assert loads == []  # refused before anything was loaded
+    assert Embedder.from_model(ARCTIC_EMBED_L_V2_F16, path).model is ARCTIC_EMBED_L_V2_F16
+
+
+def test_the_model_cannot_be_reassigned(fake_llama_module: None, tmp_path: Path) -> None:
+    embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_F16, tmp_path / "model.gguf")
+    with pytest.raises(AttributeError):
+        embedder.model = ARCTIC_EMBED_L_V2_Q8_0  # type: ignore[misc]
+
+
+@live
+def test_the_store_indexes_and_searches_with_the_real_embedder() -> None:
+    from bmlib.db import connect_sqlite
+    from bmlib.embed.store import ensure_schema, index_paper, search
+    from bmlib.fulltext.canonical import canonical_from_plain_text
+
+    assert MODEL is not None
+    embedder = Embedder.from_model(_pinned(Path(MODEL)), Path(MODEL))
+    conn = connect_sqlite(":memory:")
+    ensure_schema(conn)
+    text = canonical_from_plain_text(
+        "Aspirin reduced strokes in older adults.\n\nThe weather in Paris was mild."
+    )
+    index_paper(conn, "k", text, embedder)
+    hits = search(conn, "k", text, "Does aspirin prevent stroke?", embedder, 2)
+    assert "Aspirin" in text.text[hits[0].span.start : hits[0].span.end]

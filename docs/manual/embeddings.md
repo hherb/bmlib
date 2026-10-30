@@ -17,8 +17,16 @@ from pathlib import Path
 from bmlib.embed import ARCTIC_EMBED_L_V2_Q8_0, Embedder, download_model
 
 path = download_model(ARCTIC_EMBED_L_V2_Q8_0, Path("~/.cache/bmlib/models").expanduser())
-embedder = Embedder(path)
+embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_Q8_0, path)
 ```
+
+`Embedder.from_model(model, path, *, gpu_layers=-1)` *(unreleased)* loads as
+`Embedder(path)` does and keeps `model` as `embedder.model` (read-only),
+without hashing the file again (it trusts `download_model`'s check). It does
+check the file is `model.size` bytes, before loading it, which tells the two
+pinned files apart: loaded as the other one, every set indexed would carry the
+wrong model's sha256 and pass the store's label. The chunk store needs that
+identity; `Embedder(path)` leaves `model` as `None`.
 
 `download_model` streams into a hidden temporary file of its own
 (`.<file>.<id>.part`), syncs it to disk, and renames it into place only once
@@ -136,6 +144,87 @@ Vectors match the reference fixture at cosine >= 0.999 (F16) and >= 0.998 (Q8_0)
 run the live tests with `BMLIB_EMBED_MODEL=/path/to/file.gguf pytest tests/test_embed_live.py`
 (`.[all,embed,dev]` installed).
 
+## Storing and searching chunks *(unreleased)*
+
+`bmlib.embed.store` keeps one paper's chunks and their embeddings in a database
+opened with `bmlib.db` (SQLite or PostgreSQL, whichever the connection is) and
+searches them by brute-force cosine. It is imported as `bmlib.embed.store`, not
+from `bmlib.embed`, so the package itself stays free of `bmlib.db`.
+
+```python
+from bmlib.db import connect_sqlite
+from bmlib.embed.store import ensure_schema, index_paper, search
+
+conn = connect_sqlite("study.db")
+ensure_schema(conn)
+index_paper(conn, "pmid:12345", canonical, embedder, on_progress=lambda done, total: True)
+for hit in search(conn, "pmid:12345", canonical, "Was the trial blinded?", embedder, k=8):
+    print(hit.score, canonical.text[hit.span.start : hit.span.end])
+```
+
+- `ensure_schema(conn)` creates `embedded_chunk_sets` (one row per paper) and
+  `embedded_chunks` (one per chunk), if absent.
+- `index_paper(conn, key, canonical, embedder, on_progress=None)` chunks the
+  canonical text with `chunk_canonical`'s defaults, embeds every chunk as a
+  document, in batches of `INDEX_BATCH_SIZE` (16), and replaces whatever set
+  `key` had, in one transaction opened only after the last chunk is embedded:
+  a failure or a cancel leaves the old set as it was. `on_progress(done,
+  total)` runs after each batch; returning `False` raises `IndexingCancelled`
+  and stores nothing. It returns the number of chunks; an empty text is stored
+  as a set of none, whose search returns `[]`.
+- `search(conn, key, canonical, question, embedder, k)` returns up to `k`
+  `ChunkHit`s (`chunk_index`, `section_index`, `span`, `score`), best first,
+  an exact tie going to the lower chunk index. `canonical` must be the text the
+  set was indexed from.
+- `delete_paper(conn, key)` removes a set; an absent key is not an error.
+
+`search` reads the label and the rows in one statement, so a re-index by
+another process while it runs is seen whole or not at all. Two processes
+indexing the same key at once leave one whole set, the later writer's —
+reasoned, not measured: SQLite serialises the two writes, and on PostgreSQL
+the later writer's delete sees the earlier one's set once it commits and the
+foreign key's `ON DELETE CASCADE` removes that set's chunks (the explicit
+delete of chunks ahead of it does not see them). On PostgreSQL, if the key had
+no set yet, the later one can instead fail with the driver's unique-violation
+error, and can be retried. `index_paper` checks the connection's transaction
+mode before embedding anything (`bmlib.db.TransactionModeError`). The question's
+vector is held to the stored vectors' rules (`VectorError` otherwise).
+
+`key` is the caller's own identifier, any non-empty `str`. `embedder` is
+anything with `model`, `embed_documents` and `embed_query` (the `ChunkEmbedder`
+protocol); `Embedder` built by `from_model` is one.
+
+**A stored set is labelled with how it was made**, and `search` refuses one
+whose label is not the current one rather than ranking meaninglessly: the
+model file's sha256, `EMBEDDING_RECIPE_VERSION` (bumped when bmlib changes
+pooling, the query prefix, the 256-value cut or normalisation),
+`CHUNKER_VERSION`, the canonical text's `converter_version`, and the sha256 of
+its text. `ChunkSetLabel` holds the five; `current_label(canonical, embedder)`
+gives the current one. Any difference raises `StaleChunkSetError`, whose
+`fields` names every field that differs (`LABEL_FIELDS` order); the remedy is
+always `index_paper` again, with a re-converted text if the converter changed.
+Moving between the F16 and Q8_0 files is a different model.
+
+Errors, all `ChunkSetError` subclasses of `ValueError` (and picklable):
+`NotIndexedError` (no set under `key`, its attribute), `StaleChunkSetError`,
+`CorruptChunkSetError` (a row that cannot be part of the set — its count, an
+index, a span outside the text, a vector that is not a blob of 1,024 bytes of
+finite values of unit length; never scored), `UnidentifiedEmbedderError` (an embedder with no
+`model`, refused before anything is embedded or read) and `IndexingCancelled`.
+An empty or non-`str` key, a `k` that is not a positive integer and a text
+holding a lone surrogate are plain `ValueError`s; the embedder's own errors
+pass through.
+
+A vector is stored as 256 little-endian binary32 values, the layout sqlite-vec
+reads, and only if it has 256 finite values whose norm is within
+`NORM_TOLERANCE` (1e-4) of 1 (`VectorError` otherwise). The score is the dot
+product of the binary32 values, each widened to binary64 and summed left to
+right; the question's vector is rounded to binary32 first, so Python and Rust
+score identically. The pure helpers are public: `encode_vector`,
+`decode_vector`, `round_to_binary32`, `score` and `rank`. The shared fixture
+`tests/fixtures/vector_store.json` (written by
+`scripts/make_vector_store_fixture.py`) holds both languages to them.
+
 ## Rust
 
 The same embedder is `bmlib::embed::Embedder`, over llama-cpp-2, behind the
@@ -194,3 +283,17 @@ Run the live tests with
 `BMLIB_EMBED_MODEL=/path/to/file.gguf cargo test -p bmlib --features embed --test embed_live -- --test-threads=1`
 (in `rust/`), to the same tolerances. One thread: each test loads its own
 model.
+
+### The chunk store *(unreleased)*
+
+`bmlib::embed::store` is the same store, generic over `&mut dyn Db`, so it
+needs neither backend feature nor `embed`. `ensure_schema`, `index_paper`,
+`search` and `delete_paper` take the same arguments; `on_progress` is
+`Option<&mut dyn FnMut(usize, usize) -> bool>`, `false` cancelling.
+`Embedder::load_model(&model, path)` carries the identity (`Embedder::model()`);
+`Embedder::load` leaves it `None`. Any type implementing `ChunkEmbedder`
+(`model`, `embed_documents`, `embed_query`, errors as `BoxError`) can index;
+`Embedder` does under `embed`. Each Python error class is a `StoreError`
+variant: `NotIndexed`, `Stale(Vec<LabelField>)`, `Corrupt`,
+`UnidentifiedEmbedder`, `Cancelled`, `Vector`, `InvalidArgument`, plus `Db`
+and `Embed` for the database's and the embedder's own failures.

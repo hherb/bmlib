@@ -36,6 +36,7 @@ from bmlib.embed.model import (
 )
 from bmlib.embed.vectors import (
     EMBEDDING_DIM,
+    EMBEDDING_RECIPE_VERSION,
     MAX_TOKENS,
     QUERY_PREFIX,
     EmbedError,
@@ -53,6 +54,7 @@ __all__ = [
     "ChecksumMismatchError",
     "DownloadCancelled",
     "EMBEDDING_DIM",
+    "EMBEDDING_RECIPE_VERSION",
     "EmbedError",
     "EmptyTextError",
     "Embedder",

@@ -18,7 +18,7 @@
 
 use bmlib::embed::{
     check_texts, query_text, truncate_and_normalize, VectorError, ARCTIC_EMBED_L_V2_F16,
-    ARCTIC_EMBED_L_V2_Q8_0, EMBEDDING_DIM, MAX_TOKENS, QUERY_PREFIX,
+    ARCTIC_EMBED_L_V2_Q8_0, EMBEDDING_DIM, EMBEDDING_RECIPE_VERSION, MAX_TOKENS, QUERY_PREFIX,
 };
 use serde_json::Value;
 
@@ -47,6 +47,7 @@ fn constants_are_the_contracts() {
     assert_eq!(EMBEDDING_DIM, 256);
     assert_eq!(QUERY_PREFIX, "query: ");
     assert_eq!(MAX_TOKENS, 8192);
+    assert_eq!(EMBEDDING_RECIPE_VERSION, 1);
 }
 
 #[test]

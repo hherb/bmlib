@@ -82,4 +82,6 @@ pub use db::{Db, DbError, Row, Value};
 mod manual {
     #[doc = include_str!("../docs/manual/db.md")]
     struct Db;
+    #[doc = include_str!("../docs/manual/embed.md")]
+    struct Embed;
 }

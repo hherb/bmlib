@@ -27,6 +27,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from bmlib.embed.model import ModelFile
 from bmlib.embed.vectors import (
     EMBEDDING_DIM,
     MAX_TOKENS,
@@ -104,7 +105,13 @@ class Embedder:
     Not thread-safe (llama.cpp's context is not): use one per thread, or hold
     a lock round each call. :meth:`close` frees the model; so does leaving a
     ``with`` block.
+
+    ``model`` is the :class:`~bmlib.embed.ModelFile` the file was loaded as,
+    set by :meth:`from_model`; ``None`` for one built from a path alone, which
+    :mod:`bmlib.embed.store` refuses, since it cannot label what it stores.
     """
+
+    _model: ModelFile | None = None
 
     def __init__(self, model_path: Path, *, gpu_layers: int = -1) -> None:
         """Load the GGUF model.
@@ -152,6 +159,37 @@ class Embedder:
             raise ModelLoadError(
                 f"{model_path} embeds to {width} values, need at least {EMBEDDING_DIM}"
             )
+
+    @classmethod
+    def from_model(cls, model: ModelFile, model_path: Path, *, gpu_layers: int = -1) -> Embedder:
+        """Load ``model_path`` as ``model``, and carry its identity.
+
+        The file is not hashed: this trusts the check
+        :func:`~bmlib.embed.download_model` made when it wrote or verified the
+        file, so a launch hashes the file once. Its size is checked, which
+        tells the pinned files apart: loaded as the other one, every set it
+        stored would carry the wrong model's sha256 and pass the store's label.
+
+        Raises:
+            ModelLoadError: If the file is not ``model.size`` bytes, or as the
+                constructor.
+        """
+        try:
+            size: int | None = Path(model_path).stat().st_size
+        except OSError:
+            size = None  # absent or unreadable: the constructor reports it
+        if size is not None and size != model.size:
+            raise ModelLoadError(
+                f"{model_path} is {size} bytes, not the {model.size} of {model.file}"
+            )
+        embedder = cls(model_path, gpu_layers=gpu_layers)
+        embedder._model = model
+        return embedder
+
+    @property
+    def model(self) -> ModelFile | None:
+        """The model file this was loaded as, or ``None``."""
+        return self._model
 
     def close(self) -> None:
         """Free the model. The embedder cannot be used afterwards."""

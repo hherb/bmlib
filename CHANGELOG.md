@@ -7,6 +7,50 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **A paper's chunks, stored and searched** (StudyAnalyzer phase 1, item 8;
+  spec `docs/superpowers/specs/2026-10-30-vector-store-design.md`, plan beside
+  it). `bmlib.embed.store` (Rust: `bmlib::embed::store`) keeps one paper's
+  chunks and their embeddings in a `bmlib.db` connection, SQLite or PostgreSQL
+  (the maintainer's choice), and searches them by brute-force cosine (the
+  maintainer's choice over sqlite-vec: one paper is ~50–150 chunks — an estimate,
+  not measured — sqlite-vec's
+  `vec0` is itself a flat scan, and it is a pre-1.0 native extension iOS and the
+  App Store sandbox cannot load at run time). `index_paper` chunks, embeds and
+  stores in one call (the maintainer's choice over three calls in the app),
+  embedding before the write transaction opens so a failure or a cancel leaves
+  the old set; `search` embeds the question and returns `ChunkHit`s, best first,
+  ties to the lower chunk index. **A set is labelled with how it was made** —
+  model file sha256, a new `EMBEDDING_RECIPE_VERSION`, `CHUNKER_VERSION`, the
+  converter version and the text's sha256 — and a set whose label is not the
+  current one is refused (`StaleChunkSetError` naming every differing field;
+  the maintainer's choice over searching it anyway), since a question embedded
+  by another model ranks meaninglessly and raises nothing. Vectors are stored as
+  256 little-endian binary32 values (sqlite-vec's layout) and scored as binary64
+  sums left to right, so both languages agree bit for bit, held by
+  `tests/fixtures/vector_store.json` (`scripts/make_vector_store_fixture.py`).
+  **`Embedder.from_model(model, path)`** (Rust `Embedder::load_model`) carries
+  the model's identity without re-hashing the file (the maintainer's choice);
+  `Embedder(path)` is unchanged and its embedder is refused by the store. The
+  Rust crate's `sha2` is no longer optional. Mutation-checked in both languages:
+  one gap found (Rust's length check), closed by two fixture cases. **The final
+  review's fixes**: `search` reads the label and the rows in one statement (read
+  apart, a re-index by another process between the two had another model's
+  vectors scored as this one's, with the chunk count agreeing), and the
+  question's vector is held to the stored vectors' rules (`VectorError`; Rust
+  had scored a wrong-length query on a prefix). **PR #586's review**: a stored
+  vector is refused unless it is a blob (Python had read SQLite's INTEGER 1024
+  as 1,024 zero bytes and scored it) of unit length (one bad exponent ranked its
+  chunk first at ~1e28), in both languages; a corrupt chunk count is compared by
+  length before an index list is built (10^12 had exhausted memory);
+  `from_model` / `load_model` refuse a file that is not `model.size` bytes
+  before loading it (the F16 file loaded as Q8_0 had stored F16 vectors under
+  Q8_0's sha256, and every later search passed the label — the live tests
+  themselves claimed F16 for whichever file `BMLIB_EMBED_MODEL` named, and now
+  take the pinned file by name), and Python's
+  `Embedder.model` is read-only; `index_paper` checks the transaction mode
+  before embedding (it was refused only after every chunk was embedded);
+  `NotIndexedError` carries `key` as Rust does, and both custom-pickled errors
+  keep their notes.
 - **One paper's record by identifier** (StudyAnalyzer phase 1, item 5; spec
   `docs/superpowers/specs/2026-10-30-record-lookup-design.md`, plan beside it).
   `bmlib.publications.lookup_record()` (Rust:

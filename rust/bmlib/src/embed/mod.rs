@@ -15,7 +15,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! In-process text embedding: the pinned model files, the pure vector rules, a
-//! verified download and the `Embedder` (feature `embed`).
+//! verified download, the `Embedder` (feature `embed`) and the chunk store
+//! ([`store`]).
 //!
 //! A port of `bmlib/embed` (Python). The vector rules are held to the shared
 //! `tests/fixtures/embedding_contract.json`; the model constants to
@@ -24,6 +25,7 @@
 #[cfg(feature = "embed")]
 mod embedder;
 mod model;
+pub mod store;
 mod vectors;
 
 #[cfg(feature = "embed")]
@@ -36,5 +38,5 @@ pub use model::{verify_model, ModelError};
 pub use model::{ModelFile, ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0};
 pub use vectors::{
     check_texts, query_text, truncate_and_normalize, EmptyText, VectorError, EMBEDDING_DIM,
-    MAX_TOKENS, QUERY_PREFIX,
+    EMBEDDING_RECIPE_VERSION, MAX_TOKENS, QUERY_PREFIX,
 };

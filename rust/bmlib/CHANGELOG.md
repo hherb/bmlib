@@ -9,6 +9,23 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's chunk store (StudyAnalyzer item 8)
+`embed::store` (`ensure_schema`, `index_paper`, `search`, `delete_paper`, the
+`ChunkEmbedder` trait, `ChunkHit`, `ChunkSetLabel`, `LabelField`, `StoreError`
+— `#[non_exhaustive]`, one variant per Python error class — and the pure
+`encode_vector`, `decode_vector`, `score`, `rank`), generic over `dyn Db` and
+needing no feature; `Embedder` implements `ChunkEmbedder` under `embed`.
+`Embedder::load_model` and `Embedder::model()` carry the `ModelFile`;
+`EMBEDDING_RECIPE_VERSION`. Held to Python bit for bit by
+`tests/fixtures/vector_store.json`; 37 SQLite tests, a PostgreSQL round trip in
+`postgres_live`, and a live test with the real embedder. Since PR #586's
+review, `decode_vector` refuses a stored vector that is not unit length (one
+bad exponent had ranked its chunk first), a corrupt chunk count is compared by
+length before an index list is collected (10^12 would have aborted), and
+`load_model` refuses a file that is not `model.size` bytes before loading it. **`sha2` is no longer
+optional** (the store's text digest needs it without `embed`), so a
+`--no-default-features` build now compiles it.
+
 ### Added — follows Python's PICO agent (StudyAnalyzer item 7)
 `quality::PicoAgent` (`check_suitability`, `extract(title, text,
 min_similarity)`, `pico_condenser`), `quality::pico_models` (`PicoExtraction`,

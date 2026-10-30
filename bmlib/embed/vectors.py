@@ -30,6 +30,10 @@ EMBEDDING_DIM = 256
 QUERY_PREFIX = "query: "
 MAX_TOKENS = 8192
 NORM_FLOOR = 1e-12
+# Bump with any change that can move a vector for the same text and model file:
+# pooling, QUERY_PREFIX, EMBEDDING_DIM or normalisation. A stored chunk set made
+# under another recipe is stale (bmlib.embed.store).
+EMBEDDING_RECIPE_VERSION = 1
 
 
 class VectorError(ValueError):
