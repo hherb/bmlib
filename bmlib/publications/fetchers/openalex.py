@@ -24,6 +24,7 @@ before being handed to the *on_record* callback.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from datetime import date
@@ -44,6 +45,7 @@ _PER_PAGE = 200
 _RATE_LIMIT_SECONDS = 0.1
 _DOI_PREFIX = "https://doi.org/"
 _PMID_PREFIX = "https://pubmed.ncbi.nlm.nih.gov/"
+_PMCID_SEGMENT = re.compile(r"(?:PMC)?([0-9]+)")
 
 _VERSION_MAP: dict[str, str] = {
     "publishedVersion": "published",
@@ -57,7 +59,7 @@ _VERSION_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _reconstruct_abstract(inverted_index: dict[str, list[int]] | None) -> str | None:
+def _reconstruct_abstract(inverted_index: dict[str, Any] | None) -> str | None:
     """Reconstruct an abstract from OpenAlex's inverted-index representation.
 
     OpenAlex stores abstracts as ``{"word": [pos, ...], ...}``.  We flatten
@@ -70,8 +72,12 @@ def _reconstruct_abstract(inverted_index: dict[str, list[int]] | None) -> str | 
 
     pairs: list[tuple[int, str]] = []
     for word, positions in inverted_index.items():
+        if not isinstance(positions, list):
+            continue
         for pos in positions:
-            pairs.append((pos, word))
+            # An integer position only, as Rust's `as_i64` (a bool is not one).
+            if isinstance(pos, int) and not isinstance(pos, bool):
+                pairs.append((pos, word))
 
     if not pairs:
         return None
@@ -80,101 +86,116 @@ def _reconstruct_abstract(inverted_index: dict[str, list[int]] | None) -> str | 
     return " ".join(word for _, word in pairs)
 
 
+def _object(value: Any, key: str) -> dict[str, Any]:
+    """``value[key]`` when both are JSON objects, else ``{}``."""
+    if not isinstance(value, dict):
+        return {}
+    found = value.get(key)
+    return found if isinstance(found, dict) else {}
+
+
+def _string(value: dict[str, Any], key: str) -> str | None:
+    """``value[key]`` when it is a non-empty string, else ``None``."""
+    found = value.get(key)
+    return found if isinstance(found, str) and found else None
+
+
+def _list(value: dict[str, Any], key: str) -> list[Any]:
+    """``value[key]`` when it is a JSON array, else ``[]``."""
+    found = value.get(key)
+    return found if isinstance(found, list) else []
+
+
+def _pmc_id(pmcid_url: str | None) -> str | None:
+    """``PMC`` + digits from OpenAlex's ``ids.pmcid`` article URL, or ``None``.
+
+    OpenAlex serves it as ``https://www.ncbi.nlm.nih.gov/pmc/articles/7745181``
+    (measured 2026-10-30), with no ``PMC`` prefix.
+    """
+    if pmcid_url is None:
+        return None
+    match = _PMCID_SEGMENT.fullmatch(pmcid_url.rstrip("/").rsplit("/", 1)[-1])
+    return f"PMC{match.group(1)}" if match else None
+
+
 def _normalize(raw: dict[str, Any]) -> FetchedRecord:
-    """Convert a raw OpenAlex work record to a :class:`FetchedRecord`."""
-    # DOI — strip prefix
-    doi_raw = raw.get("doi") or ""
+    """Convert a raw OpenAlex work record to a :class:`FetchedRecord`.
+
+    Every field is read type-checked, as Rust's ``normalize`` reads it: a
+    value of the wrong type is absent, costing that field and not the record.
+    A *raw* that is not an object still raises ``AttributeError`` at the first
+    ``raw.get``, which the page walk reports — the message Rust's port restates.
+    """
+    doi_raw = _string(raw, "doi")
     doi = doi_raw.removeprefix(_DOI_PREFIX) if doi_raw else None
     if doi == "":
         doi = None
 
-    # PMID — extract from ids dict
-    pmid = None
-    ids = raw.get("ids") or {}
-    pmid_raw = ids.get("pmid") or ""
-    if pmid_raw:
-        pmid = pmid_raw.removeprefix(_PMID_PREFIX)
-        if pmid == "":
-            pmid = None
+    ids = _object(raw, "ids")
+    pmid_raw = _string(ids, "pmid")
+    pmid = pmid_raw.removeprefix(_PMID_PREFIX) if pmid_raw else None
+    if pmid == "":
+        pmid = None
 
-    # Authors
-    authors = []
-    for authorship in raw.get("authorships") or []:
-        author = authorship.get("author") or {}
-        name = author.get("display_name")
+    authors: list[str] = []
+    for authorship in _list(raw, "authorships"):
+        name = _string(_object(authorship, "author"), "display_name")
         if name:
             authors.append(name)
 
-    # Journal
-    journal = None
-    primary_location = raw.get("primary_location") or {}
-    source = primary_location.get("source") or {}
-    journal = source.get("display_name")
+    journal = _string(_object(_object(raw, "primary_location"), "source"), "display_name")
 
-    # Abstract
-    abstract = _reconstruct_abstract(raw.get("abstract_inverted_index"))
+    index = raw.get("abstract_inverted_index")
+    abstract = _reconstruct_abstract(index if isinstance(index, dict) else None)
 
-    # Keywords — primary topic display name
     keywords: list[str] = []
-    primary_topic = raw.get("primary_topic") or {}
-    topic_name = primary_topic.get("display_name")
+    topic_name = _string(_object(raw, "primary_topic"), "display_name")
     if topic_name:
         keywords.append(topic_name)
 
-    # Open access
-    oa_info = raw.get("open_access") or {}
-    is_open_access = bool(oa_info.get("is_oa", False))
+    is_open_access = _object(raw, "open_access").get("is_oa") is True
 
-    # License
-    license_value = raw.get("license")
+    # A present empty string survives as "", as it always has (Rust: `as_str`).
+    license_raw = raw.get("license")
+    license_value = license_raw if isinstance(license_raw, str) else None
 
-    # Publication types
     publication_types: list[str] = []
-    work_type = raw.get("type")
+    work_type = _string(raw, "type")
     if work_type:
         publication_types.append(work_type)
 
-    # Fulltext sources from locations
     fulltext_sources: list[FullTextSourceEntry] = []
-    for location in raw.get("locations") or []:
-        loc_source = (location.get("source") or {}).get("display_name") or "unknown"
-        version_raw = location.get("version") or ""
+    for location in _list(raw, "locations"):
+        if not isinstance(location, dict):
+            continue
+        loc_source = _string(_object(location, "source"), "display_name") or "unknown"
+        version_raw = _string(location, "version")
         version = _VERSION_MAP.get(version_raw, version_raw) if version_raw else None
-        loc_is_oa = bool(location.get("is_oa", False))
+        loc_is_oa = location.get("is_oa") is True
 
-        landing_url = location.get("landing_page_url")
-        if landing_url:
-            fulltext_sources.append(
-                FullTextSourceEntry(
-                    url=landing_url,
-                    format="html",
-                    source=loc_source,
-                    open_access=loc_is_oa,
-                    version=version,
+        for key, fmt in (("landing_page_url", "html"), ("pdf_url", "pdf")):
+            url = _string(location, key)
+            if url:
+                fulltext_sources.append(
+                    FullTextSourceEntry(
+                        url=url,
+                        format=fmt,
+                        source=loc_source,
+                        open_access=loc_is_oa,
+                        version=version,
+                    )
                 )
-            )
-
-        pdf_url = location.get("pdf_url")
-        if pdf_url:
-            fulltext_sources.append(
-                FullTextSourceEntry(
-                    url=pdf_url,
-                    format="pdf",
-                    source=loc_source,
-                    open_access=loc_is_oa,
-                    version=version,
-                )
-            )
 
     return FetchedRecord(
-        title=raw.get("title") or "",
+        title=_string(raw, "title") or "",
         source="openalex",
         doi=doi,
         pmid=pmid,
+        pmc_id=_pmc_id(_string(ids, "pmcid")),
         abstract=abstract,
         authors=authors,
         journal=journal,
-        publication_date=raw.get("publication_date"),
+        publication_date=_string(raw, "publication_date"),
         keywords=keywords,
         publication_types=publication_types,
         is_open_access=is_open_access,

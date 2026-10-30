@@ -1029,5 +1029,289 @@
   },
   "fn": "fetch",
   "name": "fetch/api-key-param"
+ },
+ {
+  "args": {
+   "raw": {
+    "ids": {
+     "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/7745181"
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/pmcid-unprefixed"
+ },
+ {
+  "args": {
+   "raw": {
+    "ids": {
+     "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7745181/"
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/pmcid-prefixed"
+ },
+ {
+  "args": {
+   "raw": {
+    "ids": {
+     "pmcid": "abc"
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/pmcid-letters"
+ },
+ {
+  "args": {
+   "raw": {
+    "ids": {
+     "pmcid": "https://x/\u0661\u0662\u0663"
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/pmcid-non-ascii-digits"
+ },
+ {
+  "args": {
+   "raw": {
+    "ids": {
+     "pmcid": 7745181
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/pmcid-integer"
+ },
+ {
+  "args": {
+   "raw": {
+    "doi": 5,
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/doi-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "title": 5
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/title-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "ids": [
+     "x"
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/ids-a-list"
+ },
+ {
+  "args": {
+   "raw": {
+    "authorships": [
+     "x",
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/authorship-a-string"
+ },
+ {
+  "args": {
+   "raw": {
+    "authorships": [
+     {
+      "author": "x"
+     }
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/author-a-string"
+ },
+ {
+  "args": {
+   "raw": {
+    "authorships": [
+     {
+      "author": {
+       "display_name": 5
+      }
+     }
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/display-name-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "primary_location": "x",
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/primary-location-a-string"
+ },
+ {
+  "args": {
+   "raw": {
+    "primary_topic": "x",
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/topic-a-string"
+ },
+ {
+  "args": {
+   "raw": {
+    "open_access": [
+     "x"
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/open-access-a-list"
+ },
+ {
+  "args": {
+   "raw": {
+    "open_access": {
+     "is_oa": "yes"
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/is-oa-a-string"
+ },
+ {
+  "args": {
+   "raw": {
+    "license": 5,
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/license-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "title": "T",
+    "type": 5
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/type-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "publication_date": 5,
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/date-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "publication_date": "",
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/date-empty"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": [
+     "x"
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/abstract-a-list"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "a": "x",
+     "b": [
+      1,
+      true,
+      2.5
+     ]
+    },
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/abstract-positions-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "locations": [
+     "x",
+     {
+      "landing_page_url": "u"
+     }
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/location-a-string"
+ },
+ {
+  "args": {
+   "raw": {
+    "locations": [
+     {
+      "is_oa": "yes",
+      "landing_page_url": "u",
+      "pdf_url": 5,
+      "source": "x",
+      "version": 5
+     }
+    ],
+    "title": "T"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/location-fields-wrong-type"
  }
 ]

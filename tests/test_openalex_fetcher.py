@@ -139,6 +139,105 @@ def _mock_client(responses: list[dict]) -> MagicMock:
     return client
 
 
+class TestThePmcidIsRead:
+    """OpenAlex serves ``ids.pmcid`` as a PMC article URL with no ``PMC`` prefix.
+
+    Measured 2026-10-30: ``https://www.ncbi.nlm.nih.gov/pmc/articles/7745181``
+    for PMID 33301246. Dropping it lost the one identifier `FullTextService`'s
+    PMC tiers need.
+    """
+
+    @staticmethod
+    def _with_pmcid(pmcid: object) -> FetchedRecord:
+        raw = _make_raw_work()
+        raw["ids"]["pmcid"] = pmcid
+        return _normalize(raw)
+
+    def test_the_pmcid_is_read_with_its_prefix(self):
+        record = self._with_pmcid("https://www.ncbi.nlm.nih.gov/pmc/articles/7745181")
+        assert record.pmc_id == "PMC7745181"
+
+    def test_a_pmcid_already_prefixed_is_kept(self):
+        record = self._with_pmcid("https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7745181")
+        assert record.pmc_id == "PMC7745181"
+
+    @pytest.mark.parametrize(
+        "pmcid",
+        ["abc", "", None, 7745181, "https://www.ncbi.nlm.nih.gov/pmc/articles/١٢٣"],
+        ids=["letters", "empty", "null", "integer", "non-ascii-digits"],
+    )
+    def test_an_unreadable_pmcid_is_none(self, pmcid):
+        assert self._with_pmcid(pmcid).pmc_id is None
+
+
+class TestAWrongTypedFieldCostsThatField:
+    """A field of the wrong type is absent, as Rust's ``normalize`` reads it.
+
+    Python raised ``AttributeError`` (a ``_BUG_TYPES`` member) on every one of
+    these, so a single malformed record failed its whole page — and the record
+    lookup cannot share a normaliser that two languages read differently.
+    """
+
+    @pytest.mark.parametrize(
+        ("path", "value", "field", "empty"),
+        [
+            (("doi",), 5, "doi", None),
+            (("title",), 5, "title", ""),
+            (("ids",), ["x"], "pmid", None),
+            (("ids", "pmid"), 5, "pmid", None),
+            (("authorships",), {"author": "x"}, "authors", []),
+            (("authorships", 0), "x", "authors", ["Bob Jones"]),
+            (("authorships", 0, "author"), "x", "authors", ["Bob Jones"]),
+            (("authorships", 0, "author", "display_name"), 5, "authors", ["Bob Jones"]),
+            (("primary_location",), "x", "journal", None),
+            (("primary_location", "source"), "x", "journal", None),
+            (("primary_topic",), "x", "keywords", []),
+            (("open_access",), ["x"], "is_open_access", False),
+            (("open_access", "is_oa"), "yes", "is_open_access", False),
+            (("license",), 5, "license", None),
+            (("type",), 5, "publication_types", []),
+            (("publication_date",), 5, "publication_date", None),
+            (("abstract_inverted_index",), ["x"], "abstract", None),
+            (("abstract_inverted_index", "This"), "x", "abstract", "is a test abstract."),
+            (("locations",), {"x": 1}, "fulltext_sources", []),
+        ],
+        ids=lambda v: ".".join(map(str, v)) if isinstance(v, tuple) else None,
+    )
+    def test_a_wrong_typed_field_costs_that_field(self, path, value, field, empty):
+        raw = _make_raw_work()
+        target = raw
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+
+        record = _normalize(raw)
+
+        assert getattr(record, field) == empty
+        baseline = _normalize(_make_raw_work())
+        for other in ("title", "doi", "pmid", "journal", "publication_date"):
+            if other != field:
+                assert getattr(record, other) == getattr(baseline, other), other
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [("source", "x"), ("version", 5), ("landing_page_url", 5), ("is_oa", "yes")],
+    )
+    def test_a_wrong_typed_location_field_costs_that_field(self, key, value):
+        raw = _make_raw_work()
+        raw["locations"] = [{"landing_page_url": "https://ex/a", "is_oa": True}]
+        raw["locations"][0][key] = value
+
+        entries = _normalize(raw).fulltext_sources
+
+        if key == "landing_page_url":
+            assert entries == []
+        else:
+            (entry,) = entries
+            assert entry.source == ("unknown" if key == "source" else entry.source)
+            assert entry.version is None
+            assert entry.open_access is (key != "is_oa")
+
+
 # ---------------------------------------------------------------------------
 # Test _reconstruct_abstract
 # ---------------------------------------------------------------------------

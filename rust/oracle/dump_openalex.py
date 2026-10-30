@@ -62,6 +62,7 @@ def normalize(raw):
         "source": r.source,
         "doi": r.doi,
         "pmid": r.pmid,
+        "pmc_id": r.pmc_id,
         "abstract": r.abstract,
         "authors": r.authors,
         "journal": r.journal,
