@@ -31,7 +31,9 @@
 
 use std::path::Path;
 
-use bmlib::embed::{query_text, EmbedError, Embedder, EMBEDDING_DIM, MAX_TOKENS};
+use bmlib::embed::{
+    query_text, EmbedError, Embedder, ARCTIC_EMBED_L_V2_F16, EMBEDDING_DIM, MAX_TOKENS,
+};
 use serde_json::Value;
 
 const REFERENCE: &str = include_str!("../../../tests/fixtures/embedding_reference.json");
@@ -291,4 +293,28 @@ fn unloadable_model_file_is_a_load_error() {
         Err(EmbedError::Load(message)) => assert!(message.contains("bmlib-not-a-model-")),
         other => panic!("expected Load, got {:?}", other.err()),
     }
+}
+
+#[test]
+fn load_leaves_no_model() {
+    let Some(embedder) = embedder() else { return };
+    assert!(embedder.model().is_none());
+}
+
+#[test]
+fn load_model_carries_the_model() {
+    let Some(path) = model() else {
+        eprintln!("skipped: BMLIB_EMBED_MODEL is not set");
+        return;
+    };
+    let embedder = Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, Path::new(&path))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(embedder.model(), Some(&ARCTIC_EMBED_L_V2_F16));
+}
+
+#[test]
+fn load_model_refuses_a_missing_file_as_load_does() {
+    let error = Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, Path::new("/nonexistent/model.gguf"))
+        .expect_err("a missing file must not load");
+    assert!(matches!(error, EmbedError::Load(_)), "{error}");
 }

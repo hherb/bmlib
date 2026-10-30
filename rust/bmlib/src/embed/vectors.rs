@@ -24,6 +24,10 @@ pub const EMBEDDING_DIM: usize = 256;
 pub const QUERY_PREFIX: &str = "query: ";
 /// Longest input, in tokens, the embedder accepts.
 pub const MAX_TOKENS: usize = 8192;
+/// Bump with any change that can move a vector for the same text and model
+/// file: pooling, [`QUERY_PREFIX`], [`EMBEDDING_DIM`] or normalisation. A
+/// stored chunk set made under another recipe is stale (`embed::store`).
+pub const EMBEDDING_RECIPE_VERSION: u32 = 1;
 /// The smallest norm the kept values may have; below it the output is taken
 /// to have no direction to scale to unit length.
 const NORM_FLOOR: f64 = 1e-12;

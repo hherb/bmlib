@@ -99,9 +99,10 @@ llama-cpp-2 = { version = "=0.1.159", optional = true }
 # newer -sys crate: 0.1.159 vendors llama.cpp 26394b4e6749a41c3633db040e0987500a5f7013,
 # the commit the GGUF files were converted with; 0.1.160 vendors a different one.
 llama-cpp-sys-2 = { version = "=0.1.159", optional = true }
-# SHA-256, for the model download's checksum. Its own crate: a wrong digest
-# would fail *silently* by accepting a corrupt multi-gigabyte file.
-sha2 = { version = "0.10", optional = true }
+# SHA-256, for the model download's checksum and the chunk store's text digest.
+# Its own crate: a wrong digest would fail *silently* by accepting a corrupt
+# multi-gigabyte file. Not optional: the store needs it without `embed`.
+sha2 = "0.10"
 
 [features]
 # `sqlite` and `http-ureq` are on by default, so a consumer depending on bmlib
@@ -133,7 +134,7 @@ postgres = ["dep:postgres", "dep:bytes"]
 # Off by default, so a build that never embeds needs no C++ toolchain. The
 # constants and vector rules in `bmlib::embed` are always present; the download
 # additionally needs `http-ureq`.
-embed = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:sha2"]
+embed = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
 # `embed` with llama.cpp's Metal backend named explicitly. On macOS `embed`
 # already uses Metal (llama.cpp's default); a CPU-only build needs
 # `GGML_METAL=OFF` in the environment.

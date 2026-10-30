@@ -36,5 +36,5 @@ pub use model::{verify_model, ModelError};
 pub use model::{ModelFile, ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0};
 pub use vectors::{
     check_texts, query_text, truncate_and_normalize, EmptyText, VectorError, EMBEDDING_DIM,
-    MAX_TOKENS, QUERY_PREFIX,
+    EMBEDDING_RECIPE_VERSION, MAX_TOKENS, QUERY_PREFIX,
 };

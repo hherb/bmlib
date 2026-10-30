@@ -33,6 +33,7 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{send_logs_to_tracing, LogOptions};
 
+use super::model::ModelFile;
 use super::vectors::{
     check_texts, query_text, truncate_and_normalize, VectorError, EMBEDDING_DIM, MAX_TOKENS,
 };
@@ -130,6 +131,7 @@ fn backend() -> Result<&'static LlamaBackend, EmbedError> {
 pub struct Embedder {
     backend: &'static LlamaBackend,
     model: LlamaModel,
+    identity: Option<ModelFile>,
 }
 
 // Tauri's managed state (`Mutex<Option<Embedder>>`) needs `Embedder: Send`.
@@ -161,7 +163,32 @@ impl Embedder {
         let model = LlamaModel::load_from_file(backend, model_path, &params)
             .map_err(|e| EmbedError::Load(format!("cannot load {}: {e}", model_path.display())))?;
         refuse_narrow(model.n_embd_out())?;
-        Ok(Self { backend, model })
+        Ok(Self {
+            backend,
+            model,
+            identity: None,
+        })
+    }
+
+    /// Load `path` as `model`, and carry its identity ([`Embedder::model`]).
+    ///
+    /// The file is not hashed: this trusts the check `download_model` made
+    /// when it wrote or verified the file, so a launch hashes it once.
+    ///
+    /// # Errors
+    ///
+    /// As [`Embedder::load`].
+    pub fn load_model(model: &ModelFile, path: &Path) -> Result<Self, EmbedError> {
+        let mut embedder = Self::load(path)?;
+        embedder.identity = Some(*model);
+        Ok(embedder)
+    }
+
+    /// The model file this was loaded as; `None` from [`Embedder::load`],
+    /// which the chunk store refuses, since it cannot label what it stores.
+    #[must_use]
+    pub fn model(&self) -> Option<&ModelFile> {
+        self.identity.as_ref()
     }
 
     // shortcut: a fresh context per call (~15 ms on Metal) because LlamaContext
