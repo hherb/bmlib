@@ -299,6 +299,19 @@ All notable changes to bmlib are documented here. The format is based on
   bumped: the renderer is untouched.
 
 ### Changed
+- **A caller's `html` source no longer ends `FullTextService`'s chain**
+  (#579, found designing StudyAnalyzer's item 5). Tier 0 returned an `html`
+  entry at once as a bare `web_url`, so Europe PMC, the PMC tiers, Unpaywall
+  and Tier 3 never ran — and the PubMed fetcher gives every record carrying a
+  DOI a `doi.org` entry (and every record carrying a PMC ID its PMC page), so
+  a caller passing a synced record's stored sources, as BioMedicalNews's paper
+  view does, got a publisher link where Europe PMC held the article. The first
+  `html` entry is now held and used only once every tier that can fetch text
+  has failed, ahead of Tier 3's generated DOI / PubMed link (the maintainer's
+  decision). **What moves for a downstream**: such a call returns full text
+  where any tier finds it, at the cost of the requests those tiers make, and a
+  call ending on the held link now logs the chain's "No full text found"
+  WARNING, as one ending on Tier 3's link always did. Python and Rust alike.
 - **A condensation pass cut at `max_tokens` fails its batch.**
   `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or
   reduce reply that hit the output ceiling was kept as a whole extraction and
