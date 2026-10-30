@@ -168,6 +168,7 @@ fn run(case: &Value) -> Value {
                 "source": record.source,
                 "doi": record.doi,
                 "pmid": record.pmid,
+                "pmc_id": record.pmc_id,
                 "abstract": record.abstract_text,
                 "authors": record.authors,
                 "journal": record.journal,

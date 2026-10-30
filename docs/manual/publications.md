@@ -21,7 +21,9 @@ Requires `httpx` for HTTP requests to external APIs.
 | `retractions` | `parse_retraction_watch_csv()`, `import_retraction_watch_export()`, `RetractionImport`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
 | `retraction_status` *(unreleased)* | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()`, and their types (`RetractionEvidence`, `RetractionVerdict`, `CrossrefResult`, …) | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status-unreleased) |
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
+| `lookup` *(unreleased)* | `lookup_record()`, `RecordLookup`, `SourceReport`, `SourceOutcome`, `PublishedVersion` | One paper's record by PMID, DOI, PMC ID or PPR accession — see [Looking up one paper](#looking-up-one-paper-unreleased) |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
+| `fetchers.europepmc` *(unreleased)* | `normalize_europepmc()` | One Europe PMC search hit as a `FetchedRecord`; used by `lookup_record`, not a sync source |
 
 > **Breaking change in 0.4.0 — `on_record` now fires *before* storage.**
 > `sync()` no longer stores each record as it arrives. Records are buffered for the duration of a source/day fetch and written in a **single transaction per day** once the fetch completes. Your `on_record` callback is invoked while the record is still only in memory, so it **must not** expect to read the record back from the database. See [Buffering and commit batching](#buffering-and-commit-batching).
@@ -35,6 +37,14 @@ Requires `httpx` for HTTP requests to external APIs.
 from bmlib.publications import (
     # Sync orchestration
     sync,
+
+    # One paper by identifier (unreleased)
+    lookup_record,
+    RecordLookup,
+    SourceReport,
+    SourceOutcome,
+    PublishedVersion,
+
     SyncReport,
     SyncProgress,
     FetchResult,
@@ -193,7 +203,7 @@ class FetchedRecord:
 | `source` | `str` | Name of the source that produced the record. *(required)* |
 | `doi` | `str \| None` | DOI as reported by the source (may carry a prefix or mixed case). |
 | `pmid` | `str \| None` | PubMed ID. |
-| `pmc_id` | `str \| None` | PubMed Central ID. Not carried over into `Publication`. |
+| `pmc_id` | `str \| None` | PubMed Central ID. Stored as `Publication.pmcid`. |
 | `abstract` | `str \| None` | Abstract text. |
 | `authors` | `list[str]` | Author names. |
 | `journal` | `str \| None` | Journal or venue name. |
@@ -207,7 +217,9 @@ class FetchedRecord:
 | `grants` | `list[Grant]` | Funding awards. Only `fetch_pubmed` populates these. |
 | `author_affiliations` | `list[AuthorAffiliation]` | Author affiliations. Only `fetch_pubmed` populates these. |
 
-`sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)). Note that `pmc_id` and `extras` are **not** persisted — if you need them, capture them in an `on_record` callback.
+`sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)), and `pmc_id` is stored as `Publication.pmcid`. `extras` is **not** persisted — if you need it, capture it in an `on_record` callback.
+
+`to_dict()` / `from_dict()` *(unreleased)* serialise a record with one key per field, in declaration order, nested entries through their own `to_dict()`; `from_dict()` raises `ValueError` for a dictionary carrying any other set of keys, or a field of the wrong type, naming the field — a nested entry must be exactly what its own `to_dict()` writes.
 
 The last two fields are declared after `extras` rather than beside the content fields they read best beside, because downstream projects construct `FetchedRecord` positionally: inserting a field anywhere but the end shifts every later argument silently.
 
@@ -987,7 +999,7 @@ What a callback **may** assume:
 
 - It receives a fully normalised `FetchedRecord` (not a raw dict, and not a `Publication`).
 - It is called once per record, in fetch order, on the calling thread.
-- Fields dropped during storage — `pmc_id`, `extras` — are still present here. This is the only place to capture them. (`grants` and `author_affiliations` *are* persisted, into their own tables.)
+- The one field dropped during storage — `extras` — is still present here. This is the only place to capture it. (`pmc_id` is stored as `Publication.pmcid`; `grants` and `author_affiliations` *are* persisted, into their own tables.)
 
 What a callback **must not** assume:
 
@@ -1591,10 +1603,77 @@ Fetch all OpenAlex works published on `target_date`.
 - Cursor-based pagination at `per_page=200`, 0.1 s between pages.
 - Reconstructs abstracts from OpenAlex's inverted-index format.
 - Strips the `https://doi.org/` and `https://pubmed.ncbi.nlm.nih.gov/` prefixes from identifiers.
-- Extracts: DOI, PMID, title, authors, journal, abstract, publication date, keywords (primary topic), open-access status, license, and full-text source URLs with versions.
+- Extracts: DOI, PMID, PMC ID *(unreleased: OpenAlex serves `ids.pmcid` as `…/pmc/articles/7745181`, read as `PMC7745181`; it used to be dropped)*, title, authors, journal, abstract, publication date, keywords (primary topic), open-access status, license, and full-text source URLs with versions.
+- Reads every field type-checked *(unreleased)*: a value of the wrong type (an `ids` list, a string `author`, an `is_oa` that is not a JSON boolean) is absent, costing that field and not the record, as Rust's port reads it. It used to raise `AttributeError` and fail the whole page, and so the day. A work that is not a JSON object still fails its page.
 
 Core fields are guaranteed present (possibly `None`/empty); source-specific
 data goes in `extras`.
+
+---
+
+## Looking up one paper *(unreleased)*
+
+StudyAnalyzer's item 5 (spec `docs/superpowers/specs/2026-10-30-record-lookup-design.md`). `lookup_record()` takes any of a PMID, a DOI, a PMC ID and a Europe PMC preprint accession and returns the paper's `FetchedRecord`, built to be handed straight to [`FullTextService.fetch_fulltext`](fulltext.md):
+
+```python
+import httpx
+from bmlib.fulltext import FullTextService
+from bmlib.publications import SourceOutcome, lookup_record
+
+with httpx.Client(timeout=15.0) as client:
+    found = lookup_record(client, doi="10.1056/NEJMoa2034577", email="you@example.org")
+
+if found.record is None:
+    retry = [r for r in (found.pubmed, found.openalex, found.europepmc)
+             if r.outcome is SourceOutcome.REQUEST_FAILED]
+    # retry → a source could not be reached; otherwise no source holds the paper
+else:
+    record = found.record
+    text = FullTextService(email="you@example.org").fetch_fulltext(
+        fulltext_sources=record.fulltext_sources,
+        pmc_id=record.pmc_id, doi=record.doi, pmid=record.pmid,
+    )
+```
+
+```python
+def lookup_record(
+    client: Any, *,
+    pmid: str | None = None, doi: str | None = None,
+    pmc_id: str | None = None, ppr_id: str | None = None,
+    email: str,
+    ncbi_api_key: str | None = None, openalex_api_key: str | None = None,
+) -> RecordLookup
+```
+
+**Three sources, each asked for a reason** (the maintainer's decisions):
+
+| Source | Asked when | What it gives |
+|--------|------------|---------------|
+| Europe PMC | a `ppr_id` is given — neither other source knows a `PPR` accession | its record (`source="europepmc"`, the accession in `extras["ppr_id"]`), the DOI the other two are asked by, and an `xml` source for the preprint's `fullTextXML` where Europe PMC holds the text — the only way `FullTextService` reaches it, its PMC tiers refusing a `PPR` |
+| OpenAlex | always, by the first of PMID, PMC ID, DOI (`GET https://api.openalex.org/works/{pmid:…\|pmcid:…\|doi:…}`, `mailto` = *email*) | its work; where PubMed has the paper, only the identifiers PubMed's record lacks and its open-access locations, appended to `fulltext_sources` — every identifier the record misses is a tier of the full-text chain that never runs |
+| PubMed | a PMID is known, the caller's or OpenAlex's (one `efetch`, `api_key` = *ncbi_api_key*) | the record, `source="pubmed"`, when it holds the paper — the `<PubmedArticle>` whose own PMID is the one sent (#474's rule) |
+
+The record is PubMed's if found, else Europe PMC's, else OpenAlex's. Each empty identifier is then filled from the caller, then from the other sources, and every other source's full-text entry whose URL is not already there is appended; `is_open_access` is true if any source says so. **The lookup's identity is the first given of PMID, PMC ID, PPR, DOI**; the caller's other identifiers fill only empty fields, and one disagreeing with the record's is logged at WARNING and the record's kept.
+
+**Identifiers are checked before any request**, raising `ValueError` naming the argument: a PMID is ASCII digits, not all zeros, sent without leading zeros (`transparency`'s caller rule, #470); a PMC ID is `PMC` + ASCII digits, the prefix optional and case-folded; a PPR is `PPR` + ASCII digits, case-folded; a DOI is prefix-stripped and lower-cased, its shape not checked (#475), but one holding a lone surrogate, which no URL can carry, is refused. A blank one is none, none at all is the same `ValueError`, and a value that is not text is a `TypeError`.
+
+**A preprint OpenAlex merged with its journal version** (measured 2026-10-30: bioRxiv's `10.1101/2020.03.22.002386` carries the Nature paper's PMID and PMC ID) returns **the preprint's own record**: where the lookup's identity is a DOI or a PPR and the PubMed record reached through OpenAlex's PMID carries a different DOI, that PMID and OpenAlex's PMC ID are the published version's. The record is then Europe PMC's for a PPR, else OpenAlex's without its PMID and PMC ID and with only its `submittedVersion` locations, and the journal version's identifiers are returned as `RecordLookup.published_version`, never in the record. A PubMed record carrying no DOI is taken as the same paper — so a merged preprint whose journal record carries no DOI still returns the journal's record, the rule having nothing to compare.
+
+**Unconfirmed, OpenAlex's PMID and PMC ID stay out of a DOI or PPR lookup's record.** Only PubMed's record, its DOI compared, can say whether they are this paper's or a merged journal version's, so where PubMed did not answer `found` — an outage, an empty set, another record, a Bookshelf chapter — the record carries neither, and an outage cannot decide which version it names. The DOI stays, so `FullTextService` still searches Europe PMC and Unpaywall by it, and the `pubmed` outcome says whether a retry may add the rest. OpenAlex's locations are kept, so a merged preprint looked up during a PubMed outage may list the journal version's links; whether to withhold them too is open (#581). A lookup by PMID or PMC ID is unaffected: OpenAlex was asked by that identifier, and its work carries it.
+
+**`RecordLookup`** carries `record` (`None` when no source has the paper), `published_version` (a `PublishedVersion(pmid, doi, pmc_id)` or `None`) and one `SourceReport(outcome, message)` per source — `pubmed`, `openalex`, `europepmc` — with `to_dict()` / `from_dict()` (which refuses a dictionary `to_dict()` did not write). **One source failing still returns the others' record.** Nothing is retried.
+
+| `SourceOutcome` | Means |
+|-----------------|-------|
+| `found` | the source answered with the paper |
+| `not_found` | the source's own "not held": OpenAlex's 404, PubMed's empty `<PubmedArticleSet>`, Europe PMC's empty result list |
+| `request_failed` | no answer — no connection, a timeout, any other non-200. **Worth a retry**; never read as "no such paper" |
+| `unreadable` | a 200 whose body bmlib cannot read: not UTF-8 (a body is read as UTF-8 whatever charset it declares, in both languages), not JSON or XML, carrying an escaped lone surrogate, not an object, a root other than `<PubmedArticleSet>`, an envelope of the wrong shape |
+| `other_record` | served, but not the paper asked about: efetch with no `<PubmedArticle>` carrying the PMID sent, or an OpenAlex work not carrying the identifier it was looked up by (whose PMID is then not followed) |
+| `book_record` | the PMID is a Bookshelf chapter (`<PubmedBookArticle>`), which the PubMed parser reads nothing from; another source's record is used |
+| `not_asked` | nothing to ask by: PubMed with no PMID, OpenAlex with no PMID, PMC ID or DOI, Europe PMC with no PPR |
+
+A source that could not be used (`request_failed`, `unreadable`, `other_record`) is logged at WARNING on `bmlib.publications.lookup`; the other outcomes at DEBUG. A client raising a `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` propagates — that can only mean bmlib, or the client, is wrong. Rust's `bmlib::publications::lookup::lookup_record(&dyn HttpClient, &LookupRequest)` gives the same results: `tests/fixtures/record_lookup.json`, written by `scripts/make_record_lookup_fixture.py`, holds both languages to every case's requests and outcomes.
 
 ---
 

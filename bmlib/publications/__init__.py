@@ -23,6 +23,13 @@ from bmlib.publications.fetchers.registry import (
     register_source,
     source_names,
 )
+from bmlib.publications.lookup import (
+    PublishedVersion,
+    RecordLookup,
+    SourceOutcome,
+    SourceReport,
+    lookup_record,
+)
 from bmlib.publications.models import (
     AuthorAffiliation,
     DownloadDay,
@@ -60,6 +67,11 @@ from bmlib.publications.sync import sync
 
 __all__ = [
     "sync",
+    "lookup_record",
+    "RecordLookup",
+    "SourceOutcome",
+    "SourceReport",
+    "PublishedVersion",
     "SyncReport",
     "Publication",
     "FetchedRecord",

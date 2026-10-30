@@ -1550,7 +1550,7 @@ pub fn read_esearch(xml: &str) -> Result<ESearchResult, String> {
 ///
 /// The parser's own message, prefixed so a caller can tell a malformed body from a
 /// transport failure.
-fn parse_ncbi_xml(xml: &str) -> Result<Document<'_>, String> {
+pub(crate) fn parse_ncbi_xml(xml: &str) -> Result<Document<'_>, String> {
     let options = roxmltree::ParsingOptions {
         allow_dtd: true,
         ..roxmltree::ParsingOptions::default()

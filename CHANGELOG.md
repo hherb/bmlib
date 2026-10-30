@@ -7,6 +7,44 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **One paper's record by identifier** (StudyAnalyzer phase 1, item 5; spec
+  `docs/superpowers/specs/2026-10-30-record-lookup-design.md`, plan beside it).
+  `bmlib.publications.lookup_record()` (Rust:
+  `bmlib::publications::lookup::lookup_record`) takes any of a PMID, a DOI, a
+  PMC ID and a Europe PMC preprint accession (`PPR` + digits) and returns the
+  paper's `FetchedRecord`, built for `FullTextService.fetch_fulltext`: getting
+  as much full text as possible was the maintainer's first requirement, so
+  every identifier and open-access location the record misses is a tier of the
+  chain that never runs. **PubMed first** (one efetch, the matching
+  `<PubmedArticle>` only, #474's rule), **OpenAlex always** (by the first of
+  PMID, PMC ID, DOI — measured 2026-10-30 to answer `pmid:`, `pmcid:` and
+  `doi:` alike and an unknown id with a plain 404), adding only identifiers and
+  open-access locations where PubMed has the paper, and **Europe PMC for a
+  `PPR` accession**, which neither other source knows; a preprint Europe PMC
+  holds gains an `xml` source for its `fullTextXML`, the only route
+  `FullTextService` has to it. **A preprint OpenAlex merged with its journal
+  version** (bioRxiv's `10.1101/2020.03.22.002386` carries the Nature paper's
+  PMID and PMC ID) returns the preprint's own record, the journal version's
+  identifiers in `RecordLookup.published_version` and never in the record (the
+  maintainer's choice), and a DOI or PPR lookup PubMed did not confirm carries
+  neither OpenAlex's PMID nor its PMC ID, so an outage cannot decide which
+  version the record names. Each source reports one of seven outcomes —
+  `found`, `not_found`, `request_failed`, `unreadable`, `other_record`,
+  `book_record`, `not_asked` — so an outage never reads as "no such paper", and
+  one source failing still returns the others' record. Identifiers are checked
+  before any request (`ValueError` naming the argument); nothing is retried.
+  Python and Rust are held together by `tests/fixtures/record_lookup.json` (60
+  cases, every outcome at every source that can give it), written by
+  `scripts/make_record_lookup_fixture.py`. On the way: the new
+  `normalize_europepmc` / `fetchers::europepmc::normalize` reads one Europe PMC
+  hit (its abstract stripped of tags by rule, since the measured body carries a
+  raw `&` and is not XML, and its `pmid` kept only as ASCII digits), and
+  `FetchedRecord` gains `to_dict()` / `from_dict()`, which refuses a field of
+  the wrong type by name. A 200's body is read as UTF-8 whatever charset it
+  declares, as Rust reads it (a declared `rot13` raised `TypeError` out of the
+  lookup), and a body carrying an escaped lone surrogate is `unreadable` in
+  both languages (Python's raised `UnicodeEncodeError` once a DOI reached the
+  URL); a caller's DOI holding one is a `ValueError`.
 - **The PICO agent, with verified quotes** (StudyAnalyzer phase 1, item 7).
   `bmlib.quality.PicoAgent` (Rust: `bmlib::quality::PicoAgent`) ports
   bmlibrarian's PICO agent as two independent calls: `check_suitability()`
@@ -315,6 +353,20 @@ All notable changes to bmlib are documented here. The format is based on
   JATS abstract was also held, the result's `source` names where the abstract
   came from rather than the link's source, which used to be stamped on an
   abstract it did not serve. Python and Rust alike.
+- **The OpenAlex normaliser reads the PMC ID, and a wrong-typed field costs
+  only that field.** OpenAlex serves `ids.pmcid` as a PMC article URL with no
+  `PMC` prefix (`…/pmc/articles/7745181`, measured 2026-10-30), and both
+  languages dropped it, so the OpenAlex **sync now stores `pmcid`** where it
+  stored nothing — for a preprint OpenAlex merged with its journal version that
+  is the journal version's PMC ID, as the row's `pmid` already was. And Python
+  raised `AttributeError` on any nested field of the
+  wrong type (an `ids` list, a string `author`), failing the record's whole page
+  and so its day, where Rust's port read the field as absent: Python now reads
+  every field type-checked, as Rust does, so such a record is stored without
+  that field. Also: an empty `publication_date` is `None` in Python as it was
+  in Rust, and an `is_oa` that is not a JSON boolean is `False` (Python's
+  `bool("no")` was `True`). 23 new oracle cases hold the two languages to agreeing.
+  Found building StudyAnalyzer's item 5, which shares the normaliser.
 - **A condensation pass cut at `max_tokens` fails its batch.**
   `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or
   reduce reply that hit the output ceiling was kept as a whole extraction and

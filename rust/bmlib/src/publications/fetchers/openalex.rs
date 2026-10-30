@@ -138,6 +138,15 @@ fn text(raw: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// `PMC` + digits from the last path segment of OpenAlex's `ids.pmcid`, the
+/// segment's `PMC` optional and its digits ASCII.
+fn pmc_id_from_url(url: &str) -> Option<String> {
+    let segment = url.trim_end_matches('/').rsplit('/').next()?;
+    let digits = segment.strip_prefix("PMC").unwrap_or(segment);
+    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("PMC{digits}"))
+}
+
 fn nested<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.get(key).filter(|v| !v.is_null())
 }
@@ -161,6 +170,12 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
         .and_then(|ids| text(ids, "pmid"))
         .map(|p| p.strip_prefix(PMID_PREFIX).unwrap_or(&p).to_string())
         .filter(|p| !p.is_empty());
+
+    // PMC ID — OpenAlex serves an article URL with no `PMC` prefix
+    // (`https://www.ncbi.nlm.nih.gov/pmc/articles/7745181`, measured 2026-10-30).
+    let pmc_id = nested(raw, "ids")
+        .and_then(|ids| text(ids, "pmcid"))
+        .and_then(|url| pmc_id_from_url(&url));
 
     // Authors, in order.
     let mut authors: Vec<String> = Vec::new();
@@ -250,6 +265,7 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
     let mut record = FetchedRecord::new(text(raw, "title").unwrap_or_default(), "openalex");
     record.doi = doi;
     record.pmid = pmid;
+    record.pmc_id = pmc_id;
     record.abstract_text = abstract_text;
     record.authors = authors;
     record.journal = journal;

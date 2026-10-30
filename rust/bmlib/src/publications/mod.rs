@@ -30,6 +30,7 @@
 
 pub mod csv;
 pub mod fetchers;
+pub mod lookup;
 pub mod models;
 pub mod retraction_status;
 pub mod retractions;

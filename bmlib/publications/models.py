@@ -22,8 +22,9 @@ and sync status reporting.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
@@ -649,6 +650,89 @@ class FetchedRecord:
     # rule and the test that pins it.
     grants: list[Grant] = field(default_factory=list)
     author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary, one key per field in order."""
+        data: dict[str, Any] = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if f.name in ("fulltext_sources", "grants", "author_affiliations"):
+                value = [item.to_dict() for item in value]
+            elif isinstance(value, (list, dict)):
+                value = copy.deepcopy(value)
+            data[f.name] = value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FetchedRecord:
+        """Deserialise from a dictionary produced by :meth:`to_dict`.
+
+        Raises:
+            ValueError: *data* does not carry exactly the fields ``to_dict``
+                writes, each of its type, naming the first field that is not
+                — a nested entry included, which must be what its own
+                ``to_dict`` writes.
+        """
+        # Imported here, not at the top, where the module imports it for type
+        # checking only.
+        from bmlib.fulltext.models import FullTextSourceEntry
+
+        if not isinstance(data, dict) or set(data) != {f.name for f in fields(cls)}:
+            raise ValueError("not a FetchedRecord.to_dict() record")
+        for name in ("title", "source"):
+            _require(isinstance(data[name], str), name, "text")
+        for name in _OPTIONAL_TEXT_FIELDS:
+            _require(data[name] is None or isinstance(data[name], str), name, "text or None")
+        for name in ("authors", "keywords", "publication_types"):
+            value = data[name]
+            ok = isinstance(value, list) and all(isinstance(v, str) for v in value)
+            _require(ok, name, "a list of text")
+        _require(isinstance(data["is_open_access"], bool), "is_open_access", "a boolean")
+        _require(isinstance(data["extras"], dict), "extras", "an object")
+        values = dict(data)
+        for name, entry_cls in (
+            ("fulltext_sources", FullTextSourceEntry),
+            ("grants", Grant),
+            ("author_affiliations", AuthorAffiliation),
+        ):
+            values[name] = _entries(entry_cls, data[name], name)
+        return cls(**values)
+
+
+_OPTIONAL_TEXT_FIELDS = (
+    "doi",
+    "pmid",
+    "pmc_id",
+    "abstract",
+    "journal",
+    "publication_date",
+    "license",
+)
+
+
+def _require(ok: bool, name: str, expected: str) -> None:
+    """``ValueError`` naming *name* unless *ok*."""
+    if not ok:
+        raise ValueError(f"FetchedRecord.{name} is not {expected}")
+
+
+def _entries(entry_cls: Any, items: Any, name: str) -> list[Any]:
+    """Each of *items* through ``entry_cls.from_dict``, or ``ValueError`` naming it.
+
+    Those ``from_dict`` default an absent key and raise ``KeyError`` or
+    ``AttributeError`` on a malformed entry, so an entry is taken only when
+    it is exactly what its ``to_dict`` writes back.
+    """
+    _require(isinstance(items, list), name, "a list")
+    entries = []
+    for index, item in enumerate(items):
+        try:
+            entry = entry_cls.from_dict(item) if isinstance(item, dict) else None
+        except (KeyError, TypeError, AttributeError, ValueError):
+            entry = None
+        _require(entry is not None and entry.to_dict() == item, f"{name}[{index}]", "an entry")
+        entries.append(entry)
+    return entries
 
 
 # ---------------------------------------------------------------------------

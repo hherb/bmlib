@@ -138,7 +138,10 @@ states the new order. Issue to be filed for it, and the PR closes it.
    if found, else Europe PMC's, else OpenAlex's, else none. Each empty
    identifier is filled from the caller, then from the other sources;
    `fulltext_sources` gains every other source's entry whose URL is not
-   already present; `is_open_access` is true if any source says so.
+   already present; `is_open_access` is true if any source says so. A DOI or
+   PPR lookup PubMed did not confirm takes neither OpenAlex's PMID nor its PMC
+   ID (the PR review's rule: for a merged preprint they are the journal
+   version's).
 
 ### A preprint (the maintainer's decision)
 
