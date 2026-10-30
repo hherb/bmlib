@@ -60,8 +60,8 @@ pub const VECTOR_BYTES: usize = 4 * EMBEDDING_DIM;
 /// An embedder's own error, carried through [`StoreError::Embed`].
 pub type BoxError = Box<dyn Error + Send + Sync>;
 
-/// What the store needs of an embedder; [`super::Embedder`] is one (feature
-/// `embed`).
+/// What the store needs of an embedder; `bmlib::embed::Embedder` is one
+/// (feature `embed`; not a link, since the item is absent without it).
 pub trait ChunkEmbedder {
     /// The model file the vectors come from; `None` is refused.
     fn model(&self) -> Option<&ModelFile>;
