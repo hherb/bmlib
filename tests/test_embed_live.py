@@ -444,3 +444,21 @@ def test_from_model_does_not_hash(
     monkeypatch.setattr(bmlib.embed.model, "verify_model", refuse)
     monkeypatch.setattr(hashlib, "sha256", refuse)
     Embedder.from_model(ARCTIC_EMBED_L_V2_F16, tmp_path / "model.gguf")
+
+
+@live
+def test_the_store_indexes_and_searches_with_the_real_embedder() -> None:
+    from bmlib.db import connect_sqlite
+    from bmlib.embed.store import ensure_schema, index_paper, search
+    from bmlib.fulltext.canonical import canonical_from_plain_text
+
+    assert MODEL is not None
+    embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_F16, Path(MODEL))
+    conn = connect_sqlite(":memory:")
+    ensure_schema(conn)
+    text = canonical_from_plain_text(
+        "Aspirin reduced strokes in older adults.\n\nThe weather in Paris was mild."
+    )
+    index_paper(conn, "k", text, embedder)
+    hits = search(conn, "k", text, "Does aspirin prevent stroke?", embedder, 2)
+    assert "Aspirin" in text.text[hits[0].span.start : hits[0].span.end]
