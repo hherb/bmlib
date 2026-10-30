@@ -1,13 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 7, the PICO
-agent**, PR #575, branch `feat/pico-agent`; item 11 was PR #568, item 6 PR #562).
-**0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). PRs #526
-(`find_passage`), #531 (the embedder), #534 (#530), #535 (#532), #536 (#500),
-#538 (#507), #539 (#453), #541 (#540), #542 and #543 (#503), #544 (#533), #545
-(item 9), #547 (item 4a), #554 and #555 (item 3), #556 (item 4b), #559 (item
-4c), #562 (item 6), #568 (item 11) and #569 (the manual) merged since; all are
-unreleased._
+_Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 5, metadata
+by identifier**, in two PRs: part 1 fixes #579 on `fix/known-html-link-last`,
+part 2 is the lookup on `feat/record-lookup`, stacked on part 1; item 7 was PR
+#575, merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
+merged since — #526 through #575 — is unreleased._
 
 ## What 0.11.0 costs a downstream
 
@@ -40,57 +37,28 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: the PICO agent (StudyAnalyzer item 7)
+## This session: one paper's record by identifier (StudyAnalyzer item 5)
 
-PR #575, branch `feat/pico-agent`. Spec `docs/superpowers/specs/2026-10-30-pico-agent-design.md`
-(the maintainer's decisions), plan `docs/superpowers/plans/2026-10-30-pico-agent.md`;
-the CHANGELOG entry *The PICO agent, with verified quotes* is the argument.
-`PicoAgent` in `bmlib.quality` and `bmlib::quality`: `check_suitability()`
-and `extract(…, min_similarity)` are independent calls. Each part's quotes are
-located by `find_passage` and kept as the paper's spans; a part is
-`VERIFIED`, `UNVERIFIED` (description kept) or `NOT_REPORTED`. Nothing is
-discarded for low confidence or truncated, and `PicoError` names the cause.
-On the way, `chat_json()` gained one `ValueError` subclass per cause
-(`ChatJson*Error`), and the Cochrane condensation became
-`_condense.condense_text` / `LlmCondenser::with_prompts`. **The first oracle to
-run a whole agent** (`rust/oracle/dump_pico_agent.py`, 34 cases) compares the
-results and the messages sent; it caught Python's `sum()` compensating on
-3.12+ only. `python_strip` moved to Rust's `pyvalue`, and `ScriptedChat` moved to
-`rust/bmlib/tests/common/`.
+Spec `docs/superpowers/specs/2026-10-30-record-lookup-design.md` (the
+maintainer's decisions), plan `docs/superpowers/plans/2026-10-30-record-lookup.md`.
+**Part 1 (#579)**: `FullTextService`'s Tier 0 returned a caller's `html`
+source at once, so every PubMed record's `doi.org` link ended the chain before
+Europe PMC ran (BioMedicalNews's paper view hit it). The first `html` entry is
+now held and used only once every tier that can fetch text has failed, ahead
+of Tier 3's link; Python and Rust.
 
-**For StudyAnalyzer plan 2c**: run `check_suitability` on the abstract, then show
-a "not suitable" answer plainly with a *run anyway* action that calls
-`extract`. Pass `CanonicalText.text` as `text`, since offsets index it, and pass
-`min_similarity` from plan 2b's measurement. Label an `UNVERIFIED` part *Unsure –
-model could not reproduce <part> from text provided*. On error:
-`REQUEST_FAILED` is retried, `UNUSABLE_REPLY` suggests another model,
-`TRUNCATED` asks for a larger `max_tokens`, and `CONDENSATION_FAILED` on a long
-paper may be an outage too — its message names a failed map-reduce (#576 would
-name the cause). A stored run is read back with `from_dict()`, which refuses a
-record `to_dict()` did not write. In Rust, configure
-`PicoAgent::pico_condenser` for long papers. Without one, oversized text is
-`CondensationFailed`.
+## Previous session: the PICO agent (StudyAnalyzer item 7)
 
-Filed from the final review: **#572**, where Python's `json` accepts `NaN`,
-`Infinity` and out-of-range numbers and Rust's serde_json does not, so the same
-reply can succeed in one language and fail in the other (a direction decision,
-pre-existing in `chat_json`). **#573**: a bmlib defect inside `PicoAgent` reads
-as `REQUEST_FAILED`. **#574**: `chat_json(max_retries=0)` names a cause that
-never happened. New, and worth keeping: `tests/test_package_exports.py` checks
-that every package's `__all__` resolves.
-
-**The PR review's fixes** (same PR): a map or reduce reply cut at `max_tokens`
-now fails its batch in `LLMChunkProcessor` (Cochrane's too; Rust's
-`ContextModel::complete` documents the same contract); a refused digest says
-why (`CondensationRefusedError`, logged at WARNING, no longer ERROR); every
-`from_dict` refuses a corrupt record and `PicoPart` is frozen with its state
-checked against its citations; Rust strips a digest as Python does. Eleven
-oracle cases cover the fuzzy match at the caller's threshold, an array reply,
-null quotes and each condensation refusal. Filed for a decision: **#576** (a
-failed map-reduce's message drops each batch's cause), **#577** (quotes in the
-wrong shape, or beside `reported: false`, leave no trace), **#578** (a numeric
-`sample_size` reads as `None`; an empty description is accepted); #573 gained
-two findings.
+PR #575, merged. `PicoAgent` in `bmlib.quality` / `bmlib::quality`; the
+CHANGELOG entry *The PICO agent, with verified quotes* is the argument.
+**For StudyAnalyzer plan 2c**: run `check_suitability` on the abstract, show a
+"not suitable" answer with a *run anyway* action calling `extract`; pass
+`CanonicalText.text` as `text` and `min_similarity` from plan 2b's
+measurement; label an `UNVERIFIED` part *Unsure – model could not reproduce
+<part> from text provided*. `REQUEST_FAILED` is retried, `UNUSABLE_REPLY`
+suggests another model, `TRUNCATED` a larger `max_tokens`. In Rust, configure
+`PicoAgent::pico_condenser` for long papers. Its reviews filed #572, #573,
+#574, #576, #577 and #578.
 
 ## Since: the manual refresh (PR #569)
 
