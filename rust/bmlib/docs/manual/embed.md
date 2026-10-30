@@ -83,9 +83,11 @@ println!("{}", paper.span_text(hits[0].span).unwrap());
 file's sha256, `EMBEDDING_RECIPE_VERSION`, `CHUNKER_VERSION`, the text's
 `converter_version`, the text's sha256. Index the paper again. The other
 variants mirror Python's classes: `NotIndexed`, `Corrupt` (a row that cannot be
-part of the set, a stored vector that is not a blob of unit length among
-them), `UnidentifiedEmbedder`, `Vector`, `InvalidArgument` (an empty key, a `k`
-of 0, or a chunker failure or span outside the text in `index_paper`), plus `Db` and `Embed` carrying the database's and the
+part of the set, a stored vector that is not a blob of unit length and a
+stored span other than the one `chunk_canonical` makes of the text among them,
+which a hand-built text with the indexed text and converter version but other
+sections meets too, the label hashing the text and not its sections), `UnidentifiedEmbedder`, `Vector`, `InvalidArgument` (an empty key, a `k`
+of 0, a chunker failure in `index_paper` or `search`, or a span outside the text in `index_paper`), plus `Db` and `Embed` carrying the database's and the
 embedder's own errors.
 
 The scoring is Python's to the bit: vectors stored as 256 little-endian

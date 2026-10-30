@@ -52,7 +52,13 @@ from bmlib.db import (
 )
 from bmlib.embed.model import ModelFile
 from bmlib.embed.vectors import EMBEDDING_DIM, EMBEDDING_RECIPE_VERSION, VectorError
-from bmlib.fulltext.canonical import CHUNKER_VERSION, CanonicalText, TextSpan, chunk_canonical
+from bmlib.fulltext.canonical import (
+    CHUNKER_VERSION,
+    CanonicalText,
+    Chunk,
+    TextSpan,
+    chunk_canonical,
+)
 
 # The five label fields' wire names, in label order.
 LABEL_FIELDS = (
@@ -414,7 +420,8 @@ def search(
         UnidentifiedEmbedderError: If the embedder carries no model.
         NotIndexedError: If no set is stored under ``key``.
         StaleChunkSetError: If the stored label differs from the current one.
-        CorruptChunkSetError: If a stored row cannot be read as part of the set.
+        CorruptChunkSetError: If a stored row cannot be read as part of the set,
+            or is not a chunk ``chunk_canonical`` makes of ``canonical``.
         VectorError: If the question's vector would not be stored.
         EmbedError: As the embedder raises it.
     """
@@ -451,14 +458,24 @@ def search(
         or [r["chunk_index"] for r in chunks] != list(range(count))
     ):
         raise CorruptChunkSetError(f"the set for {key!r} records {count!r} chunks, not its rows")
+    # The label pins the text's bytes, the chunker and the converter's version
+    # (held to its code by test_renderer_version.py), not the sections, so a
+    # hand-built text sectioned otherwise lands here as corrupt too. Checked
+    # against bounds alone, a stored span rewritten in bounds was returned.
+    expected = chunk_canonical(canonical)
+    if len(expected) != count:
+        raise CorruptChunkSetError(
+            f"the set for {key!r} records {count!r} chunks, the text makes {len(expected)}"
+        )
+    for row, chunk in zip(chunks, expected, strict=True):
+        _check_span(row, chunk)
     if not chunks:
         return []
     vectors = [decode_vector(_stored_blob(r)) for r in chunks]
-    spans = [_stored_span(canonical, r) for r in chunks]
     query = embedder.embed_query(question)
     encode_vector(query)  # held to the stored vectors' rules: a VectorError otherwise
     return [
-        ChunkHit(index, chunks[index]["section_index"], spans[index], value)
+        ChunkHit(index, expected[index].section_index, expected[index].span, value)
         for index, value in rank(query, vectors, k)
     ]
 
@@ -487,15 +504,17 @@ def _stored_blob(row: Any) -> bytes:
     return bytes(value)
 
 
-def _stored_span(canonical: CanonicalText, row: Any) -> TextSpan:
-    section, start, end = row["section_index"], row["span_start"], row["span_end"]
-    if not all(type(v) is int for v in (section, start, end)) or not (
-        0 <= section < len(canonical.sections) and 0 <= start < end <= len(canonical.text)
+def _check_span(row: Any, chunk: Chunk) -> None:
+    stored = (row["section_index"], row["span_start"], row["span_end"])
+    if not all(type(v) is int for v in stored) or stored != (
+        chunk.section_index,
+        chunk.span.start,
+        chunk.span.end,
     ):
         raise CorruptChunkSetError(
-            f"stored chunk {row['chunk_index']!r} lies outside the text: {(section, start, end)!r}"
+            f"stored chunk {row['chunk_index']!r} is not the one the chunker makes of this "
+            f"text: {stored!r}"
         )
-    return TextSpan(start, end)
 
 
 def _now() -> str:

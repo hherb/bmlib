@@ -43,7 +43,7 @@ use crate::db::{
     Value,
 };
 use crate::fulltext::canonical::{
-    chunk_canonical, CanonicalText, TextSpan, CHUNKER_VERSION, DEFAULT_MAX_CHARS,
+    chunk_canonical, CanonicalText, Chunk, TextSpan, CHUNKER_VERSION, DEFAULT_MAX_CHARS,
     DEFAULT_OVERLAP_CHARS,
 };
 
@@ -524,11 +524,12 @@ pub fn index_paper(
 ///
 /// # Errors
 ///
-/// [`StoreError::InvalidArgument`] for an empty key or a `k` of 0,
-/// [`StoreError::UnidentifiedEmbedder`], [`StoreError::NotIndexed`],
-/// [`StoreError::Stale`], [`StoreError::Corrupt`], [`StoreError::Vector`]
-/// (the question's vector would not be stored), [`StoreError::Embed`] or
-/// [`StoreError::Db`].
+/// [`StoreError::InvalidArgument`] for an empty key, a `k` of 0 or a chunker
+/// failure, [`StoreError::UnidentifiedEmbedder`], [`StoreError::NotIndexed`],
+/// [`StoreError::Stale`], [`StoreError::Corrupt`] (including a stored chunk
+/// other than the one `chunk_canonical` makes of `canonical`),
+/// [`StoreError::Vector`] (the question's vector would not be stored),
+/// [`StoreError::Embed`] or [`StoreError::Db`].
 pub fn search(
     db: &mut dyn Db,
     key: &str,
@@ -577,12 +578,25 @@ pub fn search(
             "the set for {key:?} records {count} chunks, not its rows"
         )));
     }
+    // The label pins the text's bytes, the chunker and the converter's version
+    // (held to its code by test_renderer_version.py), not the sections, so a
+    // hand-built text sectioned otherwise lands here as corrupt too. Checked
+    // against bounds alone, a stored span rewritten in bounds was returned.
+    let expected = chunk_canonical(canonical, DEFAULT_MAX_CHARS, DEFAULT_OVERLAP_CHARS)
+        .map_err(|e| StoreError::InvalidArgument(e.to_string()))?;
+    if expected.len() != rows.len() {
+        return Err(StoreError::Corrupt(format!(
+            "the set for {key:?} records {count} chunks, the text makes {}",
+            expected.len()
+        )));
+    }
+    for (index, (&r, chunk)) in rows.iter().zip(&expected).enumerate() {
+        check_span(index, r, chunk)?;
+    }
     if rows.is_empty() {
         return Ok(Vec::new());
     }
-    let text_len = canonical.text.chars().count();
     let mut vectors = Vec::with_capacity(rows.len());
-    let mut placed = Vec::with_capacity(rows.len());
     for &r in &rows {
         let blob = r
             .get("embedding")
@@ -590,7 +604,6 @@ pub fn search(
             .and_then(Value::as_blob)
             .ok_or_else(|| StoreError::Corrupt("a stored vector is not a blob".to_string()))?;
         vectors.push(decode_vector(blob)?);
-        placed.push(stored_span(r, canonical.sections.len(), text_len)?);
     }
     let query = embedder.embed_query(question).map_err(StoreError::Embed)?;
     encode_vector(&query)?; // held to the stored vectors' rules
@@ -598,8 +611,8 @@ pub fn search(
         .into_iter()
         .map(|(index, value)| ChunkHit {
             chunk_index: index,
-            section_index: placed[index].0,
-            span: placed[index].1,
+            section_index: expected[index].section_index,
+            span: expected[index].span,
             score: value,
         })
         .collect())
@@ -650,26 +663,25 @@ fn stored_label(row: &Row) -> Result<ChunkSetLabel, String> {
     })
 }
 
-fn stored_span(
-    row: &Row,
-    sections: usize,
-    text_len: usize,
-) -> Result<(usize, TextSpan), StoreError> {
+fn check_span(index: usize, row: &Row, chunk: &Chunk) -> Result<(), StoreError> {
     let field = |name: &str| row.get_i64(name).ok().and_then(|v| usize::try_from(v).ok());
-    match (
+    let stored = (
         field("section_index"),
         field("span_start"),
         field("span_end"),
-    ) {
-        (Some(section), Some(start), Some(end))
-            if section < sections && start < end && end <= text_len =>
-        {
-            Ok((section, TextSpan { start, end }))
-        }
-        other => Err(StoreError::Corrupt(format!(
-            "stored chunk {:?} lies outside the text: {other:?}",
-            row.get_i64("chunk_index").ok()
-        ))),
+    );
+    if stored
+        == (
+            Some(chunk.section_index),
+            Some(chunk.span.start),
+            Some(chunk.span.end),
+        )
+    {
+        Ok(())
+    } else {
+        Err(StoreError::Corrupt(format!(
+            "stored chunk {index} is not the one the chunker makes of this text: {stored:?}"
+        )))
     }
 }
 

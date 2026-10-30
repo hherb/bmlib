@@ -1,10 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 8, the
-chunk store**, on `feat/vector-store`; item 5 was PRs #580 and #584, both
+_Last updated: 2026-10-31 (**this session is #587 and #588**, the chunk
+store's two review follow-ups, on `fix/store-spans`; item 8 was PR #586,
 merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
-merged since — #526 through #584 — is unreleased. **No StudyAnalyzer item is
-left in bmlib.**_
+merged since — #526 through #586 — is unreleased, **and no StudyAnalyzer item
+is left in bmlib, so a 0.12.0 release is a natural next session.**_
 
 ## What 0.11.0 costs a downstream
 
@@ -37,24 +37,29 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a paper's chunks, stored and searched (StudyAnalyzer item 8)
+## This session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
 
-Spec `docs/superpowers/specs/2026-10-30-vector-store-design.md` (the
-maintainer's decisions: brute force over sqlite-vec, bmlib owns the storage,
-a stale set refused, one indexing call, both backends, the model identity on
-the embedder), plan `docs/superpowers/plans/2026-10-30-vector-store.md`; the
-CHANGELOG entry *A paper's chunks, stored and searched* is the argument.
-`bmlib.embed.store` (imported as that, **not re-exported** from `bmlib.embed`)
+The CHANGELOG's two *Fixed* entries at the top of `[Unreleased]` are the
+argument. `search` rebuilds the chunks with `chunk_canonical` (the label pins
+the text's bytes, the chunker and the converter's version — not the sections,
+so a hand-built text sectioned otherwise is refused as corrupt too) and refuses a set unless every stored
+`(section, start, end)` is the rebuilt chunk's and the counts agree — which
+also caught a set whose rows and count were both zeroed. Python and Rust; the
+spans are still stored, so no schema change. `rust/bmlib/tests/vector_store.rs`
+now generates each case twice with a local `store_test!` macro (SQLite, and
+PostgreSQL via `common::on_postgres` when `BMLIB_PG_TESTS=1`); five cases stay
+SQLite-only and say why. `postgres_live.rs`'s `TestDb` moved to
+`tests/common/live_pg.rs`. Local run: `BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost
+BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres cargo test -p bmlib --features
+postgres --test vector_store` (77 = 41 + 36).
+
+## Previous session: a paper's chunks, stored and searched (StudyAnalyzer item 8)
+
+PR #586, merged. `bmlib.embed.store` (imported as that, **not re-exported**)
 and `bmlib::embed::store`: `ensure_schema`, `index_paper`, `search`,
-`delete_paper`. A set's label is model sha256, `EMBEDDING_RECIPE_VERSION` (new;
-**bump it with any change that can move a vector**), `CHUNKER_VERSION`, the
-converter version and the text's sha256. `Embedder.from_model` /
-`Embedder::load_model` carry the `ModelFile` without re-hashing (they check
-only that the file is `model.size` bytes, PR #586's review); the store refuses
-an `Embedder(path)`. Open from that review: #587 (re-chunk and compare stored
-spans) and #588 (Rust's store tests on PostgreSQL). Rust's `sha2` is no longer optional. Held bit for
-bit by `tests/fixtures/vector_store.json`; mutation-checked in both languages
-(the one gap found, Rust's length check, is closed).
+`delete_paper`; spec and plan under `docs/superpowers/`, the CHANGELOG entry
+*A paper's chunks, stored and searched* is the argument. **Bump
+`EMBEDDING_RECIPE_VERSION` with any change that can move a vector.**
 
 **For StudyAnalyzer plan 2b**: download with `download_model`, then build the
 embedder with `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, &path)` (never
@@ -211,8 +216,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,681 passing + 145 skipped** on `feat/vector-store`
-  (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
+- **Tests: 8,711 passing + 163 skipped** on `fix/store-spans`
+  (`uv run pytest tests/ -v`, 2026-10-31; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -241,9 +246,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**116 open** (`gh issue list --state open --limit 300`, 2026-10-30, after
-item 8; #579 is closed, and #560–#585 are not yet sorted into the lists below;
-item 5 filed #581–#583 and #585, item 8 filed none). **#528** and
+**116 open** (`gh issue list --state open --limit 300`, 2026-10-31, once
+this PR closes #587 and #588; #560–#585 are not yet sorted into the lists
+below). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI

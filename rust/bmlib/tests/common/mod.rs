@@ -16,7 +16,7 @@
 
 //! Shared harnesses.
 //!
-//! Two so far:
+//! Three so far:
 //!
 //! * [`both_backends!`] runs one test body against SQLite and PostgreSQL. It is
 //!   the Rust equivalent of `tests/test_backends.py`'s `backend_conn` fixture;
@@ -25,12 +25,17 @@
 //!   includes this module, so it is reached as `crate::both_backends!`, and its
 //!   own call sites go through `$crate`, which is what keeps the expansion
 //!   hygienic when several integration tests include this file.
+//! * [`on_postgres`] runs a body on a private database on a real PostgreSQL
+//!   server ([`live_pg`]), when `BMLIB_PG_TESTS=1` in a `--features postgres`
+//!   build; `tests/vector_store.rs` runs its cases on it and on SQLite.
 //! * [`oracle`] reads the differential corpora's **response vocabulary** — a
 //!   body, a status, a transport failure — the same way in every harness that
 //!   scripts a fetcher's transport.
 
 #![allow(dead_code)]
 
+#[cfg(feature = "postgres")]
+pub mod live_pg;
 pub mod oracle;
 pub mod pg_sim;
 pub mod pubmed_sim;
@@ -59,6 +64,16 @@ pub fn on_sqlite(body: impl FnOnce(&mut dyn Db)) {
 pub fn on_pg_semantics(body: impl FnOnce(&mut dyn Db)) {
     let mut conn = PgSim::new(open_memory().expect("open in-memory sqlite"));
     body(&mut conn);
+}
+
+/// Run `body` against a private database on a real PostgreSQL server, or
+/// return at once unless `BMLIB_PG_TESTS=1` (see [`live_pg`]).
+#[cfg(feature = "postgres")]
+pub fn on_postgres(body: impl FnOnce(&mut dyn Db)) {
+    let Some(mut test_db) = live_pg::TestDb::new() else {
+        return;
+    };
+    body(test_db.db());
 }
 
 /// Generate one test per backend from a single body.

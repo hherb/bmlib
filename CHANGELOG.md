@@ -6,6 +6,34 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **A stored span is the chunker's, or the set is corrupt** (#587, from PR
+  #586's review). `search` checked a stored row's section and span only
+  against the text's bounds, so a span rewritten in bounds — chunk 4 stored as
+  `(0, 3)` — was returned as chunk 4's passage at chunk 4's score. The label
+  already pins the text's bytes, `CHUNKER_VERSION` and the converter's version
+  (not the sections: a hand-built text with the indexed text and converter
+  version but other sections is refused as corrupt too), so `search` now rebuilds the
+  chunks with `chunk_canonical` and refuses the set (`CorruptChunkSetError`,
+  Rust `StoreError::Corrupt`) unless every stored `(section, start, end)` is
+  the rebuilt chunk's and the set holds as many chunks as the text makes;
+  each hit's section and span come from the rebuilt chunk. That also closes a
+  hole the issue did not name: a set whose rows and count were both zeroed
+  agreed with itself, and a text with chunks searched as none. The cost is one
+  chunking pass per search (not measured). The stored spans are still written
+  and compared, not dropped, so a schema change is not needed. Python and Rust.
+- **Rust's chunk-store tests run on PostgreSQL too** (#588). Every
+  `tests/vector_store.rs` case runs on SQLite and, in a `--features postgres`
+  build with `BMLIB_PG_TESTS=1` (CI's PostgreSQL job), again on a private
+  database on a real server, as `tests/test_embed_store.py` does on both
+  backends: the corrupt-store paths, the empty set's LEFT JOIN, the
+  embedder-failure, cancel and stale-label tests among them (36 cases). Five
+  stay SQLite-only and say why: a non-blob vector (BYTEA refuses it), a version
+  past `u32` (`INTEGER` cannot hold it), the per-connection `PRAGMA
+  foreign_keys`, the two-connection race and the `RAISE` trigger. The huge
+  chunk count is `i32::MAX` now on both, as Python's is. `postgres_live.rs`'s
+  private-database harness moved to `tests/common/live_pg.rs` to be shared.
+
 ### Added
 - **A paper's chunks, stored and searched** (StudyAnalyzer phase 1, item 8;
   spec `docs/superpowers/specs/2026-10-30-vector-store-design.md`, plan beside
