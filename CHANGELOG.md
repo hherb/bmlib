@@ -31,7 +31,12 @@ All notable changes to bmlib are documented here. The format is based on
   the model's identity without re-hashing the file (the maintainer's choice);
   `Embedder(path)` is unchanged and its embedder is refused by the store. The
   Rust crate's `sha2` is no longer optional. Mutation-checked in both languages:
-  one gap found (Rust's length check), closed by two fixture cases.
+  one gap found (Rust's length check), closed by two fixture cases. **The final
+  review's fixes**: `search` reads the label and the rows in one statement (read
+  apart, a re-index by another process between the two had another model's
+  vectors scored as this one's, with the chunk count agreeing), and the
+  question's vector is held to the stored vectors' rules (`VectorError`; Rust
+  had scored a wrong-length query on a prefix).
 - **One paper's record by identifier** (StudyAnalyzer phase 1, item 5; spec
   `docs/superpowers/specs/2026-10-30-record-lookup-design.md`, plan beside it).
   `bmlib.publications.lookup_record()` (Rust:

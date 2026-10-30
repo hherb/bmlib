@@ -208,7 +208,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,673 passing + 138 skipped** on `feat/vector-store`
+- **Tests: 8,679 passing + 143 skipped** on `feat/vector-store`
   (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need

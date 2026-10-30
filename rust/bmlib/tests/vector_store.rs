@@ -18,7 +18,7 @@
 //! `tests/test_embed_store.py`; `tests/postgres_live.rs` runs a round trip on
 //! a real PostgreSQL server.
 
-use bmlib::db::{execute, fetch_scalar, open_memory, Db, Value};
+use bmlib::db::{execute, fetch_scalar, open_memory, open_path, Db, DbError, Dialect, Row, Value};
 use bmlib::embed::store::{
     delete_paper, ensure_schema, index_paper, search, BoxError, ChunkEmbedder, LabelField,
     StoreError, INDEX_BATCH_SIZE,
@@ -38,6 +38,7 @@ struct FakeEmbedder {
     batches: usize,
     fail_on_batch: Option<usize>,
     query_override: Option<String>,
+    query_vector: Option<Vec<f32>>,
 }
 
 impl FakeEmbedder {
@@ -49,6 +50,7 @@ impl FakeEmbedder {
             batches: 0,
             fail_on_batch: None,
             query_override: None,
+            query_vector: None,
         }
     }
 }
@@ -83,6 +85,9 @@ impl ChunkEmbedder for FakeEmbedder {
 
     fn embed_query(&mut self, query: &str) -> Result<Vec<f32>, BoxError> {
         self.queries.push(query.to_string());
+        if let Some(vector) = &self.query_vector {
+            return Ok(vector.clone());
+        }
         Ok(match &self.query_override {
             Some(text) => vector_of(text),
             None => vector_of(&query_text(query)),
@@ -462,4 +467,127 @@ fn a_stale_error_names_every_field() {
     assert_eq!(fields, [LabelField::ModelSha256, LabelField::TextSha256]);
     let message = StoreError::Stale(fields).to_string();
     assert!(message.contains("model_sha256, text_sha256"), "{message}");
+}
+
+/// Another model: different vectors for the same texts.
+struct SaltedEmbedder(FakeEmbedder);
+
+impl ChunkEmbedder for SaltedEmbedder {
+    fn model(&self) -> Option<&ModelFile> {
+        self.0.model()
+    }
+    fn embed_documents(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>, BoxError> {
+        Ok(texts
+            .iter()
+            .map(|t| vector_of(&format!("salt{t}")))
+            .collect())
+    }
+    fn embed_query(&mut self, query: &str) -> Result<Vec<f32>, BoxError> {
+        self.0.embed_query(query)
+    }
+}
+
+/// A connection that, after its first query, lets another process re-index
+/// the paper with another model.
+struct Racing<'a> {
+    inner: &'a mut dyn Db,
+    racer: Option<Box<dyn FnOnce() + 'a>>,
+}
+
+impl Db for Racing<'_> {
+    fn dialect(&self) -> Dialect {
+        self.inner.dialect()
+    }
+    fn execute_raw(&mut self, sql: &str, params: &[Value]) -> bmlib::db::Result<u64> {
+        self.inner.execute_raw(sql, params)
+    }
+    fn query_raw(&mut self, sql: &str, params: &[Value]) -> bmlib::db::Result<Vec<Row>> {
+        let rows = self.inner.query_raw(sql, params);
+        if let Some(race) = self.racer.take() {
+            race();
+        }
+        rows
+    }
+    fn last_insert_rowid(&self) -> Option<i64> {
+        self.inner.last_insert_rowid()
+    }
+    fn begin(&mut self) -> bmlib::db::Result<Box<dyn Db + '_>> {
+        self.inner.begin()
+    }
+    fn commit(self: Box<Self>) -> bmlib::db::Result<()> {
+        Err(DbError::Backend("not a transaction".to_string()))
+    }
+    fn rollback(self: Box<Self>) -> bmlib::db::Result<()> {
+        Err(DbError::Backend("not a transaction".to_string()))
+    }
+    fn owns_commit(&self) -> bool {
+        self.inner.owns_commit()
+    }
+}
+
+// Review finding: the label and the rows were two statements, so a re-index
+// between them had another model's vectors scored as this one's.
+#[test]
+fn a_search_racing_a_reindex_scores_one_snapshot() {
+    let dir = std::env::temp_dir().join(format!("bmlib-race-{}", std::process::id()));
+    let path = dir.join("store.db");
+    let mut searching = open_path(&path, true, true).unwrap();
+    ensure_schema(&mut searching).unwrap();
+    let text = paper(3, "aspirin");
+    let q8 = || FakeEmbedder::new(Some(ARCTIC_EMBED_L_V2_Q8_0));
+    index_paper(&mut searching, "k", &text, &mut q8(), None).unwrap();
+    let expected = search(&mut searching, "k", &text, "q", &mut q8(), 5).unwrap();
+    let racing_text = text.clone();
+    let racing_path = path.clone();
+    let mut wrapped = Racing {
+        inner: &mut searching,
+        racer: Some(Box::new(move || {
+            let mut racing = open_path(&racing_path, true, true).unwrap();
+            let mut f16 = SaltedEmbedder(FakeEmbedder::new(Some(ARCTIC_EMBED_L_V2_F16)));
+            index_paper(&mut racing, "k", &racing_text, &mut f16, None).unwrap();
+        })),
+    };
+    let raced = search(&mut wrapped, "k", &text, "q", &mut q8(), 5).unwrap();
+    let ran = wrapped.racer.is_none();
+    drop(wrapped);
+    assert!(ran, "the race never ran");
+    assert_eq!(raced, expected);
+    let next = search(&mut searching, "k", &text, "q", &mut q8(), 5);
+    assert!(matches!(next, Err(StoreError::Stale(_))), "{next:?}");
+    drop(searching);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_bad_query_vector_is_refused() {
+    let good = vector_of("q");
+    let mut nan = good.clone();
+    nan[0] = f32::NAN;
+    let queries = [
+        good[..128].to_vec(),
+        good.repeat(4),
+        nan,
+        good.iter().map(|v| v * 0.5).collect(),
+    ];
+    for query in queries {
+        let mut db = db();
+        let text = paper(2, "aspirin");
+        index_paper(&mut db, "k", &text, &mut f16(), None).unwrap();
+        let mut embedder = f16();
+        embedder.query_vector = Some(query.clone());
+        let result = search(&mut db, "k", &text, "q", &mut embedder, 3);
+        assert!(
+            matches!(result, Err(StoreError::Vector(_))),
+            "{} values: {result:?}",
+            query.len()
+        );
+    }
+}
+
+#[test]
+fn a_set_recording_no_chunks_beside_rows_is_corrupt() {
+    corrupt_after(
+        "UPDATE embedded_chunk_sets SET chunk_count = ?",
+        Value::from(0_i64),
+    );
 }

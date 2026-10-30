@@ -39,8 +39,8 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 use crate::db::{
-    create_tables, execute, executemany, fetch_all, fetch_one, transaction_with, Db, DbError,
-    Dialect, Row, Value,
+    create_tables, execute, executemany, fetch_all, transaction_with, Db, DbError, Dialect, Row,
+    Value,
 };
 use crate::fulltext::canonical::{
     chunk_canonical, CanonicalText, TextSpan, CHUNKER_VERSION, DEFAULT_MAX_CHARS,
@@ -516,7 +516,8 @@ pub fn index_paper(
 ///
 /// [`StoreError::InvalidArgument`] for an empty key or a `k` of 0,
 /// [`StoreError::UnidentifiedEmbedder`], [`StoreError::NotIndexed`],
-/// [`StoreError::Stale`], [`StoreError::Corrupt`], [`StoreError::Embed`] or
+/// [`StoreError::Stale`], [`StoreError::Corrupt`], [`StoreError::Vector`]
+/// (the question's vector would not be stored), [`StoreError::Embed`] or
 /// [`StoreError::Db`].
 pub fn search(
     db: &mut dyn Db,
@@ -529,32 +530,34 @@ pub fn search(
     check_key(key)?;
     check_k(k)?;
     let label = current_label(canonical, embedder)?;
-    let row = fetch_one(
+    // One statement, so the label and the rows come from one snapshot: read
+    // apart, a re-index between the two had another model's vectors scored.
+    let rows = fetch_all(
         db,
-        "SELECT model_sha256, recipe_version, chunker_version, converter_version, text_sha256, \
-         chunk_count FROM embedded_chunk_sets WHERE paper_key = ?",
+        "SELECT s.model_sha256, s.recipe_version, s.chunker_version, s.converter_version, \
+         s.text_sha256, s.chunk_count, c.chunk_index, c.section_index, c.span_start, \
+         c.span_end, c.embedding FROM embedded_chunk_sets s \
+         LEFT JOIN embedded_chunks c ON c.paper_key = s.paper_key \
+         WHERE s.paper_key = ? ORDER BY c.chunk_index",
         &[Value::from(key)],
-    )?
-    .ok_or_else(|| StoreError::NotIndexed(key.to_string()))?;
-    let stored = stored_label(&row).map_err(|e| {
+    )?;
+    let first = rows
+        .first()
+        .ok_or_else(|| StoreError::NotIndexed(key.to_string()))?;
+    let stored = stored_label(first).map_err(|e| {
         StoreError::Corrupt(format!("the stored label for {key:?} is unreadable: {e}"))
     })?;
     let differing = stored.differences(&label);
     if !differing.is_empty() {
         return Err(StoreError::Stale(differing));
     }
-    let count = row
+    let count = first
         .get_i64("chunk_count")
         .map_err(|e| StoreError::Corrupt(e.to_string()))?;
-    if count == 0 {
-        return Ok(Vec::new());
-    }
-    let rows = fetch_all(
-        db,
-        "SELECT chunk_index, section_index, span_start, span_end, embedding \
-         FROM embedded_chunks WHERE paper_key = ? ORDER BY chunk_index",
-        &[Value::from(key)],
-    )?;
+    let rows: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.get("chunk_index").is_ok_and(|v| !v.is_null()))
+        .collect();
     let indices: Vec<Option<i64>> = rows.iter().map(|r| r.get_i64("chunk_index").ok()).collect();
     let expected: Vec<Option<i64>> = (0..count.max(0)).map(Some).collect();
     if count < 0 || indices != expected {
@@ -562,10 +565,13 @@ pub fn search(
             "the set for {key:?} records {count} chunks, not its rows"
         )));
     }
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
     let text_len = canonical.text.chars().count();
     let mut vectors = Vec::with_capacity(rows.len());
     let mut placed = Vec::with_capacity(rows.len());
-    for r in &rows {
+    for &r in &rows {
         let blob = r
             .get("embedding")
             .ok()
@@ -575,6 +581,7 @@ pub fn search(
         placed.push(stored_span(r, canonical.sections.len(), text_len)?);
     }
     let query = embedder.embed_query(question).map_err(StoreError::Embed)?;
+    encode_vector(&query)?; // held to the stored vectors' rules
     Ok(rank(&query, &vectors, k)?
         .into_iter()
         .map(|(index, value)| ChunkHit {

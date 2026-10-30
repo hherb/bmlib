@@ -44,7 +44,6 @@ from bmlib.db import (
     execute,
     executemany,
     fetch_all,
-    fetch_one,
     is_sqlite,
     placeholder,
     placeholders,
@@ -389,6 +388,7 @@ def search(
         NotIndexedError: If no set is stored under ``key``.
         StaleChunkSetError: If the stored label differs from the current one.
         CorruptChunkSetError: If a stored row cannot be read as part of the set.
+        VectorError: If the question's vector would not be stored.
         EmbedError: As the embedder raises it.
     """
     _check_key(key)
@@ -396,37 +396,41 @@ def search(
         raise ValueError(f"k must be a positive integer, got {k!r}")
     label = current_label(canonical, embedder)
     p = placeholder(conn)
-    row = fetch_one(
+    # One statement, so the label and the rows come from one snapshot: read
+    # apart, a re-index between the two had another model's vectors scored.
+    rows = fetch_all(
         conn,
-        f"SELECT {', '.join(LABEL_FIELDS)}, chunk_count FROM embedded_chunk_sets "
-        f"WHERE paper_key = {p}",
+        f"SELECT {', '.join('s.' + f for f in LABEL_FIELDS)}, s.chunk_count, c.chunk_index, "
+        "c.section_index, c.span_start, c.span_end, c.embedding "
+        "FROM embedded_chunk_sets s LEFT JOIN embedded_chunks c ON c.paper_key = s.paper_key "
+        f"WHERE s.paper_key = {p} ORDER BY c.chunk_index",
         [key],
     )
-    if row is None:
+    if not rows:
         raise NotIndexedError(f"no chunk set is stored for {key!r}")
     try:
-        stored = ChunkSetLabel.from_dict({f: row[f] for f in LABEL_FIELDS})
+        stored = ChunkSetLabel.from_dict({f: rows[0][f] for f in LABEL_FIELDS})
     except ValueError as exc:
         raise CorruptChunkSetError(f"the stored label for {key!r} is unreadable: {exc}") from exc
     differing = stored.differences(label)
     if differing:
         raise StaleChunkSetError(differing)
-    count = row["chunk_count"]
-    if count == 0:
-        return []
-    rows = fetch_all(
-        conn,
-        "SELECT chunk_index, section_index, span_start, span_end, embedding "
-        f"FROM embedded_chunks WHERE paper_key = {p} ORDER BY chunk_index",
-        [key],
-    )
-    if type(count) is not int or [r["chunk_index"] for r in rows] != list(range(count)):
+    count = rows[0]["chunk_count"]
+    chunks = [r for r in rows if r["chunk_index"] is not None]
+    if (
+        type(count) is not int
+        or count < 0
+        or [r["chunk_index"] for r in chunks] != list(range(count))
+    ):
         raise CorruptChunkSetError(f"the set for {key!r} records {count!r} chunks, not its rows")
-    vectors = [decode_vector(bytes(r["embedding"])) for r in rows]
-    spans = [_stored_span(canonical, r) for r in rows]
+    if not chunks:
+        return []
+    vectors = [decode_vector(bytes(r["embedding"])) for r in chunks]
+    spans = [_stored_span(canonical, r) for r in chunks]
     query = embedder.embed_query(question)
+    encode_vector(query)  # held to the stored vectors' rules: a VectorError otherwise
     return [
-        ChunkHit(index, rows[index]["section_index"], spans[index], value)
+        ChunkHit(index, chunks[index]["section_index"], spans[index], value)
         for index, value in rank(query, vectors, k)
     ]
 

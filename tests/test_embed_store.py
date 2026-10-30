@@ -456,3 +456,84 @@ def test_a_hit_carries_its_section(conn: Any) -> None:
         blocks = paper.sections[hit.section_index].blocks
         assert blocks[0].span.start <= hit.span.start and hit.span.end <= blocks[-1].span.end
         assert isinstance(hit.span, TextSpan)
+
+
+class _SaltedEmbedder(FakeEmbedder):
+    """Another model: different vectors for the same texts."""
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        super().embed_documents(texts)  # the bookkeeping only
+        return [_vector_of("salt" + t) for t in texts]
+
+
+def test_a_search_racing_a_reindex_scores_one_snapshot(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Review finding: the label and the rows were two statements, so a
+    # re-index between them had another model's vectors scored as this one's.
+    path = tmp_path / "store.db"
+    searching, racing = connect_sqlite(path), connect_sqlite(path)
+    ensure_schema(searching)
+    paper = _paper(3)
+    index_paper(searching, "k", paper, FakeEmbedder(ARCTIC_EMBED_L_V2_Q8_0))
+    embedder = FakeEmbedder(ARCTIC_EMBED_L_V2_Q8_0)
+    expected = search(searching, "k", paper, "q", embedder, 5)
+
+    raced = False
+
+    def reindex_once() -> None:
+        nonlocal raced
+        if not raced:
+            raced = True
+            index_paper(racing, "k", paper, _SaltedEmbedder(ARCTIC_EMBED_L_V2_F16))
+
+    for name in ("fetch_one", "fetch_all", "fetch_scalar"):  # whichever the store reads with
+        original = getattr(bmlib.embed.store, name, None)
+        if original is None:
+            continue
+
+        def hooked(*args: Any, _original: Any = original) -> Any:
+            result = _original(*args)
+            reindex_once()
+            return result
+
+        monkeypatch.setattr(bmlib.embed.store, name, hooked)
+    assert search(searching, "k", paper, "q", embedder, 5) == expected
+    assert raced
+    with pytest.raises(StaleChunkSetError):  # the next search sees the new set
+        search(searching, "k", paper, "q", embedder, 5)
+
+
+class _QueryEmbedder(FakeEmbedder):
+    def __init__(self, query: list[float]) -> None:
+        super().__init__()
+        self.query = query
+
+    def embed_query(self, query: str) -> list[float]:
+        return self.query
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        _unit(1)[:128],
+        _unit(1) * 4,
+        [math.nan] + _unit(1)[1:],
+        [x * 0.5 for x in _unit(1)],
+    ],
+    ids=["128 values", "1024 values", "nan", "norm 0.5"],
+)
+def test_a_bad_query_vector_is_refused(conn: Any, query: list[float]) -> None:
+    paper = _paper(2)
+    index_paper(conn, "k", paper, FakeEmbedder())
+    with pytest.raises(VectorError):
+        search(conn, "k", paper, "q", _QueryEmbedder(query), 3)
+
+
+def test_a_set_recording_no_chunks_beside_rows_is_corrupt(conn: Any) -> None:
+    paper = _paper(3)
+    index_paper(conn, "k", paper, FakeEmbedder())
+    execute(conn, "UPDATE embedded_chunk_sets SET chunk_count = 0")
+    conn.commit()
+    with pytest.raises(CorruptChunkSetError):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)

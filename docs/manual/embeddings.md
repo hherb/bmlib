@@ -175,6 +175,10 @@ for hit in search(conn, "pmid:12345", canonical, "Was the trial blinded?", embed
   set was indexed from.
 - `delete_paper(conn, key)` removes a set; an absent key is not an error.
 
+`search` reads the label and the rows in one statement, so a re-index by
+another process while it runs is seen whole or not at all. The question's
+vector is held to the stored vectors' rules (`VectorError` otherwise).
+
 `key` is the caller's own identifier, any non-empty `str`. `embedder` is
 anything with `model`, `embed_documents` and `embed_query` (the `ChunkEmbedder`
 protocol); `Embedder` built by `from_model` is one.
