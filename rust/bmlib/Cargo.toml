@@ -221,6 +221,10 @@ required-features = ["sqlite"]
 name = "transactions"
 required-features = ["sqlite"]
 
+[[test]]
+name = "vector_store"
+required-features = ["sqlite"]
+
 # The oracle tests parse Python's floats and compare them with `==`. serde_json's
 # default float parse can be one ulp off the correctly rounded value (it parsed
 # 0.9888888888888889 as ...88), which reads as a port mismatch that is not

@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from bmlib.embed import EMBEDDING_DIM, EMBEDDING_RECIPE_VERSION, VectorError, truncate_and_normalize
+from bmlib.embed import EMBEDDING_DIM, EMBEDDING_RECIPE_VERSION, VectorError
 from bmlib.embed.store import (
     INDEX_BATCH_SIZE,
     LABEL_FIELDS,
@@ -61,9 +61,14 @@ def f64(value: float) -> str:
 
 
 def unit(seed: int) -> list[float]:
-    """A seeded random unit vector, as the embedder would hand it over."""
+    """A seeded random unit vector, the same bits on every platform and Python.
+
+    Built from correctly rounded operations only: ``gauss()`` goes through the
+    platform's libm and ``truncate_and_normalize``'s ``sum()`` compensates on
+    3.12+ alone, so a fixture made with them on macOS failed to rebuild on CI.
+    """
     rng = random.Random(seed)
-    return truncate_and_normalize([rng.gauss(0.0, 1.0) for _ in range(EMBEDDING_DIM)])
+    return unit_of([rng.random() - 0.5 for _ in range(EMBEDDING_DIM)])
 
 
 def unit_of(values: list[float]) -> list[float]:
