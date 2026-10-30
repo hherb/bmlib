@@ -25,6 +25,7 @@
 //! | `pubmed.py` | [`pubmed`] | in progress (XML reader) |
 
 pub mod biorxiv;
+pub mod europepmc;
 pub mod openalex;
 pub mod pubmed;
 pub mod reconcile;

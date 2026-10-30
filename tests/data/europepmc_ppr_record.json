@@ -1,0 +1,50 @@
+{
+ "id": "PPR1325930",
+ "source": "PPR",
+ "doi": "10.21203/rs.3.rs-11130366/v1",
+ "title": "Economic evidence for a watch-and-wait strategy in patients with clinical complete response following neoadjuvant chemoradiotherapy for rectal cancer: a systematic review and a subject-specific critical appraisal",
+ "authorList": {
+  "author": [
+   {
+    "fullName": "Thapa S",
+    "firstName": "Shabnam",
+    "lastName": "Thapa"
+   },
+   {
+    "fullName": "Payne K",
+    "firstName": "Kathrine",
+    "lastName": "Payne"
+   },
+   {
+    "fullName": "Praveen",
+    "lastName": "Praveen"
+   },
+   {
+    "fullName": "Malcomson L",
+    "firstName": "Lee",
+    "lastName": "Malcomson"
+   },
+   {
+    "fullName": "Renehan AG",
+    "firstName": "Andrew",
+    "lastName": "Renehan"
+   }
+  ]
+ },
+ "pubYear": "2026",
+ "abstractText": "<title>Abstract</title>  <p>  <bold>Aim:</bold>  Several studies report that watch-and-wait (W&W) after clinical complete response (cCR) following neoadjuvant chemoradiotherapy in patients with rectal cancer is cost effective compared with resective surgery. However, the uncertainty of these conclusions may be high. To address this, a systematic review of economic analyses was performed including ",
+ "pubTypeList": {
+  "pubType": [
+   "Preprint"
+  ]
+ },
+ "bookOrReportDetails": {
+  "publisher": "Research Square",
+  "yearOfPublication": 2026
+ },
+ "isOpenAccess": "Y",
+ "inEPMC": "Y",
+ "inPMC": "N",
+ "license": "cc by",
+ "firstPublicationDate": "2026-09-23"
+}
