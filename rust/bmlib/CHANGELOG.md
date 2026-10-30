@@ -27,15 +27,23 @@ less `SYNTHETIC`, colour, font name) and dominant-span rule, bold and italic
 from MuPDF's own font flags, the font name as its bytes in Latin-1 less a
 subset tag (`Font::name` panics on a name that is not UTF-8, and a corpus PDF
 carries an EUC-KR one; `pymupdf_font_name`), characters whose box misses the
-page dropped, the line's box the kept characters' union, and annotations and
-widgets run after the page contents (`Page::to_text_page` runs the contents
-alone, and three figure labels in one corpus PDF are `FreeText`
-annotations). Over that 151-PDF corpus 143 PDFs give PyMuPDF 1.28.5's lines
-exactly, with every font, size, bold and italic identical, and 149 give
-PyMuPDF 1.27.2's (the same MuPDF release): the rest are combining accents
-placed either side of a space (the version gap), glyphs with no Unicode in two
-PDFs, and line boxes round maths fonts. Not read: the bidirectional level and
-PyMuPDF's rotation reset, so a rotated page's boxes are in the rotated frame.
+page dropped, the line's box the kept characters' union, and the whole page — contents, then annotations and widgets — run into one device
+over an empty text page bounded by the page, as PyMuPDF does
+(`Page::to_text_page` runs the contents alone, three figure labels in one
+corpus PDF are `FreeText` annotations, and a second device would close the
+page twice, reversing a right-to-left line again). `page_texts` is written as
+PyMuPDF's `get_text()` writes it, not by MuPDF's text writer, which adds a
+blank line per block and can emit bytes that are not UTF-8. Over that 151-PDF
+corpus 143 PDFs give PyMuPDF 1.28.5's lines exactly, with every font, size,
+bold and italic identical, and 149 give PyMuPDF 1.27.2's (the same MuPDF
+release); page texts are 130 and 151 of 151, and the canonical text through
+the segmenter 140 against 1.28.5. The rest are combining accents placed
+either side of a space and the boxes of a subset-tagged base-14 face (both the
+version gap, PyMuPDF 1.27.2 agreeing with the crate), glyphs with no Unicode
+in two PDFs, and line boxes round maths fonts. Not read: the bidirectional
+level, `JM_char_quad`'s box correction (both need fields the crate does not
+expose) and PyMuPDF's rotation reset, so a rotated page's boxes are in the
+rotated frame.
 `tests/pdf_extraction_contract.rs` holds it to Python from a committed PDF's
 bytes. The `pdf` feature now needs a C compiler and libclang (bindgen), and
 CI lints it.

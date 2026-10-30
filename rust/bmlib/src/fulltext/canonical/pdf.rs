@@ -22,9 +22,10 @@
 //! extraction gives it: a table's cells may run together, and a hyphen at a line
 //! break is kept, the lines joined by a space (`dose- response`), since `dose-` /
 //! `response` must keep it and nothing in a PDF tells it from `random-` / `ised`.
-//! A **soft** hyphen (U+00AD) is the exception, because it says so: one that ends
-//! a line inside a paragraph is removed with the break after it (`preva\u{ad}` /
-//! `lent` gives `prevalent`; [`join_soft_hyphens`]).
+//! A **soft** hyphen (U+00AD) is the exception, because it says so: one followed
+//! by white space inside a paragraph is removed with that space, which is the
+//! line break it ended (`preva\u{ad}` / `lent` gives `prevalent`;
+//! [`join_soft_hyphens`]).
 //!
 //! Both languages extract with MuPDF (Rust through the `mupdf` crate, behind the
 //! `pdf` feature). The shared contract starts at the [`SegmentedDocument`], and

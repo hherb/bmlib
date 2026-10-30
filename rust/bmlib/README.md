@@ -24,7 +24,7 @@ neither pulls in neither:
 |---|---|---|---|
 | `sqlite` | on | `rusqlite` (SQLite bundled) | The SQLite backend: `db::sqlite`, `db::open_memory`, `db::open_path`. The Quick start below needs it. |
 | `http-ureq` | on | `ureq` | `bmlib::http`, the real `HttpClient`. Without it a caller injects its own transport. |
-| `pdf` | off | `mupdf` | PDF → text with MuPDF, the engine Python's PyMuPDF binds. Compiled from source and linked statically (a C compiler and libclang); nothing is downloaded or loaded at run time. |
+| `pdf` | off | `mupdf`, `mupdf-sys` | PDF → text with MuPDF, the engine Python's PyMuPDF binds. Compiled from source and linked statically (a C compiler and libclang); nothing is downloaded or loaded at run time. |
 | `postgres` | off | `postgres` | A real PostgreSQL backend. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present — this adds the driver that can run a statement against a server. |
 
 ```bash

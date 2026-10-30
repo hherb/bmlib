@@ -176,7 +176,7 @@ registry, and `.gitignore` covers it.
 | `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 64 named tests + 73 oracle cases |
 | `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 28 named tests, 351 oracle cases, and `tests/funder_matching.rs` re-deriving the industry-funder matcher's stated counts |
 | `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 53 oracle cases |
-| `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — MuPDF (the `mupdf` crate, the engine PyMuPDF binds; PDFium until #590) behind the optional `pdf` feature, plus the `FullTextService` adapter. 9 tests against real PDFs, and the PDF-bytes contract `pdf_extraction_contract.rs` |
+| `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — MuPDF (the `mupdf` crate, the engine PyMuPDF binds; PDFium until #590) behind the optional `pdf` feature, plus the `FullTextService` adapter. 9 tests (six over PDFs the tests build, three on the pure rules), and the PDF-bytes contract `pdf_extraction_contract.rs` |
 | `llm/text_utils` | 364 lines | 1 file | **ported**, covered by the context oracle |
 | `llm/json_repair` | 637 lines | 1 file | **ported** (fixes #299), 15 named tests + 64 oracle cases |
 | `llm/utils` | 282 lines | 1 file | **ported**, covered by the JSON oracle |

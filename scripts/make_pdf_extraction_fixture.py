@@ -21,10 +21,16 @@ The shared contract that starts at a PDF's bytes (#590): Python's
 committed PDF as the same blocks, and the segmenter and
 ``canonical_from_segmented`` must lay those out as the same canonical text.
 The PDF is written here by hand, byte for byte, so it carries exactly the
-shapes the contract is for: unembedded base-14 faces (Helvetica, its bold,
+shapes the contract is for (not a subset-tagged name, ``ABCDEF+Helvetica-Bold``:
+the crate's MuPDF 1.27.2 sets that unembedded face's line 0.2 pt lower than
+PyMuPDF 1.28.5 does, and PyMuPDF 1.27.2 agrees with the crate, so it measures
+the version gap and not either backend): unembedded base-14 faces (Helvetica, its bold,
 Times-Italic), whose glyphs MuPDF supplies from its own copies; a word broken
 at a soft hyphen (U+00AD, through an ``/Encoding`` ``/Differences`` entry
-naming ``uni00AD``); and a hard hyphen at a line's end, which is kept. The
+naming ``uni00AD``); a hard hyphen at a line's end, which is kept; and a line
+of five spans whose font is decided by the superscript bit — read as one span
+with the run after it, the raised ``1`` would make Helvetica the line's
+dominant font, where split off it leaves the italic run dominant. The
 expected values are PyMuPDF's output, printed on stderr to be checked by eye.
 
     python scripts/make_pdf_extraction_fixture.py [tests/fixtures]
@@ -62,25 +68,43 @@ FONTS = {
     "F3": ("Times-Italic", False),
 }
 
-#: Each page's lines: (font, size, x, y, text). ``\255`` is byte 173, which F1's
-#: encoding maps to U+00AD.
-PAGES: list[list[tuple[str, int, int, int, str]]] = [
+#: A run of one line: (font, size, text rise, text).
+Run = tuple[str, int, int, str]
+
+#: Each page's lines: (x, y, runs). ``\255`` is byte 173, which F1's encoding
+#: maps to U+00AD.
+PAGES: list[list[tuple[int, int, list[Run]]]] = [
     [
-        ("F2", 18, 72, 720, "A soft hyphen trial"),
-        ("F1", 10, 72, 680, r"We found the condition preva\255"),
-        ("F1", 10, 72, 668, "lent in adults, with a dose-"),
-        ("F1", 10, 72, 656, "response curve that rose steadily."),
-        ("F2", 12, 72, 620, "Methods"),
-        ("F1", 10, 72, 600, "Cultures of"),
-        ("F3", 10, 130, 600, "Escherichia coli"),
-        ("F1", 10, 72, 588, "were grown overnight."),
+        (72, 720, [("F2", 18, 0, "A soft hyphen trial")]),
+        (72, 680, [("F1", 10, 0, r"We found the condition preva\255")]),
+        (72, 668, [("F1", 10, 0, "lent in adults, with a dose-")]),
+        (72, 656, [("F1", 10, 0, "response curve that rose steadily.")]),
+        (72, 620, [("F2", 12, 0, "Methods")]),
+        (
+            72,
+            600,
+            [
+                ("F1", 10, 0, "Cultures of "),
+                ("F3", 10, 0, "Escherichia coli"),
+                ("F1", 10, 0, " were grown"),
+                ("F1", 10, 4, "1"),
+                ("F1", 10, 0, " overnight."),
+            ],
+        ),
     ],
     [
-        ("F2", 12, 72, 720, "Results"),
-        ("F1", 10, 72, 700, r"Growth was spe\255"),
-        ("F1", 10, 72, 688, "cific to the treated arm."),
+        (72, 720, [("F2", 12, 0, "Results")]),
+        (72, 700, [("F1", 10, 0, r"Growth was spe\255")]),
+        (72, 688, [("F1", 10, 0, "cific to the treated arm.")]),
+        (72, 660, [("F2", 12, 0, "Discussion")]),
+        (72, 640, [("F1", 10, 0, "It held.")]),
     ],
 ]
+
+
+def _line(x: int, y: int, runs: list[Run]) -> str:
+    shown = " ".join(f"/{font} {size} Tf {rise} Ts ({text}) Tj" for font, size, rise, text in runs)
+    return f"BT {x} {y} Td {shown} ET"
 
 
 def _font_object(base_font: str, soft_hyphen: bool) -> str:
@@ -106,9 +130,7 @@ def build_pdf() -> bytes:
     for index, lines in enumerate(PAGES):
         page_id = first_page + 2 * index
         page_ids.append(page_id)
-        stream = "\n".join(
-            f"BT /{font} {size} Tf {x} {y} Td ({text}) Tj ET" for font, size, x, y, text in lines
-        )
+        stream = "\n".join(_line(*line) for line in lines)
         objects.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
             f"/Resources << /Font << {fonts} >> >> /Contents {page_id + 1} 0 R >>"

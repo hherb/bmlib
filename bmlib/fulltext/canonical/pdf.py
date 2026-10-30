@@ -22,9 +22,10 @@ is taken as the extraction gives it: a table's cells may run together, and a
 hyphen at a line break is kept, the lines joined by a space (``dose- response``),
 since ``dose-`` / ``response`` must keep it and nothing in a PDF tells it from
 ``random-`` / ``ised``. A **soft** hyphen (U+00AD) is the exception, because it
-says so: one that ends a line inside a paragraph is removed with the break after
-it (``preva\u00ad`` / ``lent`` gives ``prevalent``). Only a PDF that maps its
-line-end hyphens to U+00AD carries one; most typeset an ordinary ``-``.
+says so: one followed by white space inside a paragraph is removed with that
+space, which is the line break it ended (``preva\u00ad`` / ``lent`` gives
+``prevalent``). Only a PDF that maps its line-end hyphens to U+00AD carries
+one; most typeset an ordinary ``-``.
 """
 
 from __future__ import annotations

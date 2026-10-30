@@ -71,7 +71,7 @@ Build and test:
 ```bash
 cd rust
 CARGO_HOME="$PWD/.cargo-home" cargo test          # a sandbox that denies ~/.cargo
-cargo test --features pdf                          # + 8 PDFium tests over real PDFs
+cargo test --features pdf                          # + the MuPDF tests and the PDF-bytes contract
 BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1   # 6 live requests
 BMLIB_LIVE_TESTS=1 cargo test --test live_sync                          # 1 settled day, in memory
 BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live    # 10 against a real server
@@ -2088,9 +2088,13 @@ lost minutes.
   response carries one, so the whole PubMed path was dead against the real service
   while every fixture passed. `parse_ncbi_xml` sets `allow_dtd`. **This is the
   single best argument for the live suite.**
-- **PDFium's `font_weight()` and `font_is_italic()` return nothing usable for a
-  base-14 face** (measured against PyMuPDF on the same files). Bold and italic are
-  derived from the **font name**. The measurement is in the module docs.
+- **The `pdf` feature is MuPDF since #590** (PDFium before: its line-end
+  hyphens arrived as U+0002 and overlapping segments duplicated characters).
+  `mupdf_backend.rs` reads a line as PyMuPDF's `get_text("dict")` does, and its
+  module docs list what it does not replicate. The crate's `Font::name` panics
+  on a non-UTF-8 name, and a second text device over a page closes it twice
+  (reversing right-to-left lines again): both are worked round there, so read
+  the docs before simplifying either.
 - **`ruff`'s version matters.** `.venv` has 0.15.1; CI pins **0.15.20**. The older
   one flags `UP012` in a file this work never touches. Use the pinned one:
   `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`

@@ -9,8 +9,8 @@ All notable changes to bmlib are documented here. The format is based on
 ### Changed
 - **A soft hyphen that ends a line joins its word** (#590, `"pdf-2"`, the
   maintainer's call). `canonical_from_segmented` removed nothing, so a PDF
-  that maps its line-end hyphens to U+00AD gave `preva\u00ad lent`, and the
-  soft hyphen showed as a box. Each paragraph now passes through
+  that maps its line-end hyphens to U+00AD gave `preva\u00ad lent`, the soft
+  hyphen left in the text. Each paragraph now passes through
   `join_soft_hyphens` (exported from `bmlib.fulltext.canonical`, and in Rust),
   which removes a U+00AD followed by white space together with that space; a
   soft hyphen anywhere else is kept, and a hard line-end hyphen keeps the

@@ -83,6 +83,8 @@ def test_the_contract_carries_the_shapes_it_is_for() -> None:
         ("Times-Italic", False, True),
     }
     assert {b["page_num"] for b in CONTRACT["blocks"]} == {0, 1}
+    # The five-span line, whose font only the superscript split makes italic.
+    assert "Cultures of Escherichia coli were grown1 overnight." in texts
 
 
 def test_the_segmented_blocks_are_the_expected_canonical_text() -> None:

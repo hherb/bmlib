@@ -1,6 +1,6 @@
 {
   "pdf": "pdf_extraction.pdf",
-  "pdf_sha256": "0e411df9b5dede8d28cd59f2ba0e21220cbf72048fcd25cab89ae9ee8f13f551",
+  "pdf_sha256": "de60f3882399586f00a0e0a4113bd0ff671b70414dce6411fde09dc6f1d7137e",
   "geometry_tolerance": 0.01,
   "blocks": [
     {
@@ -64,40 +64,16 @@
       "height": 16.524002075195312
     },
     {
-      "text": "Cultures of",
-      "page_num": 0,
-      "font_size": 10.0,
-      "font_name": "Helvetica",
-      "is_bold": false,
-      "is_italic": false,
-      "x": 72.0,
-      "y": 181.25,
-      "width": 48.34999084472656,
-      "height": 13.740005493164062
-    },
-    {
-      "text": "Escherichia coli",
+      "text": "Cultures of Escherichia coli were grown1 overnight.",
       "page_num": 0,
       "font_size": 10.0,
       "font_name": "Times-Italic",
       "is_bold": false,
       "is_italic": true,
-      "x": 130.0,
-      "y": 182.49000549316406,
-      "width": 65.27000427246094,
-      "height": 12.209991455078125
-    },
-    {
-      "text": "were grown overnight.",
-      "page_num": 0,
-      "font_size": 10.0,
-      "font_name": "Helvetica",
-      "is_bold": false,
-      "is_italic": false,
       "x": 72.0,
-      "y": 193.25,
-      "width": 98.36997985839844,
-      "height": 13.740005493164062
+      "y": 177.25,
+      "width": 223.10995483398438,
+      "height": 17.740005493164062
     },
     {
       "text": "Results",
@@ -134,10 +110,34 @@
       "y": 93.25,
       "width": 101.70997619628906,
       "height": 13.739997863769531
+    },
+    {
+      "text": "Discussion",
+      "page_num": 1,
+      "font_size": 12.0,
+      "font_name": "Helvetica-Bold",
+      "is_bold": true,
+      "is_italic": false,
+      "x": 72.0,
+      "y": 119.16000366210938,
+      "width": 64.01998901367188,
+      "height": 16.524002075195312
+    },
+    {
+      "text": "It held.",
+      "page_num": 1,
+      "font_size": 10.0,
+      "font_name": "Helvetica",
+      "is_bold": false,
+      "is_italic": false,
+      "x": 72.0,
+      "y": 141.25,
+      "width": 30.019989013671875,
+      "height": 13.740005493164062
     }
   ],
   "canonical": {
-    "text": "A soft hyphen trial\n\nA soft hyphen trial\n\nWe found the condition prevalent in adults, with a dose- response curve that rose steadily.\n\nMethods\n\nCultures of Escherichia coli were grown overnight.\n\nResults\n\nGrowth was specific to the treated arm.",
+    "text": "A soft hyphen trial\n\nA soft hyphen trial\n\nWe found the condition prevalent in adults, with a dose- response curve that rose steadily.\n\nMethods\n\nCultures of Escherichia coli were grown1 overnight.\n\nResults\n\nGrowth was specific to the treated arm.\n\nDiscussion\n\nIt held.",
     "title_span": {
       "start": 0,
       "end": 19
@@ -174,7 +174,7 @@
             "kind": "paragraph",
             "span": {
               "start": 144,
-              "end": 194
+              "end": 195
             }
           }
         ]
@@ -182,15 +182,31 @@
       {
         "level": 1,
         "heading_span": {
-          "start": 196,
-          "end": 203
+          "start": 197,
+          "end": 204
         },
         "blocks": [
           {
             "kind": "paragraph",
             "span": {
-              "start": 205,
-              "end": 244
+              "start": 206,
+              "end": 245
+            }
+          }
+        ]
+      },
+      {
+        "level": 1,
+        "heading_span": {
+          "start": 247,
+          "end": 257
+        },
+        "blocks": [
+          {
+            "kind": "paragraph",
+            "span": {
+              "start": 259,
+              "end": 267
             }
           }
         ]

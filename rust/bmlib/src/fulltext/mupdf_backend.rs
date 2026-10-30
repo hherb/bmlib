@@ -33,8 +33,19 @@
 //! font name changes. The pieces it takes from PyMuPDF:
 //!
 //! * **The flags**: [`DICT_FLAGS`] is PyMuPDF's `TEXTFLAGS_DICT` and
-//!   [`TEXT_FLAGS`] its `TEXTFLAGS_TEXT` (199 and 195). Both clip to the
-//!   mediabox, which is what drops a bioRxiv margin line set outside the page.
+//!   [`TEXT_FLAGS`] its `TEXTFLAGS_TEXT` (199 and 195). Both clip to the clip
+//!   path within the mediabox, which is what drops a bioRxiv margin line set
+//!   outside the page.
+//! * **The whole page, into one device**: `fz_run_page` (contents, then
+//!   annotations and widgets) into a text page bounded by the page, as
+//!   `_get_textpage` builds it. The crate's `Page::to_text_page` runs the
+//!   contents alone, and a figure label can be a `FreeText` annotation (three,
+//!   in one corpus PDF); a second device over the same page would close it
+//!   twice, and every close reverses a right-to-left line's characters again.
+//! * **Characters off the page are dropped**: one whose box does not overlap
+//!   the page, as `JM_make_spanlist` and `JM_print_stext_page_as_text` drop it
+//!   (which drops a glyph with an empty box too), and a line's box is the union
+//!   of the characters kept.
 //! * **Bold and italic** are MuPDF's `fz_font_is_bold`/`fz_font_is_italic`, the
 //!   span's `flags` bits 4 and 1, not a guess from the font's name.
 //! * **The font name** is MuPDF's bytes read as Latin-1, which is what PyMuPDF's
@@ -44,18 +55,30 @@
 //!   (`ABCDEF+Helvetica`), as `JM_font_name` does.
 //! * **The superscript bit** (`detect_super_script`) splits a span as any other
 //!   flag does: on a line written left to right, a character whose baseline sits
-//!   above the line's first by more than a tenth of its size.
+//!   above the line's first character's by more than a tenth of its size.
+//! * **Page text** ([`MupdfExtractor::page_texts`]) is written as
+//!   `JM_print_stext_page_as_text` writes `get_text()`: each line's kept
+//!   characters, then a newline unless the line ended in one — not MuPDF's own
+//!   text writer, which adds a blank line after every block and can emit bytes
+//!   that are not UTF-8 (a glyph with no Unicode is stored as its CID, and CID 0
+//!   is written `C0 80`).
 //!
-//! Two of `JM_make_spanlist`'s split keys are not read, the crate exposing
-//! neither: the bidirectional level (right-to-left text) and the line's `dir`,
-//! for which the first character's quad stands in (left to right where its top
-//! edge is level). PyMuPDF also sets a rotated page's rotation to 0 before
-//! extracting; this reads the page as MuPDF lays it out.
+//! What is not replicated, the crate exposing neither the field nor a way to
+//! reach it: the bidirectional level, one of `JM_make_spanlist`'s split keys
+//! (so a right-to-left run inside a line can share a span PyMuPDF splits); the
+//! line's `dir`, for which the first character's quad stands in (left to right
+//! where its top edge is level); and `JM_char_quad`'s recomputation of a
+//! character's box from the font's ascender and descender, which reads `dir`
+//! too. That last is PyMuPDF's own and moves between its releases: over #590's
+//! corpus, PyMuPDF 1.28.5's line boxes agree with MuPDF's raw quads in 132 of
+//! 151 PDFs, and 1.27.2's differ on about 50,000 lines. PyMuPDF also sets a
+//! rotated page's rotation to 0 before extracting; this reads the page as MuPDF
+//! lays it out.
 
 use crate::fulltext::models::TextBlock;
 use crate::fulltext::pdf_text::{normalize_line, PdfTextExtractor};
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
-use mupdf::{Device, Document, Matrix, Page, Quad, Rect};
+use mupdf::{Device, DisplayList, Document, Matrix, Page, Quad, Rect};
 
 /// PyMuPDF's `TEXTFLAGS_DICT` (199), the flags `get_text("dict")` reads with.
 pub const DICT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
@@ -166,6 +189,13 @@ pub fn line_spans(line: &TextLine<'_>, page: &Rect) -> (Vec<Span>, Option<Rect>)
     let mut first: Option<(f32, bool)> = None;
     for ch in line.chars() {
         let quad = ch.quad();
+        // The line's direction and baseline, taken from its first character
+        // whether or not it is kept, as `detect_super_script` reads
+        // `line.first_char`: left to right where its top edge is level.
+        let (first_y, horizontal) = *first.get_or_insert((
+            ch.origin().y,
+            quad.ul.y == quad.ur.y && quad.ur.x > quad.ul.x,
+        ));
         let rect = quad_rect(&quad);
         if !overlaps(page, &rect) {
             continue;
@@ -179,13 +209,8 @@ pub fn line_spans(line: &TextLine<'_>, page: &Rect) -> (Vec<Span>, Option<Rect>)
             ),
             None => rect,
         });
-        let origin_y = ch.origin().y;
-        // The line's direction, taken from its first character (see the module
-        // docs): left to right where the character's top edge is level.
-        let (first_y, horizontal) =
-            *first.get_or_insert((origin_y, quad.ul.y == quad.ur.y && quad.ur.x > quad.ul.x));
         let size = ch.size();
-        let superscript = horizontal && origin_y < first_y - size * 0.1;
+        let superscript = horizontal && ch.origin().y < first_y - size * 0.1;
         let (font, font_flags) = match ch.font() {
             Some(font) => {
                 let flags = i32::from(font.is_italic()) * 2
@@ -285,13 +310,12 @@ fn open(path: &std::path::Path) -> Result<Document, String> {
 
 /// Each page's bounds and text, in order, read with `flags`.
 ///
-/// PyMuPDF runs the whole page into its text device (`fz_run_page`), where the
-/// crate's `Page::to_text_page` runs the page's contents alone — and a figure
-/// label can be a `FreeText` annotation (three, in one corpus PDF). So the
-/// annotations and widgets are run into a second device over the same text
-/// page, which is `fz_run_page`'s order. (Reading a display list of the whole
-/// page instead regroups lines and loses spaces: 43 corpus PDFs moved.) A page
-/// is loaded only when it is reached, so a long document is not held whole.
+/// The whole page is run (`fz_run_page`: contents, then annotations and
+/// widgets) into one device over an empty text page bounded by the page, which
+/// is how PyMuPDF's `_get_textpage` builds it (see the module docs). The empty
+/// text page comes from an empty display list, the crate's one way to make a
+/// text page from a rectangle. A page is loaded only when it is reached, so a
+/// long document is not held whole.
 fn text_pages(
     document: &Document,
     flags: TextPageFlags,
@@ -302,11 +326,10 @@ fn text_pages(
     Ok((0..count).map(move |index| {
         let read = |page: Page| -> Result<(Rect, TextPage), mupdf::Error> {
             let bounds = page.bounds()?;
-            let text_page = page.to_text_page(flags)?;
-            // Dropping the device closes it, which flushes its last line.
+            let text_page = DisplayList::new(bounds)?.to_text_page(flags)?;
             let device = Device::from_text_page(&text_page, flags)?;
-            page.run_annotations(&device, &Matrix::IDENTITY)?;
-            page.run_widgets(&device, &Matrix::IDENTITY)?;
+            page.run(&device, &Matrix::IDENTITY)?;
+            // Dropping the device closes it, which flushes its last line.
             drop(device);
             Ok((bounds, text_page))
         };
@@ -315,6 +338,28 @@ fn text_pages(
             .and_then(read)
             .map_err(|e| format!("could not read the text of page {index}: {e}"))
     }))
+}
+
+/// A page's text as PyMuPDF's `get_text()` writes it (see the module docs).
+#[must_use]
+pub fn page_text(text_page: &TextPage, page: &Rect) -> String {
+    let mut out = String::new();
+    for block in text_page.blocks() {
+        for line in block.lines() {
+            let mut last = None;
+            for ch in line.chars() {
+                if overlaps(page, &quad_rect(&ch.quad())) {
+                    let c = ch.char().unwrap_or(char::REPLACEMENT_CHARACTER);
+                    out.push(c);
+                    last = Some(c);
+                }
+            }
+            if last.is_some_and(|c| c != '\n' && c != '\0') {
+                out.push('\n');
+            }
+        }
+    }
+    out
 }
 
 impl PdfTextExtractor for MupdfExtractor {
@@ -341,13 +386,7 @@ impl PdfTextExtractor for MupdfExtractor {
     fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, String> {
         let document = open(path)?;
         let pages = text_pages(&document, TEXT_FLAGS)?
-            .map(|page| {
-                page.and_then(|(_, text_page)| {
-                    text_page
-                        .to_text()
-                        .map_err(|e| format!("could not read a page's text: {e}"))
-                })
-            })
+            .map(|page| page.map(|(bounds, text_page)| page_text(&text_page, &bounds)))
             .collect();
         pages
     }
