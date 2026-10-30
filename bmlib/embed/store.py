@@ -31,13 +31,28 @@ rank identically.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import struct
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, fields
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
-from bmlib.embed.vectors import EMBEDDING_DIM, VectorError
+from bmlib.db import (
+    create_tables,
+    execute,
+    executemany,
+    fetch_all,
+    fetch_one,
+    is_sqlite,
+    placeholder,
+    placeholders,
+    transaction,
+)
+from bmlib.embed.model import ModelFile
+from bmlib.embed.vectors import EMBEDDING_DIM, EMBEDDING_RECIPE_VERSION, VectorError
+from bmlib.fulltext.canonical import CHUNKER_VERSION, CanonicalText, TextSpan, chunk_canonical
 
 # The five label fields' wire names, in label order.
 LABEL_FIELDS = (
@@ -51,7 +66,32 @@ LABEL_FIELDS = (
 # A stored vector's norm, after rounding to binary32, may miss 1 by this much.
 NORM_TOLERANCE = 1e-4
 
+# Chunks embedded per call, and per progress report.
+INDEX_BATCH_SIZE = 16
+
 _CODEC = struct.Struct(f"<{EMBEDDING_DIM}f")
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS embedded_chunk_sets (
+    paper_key TEXT PRIMARY KEY,
+    model_sha256 TEXT NOT NULL,
+    recipe_version INTEGER NOT NULL,
+    chunker_version INTEGER NOT NULL,
+    converter_version TEXT NOT NULL,
+    text_sha256 TEXT NOT NULL,
+    chunk_count INTEGER NOT NULL,
+    indexed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS embedded_chunks (
+    paper_key TEXT NOT NULL REFERENCES embedded_chunk_sets(paper_key) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    section_index INTEGER NOT NULL,
+    span_start INTEGER NOT NULL,
+    span_end INTEGER NOT NULL,
+    embedding {blob} NOT NULL,
+    PRIMARY KEY (paper_key, chunk_index)
+);
+"""
 
 
 class ChunkSetError(ValueError):
@@ -189,3 +229,232 @@ def rank(
     scored = [(index, score(rounded, vector)) for index, vector in enumerate(vectors)]
     scored.sort(key=lambda hit: (-hit[1], hit[0]))
     return scored[:k]
+
+
+class ChunkEmbedder(Protocol):
+    """What the store needs of an embedder; :class:`~bmlib.embed.Embedder` is one.
+
+    ``model`` is the file the vectors come from; ``None`` is refused.
+    """
+
+    model: ModelFile | None
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed texts as documents, in order."""
+        ...
+
+    def embed_query(self, query: str) -> list[float]:
+        """Embed a search query, with the model's query prompt."""
+        ...
+
+
+@dataclass(frozen=True)
+class ChunkHit:
+    """One search result: which chunk, its section, where it lies, its score."""
+
+    chunk_index: int
+    section_index: int
+    span: TextSpan
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return ``{"chunk_index", "section_index", "span", "score"}``."""
+        return {
+            "chunk_index": self.chunk_index,
+            "section_index": self.section_index,
+            "span": self.span.to_dict(),
+            "score": self.score,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ChunkHit:
+        """Rebuild a hit from :meth:`to_dict` output."""
+        return cls(
+            data["chunk_index"],
+            data["section_index"],
+            TextSpan.from_dict(data["span"]),
+            data["score"],
+        )
+
+
+def ensure_schema(conn: Any) -> None:
+    """Create the store's two tables if they do not exist (SQLite or PostgreSQL)."""
+    create_tables(conn, _SCHEMA.format(blob="BLOB" if is_sqlite(conn) else "BYTEA"))
+
+
+def current_label(canonical: CanonicalText, embedder: ChunkEmbedder) -> ChunkSetLabel:
+    """Return the label a set indexed now from ``canonical`` would carry.
+
+    Raises:
+        UnidentifiedEmbedderError: If the embedder carries no model.
+        ValueError: If the text holds a lone surrogate, which cannot be hashed.
+    """
+    model = getattr(embedder, "model", None)
+    if not isinstance(model, ModelFile):
+        raise UnidentifiedEmbedderError(
+            "the embedder carries no model identity; build it with Embedder.from_model"
+        )
+    try:
+        encoded = canonical.text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"the canonical text holds a lone surrogate ({exc})") from exc
+    return ChunkSetLabel(
+        model.sha256,
+        EMBEDDING_RECIPE_VERSION,
+        CHUNKER_VERSION,
+        canonical.converter_version,
+        hashlib.sha256(encoded).hexdigest(),
+    )
+
+
+def _check_key(key: object) -> None:
+    if type(key) is not str or not key:
+        raise ValueError(f"a paper's key must be a non-empty str, got {key!r}")
+
+
+def index_paper(
+    conn: Any,
+    key: str,
+    canonical: CanonicalText,
+    embedder: ChunkEmbedder,
+    on_progress: Callable[[int, int], bool | None] | None = None,
+) -> int:
+    """Chunk, embed and store ``canonical`` under ``key``, replacing any set there.
+
+    Every chunk is embedded before the write transaction opens, so a failure
+    or a cancel leaves the stored set as it was. ``on_progress(done, total)``
+    is called after each batch of :data:`INDEX_BATCH_SIZE` chunks; returning
+    ``False`` cancels. A text with no chunks is stored as a set of none.
+
+    Returns:
+        The number of chunks stored.
+
+    Raises:
+        ValueError: For an empty or non-``str`` key, or a lone surrogate.
+        UnidentifiedEmbedderError: If the embedder carries no model.
+        IndexingCancelled: If ``on_progress`` returned ``False``.
+        EmbedError: As the embedder raises it.
+    """
+    _check_key(key)
+    label = current_label(canonical, embedder)
+    chunks = chunk_canonical(canonical)
+    blobs: list[bytes] = []
+    for start in range(0, len(chunks), INDEX_BATCH_SIZE):
+        batch = chunks[start : start + INDEX_BATCH_SIZE]
+        texts = [canonical.text[c.span.start : c.span.end] for c in batch]
+        vectors = embedder.embed_documents(texts)
+        if len(vectors) != len(texts):
+            raise VectorError(f"the embedder returned {len(vectors)} vectors for {len(texts)}")
+        blobs.extend(encode_vector(v) for v in vectors)
+        if on_progress is not None and on_progress(len(blobs), len(chunks)) is False:
+            raise IndexingCancelled(f"indexing {key!r} was cancelled; nothing was stored")
+    p = placeholder(conn)
+    with transaction(conn):
+        _delete(conn, key)
+        execute(
+            conn,
+            f"INSERT INTO embedded_chunk_sets (paper_key, {', '.join(LABEL_FIELDS)}, "
+            f"chunk_count, indexed_at) VALUES ({placeholders(conn, 8)})",
+            [key, *(getattr(label, f) for f in LABEL_FIELDS), len(chunks), _now()],
+        )
+        executemany(
+            conn,
+            "INSERT INTO embedded_chunks (paper_key, chunk_index, section_index, span_start, "
+            f"span_end, embedding) VALUES ({p}, {p}, {p}, {p}, {p}, {p})",
+            [
+                (key, i, c.section_index, c.span.start, c.span.end, blob)
+                for i, (c, blob) in enumerate(zip(chunks, blobs, strict=True))
+            ],
+        )
+    return len(chunks)
+
+
+def search(
+    conn: Any,
+    key: str,
+    canonical: CanonicalText,
+    question: str,
+    embedder: ChunkEmbedder,
+    k: int,
+) -> list[ChunkHit]:
+    """Return the ``k`` chunks of ``key``'s set that best match ``question``, best first.
+
+    ``canonical`` is the text the app holds for the paper; the set must have
+    been indexed from exactly it, by the embedder's model, under the current
+    recipe and chunker. An exact tie goes to the lower chunk index.
+
+    Raises:
+        ValueError: For an empty or non-``str`` key, a bad ``k``, or a lone surrogate.
+        UnidentifiedEmbedderError: If the embedder carries no model.
+        NotIndexedError: If no set is stored under ``key``.
+        StaleChunkSetError: If the stored label differs from the current one.
+        CorruptChunkSetError: If a stored row cannot be read as part of the set.
+        EmbedError: As the embedder raises it.
+    """
+    _check_key(key)
+    if type(k) is not int or k < 1:
+        raise ValueError(f"k must be a positive integer, got {k!r}")
+    label = current_label(canonical, embedder)
+    p = placeholder(conn)
+    row = fetch_one(
+        conn,
+        f"SELECT {', '.join(LABEL_FIELDS)}, chunk_count FROM embedded_chunk_sets "
+        f"WHERE paper_key = {p}",
+        [key],
+    )
+    if row is None:
+        raise NotIndexedError(f"no chunk set is stored for {key!r}")
+    try:
+        stored = ChunkSetLabel.from_dict({f: row[f] for f in LABEL_FIELDS})
+    except ValueError as exc:
+        raise CorruptChunkSetError(f"the stored label for {key!r} is unreadable: {exc}") from exc
+    differing = stored.differences(label)
+    if differing:
+        raise StaleChunkSetError(differing)
+    count = row["chunk_count"]
+    if count == 0:
+        return []
+    rows = fetch_all(
+        conn,
+        "SELECT chunk_index, section_index, span_start, span_end, embedding "
+        f"FROM embedded_chunks WHERE paper_key = {p} ORDER BY chunk_index",
+        [key],
+    )
+    if type(count) is not int or [r["chunk_index"] for r in rows] != list(range(count)):
+        raise CorruptChunkSetError(f"the set for {key!r} records {count!r} chunks, not its rows")
+    vectors = [decode_vector(bytes(r["embedding"])) for r in rows]
+    spans = [_stored_span(canonical, r) for r in rows]
+    query = embedder.embed_query(question)
+    return [
+        ChunkHit(index, rows[index]["section_index"], spans[index], value)
+        for index, value in rank(query, vectors, k)
+    ]
+
+
+def delete_paper(conn: Any, key: str) -> None:
+    """Remove ``key``'s set; an absent key is not an error."""
+    _check_key(key)
+    with transaction(conn):
+        _delete(conn, key)
+
+
+def _delete(conn: Any, key: str) -> None:
+    # Explicit, not by cascade: a connection may have foreign keys off.
+    p = placeholder(conn)
+    execute(conn, f"DELETE FROM embedded_chunks WHERE paper_key = {p}", [key])
+    execute(conn, f"DELETE FROM embedded_chunk_sets WHERE paper_key = {p}", [key])
+
+
+def _stored_span(canonical: CanonicalText, row: Any) -> TextSpan:
+    section, start, end = row["section_index"], row["span_start"], row["span_end"]
+    if not all(type(v) is int for v in (section, start, end)) or not (
+        0 <= section < len(canonical.sections) and 0 <= start < end <= len(canonical.text)
+    ):
+        raise CorruptChunkSetError(
+            f"stored chunk {row['chunk_index']!r} lies outside the text: {(section, start, end)!r}"
+        )
+    return TextSpan(start, end)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
