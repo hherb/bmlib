@@ -22,8 +22,9 @@ and sync status reporting.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
@@ -649,6 +650,43 @@ class FetchedRecord:
     # rule and the test that pins it.
     grants: list[Grant] = field(default_factory=list)
     author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary, one key per field in order."""
+        data: dict[str, Any] = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if f.name in ("fulltext_sources", "grants", "author_affiliations"):
+                value = [item.to_dict() for item in value]
+            elif isinstance(value, (list, dict)):
+                value = copy.deepcopy(value)
+            data[f.name] = value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FetchedRecord:
+        """Deserialise from a dictionary produced by :meth:`to_dict`.
+
+        Raises:
+            ValueError: *data* does not carry exactly the fields ``to_dict``
+                writes.
+        """
+        # Imported here, not at the top, where the module imports it for type
+        # checking only.
+        from bmlib.fulltext.models import FullTextSourceEntry
+
+        expected = {f.name for f in fields(cls)}
+        if not isinstance(data, dict) or set(data) != expected:
+            raise ValueError("not a FetchedRecord.to_dict() record")
+        values = dict(data)
+        values["fulltext_sources"] = [
+            FullTextSourceEntry.from_dict(item) for item in data["fulltext_sources"]
+        ]
+        values["grants"] = [Grant.from_dict(item) for item in data["grants"]]
+        values["author_affiliations"] = [
+            AuthorAffiliation.from_dict(item) for item in data["author_affiliations"]
+        ]
+        return cls(**values)
 
 
 # ---------------------------------------------------------------------------

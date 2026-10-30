@@ -4719,6 +4719,11 @@ class TestTheRestatedBugTypesMatchTheOtherModules:
 
         assert set(_BUG_TYPES) == set(service._BUG_TYPES)
 
+    def test_the_record_lookups_copy_holds_the_same_types(self):
+        from bmlib.publications import lookup
+
+        assert set(lookup._BUG_TYPES) == set(_BUG_TYPES)
+
     @pytest.mark.parametrize(
         "excluded",
         [
