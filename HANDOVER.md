@@ -1,10 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 5, metadata
-by identifier**, in two PRs: part 1 fixes #579 on `fix/known-html-link-last`,
-part 2 is the lookup on `feat/record-lookup`, stacked on part 1; item 7 was PR
-#575, merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
-merged since — #526 through #575 — is unreleased._
+_Last updated: 2026-10-30 (**this session is StudyAnalyzer's item 8, the
+chunk store**, on `feat/vector-store`; item 5 was PRs #580 and #584, both
+merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
+merged since — #526 through #584 — is unreleased. **No StudyAnalyzer item is
+left in bmlib.**_
 
 ## What 0.11.0 costs a downstream
 
@@ -37,52 +37,43 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: one paper's record by identifier (StudyAnalyzer item 5)
+## This session: a paper's chunks, stored and searched (StudyAnalyzer item 8)
 
-Spec `docs/superpowers/specs/2026-10-30-record-lookup-design.md` (the
-maintainer's decisions), plan `docs/superpowers/plans/2026-10-30-record-lookup.md`.
-Two PRs: **#580** (part 1, closes #579) and the lookup PR stacked on it.
+Spec `docs/superpowers/specs/2026-10-30-vector-store-design.md` (the
+maintainer's decisions: brute force over sqlite-vec, bmlib owns the storage,
+a stale set refused, one indexing call, both backends, the model identity on
+the embedder), plan `docs/superpowers/plans/2026-10-30-vector-store.md`; the
+CHANGELOG entry *A paper's chunks, stored and searched* is the argument.
+`bmlib.embed.store` (imported as that, **not re-exported** from `bmlib.embed`)
+and `bmlib::embed::store`: `ensure_schema`, `index_paper`, `search`,
+`delete_paper`. A set's label is model sha256, `EMBEDDING_RECIPE_VERSION` (new;
+**bump it with any change that can move a vector**), `CHUNKER_VERSION`, the
+converter version and the text's sha256. `Embedder.from_model` /
+`Embedder::load_model` carry the `ModelFile` without re-hashing; the store
+refuses an `Embedder(path)`. Rust's `sha2` is no longer optional. Held bit for
+bit by `tests/fixtures/vector_store.json`; mutation-checked in both languages
+(the one gap found, Rust's length check, is closed).
 
-**Part 1 (#579, PR #580)**: `FullTextService`'s Tier 0 returned a caller's
-`html` source at once, so every PubMed record's `doi.org` link ended the chain
-before Europe PMC ran (BioMedicalNews's paper view hit it). The first `html`
-entry is now held and used only once every tier that can fetch text has failed,
-ahead of Tier 3's link; Python and Rust.
+**For StudyAnalyzer plan 2b**: download with `download_model`, then build the
+embedder with `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, &path)` (never
+`load`); call `embed::store::ensure_schema` on the app's database once;
+`index_paper(db, paper_key, &canonical, &mut embedder, Some(&mut progress))`
+after converting the full text (show progress; `false` cancels and keeps the
+old set); `search(db, paper_key, &canonical, question, &mut embedder, k)` for
+retrieval mode. On `StoreError::Stale(_)` re-index (re-converting first if
+`ConverterVersion` is among the fields); `NotIndexed` means index first;
+`Corrupt` means re-index too. Switching F16 ↔ Q8_0 makes every paper stale.
 
-**Part 2, the lookup**: `lookup_record()` in `bmlib.publications` and
-`bmlib::publications::lookup` — a PMID, DOI, PMC ID or PPR accession in, a
-`FetchedRecord` out. PubMed first, OpenAlex always (its identifiers and
-open-access locations), Europe PMC for a PPR (its `fullTextXML` as an `xml`
-source). A preprint OpenAlex merged with its journal version returns the
-preprint, the journal version in `published_version`. Seven per-source
-outcomes; `tests/fixtures/record_lookup.json` (60 cases, from
-`scripts/make_record_lookup_fixture.py`) holds Rust to it. On the way:
-OpenAlex's normaliser reads `ids.pmcid` (**the OpenAlex sync now stores
-`pmcid`**) and reads every field type-checked in Python as Rust did (a
-wrong-typed field no longer fails its page); `normalize_europepmc` is new;
-`FetchedRecord` has `to_dict`/`from_dict`; three stale manual lines claiming
-`pmc_id` is not persisted were fixed. **The final review's fix**: a DOI or PPR
-lookup PubMed did not confirm carries neither OpenAlex's PMID nor PMC ID (an
-outage decided which version the record named). Filed from it: **#581** (an
-unconfirmed merged preprint keeps the journal version's *locations* — a
-decision), **#582** (the normalisers drop a wrong-typed field silently; #209's
-question) and **#583** (OpenAlex abstract tie order differs between languages).
-**The second review's fixes**: a 200's body is read as UTF-8 whatever its
-declared charset (a `rot13` one raised `TypeError` out of the lookup), a lone
-surrogate in a body or the caller's DOI is refused (it raised
-`UnicodeEncodeError` from `quote()`), `FetchedRecord.from_dict` names a
-wrong-typed field, Europe PMC's `pmid` must be ASCII digits, and 13 fixture
-cases pin what 21 of 25 mutations survived. Filed from it: **#585** (which
-`SourceOutcome`s are worth a retry — a decision).
+## Previous session: one paper's record by identifier (StudyAnalyzer item 5)
 
-**For StudyAnalyzer plan 2a** (its *Metadata waits for bmlib item 5*): call
-`lookup_record` with the app's identifiers — **a PPR accession as `ppr_id`**,
-not in `pmid` as its `Identifiers` holds it — and hand the record's
-`fulltext_sources`, `pmc_id`, `doi` and `pmid` to `fetch_fulltext`. Show
-`published_version` as "a published version exists"; a `request_failed` at any
-source is worth a retry and never means "no such paper". In Rust, call it with
-`&LookupRequest { …, email }` over the app's `HttpClient`. **Item 8 (vector
-storage) is the last StudyAnalyzer item left in bmlib.**
+PRs #580 (#579: a caller's `html` source is the last-resort link) and #584
+(`lookup_record` / `bmlib::publications::lookup`), both merged; the CHANGELOG
+entries are the argument. Filed from its reviews: **#581**, **#582**, **#583**,
+**#585**. **For StudyAnalyzer plan 2a**: call `lookup_record` with **a PPR
+accession as `ppr_id`**, hand the record's `fulltext_sources`, `pmc_id`, `doi`
+and `pmid` to `fetch_fulltext`, show `published_version` as "a published
+version exists", and treat `request_failed` at any source as worth a retry,
+never "no such paper".
 
 ## Previous session: the PICO agent (StudyAnalyzer item 7)
 
@@ -217,9 +208,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,546 passing + 111 skipped** on `feat/record-lookup`
+- **Tests: 8,673 passing + 138 skipped** on `feat/vector-store`
   (`uv run pytest tests/ -v`, 2026-10-30; the embedder's live tests skip
-  without `BMLIB_EMBED_MODEL`); measure `main` with `pytest
+  without `BMLIB_EMBED_MODEL` — the GGUF files are in
+  `~/.cache/bmlib/models/` on this machine, and the Python live tests need
+  `.[all,dev,embed]` installed); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #542's session ran
   `test_backends.py` with it (197 passed + 1 skipped). The default skips are
@@ -245,10 +238,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**116 open** (`gh issue list --state open --limit 300`, 2026-10-30, #579 among them until PR #580 merges, and #581–#583 from this session; #560–#578 are not yet sorted into the lists below;
-PR #547's #548, #549, #552 and #553 are the four since the last count; this
-session filed **#557** (`match_section_type` parity) and **#558** (scraper
-0.29), and closed none). **#528** and
+**116 open** (`gh issue list --state open --limit 300`, 2026-10-30, after
+item 8; #579 is closed, and #560–#585 are not yet sorted into the lists below;
+item 5 filed #581–#583 and #585, item 8 filed none). **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI

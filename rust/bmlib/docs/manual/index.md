@@ -35,7 +35,7 @@ cargo add bmlib --no-default-features
 | `pdf` | off | `pdfium-render`, `pdfium-bundled` | PDF → text. Downloads a prebuilt PDFium at build time |
 | `html` | off | `scraper`, `ego-tree` | `fulltext::canonical`'s HTML → canonical text (html5ever, as Python's `html` extra) |
 | `postgres` | off | `postgres` | `db::connect_postgresql`. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present |
-| `embed` | off | `llama-cpp-2`, `sha2` | `embed::Embedder` and model verification; the download also needs `http-ureq`. Builds llama.cpp (cmake and a C++ compiler) |
+| `embed` | off | `llama-cpp-2` | `embed::Embedder` and model verification; the download also needs `http-ureq`. Builds llama.cpp (cmake and a C++ compiler) |
 | `embed-metal` | off | `embed` + llama.cpp's Metal backend | Names Metal explicitly; on macOS `embed` already uses it |
 
 The constants and pure rules of every module (the embedding vector rules, the
@@ -54,7 +54,7 @@ canonical-text model, the JSON repair, the citation formatter) need no feature.
 | `transparency` | CrossRef / Europe PMC / PubMed / OpenAlex / ClinicalTrials.gov → a 0–100 transparency score | [transparency.md](../../../../docs/manual/transparency.md) | — |
 | `llm` | `LlmClient` over the OpenAI-compatible, Anthropic and Ollama wire protocols; streaming; context windows; JSON repair; chunking; token tracking | [llm.md](../../../../docs/manual/llm.md) | — |
 | `agents` | `BaseAgent`'s retry/truncation loop and per-agent metrics | [agents.md](../../../../docs/manual/agents.md) | — |
-| `embed` | arctic-embed-l-v2.0 GGUF in process, pinned and verified model files, vector rules | [embeddings.md](../../../../docs/manual/embeddings.md) | — |
+| `embed` | arctic-embed-l-v2.0 GGUF in process, pinned and verified model files, vector rules, a paper's chunks stored and searched | [embeddings.md](../../../../docs/manual/embeddings.md) | [embed.md](embed.md) |
 | `templates` | `{{ variable }}` prompt templates with a user/default directory lookup | [templates.md](../../../../docs/manual/templates.md) | — |
 | `http` | `UreqClient`, the one implementation of `HttpClient` that goes out | — | — |
 | `atomic` | `atomic_write`: publish a file so no partial version is visible | — | — |
