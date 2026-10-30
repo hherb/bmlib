@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from bmlib.embed import (
+    EMBEDDING_RECIPE_VERSION,
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
     EMBEDDING_DIM,
@@ -57,6 +58,7 @@ def test_every_contract_section_is_read() -> None:
 
 def test_constants() -> None:
     assert (EMBEDDING_DIM, QUERY_PREFIX, MAX_TOKENS) == (256, "query: ", 8192)
+    assert EMBEDDING_RECIPE_VERSION == 1
 
 
 _ERROR_MESSAGES = {"too_short": "values, need at least", "not_scalable": "made unit length"}

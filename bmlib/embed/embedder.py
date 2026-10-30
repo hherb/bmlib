@@ -27,6 +27,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from bmlib.embed.model import ModelFile
 from bmlib.embed.vectors import (
     EMBEDDING_DIM,
     MAX_TOKENS,
@@ -104,7 +105,13 @@ class Embedder:
     Not thread-safe (llama.cpp's context is not): use one per thread, or hold
     a lock round each call. :meth:`close` frees the model; so does leaving a
     ``with`` block.
+
+    ``model`` is the :class:`~bmlib.embed.ModelFile` the file was loaded as,
+    set by :meth:`from_model`; ``None`` for one built from a path alone, which
+    :mod:`bmlib.embed.store` refuses, since it cannot label what it stores.
     """
+
+    model: ModelFile | None = None
 
     def __init__(self, model_path: Path, *, gpu_layers: int = -1) -> None:
         """Load the GGUF model.
@@ -152,6 +159,21 @@ class Embedder:
             raise ModelLoadError(
                 f"{model_path} embeds to {width} values, need at least {EMBEDDING_DIM}"
             )
+
+    @classmethod
+    def from_model(cls, model: ModelFile, model_path: Path, *, gpu_layers: int = -1) -> Embedder:
+        """Load ``model_path`` as ``model``, and carry its identity.
+
+        The file is not hashed: this trusts the check
+        :func:`~bmlib.embed.download_model` made when it wrote or verified the
+        file, so a launch hashes the file once.
+
+        Raises:
+            ModelLoadError: As the constructor.
+        """
+        embedder = cls(model_path, gpu_layers=gpu_layers)
+        embedder.model = model
+        return embedder
 
     def close(self) -> None:
         """Free the model. The embedder cannot be used afterwards."""

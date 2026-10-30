@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from bmlib.embed import (
+    ARCTIC_EMBED_L_V2_F16,
     EMBEDDING_DIM,
     MAX_TOKENS,
     BatchDecodeError,
@@ -414,3 +415,32 @@ def test_every_embedder_error_survives_pickling(error: EmbedError) -> None:
         error.args,
         repr(vars(error)),
     )
+
+
+@pytest.fixture
+def fake_llama_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "llama_cpp", _FakeLlamaModule(EMBEDDING_DIM))
+
+
+def test_a_path_built_embedder_has_no_model(fake_llama_module: None, tmp_path: Path) -> None:
+    assert Embedder(tmp_path / "model.gguf").model is None
+
+
+def test_from_model_carries_the_model_file(fake_llama_module: None, tmp_path: Path) -> None:
+    embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_F16, tmp_path / "model.gguf")
+    assert embedder.model is ARCTIC_EMBED_L_V2_F16
+
+
+def test_from_model_does_not_hash(
+    fake_llama_module: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    import bmlib.embed.model
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("from_model hashed the model file")
+
+    monkeypatch.setattr(bmlib.embed.model, "verify_model", refuse)
+    monkeypatch.setattr(hashlib, "sha256", refuse)
+    Embedder.from_model(ARCTIC_EMBED_L_V2_F16, tmp_path / "model.gguf")
