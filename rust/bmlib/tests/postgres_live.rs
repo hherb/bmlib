@@ -506,3 +506,60 @@ fn a_split_identity_consolidates_its_children() {
     // duplicated — the branch the lost space would have broken.
     assert_eq!(count(db, "SELECT COUNT(*) FROM publication_grants"), 1);
 }
+
+// ---------------------------------------------------------------------------
+// The vector store
+// ---------------------------------------------------------------------------
+
+/// An embedder that needs no model; the store's rules are tested on SQLite in
+/// `tests/vector_store.rs`, so this only asks whether PostgreSQL holds them.
+struct ConstantEmbedder;
+
+impl bmlib::embed::store::ChunkEmbedder for ConstantEmbedder {
+    fn model(&self) -> Option<&bmlib::embed::ModelFile> {
+        Some(&bmlib::embed::ARCTIC_EMBED_L_V2_F16)
+    }
+
+    fn embed_documents(
+        &mut self,
+        texts: &[&str],
+    ) -> Result<Vec<Vec<f32>>, bmlib::embed::store::BoxError> {
+        Ok(texts.iter().map(|t| unit(t.len())).collect())
+    }
+
+    fn embed_query(&mut self, _query: &str) -> Result<Vec<f32>, bmlib::embed::store::BoxError> {
+        Ok(unit(3))
+    }
+}
+
+/// A unit vector along one axis.
+fn unit(axis: usize) -> Vec<f32> {
+    let mut v = vec![0.0; bmlib::embed::EMBEDDING_DIM];
+    v[axis % bmlib::embed::EMBEDDING_DIM] = 1.0;
+    v
+}
+
+#[test]
+fn vector_store_round_trip() {
+    use bmlib::embed::store::{delete_paper, ensure_schema, index_paper, search, StoreError};
+    let Some(mut t) = TestDb::new() else { return };
+    let db = t.db();
+    ensure_schema(db).expect("schema");
+    ensure_schema(db).expect("schema is idempotent");
+    let text = bmlib::fulltext::canonical::canonical_from_plain_text("One.\n\nTwo two.", "T");
+    let count = index_paper(db, "k", &text, &mut ConstantEmbedder, None).expect("index");
+    assert!(count >= 1);
+    let hits = search(db, "k", &text, "q", &mut ConstantEmbedder, 5).expect("search");
+    assert_eq!(hits.len(), count);
+    let mut other = text.clone();
+    other.converter_version = "plain-99".to_string();
+    assert!(matches!(
+        search(db, "k", &other, "q", &mut ConstantEmbedder, 5),
+        Err(StoreError::Stale(_))
+    ));
+    delete_paper(db, "k").expect("delete");
+    assert!(matches!(
+        search(db, "k", &text, "q", &mut ConstantEmbedder, 5),
+        Err(StoreError::NotIndexed(_))
+    ));
+}

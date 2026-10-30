@@ -318,3 +318,32 @@ fn load_model_refuses_a_missing_file_as_load_does() {
         .expect_err("a missing file must not load");
     assert!(matches!(error, EmbedError::Load(_)), "{error}");
 }
+
+#[test]
+fn the_store_indexes_and_searches_with_the_real_embedder() {
+    use bmlib::embed::store::{ensure_schema, index_paper, search};
+    let Some(path) = model() else {
+        eprintln!("skipped: BMLIB_EMBED_MODEL is not set");
+        return;
+    };
+    let mut embedder = Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, Path::new(&path))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut db = bmlib::db::open_memory().unwrap();
+    ensure_schema(&mut db).unwrap();
+    let text = bmlib::fulltext::canonical::canonical_from_plain_text(
+        "Aspirin reduced strokes in older adults.\n\nThe weather in Paris was mild.",
+        "",
+    );
+    index_paper(&mut db, "k", &text, &mut embedder, None).unwrap();
+    let hits = search(
+        &mut db,
+        "k",
+        &text,
+        "Does aspirin prevent stroke?",
+        &mut embedder,
+        2,
+    )
+    .unwrap();
+    assert!(!hits.is_empty());
+    assert!(text.span_text(hits[0].span).unwrap().contains("Aspirin"));
+}
