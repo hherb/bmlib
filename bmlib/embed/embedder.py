@@ -111,7 +111,7 @@ class Embedder:
     :mod:`bmlib.embed.store` refuses, since it cannot label what it stores.
     """
 
-    model: ModelFile | None = None
+    _model: ModelFile | None = None
 
     def __init__(self, model_path: Path, *, gpu_layers: int = -1) -> None:
         """Load the GGUF model.
@@ -166,14 +166,30 @@ class Embedder:
 
         The file is not hashed: this trusts the check
         :func:`~bmlib.embed.download_model` made when it wrote or verified the
-        file, so a launch hashes the file once.
+        file, so a launch hashes the file once. Its size is checked, which
+        tells the pinned files apart: loaded as the other one, every set it
+        stored would carry the wrong model's sha256 and pass the store's label.
 
         Raises:
-            ModelLoadError: As the constructor.
+            ModelLoadError: If the file is not ``model.size`` bytes, or as the
+                constructor.
         """
+        try:
+            size: int | None = Path(model_path).stat().st_size
+        except OSError:
+            size = None  # absent or unreadable: the constructor reports it
+        if size is not None and size != model.size:
+            raise ModelLoadError(
+                f"{model_path} is {size} bytes, not the {model.size} of {model.file}"
+            )
         embedder = cls(model_path, gpu_layers=gpu_layers)
-        embedder.model = model
+        embedder._model = model
         return embedder
+
+    @property
+    def model(self) -> ModelFile | None:
+        """The model file this was loaded as, or ``None``."""
+        return self._model
 
     def close(self) -> None:
         """Free the model. The embedder cannot be used afterwards."""

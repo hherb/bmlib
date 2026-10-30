@@ -106,7 +106,18 @@ def encode_cases() -> list[dict[str, Any]]:
 def decode_cases() -> list[dict[str, Any]]:
     """Stored blobs read back: their values, or refused as corrupt."""
     good = encode_vector(unit(3))
+    values = list(struct.unpack(f"<{EMBEDDING_DIM}f", good))
+
+    def packed(scaled: list[float]) -> bytes:
+        return struct.pack(f"<{EMBEDDING_DIM}f", *scaled)
+
     blobs = [
+        # Finite and of the right length, but not what encode_vector writes.
+        ("zero", bytes(4 * EMBEDDING_DIM)),
+        ("norm-half", packed([x * 0.5 for x in values])),
+        ("one-huge-value", struct.pack("<f", 1e30) + good[4:]),
+        ("norm-just-inside-tolerance", packed([x * (1 + 0.9 * NORM_TOLERANCE) for x in values])),
+        ("norm-just-outside-tolerance", packed([x * (1 + 1.1 * NORM_TOLERANCE) for x in values])),
         ("round-trip", good),
         ("one-byte-short", good[:-1]),
         ("one-byte-long", good + b"\0"),

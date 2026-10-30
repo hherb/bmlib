@@ -24,7 +24,9 @@ let query = embedder.embed_query("what treats malaria")?; // 256 values, unit le
 
 `Embedder::load_model` loads as `Embedder::load` does and keeps the
 `ModelFile` (`embedder.model()`), without hashing the file again — it trusts
-`download_model`'s check. The chunk store refuses an embedder without that
+`download_model`'s check. It does check the file is `model.size` bytes, before
+loading it (`EmbedError::Load` otherwise), which tells the two pinned files
+apart. The chunk store refuses an embedder without that
 identity, so build the one you index with this way. Drop the `Embedder` before
 the process exits (llama.cpp aborts at `exit()` on Metal while a model is
 loaded).
@@ -81,8 +83,9 @@ println!("{}", paper.span_text(hits[0].span).unwrap());
 file's sha256, `EMBEDDING_RECIPE_VERSION`, `CHUNKER_VERSION`, the text's
 `converter_version`, the text's sha256. Index the paper again. The other
 variants mirror Python's classes: `NotIndexed`, `Corrupt` (a row that cannot be
-part of the set), `UnidentifiedEmbedder`, `Vector`, `InvalidArgument` (an empty
-key, a `k` of 0), plus `Db` and `Embed` carrying the database's and the
+part of the set, a stored vector that is not a blob of unit length among
+them), `UnidentifiedEmbedder`, `Vector`, `InvalidArgument` (an empty key, a `k`
+of 0, or a chunker failure or span outside the text in `index_paper`), plus `Db` and `Embed` carrying the database's and the
 embedder's own errors.
 
 The scoring is Python's to the bit: vectors stored as 256 little-endian

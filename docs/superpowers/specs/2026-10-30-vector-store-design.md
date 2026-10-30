@@ -39,7 +39,7 @@ nothing, so the store refuses that search instead.
 
 - **sqlite-vec, pgvector or any index.** Search is brute-force cosine *(the
   maintainer's decision)*: one paper is ~50–150 chunks of 256 values, scored in
-  well under a millisecond, and sqlite-vec's `vec0` is itself a flat scan today.
+  well under a millisecond (both estimates, not measured), and sqlite-vec's `vec0` is itself a flat scan today.
   sqlite-vec would add a pre-1.0 native dependency that iOS and the App Store
   sandbox cannot load at run time and some Python builds cannot load at all.
 - **Searching across papers.** A shared vector database with bmlibrarian is a

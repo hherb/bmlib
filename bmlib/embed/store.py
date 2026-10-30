@@ -47,6 +47,7 @@ from bmlib.db import (
     is_sqlite,
     placeholder,
     placeholders,
+    require_transaction_control,
     transaction,
 )
 from bmlib.embed.model import ModelFile
@@ -98,7 +99,14 @@ class ChunkSetError(ValueError):
 
 
 class NotIndexedError(ChunkSetError):
-    """No set is stored under the key."""
+    """No set is stored under ``key``."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        super().__init__(f"no chunk set is stored for {key!r}")
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the key
+        return (type(self), (self.key,), self.__dict__)
 
 
 class StaleChunkSetError(ChunkSetError):
@@ -114,7 +122,7 @@ class StaleChunkSetError(ChunkSetError):
         )
 
     def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
-        return (type(self), (self.fields,))
+        return (type(self), (self.fields,), self.__dict__)
 
 
 class CorruptChunkSetError(ChunkSetError):
@@ -204,13 +212,19 @@ def decode_vector(blob: bytes) -> list[float]:
     """Return a stored vector's values.
 
     Raises:
-        CorruptChunkSetError: Unless it is ``4 * EMBEDDING_DIM`` bytes of finite values.
+        CorruptChunkSetError: Unless it is ``4 * EMBEDDING_DIM`` bytes of finite
+            values whose norm is within :data:`NORM_TOLERANCE` of 1, as
+            :func:`encode_vector` wrote it.
     """
     if len(blob) != _CODEC.size:
         raise CorruptChunkSetError(f"a stored vector is {len(blob)} bytes, not {_CODEC.size}")
     values = list(_CODEC.unpack(blob))
     if not all(math.isfinite(x) for x in values):
         raise CorruptChunkSetError("a stored vector holds a value that is not finite")
+    # Unchecked, one bad exponent ranked its chunk first on every question.
+    norm = math.sqrt(score(values, values))
+    if not abs(norm - 1.0) <= NORM_TOLERANCE:
+        raise CorruptChunkSetError(f"a stored vector is not unit length, its norm is {norm}")
     return values
 
 
@@ -239,7 +253,10 @@ class ChunkEmbedder(Protocol):
     ``model`` is the file the vectors come from; ``None`` is refused.
     """
 
-    model: ModelFile | None
+    @property
+    def model(self) -> ModelFile | None:
+        """The model file the vectors come from."""
+        ...
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed texts as documents, in order."""
@@ -333,6 +350,8 @@ def index_paper(
 
     Raises:
         ValueError: For an empty or non-``str`` key, or a lone surrogate.
+        TransactionModeError: If ``conn`` is not in its driver's default
+            transaction mode; raised before anything is embedded.
         UnidentifiedEmbedderError: If the embedder carries no model.
         IndexingCancelled: If ``on_progress`` returned ``False``.
         VectorError: If the embedder returned the wrong number of vectors, or
@@ -340,6 +359,9 @@ def index_paper(
         EmbedError: As the embedder raises it.
     """
     _check_key(key)
+    # At the entry, as sync() does: transaction() would refuse it only after
+    # every chunk had been embedded.
+    require_transaction_control(conn)
     label = current_label(canonical, embedder)
     chunks = chunk_canonical(canonical)
     blobs: list[bytes] = []
@@ -412,7 +434,7 @@ def search(
         [key],
     )
     if not rows:
-        raise NotIndexedError(f"no chunk set is stored for {key!r}")
+        raise NotIndexedError(key)
     try:
         stored = ChunkSetLabel.from_dict({f: rows[0][f] for f in LABEL_FIELDS})
     except ValueError as exc:
@@ -422,15 +444,16 @@ def search(
         raise StaleChunkSetError(differing)
     count = rows[0]["chunk_count"]
     chunks = [r for r in rows if r["chunk_index"] is not None]
+    # The length first: a corrupt count of 10**12 must not build a list that long.
     if (
         type(count) is not int
-        or count < 0
+        or count != len(chunks)
         or [r["chunk_index"] for r in chunks] != list(range(count))
     ):
         raise CorruptChunkSetError(f"the set for {key!r} records {count!r} chunks, not its rows")
     if not chunks:
         return []
-    vectors = [decode_vector(bytes(r["embedding"])) for r in chunks]
+    vectors = [decode_vector(_stored_blob(r)) for r in chunks]
     spans = [_stored_span(canonical, r) for r in chunks]
     query = embedder.embed_query(question)
     encode_vector(query)  # held to the stored vectors' rules: a VectorError otherwise
@@ -452,6 +475,16 @@ def _delete(conn: Any, key: str) -> None:
     p = placeholder(conn)
     execute(conn, f"DELETE FROM embedded_chunks WHERE paper_key = {p}", [key])
     execute(conn, f"DELETE FROM embedded_chunk_sets WHERE paper_key = {p}", [key])
+
+
+def _stored_blob(row: Any) -> bytes:
+    # SQLite's BLOB column takes any type, and bytes(1024) is 1,024 zero bytes.
+    value = row["embedding"]
+    if not isinstance(value, (bytes, bytearray, memoryview)):
+        raise CorruptChunkSetError(
+            f"stored chunk {row['chunk_index']!r}'s vector is not a blob: {type(value).__name__}"
+        )
+    return bytes(value)
 
 
 def _stored_span(canonical: CanonicalText, row: Any) -> TextSpan:

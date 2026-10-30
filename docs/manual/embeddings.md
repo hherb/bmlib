@@ -21,8 +21,11 @@ embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_Q8_0, path)
 ```
 
 `Embedder.from_model(model, path, *, gpu_layers=-1)` *(unreleased)* loads as
-`Embedder(path)` does and keeps `model` as `embedder.model`, without hashing
-the file again (it trusts `download_model`'s check). The chunk store needs that
+`Embedder(path)` does and keeps `model` as `embedder.model` (read-only),
+without hashing the file again (it trusts `download_model`'s check). It does
+check the file is `model.size` bytes, before loading it, which tells the two
+pinned files apart: loaded as the other one, every set indexed would carry the
+wrong model's sha256 and pass the store's label. The chunk store needs that
 identity; `Embedder(path)` leaves `model` as `None`.
 
 `download_model` streams into a hidden temporary file of its own
@@ -177,9 +180,14 @@ for hit in search(conn, "pmid:12345", canonical, "Was the trial blinded?", embed
 
 `search` reads the label and the rows in one statement, so a re-index by
 another process while it runs is seen whole or not at all. Two processes
-indexing the same key at once leave one whole set, the later writer's; on
-PostgreSQL, if the key had no set yet, the later one can instead fail with the
-driver's unique-violation error (reasoned, not measured), and can be retried. The question's
+indexing the same key at once leave one whole set, the later writer's —
+reasoned, not measured: SQLite serialises the two writes, and on PostgreSQL
+the later writer's delete sees the earlier one's set once it commits and the
+foreign key's `ON DELETE CASCADE` removes that set's chunks (the explicit
+delete of chunks ahead of it does not see them). On PostgreSQL, if the key had
+no set yet, the later one can instead fail with the driver's unique-violation
+error, and can be retried. `index_paper` checks the connection's transaction
+mode before embedding anything (`bmlib.db.TransactionModeError`). The question's
 vector is held to the stored vectors' rules (`VectorError` otherwise).
 
 `key` is the caller's own identifier, any non-empty `str`. `embedder` is
@@ -198,10 +206,10 @@ always `index_paper` again, with a re-converted text if the converter changed.
 Moving between the F16 and Q8_0 files is a different model.
 
 Errors, all `ChunkSetError` subclasses of `ValueError` (and picklable):
-`NotIndexedError` (no set under the key), `StaleChunkSetError`,
+`NotIndexedError` (no set under `key`, its attribute), `StaleChunkSetError`,
 `CorruptChunkSetError` (a row that cannot be part of the set — its count, an
-index, a span outside the text, a vector that is not 1,024 bytes of finite
-values; never scored), `UnidentifiedEmbedderError` (an embedder with no
+index, a span outside the text, a vector that is not a blob of 1,024 bytes of
+finite values of unit length; never scored), `UnidentifiedEmbedderError` (an embedder with no
 `model`, refused before anything is embedded or read) and `IndexingCancelled`.
 An empty or non-`str` key, a `k` that is not a positive integer and a text
 holding a lone surrogate are plain `ValueError`s; the embedder's own errors

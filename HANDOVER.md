@@ -49,14 +49,17 @@ and `bmlib::embed::store`: `ensure_schema`, `index_paper`, `search`,
 `delete_paper`. A set's label is model sha256, `EMBEDDING_RECIPE_VERSION` (new;
 **bump it with any change that can move a vector**), `CHUNKER_VERSION`, the
 converter version and the text's sha256. `Embedder.from_model` /
-`Embedder::load_model` carry the `ModelFile` without re-hashing; the store
-refuses an `Embedder(path)`. Rust's `sha2` is no longer optional. Held bit for
+`Embedder::load_model` carry the `ModelFile` without re-hashing (they check
+only that the file is `model.size` bytes, PR #586's review); the store refuses
+an `Embedder(path)`. Open from that review: #587 (re-chunk and compare stored
+spans) and #588 (Rust's store tests on PostgreSQL). Rust's `sha2` is no longer optional. Held bit for
 bit by `tests/fixtures/vector_store.json`; mutation-checked in both languages
 (the one gap found, Rust's length check, is closed).
 
 **For StudyAnalyzer plan 2b**: download with `download_model`, then build the
 embedder with `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, &path)` (never
-`load`); call `embed::store::ensure_schema` on the app's database once;
+`load`; the `ModelFile` must be the one `path` was downloaded as, or the size
+check refuses it); call `embed::store::ensure_schema` on the app's database once;
 `index_paper(db, paper_key, &canonical, &mut embedder, Some(&mut progress))`
 after converting the full text (show progress; `false` cancels and keeps the
 old set); `search(db, paper_key, &canonical, question, &mut embedder, k)` for

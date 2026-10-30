@@ -32,7 +32,8 @@
 use std::path::Path;
 
 use bmlib::embed::{
-    query_text, EmbedError, Embedder, ARCTIC_EMBED_L_V2_F16, EMBEDDING_DIM, MAX_TOKENS,
+    query_text, EmbedError, Embedder, ModelFile, ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0,
+    EMBEDDING_DIM, MAX_TOKENS,
 };
 use serde_json::Value;
 
@@ -40,6 +41,15 @@ const REFERENCE: &str = include_str!("../../../tests/fixtures/embedding_referenc
 
 fn model() -> Option<String> {
     std::env::var("BMLIB_EMBED_MODEL").ok()
+}
+
+/// The pinned model file `path` is, by name: claiming F16 for any file stored
+/// another model's vectors under F16's sha256.
+fn pinned(path: &Path) -> ModelFile {
+    [ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0]
+        .into_iter()
+        .find(|m| path.file_name().is_some_and(|n| n == m.file))
+        .unwrap_or_else(|| panic!("{} is not a pinned model file", path.display()))
 }
 
 /// The model, loaded afresh for each test. Not shared through a static: a
@@ -307,9 +317,10 @@ fn load_model_carries_the_model() {
         eprintln!("skipped: BMLIB_EMBED_MODEL is not set");
         return;
     };
-    let embedder = Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, Path::new(&path))
-        .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(embedder.model(), Some(&ARCTIC_EMBED_L_V2_F16));
+    let pinned = pinned(Path::new(&path));
+    let embedder =
+        Embedder::load_model(&pinned, Path::new(&path)).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(embedder.model(), Some(&pinned));
 }
 
 #[test]
@@ -319,6 +330,27 @@ fn load_model_refuses_a_missing_file_as_load_does() {
     assert!(matches!(error, EmbedError::Load(_)), "{error}");
 }
 
+// Needs no model: the F16 file loaded as Q8_0 stored F16 vectors under Q8_0's
+// sha256, and the size check refuses it before anything is loaded.
+#[test]
+fn load_model_refuses_a_file_of_another_size() {
+    let dir = std::env::temp_dir().join(format!("bmlib-size-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("model.gguf");
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(ARCTIC_EMBED_L_V2_F16.size).unwrap(); // sparse: no gigabyte is written
+    drop(file);
+    let error = Embedder::load_model(&ARCTIC_EMBED_L_V2_Q8_0, &path)
+        .expect_err("a file of another size must not load");
+    std::fs::remove_dir_all(&dir).ok();
+    let message = error.to_string();
+    assert!(matches!(error, EmbedError::Load(_)), "{message}");
+    assert!(
+        message.contains(&format!("is {} bytes, not the", ARCTIC_EMBED_L_V2_F16.size)),
+        "{message}"
+    );
+}
+
 #[test]
 fn the_store_indexes_and_searches_with_the_real_embedder() {
     use bmlib::embed::store::{ensure_schema, index_paper, search};
@@ -326,7 +358,7 @@ fn the_store_indexes_and_searches_with_the_real_embedder() {
         eprintln!("skipped: BMLIB_EMBED_MODEL is not set");
         return;
     };
-    let mut embedder = Embedder::load_model(&ARCTIC_EMBED_L_V2_F16, Path::new(&path))
+    let mut embedder = Embedder::load_model(&pinned(Path::new(&path)), Path::new(&path))
         .unwrap_or_else(|e| panic!("{e}"));
     let mut db = bmlib::db::open_memory().unwrap();
     ensure_schema(&mut db).unwrap();

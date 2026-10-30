@@ -603,3 +603,166 @@ fn a_stored_version_out_of_range_is_corrupt() {
         Value::from(1_i64 << 32),
     );
 }
+
+// --- PR #586's review --------------------------------------------------------
+
+#[test]
+fn a_stored_vector_that_is_not_a_blob_is_corrupt() {
+    corrupt_after(
+        "UPDATE embedded_chunks SET embedding = ? WHERE chunk_index = 0",
+        Value::from(1024_i64),
+    );
+}
+
+#[test]
+fn a_stored_vector_not_of_unit_length_is_corrupt() {
+    // Unchecked, the huge one ranked its chunk first at a score of ~1e28.
+    let mut huge = vec![0_u8; 4 * EMBEDDING_DIM];
+    huge[..4].copy_from_slice(&1e30_f32.to_le_bytes());
+    for blob in [vec![0_u8; 4 * EMBEDDING_DIM], huge] {
+        corrupt_after(
+            "UPDATE embedded_chunks SET embedding = ? WHERE chunk_index = 0",
+            Value::from(blob),
+        );
+    }
+}
+
+#[test]
+fn a_huge_chunk_count_is_corrupt_without_collecting_it() {
+    corrupt_after(
+        "UPDATE embedded_chunk_sets SET chunk_count = ?",
+        Value::from(1_000_000_000_000_i64),
+    );
+}
+
+#[test]
+fn a_set_whose_rows_all_vanished_is_corrupt() {
+    corrupt_after(
+        "DELETE FROM embedded_chunks WHERE paper_key = ?",
+        Value::from("k"),
+    );
+}
+
+#[test]
+fn an_empty_set_recording_a_negative_count_is_corrupt() {
+    let mut db = db();
+    let empty = canonical_from_plain_text("", "");
+    index_paper(&mut db, "k", &empty, &mut f16(), None).unwrap();
+    execute(
+        &mut db,
+        "UPDATE embedded_chunk_sets SET chunk_count = ?",
+        &[Value::from(-1_i64)],
+    )
+    .unwrap();
+    let result = search(&mut db, "k", &empty, "q", &mut f16(), 3);
+    assert!(matches!(result, Err(StoreError::Corrupt(_))), "{result:?}");
+}
+
+#[test]
+fn a_span_that_cannot_be_a_chunk_is_corrupt() {
+    corrupt_after(
+        "UPDATE embedded_chunks SET section_index = ? WHERE chunk_index = 0",
+        Value::from(99_i64),
+    );
+    corrupt_after(
+        "UPDATE embedded_chunks SET span_start = span_end WHERE chunk_index = ?",
+        Value::from(0_i64),
+    );
+}
+
+/// What an embedder hands back for a batch of texts.
+type Batch = fn(&[&str]) -> Vec<Vec<f32>>;
+
+/// An embedder whose second batch is `second(texts)`.
+struct Misbehaving {
+    inner: FakeEmbedder,
+    second: Batch,
+}
+
+impl ChunkEmbedder for Misbehaving {
+    fn model(&self) -> Option<&ModelFile> {
+        self.inner.model()
+    }
+    fn embed_documents(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>, BoxError> {
+        let good = self.inner.embed_documents(texts)?;
+        Ok(if self.inner.batches == 2 {
+            (self.second)(texts)
+        } else {
+            good
+        })
+    }
+    fn embed_query(&mut self, query: &str) -> Result<Vec<f32>, BoxError> {
+        self.inner.embed_query(query)
+    }
+}
+
+fn vectors_of(texts: &[&str]) -> Vec<Vec<f32>> {
+    texts.iter().map(|t| vector_of(t)).collect()
+}
+
+#[test]
+fn bad_embedder_output_is_refused_and_keeps_the_old_set() {
+    let cases: [Batch; 4] = [
+        |texts| {
+            let mut v = vectors_of(texts);
+            v.push(vector_of("x"));
+            v
+        },
+        |texts| {
+            let mut v = vectors_of(texts);
+            v.pop();
+            v
+        },
+        |texts| {
+            vectors_of(texts)
+                .into_iter()
+                .map(|v| v.iter().map(|x| x * 0.5).collect())
+                .collect()
+        },
+        |texts| vec![vec![f32::NAN; EMBEDDING_DIM]; texts.len()],
+    ];
+    for (i, second) in cases.into_iter().enumerate() {
+        let mut db = db();
+        let old = paper(3, "aspirin");
+        let n = index_paper(&mut db, "k", &old, &mut f16(), None).unwrap();
+        let expected = search(&mut db, "k", &old, "q", &mut f16(), 3).unwrap();
+        let mut embedder = Misbehaving {
+            inner: f16(),
+            second,
+        };
+        let result = index_paper(&mut db, "k", &paper(40, "heparin"), &mut embedder, None);
+        assert!(
+            matches!(result, Err(StoreError::Vector(_))),
+            "case {i}: {result:?}"
+        );
+        assert_eq!(count(&mut db, "k"), i64::try_from(n).unwrap(), "case {i}");
+        assert_eq!(
+            search(&mut db, "k", &old, "q", &mut f16(), 3).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn a_failure_inside_the_write_keeps_the_old_set() {
+    let mut db = db();
+    let old = paper(3, "aspirin");
+    let n = index_paper(&mut db, "k", &old, &mut f16(), None).unwrap();
+    let expected = search(&mut db, "k", &old, "q", &mut f16(), 3).unwrap();
+    // After the old set's delete and the new set's row: only a transaction undoes both.
+    execute(
+        &mut db,
+        "CREATE TRIGGER fail BEFORE INSERT ON embedded_chunks \
+         BEGIN SELECT RAISE(ABORT, 'the disk filled'); END",
+        &[],
+    )
+    .unwrap();
+    let result = index_paper(&mut db, "k", &paper(40, "heparin"), &mut f16(), None);
+    assert!(matches!(result, Err(StoreError::Db(_))), "{result:?}");
+    execute(&mut db, "DROP TRIGGER fail", &[]).unwrap();
+    assert_eq!(count(&mut db, "k"), i64::try_from(n).unwrap());
+    assert_eq!(
+        search(&mut db, "k", &old, "q", &mut f16(), 3).unwrap(),
+        expected
+    );
+}

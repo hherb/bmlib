@@ -173,12 +173,28 @@ impl Embedder {
     /// Load `path` as `model`, and carry its identity ([`Embedder::model`]).
     ///
     /// The file is not hashed: this trusts the check `download_model` made
-    /// when it wrote or verified the file, so a launch hashes it once.
+    /// when it wrote or verified the file, so a launch hashes it once. Its
+    /// size is checked, which tells the pinned files apart: loaded as the
+    /// other one, every set it stored would carry the wrong model's sha256
+    /// and pass the store's label.
     ///
     /// # Errors
     ///
-    /// As [`Embedder::load`].
+    /// [`EmbedError::Load`] if the file is not `model.size` bytes, or as
+    /// [`Embedder::load`].
     pub fn load_model(model: &ModelFile, path: &Path) -> Result<Self, EmbedError> {
+        // An absent or unreadable file is left to `load`, which reports it.
+        if let Ok(metadata) = std::fs::metadata(path) {
+            if metadata.len() != model.size {
+                return Err(EmbedError::Load(format!(
+                    "{} is {} bytes, not the {} of {}",
+                    path.display(),
+                    metadata.len(),
+                    model.size,
+                    model.file
+                )));
+            }
+        }
         let mut embedder = Self::load(path)?;
         embedder.identity = Some(*model);
         Ok(embedder)

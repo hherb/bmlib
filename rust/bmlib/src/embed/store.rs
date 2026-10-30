@@ -283,7 +283,9 @@ pub fn encode_vector(values: &[f32]) -> Result<Vec<u8>, StoreError> {
 ///
 /// # Errors
 ///
-/// [`StoreError::Corrupt`] unless it is [`VECTOR_BYTES`] bytes of finite values.
+/// [`StoreError::Corrupt`] unless it is [`VECTOR_BYTES`] bytes of finite
+/// values whose norm is within [`NORM_TOLERANCE`] of 1, as [`encode_vector`]
+/// wrote it.
 pub fn decode_vector(blob: &[u8]) -> Result<Vec<f32>, StoreError> {
     if blob.len() != VECTOR_BYTES {
         return Err(StoreError::Corrupt(format!(
@@ -299,6 +301,13 @@ pub fn decode_vector(blob: &[u8]) -> Result<Vec<f32>, StoreError> {
         return Err(StoreError::Corrupt(
             "a stored vector holds a value that is not finite".to_string(),
         ));
+    }
+    // Unchecked, one bad exponent ranked its chunk first on every question.
+    let norm = score(&values, &values).sqrt();
+    if (norm - 1.0).abs() > NORM_TOLERANCE {
+        return Err(StoreError::Corrupt(format!(
+            "a stored vector is not unit length, its norm is {norm}"
+        )));
     }
     Ok(values)
 }
@@ -415,7 +424,8 @@ pub fn current_label(
 ///
 /// # Errors
 ///
-/// [`StoreError::InvalidArgument`] for an empty key,
+/// [`StoreError::InvalidArgument`] for an empty key, or if the chunker fails
+/// or returns a span outside the text,
 /// [`StoreError::UnidentifiedEmbedder`], [`StoreError::Cancelled`],
 /// [`StoreError::Embed`], [`StoreError::Vector`] or [`StoreError::Db`].
 pub fn index_paper(
@@ -559,8 +569,10 @@ pub fn search(
         .filter(|r| r.get("chunk_index").is_ok_and(|v| !v.is_null()))
         .collect();
     let indices: Vec<Option<i64>> = rows.iter().map(|r| r.get_i64("chunk_index").ok()).collect();
-    let expected: Vec<Option<i64>> = (0..count.max(0)).map(Some).collect();
-    if count < 0 || indices != expected {
+    // The length first: a corrupt count of 10^12 must not be collected.
+    if usize::try_from(count) != Ok(rows.len())
+        || indices != (0..count).map(Some).collect::<Vec<_>>()
+    {
         return Err(StoreError::Corrupt(format!(
             "the set for {key:?} records {count} chunks, not its rows"
         )));

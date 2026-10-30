@@ -28,14 +28,25 @@ import hashlib
 import math
 import pickle
 import random
+import sqlite3
 import struct
-from collections.abc import Sequence
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 import bmlib.embed.store
-from bmlib.db import connect_sqlite, execute, fetch_all, fetch_scalar, is_sqlite, placeholder
+from bmlib.db import (
+    TransactionModeError,
+    connect_sqlite,
+    execute,
+    fetch_all,
+    fetch_scalar,
+    is_sqlite,
+    placeholder,
+)
 from bmlib.embed import (
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
@@ -193,6 +204,17 @@ def test_errors_pickle(error: ChunkSetError) -> None:
     if isinstance(error, StaleChunkSetError):
         assert copy.fields == error.fields
         assert "model_sha256" in str(error) and "text_sha256" in str(error)
+    if isinstance(error, NotIndexedError):
+        assert copy.key == error.key == "never indexed"
+
+
+@pytest.mark.parametrize(
+    "error", [NotIndexedError("k"), StaleChunkSetError(("text_sha256",))], ids=type
+)
+def test_a_custom_reduce_keeps_what_a_caller_attached(error: ChunkSetError) -> None:
+    error.add_note("while searching paper 7")
+    copy = pickle.loads(pickle.dumps(error))
+    assert copy.__notes__ == ["while searching paper 7"]
 
 
 # --- the database half -------------------------------------------------------
@@ -302,8 +324,9 @@ def test_an_empty_text_is_an_empty_set(conn: Any) -> None:
 
 
 def test_a_never_indexed_key_raises(conn: Any) -> None:
-    with pytest.raises(NotIndexedError):
+    with pytest.raises(NotIndexedError) as caught:
         search(conn, "nobody", _paper(1), "q", FakeEmbedder(), 3)
+    assert caught.value.key == "nobody"
 
 
 def _stale_fields(conn: Any, paper: CanonicalText, embedder: FakeEmbedder) -> tuple[str, ...]:
@@ -550,3 +573,145 @@ def test_a_stored_version_out_of_range_is_corrupt(conn: Any, version: int) -> No
     conn.commit()
     with pytest.raises(CorruptChunkSetError):
         search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+# --- PR #586's review --------------------------------------------------------
+
+
+def _corrupt(conn: Any, sql: str, params: Sequence[object]) -> CanonicalText:
+    """Index a paper, run ``sql`` against the store, and return the paper."""
+    paper = _paper(3)
+    index_paper(conn, "k", paper, FakeEmbedder())
+    execute(conn, sql, list(params))
+    conn.commit()
+    return paper
+
+
+@pytest.mark.parametrize("value", [1024, "x" * 1024], ids=["integer", "text"])
+def test_a_stored_vector_that_is_not_a_blob_is_corrupt(value: object) -> None:
+    # SQLite only: its BLOB column takes any type, PostgreSQL's BYTEA does not.
+    # bytes(1024) is 1,024 zero bytes, which used to be scored.
+    conn = connect_sqlite(":memory:")
+    ensure_schema(conn)
+    sql = "UPDATE embedded_chunks SET embedding = ? WHERE chunk_index = 0"
+    paper = _corrupt(conn, sql, [value])
+    with pytest.raises(CorruptChunkSetError, match="not a blob"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [bytes(4 * EMBEDDING_DIM), struct.pack(f"<{EMBEDDING_DIM}f", 1e30, *[0.0] * 255)],
+    ids=["zero", "one-huge-value"],
+)
+def test_a_stored_vector_not_of_unit_length_is_corrupt(conn: Any, blob: bytes) -> None:
+    # Unchecked, the huge one ranked its chunk first at a score of ~1e28.
+    p = placeholder(conn)
+    sql = f"UPDATE embedded_chunks SET embedding = {p} WHERE chunk_index = {p}"
+    paper = _corrupt(conn, sql, [blob, 0])
+    with pytest.raises(CorruptChunkSetError, match="not unit length"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+def test_a_huge_chunk_count_is_corrupt_without_building_it(conn: Any) -> None:
+    # list(range(count)) was built before the rows were counted.
+    sql = f"UPDATE embedded_chunk_sets SET chunk_count = {placeholder(conn)}"
+    paper = _corrupt(conn, sql, [2**31 - 1])
+    with pytest.raises(CorruptChunkSetError, match="records 2147483647 chunks"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+def test_a_set_whose_rows_all_vanished_is_corrupt(conn: Any) -> None:
+    paper = _corrupt(conn, "DELETE FROM embedded_chunks", [])
+    with pytest.raises(CorruptChunkSetError, match="not its rows"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+def test_an_empty_set_recording_a_negative_count_is_corrupt(conn: Any) -> None:
+    paper = canonical_from_plain_text("")
+    index_paper(conn, "k", paper, FakeEmbedder())
+    execute(conn, f"UPDATE embedded_chunk_sets SET chunk_count = {placeholder(conn)}", [-1])
+    conn.commit()
+    with pytest.raises(CorruptChunkSetError, match="records -1 chunks"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [("section_index", 99), ("section_index", -1), ("span_start", "span_end")],
+    ids=["section-past-the-end", "negative-section", "empty-span"],
+)
+def test_a_span_that_cannot_be_a_chunk_is_corrupt(conn: Any, column: str, value: object) -> None:
+    # A section of -1 would otherwise index the paper's last section.
+    p = placeholder(conn)
+    target = value if isinstance(value, str) else p
+    params = [] if isinstance(value, str) else [value]
+    sql = f"UPDATE embedded_chunks SET {column} = {target} WHERE chunk_index = {p}"
+    paper = _corrupt(conn, sql, [*params, 0])
+    with pytest.raises(CorruptChunkSetError, match="lies outside the text"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+class _MisbehavingEmbedder(FakeEmbedder):
+    """Returns ``vectors(texts)`` for its second batch."""
+
+    def __init__(self, vectors: Callable[[Sequence[str]], list[list[float]]]) -> None:
+        super().__init__()
+        self.vectors = vectors
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        good = super().embed_documents(texts)
+        return self.vectors(texts) if self.batches == 2 else good
+
+
+@pytest.mark.parametrize(
+    ("vectors", "refusal"),
+    [
+        (lambda texts: [_vector_of(t) for t in texts] + [_vector_of("x")], "vectors for"),
+        (lambda texts: [_vector_of(t) for t in texts][:-1], "vectors for"),
+        (lambda texts: [[v * 0.5 for v in _vector_of(t)] for t in texts], "unit length"),
+        (lambda texts: [[math.nan] * EMBEDDING_DIM for _ in texts], "unit length"),
+    ],
+    ids=["one-too-many", "one-too-few", "norm-half", "nan"],
+)
+def test_bad_embedder_output_is_refused_and_keeps_the_old_set(
+    conn: Any, vectors: Callable[[Sequence[str]], list[list[float]]], refusal: str
+) -> None:
+    old = _paper(3)
+    count = index_paper(conn, "k", old, FakeEmbedder())
+    expected = search(conn, "k", old, "q", FakeEmbedder(), 3)
+    with pytest.raises(VectorError, match=refusal):
+        index_paper(conn, "k", _paper(40, "heparin"), _MisbehavingEmbedder(vectors))
+    assert _count(conn, "k") == count
+    assert search(conn, "k", old, "q", FakeEmbedder(), 3) == expected
+
+
+def test_a_failure_inside_the_write_keeps_the_old_set(
+    conn: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old = _paper(3)
+    count = index_paper(conn, "k", old, FakeEmbedder())
+    expected = search(conn, "k", old, "q", FakeEmbedder(), 3)
+
+    def fail(*args: object) -> None:
+        raise RuntimeError("the disk filled")
+
+    # After the old set's delete and the new set's row: only a transaction undoes both.
+    monkeypatch.setattr(bmlib.embed.store, "executemany", fail)
+    with pytest.raises(RuntimeError, match="the disk filled"):
+        index_paper(conn, "k", _paper(40, "heparin"), FakeEmbedder())
+    monkeypatch.undo()
+    assert _count(conn, "k") == count
+    assert search(conn, "k", old, "q", FakeEmbedder(), 3) == expected
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="sqlite3's autocommit= is Python 3.12+")
+def test_a_refused_transaction_mode_embeds_nothing(tmp_path: Path) -> None:
+    conn = sqlite3.connect(tmp_path / "store.db", autocommit=True)
+    try:
+        embedder = FakeEmbedder()
+        with pytest.raises(TransactionModeError):
+            index_paper(conn, "k", _paper(3), embedder)
+        assert embedder.documents == []
+    finally:
+        conn.close()
