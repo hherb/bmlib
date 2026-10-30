@@ -56,13 +56,11 @@
 
 #![cfg(feature = "postgres")]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-use postgres::{Client, NoTls};
+mod common;
 
 use bmlib::db::{
-    connect_postgresql_params, create_tables, execute, fetch_all, fetch_one, fetch_scalar,
-    run_migrations, table_exists, transaction, Db, DbError, Dialect, Migration, Value,
+    create_tables, execute, fetch_all, fetch_one, fetch_scalar, run_migrations, table_exists,
+    transaction, Db, DbError, Dialect, Migration, Value,
 };
 use bmlib::params;
 use bmlib::publications::models::{FullTextSource, Grant, Publication};
@@ -71,112 +69,7 @@ use bmlib::publications::storage::{
     add_fulltext_source, get_publication_by_doi, insert_publication, store_publication,
     StoreOutcome,
 };
-
-/// Distinguishes databases created by concurrently running tests.
-static NEXT_DB: AtomicUsize = AtomicUsize::new(0);
-
-/// Where and as whom to connect.
-struct PgConfig {
-    host: String,
-    port: u16,
-    user: String,
-    password: String,
-    admin_db: String,
-}
-
-/// The connection settings, or `None` when the suite is not enabled.
-fn pg_config() -> Option<PgConfig> {
-    if std::env::var("BMLIB_PG_TESTS").ok().as_deref() != Some("1") {
-        return None;
-    }
-    Some(PgConfig {
-        host: std::env::var("BMLIB_PG_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
-        port: std::env::var("BMLIB_PG_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(5432),
-        user: std::env::var("BMLIB_PG_USER")
-            .ok()
-            .or_else(|| std::env::var("USER").ok())
-            .unwrap_or_else(|| "postgres".to_string()),
-        password: std::env::var("BMLIB_PG_PASSWORD").unwrap_or_default(),
-        admin_db: std::env::var("BMLIB_PG_ADMIN_DB").unwrap_or_else(|_| "postgres".to_string()),
-    })
-}
-
-/// A private database, dropped when the test finishes.
-struct TestDb {
-    client: Option<Box<dyn Db>>,
-    admin: Client,
-    name: String,
-}
-
-impl TestDb {
-    /// Create the database and connect [`Db`] to it, or `None` when gated off.
-    fn new() -> Option<TestDb> {
-        let config = pg_config()?;
-        let mut admin_config = postgres::Config::new();
-        admin_config
-            .host(&config.host)
-            .port(config.port)
-            .dbname(&config.admin_db)
-            .user(&config.user);
-        if !config.password.is_empty() {
-            admin_config.password(&config.password);
-        }
-        let mut admin = admin_config
-            .connect(NoTls)
-            .expect("admin connection to PostgreSQL");
-
-        let name = format!(
-            "bmlib_rs_{}_{}",
-            std::process::id(),
-            NEXT_DB.fetch_add(1, Ordering::SeqCst)
-        );
-        // A previous run that panicked may have left the name behind.
-        admin
-            .batch_execute(&format!("DROP DATABASE IF EXISTS \"{name}\""))
-            .expect("drop a stale test database");
-        admin
-            .batch_execute(&format!("CREATE DATABASE \"{name}\""))
-            .expect("create the test database");
-
-        let client = connect_postgresql_params(
-            &config.host,
-            config.port,
-            &name,
-            &config.user,
-            &config.password,
-        )
-        .expect("bmlib's own connector");
-
-        Some(TestDb {
-            client: Some(Box::new(client)),
-            admin,
-            name,
-        })
-    }
-
-    /// The connection under test.
-    fn db(&mut self) -> &mut dyn Db {
-        &mut **self.client.as_mut().expect("the test connection")
-    }
-}
-
-impl Drop for TestDb {
-    fn drop(&mut self) {
-        // Close our own connection first, or the DROP finds it open.
-        self.client.take();
-        let _ = self.admin.batch_execute(&format!(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
-             WHERE datname = '{}' AND pid <> pg_backend_pid()",
-            self.name
-        ));
-        let _ = self
-            .admin
-            .batch_execute(&format!("DROP DATABASE IF EXISTS \"{}\"", self.name));
-    }
-}
+use common::live_pg::TestDb;
 
 /// One scalar integer, or a panic naming what arrived instead.
 fn count(db: &mut dyn Db, sql: &str) -> i64 {
@@ -511,8 +404,8 @@ fn a_split_identity_consolidates_its_children() {
 // The vector store
 // ---------------------------------------------------------------------------
 
-/// An embedder that needs no model; the store's rules are tested on SQLite in
-/// `tests/vector_store.rs`, so this only asks whether PostgreSQL holds them.
+/// An embedder that needs no model. `tests/vector_store.rs` runs the store's
+/// rules on this server too; this round trip is the smoke test beside them.
 struct ConstantEmbedder;
 
 impl bmlib::embed::store::ChunkEmbedder for ConstantEmbedder {

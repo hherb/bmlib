@@ -284,7 +284,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      # The suite is gated on this; without it its ten tests return
+      # The live tests are gated on this (`postgres_live.rs`, and
+      # `vector_store.rs`'s PostgreSQL half); without it they return
       # immediately and the job would pass having proved nothing.
       BMLIB_PG_TESTS: "1"
       BMLIB_PG_HOST: localhost

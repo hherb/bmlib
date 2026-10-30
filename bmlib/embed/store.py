@@ -52,7 +52,13 @@ from bmlib.db import (
 )
 from bmlib.embed.model import ModelFile
 from bmlib.embed.vectors import EMBEDDING_DIM, EMBEDDING_RECIPE_VERSION, VectorError
-from bmlib.fulltext.canonical import CHUNKER_VERSION, CanonicalText, TextSpan, chunk_canonical
+from bmlib.fulltext.canonical import (
+    CHUNKER_VERSION,
+    CanonicalText,
+    Chunk,
+    TextSpan,
+    chunk_canonical,
+)
 
 # The five label fields' wire names, in label order.
 LABEL_FIELDS = (
@@ -451,14 +457,22 @@ def search(
         or [r["chunk_index"] for r in chunks] != list(range(count))
     ):
         raise CorruptChunkSetError(f"the set for {key!r} records {count!r} chunks, not its rows")
+    # The label pins the text and the chunker, so the chunks are the chunker's
+    # own: a stored span in bounds but rewritten was returned as its chunk.
+    expected = chunk_canonical(canonical)
+    if len(expected) != count:
+        raise CorruptChunkSetError(
+            f"the set for {key!r} records {count!r} chunks, the text makes {len(expected)}"
+        )
+    for row, chunk in zip(chunks, expected, strict=True):
+        _check_span(row, chunk)
     if not chunks:
         return []
     vectors = [decode_vector(_stored_blob(r)) for r in chunks]
-    spans = [_stored_span(canonical, r) for r in chunks]
     query = embedder.embed_query(question)
     encode_vector(query)  # held to the stored vectors' rules: a VectorError otherwise
     return [
-        ChunkHit(index, chunks[index]["section_index"], spans[index], value)
+        ChunkHit(index, expected[index].section_index, expected[index].span, value)
         for index, value in rank(query, vectors, k)
     ]
 
@@ -487,15 +501,17 @@ def _stored_blob(row: Any) -> bytes:
     return bytes(value)
 
 
-def _stored_span(canonical: CanonicalText, row: Any) -> TextSpan:
-    section, start, end = row["section_index"], row["span_start"], row["span_end"]
-    if not all(type(v) is int for v in (section, start, end)) or not (
-        0 <= section < len(canonical.sections) and 0 <= start < end <= len(canonical.text)
+def _check_span(row: Any, chunk: Chunk) -> None:
+    stored = (row["section_index"], row["span_start"], row["span_end"])
+    if not all(type(v) is int for v in stored) or stored != (
+        chunk.section_index,
+        chunk.span.start,
+        chunk.span.end,
     ):
         raise CorruptChunkSetError(
-            f"stored chunk {row['chunk_index']!r} lies outside the text: {(section, start, end)!r}"
+            f"stored chunk {row['chunk_index']!r} is not the one the chunker makes of this "
+            f"text: {stored!r}"
         )
-    return TextSpan(start, end)
 
 
 def _now() -> str:

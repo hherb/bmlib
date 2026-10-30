@@ -78,7 +78,13 @@ from bmlib.embed.store import (
     score,
     search,
 )
-from bmlib.fulltext.canonical import CanonicalText, TextSpan, canonical_from_plain_text
+from bmlib.fulltext.canonical import (
+    CanonicalText,
+    TextSpan,
+    canonical_from_markdown,
+    canonical_from_plain_text,
+    chunk_canonical,
+)
 
 
 def _unit(seed: int) -> list[float]:
@@ -648,8 +654,54 @@ def test_a_span_that_cannot_be_a_chunk_is_corrupt(conn: Any, column: str, value:
     params = [] if isinstance(value, str) else [value]
     sql = f"UPDATE embedded_chunks SET {column} = {target} WHERE chunk_index = {p}"
     paper = _corrupt(conn, sql, [*params, 0])
-    with pytest.raises(CorruptChunkSetError, match="lies outside the text"):
+    with pytest.raises(CorruptChunkSetError, match="not the one the chunker makes"):
         search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+# --- #587: a stored span is the chunker's, or the set is corrupt ---------------
+
+
+def _two_sections() -> CanonicalText:
+    sentence = "Patients given aspirin in trial {} had fewer events. "
+    body = "\n\n".join(sentence.format(i) * 12 for i in range(3))
+    return canonical_from_markdown(f"# Methods\n\n{body}\n\n# Results\n\n{body}")
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    ["span_start = 0, span_end = 3", "section_index = 0", "span_start = span_start + 1"],
+    ids=["rewritten-in-bounds", "moved-to-another-section", "shifted-by-one"],
+)
+def test_a_span_in_bounds_but_not_the_chunkers_is_corrupt(conn: Any, assignment: str) -> None:
+    # Checked against the text's bounds alone, the last chunk came back as (0, 3).
+    paper = _two_sections()
+    index_paper(conn, "k", paper, FakeEmbedder())
+    last = len(chunk_canonical(paper)) - 1
+    assert chunk_canonical(paper)[last].section_index == 1
+    p = placeholder(conn)
+    execute(conn, f"UPDATE embedded_chunks SET {assignment} WHERE chunk_index = {p}", [last])
+    conn.commit()
+    with pytest.raises(CorruptChunkSetError, match=f"stored chunk {last} is not the one"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+def test_a_set_emptied_of_rows_and_count_is_corrupt(conn: Any) -> None:
+    # Count and rows agreed at zero, so a text with chunks searched as none.
+    paper = _corrupt(conn, "DELETE FROM embedded_chunks", [])
+    execute(conn, "UPDATE embedded_chunk_sets SET chunk_count = 0")
+    conn.commit()
+    with pytest.raises(CorruptChunkSetError, match="records 0 chunks"):
+        search(conn, "k", paper, "q", FakeEmbedder(), 3)
+
+
+def test_every_hit_is_a_chunk_the_chunker_makes(conn: Any) -> None:
+    paper = _two_sections()
+    index_paper(conn, "k", paper, FakeEmbedder())
+    chunks = chunk_canonical(paper)
+    hits = search(conn, "k", paper, "aspirin", FakeEmbedder(), len(chunks))
+    assert sorted((h.chunk_index, h.section_index, h.span) for h in hits) == [
+        (i, c.section_index, c.span) for i, c in enumerate(chunks)
+    ]
 
 
 class _MisbehavingEmbedder(FakeEmbedder):
