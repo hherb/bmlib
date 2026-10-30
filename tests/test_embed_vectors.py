@@ -25,10 +25,10 @@ from pathlib import Path
 import pytest
 
 from bmlib.embed import (
-    EMBEDDING_RECIPE_VERSION,
     ARCTIC_EMBED_L_V2_F16,
     ARCTIC_EMBED_L_V2_Q8_0,
     EMBEDDING_DIM,
+    EMBEDDING_RECIPE_VERSION,
     MAX_TOKENS,
     QUERY_PREFIX,
     EmbedError,
