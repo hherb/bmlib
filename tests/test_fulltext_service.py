@@ -343,14 +343,22 @@ class TestKnownSources:
         assert result.web_url is None
         assert result.html
 
-    def test_an_html_source_is_the_link_when_nothing_else_serves(self):
+    def test_an_html_source_is_the_link_when_nothing_else_serves(self, caplog):
         sources = [FullTextSourceEntry(url="https://ex/page", format="html", source="pmc")]
 
         service = FullTextService(email="test@example.com")
-        with patch.object(
-            service, "_http_get", return_value=MagicMock(status_code=500)
-        ) as http_get:
+        with (
+            patch.object(service, "_http_get", return_value=MagicMock(status_code=500)) as http_get,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
             result = service.fetch_fulltext(fulltext_sources=sources, doi="10.1/x")
+
+        assert any(
+            r.getMessage().startswith(
+                "No full text found for doi=10.1/x pmid= — nothing was retrieved;"
+            )
+            for r in caplog.records
+        )
 
         assert http_get.call_count > 0  # the tiers after Tier 0 were asked
         # The caller's link, ahead of Tier 3's https://doi.org/10.1/x.
@@ -382,6 +390,8 @@ class TestKnownSources:
 
         assert result.content_kind == "abstract"
         assert result.web_url == "https://ex/page"
+        # The abstract's own source; the link's ("pmc") was stamped on it before #579.
+        assert result.source == "medrxiv"
 
 
 class TestFullTextSourceEntry:

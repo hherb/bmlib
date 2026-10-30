@@ -811,9 +811,9 @@ class FullTextService:
                 ID, DOI or PMID was given — a blank or whitespace-only *pmid*
                 or *doi* being none; or ``"Nothing retrieved and no DOI or
                 PMID to fall back on — …"`` when identifiers were given,
-                nothing was retrieved, and there is no usable DOI or PMID to
-                build a link from, which includes a refused *pmid* or *doi*
-                given alone. Every tier
+                nothing was retrieved, and there is no held ``html`` source and
+                no usable DOI or PMID to build a link from, which includes a
+                refused *pmid* or *doi* given alone. Every tier
                 failure is swallowed and counted on the exhaustion report.
 
         Tries:
@@ -821,7 +821,8 @@ class FullTextService:
               what it would serve was rendered by an older bmlib (#172), the
               chain below runs instead, and the older rendering is returned
               (``source="cached"``) only if the chain returns less.
-          0.  Known sources from fetcher (JATS XML > PDF > HTML)
+          0.  Known sources from fetcher (JATS XML > PDF); the first HTML
+              entry is held for step 3 (#579)
           1a. Europe PMC XML (known PMC ID)
           1c. NCBI PMC efetch for that ID, when Europe PMC gave no body
           1b. Discover a PMC ID via Europe PMC search — when there is no
@@ -832,7 +833,7 @@ class FullTextService:
                failed known ID may be superseded by the search hit alone
           1d. Europe PMC PDF render URL (free PDF when XML unavailable)
           2.  Unpaywall PDF URL
-          3.  DOI / PubMed URL fallback
+          3.  The held HTML link, else the DOI / PubMed URL fallback
         """
         # The caller's PMID, canonical, or refused (issue #478). Ahead of the
         # cache check, so the refusal is reported on a cache hit too: a caller

@@ -791,6 +791,13 @@ fn an_html_source_is_the_link_when_nothing_else_serves() {
 
     let result = service.fetch_fulltext(&request).expect("a link");
     assert!(client.call_count() > 0, "the tiers after Tier 0 were asked");
+    assert!(
+        service.warnings().iter().any(|line| line.starts_with(
+            "No full text found for doi=Some(\"10.1/x\") pmid= — nothing was retrieved;"
+        )),
+        "{:?}",
+        service.warnings()
+    );
     // The caller's link, ahead of Tier 3's https://doi.org/10.1/x.
     assert_eq!(
         (result.source.as_str(), result.web_url.as_deref()),
@@ -832,6 +839,8 @@ fn a_held_link_rides_on_a_held_abstract() {
     let result = service.fetch_fulltext(&request).expect("the abstract");
     assert_eq!(result.content_kind, ContentKind::Abstract);
     assert_eq!(result.web_url.as_deref(), Some("https://ex/page"));
+    // The abstract's own source; the link's ("pmc") was stamped on it before #579.
+    assert_eq!(result.source, "medrxiv");
 }
 
 // ---------------------------------------------------------------------------

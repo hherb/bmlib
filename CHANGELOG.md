@@ -311,7 +311,10 @@ All notable changes to bmlib are documented here. The format is based on
   decision). **What moves for a downstream**: such a call returns full text
   where any tier finds it, at the cost of the requests those tiers make, and a
   call ending on the held link now logs the chain's "No full text found"
-  WARNING, as one ending on Tier 3's link always did. Python and Rust alike.
+  WARNING, as one ending on Tier 3's link always did; and where a body-less
+  JATS abstract was also held, the result's `source` names where the abstract
+  came from rather than the link's source, which used to be stamped on an
+  abstract it did not serve. Python and Rust alike.
 - **A condensation pass cut at `max_tokens` fails its batch.**
   `LLMChunkProcessor`'s plain completion never read `stop_reason`, so a map or
   reduce reply that hit the output ceiling was kept as a whole extraction and

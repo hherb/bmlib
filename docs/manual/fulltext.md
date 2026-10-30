@@ -243,7 +243,7 @@ The chain is longer than three tiers. In order:
 | Tier 3 | A Tier 0 `html` entry was held *(unreleased — #579)* | Return its URL | `entry.source` |
 | Tier 3′ | A usable `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(0.11.0 — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
-| — | no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise a message naming the missing fallback and summarising the failures | — |
+| — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise a message naming the missing fallback and summarising the failures | — |
 
 Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(unreleased — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
 
