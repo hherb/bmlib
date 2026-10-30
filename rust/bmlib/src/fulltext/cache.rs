@@ -275,12 +275,19 @@ impl FullTextCache {
     }
 
     /// Where PDFs live.
+    ///
+    /// Created by the first [`FullTextCache::save_pdf`] that keeps a file, not
+    /// by construction (see [`FullTextCache::new`]); Python's constructor
+    /// creates it.
     #[must_use]
     pub fn pdf_dir(&self) -> PathBuf {
         self.cache_dir.join("pdfs")
     }
 
     /// Where parsed HTML lives.
+    ///
+    /// Created by the first [`FullTextCache::save_html`], as
+    /// [`FullTextCache::pdf_dir`] is by its save.
     #[must_use]
     pub fn html_dir(&self) -> PathBuf {
         self.cache_dir.join("html")
@@ -328,6 +335,7 @@ impl FullTextCache {
         let path = self
             .pdf_dir()
             .join(format!("{}.pdf", safe_filename(identifier)));
+        std::fs::create_dir_all(self.pdf_dir())?;
         atomic_write(&path, data)?;
         Ok(Some(path))
     }
@@ -361,6 +369,7 @@ impl FullTextCache {
         let path = self
             .html_dir()
             .join(format!("{}.html", safe_filename(identifier)));
+        std::fs::create_dir_all(self.html_dir())?;
         atomic_write(&path, html.as_bytes())?;
         Ok(path)
     }

@@ -1,8 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session is #587 and #588**, the chunk
-store's two review follow-ups, on `fix/store-spans`; item 8 was PR #586,
-merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
+_Last updated: 2026-10-31 (**this session is #592**, a fresh Rust cache
+saving no PDF, on `fix/cache-dirs`; #587 and #588 were PR #589, merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
 merged since — #526 through #586 — is unreleased, **and no StudyAnalyzer item
 is left in bmlib, so a 0.12.0 release is a natural next session.**_
 
@@ -37,7 +36,20 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
+## This session: a fresh Rust cache saves its PDFs and HTML (#592)
+
+Found by StudyAnalyzer's manual test: Rust's `FullTextCache` creates no
+directory on construction, and `save_pdf`/`save_html` (unlike `save_jats` and
+`save_abstract`) never created theirs, so in a new cache directory every PDF
+write failed and the service returned no file. Both saves now create their
+directory (a rejected PDF still creates nothing). The Rust test helpers had
+pre-created `html/` and `pdfs/`, which hid it; they no longer do. Python's
+constructor makes both, so it is unchanged. Filed from the same test: **#590**
+(Rust's PDF backend to MuPDF: PDFium's U+0002 hyphen markers and duplicated
+characters, with a build trial for macOS, iOS and Android; a parallel session
+takes it) and **#591** (running page headers and footers inside paragraphs).
+
+## Previous session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
 
 The CHANGELOG's two *Fixed* entries at the top of `[Unreleased]` are the
 argument. `search` rebuilds the chunks with `chunk_canonical` (the label pins
