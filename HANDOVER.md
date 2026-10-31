@@ -5,13 +5,13 @@ the Rust manual's eleven missing pages, the Python manual audited against
 every unreleased CHANGELOG entry, #571's stale docs, and two Rust defects the
 manual work found, `sync()`'s unreadable timestamp and `atomic_write`'s
 stranded temporary; then the release PR's own review, fixed in a follow-up
-PR on `fix/release-0.12.0-review` because #610 was merged before it). **0.11.0
-is on PyPI**; 0.12.0 is published once that follow-up is merged, `main`'s tip
-tagged, released on GitHub and the `pypi` gate approved by the maintainer.
-Every PR merged since `v0.11.0`, #499 through #602 and the release PR #610,
-ships in 0.12.0, with the follow-up; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
-release notes. The Rust crate is released beside it as 0.3.0 (0.2.0 is on
-crates.io), published with `cargo publish` from a clean worktree of the same
+PR, #611, because #610 was merged before it). **0.12.0 is on PyPI** (tag
+`v0.12.0` on `d2ee803`, the merge of #611; installed from the index and
+imported) and **the Rust crate 0.3.0 is on crates.io** from the same commit.
+Every PR merged since `v0.11.0`, #499 through #602 and #610/#611, ships in
+0.12.0; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
+release notes. The Rust crate was released beside it as 0.3.0,
+published with `cargo publish` from a clean worktree of the same
 merge commit; see `HANDOVER_RUST.md`._
 
 ## What 0.12.0 costs a downstream
