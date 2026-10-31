@@ -46,12 +46,14 @@ from bmlib.fulltext.models import (
 from bmlib.fulltext.pdf_converter import (
     ConversionResult,
     LayoutExtractor,
+    PDFBlocks,
     PDFConverter,
     PDFErrorKind,
     PDFExtractionError,
     PDFLimit,
     PyMuPDFConverter,
     get_converter,
+    is_about_the_file,
     list_converters,
     render_html,
 )
@@ -128,6 +130,7 @@ __all__ = [
     "JATSReferenceInfo",
     "JATSTableInfo",
     "LayoutExtractor",
+    "PDFBlocks",
     "PDFErrorKind",
     "PDFExtractionError",
     "PDFLimit",
@@ -139,6 +142,7 @@ __all__ = [
     "SegmentedDocument",
     "TextBlock",
     "get_converter",
+    "is_about_the_file",
     "list_converters",
     "render_html",
 ]

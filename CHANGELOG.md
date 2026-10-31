@@ -6,6 +6,34 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **What MuPDF reads past is reported** (#599, found reviewing
+  hherb/StudyAnalyzer#21). MuPDF repairs a broken xref, and stops reading a
+  page's content stream after too many syntax errors (#605's case:
+  `too many syntax errors; ignoring rest of page`), with only a message. bmlib
+  never read PyMuPDF's store of those messages, so a damaged PDF converted
+  whole with text missing and nothing said. `PyMuPDFConverter.extract_blocks_with_warnings()`
+  returns a `PDFBlocks` — the blocks `extract_blocks()` returns, and MuPDF's
+  messages, warnings and the errors it reads past alike, as MuPDF words them,
+  the path replaced by "the file". `convert()` ends `ConversionResult.warnings`
+  with them. Both log each at WARNING, on a failure too. A repeated warning
+  arrives once, then as `... repeated N times...`; reading starts with a flush,
+  since a warning MuPDF left counted would otherwise swallow the next read's
+  first identical one (a plain `TOOLS.reset_mupdf_warnings()` keeps the count,
+  measured). `is_about_the_file()` sets aside MuPDF's store race
+  (`found duplicate fz_icc_link in the store`, two threads caching one item),
+  which costs no text. **PyMuPDF's store is one per process**, so two PDFs read
+  at once on two threads can get each other's messages (a `shortcut:` at the
+  site). The Rust crate reports the same; the shared contract is
+  `tests/fixtures/pdf_warnings.json` (a repaired xref, a page cut short, and
+  #590's sound PDF reporting nothing), written by
+  `scripts/make_pdf_warnings_fixture.py`. **Measured** over 128 journal PDFs:
+  15 report anything in Python (20 messages, mostly `bogus font ...
+  ascent/descent values`, but `premature end of data in flate filter` and
+  `ActualText with no position. Text may be lost or mispositioned.` too). The
+  canonical text does not move, so `PDF_CANONICAL_VERSION` stays 3 (re-pinned).
+
 ## [0.12.0] — 2026-10-31
 
 **The StudyAnalyzer release: the pieces an evidence-appraisal app needs to

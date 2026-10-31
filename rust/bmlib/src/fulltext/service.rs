@@ -2420,6 +2420,15 @@ impl FullTextService {
                         conversion.page_count
                     ));
                 }
+                // Python's converter logs each of these itself (#599).
+                if !conversion.warnings.is_empty() {
+                    self.warn(format!(
+                        "PDF {} read with {} message(s) from the PDF engine, so text may be missing: {}",
+                        pdf_path.display(),
+                        conversion.warnings.len(),
+                        conversion.warnings.join("; ")
+                    ));
+                }
                 result.html = Some(conversion.html);
                 result.content_kind = ContentKind::Extracted;
                 self.info(format!(

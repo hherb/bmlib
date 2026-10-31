@@ -478,6 +478,26 @@ pub trait PdfTextExtractor {
         limit: &PdfLimit,
     ) -> Result<Vec<TextBlock>, PdfError>;
 
+    /// [`PdfTextExtractor::extract_blocks_within`], with what the engine
+    /// reported while reading (#599).
+    ///
+    /// The default reports nothing, for a backend that cannot; the MuPDF
+    /// backend returns MuPDF's messages.
+    ///
+    /// # Errors
+    ///
+    /// As [`PdfTextExtractor::extract_blocks_within`].
+    fn extract_blocks_with_warnings(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<PdfBlocks, PdfError> {
+        Ok(PdfBlocks {
+            blocks: self.extract_blocks_within(path, limit)?,
+            warnings: Vec::new(),
+        })
+    }
+
     /// The page texts, for the furniture rule.
     ///
     /// # Errors
@@ -497,6 +517,22 @@ pub trait PdfTextExtractor {
         path: &std::path::Path,
         limit: &PdfLimit,
     ) -> Result<Vec<String>, PdfError>;
+}
+
+/// A PDF's text blocks, and what the engine reported while reading them (#599).
+///
+/// `warnings` are MuPDF's own messages, as it words them: a broken xref it
+/// repaired, a content stream it stopped reading (`too many syntax errors;
+/// ignoring rest of page`), a font with bogus metrics. MuPDF reads past each
+/// without failing, so the blocks may be short of the page's text and only
+/// these say so. The path read is replaced by "the file". Python's
+/// `PDFBlocks` is the same pair.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PdfBlocks {
+    /// One block per visual line, in reading order.
+    pub blocks: Vec<TextBlock>,
+    /// The engine's messages, in the order it reported them.
+    pub warnings: Vec<String>,
 }
 
 /// What a conversion produced.
