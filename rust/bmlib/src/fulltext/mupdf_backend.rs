@@ -832,6 +832,9 @@ mod tests {
             let messages = EngineMessages::capture();
             assert!(warning_callback().is_some());
             warn(c"cannot read /tmp/probe.pdf");
+            // Set aside on the way in, not only by the predicate's own test.
+            warn(c"found duplicate fz_icc_link in the store");
+            warn(c"");
             assert_eq!(
                 messages.finish(std::path::Path::new("/tmp/probe.pdf")),
                 ["cannot read the file"]

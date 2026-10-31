@@ -458,6 +458,9 @@ pub trait PdfTextExtractor {
 
     /// Extract one text block per **visual line**, in reading order.
     ///
+    /// What the engine reported while reading is dropped, the crate having no
+    /// logger: [`PdfTextExtractor::extract_blocks_with_warnings`] returns it.
+    ///
     /// # Errors
     ///
     /// [`PdfError`] when the document cannot be read or the text cannot be
@@ -500,6 +503,10 @@ pub trait PdfTextExtractor {
 
     /// The page texts, for the furniture rule.
     ///
+    /// What the engine reported is dropped, as by
+    /// [`PdfTextExtractor::extract_blocks`]; `MupdfExtractor` has
+    /// `page_texts_with_warnings` for it.
+    ///
     /// # Errors
     ///
     /// As [`PdfTextExtractor::extract_blocks`].
@@ -521,15 +528,17 @@ pub trait PdfTextExtractor {
 
 /// A PDF's text blocks, and what the engine reported while reading them (#599).
 ///
-/// `warnings` are MuPDF's own messages, as it words them: a broken xref it
+/// For MuPDF, `warnings` are its own messages, as it words them: a broken xref it
 /// repaired, a content stream it stopped reading (`too many syntax errors;
 /// ignoring rest of page`), a font with bogus metrics. MuPDF reads past each
 /// without failing, so the blocks may be short of the page's text and only
 /// these say so. The path read is replaced by "the file". Python's
-/// `PDFBlocks` is the same pair.
+/// `PDFBlocks` is the same pair. A backend that does not report keeps the
+/// trait's default, an empty list, which reads as nothing reported.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PdfBlocks {
-    /// One block per visual line, in reading order.
+    /// One block per visual line, in the content stream's order (usually
+    /// reading order, as Python's `extract_blocks` says).
     pub blocks: Vec<TextBlock>,
     /// The engine's messages, in the order it reported them.
     pub warnings: Vec<String>,

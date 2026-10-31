@@ -21,14 +21,16 @@ The Python library is documented separately, in the repository's
   "the file"); its default reports nothing, so another backend compiles
   unchanged. `MupdfExtractor::page_texts_with_warnings` does the same for page
   texts, `MupdfPdfExtractor` fills `PdfText.warnings`, and `FullTextService`
-  logs them as one WARNING line. On a failure they are dropped, the error
+  logs them as one WARNING line; when no text came out it lists every message
+  in place of *likely a scan*, which it used to say with the first three. On a failure they are dropped, the error
   saying what failed. The capture starts with `fz_flush_warnings`, since a
   warning MuPDF left counted would swallow the next read's first identical
   one. `is_about_the_file` sets aside MuPDF's store race (`found duplicate
   fz_icc_link in the store`), which appeared when the contract's tests ran on
   parallel threads and costs no text. Python's `PDFBlocks`, held together by
   `tests/fixtures/pdf_warnings.json`: the crate's MuPDF 1.27.2 words those
-  messages exactly as PyMuPDF 1.28.5 does. Over 128 journal PDFs 118 give
+  messages exactly as PyMuPDF 1.28.5 does. Over 128 journal PDFs held locally
+  (no list committed, so not re-derivable from the repo) 118 give
   identical lists; the other 10 are the version gap (1.28 adds the font's name
   to `bogus font ... ascent/descent values`, capitalises `ActualText`, and on
   one PDF no longer reports a bogus font).

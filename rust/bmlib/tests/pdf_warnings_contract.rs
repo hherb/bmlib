@@ -77,9 +77,9 @@ fn the_service_adapter_carries_them_too() {
     }
 }
 
-/// A second read on the same thread reports what the first did: MuPDF counts
-/// a warning repeating the one before rather than reporting it, and that count
-/// outlives a read unless it is flushed.
+/// A second read on the same thread reports what the first did. A stability
+/// check: a successful read flushes MuPDF's count at its end, so the flush at
+/// the start is pinned by the unit test `a_warning_left_counted_does_not_swallow_the_next`.
 #[test]
 fn a_second_read_on_one_thread_reports_the_same() {
     let contract = contract();

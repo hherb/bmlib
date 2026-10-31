@@ -80,20 +80,50 @@ def test_extract_blocks_returns_the_same_blocks() -> None:
     assert converter.extract_blocks(path) == converter.extract_blocks_with_warnings(path).blocks
 
 
-def test_each_message_is_logged_at_warning_without_the_path_in_the_message(
-    caplog: pytest.LogCaptureFixture,
+def _mupdf_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.msg.startswith("MuPDF reported")]
+
+
+@pytest.mark.parametrize("read", ["extract_blocks", "extract_blocks_with_warnings", "convert"])
+def test_the_messages_are_logged_as_one_warning(
+    read: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    path = FIXTURES / ROWS[0]["pdf"]
+    path = FIXTURES / ROWS[1]["pdf"]
     with caplog.at_level(logging.WARNING, logger="bmlib.fulltext.pdf_converter"):
-        read = PyMuPDFConverter().extract_blocks_with_warnings(path)
-    logged = [r.args[1] for r in caplog.records if r.msg.startswith("MuPDF reported")]
-    assert logged == read.warnings == ROWS[0]["warnings"]
-    assert all(str(path) not in message for message in read.warnings)
+        getattr(PyMuPDFConverter(), read)(path)
+    [record] = _mupdf_records(caplog)
+    assert record.levelno == logging.WARNING
+    assert record.args == (len(ROWS[1]["warnings"]), path, "; ".join(ROWS[1]["warnings"]))
+
+
+def test_a_sound_pdf_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="bmlib.fulltext.pdf_converter"):
+        PyMuPDFConverter().extract_blocks_with_warnings(FIXTURES / ROWS[2]["pdf"])
+    assert _mupdf_records(caplog) == []
+
+
+@pytest.mark.parametrize("read", ["extract_blocks_with_warnings", "convert"])
+def test_what_mupdf_reported_before_a_read_is_not_this_pdfs(read: str) -> None:
+    import pymupdf
+
+    pymupdf.mupdf.fz_warn("left by someone else")
+    result = getattr(PyMuPDFConverter(), read)(FIXTURES / ROWS[2]["pdf"])
+    assert result.warnings == []
+
+
+def test_the_path_is_replaced_and_the_store_race_set_aside() -> None:
+    import pymupdf
+
+    path = Path("/papers/probe.pdf")
+    _reset_engine_messages(pymupdf)
+    pymupdf.mupdf.fz_warn(f"cannot read {path}")
+    pymupdf.mupdf.fz_warn("found duplicate fz_icc_link in the store")
+    assert _engine_messages(pymupdf, path) == ["cannot read the file"]
 
 
 def test_a_second_read_reports_the_same() -> None:
-    # MuPDF counts a warning repeating the one before rather than reporting
-    # it, and that count outlives a read unless it is flushed.
+    # A stability check: each read flushes MuPDF's count at its end, so the
+    # flush at the start is pinned by the next test, not by this one.
     path = FIXTURES / ROWS[0]["pdf"]
     converter = PyMuPDFConverter()
     first = converter.extract_blocks_with_warnings(path).warnings
@@ -102,8 +132,9 @@ def test_a_second_read_reports_the_same() -> None:
 
 
 def test_a_warning_left_counted_does_not_swallow_the_next() -> None:
-    # As a failed read leaves one: a plain reset of PyMuPDF's store keeps
-    # MuPDF's count, and this read would report only "... repeated 4 times...".
+    # As PyMuPDF used outside bmlib can leave one: a plain reset of PyMuPDF's
+    # store keeps MuPDF's count, and this read would report only
+    # "... repeated 4 times...".
     import pymupdf
 
     pymupdf.mupdf.fz_warn("left over")
@@ -126,7 +157,23 @@ def test_a_failed_read_logs_what_mupdf_reported(
         pytest.raises(ValueError),
     ):
         PyMuPDFConverter().extract_blocks_with_warnings(garbage)
-    assert any(r.msg.startswith("MuPDF reported") for r in caplog.records)
+    [record] = _mupdf_records(caplog)
+    assert record.levelno == logging.WARNING
+    assert record.args[1] == garbage
+
+
+def test_a_failed_convert_carries_what_mupdf_reported(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    garbage = tmp_path / "garbage.pdf"
+    garbage.write_bytes(b"%PDF-1.4\nnot a pdf at all\n")
+    with caplog.at_level(logging.WARNING, logger="bmlib.fulltext.pdf_converter"):
+        result = PyMuPDFConverter().convert(garbage)
+    assert not result.success
+    [record] = _mupdf_records(caplog)
+    count, _, joined = record.args
+    assert count > 0
+    assert result.warnings[-count:] == joined.split("; ")
 
 
 def test_only_the_store_race_is_set_aside() -> None:

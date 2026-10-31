@@ -17,8 +17,11 @@ All notable changes to bmlib are documented here. The format is based on
   returns a `PDFBlocks` — the blocks `extract_blocks()` returns, and MuPDF's
   messages, warnings and the errors it reads past alike, as MuPDF words them,
   the path replaced by "the file". `convert()` ends `ConversionResult.warnings`
-  with them. Both log each at WARNING, on a failure too. A repeated warning
-  arrives once, then as `... repeated N times...`; reading starts with a flush,
+  with them. Both, and `extract_blocks()`, log them as one WARNING per read
+  (the count, then every message; a page cut short gives a hundred), on a
+  failure too, and empty PyMuPDF's process-wide store before and after, so a
+  caller reading it finds it empty. A repeated warning arrives once, then as
+  `... repeated N times...`, N counting the first; reading starts with a flush,
   since a warning MuPDF left counted would otherwise swallow the next read's
   first identical one (a plain `TOOLS.reset_mupdf_warnings()` keeps the count,
   measured). `is_about_the_file()` sets aside MuPDF's store race
@@ -28,11 +31,15 @@ All notable changes to bmlib are documented here. The format is based on
   site). The Rust crate reports the same; the shared contract is
   `tests/fixtures/pdf_warnings.json` (a repaired xref, a page cut short, and
   #590's sound PDF reporting nothing), written by
-  `scripts/make_pdf_warnings_fixture.py`. **Measured** over 128 journal PDFs:
-  15 report anything in Python (20 messages, mostly `bogus font ...
+  `scripts/make_pdf_warnings_fixture.py`. **Measured** over 128 journal PDFs
+  held locally (no list is committed, so the figures cannot be re-derived from
+  the repo), with PyMuPDF 1.28.5: 15 report anything in Python (20 messages, mostly `bogus font ...
   ascent/descent values`, but `premature end of data in flate filter` and
   `ActualText with no position. Text may be lost or mispositioned.` too). The
   canonical text does not move, so `PDF_CANONICAL_VERSION` stays 3 (re-pinned).
+  `FullTextService`'s line for a PDF yielding no text no longer says *likely a
+  scan*: a page cut short yields nothing too, and the converter's own line
+  says which.
 
 ### Fixed
 

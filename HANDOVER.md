@@ -17,7 +17,9 @@ set both callbacks to NULL and Python never read PyMuPDF's store. Now
 `MupdfPdfExtractor` fills `PdfText.warnings` (the service logs one WARNING),
 Python's `convert()` ends `warnings` with them and logs each. The CHANGELOG
 entries are the argument. **Traps found**: MuPDF dedupes a warning against
-the *previous read's* last one, so a capture must flush first (Rust
+the previous *warning*, which is the previous read's last one wherever that
+read did not flush (a failed Rust read, or PyMuPDF used outside bmlib), so a
+capture must flush first (Rust
 `fz_flush_warnings`, Python `TOOLS.mupdf_warnings(reset=True)`, not
 `reset_mupdf_warnings()`), both mutation-checked; parallel threads make
 MuPDF's store warn `found duplicate fz_icc_link in the store`, set aside by
@@ -27,8 +29,16 @@ a truncated page should be more than a warning is still the maintainer's
 call, so #605 stays open. **For StudyAnalyzer**: call
 `extract_blocks_with_warnings` and show the messages as a notice. Not done:
 Rust drops the messages on a failed read (it has no logger), where Python
-logs them and a failed `convert()` result carries them in `warnings`;
-PyMuPDF's store is per process (`shortcut:`).
+logs them and a failed `convert()` result carries them in `warnings`, and
+Python's `warnings` mixes bmlib's notes with MuPDF's (**#619**, filed by PR
+#614's review); PyMuPDF's store is per process (`shortcut:`). **PR #614's
+review**: Python logs one WARNING per read rather than one per message (a
+page cut short gave 102 lines); neither service says "likely a scan" when the
+engine reported something, and Rust's lists every message, not three; the
+reset, the path replacement and the store-race filter are pinned in both
+languages, and the Rust service line by a fake extractor. A worker thread
+reports what the main thread does (probed), so the store's sharing is the
+only threading caveat.
 
 ## Earlier today: `chat_json(max_retries=0)` (#574), a non-text extraction (#570) — PR #613, merged
 
