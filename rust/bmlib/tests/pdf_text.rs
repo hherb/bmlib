@@ -22,8 +22,8 @@
 
 use bmlib::fulltext::pdf_text::{
     group_paragraphs, line_to_block, normalize_line, render_html, repeated_lines, span_text_weight,
-    split_on_short_lines, ConversionResult, PARAGRAPH_BREAK_RATIO, REPEATED_LINE_MIN_PAGES,
-    REPEATED_LINE_RATIO, SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
+    split_on_short_lines, ConversionResult, PdfError, PdfErrorKind, PARAGRAPH_BREAK_RATIO,
+    REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO, SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
 };
 use serde_json::{json, Value};
 
@@ -366,13 +366,14 @@ fn an_empty_document_has_no_ratio_but_is_complete() {
 /// The failure helper names its cause and reports nothing converted.
 #[test]
 fn a_failure_result_names_its_cause() {
-    let failure = ConversionResult::failure("the file is not a PDF");
+    let failure = ConversionResult::failure(PdfError::unreadable("no objects found"));
     assert!(!failure.success);
     assert!(!failure.is_complete());
     assert_eq!(
         failure.error_message.as_deref(),
-        Some("the file is not a PDF")
+        Some("the PDF could not be read: no objects found")
     );
+    assert_eq!(failure.error_kind, Some(PdfErrorKind::Unreadable));
     assert_eq!(failure.completion_ratio(), 0.0);
     // And it renders as nothing.
     assert_eq!(render_html(failure.success, &failure.text, &[]), "");
@@ -404,4 +405,30 @@ fn a_pdf_limit_says_why_it_stops() {
     };
     assert!(later.is_set());
     assert_eq!(later.reached(), None);
+}
+
+/// The kinds are Python's, member for member: the wire names and the file's
+/// side, both read from the fixture `test_pdf_converter.py` asserts too.
+#[test]
+fn the_kinds_are_the_shared_fixtures() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/pdf_error_kinds.json"))
+            .expect("parses");
+    let kinds = [
+        PdfErrorKind::Encrypted,
+        PdfErrorKind::Unreadable,
+        PdfErrorKind::Engine,
+        PdfErrorKind::Cancelled,
+        PdfErrorKind::TimedOut,
+    ];
+    let rows = fixture["kinds"].as_array().expect("a list");
+    assert_eq!(rows.len(), kinds.len());
+    for (kind, row) in kinds.into_iter().zip(rows) {
+        assert_eq!(kind.as_str(), row["name"].as_str().expect("a name"));
+        assert_eq!(
+            kind.is_the_files(),
+            row["the_files"].as_bool().expect("a bool"),
+            "{kind:?}"
+        );
+    }
 }

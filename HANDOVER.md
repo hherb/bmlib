@@ -43,11 +43,12 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 ## This session: whose fault a PDF failure is (#598), and a bound on extraction (#600)
 
-Both found reviewing StudyAnalyzer's PR #21. **#598**: `PdfErrorKind` (Rust)
+Both found reviewing hherb/StudyAnalyzer#21. **#598**: `PdfErrorKind` (Rust)
 / `PDFErrorKind` (Python) — `encrypted`, `unreadable`, `engine`, and from
 #600 `cancelled`, `timed-out`. MuPDF's `FORMAT`, `SYNTAX`, `UNSUPPORTED` are
-the file's (measured: garbage and empty files are `FORMAT`, a truncated one
-`SYNTAX`, a missing file `SYSTEM`); every other code and anything unplaced is
+the file's (measured: a garbage file is `FORMAT`, a truncated one `SYNTAX`; in
+Rust an empty file is `FORMAT` and a missing one `SYSTEM`, while Python sees
+PyMuPDF's `EmptyFileError` and its own `FileNotFoundError`); every other code and anything unplaced is
 `engine`, so an unknown cause is loud. Rust's `PdfTextExtractor` returns
 `PdfError { kind, message }`; Python's `ConversionResult.error_kind` and
 `extract_blocks()`'s `PDFExtractionError` (a `ValueError`, pickles). Messages
@@ -57,13 +58,22 @@ file" — a `shortcut:` comment notes MuPDF's 256-byte message cut). **#600**:
 mid-page in Rust, per-page in Python**: Rust runs every page with one MuPDF
 cookie and a scoped watcher thread sets its `abort` (the crate's `Cookie` is
 `!Send`, so the field is reached through its pointer, one documented
-`unsafe`); MuPDF ends an aborted page silently, so the flag is read back. A
-4.6 s page stops ~60 ms after a 50 ms deadline. PyMuPDF's `get_text()` takes
+`unsafe`); MuPDF ends an aborted page silently, so the flag is read back. Measured
+once, debug build: a 4.6 s page stops ~60 ms after the start given a 50 ms
+deadline. PyMuPDF's `get_text()` takes
 no cookie. A reached limit logs at INFO in Python's `convert()`. Both
 mutation-checked in both languages; **one survivor, timing-equivalent**: the
 check before each page, which the watcher always beats on a short page — kept
 for determinism. `MupdfPdfExtractor` (the service's adapter) takes no limit,
-and neither does `FullTextService`.
+and neither does `FullTextService`; neither carries the kind on either
+(#604). **PR #602's review** added: a drop guard so a panic during the walk
+cannot hang the watcher's scope; Python failing the conversion on an engine
+fault *on a page* (it was a page warning); `ConversionResult::failure(PdfError)`
+setting `error_kind`; `PDFLimit` and `ConversionResult` refusing what cannot
+work; `is_the_files` in both languages over `tests/fixtures/pdf_error_kinds.json`;
+the cause walk honouring `__suppress_context__`; the `LayoutExtractor`
+Protocol left at its old signature. MuPDF's silent stop after too many syntax
+errors, which the cookie now counts, is #605.
 
 **For StudyAnalyzer**: map `PdfErrorKind::Unreadable`/`Encrypted` to
 `invalid_input` (the encrypted message says to remove the password) and

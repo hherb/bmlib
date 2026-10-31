@@ -81,8 +81,9 @@ use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
 use mupdf::{Cookie, Device, DisplayList, Document, Matrix, Page, Quad, Rect};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
-/// How often the watcher looks at a [`PdfLimit`] while a page runs: the most a
-/// cancel or a deadline can be overrun by, a page's own last operator aside.
+/// How often the watcher looks at a [`PdfLimit`] while a page runs. A cancel or
+/// a deadline is overrun by up to this, plus whatever MuPDF does between two
+/// looks at the cookie (loading a page and building its text page do not look).
 pub const LIMIT_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// PyMuPDF's `TEXTFLAGS_DICT` (199), the flags `get_text("dict")` reads with.
@@ -341,8 +342,8 @@ fn open(path: &std::path::Path) -> Result<Document, PdfError> {
 /// A cookie's `abort` field, for the watcher thread to set.
 ///
 /// MuPDF's cookie is its documented way for one thread to stop another's run,
-/// "unsynchronized without locking": `fz_run_page` reads `abort` before each
-/// content-stream operator and ends the page early, silently, when it is set.
+/// "unsynchronized without locking": the PDF interpreter reads `abort` once per
+/// content-stream token and ends the page early, silently, when it is set.
 /// The crate's [`Cookie`] cannot cross threads (`abort` takes `&mut`, and it is
 /// `!Send`), so the field is reached through its pointer and written
 /// atomically.
@@ -354,8 +355,12 @@ fn abort_flag(cookie: &Cookie) -> &AtomicI32 {
     // SAFETY: the copy is the pointer `cookie` holds, valid while `cookie` is
     // borrowed, which the returned reference is tied to; the copy is not
     // dropped (`*mut` has no destructor), so the cookie is freed once, by
-    // `cookie`. `abort` is an aligned C `int`, which is what `AtomicI32` needs;
-    // MuPDF reads it plainly, as the cookie's protocol has it.
+    // `cookie`. `abort` is an aligned C `int`, which is what `AtomicI32` needs.
+    // One precondition of `from_ptr` is knowingly not met: MuPDF reads `abort`
+    // plainly while the watcher stores to it, a mixed access the Rust memory
+    // model calls a race. It is accepted because that read is MuPDF's own
+    // documented protocol, behind FFI where Rust cannot reorder it, and the
+    // store is one aligned `int` write that cannot tear.
     unsafe {
         let raw: *mut fz_cookie = std::mem::transmute_copy(cookie);
         AtomicI32::from_ptr(std::ptr::addr_of_mut!((*raw).abort))
@@ -431,13 +436,29 @@ fn each_page(
             }
             Ok(())
         };
-        let result = walk();
-        done.store(true, Ordering::Release);
-        if let Some(watcher) = watcher {
-            watcher.thread().unpark();
-        }
-        result
+        let _done = WalkDone {
+            done: &done,
+            watcher: watcher.as_ref().map(|w| w.thread().clone()),
+        };
+        walk()
     })
+}
+
+/// Ends the watcher however the walk ends, a panic included: the scope joins the
+/// watcher before a panic leaves it, and a watcher whose limit is never reached
+/// (a cancel flag nobody sets) would otherwise keep it waiting for ever.
+struct WalkDone<'a> {
+    done: &'a AtomicBool,
+    watcher: Option<std::thread::Thread>,
+}
+
+impl Drop for WalkDone<'_> {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Release);
+        if let Some(watcher) = &self.watcher {
+            watcher.unpark();
+        }
+    }
 }
 
 /// A page's text as PyMuPDF's `get_text()` writes it (see the module docs).
@@ -558,5 +579,75 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
             char_count,
             warnings: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fulltext::pdf_text::PdfErrorKind;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// One empty page; MuPDF's repair supplies the offsets.
+    const ONE_PAGE: &[u8] = b"%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n\
+        2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n\
+        3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>> endobj\n\
+        trailer <</Root 1 0 R>>\n%%EOF\n";
+
+    /// Every MuPDF code is placed: `FORMAT`, `SYNTAX` and `UNSUPPORTED` the
+    /// file's and every other the engine's, so a new code cannot be blamed on
+    /// the file by default.
+    #[test]
+    fn every_mupdf_code_is_placed() {
+        use mupdf_sys::*;
+        let codes = [
+            (FZ_ERROR_NONE, PdfErrorKind::Engine),
+            (FZ_ERROR_GENERIC, PdfErrorKind::Engine),
+            (FZ_ERROR_SYSTEM, PdfErrorKind::Engine),
+            (FZ_ERROR_LIBRARY, PdfErrorKind::Engine),
+            (FZ_ERROR_ARGUMENT, PdfErrorKind::Engine),
+            (FZ_ERROR_LIMIT, PdfErrorKind::Engine),
+            (FZ_ERROR_UNSUPPORTED, PdfErrorKind::Unreadable),
+            (FZ_ERROR_FORMAT, PdfErrorKind::Unreadable),
+            (FZ_ERROR_SYNTAX, PdfErrorKind::Unreadable),
+            (FZ_ERROR_TRYLATER, PdfErrorKind::Engine),
+            (FZ_ERROR_ABORT, PdfErrorKind::Engine),
+            (FZ_ERROR_REPAIRED, PdfErrorKind::Engine),
+        ];
+        for (code, kind) in codes {
+            let error = mupdf::Error::MuPdf(mupdf::error::MuPdfError {
+                code: code as i32,
+                message: "cannot read /tmp/probe.pdf".to_string(),
+            });
+            let classified = classify(&error, "probing", std::path::Path::new("/tmp/probe.pdf"));
+            assert_eq!(classified.kind, kind, "code {code}");
+            assert!(!classified.message.contains("probe.pdf"), "{classified}");
+        }
+    }
+
+    /// A panic while a page is visited reaches the caller, rather than the
+    /// scope waiting for ever on a watcher whose cancel flag nobody sets.
+    #[test]
+    fn a_panic_while_a_page_is_visited_is_not_a_hang() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let document = Document::from_bytes(ONE_PAGE, "application/pdf").expect("parses");
+            let limit = PdfLimit {
+                cancel: Some(Arc::new(AtomicBool::new(false))),
+                ..PdfLimit::default()
+            };
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                each_page(
+                    &document,
+                    TEXT_FLAGS,
+                    std::path::Path::new("probe.pdf"),
+                    &limit,
+                    |_, _| panic!("visit"),
+                )
+            }));
+            sender.send(outcome.is_err()).ok();
+        });
+        assert_eq!(receiver.recv_timeout(Duration::from_secs(10)), Ok(true));
     }
 }

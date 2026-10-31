@@ -159,14 +159,46 @@ class TestPDFExtractionError:
         assert copy.kind is PDFErrorKind.ENGINE
         assert str(copy) == str(error)
 
-    def test_the_kinds_are_rusts_wire_names(self):
-        assert [k.value for k in PDFErrorKind] == [
-            "encrypted",
-            "unreadable",
-            "engine",
-            "cancelled",
-            "timed-out",
+    def test_the_kinds_are_the_shared_fixtures(self):
+        # Rust's PdfErrorKind asserts the same file, member for member.
+        import json
+
+        fixture = Path(__file__).parent / "fixtures" / "pdf_error_kinds.json"
+        rows = json.loads(fixture.read_text(encoding="utf-8"))["kinds"]
+        assert [(k.value, k.is_the_files) for k in PDFErrorKind] == [
+            (row["name"], row["the_files"]) for row in rows
         ]
+
+    def test_a_bare_string_kind_is_converted_and_a_wrong_one_refused(self):
+        assert PDFExtractionError("engine", "x").kind is PDFErrorKind.ENGINE
+        with pytest.raises(ValueError):
+            PDFExtractionError("the-engine", "x")
+
+
+class TestConversionResultKind:
+    def test_a_success_carrying_a_failure_kind_is_refused(self):
+        with pytest.raises(ValueError, match="no error kind"):
+            ConversionResult(
+                success=True,
+                text="t",
+                format="plaintext",
+                page_count=1,
+                converted_pages=1,
+                char_count=1,
+                error_kind=PDFErrorKind.ENGINE,
+            )
+
+    def test_a_failure_without_a_kind_is_allowed(self):
+        # A third-party backend may not be able to place its cause.
+        result = ConversionResult(
+            success=False,
+            text="",
+            format="plaintext",
+            page_count=0,
+            converted_pages=0,
+            char_count=0,
+        )
+        assert result.error_kind is None
 
 
 class TestPDFLimit:
@@ -192,6 +224,29 @@ class TestPDFLimit:
         stop = PDFLimit(deadline=time.monotonic() - 1).reached()
         assert stop is not None and stop.kind is PDFErrorKind.TIMED_OUT
         assert str(stop) == "the PDF extraction ran past its deadline"
+
+    @pytest.mark.parametrize(
+        ("kwargs", "error"),
+        [
+            pytest.param({"deadline": float("nan")}, ValueError, id="nan"),
+            pytest.param({"deadline": float("inf")}, ValueError, id="inf"),
+            pytest.param({"deadline": True}, TypeError, id="bool"),
+            pytest.param({"deadline": "soon"}, TypeError, id="str"),
+            pytest.param({"cancel": True}, TypeError, id="cancel-bool"),
+        ],
+    )
+    def test_a_limit_that_could_not_work_is_refused(self, kwargs, error):
+        # Each would stop nothing silently, or raise mid-extraction as an
+        # engine fault.
+        with pytest.raises(error):
+            PDFLimit(**kwargs)
+
+    def test_a_wall_clock_deadline_is_refused(self):
+        import time
+
+        with pytest.raises(ValueError, match="time.monotonic"):
+            PDFLimit(deadline=time.time() + 60)
+        assert PDFLimit(deadline=time.monotonic() + 3600).reached() is None
 
 
 class TestRegistry:
@@ -639,6 +694,7 @@ class TestExtractBlocks:
             pytest.param(lambda m: m.mupdf.FzErrorSystem("out of memory"), id="fz-system"),
             pytest.param(lambda m: m.mupdf.FzErrorArgument("bad argument"), id="fz-argument"),
             pytest.param(lambda m: RuntimeError("unplaced"), id="unknown"),
+            pytest.param(lambda m: KeyError("size"), id="bmlib-defect"),
         ],
     )
     def test_an_engine_fault_is_not_the_files(self, tmp_path, monkeypatch, make_error):
@@ -659,6 +715,64 @@ class TestExtractBlocks:
         with pytest.raises(PDFExtractionError) as caught:
             converter.extract_blocks(pdf)
         assert caught.value.kind is PDFErrorKind.ENGINE
+        # What was raised is named, when it is not MuPDF's, so a defect in
+        # bmlib does not read as a claim about MuPDF.
+        if not isinstance(error, converter._pymupdf.mupdf.FzErrorBase):
+            assert type(error).__name__ in result.error_message
+
+    def test_every_mupdf_code_is_placed(self, tmp_path, monkeypatch):
+        # Exactly FORMAT, SYNTAX and UNSUPPORTED are the file's, as in Rust's
+        # classify; a code added later is the engine's by default.
+        import inspect
+
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        converter = get_converter("pymupdf")
+        mupdf = converter._pymupdf.mupdf
+        codes = [
+            cls
+            for name, cls in inspect.getmembers(mupdf, inspect.isclass)
+            if name.startswith("FzError")
+            and issubclass(cls, mupdf.FzErrorBase)
+            and cls is not mupdf.FzErrorBase
+        ]
+        assert len(codes) >= 10
+        placed = {}
+        for cls in codes:
+
+            def fail(*_args, _cls=cls, **_kwargs):
+                raise _cls("probe")
+
+            monkeypatch.setattr(converter._pymupdf, "open", fail)
+            placed[cls.__name__] = converter.convert(pdf).error_kind
+        file_codes = {"FzErrorFormat", "FzErrorSyntax", "FzErrorUnsupported"}
+        assert {n for n, k in placed.items() if k is PDFErrorKind.UNREADABLE} == file_codes
+        assert all(k is PDFErrorKind.ENGINE for n, k in placed.items() if n not in file_codes)
+
+    def test_a_suppressed_mupdf_context_does_not_decide(self, tmp_path, monkeypatch):
+        # Raised while a FORMAT error was handled, but with the context
+        # suppressed: the file is not blamed for what followed.
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        converter = get_converter("pymupdf")
+        mupdf = converter._pymupdf.mupdf
+
+        def suppressed(*_args, **_kwargs):
+            try:
+                raise mupdf.FzErrorFormat("no objects found")
+            except Exception:
+                raise RuntimeError("something else") from None
+
+        def implicit(*_args, **_kwargs):
+            try:
+                raise mupdf.FzErrorFormat("no objects found")
+            except Exception:
+                raise RuntimeError("raised while handling it")  # noqa: B904
+
+        monkeypatch.setattr(converter._pymupdf, "open", suppressed)
+        assert converter.convert(pdf).error_kind is PDFErrorKind.ENGINE
+        monkeypatch.setattr(converter._pymupdf, "open", implicit)
+        assert converter.convert(pdf).error_kind is PDFErrorKind.UNREADABLE
 
     def test_a_chained_mupdf_code_decides_over_the_wrapper(self, tmp_path, monkeypatch):
         # PyMuPDF raises FileDataError for any open failure and chains
@@ -726,6 +840,25 @@ class TestExtractBlocks:
         unset = PDFLimit(cancel=threading.Event())
         assert len(converter.extract_blocks(pdf, limit=unset)) == 3
         assert converter.convert(pdf, limit=unset).converted_pages == 3
+
+    def test_a_passed_deadline_stops_both_paths(self, tmp_path, caplog):
+        import time
+
+        pdf = tmp_path / "one.pdf"
+        self._write_pdf(pdf, [[(72, 72, "Page one", "helv", 12)]])
+        converter = get_converter("pymupdf")
+        past = PDFLimit(deadline=time.monotonic() - 1)
+        with caplog.at_level("INFO", logger="bmlib.fulltext.pdf_converter"):
+            result = converter.convert(pdf, limit=past)
+        assert (result.success, result.text, result.error_kind) == (
+            False,
+            "",
+            PDFErrorKind.TIMED_OUT,
+        )
+        assert [r.levelname for r in caplog.records] == ["INFO"]
+        with pytest.raises(PDFExtractionError) as caught:
+            converter.extract_blocks(pdf, limit=past)
+        assert caught.value.kind is PDFErrorKind.TIMED_OUT
 
     def test_an_owner_password_alone_does_not_block_extraction(self, tmp_path):
         # Negative control: encrypted, but readable, so blocks come back.
@@ -830,7 +963,9 @@ class TestTheConvertedResultCarriesAJudgedTitle:
         assert result.title == "A study of coffee"
 
     @staticmethod
-    def _open_returning(converter, monkeypatch, *, page_zero_raises=False, no_pages=False):
+    def _open_returning(
+        converter, monkeypatch, *, page_zero_raises=False, no_pages=False, page_zero_error=None
+    ):
         """Drive ``convert()`` over a real document that misbehaves in one way.
 
         A page object comes fresh from ``doc[n]`` on every access, so patching
@@ -844,7 +979,7 @@ class TestTheConvertedResultCarriesAJudgedTitle:
 
             def get_text(self, *a, **k):
                 if self._fail:
-                    raise RuntimeError("damaged content stream")
+                    raise page_zero_error or RuntimeError("damaged content stream")
                 return self._page.get_text(*a, **k)
 
         class _Doc:
@@ -889,6 +1024,36 @@ class TestTheConvertedResultCarriesAJudgedTitle:
         result = converter.convert(pdf)
 
         assert result.title is None
+        assert any("Extraction failed" in w for w in result.warnings)
+
+    @pytest.mark.parametrize(
+        "make_error",
+        [
+            pytest.param(lambda m: MemoryError(), id="memory"),
+            pytest.param(lambda m: m.mupdf.FzErrorSystem("out of memory"), id="fz-system"),
+        ],
+    )
+    def test_an_engine_fault_on_a_page_fails_the_conversion(
+        self, tmp_path, monkeypatch, make_error
+    ):
+        # Out of memory on a page is not one bad page: the conversion fails as
+        # the engine's, as Rust's does, rather than returning success short a
+        # page with no kind (#598).
+        pdf = self._write_pdf(tmp_path / "oom.pdf", "Effects of aspirin on outcomes")
+        converter = get_converter("pymupdf")
+        error = make_error(converter._pymupdf)
+        self._open_returning(converter, monkeypatch, page_zero_raises=True, page_zero_error=error)
+        result = converter.convert(pdf)
+        assert (result.success, result.text, result.error_kind) == (False, "", PDFErrorKind.ENGINE)
+
+    def test_a_file_fault_on_a_page_costs_that_page_alone(self, tmp_path, monkeypatch):
+        # The #57 rule: one bad page does not abort the rest.
+        pdf = self._write_pdf(tmp_path / "bad-page.pdf", "Effects of aspirin on outcomes")
+        converter = get_converter("pymupdf")
+        error = converter._pymupdf.mupdf.FzErrorSyntax("bad content stream")
+        self._open_returning(converter, monkeypatch, page_zero_raises=True, page_zero_error=error)
+        result = converter.convert(pdf)
+        assert result.success is True and result.error_kind is None
         assert any("Extraction failed" in w for w in result.warnings)
 
     def test_a_document_with_no_pages_rejects_its_metadata_title(self, tmp_path, monkeypatch):

@@ -18,8 +18,9 @@ trait must implement the two `_within` methods instead — breaking for one).
 `MupdfExtractor` runs every page with one MuPDF cookie, and while a limit is
 set a scoped watcher thread checks it every `LIMIT_WATCH_INTERVAL` (10 ms) and
 sets the cookie's `abort`, so **one pathological page stops while it runs**:
-measured, a page taking 4.6 s unlimited (debug) stops about 60 ms after a 50 ms
-deadline or a cancel. MuPDF ends an aborted page silently, so the flag is read
+measured once in a debug build, a page taking 4.6 s unlimited stops about 60 ms
+after the extraction starts, given a 50 ms deadline or a cancel at 50 ms (the
+test asserts under 1 s). MuPDF ends an aborted page silently, so the flag is read
 back after each page and a page cut short is `PdfErrorKind::Cancelled` or
 `TimedOut`, never a short page. Passing a cookie changes nothing else MuPDF does
 but count: the PDF-bytes contract is unchanged. `MupdfPdfExtractor` (the
@@ -34,7 +35,10 @@ password), `Unreadable` (MuPDF's `FORMAT`, `SYNTAX` or `UNSUPPORTED`) or
 `Engine` (every other MuPDF code, the crate's own errors, and anything
 unplaced). The message never names the path; MuPDF's own open messages did,
 and the path is removed. `PdfErrorKind` is `#[non_exhaustive]`, and its
-`as_str()` is Python's `PDFErrorKind` value. `ConversionResult` gains
+`as_str()` is Python's `PDFErrorKind` value; `is_the_files()` is the split, and
+`tests/fixtures/pdf_error_kinds.json` holds both languages to it.
+`ConversionResult::failure` takes a `PdfError` rather than a string and sets
+`error_kind` with the message. `ConversionResult` gains
 `error_kind: Option<PdfErrorKind>` (a struct literal must name it, or use
 `..ConversionResult::default()`). `MupdfPdfExtractor` still reports a failure
 as `PdfExtractError::Conversion(String)`, now the `PdfError`'s message.

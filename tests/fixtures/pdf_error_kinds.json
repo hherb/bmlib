@@ -1,0 +1,10 @@
+{
+  "description": "PDFErrorKind (Python) and PdfErrorKind (Rust), member for member, in declaration order: each kind's wire name, and whether the file is at fault (#598, #600). Both test suites assert this file.",
+  "kinds": [
+    {"name": "encrypted", "the_files": true},
+    {"name": "unreadable", "the_files": true},
+    {"name": "engine", "the_files": false},
+    {"name": "cancelled", "the_files": false},
+    {"name": "timed-out", "the_files": false}
+  ]
+}

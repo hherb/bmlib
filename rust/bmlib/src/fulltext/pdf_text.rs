@@ -323,6 +323,13 @@ impl PdfErrorKind {
             PdfErrorKind::TimedOut => "timed-out",
         }
     }
+
+    /// Whether the file is at fault (encrypted, unreadable), so another file —
+    /// not a retry — is the remedy. An engine fault and a reached limit are not.
+    #[must_use]
+    pub fn is_the_files(self) -> bool {
+        matches!(self, PdfErrorKind::Encrypted | PdfErrorKind::Unreadable)
+    }
 }
 
 /// Why a PDF could not be extracted: its [`PdfErrorKind`] and a message fit to
@@ -552,11 +559,12 @@ impl Default for ConversionResult {
 }
 
 impl ConversionResult {
-    /// A failed conversion naming its cause.
+    /// A failed conversion naming its cause and which side it is on.
     #[must_use]
-    pub fn failure(error: impl Into<String>) -> Self {
+    pub fn failure(error: PdfError) -> Self {
         ConversionResult {
-            error_message: Some(error.into()),
+            error_message: Some(error.message),
+            error_kind: Some(error.kind),
             ..ConversionResult::default()
         }
     }
