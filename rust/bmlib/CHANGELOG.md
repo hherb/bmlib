@@ -33,6 +33,14 @@ The Python library is documented separately, in the repository's
   to `bogus font ... ascent/descent values`, capitalises `ActualText`, and on
   one PDF no longer reports a bogus font).
 
+### Fixed
+
+- **A structured extraction whose `extracted_content` is not a string is no
+  content** (#570, with the Python library). `extract_from_batch` stored a
+  JSON `null` as the text `"null"` at the model's confidence, and an object
+  or a list as its JSON; it now reads as `""` at confidence 0.0 with no
+  findings, which `is_valid` drops before consolidation.
+
 ## [0.3.0] - 2026-10-31
 
 Published with the Python library's 0.12.0, from the same merge commit. **The

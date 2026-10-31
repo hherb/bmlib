@@ -34,6 +34,26 @@ All notable changes to bmlib are documented here. The format is based on
   `ActualText with no position. Text may be lost or mispositioned.` too). The
   canonical text does not move, so `PDF_CANONICAL_VERSION` stays 3 (re-pinned).
 
+### Fixed
+
+- **`chat_json(max_retries=0)` makes one attempt** (#574). It made no
+  request and raised `ChatJsonUnparseableError("Failed after 0 attempts:
+  None")`, naming a cause that never happened. Fewer than one attempt is now
+  one, which is Rust's `max_retries.max(1)`, so the two languages agree; a
+  negative value is clamped the same way. Nothing in bmlib passes `0`.
+- **A structured extraction whose `extracted_content` is not text is no
+  content** (#570). `LLMChunkProcessor` read the field through `str()`, so a
+  `null` was stored as the four-character text `"None"` at the model's own
+  confidence, and an object or a list as its Python `repr`, and that text fed
+  consolidation and the next level as if the model had written it. An absent
+  or non-string value now reads as `""`, at confidence 0.0 and with no
+  findings, logged at WARNING naming the batch; an empty extraction was
+  already dropped before consolidation (`is_valid`), so the batch contributes
+  nothing. An absent key used to give `""` at the model's confidence and no
+  line, and now warns too. The Rust port had the same defect, storing a JSON
+  `null` as the text `"null"`, and is fixed alike (it logs nothing, as the
+  crate logs nothing anywhere).
+
 ## [0.12.0] — 2026-10-31
 
 **The StudyAnalyzer release: the pieces an evidence-appraisal app needs to

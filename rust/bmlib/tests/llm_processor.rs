@@ -418,6 +418,38 @@ fn structured_output_is_read_at_level_zero() {
     assert_eq!(result.content, "merged");
 }
 
+/// **Content that is not a string is no content, at no confidence** (#570). A
+/// `null` was stored as the text `"null"` at the model's confidence, and an
+/// object as its JSON, which then fed consolidation as if the model wrote it.
+#[test]
+fn content_that_is_not_text_is_no_content() {
+    for answer in [
+        json!({"extracted_content": null, "confidence": 0.8}),
+        json!({"extracted_content": {"a": 1}, "confidence": 0.8, "key_findings": ["k"]}),
+        json!({"extracted_content": ["x"], "confidence": 0.8}),
+        json!({"extracted_content": 5, "confidence": 0.8}),
+        json!({"confidence": 0.8}),
+    ] {
+        let model = Scripted::structured(answer.clone());
+        let result = extract_from_batch(
+            &model,
+            &BatchRequest {
+                templates: &templates(),
+                batch_content: "B",
+                query: "Q",
+                batch_metadata: &metadata(0),
+                temperature: 0.2,
+                max_tokens: 100,
+                use_structured_output: true,
+            },
+        )
+        .expect("extracts");
+        assert_eq!(result.content, "", "{answer}");
+        assert_eq!(result.confidence, 0.0, "{answer}");
+        assert!(!result.metadata.contains_key("key_findings"), "{answer}");
+    }
+}
+
 /// **An unusable confidence falls back to the default, not to zero.** A model that
 /// reported `"high"` has not said it is unsure, and recording zero would let
 /// `min_confidence_threshold` discard a good extraction for a type error.

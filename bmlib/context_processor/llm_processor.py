@@ -322,7 +322,9 @@ class LLMChunkProcessor(IterativeContextProcessor):
             label: Retry context, so a failure names the batch it came from.
 
         Returns:
-            ``(content, confidence, key_findings)``.
+            ``(content, confidence, key_findings)``. An ``extracted_content``
+            that is absent or not a string is ``("", 0.0, [])``, logged at
+            WARNING.
         """
         parsed = self.agent.chat_json(
             [self.agent.user_msg(prompt)],
@@ -331,7 +333,18 @@ class LLMChunkProcessor(IterativeContextProcessor):
             retry_context=label,
             require_dict=True,
         )
-        content = str(parsed.get("extracted_content", "")).strip()
+        raw_content = parsed.get("extracted_content")
+        if not isinstance(raw_content, str):
+            # ``str()`` stored ``null`` as the literal "None" at the model's
+            # confidence (#570); empty content is dropped before consolidation.
+            logger.warning(
+                "Model reported extracted_content that is not text in %s (%s); "
+                "reading it as no content",
+                label,
+                type(raw_content).__name__,
+            )
+            return "", 0.0, []
+        content = raw_content.strip()
         try:
             confidence = float(parsed.get("confidence", DEFAULT_EXTRACTION_CONFIDENCE))
         except (TypeError, ValueError):
