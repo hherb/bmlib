@@ -103,14 +103,18 @@ What a call can refuse is a `ChatError`: `UnknownProvider`, `MissingApiKey {
 provider, env_var }` (before any request), `Transport` (no answer, or a
 non-2xx status, quoting the server's `error.message` when it gave one),
 `Malformed` (a body the protocol cannot read, including an `error` object at
-HTTP 200), and for streams `Stream` and `StreamingToolsUnsupported`. It is
+HTTP 200), `ToolsUnsupported` (tools for a provider not in
+`TOOL_CAPABLE_PROVIDERS`, which every built-in provider is today), and for
+streams `Stream` and `StreamingToolsUnsupported`. It is
 `#[non_exhaustive]`. `chat` itself does not retry; only opening a stream and a
 context-window lookup do.
 
 Other request fields: `json_mode` (OpenAI `response_format`, Ollama
 `format: "json"`; Anthropic has none), `top_p`, `think`, `num_ctx`, and
 `extra_body`, merged into the body last so you can send a field this crate
-does not know. `chat_body`, `chat_url`, `chat_headers` and `resolve_target`
+does not know. For Ollama its `options` are merged key by key, and `num_ctx`
+and `stream: false` are written after it, so `extra_body` cannot override
+them. `chat_body`, `chat_url`, `chat_headers` and `resolve_target`
 are public, so you can inspect exactly what would be sent without sending it.
 
 `LLMResponse.duration_seconds` is always `0.0`, as in Python: nothing fills
@@ -205,7 +209,7 @@ assert_eq!((response.input_tokens, response.output_tokens), (9, 3));
   answer. So is a server `error` event and a tool call; tools are refused up
   front (`StreamingToolsUnsupported`).
 - Opening is tried up to `STREAM_OPEN_ATTEMPTS` (3) times on a transport
-  failure or a `RETRYABLE_STATUSES` status (429, 5xx, 529), the wait doubling
+  failure or a `RETRYABLE_STATUSES` status (429, 500, 502, 503, 504, 529), the wait doubling
   from `retry_base_delay`. Nothing is retried once a delta has been delivered.
 - An OpenAI-compatible server reports usage only when asked, and only the
   `STREAM_USAGE_PROVIDERS` are asked; elsewhere the counts are 0.
@@ -327,10 +331,10 @@ assert_eq!(fields["score"], json!(8));
 # Ok::<(), bmlib::llm::RepairError>(())
 ```
 
-Where Python appended every `]` and then every `}`, the Rust repairer closes
-brackets in reverse order of opening, so an interleaved truncation is repaired
-rather than handed to the fragment extractor (which kept only the first
-object). Errors are `RepairError` (`EmptyRepair`, `EmptyParse`,
+Both repairers close brackets in reverse order of opening (#299; Python once
+appended every `]` and then every `}`), so an interleaved truncation is
+repaired rather than handed to the fragment extractor (which kept only the
+first object). Errors are `RepairError` (`EmptyRepair`, `EmptyParse`,
 `EmptyExtract`, `TooLarge` past `MAX_JSON_LENGTH`, `Unrepairable`).
 `iter_json_spans` exposes the candidate spans both extractors walk.
 

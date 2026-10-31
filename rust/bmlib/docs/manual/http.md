@@ -2,8 +2,10 @@
 
 Every module that goes out to the network — the publication fetchers, the
 record lookup, the LLM client, the transparency analyzer, the full-text
-service — is written against one trait, `HttpClient`, and takes it as
-`&dyn HttpClient`. `UreqClient` is the one implementation that makes real
+service — is written against one trait, `HttpClient`: the fetchers, the
+lookup and the analyzer take `&dyn HttpClient`, and `LlmClient::new` and
+`FullTextService::new`, which keep it, `Arc<dyn HttpClient + Send + Sync>`.
+`UreqClient` is the one implementation that makes real
 requests. Python has no page for this: its modules build an `httpx` client
 internally, and its tests patch it. In Rust the client is always an argument,
 so a test or a host app passes its own.

@@ -73,6 +73,12 @@ cited.
   full text, and make those requests, where it returned a link.
 - **Segmented PDF sections no longer carry page furniture** (#591), so
   section content moves wherever a page broke.
+- **Tier 1d fetches Europe PMC's own PDF alone** (#494): `pdf_url` and
+  `source` move where another site's PDF was listed first, and a call with no
+  DOI may now make an Unpaywall request by the search hit's DOI.
+- **An unusable cache `identifier` given alone raises `"No identifiers
+  provided"`** (#485), where a blank one was a real key shared by every call
+  spelling it.
 
 **`llm`**
 
@@ -90,17 +96,23 @@ cited.
 - **The OpenAlex normaliser reads every field type-checked**: an empty
   `publication_date` is `None` and an `is_oa` that is not a JSON boolean is
   `False` (`bool("no")` was `True`).
+- **`lookup_retractions()` raises `ValueError` for a PMID that is not
+  digits** (#504), where it returned `[]`, which read as not retracted.
 
 **`quality`**
 
 - **`extract_study_type` reads a review by how it searched** (#453).
+- **A Tier 3 result naming no study design no longer replaces a conclusive
+  Tier 1** (#489), which moves stored values and `min_tier` filter results.
 
 **Rust crate** (0.3.0, published beside this; see its CHANGELOG): `PdfTextExtractor`
 returns `PdfError` and gains `_within` methods taking a `PdfLimit` (#598,
 #600); `ChatRequest` gains `num_ctx`, `Protocol` an `Ollama` variant,
 `ProtocolError` a `Malformed` variant, and `parse_response` takes the
 request's messages; the `ollama` provider speaks `/api/chat`; `ChatError` is
-`#[non_exhaustive]`; `FullTextResult` gains `pdf_download_failure` (#594).
+`#[non_exhaustive]`; `FullTextResult` gains `pdf_download_failure` (#594);
+`sync()` returns `SyncReport` rather than `SyncOutcome`; `quality::next_tier`
+takes `deep_attempted` (#489).
 
 ### Added
 - **A PDF extraction can be cancelled or bounded in time** (#600, found

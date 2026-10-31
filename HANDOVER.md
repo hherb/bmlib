@@ -4,13 +4,21 @@ _Last updated: 2026-10-31 (**this session cut 0.12.0** on `release/0.12.0`:
 the Rust manual's eleven missing pages, the Python manual audited against
 every unreleased CHANGELOG entry, #571's stale docs, and two Rust defects the
 manual work found, `sync()`'s unreadable timestamp and `atomic_write`'s
-stranded temporary). **0.11.0 is on PyPI**; 0.12.0 is published when the
-release PR is merged, tagged, released on GitHub and the `pypi` gate approved
-by the maintainer. Every PR merged since `v0.11.0`, #499 through #601, ships
-in 0.12.0; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
+stranded temporary; then the release PR's own review, fixed in a follow-up
+PR on `fix/release-0.12.0-review` because #610 was merged before it). **0.11.0
+is on PyPI**; 0.12.0 is published once that follow-up is merged, `main`'s tip
+tagged, released on GitHub and the `pypi` gate approved by the maintainer.
+Every PR merged since `v0.11.0`, #499 through #602 and the release PR #610,
+ships in 0.12.0, with the follow-up; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
 release notes. The Rust crate is released beside it as 0.3.0 (0.2.0 is on
 crates.io), published with `cargo publish` from a clean worktree of the same
 merge commit; see `HANDOVER_RUST.md`._
+
+## What 0.12.0 costs a downstream
+
+**Read the CHANGELOG's `[0.12.0]` summary and its *Changed — breaking*
+heading**, as for 0.11.0 below. The README's *Upgrading to 0.12* note points
+at it; the Rust crate's 0.3.0 breaks are gathered in `rust/bmlib/CHANGELOG.md`.
 
 ## What 0.11.0 costs a downstream
 
@@ -23,7 +31,7 @@ stored transparency results want recomputing (#184, #194) and
 `risk_indicators` strings move (#203, #227); the preprint population is
 published preprints only (#325); `ensure_schema()` adds
 `download_days.peak_count` and `download_day_parts`. The README has a short
-*Upgrading to 0.11* note pointing at the heading.
+*Upgrading to 0.11* note pointing at the heading until 0.12.0 replaced it.
 
 ## Rules carried forward, and previous sessions
 
@@ -43,7 +51,7 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: whose fault a PDF failure is (#598), and a bound on extraction (#600)
+## Previous session: whose fault a PDF failure is (#598), and a bound on extraction (#600)
 
 Both found reviewing hherb/StudyAnalyzer#21. **#598**: `PdfErrorKind` (Rust)
 / `PDFErrorKind` (Python) — `encrypted`, `unreadable`, `engine`, and from
@@ -283,8 +291,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,751 passing + 164 skipped** on `fix/pdf-extract-error-598`
-  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,345 with `cargo test -p bmlib --features pdf,html`; the embedder's live tests skip
+- **Tests: 8,767 passing + 164 skipped** on `fix/release-0.12.0-review`
+  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,399 with `cargo test -p bmlib --features pdf,html`, plus 59 manual doctests; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest

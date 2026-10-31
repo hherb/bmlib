@@ -704,9 +704,7 @@ fn a_failed_write_leaves_the_previous_version_intact() {
     assert_eq!(std::fs::read(&target).expect("read"), b"third");
 }
 
-/// **No temporary file survives a write**, and the temporary name is
-/// [`TEMP_SUFFIX_LEN`] characters longer than the target — the figure the cache's
-/// prefix cap leaves room for.
+/// **A failed write leaves no temporary file behind** either.
 #[test]
 fn a_failed_write_leaves_no_temporary_behind() {
     // A rename onto a non-empty directory fails after the temporary is written.
@@ -723,6 +721,9 @@ fn a_failed_write_leaves_no_temporary_behind() {
     assert_eq!(left, vec!["entry.bin".to_string()], "left {left:?}");
 }
 
+/// **No temporary file survives a write**, and the temporary name is
+/// [`TEMP_SUFFIX_LEN`] characters longer than the target — the figure the cache's
+/// prefix cap leaves room for.
 #[test]
 fn a_write_leaves_no_temporary_behind() {
     let dir = TempDir::new("temp");
