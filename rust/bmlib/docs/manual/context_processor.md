@@ -210,7 +210,9 @@ assert!(LlmChunkProcessor::new(&Stub, bad, ProcessingConfig::new(), false, 0.0, 
   prompt, always in prose. With structured output on, level 0 calls
   `complete_json` and reads `extracted_content`, `confidence` (clamped; an
   unusable one is `DEFAULT_EXTRACTION_CONFIDENCE`, 0.9) and `key_findings`
-  (kept in the result's metadata). A prose extraction records 0.9.
+  (kept in the result's metadata). An `extracted_content` that is absent or
+  not a string is no content, at confidence 0.0 with no findings (#570; a
+  `null` used to be stored as the text `"null"`). A prose extraction records 0.9.
 - `ChunkItem` renders `[Item N]`, or `[Chunk N, score S]` with a score, and a
   split chunk keeps its score on every piece. A level above renders as
   `[Consolidated level L, item N]`.

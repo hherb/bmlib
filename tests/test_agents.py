@@ -520,6 +520,20 @@ class TestChatJson:
 
         assert agent.llm.chat.call_count == 5
 
+    @pytest.mark.parametrize("max_retries", [0, -1])
+    @patch("bmlib.agents.base.time.sleep")
+    def test_fewer_than_one_attempt_makes_one(self, mock_sleep, max_retries):
+        """#574: ``max_retries=0`` asked nothing and raised "unparseable" for
+        a reply that never came; Rust clamps to one attempt, and so does this."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('{"ok": true}')
+        assert agent.chat_json([agent.user_msg("test")], max_retries=max_retries) == {"ok": True}
+        agent.llm.chat.return_value = _make_response("")
+        with pytest.raises(ChatJsonEmptyError, match="Failed after 1 attempts"):
+            agent.chat_json([agent.user_msg("test")], max_retries=max_retries)
+        assert agent.llm.chat.call_count == 2
+        mock_sleep.assert_not_called()
+
     @patch("bmlib.agents.base.time.sleep")
     def test_empty_response_logs_warning(self, mock_sleep, caplog):
         agent = _make_agent()

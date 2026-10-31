@@ -168,7 +168,7 @@ Send a chat request in JSON mode, parse the result, and retry on empty, unparsea
 | `messages` | `list[LLMMessage]` | *(required)* | The conversation messages. |
 | `temperature` | `float \| None` | `None` | Override the agent's default temperature. Also selects the truncation policy (see below). |
 | `max_tokens` | `int \| None` | `None` | Override the agent's default max tokens. |
-| `max_retries` | `int` | `3` | Total attempts, not extra attempts after the first. |
+| `max_retries` | `int` | `3` | Total attempts, not extra attempts after the first. *(unreleased)* Fewer than one is one, as in Rust; `0` used to make no request and raise `ChatJsonUnparseableError` for a reply never asked for (#574). |
 | `retry_context` | `str` | `""` | Label naming the task being attempted, folded into every retry, error, and failure message — `retry_context="quality classification"` turns `Retry 2/3 after 2s` into `Retry 2/3 for quality classification after 2s`. Also appears in the truncation `ValueError` and the final exhaustion message. Empty by default, in which case every message reads exactly as it did before this parameter existed. |
 | `require_dict` | `bool` | `False` | Demand a JSON object. A response that parses to anything else is retried like any other bad response — see [Shape handling](#shape-handling). |
 | `**kwargs` | `object` | | Forwarded to `chat()` and on to the provider. |
