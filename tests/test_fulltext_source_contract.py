@@ -14,11 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The shared ``FullTextResult.jats_xml`` contract.
+"""The shared ``FullTextResult.jats_xml`` and ``pdf_download_failure`` contract.
 
 The same file Rust's ``rust/bmlib/tests/fulltext_source_contract.rs`` asserts
 against: the service hands back the JATS it rendered, byte for byte as served,
-and the cache keeps it beside the HTML.
+and the cache keeps it beside the HTML; a PDF download that leaves no file
+says why (#594).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from bmlib.fulltext.cache import FullTextCache, sanitize_identifier
@@ -60,13 +62,16 @@ def _fetch(
     another order or an extra time fails here rather than quietly reading a
     different body.
     """
-    script = [_response(answer) for answer in answers]
+    script = list(answers)
     asked: list[str] = []
 
     def http_get(url: str, **_kwargs: object) -> MagicMock:
         asked.append(url)
         assert script, f"transport exhausted at {url}"
-        return script.pop(0)
+        answer = script.pop(0)
+        if "raise" in answer:
+            raise httpx.ConnectError("scripted transport failure")
+        return _response(answer)
 
     sources = [FullTextSourceEntry.from_dict(s) for s in request.get("fulltext_sources", [])]
     with patch.object(service, "_http_get", side_effect=http_get):
@@ -84,6 +89,8 @@ def _check(result: FullTextResult, expected: dict[str, Any]) -> None:
     assert result.source == expected["source"]
     assert result.content_kind == expected["content_kind"]
     assert result.jats_xml == _body(expected["jats_xml"])
+    assert result.pdf_download_failure == expected.get("pdf_download_failure")
+    assert (result.file_path is not None) == expected.get("pdf_cached", False)
 
 
 @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
@@ -95,6 +102,9 @@ def test_contract_case(case: dict[str, Any], tmp_path: Path) -> None:
         cache.save_html(case["seed_html"], key)
     if case.get("seed_unreadable_jats"):
         jats_entry.mkdir(parents=True)
+    if case.get("seed_pdfs_dir_as_file"):
+        (tmp_path / "pdfs").rmdir()
+        (tmp_path / "pdfs").write_bytes(b"")
     service = FullTextService(email="test@example.com", cache=cache)
 
     _check(_fetch(service, case["request"], case["responses"]), case["expected"])

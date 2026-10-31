@@ -2205,6 +2205,7 @@ impl FullTextService {
             Ok(response) => response,
             Err(fault) => {
                 self.report_pdf_download_exception(&result.source, origin, pdf_url, &fault);
+                result.pdf_download_failure = Some("request-failed".to_string());
                 return;
             }
         };
@@ -2216,6 +2217,7 @@ impl FullTextService {
                 &format!("HTTP {}", response.status),
                 &format!("http-{}", response.status),
             );
+            result.pdf_download_failure = Some(format!("http-{}", response.status));
             return;
         }
 
@@ -2225,6 +2227,14 @@ impl FullTextService {
         // prefix still matched.
         let (path, outcome) = self.save_pdf_to_cache(cache, &response.body, cache_id);
         let Some(path) = path else {
+            result.pdf_download_failure = Some(
+                if outcome == PdfSaveOutcome::NotAPdf {
+                    "not-a-pdf"
+                } else {
+                    "write-failed"
+                }
+                .to_string(),
+            );
             if outcome == PdfSaveOutcome::NotAPdf {
                 self.report_pdf_download_failure(
                     &result.source,
@@ -3019,6 +3029,7 @@ fn empty_result(source: impl Into<String>) -> FullTextResult {
         file_path: None,
         content_kind: ContentKind::None,
         jats_xml: None,
+        pdf_download_failure: None,
     }
 }
 

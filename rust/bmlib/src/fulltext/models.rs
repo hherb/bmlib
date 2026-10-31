@@ -807,6 +807,18 @@ pub struct FullTextResult {
     /// [`file_path`](FullTextResult::file_path).
     #[serde(default)]
     pub jats_xml: Option<Vec<u8>>,
+    /// Why a PDF tier's download of [`pdf_url`](FullTextResult::pdf_url) left
+    /// no [`file_path`](FullTextResult::file_path) (#594), so a free PDF a
+    /// retry may fetch is not mistaken for a bare link: `"http-<status>"` (the
+    /// server answered with that non-200 status), `"not-a-pdf"` (a 200 whose
+    /// body is not a PDF), `"request-failed"` (the request failed before an
+    /// answer: a timeout, a reset, DNS) or `"write-failed"` (the PDF arrived
+    /// and the cache could not save it).
+    ///
+    /// `None` when the PDF was cached, and when no download was attempted — no
+    /// cache, or no `identifier` to key one by — as for every non-PDF tier.
+    #[serde(default)]
+    pub pdf_download_failure: Option<String>,
 }
 
 /// What a [`FullTextResult::html`] payload actually is.

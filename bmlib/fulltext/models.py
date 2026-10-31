@@ -849,6 +849,17 @@ class FullTextResult:
     # bmlib cached the XML beside it, and one whose XML could not be read
     # back. A PDF's own bytes are at ``file_path``.
     jats_xml: bytes | None = None
+    # Why a PDF tier's download of ``pdf_url`` left no ``file_path`` (#594), so
+    # a free PDF a retry may fetch is not mistaken for a bare link:
+    #
+    #   "http-<status>"  — the server answered with that non-200 status
+    #   "not-a-pdf"      — it answered 200 with a body that is not a PDF
+    #   "request-failed" — the request raised (a timeout, a reset, DNS)
+    #   "write-failed"   — the PDF arrived and the cache could not save it
+    #
+    # ``None`` when the PDF was cached, and when no download was attempted —
+    # no cache, or no ``identifier`` to key one by — as for every non-PDF tier.
+    pdf_download_failure: str | None = None
 
 
 class SectionType(Enum):
