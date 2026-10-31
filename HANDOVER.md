@@ -302,7 +302,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **118 open** (`gh issue list --state open --limit 300 --json number`,
-2026-10-31, once this PR closes #598 and #600; #560–#597 are not yet sorted
+2026-10-31, counting #598 and #600 as done; #560–#597 are not yet sorted
 into the lists below). **#599** (Rust silences MuPDF's warnings, so a
 repaired PDF's lost text goes unreported; the cookie this session added
 counts `errors`, which may help) and **#595** (`render_html`'s weaker
