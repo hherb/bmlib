@@ -1,17 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session is #590 and #591**, Rust's PDF
-backend moved to MuPDF and the segmenter's page furniture, two stacked PRs:
-`fix/rust-pdf-mupdf-590`, then `fix/segmenter-page-furniture-591` on top of
-it). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
-since — #526 through #589 — is unreleased, **and no StudyAnalyzer item is left
-in bmlib, so a 0.12.0 release is a natural next session** (the Rust crate's
-`pdf` feature changed API in #590: say so in its release notes).
-_Last updated: 2026-10-31 (**this session is #592**, a fresh Rust cache
-saving no PDF, on `fix/cache-dirs`; #587 and #588 were PR #589, merged).
-**0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
-since — #526 through #586 — is unreleased, **and no StudyAnalyzer item is left
-in bmlib, so a 0.12.0 release is a natural next session.**_
+_Last updated: 2026-10-31 (**this session is #594**, a failed PDF download
+says why, on `fix/pdf-download-fault-594`). **0.11.0 is released** (`v0.11.0`
+on 8edd3d7, on PyPI). Every PR merged since — #526 through #597 — is
+unreleased, **and no StudyAnalyzer item is left in bmlib, so a 0.12.0 release
+is a natural next session** (the Rust crate's `pdf` feature changed API in
+#590, and `FullTextResult` gained a field in #594: say both in its release
+notes)._
 
 ## What 0.11.0 costs a downstream
 
@@ -34,7 +29,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -44,9 +39,28 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: MuPDF in Rust (#590), page furniture (#591)
+## This session: a failed PDF download says why (#594)
 
-The CHANGELOG's top entries (both files) are the argument. **#590**: Rust's
+Found by StudyAnalyzer. A PDF tier (Tier 0's fetcher-supplied PDF, 1d, 2)
+whose download failed returned `pdf_url` and no `file_path` — the shape of a
+download never attempted — so a free PDF a retry would fetch read as a link.
+`FullTextResult.pdf_download_failure` (Python and Rust) names the cause:
+`"http-<status>"`, `"not-a-pdf"`, `"request-failed"`, `"write-failed"`;
+`None` when cached or not attempted. **The maintainer chose the field over
+falling through to the next tier**, so which tier answers does not move. The
+shared `tests/fixtures/fulltext_source.json` gains five cases (a `raise`
+answer and a `seed_pdfs_dir_as_file` seed are new to both harnesses), every
+case now checks the field and `file_path`, and each setting site was
+mutation-checked in both languages. `test_renderer_version.py`'s three digests
+were re-pinned with no version bumped (a result field moves no rendering).
+**For StudyAnalyzer**: a result with `pdf_download_failure` set is "a free
+PDF whose download failed" (worth a retry, never "no full text yet"); its PR
+#16 deadline rule is unaffected, since a download cut off by the app's own
+deadline never returns a result.
+
+## Previous sessions: MuPDF in Rust (#590), page furniture (#591), a fresh Rust cache (#592)
+
+PRs #596, #597 and #593, all merged. The CHANGELOG's top entries (both files) are the argument. **#590**: Rust's
 `pdf` feature extracts with MuPDF (`mupdf` =0.8.0, MuPDF 1.27.2, linked
 statically; `MupdfExtractor` / `MupdfPdfExtractor`, `PdfiumExtractor` gone —
 breaking), reading a line as PyMuPDF's `get_text("dict")` does; over the
@@ -76,15 +90,7 @@ two PDFs' no-Unicode glyphs differ; line boxes round maths fonts
 build workarounds and `Font::name`'s panic on a non-UTF-8 name are
 upstream `messense/mupdf-rs` bugs, **not reported** — the maintainer's call.
 
-## Previous session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
-
-PR #589, merged. `search` rebuilds the chunks with `chunk_canonical` and
-refuses a set unless every stored `(section, start, end)` is the rebuilt
-chunk's; `rust/bmlib/tests/vector_store.rs` runs each case on SQLite and
-PostgreSQL. Local run: `BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost
-## This session: a fresh Rust cache saves its PDFs and HTML (#592)
-
-Found by StudyAnalyzer's manual test: Rust's `FullTextCache` creates no
+**#592** (PR #593), found by StudyAnalyzer's manual test: Rust's `FullTextCache` creates no
 directory on construction, and `save_pdf`/`save_html` (unlike `save_jats` and
 `save_abstract`) never created theirs, so in a new cache directory every PDF
 write failed and the service returned no file. Both saves now create their
@@ -92,8 +98,7 @@ directory (a rejected PDF still creates nothing). The Rust test helpers had
 pre-created `html/` and `pdfs/`, which hid it; they no longer do. Python's
 constructor makes both, so it is unchanged. Filed from the same test: **#590**
 (Rust's PDF backend to MuPDF: PDFium's U+0002 hyphen markers and duplicated
-characters, with a build trial for macOS, iOS and Android; a parallel session
-takes it) and **#591** (running page headers and footers inside paragraphs).
+characters, with a build trial for macOS, iOS and Android) and **#591** (running page headers and footers inside paragraphs).
 
 ## Previous session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
 
@@ -274,8 +279,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,711 passing + 163 skipped** on `fix/store-spans`
-  (`uv run pytest tests/ -v`, 2026-10-31; the embedder's live tests skip
+- **Tests: 8,737 passing + 164 skipped** on `fix/pdf-download-fault-594`
+  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,353 with `--features pdf,html`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -304,9 +309,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**116 open** (`gh issue list --state open --limit 300`, 2026-10-31, once
-this PR closes #587 and #588; #560–#585 are not yet sorted into the lists
-below). **#528** and
+**120 open** (`gh issue list --state open --limit 300 --json number`,
+2026-10-31, once this PR closes #594; #560–#600 are not yet sorted into the
+lists below). **#598**, **#599** and **#600** (PDF extraction: a `String`
+error, MuPDF's silenced warnings, no cancellation or time bound) and **#595**
+(`render_html`'s weaker furniture rule) are the PDF path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI

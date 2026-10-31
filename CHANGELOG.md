@@ -60,6 +60,22 @@ All notable changes to bmlib are documented here. The format is based on
   before.
 
 ### Fixed
+- **A failed PDF download says why** (#594, found by StudyAnalyzer; the
+  maintainer chose a field over falling through to the next tier). A PDF tier
+  — a fetcher-supplied PDF, Tier 1d's Europe PMC render, Tier 2's Unpaywall —
+  downloads its `pdf_url`, and on any failure logged it and returned the
+  result with `pdf_url` and no `file_path`: the shape a result has when no
+  download was attempted (no cache, no `identifier`), so a caller could not
+  tell a free PDF a retry would fetch from a bare link, and StudyAnalyzer told
+  its user "no full text yet" as if the paper were paywalled. The download is
+  not recorded on the exhaustion report, the tier returning at once.
+  `FullTextResult.pdf_download_failure` (Python and Rust) now names the cause:
+  `"http-<status>"`, `"not-a-pdf"`, `"request-failed"` (the request raised) or
+  `"write-failed"` (the cache could not save it); `None` when the PDF was
+  cached or no download was attempted. Which tier answers does not move. The
+  shared `tests/fixtures/fulltext_source.json` gains a case per cause and a
+  cached one, and checks the field and `file_path` in every case; each
+  setting site was mutation-checked in both languages.
 - **A fresh Rust cache saves its PDFs and HTML** (#592, found by
   StudyAnalyzer). Rust's `FullTextCache` creates no directory on construction,
   and `save_pdf` and `save_html`, unlike `save_jats` and `save_abstract`, never

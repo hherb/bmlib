@@ -9,6 +9,14 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed, breaking for a struct literal — follows Python's failed PDF download (#594)
+`FullTextResult::pdf_download_failure: Option<String>` (`#[serde(default)]`)
+names why a PDF tier's download left no `file_path`: `"http-<status>"`,
+`"not-a-pdf"`, `"request-failed"` or `"write-failed"`; `None` when the PDF was
+cached or no download was attempted. A struct literal of `FullTextResult` must
+now name the field. `tests/fulltext_source_contract.rs` checks it in every case
+of the shared fixture.
+
 ### Changed — follows Python's page furniture (#591)
 `fulltext::segmenter::page_furniture` and `drop_page_furniture`, with
 `FURNITURE_PAGE_RATIO`, `FURNITURE_MIN_PAGES`, `FURNITURE_Y_TOLERANCE` and

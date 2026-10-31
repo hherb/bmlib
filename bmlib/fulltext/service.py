@@ -1885,8 +1885,10 @@ class FullTextService:
         On success, sets ``result.file_path`` to the cached file and — when
         ``convert_pdfs`` is on and a backend is available — ``result.html``
         and ``result.content_kind`` from the PDF's extracted text.
-        On failure (network error or invalid PDF), leaves result unchanged
-        so the caller can still use ``result.pdf_url`` as a fallback.
+        On failure (network error, invalid PDF or a cache write), sets
+        ``result.pdf_download_failure`` to the cause (#594) and nothing else,
+        so the caller can still use ``result.pdf_url`` as a fallback and can
+        tell it from a download never attempted.
 
         Returns without downloading at all when there is nowhere to put the
         file: no cache (#75) or no ``identifier`` to key one by. The URL stays
@@ -1952,14 +1954,17 @@ class FullTextService:
                     reason=f"HTTP {resp.status_code}",
                     cause=f"http-{resp.status_code}",
                 )
+                result.pdf_download_failure = f"http-{resp.status_code}"
                 return
             path, outcome = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
         except Exception as exc:
             self._report_pdf_download_exception(
                 source=result.source, origin=origin, pdf_url=pdf_url, exc=exc
             )
+            result.pdf_download_failure = "request-failed"
             return
         if path is None:
+            result.pdf_download_failure = outcome
             if outcome == "not-a-pdf":
                 self._report_pdf_download_failure(
                     source=result.source,

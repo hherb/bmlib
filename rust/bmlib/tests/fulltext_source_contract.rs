@@ -14,10 +14,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! The shared `FullTextResult::jats_xml` contract — the same file Python's
-//! `tests/test_fulltext_source_contract.py` asserts against: the service hands
-//! back the JATS it rendered, byte for byte as served, and the cache keeps it
-//! beside the HTML.
+//! The shared `FullTextResult::jats_xml` and `pdf_download_failure` contract —
+//! the same file Python's `tests/test_fulltext_source_contract.py` asserts
+//! against: the service hands back the JATS it rendered, byte for byte as
+//! served, and the cache keeps it beside the HTML; a PDF download that leaves
+//! no file says why (#594).
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -46,7 +47,7 @@ fn body(name: &Value) -> Option<Vec<u8>> {
 
 /// A transport answering a script in order and counting what it was asked.
 struct ScriptedClient {
-    script: Mutex<VecDeque<HttpResponse>>,
+    script: Mutex<VecDeque<Result<HttpResponse, FetchError>>>,
     asked: Mutex<Vec<String>>,
 }
 
@@ -57,7 +58,11 @@ impl HttpClient for ScriptedClient {
             .lock()
             .expect("lock")
             .pop_front()
-            .ok_or_else(|| FetchError::Transport(format!("transport exhausted at {url}")))
+            .unwrap_or_else(|| {
+                Err(FetchError::Transport(format!(
+                    "transport exhausted at {url}"
+                )))
+            })
     }
 }
 
@@ -89,8 +94,14 @@ fn fetch(cache: &FullTextCache, name: &str, request: &Value, answers: &[Value]) 
     let script = answers
         .iter()
         .map(|answer| {
+            if answer.get("raise").is_some() {
+                return Err(FetchError::Transport("scripted transport failure".into()));
+            }
             let status = u16::try_from(answer["status"].as_u64().expect("status")).expect("u16");
-            HttpResponse::from_bytes(status, body(&answer["body_file"]).unwrap_or_default())
+            Ok(HttpResponse::from_bytes(
+                status,
+                body(&answer["body_file"]).unwrap_or_default(),
+            ))
         })
         .collect();
     let client = Arc::new(ScriptedClient {
@@ -130,6 +141,16 @@ fn check(name: &str, result: &FullTextResult, expected: &Value) {
         "{name}"
     );
     assert_eq!(result.jats_xml, body(&expected["jats_xml"]), "{name}");
+    assert_eq!(
+        result.pdf_download_failure.as_deref(),
+        expected["pdf_download_failure"].as_str(),
+        "{name}"
+    );
+    assert_eq!(
+        result.file_path.is_some(),
+        expected["pdf_cached"].as_bool().unwrap_or(false),
+        "{name}"
+    );
 }
 
 #[test]
@@ -146,6 +167,9 @@ fn contract_case() {
         }
         if case["seed_unreadable_jats"].as_bool() == Some(true) {
             std::fs::create_dir_all(&jats_entry).expect("an unreadable entry");
+        }
+        if case["seed_pdfs_dir_as_file"].as_bool() == Some(true) {
+            std::fs::write(cache.pdf_dir(), b"").expect("a file where pdfs/ belongs");
         }
         let answers = case["responses"].as_array().expect("responses");
         check(

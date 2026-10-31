@@ -340,7 +340,26 @@ class FullTextResult:
     file_path: str | None = None   # Local cached file path
     content_kind: ContentKind = "none"   # what `html` actually is
     jats_xml: bytes | None = None  # the JATS `html` was rendered from *(unreleased)*
+    pdf_download_failure: str | None = None  # why a PDF tier left no file *(unreleased)*
 ```
+
+### `pdf_download_failure` *(unreleased)*
+
+Why a PDF tier (a fetcher-supplied PDF, Europe PMC's render, Unpaywall) that
+tried to download `pdf_url` came back without a `file_path` (#594), so a free
+PDF a retry may fetch is not mistaken for a bare link:
+
+| Value | What happened |
+|-------|---------------|
+| `"http-<status>"` | The server answered with that non-200 status (`"http-503"`) |
+| `"not-a-pdf"` | It answered 200 with a body that is not a PDF — often a landing page or a bot wall |
+| `"request-failed"` | The request failed before any answer: a timeout, a reset, DNS. In Python, also a defect in bmlib itself, which a retry will not cure |
+| `"write-failed"` | The PDF arrived and the cache could not save it |
+
+`None` when the PDF was cached, and when no download was attempted at all —
+no cache, or no `identifier` to key one by — which, like every non-PDF tier,
+leaves `pdf_url` alone on the result as before. Rust's `FullTextResult` has
+the same field, `Option<String>`, with the same values.
 
 ### `jats_xml` *(unreleased)*
 

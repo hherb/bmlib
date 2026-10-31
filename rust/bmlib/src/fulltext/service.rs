@@ -2205,6 +2205,7 @@ impl FullTextService {
             Ok(response) => response,
             Err(fault) => {
                 self.report_pdf_download_exception(&result.source, origin, pdf_url, &fault);
+                result.pdf_download_failure = Some("request-failed".to_string());
                 return;
             }
         };
@@ -2216,6 +2217,7 @@ impl FullTextService {
                 &format!("HTTP {}", response.status),
                 &format!("http-{}", response.status),
             );
+            result.pdf_download_failure = Some(format!("http-{}", response.status));
             return;
         }
 
@@ -2225,7 +2227,7 @@ impl FullTextService {
         // prefix still matched.
         let (path, outcome) = self.save_pdf_to_cache(cache, &response.body, cache_id);
         let Some(path) = path else {
-            if outcome == PdfSaveOutcome::NotAPdf {
+            let cause = if outcome == PdfSaveOutcome::NotAPdf {
                 self.report_pdf_download_failure(
                     &result.source,
                     origin,
@@ -2233,10 +2235,14 @@ impl FullTextService {
                     "the response is not a PDF",
                     "not-a-pdf",
                 );
-            }
-            // Otherwise "write-failed": warn_cache_write_failed has already
-            // spoken, and it names the right cause. Saying anything more here
-            // would blame the publisher for a read-only directory.
+                "not-a-pdf"
+            } else {
+                // "write-failed": warn_cache_write_failed has already spoken,
+                // and it names the right cause. Saying anything more here would
+                // blame the publisher for a read-only directory.
+                "write-failed"
+            };
+            result.pdf_download_failure = Some(cause.to_string());
             return;
         };
         result.file_path = Some(path.display().to_string());
@@ -3019,6 +3025,7 @@ fn empty_result(source: impl Into<String>) -> FullTextResult {
         file_path: None,
         content_kind: ContentKind::None,
         jats_xml: None,
+        pdf_download_failure: None,
     }
 }
 
