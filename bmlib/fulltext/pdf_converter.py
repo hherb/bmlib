@@ -36,9 +36,12 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
+import time
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
+from enum import StrEnum
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -78,6 +81,122 @@ _SPAN_BOLD_FLAG = 1 << 4
 _SPAN_ITALIC_FLAG = 1 << 1
 
 
+class PDFErrorKind(StrEnum):
+    """Which side a PDF extraction failure is on (#598).
+
+    ``ENCRYPTED`` and ``UNREADABLE`` are the **file's** (remove the password,
+    or pick another file); ``ENGINE`` is **not** (out of memory, a system
+    call, a library fault — the same file may read elsewhere or later). A
+    failure the backend cannot place is ``ENGINE``, so an unknown cause is
+    reported loudly rather than blamed on the file. Rust's ``PdfErrorKind``,
+    member for member.
+    """
+
+    ENCRYPTED = "encrypted"
+    UNREADABLE = "unreadable"
+    ENGINE = "engine"
+    #: The caller's :attr:`PDFLimit.cancel` was set (#600).
+    CANCELLED = "cancelled"
+    #: The caller's :attr:`PDFLimit.deadline` passed (#600).
+    TIMED_OUT = "timed-out"
+
+    @property
+    def is_the_files(self) -> bool:
+        """Whether the file is at fault, so another file — not a retry — is the remedy."""
+        return self in _FILE_KINDS
+
+
+_FILE_KINDS = frozenset({PDFErrorKind.ENCRYPTED, PDFErrorKind.UNREADABLE})
+_LIMIT_KINDS = frozenset({PDFErrorKind.CANCELLED, PDFErrorKind.TIMED_OUT})
+
+# A deadline further ahead than this (about 31 years) is not a monotonic
+# reading meant for one extraction: it is a time.time() one, ~1.7e9 s ahead.
+_MONOTONIC_HORIZON = 1e9
+
+_ENCRYPTED_MESSAGE = "the PDF is password-protected; remove the password and try again"
+
+
+class PDFExtractionError(ValueError):
+    """A PDF could not be extracted: its :class:`PDFErrorKind` and a message.
+
+    A ``ValueError``, which is what :meth:`PyMuPDFConverter.extract_blocks`
+    raised before it was typed. The message never carries the path read,
+    which the caller knows and the user may never have chosen. Rust's
+    ``PdfError`` is the same pair.
+    """
+
+    def __init__(self, kind: PDFErrorKind, message: str) -> None:
+        """Hold the kind beside the message."""
+        super().__init__(message)
+        # Converted, so a bare string is refused here rather than held as one.
+        self.kind = PDFErrorKind(kind)
+
+    @classmethod
+    def encrypted(cls) -> PDFExtractionError:
+        """The PDF needs a password, and the message says what to do."""
+        return cls(PDFErrorKind.ENCRYPTED, _ENCRYPTED_MESSAGE)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle with both arguments, which ``BaseException`` would drop."""
+        return (type(self), (self.kind, str(self)))
+
+
+@dataclass(frozen=True)
+class PDFLimit:
+    """When a PDF extraction should stop, so a caller can bound it (#600).
+
+    The default stops never. :class:`PyMuPDFConverter` checks it **before
+    each page**: PyMuPDF's ``get_text()`` takes no MuPDF cookie, so one long
+    page runs to its end, where Rust's ``PdfLimit`` stops a page while it
+    runs. A stopped extraction is a failure (``CANCELLED`` or ``TIMED_OUT``),
+    never a partial result.
+
+    Attributes:
+        cancel: Set, from any thread, to cancel.
+        deadline: A :func:`time.monotonic` reading past which extraction stops.
+    """
+
+    cancel: threading.Event | None = None
+    deadline: float | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse a limit that would never stop, or would fail as the engine's fault.
+
+        A ``nan`` deadline never compares as passed, and a :func:`time.time`
+        reading sits about 1.7e9 s past :func:`time.monotonic`, so either
+        would silently stop nothing; a ``cancel`` that is not an ``Event``
+        would raise inside the extraction, reported as an engine failure.
+        """
+        if self.cancel is not None and not isinstance(self.cancel, threading.Event):
+            raise TypeError(
+                f"PDFLimit.cancel must be a threading.Event, not {type(self.cancel).__name__}"
+            )
+        if self.deadline is None:
+            return
+        if isinstance(self.deadline, bool) or not isinstance(self.deadline, (int, float)):
+            raise TypeError(
+                f"PDFLimit.deadline must be a time.monotonic() reading, "
+                f"not {type(self.deadline).__name__}"
+            )
+        if not math.isfinite(self.deadline):
+            raise ValueError(f"PDFLimit.deadline must be finite, not {self.deadline}")
+        if self.deadline - time.monotonic() > _MONOTONIC_HORIZON:
+            raise ValueError(
+                "PDFLimit.deadline is decades away, which is a time.time() reading; "
+                "it must be a time.monotonic() one"
+            )
+
+    def reached(self) -> PDFExtractionError | None:
+        """Why the extraction must stop now, if it must; a cancel outranks a deadline."""
+        if self.cancel is not None and self.cancel.is_set():
+            return PDFExtractionError(PDFErrorKind.CANCELLED, "the PDF extraction was cancelled")
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            return PDFExtractionError(
+                PDFErrorKind.TIMED_OUT, "the PDF extraction ran past its deadline"
+            )
+        return None
+
+
 @dataclass
 class ConversionResult:
     """Result of a PDF-to-text conversion — a stable interface across backends."""
@@ -104,8 +223,20 @@ class ConversionResult:
     # it, else None (issue #56). ``metadata["title"]`` keeps the verbatim
     # original beside this, junk and all — the dict is a record of what the
     # PDF says, and a caller debugging provenance needs it unaltered.
-    # Declared last so positional construction stays stable.
+    # Declared after the rest so positional construction stays stable.
     title: str | None = None
+    # Which side a failure is on (#598); None when the conversion succeeded.
+    # Declared last for the reason ``title`` is.
+    error_kind: PDFErrorKind | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse a successful result carrying a failure's kind.
+
+        Only that direction: a third-party backend's failed result may not be
+        able to place its cause, and ``None`` is then the honest answer.
+        """
+        if self.success and self.error_kind is not None:
+            raise ValueError(f"a successful conversion has no error kind, not {self.error_kind}")
 
     @property
     def is_complete(self) -> bool:
@@ -241,6 +372,77 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
     )
 
 
+def _file_codes(mupdf: Any) -> tuple[type, ...]:
+    """MuPDF's codes for a fault in the file: ``FORMAT``, ``SYNTAX``, ``UNSUPPORTED``."""
+    return (mupdf.FzErrorFormat, mupdf.FzErrorSyntax, mupdf.FzErrorUnsupported)
+
+
+def _mupdf_cause(e: BaseException, mupdf: Any) -> BaseException | None:
+    """The MuPDF error under *e*: itself, its ``__cause__``, or a context not suppressed.
+
+    A ``__context__`` Python marked suppressed (``raise ... from``) is not
+    followed, so an error raised while an unrelated MuPDF error was being
+    handled does not take that error's code.
+    """
+    seen: set[int] = set()
+    link: BaseException | None = e
+    while link is not None and id(link) not in seen:
+        seen.add(id(link))
+        if isinstance(link, mupdf.FzErrorBase):
+            return link
+        link = link.__cause__ if link.__suppress_context__ else link.__context__
+    return None
+
+
+def _engine_fault(e: BaseException, pymupdf: Any) -> bool:
+    """Whether *e* says positively that the engine failed, not one page.
+
+    A ``MemoryError``, or a MuPDF code that is not the file's. An exception
+    carrying neither is not placed here: on one page it costs that page.
+    """
+    cause = _mupdf_cause(e, pymupdf.mupdf)
+    if cause is None:
+        return isinstance(e, MemoryError)
+    return not isinstance(cause, _file_codes(pymupdf.mupdf))
+
+
+def _classify(e: BaseException, pymupdf: Any, pdf_path: Path) -> PDFExtractionError:
+    """A PyMuPDF failure as a :class:`PDFExtractionError`.
+
+    PyMuPDF chains MuPDF's own error as the cause, and its class is the code:
+    ``FzErrorFormat``, ``FzErrorSyntax`` and ``FzErrorUnsupported`` are the
+    file's — a garbage file is ``FORMAT``, a truncated one ``SYNTAX``,
+    measured — and every other code the engine's, as Rust's ``classify``
+    decides. A ``FileDataError`` with no MuPDF cause is the file's: it is
+    PyMuPDF's own refusal of an empty file (``EmptyFileError``), which MuPDF,
+    and so Rust, reports as ``FORMAT``. Anything else, a ``MemoryError`` or a
+    defect in bmlib included, is the engine's, named by its type. PyMuPDF
+    names the path in an open failure, and it is removed. A
+    :class:`PDFExtractionError` is its own answer, a limit reached among them.
+    """
+    if isinstance(e, PDFExtractionError):
+        return e
+    fz_error = _mupdf_cause(e, pymupdf.mupdf)
+    if fz_error is not None:
+        the_file = isinstance(fz_error, _file_codes(pymupdf.mupdf))
+        # MuPDF's own text, as Rust reports it ("no objects found"), rather
+        # than PyMuPDF's wrapper naming the file.
+        detail = str(getattr(fz_error, "m_text", "") or fz_error)
+    elif isinstance(e, pymupdf.FileDataError):
+        the_file = True
+        detail = str(e)
+    else:
+        # Not MuPDF's: the type is the one thing that says what was raised.
+        the_file = False
+        detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+    # shortcut: MuPDF cuts a message at 256 bytes, so a path long enough to be
+    # cut survives the replace; check the path's length first if one ever does.
+    detail = detail.replace(str(pdf_path), "the file")
+    if the_file:
+        return PDFExtractionError(PDFErrorKind.UNREADABLE, f"the PDF could not be read: {detail}")
+    return PDFExtractionError(PDFErrorKind.ENGINE, f"the PDF engine failed: {detail}")
+
+
 class PyMuPDFConverter(PDFConverter):
     """PDF converter backed by PyMuPDF (``pymupdf``).
 
@@ -277,13 +479,14 @@ class PyMuPDFConverter(PDFConverter):
         """PyMuPDF version."""
         return self._pymupdf.version[0]
 
-    def convert(self, pdf_path: Path) -> ConversionResult:
+    def convert(self, pdf_path: Path, *, limit: PDFLimit | None = None) -> ConversionResult:
         """Convert a PDF to plaintext, extracting every page's text.
 
         All text is extracted even where formatting is imperfect; pages with
         no extractable text are still counted as processed. A PDF needing a
         password to open is a failed result rather than an empty successful
-        one — a file that cannot be read is not a paper without text.
+        one — a file that cannot be read is not a paper without text. A
+        ``limit`` reached before a page is a failed result too (#600).
         """
         self.validate_pdf_path(pdf_path)
 
@@ -309,8 +512,8 @@ class PyMuPDFConverter(PDFConverter):
                     # ``is_encrypted`` because an owner password restricts
                     # permissions without blocking reads: such a file is
                     # encrypted and extracts perfectly.
-                    error_msg = "PDF is password-protected"
-                    logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
+                    error = PDFExtractionError.encrypted()
+                    logger.error("PDF conversion failed for %s: %s", pdf_path, error)
                     return ConversionResult(
                         success=False,
                         text="",
@@ -321,7 +524,8 @@ class PyMuPDFConverter(PDFConverter):
                         warnings=warnings,
                         converter_name=self.name,
                         converter_version=self.version,
-                        error_message=error_msg,
+                        error_message=str(error),
+                        error_kind=error.kind,
                     )
 
                 try:
@@ -355,6 +559,9 @@ class PyMuPDFConverter(PDFConverter):
                 # on exactly the documents least worth trusting.
                 first_page_text: str | None = None
                 for page_num in range(page_count):
+                    stop = limit.reached() if limit is not None else None
+                    if stop is not None:
+                        raise stop
                     try:
                         page_text = doc[page_num].get_text()
                         if page_num == 0:
@@ -367,6 +574,10 @@ class PyMuPDFConverter(PDFConverter):
                             warnings.append(f"Page {page_num + 1}: No extractable text")
                             converted_pages += 1
                     except Exception as e:  # noqa: BLE001 — one bad page must not abort the rest
+                        # An engine fault is not one bad page: out of memory on
+                        # page 3 fails the conversion, as Rust's does (#598).
+                        if _engine_fault(e, self._pymupdf):
+                            raise
                         warnings.append(f"Page {page_num + 1}: Extraction failed - {e}")
                         logger.warning("Page %d extraction failed: %s", page_num + 1, e)
 
@@ -400,25 +611,17 @@ class PyMuPDFConverter(PDFConverter):
                 title=judged_title,
             )
 
-        except self._pymupdf.FileDataError as e:
-            error_msg = f"Invalid or corrupted PDF: {e}"
-            logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
-            return ConversionResult(
-                success=False,
-                text="",
-                format="plaintext",
-                page_count=page_count,
-                converted_pages=0,
-                char_count=0,
-                warnings=warnings,
-                converter_name=self.name,
-                converter_version=self.version,
-                error_message=error_msg,
-            )
-
         except Exception as e:  # noqa: BLE001 — surface any backend failure as a result
-            error_msg = f"PDF conversion failed: {e}"
-            logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
+            error = _classify(e, self._pymupdf, pdf_path)
+            # A reached limit is what the caller asked for, not a fault.
+            level = logging.INFO if error.kind in _LIMIT_KINDS else logging.ERROR
+            logger.log(
+                level,
+                "PDF conversion failed for %s: %s",
+                pdf_path,
+                error,
+                exc_info=error.kind is PDFErrorKind.ENGINE,
+            )
             return ConversionResult(
                 success=False,
                 text="",
@@ -429,10 +632,11 @@ class PyMuPDFConverter(PDFConverter):
                 warnings=warnings,
                 converter_name=self.name,
                 converter_version=self.version,
-                error_message=error_msg,
+                error_message=str(error),
+                error_kind=error.kind,
             )
 
-    def extract_blocks(self, pdf_path: Path) -> list[TextBlock]:
+    def extract_blocks(self, pdf_path: Path, *, limit: PDFLimit | None = None) -> list[TextBlock]:
         """Extract one :class:`TextBlock` per text line, in reading order.
 
         Unlike :meth:`convert`, which returns a failed result because
@@ -443,6 +647,7 @@ class PyMuPDFConverter(PDFConverter):
 
         Args:
             pdf_path: Path to the PDF file.
+            limit: When to stop, checked before each page (#600).
 
         Returns:
             One block per text line, pages in order, lines in the PDF's
@@ -453,16 +658,22 @@ class PyMuPDFConverter(PDFConverter):
 
         Raises:
             FileNotFoundError: If the file does not exist.
-            ValueError: If the path is not a PDF file, or the file cannot
-                be parsed (corrupt or encrypted).
+            ValueError: If the path is not a PDF file.
+            PDFExtractionError: If the file cannot be read; its ``kind``
+                says whether the file (encrypted, unreadable) or the engine
+                is at fault, or that ``limit`` was reached (cancelled, timed
+                out). A ``ValueError`` too.
         """
         self.validate_pdf_path(pdf_path)
         blocks: list[TextBlock] = []
         try:
             with self._pymupdf.open(str(pdf_path)) as doc:
                 if doc.needs_pass:
-                    raise ValueError("PDF is password-protected")
+                    raise PDFExtractionError.encrypted()
                 for page_num in range(len(doc)):
+                    stop = limit.reached() if limit is not None else None
+                    if stop is not None:
+                        raise stop
                     page_dict = doc[page_num].get_text("dict")
                     for raw_block in page_dict.get("blocks", []):
                         if raw_block.get("type") != 0:  # not a text block (image)
@@ -471,8 +682,10 @@ class PyMuPDFConverter(PDFConverter):
                             text_block = _line_to_block(raw_line, page_num)
                             if text_block is not None:
                                 blocks.append(text_block)
-        except Exception as e:  # noqa: BLE001 — any parse failure becomes ValueError
-            raise ValueError(f"Failed to extract text blocks from {pdf_path}: {e}") from e
+        except PDFExtractionError:
+            raise
+        except Exception as e:  # noqa: BLE001 — any failure is classified, never lost
+            raise _classify(e, self._pymupdf, pdf_path) from e
         return blocks
 
 

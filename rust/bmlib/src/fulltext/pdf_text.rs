@@ -287,6 +287,166 @@ pub fn render_html(success: bool, text: &str, page_texts: &[String]) -> String {
         .join("\n")
 }
 
+/// Which side a PDF extraction failure is on.
+///
+/// The split a caller acts on: [`PdfErrorKind::Encrypted`] and
+/// [`PdfErrorKind::Unreadable`] are the **file's** (pick another file, or remove
+/// the password), [`PdfErrorKind::Engine`] is **not** (out of memory, a system
+/// call, a library fault — the same file may read elsewhere or later). A failure
+/// the backend cannot place is `Engine`, so an unknown cause is reported loudly
+/// rather than blamed on the file (#598).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PdfErrorKind {
+    /// The PDF needs a password to open.
+    Encrypted,
+    /// The file is not a PDF the backend can read: damaged, truncated or
+    /// unsupported.
+    Unreadable,
+    /// The engine failed, not the file.
+    Engine,
+    /// The caller's [`PdfLimit::cancel`] flag was set.
+    Cancelled,
+    /// The caller's [`PdfLimit::deadline`] passed.
+    TimedOut,
+}
+
+impl PdfErrorKind {
+    /// The wire name, Python's `PDFErrorKind` value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PdfErrorKind::Encrypted => "encrypted",
+            PdfErrorKind::Unreadable => "unreadable",
+            PdfErrorKind::Engine => "engine",
+            PdfErrorKind::Cancelled => "cancelled",
+            PdfErrorKind::TimedOut => "timed-out",
+        }
+    }
+
+    /// Whether the file is at fault (encrypted, unreadable), so another file —
+    /// not a retry — is the remedy. An engine fault and a reached limit are not.
+    #[must_use]
+    pub fn is_the_files(self) -> bool {
+        matches!(self, PdfErrorKind::Encrypted | PdfErrorKind::Unreadable)
+    }
+}
+
+/// Why a PDF could not be extracted: its [`PdfErrorKind`] and a message fit to
+/// show a user.
+///
+/// The message **never carries the path read**, which the caller knows and the
+/// user may never have chosen (a scratch copy, say); Python's
+/// `PDFExtractionError` is the same pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfError {
+    /// Which side the failure is on.
+    pub kind: PdfErrorKind,
+    /// What happened.
+    pub message: String,
+}
+
+impl PdfError {
+    /// The PDF needs a password, and the message says what to do about it.
+    #[must_use]
+    pub fn encrypted() -> Self {
+        PdfError {
+            kind: PdfErrorKind::Encrypted,
+            message: "the PDF is password-protected; remove the password and try again".to_string(),
+        }
+    }
+
+    /// The file could not be read, for `detail`.
+    #[must_use]
+    pub fn unreadable(detail: &str) -> Self {
+        PdfError {
+            kind: PdfErrorKind::Unreadable,
+            message: format!("the PDF could not be read: {detail}"),
+        }
+    }
+
+    /// The engine failed, for `detail`.
+    #[must_use]
+    pub fn engine(detail: &str) -> Self {
+        PdfError {
+            kind: PdfErrorKind::Engine,
+            message: format!("the PDF engine failed: {detail}"),
+        }
+    }
+}
+
+impl PdfError {
+    /// The caller cancelled the extraction.
+    #[must_use]
+    pub fn cancelled() -> Self {
+        PdfError {
+            kind: PdfErrorKind::Cancelled,
+            message: "the PDF extraction was cancelled".to_string(),
+        }
+    }
+
+    /// The extraction ran past the caller's deadline.
+    #[must_use]
+    pub fn timed_out() -> Self {
+        PdfError {
+            kind: PdfErrorKind::TimedOut,
+            message: "the PDF extraction ran past its deadline".to_string(),
+        }
+    }
+}
+
+/// When a PDF extraction should stop, so a caller can bound it (#600).
+///
+/// The default stops never. The MuPDF backend watches the limit **while a page
+/// runs**, not only between pages, so one pathological page cannot outlast it;
+/// a stopped extraction is an error ([`PdfErrorKind::Cancelled`] or
+/// [`PdfErrorKind::TimedOut`]), never a partial result. Python's
+/// `PyMuPDFConverter` takes the same pair and checks it between pages.
+#[derive(Debug, Clone, Default)]
+pub struct PdfLimit {
+    /// Set to `true`, from any thread, to cancel.
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// The instant past which the extraction stops.
+    pub deadline: Option<std::time::Instant>,
+}
+
+impl PdfLimit {
+    /// Whether anything can stop the extraction.
+    #[must_use]
+    pub fn is_set(&self) -> bool {
+        self.cancel.is_some() || self.deadline.is_some()
+    }
+
+    /// Why the extraction must stop now, if it must; a cancel outranks a
+    /// passed deadline.
+    #[must_use]
+    pub fn reached(&self) -> Option<PdfError> {
+        use std::sync::atomic::Ordering;
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Acquire))
+        {
+            return Some(PdfError::cancelled());
+        }
+        if self
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            return Some(PdfError::timed_out());
+        }
+        None
+    }
+}
+
+impl std::fmt::Display for PdfError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PdfError {}
+
 /// What a PDF backend must do.
 ///
 /// A trait, so the assembly rules above are testable without a PDF, and so the
@@ -300,22 +460,50 @@ pub trait PdfTextExtractor {
     ///
     /// # Errors
     ///
-    /// When the document cannot be read or the text cannot be extracted.
-    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, String>;
+    /// [`PdfError`] when the document cannot be read or the text cannot be
+    /// extracted.
+    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, PdfError> {
+        self.extract_blocks_within(path, &PdfLimit::default())
+    }
+
+    /// [`PdfTextExtractor::extract_blocks`], stopping at `limit`.
+    ///
+    /// # Errors
+    ///
+    /// As [`PdfTextExtractor::extract_blocks`], and [`PdfErrorKind::Cancelled`]
+    /// or [`PdfErrorKind::TimedOut`] when `limit` is reached.
+    fn extract_blocks_within(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<Vec<TextBlock>, PdfError>;
 
     /// The page texts, for the furniture rule.
     ///
     /// # Errors
     ///
     /// As [`PdfTextExtractor::extract_blocks`].
-    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, String>;
+    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, PdfError> {
+        self.page_texts_within(path, &PdfLimit::default())
+    }
+
+    /// [`PdfTextExtractor::page_texts`], stopping at `limit`.
+    ///
+    /// # Errors
+    ///
+    /// As [`PdfTextExtractor::extract_blocks_within`].
+    fn page_texts_within(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<Vec<String>, PdfError>;
 }
 
 /// What a conversion produced.
 ///
-/// The fields are the Python dataclass's, in its order, and `title` is declared
-/// **last** there so positional construction stays stable through a change — kept
-/// here for the same reason.
+/// The fields are the Python dataclass's, in its order, and each added field is
+/// declared **after** the rest there (`title`, then `error_kind`) so positional
+/// construction stays stable through a change — kept here for the same reason.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConversionResult {
     /// Whether the conversion ran at all.
@@ -345,6 +533,8 @@ pub struct ConversionResult {
     pub page_texts: Vec<String>,
     /// The document's title, when the PDF states one.
     pub title: Option<String>,
+    /// Which side a failure is on; `None` when the conversion succeeded.
+    pub error_kind: Option<PdfErrorKind>,
 }
 
 impl Default for ConversionResult {
@@ -363,16 +553,18 @@ impl Default for ConversionResult {
             error_message: None,
             page_texts: Vec::new(),
             title: None,
+            error_kind: None,
         }
     }
 }
 
 impl ConversionResult {
-    /// A failed conversion naming its cause.
+    /// A failed conversion naming its cause and which side it is on.
     #[must_use]
-    pub fn failure(error: impl Into<String>) -> Self {
+    pub fn failure(error: PdfError) -> Self {
         ConversionResult {
-            error_message: Some(error.into()),
+            error_message: Some(error.message),
+            error_kind: Some(error.kind),
             ..ConversionResult::default()
         }
     }

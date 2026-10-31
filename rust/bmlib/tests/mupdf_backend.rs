@@ -24,7 +24,10 @@
 #![cfg(feature = "pdf")]
 
 use bmlib::fulltext::mupdf_backend::{pymupdf_font_name, MupdfExtractor};
-use bmlib::fulltext::pdf_text::PdfTextExtractor;
+use bmlib::fulltext::pdf_text::{PdfError, PdfErrorKind, PdfLimit, PdfTextExtractor};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// PyMuPDF's `JM_font_name`: a six-letter subset tag goes, nothing else does.
 #[test]
@@ -234,19 +237,239 @@ fn an_annotations_text_is_read() {
     assert!(pages[0].contains("Figure 1"), "{pages:?}");
 }
 
-/// An unreadable file is an error naming the path, not an empty extraction — an
-/// empty result for a corrupt PDF would read as a PDF with no text.
+/// An unreadable file is an error of the file's kind, not an empty extraction —
+/// an empty result for a corrupt PDF would read as a PDF with no text — and its
+/// message does not name the path, which the caller knows (#598).
 #[test]
-fn a_corrupt_pdf_is_an_error() {
+fn a_corrupt_pdf_is_an_unreadable_file() {
     let extractor = MupdfExtractor::new();
-    let (_guard, path) = write_pdf("corrupt", b"not a pdf at all");
-    let error = extractor.extract_blocks(&path).expect_err("refuses");
-    assert!(error.contains("could not open"), "{error}");
+    let tiny = tiny_pdf("Page text", "Helvetica", 12);
+    // Garbage and empty files are MuPDF's FORMAT, a truncated one its SYNTAX.
+    for (label, bytes) in [
+        ("garbage", b"not a pdf at all".as_slice()),
+        ("empty", b"".as_slice()),
+        ("truncated", b"%PDF-1.4\n1 0 obj\n<<".as_slice()),
+        ("cut", &tiny[..tiny.len() / 3]),
+    ] {
+        let (_guard, path) = write_pdf(label, bytes);
+        for error in [
+            extractor.extract_blocks(&path).expect_err(label),
+            extractor.page_texts(&path).expect_err(label),
+        ] {
+            assert_eq!(error.kind, PdfErrorKind::Unreadable, "{label}: {error}");
+            assert!(
+                error.message.starts_with("the PDF could not be read: "),
+                "{label}: {error}"
+            );
+            assert!(!error.message.contains("probe.pdf"), "{label}: {error}");
+        }
+    }
+}
+
+/// A file MuPDF has no handler for is MuPDF's `UNSUPPORTED`, the file's side,
+/// and that message names the path, which is removed.
+#[test]
+fn a_file_of_no_known_type_is_unreadable_without_its_path() {
+    let guard = TempPdf::new("unknown-type");
+    let path = guard.path().join("probe.bin");
+    std::fs::write(&path, b"not a pdf at all").expect("write");
+    let error = MupdfExtractor::new()
+        .extract_blocks(&path)
+        .expect_err("refuses");
+    assert_eq!(error.kind, PdfErrorKind::Unreadable, "{error}");
+    assert!(!error.message.contains("probe.bin"), "{error}");
+    assert!(error.message.contains("the file"), "{error}");
+}
+
+/// A file that cannot be opened at all is not the file's fault as a PDF: MuPDF
+/// reports a missing file as `SYSTEM`, the engine's side, and names the path,
+/// which is removed.
+#[test]
+fn a_missing_file_is_an_engine_error_without_its_path() {
+    let guard = TempPdf::new("missing");
+    let path = guard.path().join("probe.pdf");
+    let error = MupdfExtractor::new()
+        .extract_blocks(&path)
+        .expect_err("refuses");
+    assert_eq!(error.kind, PdfErrorKind::Engine, "{error}");
     assert!(
-        error.contains("probe.pdf"),
-        "the error names the file: {error}"
+        error.message.starts_with("the PDF engine failed: "),
+        "{error}"
     );
-    assert!(extractor.page_texts(&path).is_err());
+    assert!(!error.message.contains("probe.pdf"), "{error}");
+    assert!(error.message.contains("the file"), "{error}");
+}
+
+/// The crate's own errors are the engine's: a path holding a NUL byte cannot
+/// reach MuPDF at all (`Error::Nul`), which says nothing about the file.
+#[test]
+fn a_crate_error_is_an_engine_error() {
+    let error = MupdfExtractor::new()
+        .extract_blocks(std::path::Path::new("probe\0.pdf"))
+        .expect_err("refuses");
+    assert_eq!(error.kind, PdfErrorKind::Engine, "{error}");
+}
+
+/// A PDF needing a password to open is its own kind, and the message says what
+/// to do; an owner password alone restricts permissions and reads.
+#[test]
+fn a_password_protected_pdf_is_encrypted() {
+    use mupdf::pdf::document::Encryption;
+    use mupdf::pdf::{PdfDocument, PdfWriteOptions};
+
+    let locked = |user: &str| {
+        let document =
+            PdfDocument::from_bytes(&tiny_pdf("Locked text", "Helvetica", 12)).expect("parses");
+        let mut options = PdfWriteOptions::default();
+        options
+            .set_encryption(Encryption::Aes256)
+            .set_owner_password("owner")
+            .set_user_password(user);
+        let mut bytes = Vec::new();
+        document
+            .write_to_with_options(&mut bytes, options)
+            .expect("writes");
+        bytes
+    };
+    let extractor = MupdfExtractor::new();
+
+    let (_guard, path) = write_pdf("locked", &locked("user"));
+    for error in [
+        extractor.extract_blocks(&path).expect_err("refuses"),
+        extractor.page_texts(&path).expect_err("refuses"),
+    ] {
+        assert_eq!(error, PdfError::encrypted());
+        assert_eq!(
+            error.to_string(),
+            "the PDF is password-protected; remove the password and try again"
+        );
+    }
+
+    let (_guard, path) = write_pdf("owner-only", &locked(""));
+    let pages = extractor.page_texts(&path).expect("reads");
+    assert!(pages[0].contains("Locked text"), "{pages:?}");
+}
+
+/// One page that runs for seconds: a form XObject of `q Q` pairs drawn `draws`
+/// times, after one line of text. Measured at 20,000 draws: about 4.6 s in a
+/// debug build and 2 s in release, unlimited, and nothing output but the text.
+fn heavy_pdf(draws: usize) -> Vec<u8> {
+    let form = "q Q ".repeat(1000);
+    let content = format!(
+        "BT /F1 12 Tf 72 700 Td (Heavy) Tj ET {}",
+        "/X0 Do ".repeat(draws)
+    );
+    let mut bytes = pdf_with(
+        "",
+        "Helvetica",
+        12,
+        "",
+        &[format!(
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Length {} >>\nstream\n{form}\nendstream",
+            form.len()
+        )],
+    );
+    // `pdf_with` writes its own content stream; swap it for the heavy one and
+    // let MuPDF's repair reread the offsets — simpler than a second writer.
+    let text = String::from_utf8(bytes.clone()).expect("ascii");
+    let stream = "BT /F1 12 Tf 72 700 Td () Tj ET";
+    let old = format!("<< /Length {} >>\nstream\n{stream}", stream.len());
+    let new = format!("<< /Length {} >>\nstream\n{content}", content.len());
+    bytes = text
+        .replace(&old, &new)
+        .replace(
+            "/Resources << /Font << /F1 5 0 R >> >>",
+            "/Resources << /Font << /F1 5 0 R >> /XObject << /X0 6 0 R >> >>",
+        )
+        .into_bytes();
+    bytes
+}
+
+/// A limit already reached stops the extraction before a page runs, as an
+/// error of its own kind, never a partial result (#600).
+#[test]
+fn a_reached_limit_stops_before_the_first_page() {
+    let extractor = MupdfExtractor::new();
+    let (_guard, path) = write_pdf("limit", &tiny_pdf("Page text", "Helvetica", 12));
+    let cancelled = PdfLimit {
+        cancel: Some(Arc::new(AtomicBool::new(true))),
+        ..PdfLimit::default()
+    };
+    let past = PdfLimit {
+        deadline: Some(Instant::now()),
+        ..PdfLimit::default()
+    };
+    assert_eq!(
+        extractor.extract_blocks_within(&path, &cancelled),
+        Err(PdfError::cancelled())
+    );
+    assert_eq!(
+        extractor.page_texts_within(&path, &past),
+        Err(PdfError::timed_out())
+    );
+    let unset = Arc::new(AtomicBool::new(false));
+    let open = PdfLimit {
+        cancel: Some(unset),
+        deadline: Some(Instant::now() + Duration::from_secs(60)),
+    };
+    assert!(extractor.page_texts_within(&path, &open).is_ok());
+}
+
+/// A deadline stops **one long page while it runs**, which a check between
+/// pages cannot: the page below runs for seconds unlimited.
+#[test]
+fn a_deadline_stops_a_page_mid_run() {
+    let (_guard, path) = write_pdf("deadline", &heavy_pdf(20_000));
+    let started = Instant::now();
+    let limit = PdfLimit {
+        deadline: Some(started + Duration::from_millis(50)),
+        ..PdfLimit::default()
+    };
+    let error = MupdfExtractor::new()
+        .page_texts_within(&path, &limit)
+        .expect_err("stops");
+    assert_eq!(error, PdfError::timed_out());
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+/// A cancel flag set from another thread stops a page mid-run too, and a page
+/// cut short is an error, never a short page.
+#[test]
+fn a_cancel_from_another_thread_stops_a_page_mid_run() {
+    let (_guard, path) = write_pdf("cancel", &heavy_pdf(20_000));
+    let flag = Arc::new(AtomicBool::new(false));
+    let limit = PdfLimit {
+        cancel: Some(flag.clone()),
+        ..PdfLimit::default()
+    };
+    let started = Instant::now();
+    let canceller = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        flag.store(true, Ordering::Release);
+    });
+    let error = MupdfExtractor::new()
+        .extract_blocks_within(&path, &limit)
+        .expect_err("stops");
+    canceller.join().expect("joins");
+    assert_eq!(error, PdfError::cancelled());
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+/// The heavy page is a real page: unlimited, its text is read (a small count of
+/// draws, so the test stays fast).
+#[test]
+fn the_heavy_page_reads_unlimited() {
+    let (_guard, path) = write_pdf("heavy", &heavy_pdf(10));
+    let pages = MupdfExtractor::new().page_texts(&path).expect("reads");
+    assert_eq!(pages, ["Heavy\n"]);
 }
 
 /// The blocks feed `render_html`, so a real PDF's text reaches an `<p>` — the shape

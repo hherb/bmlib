@@ -6,6 +6,49 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **A PDF extraction can be cancelled or bounded in time** (#600, found
+  reviewing hherb/StudyAnalyzer#21). `PyMuPDFConverter.convert()` and
+  `extract_blocks()` take `limit=PDFLimit(cancel=threading.Event,
+  deadline=time.monotonic() + seconds)`, checked before each page; a reached
+  limit is `PDFErrorKind.CANCELLED` or `TIMED_OUT` (a failed result, logged at
+  INFO, or a raised `PDFExtractionError`), never a partial result. PyMuPDF's
+  `get_text()` takes no MuPDF cookie, so a single long page runs to its end in
+  Python; Rust's `PdfLimit` stops a page mid-run. The default stops never, so
+  nothing moves for a caller passing none. A `PDFLimit` that could not work is
+  refused when built: a `nan` or infinite deadline, a `time.time()` reading
+  (decades past `time.monotonic()`), and a `cancel` that is not an `Event`.
+
+### Changed — breaking for a caller matching the old messages
+- **A PDF that cannot be extracted says whose fault it is** (#598, found
+  reviewing hherb/StudyAnalyzer#21). `PyMuPDFConverter.convert()` reported
+  every failure as an `error_message` string and `extract_blocks()` raised a
+  bare `ValueError`, so a caller could not tell a bad file from an engine
+  fault: an out-of-memory on a large PDF told the user to pick another file.
+  `PDFErrorKind` (`ENCRYPTED`, `UNREADABLE`, `ENGINE`) now says which side:
+  MuPDF's `FzErrorFormat`, `FzErrorSyntax` and `FzErrorUnsupported`, chained by
+  PyMuPDF as the cause, are the file's (measured: a garbage file is `FORMAT` and a
+  truncated one `SYNTAX`; an empty one is PyMuPDF's own `EmptyFileError`, a
+  `FileDataError` with no MuPDF code, which is the file's too), and every other
+  code — `SYSTEM`, `LIBRARY`, `ARGUMENT`, `LIMIT` — a `MemoryError`, and any
+  cause the converter cannot place are the engine's, so an unknown fault is
+  loud rather than blamed on the file; a cause that is not MuPDF's is named by
+  its type. **An engine fault on one page now fails the conversion** (a
+  `MemoryError`, or a MuPDF code that is not the file's): it used to cost that
+  page alone, with `success=True` and no kind, which was #598's own example.
+  A page failing for any other reason still costs that page alone.
+  `PDFErrorKind.is_the_files` is the split, and a `ConversionResult` with
+  `success=True` and an `error_kind` is refused. `ConversionResult.error_kind` carries it (declared
+  last; `None` on success), and `extract_blocks()` raises
+  `PDFExtractionError(kind, message)`, a `ValueError` subclass that pickles.
+  **The messages move**: they no longer name the path (the caller knows it,
+  and the user may never have chosen it), *"Invalid or corrupted PDF: …"* and
+  *"Failed to extract text blocks from …"* become *"the PDF could not be
+  read: …"* or *"the PDF engine failed: …"* carrying MuPDF's own text, and
+  *"PDF is password-protected"* becomes *"…; remove the password and try
+  again"*. Rust's `PdfTextExtractor` returns the same pair as `PdfError`
+  (see the crate's CHANGELOG). Nothing stored moves.
+
 ### Changed
 - **The segmenter sets page furniture aside** (#591, `"pdf-3"`).
   `SectionSegmenter.segment_document` put a page's running head, footer,
