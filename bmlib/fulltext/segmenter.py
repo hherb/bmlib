@@ -40,6 +40,7 @@ Example::
 
 from __future__ import annotations
 
+import itertools
 import math
 import re
 import statistics
@@ -75,15 +76,21 @@ _TRAILING_PUNCTUATION_RE = re.compile(r"[:.?!]+$")
 # Page furniture (#591): a line whose text, digits aside, recurs at one height
 # on at least this share of the document's pages, and on at least
 # FURNITURE_MIN_PAGES of them, is a running head, a footer, a page number or a
-# licence stamp. Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal
-# PDFs): the furniture found sits from 0.35 to 1.0 of the pages (an odd/even
-# running head at 0.43-0.46), content repeating at one height below 0.3 (list
-# numbering, "Figure 2", table cells, at most 0.27), and the threshold moves the
-# lines dropped by 2% between 0.3 and 0.6.
+# licence stamp, if it also sits at its page's top or bottom edge (see
+# page_furniture). Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal
+# PDFs): the furniture found recurs on 0.35 to 1.0 of the pages (an odd/even
+# running head at 0.43-0.46; below 0.4 it is kept, e.g. bioRxiv's stamp on a
+# document's landscape pages), content repeating at one height on at most 0.27
+# (list numbering, "Figure 2", table cells), and the threshold moves the lines
+# set aside by 2% between 0.3 and 0.6.
 FURNITURE_PAGE_RATIO = 0.4
 FURNITURE_MIN_PAGES = 3
 # How far apart, in points, two lines' tops may be and still be one height.
 FURNITURE_Y_TOLERANCE = 2.0
+# More furniture lines than this at one edge of one page are the page's own
+# content (a table filling it), not furniture: the corpus's longest edge run of
+# furniture is 13 lines, bioRxiv's stamp.
+FURNITURE_MAX_EDGE_LINES = 20
 # A page number has at most this many digits.
 _PAGE_NUMBER_MAX_DIGITS = 6
 
@@ -103,28 +110,47 @@ def page_furniture(blocks: list[TextBlock]) -> set[int]:
     one height: lines with the same masked text are taken in order of their
     ``y``, a run of them whose tops lie within ``FURNITURE_Y_TOLERANCE`` of the
     previous one is one height, and every line in a run reaching that many
-    pages is furniture. The pages are ``max(page_num) + 1``. A run of bare
-    numbers is furniture only if each number is its page's index plus one
+    pages is a candidate. The pages are ``max(page_num) + 1``. A run of bare
+    numbers is a candidate only if each number is its page's index plus one
     constant, which is what a page number is and a manuscript's line numbers
-    and a table's values are not.
+    and a table's values are not. A run can drift: each top is compared with
+    the previous one, not with the first.
+
+    A candidate is furniture only at its page's edge: the page's lines in order
+    of ``y``, the candidates from the top down to the first other line and from
+    the bottom up to the last, so a table whose cells repeat at one height
+    across pages ("0.12" and "3.4" both read ``#.#``) is kept wherever it has a
+    line above and below it. More than ``FURNITURE_MAX_EDGE_LINES`` at one edge
+    are the page's content and are kept. A line whose ``y`` is not finite is
+    never furniture and is passed over.
     """
-    if not blocks:
+    lines = [i for i, b in enumerate(blocks) if math.isfinite(b.y)]
+    if not lines:
         return set()
-    pages = max(b.page_num for b in blocks) + 1
+    pages = max(blocks[i].page_num for i in lines) + 1
     needed = max(FURNITURE_MIN_PAGES, math.ceil(FURNITURE_PAGE_RATIO * pages))
     by_text: dict[str, list[int]] = {}
-    for i, block in enumerate(blocks):
-        by_text.setdefault(_ASCII_DIGITS_RE.sub("#", block.text), []).append(i)
-    furniture: set[int] = set()
+    by_page: dict[int, list[int]] = {}
+    for i in lines:
+        by_text.setdefault(_ASCII_DIGITS_RE.sub("#", blocks[i].text), []).append(i)
+        by_page.setdefault(blocks[i].page_num, []).append(i)
+    candidates: set[int] = set()
     for members in by_text.values():
         members.sort(key=lambda i: (blocks[i].y, i))
         run: list[int] = []
         for i in members:
             if run and blocks[i].y - blocks[run[-1]].y > FURNITURE_Y_TOLERANCE:
-                furniture.update(_furniture_run(blocks, run, needed))
+                candidates.update(_furniture_run(blocks, run, needed))
                 run = []
             run.append(i)
-        furniture.update(_furniture_run(blocks, run, needed))
+        candidates.update(_furniture_run(blocks, run, needed))
+    furniture: set[int] = set()
+    for on_page in by_page.values():
+        on_page.sort(key=lambda i: (blocks[i].y, i))
+        for edge in (on_page, on_page[::-1]):
+            run = list(itertools.takewhile(candidates.__contains__, edge))
+            if len(run) <= FURNITURE_MAX_EDGE_LINES:
+                furniture.update(run)
     return furniture
 
 

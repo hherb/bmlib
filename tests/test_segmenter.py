@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
 from bmlib.fulltext.segmenter import (
+    FURNITURE_MAX_EDGE_LINES,
     FURNITURE_MIN_PAGES,
     FURNITURE_PAGE_RATIO,
     SectionSegmenter,
@@ -541,6 +542,44 @@ class TestPageFurniture:
         assert heads(paged(8, head_on=3)) == 0
         # Two pages are never enough, whatever the share.
         assert page_furniture(paged(2)) == set()
+
+    def test_a_table_repeating_on_one_grid_is_kept_between_its_page_text(self):
+        # PR review: "0.12" and "3.4" both read "#.#", so a table continued on
+        # the same grid over pages is one run per row; between the page's prose
+        # it is not at an edge.
+        blocks = paged(6)
+        for page in range(6):
+            blocks.append(block("Characteristic n (%) OR (95% CI)", page=page, y=200.0))
+            for row in range(5):
+                blocks.append(
+                    block(f"{row}.{page}{row} ({page + 10}%)", page=page, y=220.0 + 14 * row)
+                )
+            blocks.append(block(f"{_BODY[page]} concludes", page=page, y=400.0))
+        assert {blocks[i].text for i in page_furniture(blocks)} == {
+            "Smith et al. A trial 2024",
+            *(str(p + 101) for p in range(6)),
+        }
+
+    def test_too_many_lines_at_one_edge_are_the_pages_content(self):
+        assert FURNITURE_MAX_EDGE_LINES == 20
+
+        def rows(n: int) -> list[TextBlock]:
+            return [
+                block(f"{r}.{p} {r + p}", page=p, y=40.0 + 14 * r)
+                for p in range(4)
+                for r in range(n)
+            ] + [block(f"{_BODY[p]} below", page=p, y=700.0) for p in range(4)]
+
+        assert len(page_furniture(rows(FURNITURE_MAX_EDGE_LINES))) == 4 * FURNITURE_MAX_EDGE_LINES
+        assert page_furniture(rows(FURNITURE_MAX_EDGE_LINES + 1)) == set()
+
+    def test_a_line_with_no_finite_height_is_never_furniture(self):
+        blocks = paged(4)
+        blocks[0] = block("Smith et al. A trial 2024", page=0, y=float("nan"))
+        furniture = page_furniture(blocks)
+        assert (
+            0 not in furniture and sum(blocks[i].text.startswith("Smith") for i in furniture) == 3
+        )
 
     def test_line_numbers_are_not_page_numbers(self):
         # A manuscript numbers its lines, restarting or running on: either way

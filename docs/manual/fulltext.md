@@ -2329,28 +2329,44 @@ otherwise land inside the section content wherever a page breaks — splitting
 the paragraph that crosses the break, and putting the same boilerplate into a
 retrieval index once per page. `page_furniture(blocks)` returns the indexes
 it sets aside and `drop_page_furniture(blocks)` the rest, both in
-`bmlib.fulltext.segmenter` (not re-exported). A line is furniture when its
+`bmlib.fulltext.segmenter` (not re-exported). A line is a candidate when its
 text with every run of ASCII digits read as `#` ("Page 3 of 12" and "Page 4
-of 12" agree) recurs at one height — tops within `FURNITURE_Y_TOLERANCE`
-(2 pt) of each other — on at least `FURNITURE_PAGE_RATIO` (0.4) of the pages
-and on at least `FURNITURE_MIN_PAGES` (3) of them. A bare number counts only
-if it is its page's index plus a constant, so a page number is furniture and a
-manuscript's line numbers are not. With the furniture gone, a paragraph a page
-break interrupted reads on, the page-boundary gap being negative.
+of 12" agree) recurs at one height on at least `FURNITURE_PAGE_RATIO` (0.4)
+of the pages and on at least `FURNITURE_MIN_PAGES` (3) of them. One height is
+a chain: lines with that text, in order of their top, each within
+`FURNITURE_Y_TOLERANCE` (2 pt) of the one before, so a head that creeps down
+the pages is still one. A bare number is a candidate only if it is its page's
+index plus a constant, so a page number is furniture and a manuscript's line
+numbers are not. A candidate is furniture only at its **page's edge** — the
+candidates from the top of the page down to its first other line, and from
+the bottom up — so a table continued on one grid over pages ("0.12" and "3.4"
+both read `#.#`) is kept wherever a line of the page lies above and below it,
+and more than `FURNITURE_MAX_EDGE_LINES` (20) at one edge are the page's own
+content. A line whose `y` is not finite is never furniture. With the furniture
+gone, a paragraph a page break interrupted reads on, the page-boundary gap
+being negative.
 
 The rule was measured over 231 PDFs (150 bioRxiv/medRxiv, 80 open-access
 journal PDFs reached through Unpaywall, one *J Popul Ther Clin Pharmacol*
-article): it sets aside 50,781 of 355,282 lines in 212 of them, 99.3% of them
-with no kept line beyond them on their page; the furniture found recurs on
-0.35 to 1.0 of a document's pages (an odd/even running head at 0.43–0.46),
-content repeating at one height on at most 0.27, and moving the threshold
-from 0.3 to 0.6 moves the lines set aside by 2%. Because the furniture no
+article): it sets aside 50,401 of 355,282 lines in 212 of them; the edge rule
+keeps 380 the share rule alone would have taken — furniture the edge rule
+misses, on a page whose text runs past it: bioRxiv's stamp for nearly all, and
+a few running heads and page numbers — and the longest edge run of furniture
+is 13 lines. The furniture found recurs on 0.35 to 1.0 of a document's pages (an
+odd/even running head at 0.43–0.46; below 0.4 it is kept, as bioRxiv's stamp
+on a document's landscape pages is), content repeating at one height on at
+most 0.27, and moving the threshold from 0.3 to 0.6 moves the lines set aside
+by 2%. Not measured, and possible: a figure's label alone at a fixed place at
+the top of its own page, on 40% of a document's pages (figures at the end, one
+per page), is set aside as furniture, its legend kept. Because the furniture no
 longer sits in the body, the **median font size** the heading and title rules
 compare against is the body's: in 7 of the 231 PDFs a body sentence the old
 median (dragged to 8 pt by bioRxiv's stamp) had promoted to a heading is
 prose again, and in 3 the font-size title fallback no longer clears 1.5× the
 median (the title stays in the front matter; pass the known title as
-`metadata["title"]`). A running head on fewer than three pages — an odd/even
+`metadata["title"]`). A metadata title is checked against page 1's text
+without its furniture, so one printed on page 1 only as its running head is no
+longer found there. A running head on fewer than three pages — an odd/even
 head in a document of five pages or fewer — is not caught.
 
 ### How sections are found

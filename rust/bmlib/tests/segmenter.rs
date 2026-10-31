@@ -25,8 +25,8 @@ use bmlib::fulltext::models::{Section, SectionType, TextBlock};
 use bmlib::fulltext::segmenter::{
     drop_page_furniture, extract_title, is_potential_header, join_blocks, match_section_type,
     median_font_size, page_furniture, SectionSegmenter, DEFAULT_FONT_SIZE, FALLBACK_CONFIDENCE,
-    FURNITURE_MIN_PAGES, FURNITURE_PAGE_RATIO, MAX_HEADING_CHARS, PARTIAL_MATCH_CONFIDENCE,
-    SECTION_PATTERNS,
+    FURNITURE_MAX_EDGE_LINES, FURNITURE_MIN_PAGES, FURNITURE_PAGE_RATIO, MAX_HEADING_CHARS,
+    PARTIAL_MATCH_CONFIDENCE, SECTION_PATTERNS,
 };
 use serde_json::{json, Value};
 
@@ -610,6 +610,78 @@ fn the_share_of_pages_decides() {
     assert_eq!(heads(&paged(8, 4)), 4); // ceil(3.2) = 4 of 8
     assert_eq!(heads(&paged(8, 3)), 0);
     assert!(page_furniture(&paged(2, 2)).is_empty());
+}
+
+#[test]
+fn a_table_repeating_on_one_grid_is_kept_between_its_page_text() {
+    let mut blocks = paged(6, 6);
+    for page in 0..6 {
+        blocks.push(line("Characteristic n (%) OR (95% CI)", page, 200.0));
+        for row in 0..5 {
+            let text = format!("{row}.{page}{row} ({}%)", page + 10);
+            blocks.push(line(&text, page, 220.0 + 14.0 * row as f64));
+        }
+        blocks.push(line(
+            &format!("{} concludes", BODY[page as usize]),
+            page,
+            400.0,
+        ));
+    }
+    let mut texts = furniture_texts(&blocks);
+    texts.sort();
+    texts.dedup();
+    assert_eq!(
+        texts,
+        [
+            "101",
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "Smith et al. A trial 2024"
+        ]
+    );
+}
+
+#[test]
+fn too_many_lines_at_one_edge_are_the_pages_content() {
+    assert_eq!(FURNITURE_MAX_EDGE_LINES, 20);
+    let rows = |n: usize| -> Vec<TextBlock> {
+        let mut blocks: Vec<TextBlock> = (0..4)
+            .flat_map(|p| {
+                (0..n).map(move |r| {
+                    line(
+                        &format!("{r}.{p} {}", r as i64 + p),
+                        p,
+                        40.0 + 14.0 * r as f64,
+                    )
+                })
+            })
+            .collect();
+        blocks.extend((0..4).map(|p| line(&format!("{} below", BODY[p as usize]), p, 700.0)));
+        blocks
+    };
+    assert_eq!(
+        page_furniture(&rows(FURNITURE_MAX_EDGE_LINES)).len(),
+        4 * FURNITURE_MAX_EDGE_LINES
+    );
+    assert!(page_furniture(&rows(FURNITURE_MAX_EDGE_LINES + 1)).is_empty());
+}
+
+#[test]
+fn a_line_with_no_finite_height_is_never_furniture() {
+    let mut blocks = paged(4, 4);
+    blocks[0] = line("Smith et al. A trial 2024", 0, f64::NAN);
+    let furniture = page_furniture(&blocks);
+    assert!(!furniture.contains(&0));
+    assert_eq!(
+        furniture
+            .iter()
+            .filter(|&&i| blocks[i].text.starts_with("Smith"))
+            .count(),
+        3
+    );
 }
 
 #[test]
