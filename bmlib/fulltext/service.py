@@ -2159,17 +2159,18 @@ class FullTextService:
         populated — an earlier tier's text is never overwritten.
 
         Otherwise best-effort: a PDF backend that cannot be constructed (the
-        ``bmlib[pdf]`` extra missing, or broken) or an unreadable PDF leaves
-        the result untouched, so the caller still has the PDF itself.
+        ``bmlib[pdf]`` extra missing, or broken) leaves the result untouched,
+        and an unreadable PDF leaves it untouched but for
+        ``pdf_extraction_failure``, so the caller still has the PDF itself.
         ``result.pdf_url`` and ``result.file_path`` are deliberately left in
         place — extracted text recovers the prose but not figures, tables or
         layout, so the original stays worth offering.
 
         Every way this can come up empty is logged at WARNING: a scanned PDF
         that yields nothing is invisible otherwise, and a partial extraction
-        must not be mistaken for a whole article.  A failed conversion also
-        sets ``result.pdf_extraction_failure`` to its kind (#604), so a caller
-        can tell a damaged file from an engine fault.
+        must not be mistaken for a whole article.  That field holds a failed
+        conversion's kind (#604), so a caller can tell a damaged file from an
+        engine fault.
         """
         if not self.convert_pdfs or result.html:
             return

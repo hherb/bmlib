@@ -371,8 +371,8 @@ damaged, look for another copy* from *the engine failed, retry*:
 | Value | What happened |
 |-------|---------------|
 | `"encrypted"`, `"unreadable"` | The file's fault: it needs a password, or is damaged, truncated or unsupported. Another copy is the remedy |
-| `"engine"` | Not the file's: the same PDF may read later or elsewhere. Also a failure the backend did not place, and an exception the converter raised |
-| `"cancelled"`, `"timed-out"` | A limit the backend was given was reached |
+| `"engine"` | Not the file's: the same PDF may read later or elsewhere. Also a failure the backend did not place, and any exception while converting or rendering the text (a cache file that vanished included) |
+| `"cancelled"`, `"timed-out"` | A limit the backend was given was reached. `FullTextService` gives the built-in backend none, so only a third-party converter can report these |
 
 `None` when the text was extracted, when no extraction was attempted
 (`convert_pdfs=False`, an earlier tier's text, no PDF backend usable — that

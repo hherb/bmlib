@@ -88,12 +88,14 @@ _BUG_TYPES: tuple[type[BaseException], ...] = (
 )
 
 #: What a request may raise that is not the provider failing, so is not
-#: ``REQUEST_FAILED`` (#573): a bmlib defect, an unknown provider
-#: (``ValueError``) and a provider SDK not installed (``ImportError``).  They
-#: propagate, since retrying cannot cure them.  A missing Anthropic key raises
-#: ``TypeError`` from the SDK and propagates too, which is right for a
-#: configuration error.
-_NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ValueError, ImportError)
+#: ``REQUEST_FAILED`` (#573): a bmlib defect and a provider SDK that will not
+#: import.  They propagate, since retrying cannot cure them.  A missing
+#: Anthropic key raises ``TypeError`` from the SDK and propagates too, which is
+#: right for a configuration error.  ``ValueError`` is not a member: an SDK
+#: reading a 200 body that is not JSON raises one, which is the remote's
+#: (PR #615's review).  An unknown provider is refused before any request
+#: instead, by :meth:`PicoAgent._check_provider`.
+_NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ImportError)
 
 
 class _UnreadableReplyError(ValueError):
@@ -464,17 +466,21 @@ class PicoAgent(BaseAgent):
     has a PICO at all, and :meth:`extract` extracts it.  A caller may run the
     extraction whatever the check answered.
 
-    Each call either returns its result or raises :class:`PicoError` (or, from
+    Each call returns its result or raises :class:`PicoError` (or, from
     :meth:`extract`, ``ValueError`` for a bad ``min_similarity``), whose
-    ``kind`` says why — so an app can retry an outage, ask for a larger
-    ``max_tokens`` after a truncation, and suggest another model when the
-    replies are unusable.  An outage during the condensation of a long text
-    is ``CONDENSATION_FAILED``, its message naming the failed map-reduce.
+    ``kind`` says why, unless what failed is no outage (below) — so an app
+    can retry an outage, ask for a larger ``max_tokens`` after a truncation,
+    and suggest another model when the replies are unusable.  An outage
+    during the condensation of a long text is ``CONDENSATION_FAILED``, its
+    message naming the failed map-reduce.
     What no retry or other model can cure propagates unwrapped instead (#573):
     a bmlib defect (``TypeError``, ``AttributeError``, ``NameError``,
     ``KeyError``, ``IndexError``, or a ``ValueError`` raised while reading a
-    reply), an unknown provider (``ValueError``), a provider SDK not installed
-    (``ImportError``), and a missing Anthropic key (the SDK's ``TypeError``).
+    reply), an unknown provider (``ValueError``) and a provider SDK not
+    installed (``ImportError``), both refused before any request, and a missing
+    Anthropic key (the SDK's ``TypeError``).  The last two kinds, raised during
+    the condensation of a long text, are ``CONDENSATION_FAILED`` instead: the
+    map-reduce reports a failed run rather than raising (#616).
 
     Args:
         llm: The client requests go through.
@@ -522,6 +528,8 @@ class PicoAgent(BaseAgent):
 
         Raises:
             PicoError: Naming why no answer could be made.
+            ValueError: The model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
         """
         title, text, notes, condensed_from, status = self._prepare(
             title, text, "the suitability check"
@@ -557,7 +565,9 @@ class PicoAgent(BaseAgent):
             The breakdown.  Nothing is discarded for low confidence.
 
         Raises:
-            ValueError: *min_similarity* is not a number in (0, 1].
+            ValueError: *min_similarity* is not a number in (0, 1], or the
+                model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
             PicoError: Naming why no breakdown could be made.
         """
         similarity = _check_similarity(min_similarity)
@@ -593,6 +603,7 @@ class PicoAgent(BaseAgent):
         text = (text or "").strip()
         if not title and not text:
             raise PicoError(PicoErrorKind.EMPTY_INPUT, "both the title and the text are empty")
+        self._check_provider()
         if len(text) <= self.condense_config.max_context_chars:
             return title, text, [], None, None
 
@@ -614,6 +625,20 @@ class PicoAgent(BaseAgent):
                 f"{self.condense_config.max_context_chars} characters: {exc}",
             ) from exc
         return title, digest, notes, len(text), status.value
+
+    def _check_provider(self) -> None:
+        """Resolve the model's provider before any request is made (#573).
+
+        An unknown provider (``ValueError``) and an uninstalled SDK
+        (``ImportError``) then propagate whatever the text's length, rather
+        than failing the condensation of a long one as an outage would.
+
+        Raises:
+            ValueError: No provider is registered under the model's name.
+            ImportError: The provider's SDK is not installed.
+        """
+        provider = self.model.split(":", 1)[0] if ":" in self.model else self.llm.default_provider
+        self.llm._get_provider(provider or self.llm.default_provider)
 
     def _ask(
         self,

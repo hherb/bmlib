@@ -2348,8 +2348,10 @@ impl FullTextService {
     /// A no-op when `convert_pdfs` is off or `result.html` is already
     /// populated — an earlier tier's text is never overwritten. Otherwise
     /// best-effort: a backend that cannot be constructed (the `bmlib[pdf]`
-    /// extra missing, or broken) or an unreadable PDF leaves the result
-    /// untouched, so the caller still has the PDF itself. `result.pdf_url` and
+    /// extra missing, or broken) leaves the result untouched, and an unreadable
+    /// PDF leaves it untouched but for `pdf_extraction_failure`, which names
+    /// the side the failure is on (#604), so the caller still has the PDF
+    /// itself. `result.pdf_url` and
     /// `result.file_path` are deliberately left in place — extracted text
     /// recovers the prose but not figures, tables or layout.
     ///

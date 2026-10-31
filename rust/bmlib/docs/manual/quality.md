@@ -387,8 +387,9 @@ raises `ValueError`); `PicoError::kind()` gives Python's `PicoErrorKind`
 value, and the enum is `#[non_exhaustive]`. A part whose `description` is
 blank is refused and re-asked as a non-text one is, and an integer
 `sample_size` is kept as its digits (`150` → `"150"`, a float refused)
-*(unreleased, #578)*. Every `ChatError` the client returns, an unknown provider
-or a missing API key included, is `RequestFailed`, where Python lets those
+*(unreleased, #578)*. Every `ChatError` the client returns to the request, an
+unknown provider or a missing API key included, is `RequestFailed` (during
+the condensation of a long text it is `CondensationFailed`), where Python lets those
 propagate as exceptions (#573; see `docs/DECISIONS.md`).
 
 **Long papers.** Text over the threshold (48,000 characters, like the

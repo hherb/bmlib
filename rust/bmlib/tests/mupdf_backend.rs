@@ -491,7 +491,7 @@ fn a_pdf_reaches_the_html_renderer() {
 /// that has to work end to end rather than only the block extraction underneath it.
 #[test]
 fn the_service_adapter_produces_html() {
-    use bmlib::fulltext::service::{PdfExtractor, PdfText};
+    use bmlib::fulltext::service::{PdfExtractError, PdfExtractor, PdfText};
     use bmlib::fulltext::MupdfPdfExtractor;
 
     let adapter = MupdfPdfExtractor::new();
@@ -514,7 +514,13 @@ fn the_service_adapter_produces_html() {
     assert!(html.contains("<p>"), "{html}");
     assert!(html.contains("Adapter sentence."), "{html}");
 
-    // A corrupt file is a conversion failure, not an empty success.
+    // A corrupt file is a conversion failure, not an empty success, and its
+    // kind reaches the service unflattened (#604).
     let (_guard2, bad) = write_pdf("adapter-corrupt", b"not a pdf");
-    assert!(adapter.extract(&bad).is_err());
+    match adapter.extract(&bad) {
+        Err(PdfExtractError::Conversion(error)) => {
+            assert_eq!(error.kind, PdfErrorKind::Unreadable, "{error}");
+        }
+        other => panic!("expected a conversion failure, got {other:?}"),
+    }
 }

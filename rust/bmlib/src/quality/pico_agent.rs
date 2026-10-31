@@ -734,10 +734,14 @@ mod tests {
 
     #[test]
     fn a_blank_description_is_refused_as_null_is() {
-        for blank in ["", "   ", "\n\t"] {
-            let error = read_part(Some(&part(json!({"description": blank}))), TEXT, SIM)
-                .expect_err("a blank description");
-            assert_eq!(error, "description is blank");
+        // "\x1c" is blank to Python's `str.strip` and not to `trim`.
+        for blank in ["", "   ", "\n\t", "\x1c"] {
+            for reported in [true, false] {
+                let overrides = json!({"description": blank, "reported": reported});
+                let error =
+                    read_part(Some(&part(overrides)), TEXT, SIM).expect_err("a blank description");
+                assert_eq!(error, "description is blank");
+            }
         }
     }
 

@@ -15,8 +15,8 @@ All notable changes to bmlib are documented here. The format is based on
   from *the engine failed, retry*. The field holds the `PDFErrorKind` value of
   a failed conversion (`"encrypted"`, `"unreadable"`, `"engine"`,
   `"cancelled"`, `"timed-out"`), beside `pdf_download_failure` (#594). A
-  failure the converter did not place, and an exception it raised, is
-  `"engine"`, the rule #598 made for an unplaced cause. `None` when the text
+  failure the converter did not place, and any exception while converting or
+  rendering (a vanished cache file included), is `"engine"`, the rule #598 made for an unplaced cause. `None` when the text
   extracted, when no extraction was tried (no backend included), and for a
   scan yielding no text, which is not a failure. The maintainer's choice of
   shape. The Rust port carries the same field.
@@ -28,7 +28,10 @@ All notable changes to bmlib are documented here. The format is based on
   was `REQUEST_FAILED`, which an app retries as an outage: a bmlib
   `TypeError` or `AttributeError`, an unknown provider (`ValueError`), and a
   missing Anthropic key (the SDK's `TypeError`) included. Those now propagate
-  unwrapped, as does a provider SDK not installed (`ImportError`); a
+  unwrapped, as does a provider SDK not installed (`ImportError`); the
+  provider is resolved before any request, so an unknown one or a missing SDK
+  raises whatever the text's length, while a `ValueError` the request raises
+  (an SDK reading a 200 body that is not JSON) stays `REQUEST_FAILED`; a
   `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` is
   read as bmlib's own defect, the deny-list `transparency` and `fulltext` use.
   Likewise a `ValueError` raised by bmlib's own code while reading a reply
@@ -36,8 +39,10 @@ All notable changes to bmlib are documented here. The format is based on
   ("another model may do better"): the readers raise a private subclass, and
   only that is re-asked. **This changes the "result or `PicoError`"
   contract**: a caller catching only `PicoError` now sees those exceptions.
-  The maintainer's choice, over logging at ERROR and over a new kind. The Rust
-  port keeps every `ChatError` as `RequestFailed` (see `docs/DECISIONS.md`).
+  The maintainer's choice, over logging at ERROR and over a new kind. On a
+  text condensed first, a defect or the missing key raised during the
+  condensation is still `CONDENSATION_FAILED` (#616). The Rust port keeps
+  every `ChatError` as `RequestFailed` (see `docs/DECISIONS.md`).
 
 ### Fixed
 

@@ -54,7 +54,8 @@ class PicoErrorKind(Enum):
     EMPTY_INPUT = "empty_input"
     #: The request raised: the provider was unreachable or refused it, so
     #: retrying may help.  A bmlib defect, an unknown provider or a missing SDK
-    #: is not this: those propagate unwrapped (#573).
+    #: is not this: those propagate unwrapped (#573), the first only when the
+    #: text was sent whole (#616).
     REQUEST_FAILED = "request_failed"
     #: The reply hit the output ceiling; raise ``max_tokens``.
     TRUNCATED = "truncated"

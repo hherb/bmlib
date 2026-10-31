@@ -6195,15 +6195,24 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   cures propagates unwrapped.** The maintainer's choice on 2026-10-31, over
   logging a bmlib defect at ERROR and over a new kind. `PicoAgent._ask`
   re-raises a `_BUG_TYPES` member (restated from `transparency`, held to
-  agreeing by `tests/test_transparency.py`), a `ValueError` (an unknown
-  provider) and an `ImportError` (a provider SDK not installed). A missing
+  agreeing by `tests/test_transparency.py`) and an `ImportError` (a provider
+  SDK that will not import), and `_check_provider` refuses an unknown provider
+  (`ValueError`) and an uninstalled SDK before any request, so both raise
+  whatever the text's length. A `ValueError` the request itself raises is not
+  re-raised: an SDK reading a 200 body that is not JSON raises one, which is
+  the remote's (PR #615's review; the first cut re-raised every `ValueError`).
+  On a text condensed first, a defect or the key error below raised during the
+  condensation is `CONDENSATION_FAILED`, the map-reduce keeping only a string
+  (#616). A missing
   Anthropic key raises `TypeError` from the SDK and so propagates too: a
   configuration error, not a bmlib defect, but no retry cures it either. The
   readers raise a private `_UnreadableReplyError`, and only that is re-asked,
   so a `ValueError` from bmlib's own code while reading a reply propagates
   rather than being requested again as the model's fault. Tests:
-  `tests/test_pico_agent.py::TestTheAgent::test_what_no_retry_cures_propagates`
-  and `test_a_defect_while_reading_propagates_and_is_not_re_asked`.
+  `tests/test_pico_agent.py::TestTheExtraction::test_what_no_retry_cures_propagates`,
+  `test_an_unknown_provider_is_refused_before_any_request`,
+  `test_a_value_error_from_the_request_is_request_failed` and
+  `test_a_defect_while_reading_propagates_and_is_not_re_asked`.
 - **Rust keeps every `ChatError` as `RequestFailed`**, an unknown provider and a
   missing key included: `JsonChat` flattens the typed `ChatError` to a string
   shared with the Cochrane tiers, and Rust has no exception to propagate (its
@@ -6216,5 +6225,8 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   `shortcut:` at the site. Test: the oracle cases `sample_size_integer` and
   `sample_size_float`.
 - **A blank `description` is refused and re-asked, as a non-text one is**,
-  whatever the part's `reported`: it shows nothing. Test: the oracle case
-  `blank_description_then_whole`.
+  whatever the part's `reported`: it shows nothing. Tests: the oracle case
+  `blank_description_then_whole` (`reported: true`), and for both values of
+  `reported` `TestReadingAReply::test_a_blank_description_raises_as_null_does`
+  and Rust's `a_blank_description_is_refused_as_null_is`. Whether the prompt
+  should ask for a description on a part not reported is #618.

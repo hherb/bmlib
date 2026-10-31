@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session fixed #578, #573 and #604** on
+_Last updated: 2026-10-31 (**this session's PR is for #578, #573 and #604**, on
 `fix/578-573-604-pico-and-pdf-kind`, each with the maintainer's choice of
 remedy; see *This session* below). **0.12.0 is on PyPI** (tag `v0.12.0` on
 `d2ee803`) and **the Rust crate 0.3.0 is on crates.io** from the same commit.
@@ -14,9 +14,11 @@ digits (`150` → `"150"`; a float or `bool` stays unstated, since Python's
 as a non-text one is. Three oracle cases added (`sample_size_integer`,
 `sample_size_float`, `blank_description_then_whole`). **#573** (Python only,
 by decision): `PicoAgent._ask` re-raises a `_BUG_TYPES` member (a fourth
-restated copy, held by `TestTheRestatedBugTypesMatchTheOtherModules`), a
-`ValueError` (unknown provider) and an `ImportError`, so only the provider
-failing is `REQUEST_FAILED`; the readers raise a private
+restated copy, held by `TestTheRestatedBugTypesMatchTheOtherModules`) and an
+`ImportError`, and `_check_provider` refuses an unknown provider or a missing
+SDK before any request, so only the provider failing is `REQUEST_FAILED`
+(**PR #615's review** narrowed the first cut, which re-raised every
+`ValueError`, an SDK's on a non-JSON 200 body included); the readers raise a private
 `_UnreadableReplyError`, the only thing re-asked. **This changes the "result or
 `PicoError`" contract.** Rust keeps every `ChatError` as `RequestFailed`
 (`docs/DECISIONS.md`). **#604**: `FullTextResult.pdf_extraction_failure`, the
@@ -91,8 +93,8 @@ no cookie. A reached limit logs at INFO in Python's `convert()`. Both
 mutation-checked in both languages; **one survivor, timing-equivalent**: the
 check before each page, which the watcher always beats on a short page — kept
 for determinism. `MupdfPdfExtractor` (the service's adapter) takes no limit,
-and neither does `FullTextService`; neither carries the kind on either
-(#604). **PR #602's review** added: a drop guard so a panic during the walk
+and neither does `FullTextService`; both carry the kind since #604
+(`pdf_extraction_failure`). **PR #602's review** added: a drop guard so a panic during the walk
 cannot hang the watcher's scope; Python failing the conversion on an engine
 fault *on a page* (it was a page warning); `ConversionResult::failure(PdfError)`
 setting `error_kind`; `PDFLimit` and `ConversionResult` refusing what cannot
@@ -212,7 +214,10 @@ CHANGELOG entry *The PICO agent, with verified quotes* is the argument.
 `CanonicalText.text` as `text` and `min_similarity` from plan 2b's
 measurement; label an `UNVERIFIED` part *Unsure – model could not reproduce
 <part> from text provided*. `REQUEST_FAILED` is retried, `UNUSABLE_REPLY`
-suggests another model, `TRUNCATED` a larger `max_tokens`. In Rust, configure
+suggests another model, `TRUNCATED` a larger `max_tokens`; since #573 a
+bmlib defect, an unknown provider and a missing SDK or key raise unwrapped in
+Python, so catch them beside `PicoError` (#616: during condensation the defect
+and the key error are still `CONDENSATION_FAILED`). In Rust, configure
 `PicoAgent::pico_condenser` for long papers. Its reviews filed #572, #573,
 #574, #576, #577 and #578.
 
@@ -220,8 +225,8 @@ suggests another model, `TRUNCATED` a larger `max_tokens`. In Rust, configure
 
 Every `docs/manual/` page was audited against the source. The Rust manual at
 `rust/bmlib/docs/manual/` has a page per module, compiled as doctests (`mod
-manual` in `lib.rs`; a new page needs a line there). Open from it: **#571**
-(stale docs outside the manual).
+manual` in `lib.rs`; a new page needs a line there). Filed from it: #571
+(stale docs outside the manual, since closed).
 
 ## Earlier: context windows (item 11) and streamed chat (item 6)
 
@@ -313,7 +318,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 **119 open** (`gh issue list --state open --limit 300 --json number`,
 2026-10-31, counting #573, #578 and #604 as done; #556–#609 are not yet
-sorted into the lists below). **#599** (Rust silences MuPDF's warnings, so a
+sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`), **#617** (`openai_compat` indexes `choices` unguarded) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#599** (Rust silences MuPDF's warnings, so a
 repaired PDF's lost text goes unreported; the cookie this session added
 counts `errors`, which may help) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) are the PDF

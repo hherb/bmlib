@@ -27,6 +27,7 @@ import pytest
 
 from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
+from bmlib.llm import LLMClient
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality._condense import CondensationRefusedError
 from bmlib.quality.pico_agent import (
@@ -35,6 +36,7 @@ from bmlib.quality.pico_agent import (
     PICO_CONDENSE_QUERY,
     PICO_PARTS,
     PicoAgent,
+    _UnreadableReplyError,
     read_extraction,
     read_part,
     read_suitability,
@@ -137,12 +139,16 @@ class TestReadingAReply:
         with pytest.raises(ValueError):
             read_part(part(description=None), TEXT, SIM)
 
-    @pytest.mark.parametrize("blank", ["", "   ", "\n\t"])
+    @pytest.mark.parametrize("blank", ["", "   ", "\n\t", "\x1c"])
     def test_a_blank_description_raises_as_null_does(self, blank: str) -> None:
-        """#578: a blank description shows nothing, so it is asked again."""
-        with pytest.raises(ValueError, match="blank"):
+        """#578: a blank description shows nothing, so it is asked again.
+
+        ``"\\x1c"`` is blank to ``str.strip`` and not to Rust's ``trim``, which
+        the port's ``python_strip`` exists to bridge.
+        """
+        with pytest.raises(_UnreadableReplyError, match="blank"):
             read_part(part(description=blank), TEXT, SIM)
-        with pytest.raises(ValueError, match="blank"):
+        with pytest.raises(_UnreadableReplyError, match="blank"):
             read_part(part(description=blank, reported=False), TEXT, SIM)
 
     def test_a_missing_part_raises(self) -> None:
@@ -359,8 +365,9 @@ class TestTheExtraction:
             TypeError("bmlib defect"),
             AttributeError("bmlib defect"),
             KeyError("bmlib defect"),
-            ValueError("Unknown provider 'nosuch'"),
-            ImportError("the provider's SDK is not installed"),
+            NameError("bmlib defect"),
+            IndexError("bmlib defect"),
+            ImportError("the provider's SDK will not import"),
         ],
         ids=lambda e: type(e).__name__,
     )
@@ -370,6 +377,54 @@ class TestTheExtraction:
             make_agent(raised).extract("A trial", TEXT, min_similarity=SIM)
 
         assert caught.value is raised
+
+    def test_a_value_error_from_the_request_is_request_failed(self) -> None:
+        """An SDK reading a 200 body that is not JSON raises one: the remote's."""
+        raised = json.JSONDecodeError("Expecting value", "<html>", 0)
+
+        with pytest.raises(PicoError) as caught:
+            make_agent(raised).extract("A trial", TEXT, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.REQUEST_FAILED
+        assert caught.value.__cause__ is raised
+
+    @pytest.mark.parametrize(
+        "raised",
+        [ValueError("Unknown provider 'nosuch'"), ImportError("needs the 'ollama' package")],
+        ids=lambda e: type(e).__name__,
+    )
+    @pytest.mark.parametrize("length", ["short", "condensed"])
+    def test_an_unknown_provider_is_refused_before_any_request(
+        self, raised: Exception, length: str
+    ) -> None:
+        """Whatever the text's length: a long one would fail its condensation."""
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm._get_provider = MagicMock(side_effect=raised)
+        text = TEXT if length == "short" else "Filler sentence. " * 20 + TEXT
+
+        for call in (
+            lambda: agent.check_suitability("A trial", text),
+            lambda: agent.extract("A trial", text, min_similarity=SIM),
+        ):
+            with pytest.raises(type(raised)) as caught:
+                call()
+            assert caught.value is raised
+        assert agent.llm.chat.call_count == 0
+        agent.llm._get_provider.assert_called_with("test")
+
+    def test_a_real_client_refuses_an_unknown_provider(self) -> None:
+        agent = PicoAgent(llm=LLMClient(), model="nosuch:model")
+
+        with pytest.raises(ValueError, match="Unknown provider 'nosuch'"):
+            agent.extract("A trial", "Filler sentence. " * 5000, min_similarity=SIM)
+
+    def test_a_blank_description_is_asked_again(self) -> None:
+        agent = make_agent(reply(comparison=part(description="  ")), reply())
+
+        extraction = agent.extract("A trial", TEXT, min_similarity=SIM)
+
+        assert extraction.comparison.state is PicoPartState.VERIFIED
+        assert agent.llm.chat.call_count == 2
 
     def test_a_defect_while_reading_propagates_and_is_not_re_asked(self) -> None:
         """#573: a ``ValueError`` from bmlib's own reading is not an unusable reply."""
