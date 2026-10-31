@@ -369,7 +369,10 @@ repair and retry:
 
 A confidence outside 0.0–1.0 is clamped, and an unusable one falls back to
 0.9 — `min_confidence_threshold` and the weighted merge both assume the
-range. A non-empty `key_findings` list is kept on the result's metadata
+range. *(unreleased)* An `extracted_content` that is absent or not a string
+is no content, at confidence 0.0 and with no findings, logged at WARNING; a
+`null` used to be stored as the text `"None"` (#570). Empty content is
+dropped before consolidation. A non-empty `key_findings` list is kept on the result's metadata
 under `key_findings`. The call is `chat_json(require_dict=True)`, so a
 top-level array is retried, not accepted. Consolidation levels always use
 prose: asking for JSON there would demand the model re-wrap a summary it was

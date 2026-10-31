@@ -243,7 +243,8 @@ class BaseAgent:
             messages: Conversation turns to send.
             temperature: Sampling temperature override.
             max_tokens: Max output token override.
-            max_retries: Maximum number of attempts before giving up.
+            max_retries: Maximum number of attempts before giving up; fewer
+                than one is one.
             retry_context: Label naming the task, folded into the retry and
                 failure log lines so a failure says what was being attempted.
             require_dict: Demand a JSON object.  A response that parses to
@@ -265,6 +266,9 @@ class BaseAgent:
                 names its own cause; one after the retries are spent names the
                 last attempt's.
         """
+        # Zero attempts asked nothing and still raised "unparseable" (#574);
+        # Rust's ``max_retries.max(1)`` is the same clamp.
+        max_retries = max(max_retries, 1)
         context = f" for {retry_context}" if retry_context else ""
         last_error: str | None = None
         # The class the final raise takes: the last attempt's cause.

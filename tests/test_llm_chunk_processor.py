@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -266,6 +267,29 @@ class TestStructuredExtraction:
         processor = LLMChunkProcessor(agent, use_structured_output=True)
         result = processor.process(["chunk"], query="q")
         assert result.final_result.confidence == 1.0
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            '{"extracted_content": null, "confidence": 0.8}',
+            '{"extracted_content": {"a": 1}, "confidence": 0.8, "key_findings": ["k"]}',
+            '{"extracted_content": ["x"], "confidence": 0.8}',
+            '{"extracted_content": 5, "confidence": 0.8}',
+            '{"confidence": 0.8}',
+        ],
+        ids=["null", "object", "list", "number", "absent"],
+    )
+    def test_content_that_is_not_text_is_no_content(
+        self, answer: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """#570: ``str(None)`` stored the literal ``"None"`` at the model's
+        confidence, and an object its ``repr``; no content carries none."""
+        agent = make_agent(answer)
+        processor = LLMChunkProcessor(agent, use_structured_output=True)
+        with caplog.at_level(logging.WARNING, logger="bmlib.context_processor.llm_processor"):
+            answer_read = processor._extract_structured("p", "batch 0")
+        assert answer_read == ("", 0.0, [])
+        assert "extracted_content that is not text in batch 0" in caplog.text
 
     def test_malformed_json_is_repaired_by_the_agent(self) -> None:
         agent = make_agent('{"extracted_content": "recovered", "confidence": 0.5,}')

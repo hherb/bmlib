@@ -1,18 +1,24 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session cut 0.12.0** on `release/0.12.0`:
-the Rust manual's eleven missing pages, the Python manual audited against
-every unreleased CHANGELOG entry, #571's stale docs, and two Rust defects the
-manual work found, `sync()`'s unreadable timestamp and `atomic_write`'s
-stranded temporary; then the release PR's own review, fixed in a follow-up
-PR, #611, because #610 was merged before it). **0.12.0 is on PyPI** (tag
-`v0.12.0` on `d2ee803`, the merge of #611; installed from the index and
-imported) and **the Rust crate 0.3.0 is on crates.io** from the same commit.
-Every PR merged since `v0.11.0`, #499 through #602 and #610/#611, ships in
-0.12.0; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
-release notes. The Rust crate was released beside it as 0.3.0,
-published with `cargo publish` from a clean worktree of the same
-merge commit; see `HANDOVER_RUST.md`._
+_Last updated: 2026-10-31 (**this session fixed #574 and #570** on
+`fix/574-570-chat-json-extracted-content`, two small defects with the
+maintainer's choice of remedy; see *This session* below). **0.12.0 is on
+PyPI** (tag `v0.12.0` on `d2ee803`) and **the Rust crate 0.3.0 is on
+crates.io** from the same commit; every PR merged since `v0.11.0` ships in
+it, and the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
+release notes. Nothing is unreleased but this session's PR._
+
+## This session: `chat_json(max_retries=0)` (#574), a non-text extraction (#570)
+
+**#574** (Python only): `chat_json` clamps `max_retries` to at least one, as
+Rust's `max_retries.max(1)` does, so `0` makes one attempt instead of no
+request and a `ChatJsonUnparseableError` for a reply never asked for. No
+caller in bmlib passes it. **#570** (Python and Rust): `LLMChunkProcessor`'s
+structured path read `extracted_content` through `str()`, storing a `null`
+as `"None"` (Rust: `"null"`) at the model's confidence; an absent or
+non-string value is now `""` at confidence 0.0 with no findings (Python
+WARNs naming the batch; the crate logs nothing anywhere), which `is_valid`
+already drops before consolidation. Both manuals and both CHANGELOGs carry it.
 
 ## What 0.12.0 costs a downstream
 
@@ -233,37 +239,17 @@ PRs #554 and #555 (item 3, `chunk_canonical`, contract
 JATS, Markdown, plain text; its reviews left **#548**, **#549**, **#552**,
 **#553**); PR #545 (item 9, `FullTextResult.jats_xml`, the cache's `jats/`).
 
-**PR #544** (#533): the maintainer chose the work bound. The three `*_is_fast` tests per language
-now count the windows scored (Python monkeypatches a counting
-`SequenceMatcher`; Rust counts `set_a` behind `#[cfg(test)]`, so its three
-tests moved into `citations::passage_match`'s unit tests, sharing
-`rust/bmlib/tests/data/passage_match_sentences.rs` with the integration file)
-and assert `MAX_WINDOWS_SCORED` = 1,330, a formula over the search's
-constants. Measured 90/130/10 (Rust; Python +1 for the constructor's
-`set_seq1`), unchanged at 41 kB. Mutation-checked in both languages. No
-library code moves.
+**PR #544** (#533): the `find_passage` timing tests count windows scored
+against `MAX_WINDOWS_SCORED` (1,330) instead of wall time, in both languages.
 
-**PRs #542 and #543** (#503): the PDF-title sampler
-stamps every journal line with `ROW_DEFINITIONS_VERSION` and refuses an
-unstamped journal; the corpus's `biorxiv` rows are a 150-row `/pubs` draw, and
-nothing in `bmlib` moved. The stale unstamped journal in the main checkout was
-moved aside this session.
-
-**PR #541** (#540): PubMed's bare `Review` is a displaced
-draw, committed as `tests/data/extractor_abstracts_review.json` and pinned, so
-**an `extractors.py` edit re-measures three corpora**. Adding `Review` to the
-committed strata is still the maintainer's decision.
-
-**PR #539** (#453): `systematic_review` reads a review by
-how it searched; "meta-analyses" and "systematically identified" were refused.
-
-**PR #538** (#507): a non-ISO `RetractionEvidence.date`
-raises `ValueError`; the Rust/FFI half is **#537**.
-
-**An earlier session** (PR #524, #523 + #522): `notice_pmid` is stored
-canonical in Python and Rust; `RetractionIndex::build` refuses an all-`Other`
-export, and Python's nature flag counts findable notices only. **#520** (the
-Rust desktop store's import) must take that nature rule too.
+**PRs #538-#543**: a non-ISO `RetractionEvidence.date` raises (#507; the
+Rust/FFI half is **#537**); a review is read by how it searched (#453);
+PubMed's bare `Review` is a displaced draw, so **an `extractors.py` edit
+re-measures three corpora** (#540; adding `Review` to the strata is the
+maintainer's decision); the PDF-title journal is stamped and its `biorxiv`
+rows redrawn from `/pubs` (#503). **PR #524**: `notice_pmid` canonical;
+`RetractionIndex::build` refuses an all-`Other` export, a rule **#520** (the
+Rust desktop store's import) must take too.
 
 ## The Rust port
 
@@ -280,7 +266,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.12.0 is being cut** (2026-10-31, branch `release/0.12.0`); 0.11.0, released 2026-10-17, is the version on PyPI until the `pypi` gate is approved. The version lives
+- **Version 0.12.0** (released 2026-10-31, on PyPI). The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
@@ -291,8 +277,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,767 passing + 164 skipped** on `fix/release-0.12.0-review`
-  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,399 with `cargo test -p bmlib --features pdf,html`, plus 59 manual doctests; the embedder's live tests skip
+- **Tests: 8,774 passing + 164 skipped** on `fix/574-570-chat-json-extracted-content`
+  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,400 with `cargo test -p bmlib --features pdf,html`, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -321,9 +307,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**118 open** (`gh issue list --state open --limit 300 --json number`,
-2026-10-31, counting #598 and #600 as done; #560–#597 are not yet sorted
-into the lists below). **#599** (Rust silences MuPDF's warnings, so a
+**122 open** (`gh issue list --state open --limit 300 --json number`,
+2026-10-31, counting #570 and #574 as done; #556–#609 are not yet sorted
+into the lists below). The small decided-default ones left beside this
+session's pair: **#573** (log a `_BUG_TYPES` member at ERROR in `PicoAgent`),
+**#578** (an integer `sample_size`; a blank description), **#604** (carry a
+PDF failure's kind through `FullTextService`). **#599** (Rust silences MuPDF's warnings, so a
 repaired PDF's lost text goes unreported; the cookie this session added
 counts `errors`, which may help) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) are the PDF

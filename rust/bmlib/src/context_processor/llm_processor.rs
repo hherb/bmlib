@@ -331,19 +331,19 @@ pub fn extract_from_batch(
 
     let answer = if structured {
         let parsed = model.complete_json(&prompt, temperature, max_tokens)?;
-        let content = parsed
-            .get("extracted_content")
-            .map(|v| match v {
-                Value::String(s) => s.clone(),
-                other => other.to_string(),
-            })
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        ModelAnswer {
-            content,
-            confidence: read_confidence(&parsed),
-            findings: read_findings(&parsed),
+        match parsed.get("extracted_content") {
+            Some(Value::String(content)) => ModelAnswer {
+                content: content.trim().to_string(),
+                confidence: read_confidence(&parsed),
+                findings: read_findings(&parsed),
+            },
+            // Anything but a string is no content, at no confidence (#570): a
+            // `null` used to be stored as the text "null", an object as its JSON.
+            _ => ModelAnswer {
+                content: String::new(),
+                confidence: 0.0,
+                findings: Vec::new(),
+            },
         }
     } else {
         let content = model.complete(&prompt, temperature, max_tokens)?;
