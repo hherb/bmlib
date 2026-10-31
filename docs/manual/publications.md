@@ -19,11 +19,11 @@ Requires `httpx` for HTTP requests to external APIs.
 | `storage` | `store_publication()`, `get_publication_by_doi()`, `get_publication_by_pmid()`, `get_grants()`, `get_author_affiliations()`, `add_fulltext_source()` | De-duplicating writes and lookups |
 | `sync` | `sync()` | The sole orchestration entry point |
 | `retractions` | `parse_retraction_watch_csv()`, `import_retraction_watch_export()`, `RetractionImport`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
-| `retraction_status` *(unreleased)* | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()`, and their types (`RetractionEvidence`, `RetractionVerdict`, `CrossrefResult`, …) | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status-unreleased) |
+| `retraction_status` *(0.12.0)* | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()`, and their types (`RetractionEvidence`, `RetractionVerdict`, `CrossrefResult`, …) | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status-0120) |
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
-| `lookup` *(unreleased)* | `lookup_record()`, `RecordLookup`, `SourceReport`, `SourceOutcome`, `PublishedVersion` | One paper's record by PMID, DOI, PMC ID or PPR accession — see [Looking up one paper](#looking-up-one-paper-unreleased) |
+| `lookup` *(0.12.0)* | `lookup_record()`, `RecordLookup`, `SourceReport`, `SourceOutcome`, `PublishedVersion` | One paper's record by PMID, DOI, PMC ID or PPR accession — see [Looking up one paper](#looking-up-one-paper-0120) |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
-| `fetchers.europepmc` *(unreleased)* | `normalize_europepmc()` | One Europe PMC search hit as a `FetchedRecord`; used by `lookup_record`, not a sync source |
+| `fetchers.europepmc` *(0.12.0)* | `normalize_europepmc()` | One Europe PMC search hit as a `FetchedRecord`; used by `lookup_record`, not a sync source |
 
 > **Breaking change in 0.4.0 — `on_record` now fires *before* storage.**
 > `sync()` no longer stores each record as it arrives. Records are buffered for the duration of a source/day fetch and written in a **single transaction per day** once the fetch completes. Your `on_record` callback is invoked while the record is still only in memory, so it **must not** expect to read the record back from the database. See [Buffering and commit batching](#buffering-and-commit-batching).
@@ -38,7 +38,7 @@ from bmlib.publications import (
     # Sync orchestration
     sync,
 
-    # One paper by identifier (unreleased)
+    # One paper by identifier (0.12.0)
     lookup_record,
     RecordLookup,
     SourceReport,
@@ -90,7 +90,7 @@ from bmlib.publications import (
 )
 ```
 
-The list above is the complete `bmlib.publications.__all__`. Nothing in `retraction_status` is re-exported either; import it from `bmlib.publications.retraction_status` (see [Retraction status](#retraction-status-unreleased)). The fetcher functions themselves are not re-exported at package level and must be imported from their submodules:
+The list above is the complete `bmlib.publications.__all__`. Nothing in `retraction_status` is re-exported either; import it from `bmlib.publications.retraction_status` (see [Retraction status](#retraction-status-0120)). The fetcher functions themselves are not re-exported at package level and must be imported from their submodules:
 
 ```python
 from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
@@ -219,7 +219,7 @@ class FetchedRecord:
 
 `sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)), and `pmc_id` is stored as `Publication.pmcid`. `extras` is **not** persisted — if you need it, capture it in an `on_record` callback.
 
-`to_dict()` / `from_dict()` *(unreleased)* serialise a record with one key per field, in declaration order, nested entries through their own `to_dict()`; `from_dict()` raises `ValueError` for a dictionary carrying any other set of keys, or a field of the wrong type, naming the field — a nested entry must be exactly what its own `to_dict()` writes.
+`to_dict()` / `from_dict()` *(0.12.0)* serialise a record with one key per field, in declaration order, nested entries through their own `to_dict()`; `from_dict()` raises `ValueError` for a dictionary carrying any other set of keys, or a field of the wrong type, naming the field — a nested entry must be exactly what its own `to_dict()` writes.
 
 The last two fields are declared after `extras` rather than beside the content fields they read best beside, because downstream projects construct `FetchedRecord` positionally: inserting a field anywhere but the end shifts every later argument silently.
 
@@ -1603,15 +1603,15 @@ Fetch all OpenAlex works published on `target_date`.
 - Cursor-based pagination at `per_page=200`, 0.1 s between pages.
 - Reconstructs abstracts from OpenAlex's inverted-index format.
 - Strips the `https://doi.org/` and `https://pubmed.ncbi.nlm.nih.gov/` prefixes from identifiers.
-- Extracts: DOI, PMID, PMC ID *(unreleased: OpenAlex serves `ids.pmcid` as `…/pmc/articles/7745181`, read as `PMC7745181`; it used to be dropped)*, title, authors, journal, abstract, publication date, keywords (primary topic), open-access status, license, and full-text source URLs with versions.
-- Reads every field type-checked *(unreleased)*: a value of the wrong type (an `ids` list, a string `author`, an `is_oa` that is not a JSON boolean) is absent, costing that field and not the record, as Rust's port reads it. It used to raise `AttributeError` and fail the whole page, and so the day. A work that is not a JSON object still fails its page.
+- Extracts: DOI, PMID, PMC ID *(0.12.0: OpenAlex serves `ids.pmcid` as `…/pmc/articles/7745181`, read as `PMC7745181`; it used to be dropped)*, title, authors, journal, abstract, publication date, keywords (primary topic), open-access status, license, and full-text source URLs with versions.
+- Reads every field type-checked *(0.12.0)*: a value of the wrong type (an `ids` list, a string `author`, an `is_oa` that is not a JSON boolean) is absent, costing that field and not the record, as Rust's port reads it. It used to raise `AttributeError` and fail the whole page, and so the day. A work that is not a JSON object still fails its page. An empty `publication_date` is `None`, and an absent or mistyped `is_oa` is `False` (`bool("no")` was `True`).
 
 Core fields are guaranteed present (possibly `None`/empty); source-specific
 data goes in `extras`.
 
 ---
 
-## Looking up one paper *(unreleased)*
+## Looking up one paper *(0.12.0)*
 
 StudyAnalyzer's item 5 (spec `docs/superpowers/specs/2026-10-30-record-lookup-design.md`). `lookup_record()` takes any of a PMID, a DOI, a PMC ID and a Europe PMC preprint accession and returns the paper's `FetchedRecord`, built to be handed straight to [`FullTextService.fetch_fulltext`](fulltext.md):
 
@@ -1838,7 +1838,7 @@ successful. The warning is the only thing that distinguishes it from one.
 hunting for its close and trip the field-size limit, tens of thousands of
 rows in. This raises `ValueError` naming the last line read whole, rather
 than a bare `csv.Error` whose "field larger than field limit" reads as a
-bmlib bug rather than a corrupt download. *(unreleased)* A row with **fewer
+bmlib bug rather than a corrupt download. *(0.12.0)* A row with **fewer
 fields than the header** raises `ValueError` too, naming its line: it is what
 a download cut part-way through a row leaves, and read through, its cut DOI
 and missing nature replaced a good notice with one no lookup finds. 0 of the
@@ -1854,7 +1854,7 @@ than as real identifiers, because neither is falsy and a plain truthiness
 check would collapse tens of thousands of unrelated rows onto one key:
 `OriginalPaperPubMedID` of `"0"` (46.04% of rows) and `OriginalPaperDOI` of
 `Unavailable` / `unavailable` in either casing (4.80% of rows). **Any run of
-zeros counts as the `"0"`** *(unreleased)*: the export of 2026-10-21 writes
+zeros counts as the `"0"`** *(0.12.0)*: the export of 2026-10-21 writes
 an absent PubMed ID as `"00000000"` (33,800 of 73,329 paper PMIDs), which was
 stored as a PMID before this release. A padded real PMID (`"00069063"`, the
 export's one) is kept.
@@ -1886,7 +1886,7 @@ rather than duplicating them — every column except `record_id` and
 `created_at` is overwritten from the new file, since the CSV is the source of
 truth. Identifiers are normalised with the same functions
 `store_publication()` uses, so a DOI stored here matches any case or prefix
-variant looked up later. *(unreleased)* A PMID — the paper's and the
+variant looked up later. *(0.12.0)* A PMID — the paper's and the
 notice's own alike (#504, #523) — is stored as ASCII digits without leading
 zeros (bmlib#470's rule), so `"00069063"` is stored as `"69063"` and a padded
 PMID on either side matches. Re-store existing rows to canonicalise them. A
@@ -1906,7 +1906,7 @@ stays for a caller writing notices in batches.
 
 ### `import_retraction_watch_export`
 
-*(unreleased)*
+*(0.12.0)*
 
 ```python
 def import_retraction_watch_export(
@@ -2001,7 +2001,7 @@ no usable identifier is a programming error, not an empty result: returning
 paper it knows nothing about as not retracted, which is the worst failure
 this feature can have.
 
-*(unreleased, #504)* **A PMID is read by bmlib#470's rule**: it is looked up
+*(0.12.0, #504)* **A PMID is read by bmlib#470's rule**: it is looked up
 as ASCII digits without leading zeros, so `pmid="000069063"` finds a notice
 stored as `"69063"`. A `pmid` that is given, is not blank or a sentinel, and
 is still not ASCII digits (`"PMC123"`, `"12a"`) raises `ValueError` **whatever
@@ -2061,7 +2061,7 @@ if is_retracted(lookup_retractions(conn, doi="10.1016/j.anbehav.2009.11.027")):
 
 ---
 
-## Retraction status *(unreleased)*
+## Retraction status *(0.12.0)*
 
 `is_retracted()` answers from Retraction Watch alone, and Retraction Watch
 alone misses retractions. Measured 2026-10-18 (issue #504): 77 of 197
@@ -2144,7 +2144,7 @@ to):
   Undated entries (`None`, or `""`) are the oldest. Any other date that is
   not ISO `yyyy`, `yyyy-mm` or a real `yyyy-mm-dd` is refused with
   `ValueError` when the `RetractionEvidence` is built — by `from_dict`, by
-  `evidence_from_notices` for a stored notice — *(unreleased)*, since a
+  `evidence_from_notices` for a stored notice — *(0.12.0)*, since a
   `05/15/2020` would compare as older than every ISO date. Dates compare as ISO
   text, so a less precise date sorts before a more precise one in the same
   period: a retraction dated `2021` is older than a reinstatement dated

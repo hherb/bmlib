@@ -1,14 +1,16 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session is #598 + #600**, PDF extraction
-errors typed and extraction bounded, on `fix/pdf-extract-error-598`). **0.11.0
-is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged since — #526
-through #601 — is unreleased, **and no StudyAnalyzer item is left in bmlib, so
-a 0.12.0 release is a natural next session** (the maintainer chose the PDF
-issues over it this session). Its release notes must say: the Rust crate's
-`pdf` feature changed API in #590 and again here (`PdfError`, `PdfLimit`),
-`FullTextResult` gained a field in #594, and Python's PDF error messages move
-(#598)._
+_Last updated: 2026-10-31 (**this session cut 0.12.0** on `release/0.12.0`:
+the Rust manual's eleven missing pages, the Python manual audited against
+every unreleased CHANGELOG entry, #571's stale docs, and two Rust defects the
+manual work found, `sync()`'s unreadable timestamp and `atomic_write`'s
+stranded temporary). **0.11.0 is on PyPI**; 0.12.0 is published when the
+release PR is merged, tagged, released on GitHub and the `pypi` gate approved
+by the maintainer. Every PR merged since `v0.11.0`, #499 through #601, ships
+in 0.12.0; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
+release notes. The Rust crate is released beside it as 0.3.0 (0.2.0 is on
+crates.io), published with `cargo publish` from a clean worktree of the same
+merge commit; see `HANDOVER_RUST.md`._
 
 ## What 0.11.0 costs a downstream
 
@@ -195,8 +197,8 @@ suggests another model, `TRUNCATED` a larger `max_tokens`. In Rust, configure
 Every page of `docs/manual/` was audited against the source, and every
 exported name is now on its page. A Rust manual was started at
 `rust/bmlib/docs/manual/`: `index.md` and `db.md`, compiled as doctests.
-**Its next pages are `citations`, `embed`, `llm` and `fulltext::canonical`**,
-with `db.md` as the template. Filed: **#570** (`context_processor` stores a
+Every module has a page as of 0.12.0, each compiled as doctests
+(`mod manual` in `lib.rs`); a new page needs a line there. Filed: **#570** (`context_processor` stores a
 null `extracted_content` as `"None"`) and **#571** (stale docs outside the
 manual).
 
@@ -270,7 +272,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.11.0, released 2026-10-17 (UTC; the tag's commit is dated 2026-10-18 +1100), is live on PyPI**. The version lives
+- **Version 0.12.0 is being cut** (2026-10-31, branch `release/0.12.0`); 0.11.0, released 2026-10-17, is the version on PyPI until the `pypi` gate is approved. The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
@@ -279,7 +281,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag;
   **0.9.0 moves nothing stored**; **0.9.1 moves stored full text** (#79);
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
-  (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
+  (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests: 8,751 passing + 164 skipped** on `fix/pdf-extract-error-598`
   (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,345 with `cargo test -p bmlib --features pdf,html`; the embedder's live tests skip
@@ -297,8 +299,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release; 0.11.0 promoted all 354, and new ones are written bare again
-  (`*(unreleased)*`) — #485's, #489's, #494's and #497's lines are the first. Grep case-insensitively for the bare word, since the markers take
+  release; 0.11.0 promoted all 354 and 0.12.0 all 189 (rewriting the `#…-unreleased` anchor links to `#…-0120` with them), and new ones are written bare again
+  (`*(unreleased)*`). Grep case-insensitively for the bare word, since the markers take
   several spellings, and reword a *prose* use ("is itself unreleased") rather
   than promote it. Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.

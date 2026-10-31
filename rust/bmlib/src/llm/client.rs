@@ -733,11 +733,12 @@ pub fn parse_response(
 /// it buys is that two callers in one process can hold different clients — a
 /// different key, base URL or transport — which the singleton cannot express.
 ///
-/// This is recorded rather than left implicit because the two places this port
-/// *does* keep a global ([`crate::llm::token_tracker`] and
-/// [`crate::agents::metrics`]) make the opposite choice, and the difference looks
-/// like an oversight until the reason is written down: those hold *accumulated
-/// state* a caller wants once per process, and this holds none.
+/// This is recorded rather than left implicit because the one place this port
+/// *does* keep a global, [`crate::llm::token_tracker`], makes the opposite
+/// choice, and the difference looks like an oversight until the reason is
+/// written down: it holds *accumulated state* a caller wants once per process,
+/// and this holds none. ([`crate::agents::metrics`] holds no static at all: its
+/// accounting lives on each agent.)
 pub struct LlmClient {
     /// The transport.
     pub client: Arc<dyn HttpClient + Send + Sync>,
@@ -747,7 +748,8 @@ pub struct LlmClient {
     pub base_url: Option<String>,
     /// A credential overriding the environment's.
     pub api_key: Option<String>,
-    /// The output cap at which a model is treated as a reasoning model.
+    /// The model-name prefixes that mark a reasoning model (checked against the
+    /// name after any `provider:` prefix, by [`LlmClient::is_reasoning_model`]).
     pub reasoning_model_prefixes: Vec<String>,
     /// The wait before the first retry of opening a stream; each later one
     /// doubles it. Zero in a test, so the backoff is not spent.

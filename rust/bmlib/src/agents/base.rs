@@ -50,8 +50,9 @@ use serde_json::Value;
 
 /// Stop reasons that mean the model hit its output ceiling.
 ///
-/// `max_tokens` is OpenAI-compatible servers; `length` is Anthropic's and
-/// Ollama's word for the same thing.
+/// `max_tokens` is Anthropic's `stop_reason`; `length` is the `finish_reason`
+/// of OpenAI-compatible servers, and what the Ollama parser yields when
+/// `done_reason` is `length`.
 pub const TRUNCATION_STOP_REASONS: &[&str] = &["max_tokens", "length"];
 
 /// Why a response stopped, in the terms this module reasons about.

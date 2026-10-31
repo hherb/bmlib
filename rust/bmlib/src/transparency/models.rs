@@ -153,6 +153,10 @@ pub enum FullTextStatus {
     /// mouth that only the 404 makes: a bmlib defect on the request line, a
     /// 429/503/403, and an empty HTTP 200 body. All three are
     /// [`FullTextStatus::RequestFailed`] now.
+    ///
+    /// Python since #457 also reads an HTTP 500 to a record listed
+    /// `isOpenAccess: N` as not served; this port does not, and stores
+    /// [`FullTextStatus::RequestFailed`] for it.
     NotServed,
     /// Nobody answered: a non-404 status, or a request this end could not make.
     RequestFailed,

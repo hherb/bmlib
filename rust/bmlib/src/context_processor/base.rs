@@ -327,6 +327,11 @@ pub trait IterativeContextProcessor {
     }
 
     /// The progress callback, if any.
+    ///
+    /// **The harness never calls this.** Progress is reported only through
+    /// [`ProcessingCore::progress_callback`], the callback handed to
+    /// [`ProcessingCore::new`]; overriding this method changes nothing the
+    /// harness does, and is an accessor for the caller's own use.
     fn progress_callback(&self) -> Option<&ProgressCallback> {
         None
     }

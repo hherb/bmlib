@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**bmlib** (v0.11.0) is a shared Python library for biomedical literature tools, licensed under AGPL-3.0-or-later. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
+**bmlib** (v0.12.0) is a shared Python library for biomedical literature tools, licensed under AGPL-3.0-or-later. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
 **Before "fixing" anything that looks wrong, check [`docs/DECISIONS.md`](docs/DECISIONS.md).** It is the register of deliberate non-fixes — choices that read as bugs, oddities or missed simplifications but were investigated and closed as correct, each with the test that pins it. Reopening one wastes a session. **Before measuring anything, writing an instrument or arguing about a log level, read [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md)** — the standing rules a session gets wrong again, each earned by a review. `HANDOVER.md` covers what is still open; `ROADMAP.md` tracks planned work.
 
@@ -25,7 +25,7 @@ uv pip install -e ".[all,dev]"
 
 | Group          | Packages              | Purpose                                |
 |----------------|-----------------------|----------------------------------------|
-| anthropic      | anthropic>=0.30       | Anthropic Claude LLM provider          |
+| anthropic      | anthropic>=0.41       | Anthropic Claude LLM provider          |
 | ollama         | ollama>=0.3           | Ollama local LLM provider              |
 | openai         | openai>=1.0           | OpenAI, DeepSeek, Mistral, Gemini, and OpenAI-compatible providers |
 | postgresql     | psycopg2-binary>=2.9  | PostgreSQL database backend            |

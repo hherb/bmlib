@@ -1376,7 +1376,10 @@ pub fn sync_source(
         let day = needed.day;
         // Built once: it is the day row's `completed_at` and every part row's,
         // and the parts are written from inside the walk now.
-        let now_str = now.to_string();
+        // Python's `isoformat()` shape (`…T…+00:00`): `read_aware_timestamp` reads
+        // RFC 3339 only, and chrono's `Display` (`… UTC`) is neither, so a day
+        // stored that way could never read as durable and was re-fetched forever.
+        let now_str = now.to_rfc3339_opts(chrono::SecondsFormat::Micros, false);
         // The totals the day's own store adds to; the parts' are the buffer's,
         // folded in once the walk returns.
         let mut day_added = 0i64;

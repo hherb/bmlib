@@ -286,6 +286,34 @@ fn a_fetched_day_is_stored_and_recorded() {
     );
 }
 
+/// A day completed after it was over is durable: the next run does not fetch it
+/// again. `sync_source` stored `downloaded_at` in chrono's `Display` form, which
+/// `read_aware_timestamp` cannot read, so every completed day was re-fetched.
+#[test]
+fn a_completed_day_is_not_fetched_again() {
+    let mut conn = db();
+    for (run, expected_calls) in [(0, 1), (1, 0)] {
+        let fetcher = ScriptedFetcher::records(3);
+        let mut report = bmlib::publications::models::SyncReport::default();
+        bmlib::publications::sync::sync_source(
+            &mut *conn,
+            "pubmed",
+            &fetcher,
+            &request(&["pubmed"]),
+            now(),
+            &mut report,
+            0,
+        )
+        .expect("syncs");
+        assert_eq!(fetcher.calls(), expected_calls, "run {run}");
+    }
+    let stored = text(
+        &mut *conn,
+        "SELECT downloaded_at FROM download_days WHERE source = 'pubmed'",
+    );
+    assert_eq!(stored.as_deref(), Some("2024-06-11T12:00:00.000000+00:00"));
+}
+
 /// A fetcher that **fails** records the day `failed` and contributes an error
 /// line, and the run still returns a report — which is the point of the per-day
 /// transaction.

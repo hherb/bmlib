@@ -347,8 +347,11 @@ Items are rendered under a one-line header — `[Chunk 1, score 0.87]` for a
 scored chunk, `[Item 1]` for a string, `[Consolidated level 0, item 1]` for
 a level above — and a scored chunk that has to be split keeps its score on
 every piece. A tuple whose score is a `bool` is not a scored chunk. A model
-call that fails is raised as `RuntimeError` and recorded against its batch;
-prose extraction records confidence 0.9.
+call that fails is raised as `RuntimeError` and recorded against its batch,
+and so *(0.12.0)* is a prose reply cut at the output ceiling
+(`stop_reason` `"max_tokens"` or `"length"`, as `chat_json` reads them),
+since a truncated extraction has lost passages; prose extraction records
+confidence 0.9.
 
 ### Structured output
 

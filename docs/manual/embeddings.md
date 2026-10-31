@@ -1,4 +1,4 @@
-# `bmlib.embed` — in-process embeddings *(unreleased)*
+# `bmlib.embed` — in-process embeddings *(0.12.0)*
 
 Turns text into 256-dimension unit vectors without a server, using our own GGUF
 conversion of Snowflake's arctic-embed-l-v2.0 through llama-cpp-python.
@@ -20,7 +20,7 @@ path = download_model(ARCTIC_EMBED_L_V2_Q8_0, Path("~/.cache/bmlib/models").expa
 embedder = Embedder.from_model(ARCTIC_EMBED_L_V2_Q8_0, path)
 ```
 
-`Embedder.from_model(model, path, *, gpu_layers=-1)` *(unreleased)* loads as
+`Embedder.from_model(model, path, *, gpu_layers=-1)` *(0.12.0)* loads as
 `Embedder(path)` does and keeps `model` as `embedder.model` (read-only),
 without hashing the file again (it trusts `download_model`'s check). It does
 check the file is `model.size` bytes, before loading it, which tells the two
@@ -87,7 +87,7 @@ The pure half of the module, shared with the Rust crate and pinned by
 | `QUERY_PREFIX` | `"query: "` |
 | `query_text(query)` | `QUERY_PREFIX + query`, the text `embed_query` embeds |
 | `check_texts(texts)` | Returns `None`, or raises `EmptyTextError` for the first empty or whitespace-only text |
-| `truncate_and_normalize(vector)` | The first 256 values scaled to unit length; values past 256 are dropped unread. Raises `VectorError` for a vector shorter than 256, a NaN or infinite kept value, or a kept norm below `1e-12` (or overflowing) *(unreleased — #530: a non-finite value used to pass through and a zero head came back as a zero "unit" vector)* |
+| `truncate_and_normalize(vector)` | The first 256 values scaled to unit length; values past 256 are dropped unread. Raises `VectorError` for a vector shorter than 256, a NaN or infinite kept value, or a kept norm below `1e-12` (or overflowing) *(0.12.0 — #530: a non-finite value used to pass through and a zero head came back as a zero "unit" vector)* |
 
 ```python
 from bmlib.embed import query_text, truncate_and_normalize
@@ -101,7 +101,7 @@ truncate_and_normalize([3.0, 4.0] + [0.0] * 300)[:2]      # [0.6, 0.8]
 Every failure of a call given a list of texts is an `EmbedError`; its
 `.index` is the offending text's position (None when no text is at fault).
 Each kind is a subclass of its own, named after the Rust variant it mirrors
-*(unreleased — #532)*:
+*(0.12.0 — #532)*:
 
 - `EmptyTextError` (also a `ValueError`): an empty or whitespace-only text,
   checked before anything is embedded; an empty query is index 0.
@@ -118,7 +118,7 @@ Each kind is a subclass of its own, named after the Rust variant it mirrors
   ranking, so it is refused rather than stored. `.error` (and `__cause__`) is
   the `VectorError` (a `ValueError`) that `truncate_and_normalize` raised,
   which it also raises for a vector shorter than 256. When several texts fail,
-  `.index` is the lowest. *(unreleased — #530)*
+  `.index` is the lowest. *(0.12.0 — #530)*
 - `ModelLoadError`: llama-cpp-python cannot be imported (the message says what
   was raised; it comes with `bmlib[embed]`), the model file is missing or will
   not load, llama.cpp cannot create its context, or the model embeds to fewer
@@ -144,7 +144,7 @@ Vectors match the reference fixture at cosine >= 0.999 (F16) and >= 0.998 (Q8_0)
 run the live tests with `BMLIB_EMBED_MODEL=/path/to/file.gguf pytest tests/test_embed_live.py`
 (`.[all,embed,dev]` installed).
 
-## Storing and searching chunks *(unreleased)*
+## Storing and searching chunks *(0.12.0)*
 
 `bmlib.embed.store` keeps one paper's chunks and their embeddings in a database
 opened with `bmlib.db` (SQLite or PostgreSQL, whichever the connection is) and
@@ -209,7 +209,7 @@ Errors, all `ChunkSetError` subclasses of `ValueError` (and picklable):
 `NotIndexedError` (no set under `key`, its attribute), `StaleChunkSetError`,
 `CorruptChunkSetError` (a row that cannot be part of the set — its count, an
 index, a section or span other than the one `chunk_canonical` makes of the
-text *(unreleased)* — which is also what a hand-built text with the indexed
+text *(0.12.0)* — which is also what a hand-built text with the indexed
 text and converter version but other sections meets, the label hashing the
 text and not its sections — a vector that is not a blob of 1,024 bytes of
 finite values of unit length; never scored), `UnidentifiedEmbedderError` (an embedder with no
@@ -269,11 +269,11 @@ Every failure, model loading included, is an `EmbedError`:
   (`VectorError::NotScalable`: a NaN or infinite kept value, or a norm below
   `1e-12`); `index` is the first such text in input order. `truncate_and_normalize`
   returns `VectorError`, which also has `TooShort { len }`; the embedder never
-  sees it, refusing a narrow model at load. *(unreleased — #530)*
+  sees it, refusing a narrow model at load. *(0.12.0 — #530)*
 - `Load(message)`: llama.cpp's backend will not start, the model file is missing
   or will not load, or the model embeds to fewer than 256 values.
 - `Decode(message)`: llama.cpp fails while embedding, creating its context
-  included (Python, which creates it with the model, reports that at load). *(unreleased — #532 split
+  included (Python, which creates it with the model, reports that at load). *(0.12.0 — #532 split
   `Llama` into these two)*
 
 Drop the `Embedder` before the process exits. On Metal, llama.cpp aborts at
@@ -287,7 +287,7 @@ Run the live tests with
 (in `rust/`), to the same tolerances. One thread: each test loads its own
 model.
 
-### The chunk store *(unreleased)*
+### The chunk store *(0.12.0)*
 
 `bmlib::embed::store` is the same store, generic over `&mut dyn Db`, so it
 needs neither backend feature nor `embed`. `ensure_schema`, `index_paper`,

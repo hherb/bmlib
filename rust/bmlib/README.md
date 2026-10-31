@@ -16,19 +16,22 @@ malformed-JSON repair and prompt templates.
 cargo add bmlib
 ```
 
-Four features. Two are on by default, so `cargo add bmlib` builds the
-SQLite backend and the real HTTP client; two are off, so a caller that needs
-neither pulls in neither:
+Seven features. Two are on by default, so `cargo add bmlib` builds the
+SQLite backend and the real HTTP client; the rest are off, so a caller that
+needs none of them pulls in none:
 
 | Feature | Default | Adds | Note |
 |---|---|---|---|
 | `sqlite` | on | `rusqlite` (SQLite bundled) | The SQLite backend: `db::sqlite`, `db::open_memory`, `db::open_path`. The Quick start below needs it. |
 | `http-ureq` | on | `ureq` | `bmlib::http`, the real `HttpClient`. Without it a caller injects its own transport. |
 | `pdf` | off | `mupdf`, `mupdf-sys` | PDF → text with MuPDF, the engine Python's PyMuPDF binds. Compiled from source and linked statically (a C compiler and libclang); nothing is downloaded or loaded at run time. |
+| `html` | off | `scraper`, `ego-tree` | `fulltext::canonical`'s HTML → canonical text, over html5ever as Python's `html` extra is. |
 | `postgres` | off | `postgres` | A real PostgreSQL backend. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present — this adds the driver that can run a statement against a server. |
+| `embed` | off | `llama-cpp-2` | `embed::Embedder` and model verification; the download also needs `http-ureq`. Builds llama.cpp (cmake and a C++ compiler). The constants and vector rules in `embed` are always present. |
+| `embed-metal` | off | `embed` + llama.cpp's Metal backend | Names Metal explicitly; on macOS `embed` already uses it, and a CPU-only build needs `GGML_METAL=OFF`. |
 
 ```bash
-cargo add bmlib --features pdf,postgres
+cargo add bmlib --features pdf,html,postgres,embed
 # A build that owns its storage and its transport (the mobile apps, through
 # rust/bmlib-ffi): neither SQLite's C build nor rustls/ring is compiled.
 cargo add bmlib --no-default-features
@@ -83,13 +86,14 @@ fn main() -> Result<(), RepairError> {
 | Module | Contents |
 |---|---|
 | `db` | Dialects, placeholder rewriting, transactions and nested savepoints, migrations, multi-statement splitting. SQLite always; PostgreSQL behind the feature. |
-| `citations` | `[@id:12345:Smith2023]` marker parsing, Vancouver / APA / Harvard / Chicago formatting, reference lists, missing-document placeholders. |
+| `citations` | `[@id:12345:Smith2023]` marker parsing, Vancouver / APA / Harvard / Chicago formatting, reference lists, missing-document placeholders, and `find_passage`, which locates an LLM's near-verbatim quote in its source. |
 | `context_processor` | Hierarchical map-reduce over content too large for one context window. |
-| `fulltext` | Tiered retrieval, JATS XML parsing, section segmentation, a disk cache, and PDF → text behind the `pdf` feature. |
-| `publications` | PubMed / bioRxiv / medRxiv / OpenAlex fetchers, dedup-by-DOI/PMID with merge-on-upsert, date-range sync, Retraction Watch lookup. |
-| `quality` | Four tiers — free metadata classification, an LLM classifier, a deep assessment agent, and a Cochrane-aligned nine-domain risk-of-bias assessment. |
+| `fulltext` | Tiered retrieval, JATS XML parsing, section segmentation, a disk cache, and PDF → text behind the `pdf` feature. `fulltext::canonical`: one canonical text per paper from JATS, Markdown, plain text, a segmented PDF or (behind `html`) an HTML page, every piece a span, with retrieval chunks and a full-text check. |
+| `publications` | PubMed / bioRxiv / medRxiv / OpenAlex fetchers, dedup-by-DOI/PMID with merge-on-upsert, date-range sync, Retraction Watch lookup and `RetractionIndex`, a four-state retraction status, one paper's record by identifier. |
+| `quality` | Four tiers — free metadata classification, an LLM classifier, a deep assessment agent, and a Cochrane-aligned nine-domain risk-of-bias assessment; a PICO agent whose every part carries the passages that back it. |
 | `transparency` | CrossRef / Europe PMC / PubMed / OpenAlex / ClinicalTrials.gov analysis producing a 0–100 transparency score. |
-| `llm` | One client over two wire protocols, `json_repair`, `text_utils` chunking, a process-wide token tracker. |
+| `llm` | One client over three wire protocols (OpenAI-compatible, Anthropic, Ollama's native API), with streaming and context windows; `json_repair`, `text_utils` chunking, a process-wide token tracker. |
+| `embed` | snowflake-arctic-embed-l-v2.0 in process (behind `embed`), pinned and verified model files, the vector rules, and a paper's chunks stored and searched by cosine. |
 | `agents` | The retry/truncation loop for LLM-driven tasks, plus per-agent metrics. |
 | `templates` | A Jinja2-subset template engine with a two-directory lookup and an atomic install. |
 | `http` | The `HttpClient` trait and its `ureq` implementation; every fetcher is written against the trait. |

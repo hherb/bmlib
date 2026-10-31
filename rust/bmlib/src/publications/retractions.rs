@@ -381,10 +381,13 @@ pub struct ParseOutcome {
     pub unknown_natures: Vec<UnknownNature>,
 }
 
-/// Parse a Retraction Watch CSV **already decoded to text**.
+/// Parse a Retraction Watch CSV from its **raw bytes**, expected to be UTF-8.
 ///
-/// The encoding scan is the caller's: it needs random access to the raw file,
-/// and this function's job is the record grammar and the row rules.
+/// No encoding is detected or converted here — that is the caller's, and this
+/// function's job is the record grammar and the row rules. A field whose bytes
+/// are not UTF-8 is decoded lossily (U+FFFD), and a header row that is not
+/// UTF-8 is refused as malformed; a caller wanting the whole file held to UTF-8
+/// checks first, as [`RetractionIndex::build`](crate::publications::retraction_status::RetractionIndex::build) does.
 ///
 /// # Errors
 ///

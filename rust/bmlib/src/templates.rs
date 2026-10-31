@@ -175,8 +175,9 @@ impl TemplateEngine {
     /// would then replace the **link itself**, where the plain write this replaced
     /// wrote *through* it. A user who symlinks a prompt at a volume that happens to
     /// be unmounted must not come back to find the link gone and the default in its
-    /// place. It is reported at WARNING because rendering then falls back to the
-    /// default with the user's own version unreachable.
+    /// place. Nothing is logged (the crate has no logger, unlike Python, which
+    /// reports it at WARNING): the skipped template is absent from the returned
+    /// list, which is how a caller learns of it.
     ///
     /// The copy is **byte for byte**: reading text and writing it back is not a
     /// copy, since the two may disagree on line endings. What that buys is fidelity
@@ -191,9 +192,8 @@ impl TemplateEngine {
     /// cannot write is better told than left believing the templates are there.
     pub fn install_defaults(&self) -> Result<Vec<PathBuf>, TemplateError> {
         // Doing nothing at all is a legitimate outcome of the first check and
-        // almost never one of the second, so they are not equally quiet: a mistyped
-        // or not-yet-created `default_dir` otherwise makes this a no-op reporting
-        // success.
+        // almost never one of the second. Python logs the second at WARNING; this
+        // crate logs nothing, so both return an empty list.
         let (Some(user_dir), Some(default_dir)) = (&self.user_dir, &self.default_dir) else {
             return Ok(Vec::new());
         };

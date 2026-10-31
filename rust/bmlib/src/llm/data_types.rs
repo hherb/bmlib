@@ -207,12 +207,10 @@ pub struct LLMResponse {
 }
 
 impl LLMResponse {
-    /// A response whose `total_tokens` is derived when the provider gave none.
+    /// A response carrying `content` and every other field at its default.
     ///
-    /// The Python's `__post_init__` fills `total_tokens` from the parts **only
-    /// when it is zero**, so a provider that reports a total of zero for a
-    /// request that used tokens keeps its own answer. This constructor states
-    /// that rule in one place instead of leaving it to each call site.
+    /// It derives nothing: `total_tokens` stays zero until a caller sets it or
+    /// calls [`LLMResponse::with_derived_total`].
     #[must_use]
     pub fn new(content: impl Into<String>) -> Self {
         LLMResponse {
@@ -222,6 +220,11 @@ impl LLMResponse {
     }
 
     /// Fill `total_tokens` from the parts when the provider reported none.
+    ///
+    /// The Python's `__post_init__` fills `total_tokens` from the parts **only
+    /// when it is zero**, so a non-zero total the provider reported is kept
+    /// even where it disagrees with the parts. This method states that rule in
+    /// one place instead of leaving it to each call site.
     #[must_use]
     pub fn with_derived_total(mut self) -> Self {
         if self.total_tokens == 0 {

@@ -770,7 +770,7 @@ pub fn parse_jats_audited(xml: String, known_pmc_id: String) -> Result<JatsParse
     })
 }
 
-/// The Rust workspace version these bindings were built from (`0.2.0` …),
+/// The Rust workspace version these bindings were built from (`0.3.0` …),
 /// which bmlib-ffi and the bmlib crate share. Not Python bmlib's version, and
 /// the same for every commit of one version, so it cannot tell two builds
 /// apart — the build's commit is issue #493.

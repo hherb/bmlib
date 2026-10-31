@@ -45,14 +45,22 @@ use std::sync::Mutex;
 pub struct Monotonic(f64);
 
 impl Monotonic {
-    /// The current reading.
+    /// The current reading, taken from the **wall clock**: seconds since the
+    /// Unix epoch from [`SystemTime`](std::time::SystemTime), or `0.0` for a
+    /// clock set before 1970.
+    ///
+    /// Despite the type's name this reading is **not** monotonic: an NTP step
+    /// or a manual clock change can move it backwards, so a duration between
+    /// two `now()` readings can be distorted or negative. A caller that needs a
+    /// true monotonic duration passes [`Monotonic::from_seconds`] a value
+    /// derived from its own [`Instant`](std::time::Instant).
     #[must_use]
     pub fn now() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
         // `Instant` cannot be constructed from a caller's clock, which is why
         // the port threads readings rather than calling one here — but a plain
-        // reading needs *some* clock, and this one is monotonic on every
-        // platform bmlib targets because it never goes backwards.
+        // reading needs *some* clock, and this one is `SystemTime`, which can
+        // step backwards (see the doc above).
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs_f64())

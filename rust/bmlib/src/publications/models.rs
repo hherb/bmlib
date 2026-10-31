@@ -875,7 +875,10 @@ impl Grant {
     /// Whether this grant carries anything worth storing.
     ///
     /// A grant naming neither an agency nor an award id carries no
-    /// information; `store_publication` drops it.
+    /// information. The PubMed parser
+    /// ([`parse_grants`](crate::publications::fetchers::pubmed::parse_grants))
+    /// skips such a grant; `store_publication` does not filter on this and
+    /// stores whatever grants it is given.
     #[must_use]
     pub fn is_informative(&self) -> bool {
         self.agency.is_some() || self.grant_id.is_some()
