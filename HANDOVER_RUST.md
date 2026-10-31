@@ -94,7 +94,12 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.2.0 is published** (2026-09-28T04:16Z) from `0efd488`, the merge of PR #362 and
+**`bmlib` 0.3.0 is published** (2026-10-31T07:26Z) from `d2ee803`, the merge of PR #611 and
+the commit tagged `v0.12.0` for the Python library; `.cargo_vcs_info.json` records it and no
+`dirty` flag. Consumed as 0.2.0 was: a throwaway crate depending on `bmlib = "=0.3.0"` (no
+default features) called `sanitize_identifier` and printed the same two identifiers below.
+
+**`bmlib` 0.2.0 was published** (2026-09-28T04:16Z) from `0efd488`, the merge of PR #362 and
 the last merge commit on `main` when it went out; `.cargo_vcs_info.json` records that commit
 and no `dirty` flag, which is what publishing from a clean worktree of `main` buys. **0.1.0**
 is published (2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and
