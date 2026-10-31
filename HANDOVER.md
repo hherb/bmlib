@@ -1,9 +1,10 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-10-31 (**this session is #592**, a fresh Rust cache
-saving no PDF, on `fix/cache-dirs`; #587 and #588 were PR #589, merged). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR
-merged since — #526 through #586 — is unreleased, **and no StudyAnalyzer item
-is left in bmlib, so a 0.12.0 release is a natural next session.**_
+saving no PDF, on `fix/cache-dirs`; #587 and #588 were PR #589, merged).
+**0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
+since — #526 through #586 — is unreleased, **and no StudyAnalyzer item is left
+in bmlib, so a 0.12.0 release is a natural next session.**_
 
 ## What 0.11.0 costs a downstream
 

@@ -276,9 +276,9 @@ impl FullTextCache {
 
     /// Where PDFs live.
     ///
-    /// Created by the first [`FullTextCache::save_pdf`] that keeps a file, not
-    /// by construction (see [`FullTextCache::new`]); Python's constructor
-    /// creates it.
+    /// Created by the first [`FullTextCache::save_pdf`] that keeps a file, or
+    /// up front by `default_cache`, not by construction (see
+    /// [`FullTextCache::new`]); Python's constructor creates it.
     #[must_use]
     pub fn pdf_dir(&self) -> PathBuf {
         self.cache_dir.join("pdfs")
@@ -286,8 +286,8 @@ impl FullTextCache {
 
     /// Where parsed HTML lives.
     ///
-    /// Created by the first [`FullTextCache::save_html`], as
-    /// [`FullTextCache::pdf_dir`] is by its save.
+    /// Created by the first [`FullTextCache::save_html`] or by
+    /// `default_cache`, as [`FullTextCache::pdf_dir`] is.
     #[must_use]
     pub fn html_dir(&self) -> PathBuf {
         self.cache_dir.join("html")
