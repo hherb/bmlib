@@ -71,8 +71,8 @@ impl TempDir {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir_all(path.join("html")).expect("html dir");
-        std::fs::create_dir_all(path.join("pdfs")).expect("pdf dir");
+        // Only the root: the cache's saves create `html/` and `pdfs/` themselves.
+        std::fs::create_dir_all(&path).expect("cache dir");
         TempDir(path)
     }
 }

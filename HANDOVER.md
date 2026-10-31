@@ -7,6 +7,11 @@ it). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
 since — #526 through #589 — is unreleased, **and no StudyAnalyzer item is left
 in bmlib, so a 0.12.0 release is a natural next session** (the Rust crate's
 `pdf` feature changed API in #590: say so in its release notes).
+_Last updated: 2026-10-31 (**this session is #592**, a fresh Rust cache
+saving no PDF, on `fix/cache-dirs`; #587 and #588 were PR #589, merged).
+**0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
+since — #526 through #586 — is unreleased, **and no StudyAnalyzer item is left
+in bmlib, so a 0.12.0 release is a natural next session.**_
 
 ## What 0.11.0 costs a downstream
 
@@ -71,6 +76,32 @@ PR #589, merged. `search` rebuilds the chunks with `chunk_canonical` and
 refuses a set unless every stored `(section, start, end)` is the rebuilt
 chunk's; `rust/bmlib/tests/vector_store.rs` runs each case on SQLite and
 PostgreSQL. Local run: `BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost
+## This session: a fresh Rust cache saves its PDFs and HTML (#592)
+
+Found by StudyAnalyzer's manual test: Rust's `FullTextCache` creates no
+directory on construction, and `save_pdf`/`save_html` (unlike `save_jats` and
+`save_abstract`) never created theirs, so in a new cache directory every PDF
+write failed and the service returned no file. Both saves now create their
+directory (a rejected PDF still creates nothing). The Rust test helpers had
+pre-created `html/` and `pdfs/`, which hid it; they no longer do. Python's
+constructor makes both, so it is unchanged. Filed from the same test: **#590**
+(Rust's PDF backend to MuPDF: PDFium's U+0002 hyphen markers and duplicated
+characters, with a build trial for macOS, iOS and Android; a parallel session
+takes it) and **#591** (running page headers and footers inside paragraphs).
+
+## Previous session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
+
+The CHANGELOG's two *Fixed* entries at the top of `[Unreleased]` are the
+argument. `search` rebuilds the chunks with `chunk_canonical` (the label pins
+the text's bytes, the chunker and the converter's version — not the sections,
+so a hand-built text sectioned otherwise is refused as corrupt too) and refuses a set unless every stored
+`(section, start, end)` is the rebuilt chunk's and the counts agree — which
+also caught a set whose rows and count were both zeroed. Python and Rust; the
+spans are still stored, so no schema change. `rust/bmlib/tests/vector_store.rs`
+now generates each case twice with a local `store_test!` macro (SQLite, and
+PostgreSQL via `common::on_postgres` when `BMLIB_PG_TESTS=1`); five cases stay
+SQLite-only and say why. `postgres_live.rs`'s `TestDb` moved to
+`tests/common/live_pg.rs`. Local run: `BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost
 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres cargo test -p bmlib --features
 postgres --test vector_store` (77 = 41 + 36).
 
