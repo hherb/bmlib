@@ -1,6 +1,6 @@
 # bmlib (Rust) — Manual
 
-**Crate version 0.2.0** | **License: AGPL-3.0-or-later** | **MSRV 1.85 (edition 2021)**
+**Crate version 0.3.0** | **License: AGPL-3.0-or-later** | **MSRV 1.85 (edition 2021)**
 
 The Rust port of the Python [`bmlib`](../../../../docs/manual/index.md): a
 database abstraction over SQLite and PostgreSQL, citation-marker parsing and

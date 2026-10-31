@@ -15,7 +15,7 @@ recommendation are in bmlibrarian_lite's
 |---|---|---|
 | `parse_jats(xml) -> JatsArticle` | function | bmlib's JATS reader. **Discards the audit**: its lines go only to stderr, which an app does not see. Throws `JatsError` |
 | `parse_jats_audited(xml, known_pmc_id) -> JatsParseReport` | function | The article plus the audit: `warnings` (publisher losses), `diagnostics` (reader defects; empty on a correct reader) and `article_label` (the article's identifiers, to prefix them with). `known_pmc_id` is `""` for none |
-| `bmlib_version() -> String` | function | The Rust workspace version (`0.2.0`), shared by bmlib and bmlib-ffi; the same for every commit of it, so it cannot identify a build (#493) |
+| `bmlib_version() -> String` | function | The Rust workspace version (`0.3.0`), shared by bmlib and bmlib-ffi; the same for every commit of it, so it cannot identify a build (#493) |
 | `JatsArticle` and its parts | records | Owned FFI copies of `bmlib::fulltext::models`, field for field and in bmlib's order. Tables are HTML (`html_content`), as in bmlib |
 | `retraction_status(doi, export, crossref, publication_types) -> RetractionVerdict` | function | bmlib#504's rule: `Retracted`, `Concern`, `Clear` or `Unchecked`, the deciding notice, and the lookups that did not answer. `export: nil` means the export was **not consulted**; `[]` means consulted, nothing found |
 | `crossref_retraction_requests(dois, mailto) -> CrossrefRequests` | function | Batched Crossref URLs (50 DOIs, at most 4,000 characters) with the DOIs each covers; `unsendable` DOIs (a comma) get `crossref: nil` |

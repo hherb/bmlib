@@ -9,6 +9,71 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
+Published with the Python library's 0.12.0, from the same merge commit. **The
+StudyAnalyzer release**, the port following Python item by item: canonical
+text from JATS, Markdown, plain text, a segmented PDF and HTML (the `html`
+feature), its retrieval chunks and the whole-paper check; in-process
+embedding (the `embed` feature) and a per-paper chunk store; `find_passage`;
+the PICO agent; `lookup_record`; the four-state retraction status and
+`RetractionIndex`; streamed chat and context windows. **The `pdf` feature now
+extracts with MuPDF** (#590), with typed errors (#598) and a cancellable,
+time-bounded extraction (#600). Two defects the manual found are fixed:
+`sync()` re-fetched every completed day, and a failed `atomic_write` left its
+temporary behind. **Every module now has a manual page**
+(`docs/manual/`), each example compiled as a doctest.
+
+A minor bump because public APIs break, gathered here; each entry below
+carries the argument.
+
+### Changed — breaking (gathered)
+
+- **`publications::fetchers::Fetcher::fetch` takes a `&mut dyn FetchSink`**
+  and `FetchOutcome::records` is now `record_count` (the walk streams its
+  records); `PartDisposition::Completed` carries an `Option<PartCheckpoint>`.
+- **The quality extractors' surface is Python's**: `is_negated`,
+  `NEGATION_WORDS`, `NEGATION_CONTEXT_WINDOW` and `NUMBER` are removed;
+  `is_denied`, `COUNT` and the rule tables are added.
+- **`PdfTextExtractor`** returns `PdfError` rather than `String` (#598), and
+  an implementor must implement `extract_blocks_within` / `page_texts_within`
+  (#600); the `pdf` feature builds MuPDF, not PDFium (#590).
+- **The LLM client**: `ChatRequest` gains `num_ctx`, `Protocol` an `Ollama`
+  variant, `ProtocolError` a `Malformed` variant, `parse_response` takes the
+  request's messages, the `ollama` provider speaks `/api/chat` rather than
+  `/v1/chat/completions`, and `ChatError` is `#[non_exhaustive]` (see
+  *Recorded in the Python CHANGELOG* below).
+- **Struct literals**: `FullTextResult` gains `pdf_download_failure` (#594),
+  and `JATSTableInfo` (with the FFI's `JatsTable`) `header_rows` and
+  `body_rows`.
+- **`SourceFormat`** gains `Pdf` and `Html` and is `#[non_exhaustive]`.
+- **`atomic::TEMP_SUFFIX_LEN`** is 61 (was 18), the exact length a temporary
+  name adds.
+
+### Recorded in the Python CHANGELOG
+
+These Rust changes were written up once, in the repository's
+[`CHANGELOG.md`](../../CHANGELOG.md) under `[0.12.0]`, which carries the
+argument:
+
+- **Streamed chat**: `LlmClient::chat_stream` with `StreamDelta`, cancelled
+  by `ControlFlow::Break`.
+- **Context windows and Ollama's `num_ctx`**: `LlmClient::context_window`,
+  `ContextWindowError::NoSuchModel`; the breaking `/api/chat` move above.
+- **`ChatError` is `#[non_exhaustive]`** and gains `Stream` and
+  `StreamingToolsUnsupported`; Anthropic's extended thinking drops
+  `temperature` and `top_p`, and every thinking block is kept.
+- **`publications::lookup::lookup_record`**: one paper's record by PMID, DOI,
+  PMC ID or PPR accession.
+- **A caller's `html` source no longer ends `FullTextService`'s chain**
+  (#579), and the OpenAlex normaliser reads `ids.pmcid`.
+- **A fresh `FullTextCache` saves its PDFs and HTML** (#592).
+- **The chunk store refuses a stored span that is not the chunker's** (#587),
+  and its tests run on PostgreSQL too (#588).
+- **`RetractionIndex::build` refuses an export with no recognised nature**
+  (#522); a notice's own PMID is stored unpadded (#523).
+- **`bmlib-ffi` builds no longer embed the builder's paths** (#490).
+
 ### Fixed — a day `sync()` completed is durable, not re-fetched on every run
 `sync_source` stored `download_days.downloaded_at` (and each part's
 `completed_at`) as chrono's `Display` form, `2024-06-11 12:00:00 UTC`, which

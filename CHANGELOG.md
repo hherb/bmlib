@@ -33,7 +33,8 @@ joins its word (#590); a PDF download that failed says why (#594).
 
 **This is a minor bump because public APIs break**; every break is gathered
 under *Changed — breaking* below, and the argument stays in the entries under
-*Added*, *Changed* and *Fixed*. The Rust crate's own changes are in
+*Added*, *Changed* and *Fixed*. The Rust crate is released beside it as
+**0.3.0**, from the same merge commit; its notes are in
 `rust/bmlib/CHANGELOG.md`.
 
 **The data answer, which the number cannot give:**
@@ -94,7 +95,7 @@ cited.
 
 - **`extract_study_type` reads a review by how it searched** (#453).
 
-**Rust crate** (published separately; see its CHANGELOG): `PdfTextExtractor`
+**Rust crate** (0.3.0, published beside this; see its CHANGELOG): `PdfTextExtractor`
 returns `PdfError` and gains `_within` methods taking a `PdfLimit` (#598,
 #600); `ChatRequest` gains `num_ctx`, `Protocol` an `Ollama` variant,
 `ProtocolError` a `Malformed` variant, and `parse_response` takes the

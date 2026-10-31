@@ -8,8 +8,9 @@ stranded temporary). **0.11.0 is on PyPI**; 0.12.0 is published when the
 release PR is merged, tagged, released on GitHub and the `pypi` gate approved
 by the maintainer. Every PR merged since `v0.11.0`, #499 through #601, ships
 in 0.12.0; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
-release notes. The Rust crate (0.2.0 on crates.io) has its own unreleased
-section and is not part of this release._
+release notes. The Rust crate is released beside it as 0.3.0 (0.2.0 is on
+crates.io), published with `cargo publish` from a clean worktree of the same
+merge commit; see `HANDOVER_RUST.md`._
 
 ## What 0.11.0 costs a downstream
 
