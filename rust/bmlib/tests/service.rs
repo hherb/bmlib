@@ -113,11 +113,9 @@ impl TempDir {
     }
 
     fn cache(&self) -> FullTextCache {
-        let cache =
-            FullTextCache::new(Some(self.0.clone())).expect("an explicit directory needs no home");
-        std::fs::create_dir_all(cache.html_dir()).expect("html dir");
-        std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
-        cache
+        // No subdirectory made here: the cache's saves create their own, and
+        // every service test then runs on a fresh cache as an app's first does.
+        FullTextCache::new(Some(self.0.clone())).expect("an explicit directory needs no home")
     }
 }
 
@@ -1815,6 +1813,7 @@ fn an_unreadable_cache_entry_falls_through_to_the_network_and_is_quarantined() {
     let dir = TempDir::new("corrupt-cache");
     let cache = dir.cache();
     let name = sanitize_identifier("10.1/test");
+    std::fs::create_dir_all(cache.html_dir()).expect("html dir");
     let path = cache.html_dir().join(format!("{name}.html"));
     std::fs::write(&path, [0x3c, 0xff, 0xfe, 0x3e]).expect("write bad html");
 

@@ -7,6 +7,19 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **A fresh Rust cache saves its PDFs and HTML** (#592, found by
+  StudyAnalyzer). Rust's `FullTextCache` creates no directory on construction,
+  and `save_pdf` and `save_html`, unlike `save_jats` and `save_abstract`, never
+  created theirs. So in a fresh cache built on an explicit directory
+  (`default_cache()` already made both), every PDF write failed with
+  `NotFound`, and the service returned a found PDF with no
+  `file_path`: a caller that reads the cached file, as StudyAnalyzer does, saw
+  no full text. Both saves now create their directory (a rejected PDF still
+  creates none). The Rust test helpers in `tests/service.rs` and
+  `tests/fulltext_source_contract.rs` pre-created `html/` and `pdfs/`, as
+  Python's constructor does, which hid it; they no longer do, so the service
+  tests run on a fresh cache. Python's constructor creates both, so it is
+  unchanged. Rust only.
 - **A stored span is the chunker's, or the set is corrupt** (#587, from PR
   #586's review). `search` checked a stored row's section and span only
   against the text's bounds, so a span rewritten in bounds — chunk 4 stored as

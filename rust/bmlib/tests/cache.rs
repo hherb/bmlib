@@ -810,3 +810,36 @@ fn has_html_reports_an_html_entry_only() {
     std::fs::write(cache.html_dir().join("PMC1.html"), [0xff]).expect("an undecodable entry");
     assert!(cache.has_html("PMC1"));
 }
+
+/// **A fresh cache directory takes a PDF and HTML on the first save.** The
+/// cache creates no subdirectory on construction, so `pdfs/` and `html/` must
+/// be made by their saves, as `jats/` and `abstracts/` are; before this every
+/// PDF a fresh cache was handed failed to write, and the service returned no
+/// file. A rejected PDF still creates nothing.
+#[test]
+fn a_fresh_directory_takes_a_pdf_and_html_on_the_first_save() {
+    let dir = TempDir::new("fresh-saves");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    assert!(!cache.pdf_dir().exists() && !cache.html_dir().exists());
+
+    assert_eq!(
+        cache.save_pdf(b"<html>", "10.1/x").expect("a rejection"),
+        None
+    );
+    assert!(
+        !cache.pdf_dir().exists(),
+        "a rejection creates no directory"
+    );
+
+    let path = cache
+        .save_pdf(b"%PDF-1.7 body", "10.1/x")
+        .expect("a PDF write")
+        .expect("a PDF is kept");
+    assert_eq!(cache.get_pdf("10.1/x"), Some(path));
+
+    cache
+        .save_html("<p>x</p>", "10.1/x")
+        .expect("an HTML write");
+    assert!(cache.has_html("10.1/x"));
+}
