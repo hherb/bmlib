@@ -16,8 +16,8 @@
 
 //! Publish a file so no partial version is ever visible under it.
 //!
-//! Private to the crate, stdlib only, and shared by the full-text cache and the
-//! template engine.
+//! Public, stdlib only, and shared by the full-text cache and the template
+//! engine.
 
 use std::fs;
 use std::io::Write;
@@ -25,15 +25,17 @@ use std::path::{Path, PathBuf};
 
 /// The suffix a temporary file carries before it is published.
 ///
-/// The temporary name is **[`TEMP_SUFFIX_LEN`] characters longer** than the
-/// target's, so a caller building filenames from unbounded input has to leave
-/// room for it inside the filesystem's name limit. The cache's prefix cap does,
+/// The temporary name is **exactly [`TEMP_SUFFIX_LEN`] characters longer** than
+/// the target's (this suffix and a fixed-width unique token), so a caller
+/// building filenames from unbounded input has to leave room for it inside the
+/// filesystem's name limit. The cache's prefix cap does,
 /// and a test asserts this figure directly — which is the only guard that sees
 /// the two drift apart.
 pub const TEMP_SUFFIX: &str = ".bmlib-tmp-uuid4hex";
 
-/// The length [`TEMP_SUFFIX`] adds to a filename.
-pub const TEMP_SUFFIX_LEN: usize = 18;
+/// The length a temporary name adds to a filename: [`TEMP_SUFFIX`] and the
+/// 42-character unique token after it.
+pub const TEMP_SUFFIX_LEN: usize = TEMP_SUFFIX.len() + 42;
 
 /// Write `data` to `path` so no partial file is ever visible under it.
 ///
@@ -88,7 +90,8 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
     // fails mid-write, so a mutant deleting the cleanup survived the whole file
     // (measured). Removing it whenever it is still present is the same behaviour
     // and is reachable — a test asserts no temporary survives a successful write.
-
+    // After a successful rename it is gone, so the error is ignored.
+    let _ = fs::remove_file(&temporary);
     result
 }
 
@@ -121,5 +124,12 @@ fn unique_token() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or_default();
-    format!("{nanos:x}-{:x}-{count:x}", std::process::id())
+    // Fixed width, so `TEMP_SUFFIX_LEN` is exact: 16 + 1 + 8 + 1 + 16 = 42. The
+    // nanoseconds are truncated to 64 bits, which wraps in 2554; the pid and the
+    // counter keep the token unique regardless.
+    format!(
+        "{:016x}-{:08x}-{count:016x}",
+        nanos as u64,
+        std::process::id()
+    )
 }

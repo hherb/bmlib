@@ -9,6 +9,30 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed — a day `sync()` completed is durable, not re-fetched on every run
+`sync_source` stored `download_days.downloaded_at` (and each part's
+`completed_at`) as chrono's `Display` form, `2024-06-11 12:00:00 UTC`, which
+`read_aware_timestamp` (RFC 3339) cannot read, so the durability rule judged
+every completed day unfinished and re-fetched it on every run: no record lost,
+but nothing ever done. It now writes Python's `isoformat()` shape,
+`2024-06-11T12:00:00.000000+00:00`, which Python's `fromisoformat` reads as
+well. A row written by an earlier version is re-fetched once more and then
+rewritten. `tests/sync_source.rs` gains `a_completed_day_is_not_fetched_again`
+(mutation-checked), and the manual's `sync` example asserts the second run.
+Found writing the Rust manual's `publications` page.
+
+### Fixed — a failed `atomic_write` leaves no temporary file behind
+`atomic::atomic_write` documented removing its temporary file on every path
+and no longer did, so a write failing after the temporary was created (a full
+disk at `sync_all`, a rename refused) left `<name>.bmlib-tmp-uuid4hex…` beside
+the target, in the full-text cache or a template directory. It is removed
+again, as Python's helper does, and `tests/cache.rs` gains a failing-rename
+test (mutation-checked). The unique token is now fixed-width, so
+`TEMP_SUFFIX_LEN` (now 61, was 18) is exactly the length a temporary name adds,
+where it had understated it. `TemplateEngine::install_defaults`' rustdoc no
+longer claims a WARNING for a skipped dangling symlink: the crate has no
+logger. Found writing the Rust manual's `atomic` page.
+
 ### Added — a PDF extraction can be cancelled or bounded in time (#600)
 `PdfLimit { cancel: Option<Arc<AtomicBool>>, deadline: Option<Instant> }`
 (`fulltext::pdf_text`, re-exported) and `PdfTextExtractor::extract_blocks_within`

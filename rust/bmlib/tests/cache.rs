@@ -708,6 +708,22 @@ fn a_failed_write_leaves_the_previous_version_intact() {
 /// [`TEMP_SUFFIX_LEN`] characters longer than the target — the figure the cache's
 /// prefix cap leaves room for.
 #[test]
+fn a_failed_write_leaves_no_temporary_behind() {
+    // A rename onto a non-empty directory fails after the temporary is written.
+    let dir = TempDir::new("temp-fail");
+    let target = dir.path().join("entry.bin");
+    std::fs::create_dir(&target).expect("mkdir");
+    std::fs::write(target.join("keep"), b"x").expect("write");
+    assert!(atomic_write(&target, b"data").is_err());
+    let left: Vec<_> = std::fs::read_dir(dir.path())
+        .expect("read")
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    assert_eq!(left, vec!["entry.bin".to_string()], "left {left:?}");
+}
+
+#[test]
 fn a_write_leaves_no_temporary_behind() {
     let dir = TempDir::new("temp");
     let target = dir.path().join("entry.bin");
@@ -732,11 +748,11 @@ fn a_write_leaves_no_temporary_behind() {
             .to_string_lossy()
             .chars()
             .count();
-    // The token is variable-length, so the declared constant is a lower bound on
-    // the affix — and the cache's cap is what leaves room for it.
-    assert!(
-        extra >= TEMP_SUFFIX_LEN,
-        "the temporary name must be at least {TEMP_SUFFIX_LEN} longer, was {extra}"
+    // The token is fixed-width, so the declared constant is the affix exactly —
+    // and the cache's cap is what leaves room for it.
+    assert_eq!(
+        extra, TEMP_SUFFIX_LEN,
+        "the temporary name must be exactly {TEMP_SUFFIX_LEN} longer, was {extra}"
     );
     assert_eq!(TEMP_ROOM, TEMP_SUFFIX_LEN);
     // Every temporary carries a unique component, so two writers cannot collide —
