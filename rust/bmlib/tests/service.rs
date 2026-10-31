@@ -1483,6 +1483,61 @@ fn a_cached_pdf_with_extracted_text_is_a_hit_without_a_request() {
     assert_eq!(result.content_kind, ContentKind::Extracted);
     assert!(result.html.expect("html").contains("Extracted prose"));
     assert_eq!(client.call_count(), 0);
+    assert!(
+        !service
+            .warnings()
+            .iter()
+            .any(|line| line.contains("PDF engine")),
+        "{:?}",
+        service.warnings()
+    );
+}
+
+/// **Issue #599.** What the engine reported reaches the service's log: the
+/// crate has no logger, so this line is the only place a caller sees it. When
+/// no text came out, the messages replace "likely a scan", every one of them.
+#[test]
+fn the_engines_messages_reach_the_service_log() {
+    for (html, expected) in [
+        (
+            "<p>Extracted prose</p>",
+            "read with 2 message(s) from the PDF engine, so text may be missing: \
+             repairing PDF document; too many syntax errors; ignoring rest of page",
+        ),
+        (
+            "",
+            "yielded no extractable text over 1 page(s) — the PDF engine reported 2 \
+             message(s): repairing PDF document; too many syntax errors; ignoring rest of page",
+        ),
+    ] {
+        let dir = TempDir::new("cache-pdf-messages");
+        let cache = dir.cache();
+        cache
+            .save_pdf(b"%PDF-1.4 fake", &sanitize_identifier("10.1/test"))
+            .expect("cache write");
+        let service = service(ScriptedClient::new(vec![]))
+            .with_cache(Some(cache))
+            .with_pdf_extractor(Arc::new(MessageExtractor {
+                html: html.to_string(),
+                warnings: vec![
+                    "repairing PDF document".to_string(),
+                    "too many syntax errors; ignoring rest of page".to_string(),
+                ],
+            }));
+        let mut request = request();
+        request.identifier = Some("10.1/test".to_string());
+        let _ = service.fetch_fulltext(&request);
+
+        let warnings = service.warnings();
+        let lines: Vec<_> = warnings
+            .iter()
+            .filter(|line| line.contains("PDF engine"))
+            .collect();
+        assert_eq!(lines.len(), 1, "{warnings:?}");
+        assert!(lines[0].starts_with("PDF "), "{}", lines[0]);
+        assert!(lines[0].ends_with(expected), "{}", lines[0]);
+        assert!(!lines[0].contains("likely a scan"), "{}", lines[0]);
+    }
 }
 
 /// **Issue #485.** A whitespace-only `identifier` was a real cache key, shared
@@ -2606,6 +2661,26 @@ fn two_different_causes_from_one_tier_are_both_reported() {
 
 /// An extractor that always succeeds, for the cache-hit path.
 struct FakeExtractor;
+
+/// A backend that reports what the engine said (#599).
+struct MessageExtractor {
+    html: String,
+    warnings: Vec<String>,
+}
+
+impl PdfExtractor for MessageExtractor {
+    fn extract(&self, _pdf_path: &Path) -> Result<PdfText, PdfExtractError> {
+        Ok(PdfText {
+            html: self.html.clone(),
+            success: true,
+            error_message: None,
+            page_count: 1,
+            converted_pages: 1,
+            char_count: self.html.len(),
+            warnings: self.warnings.clone(),
+        })
+    }
+}
 
 impl PdfExtractor for FakeExtractor {
     fn extract(&self, _pdf_path: &Path) -> Result<PdfText, PdfExtractError> {

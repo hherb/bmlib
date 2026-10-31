@@ -40,7 +40,7 @@ pub mod mupdf_backend;
 pub mod parse_audit;
 pub mod pdf_text;
 #[cfg(feature = "pdf")]
-pub use mupdf_backend::{MupdfExtractor, MupdfPdfExtractor};
+pub use mupdf_backend::{is_about_the_file, MupdfExtractor, MupdfPdfExtractor};
 pub mod segmenter;
 pub mod service;
 pub mod titles;
@@ -65,7 +65,7 @@ pub use models::{
 pub use parse_audit::{unwind_diagnostics, ParseUnwindState};
 pub use pdf_text::{
     converted_content_kind, group_paragraphs, line_to_block, normalize_line, render_html,
-    repeated_lines, span_text_weight, split_on_short_lines, ConversionResult, PdfError,
+    repeated_lines, span_text_weight, split_on_short_lines, ConversionResult, PdfBlocks, PdfError,
     PdfErrorKind, PdfLimit, PdfTextExtractor, PARAGRAPH_BREAK_RATIO, PARAGRAPH_WIDTH_MIN_LINES,
     REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO, SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
 };

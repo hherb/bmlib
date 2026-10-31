@@ -18,6 +18,30 @@ The Python library is documented separately, in the repository's
   fault. A `PdfText` with `success` false names no kind and is `"engine"`.
   `None` when the text extracted, nothing was tried, or a scan yielded none.
 
+- **What MuPDF reads past is reported** (#599). `mupdf-sys` sets MuPDF's
+  warning and error callbacks to nothing, and MuPDF repairs a broken xref or
+  stops a page after too many syntax errors (#605's case) with only a message,
+  so a damaged PDF extracted whole with text missing. While one PDF is read,
+  the thread's MuPDF context now sends both kinds of message to bmlib, and the
+  callbacks found are put back after. `PdfTextExtractor::extract_blocks_with_warnings`
+  returns a `PdfBlocks` (the blocks and the messages, the path replaced by
+  "the file"); its default reports nothing, so another backend compiles
+  unchanged. `MupdfExtractor::page_texts_with_warnings` does the same for page
+  texts, `MupdfPdfExtractor` fills `PdfText.warnings`, and `FullTextService`
+  logs them as one WARNING line; when no text came out it lists every message
+  in place of *likely a scan*, which it used to say with the first three. On a failure they are dropped, the error
+  saying what failed. The capture starts with `fz_flush_warnings`, since a
+  warning MuPDF left counted would swallow the next read's first identical
+  one. `is_about_the_file` sets aside MuPDF's store race (`found duplicate
+  fz_icc_link in the store`), which appeared when the contract's tests ran on
+  parallel threads and costs no text. Python's `PDFBlocks`, held together by
+  `tests/fixtures/pdf_warnings.json`: the crate's MuPDF 1.27.2 words those
+  messages exactly as PyMuPDF 1.28.5 does. Over 128 journal PDFs held locally
+  (no list committed, so not re-derivable from the repo) 118 give
+  identical lists; the other 10 are the version gap (1.28 adds the font's name
+  to `bogus font ... ascent/descent values`, capitalises `ActualText`, and on
+  one PDF no longer reports a bogus font).
+
 ### Changed — breaking
 
 - **`PdfExtractError::Conversion` carries the `PdfError`**, not a `String`

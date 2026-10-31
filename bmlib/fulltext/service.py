@@ -2216,7 +2216,11 @@ class FullTextService:
             return
         if not html:
             logger.warning(
-                "PDF %s yielded no extractable text over %d page(s) — likely a scan; %s",
+                # Not "likely a scan": a page cut short after too many syntax
+                # errors yields nothing too, and the converter's own line
+                # says which (#599); the list mixes both kinds (#619).
+                "PDF %s yielded no extractable text over %d page(s) — a scan, or text "
+                "the PDF engine read past (its messages are logged on their own line); %s",
                 pdf_path,
                 conversion.page_count,
                 conversion.warnings[:3] or "no warnings reported",

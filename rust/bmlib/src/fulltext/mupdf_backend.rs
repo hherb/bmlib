@@ -76,7 +76,7 @@
 //! lays it out.
 
 use crate::fulltext::models::TextBlock;
-use crate::fulltext::pdf_text::{normalize_line, PdfError, PdfLimit, PdfTextExtractor};
+use crate::fulltext::pdf_text::{normalize_line, PdfBlocks, PdfError, PdfLimit, PdfTextExtractor};
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
 use mupdf::{Cookie, Device, DisplayList, Document, Matrix, Page, Quad, Rect};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -327,6 +327,129 @@ fn classify(error: &mupdf::Error, context: &str, path: &std::path::Path) -> PdfE
     }
 }
 
+/// Whether a MuPDF message is about the PDF read, not the engine's own cache.
+///
+/// Every message is, but the store's report of a race between two threads
+/// (`found duplicate fz_icc_link in the store`, from `fz_store_item`): it
+/// keeps one of the two items and reads on, so no text is lost. Python's
+/// `is_about_the_file` is the same rule, and `tests/fixtures/pdf_warnings.json`
+/// pins both.
+#[must_use]
+pub fn is_about_the_file(message: &str) -> bool {
+    let race = message
+        .strip_prefix("found duplicate ")
+        .and_then(|rest| rest.strip_suffix(" in the store"));
+    // The item's type is a C identifier (`fz_icc_link`), matched as ASCII.
+    !race.is_some_and(|kind| {
+        !kind.is_empty()
+            && kind
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    })
+}
+
+/// What MuPDF reports without failing, captured while one PDF is read (#599).
+///
+/// `mupdf-sys` silences MuPDF's warning and error callbacks, and MuPDF reads
+/// past a broken xref (repairing it) or a page's content stream (stopping it
+/// after too many syntax errors) with only a message. While this is alive the
+/// calling thread's MuPDF context sends both kinds of message here, as
+/// PyMuPDF's store collects both; dropping it puts back the callbacks it
+/// found. MuPDF's context is the crate's, one per thread, and every MuPDF
+/// call this module makes runs on the thread that made the capture (the limit
+/// watcher makes none), so no other thread's messages arrive.
+struct EngineMessages {
+    context: *mut mupdf_sys::fz_context,
+    warning: (mupdf_sys::fz_warning_cb, *mut std::ffi::c_void),
+    error: (mupdf_sys::fz_error_cb, *mut std::ffi::c_void),
+    /// Boxed so the address MuPDF holds stays put when `self` moves.
+    messages: Box<std::cell::RefCell<Vec<String>>>,
+}
+
+/// MuPDF's callback for both kinds of message: keep it.
+///
+/// # Safety
+///
+/// `user` is the `messages` of a live [`EngineMessages`], and `message` a
+/// NUL-terminated string, which is what MuPDF passes back.
+unsafe extern "C" fn keep_message(user: *mut std::ffi::c_void, message: *const std::ffi::c_char) {
+    // SAFETY: as the function's contract states; nothing else borrows the
+    // cell while MuPDF runs, since only `finish` reads it, after its flush.
+    let (messages, message) = unsafe {
+        (
+            &*user.cast::<std::cell::RefCell<Vec<String>>>(),
+            std::ffi::CStr::from_ptr(message),
+        )
+    };
+    messages
+        .borrow_mut()
+        .push(message.to_string_lossy().into_owned());
+}
+
+impl EngineMessages {
+    /// Start capturing on this thread's MuPDF context.
+    fn capture() -> Self {
+        use mupdf_sys::{
+            fz_context, fz_error_callback, fz_flush_warnings, fz_set_error_callback,
+            fz_set_warning_callback, fz_warning_callback,
+        };
+        // `Context` is one `*mut fz_context` (`mupdf` 0.8.0, pinned exactly); a
+        // crate that added a field would fail this assertion.
+        const _: () = assert!(
+            std::mem::size_of::<mupdf::Context>() == std::mem::size_of::<*mut fz_context>()
+        );
+        let messages = Box::new(std::cell::RefCell::new(Vec::new()));
+        let user = std::ptr::from_ref(&*messages).cast_mut().cast();
+        // SAFETY: the copy is the thread's context pointer, which the crate
+        // keeps alive for the thread's life (`Context` has no destructor). The
+        // flush clears a warning an earlier read left counted, which would
+        // otherwise swallow this read's first identical one; it reports to the
+        // callbacks found, before they are replaced.
+        unsafe {
+            let context: *mut fz_context = std::mem::transmute_copy(&mupdf::Context::get());
+            fz_flush_warnings(context);
+            let mut warning_user = std::ptr::null_mut();
+            let warning = fz_warning_callback(context, &mut warning_user);
+            let mut error_user = std::ptr::null_mut();
+            let error = fz_error_callback(context, &mut error_user);
+            fz_set_warning_callback(context, Some(keep_message), user);
+            fz_set_error_callback(context, Some(keep_message), user);
+            EngineMessages {
+                context,
+                warning: (warning, warning_user),
+                error: (error, error_user),
+                messages,
+            }
+        }
+    }
+
+    /// The messages so far that are [`is_about_the_file`] and not empty (as
+    /// Python's split drops an empty one), in order, `path` replaced by "the file".
+    fn finish(self, path: &std::path::Path) -> Vec<String> {
+        // SAFETY: the context is this thread's, as in `capture`. A warning
+        // repeated up to now is counted, and reported only on a flush.
+        unsafe { mupdf_sys::fz_flush_warnings(self.context) };
+        let path = path.display().to_string();
+        self.messages
+            .take()
+            .into_iter()
+            .filter(|message| !message.is_empty() && is_about_the_file(message))
+            .map(|message| message.replace(&path, "the file"))
+            .collect()
+    }
+}
+
+impl Drop for EngineMessages {
+    fn drop(&mut self) {
+        // SAFETY: the context is this thread's, and the callbacks are the
+        // ones `capture` found on it.
+        unsafe {
+            mupdf_sys::fz_set_warning_callback(self.context, self.warning.0, self.warning.1);
+            mupdf_sys::fz_set_error_callback(self.context, self.error.0, self.error.1);
+        }
+    }
+}
+
 /// Open a PDF, refusing one that needs a password, as `extract_blocks` does.
 fn open(path: &std::path::Path) -> Result<Document, PdfError> {
     let document = Document::open(path).map_err(|e| classify(&e, "could not open it", path))?;
@@ -493,6 +616,18 @@ impl PdfTextExtractor for MupdfExtractor {
         path: &std::path::Path,
         limit: &PdfLimit,
     ) -> Result<Vec<TextBlock>, PdfError> {
+        self.extract_blocks_with_warnings(path, limit)
+            .map(|read| read.blocks)
+    }
+
+    /// MuPDF's messages are those reported from opening the file to its last
+    /// page. On a failure they are dropped, the error saying what failed.
+    fn extract_blocks_with_warnings(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<PdfBlocks, PdfError> {
+        let messages = EngineMessages::capture();
         let document = open(path)?;
         let mut blocks = Vec::new();
         let mut page_index = 0;
@@ -506,7 +641,11 @@ impl PdfTextExtractor for MupdfExtractor {
             }
             page_index += 1;
         })?;
-        Ok(blocks)
+        drop(document);
+        Ok(PdfBlocks {
+            blocks,
+            warnings: messages.finish(path),
+        })
     }
 
     fn page_texts_within(
@@ -514,12 +653,31 @@ impl PdfTextExtractor for MupdfExtractor {
         path: &std::path::Path,
         limit: &PdfLimit,
     ) -> Result<Vec<String>, PdfError> {
+        self.page_texts_with_warnings(path, limit)
+            .map(|(pages, _)| pages)
+    }
+}
+
+impl MupdfExtractor {
+    /// [`PdfTextExtractor::page_texts_within`], with MuPDF's messages as
+    /// [`PdfTextExtractor::extract_blocks_with_warnings`] reports them.
+    ///
+    /// # Errors
+    ///
+    /// As [`PdfTextExtractor::page_texts_within`].
+    pub fn page_texts_with_warnings(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<(Vec<String>, Vec<String>), PdfError> {
+        let messages = EngineMessages::capture();
         let document = open(path)?;
         let mut pages = Vec::new();
         each_page(&document, TEXT_FLAGS, path, limit, |bounds, text_page| {
             pages.push(page_text(&text_page, &bounds));
         })?;
-        Ok(pages)
+        drop(document);
+        Ok((pages, messages.finish(path)))
     }
 }
 
@@ -557,9 +715,9 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
         use crate::fulltext::pdf_text::render_html;
         use crate::fulltext::service::{PdfExtractError, PdfText};
 
-        let pages = self
+        let (pages, warnings) = self
             .extractor
-            .page_texts(pdf_path)
+            .page_texts_with_warnings(pdf_path, &PdfLimit::default())
             .map_err(PdfExtractError::Conversion)?;
         let joined = pages.join("\n");
         let html = render_html(true, &joined, &pages);
@@ -577,7 +735,7 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
             page_count,
             converted_pages: page_count,
             char_count,
-            warnings: Vec::new(),
+            warnings,
         })
     }
 }
@@ -624,6 +782,69 @@ mod tests {
             assert_eq!(classified.kind, kind, "code {code}");
             assert!(!classified.message.contains("probe.pdf"), "{classified}");
         }
+    }
+
+    /// This thread's MuPDF context.
+    fn context() -> *mut mupdf_sys::fz_context {
+        // SAFETY: as in `EngineMessages::capture`.
+        unsafe { std::mem::transmute_copy(&mupdf::Context::get()) }
+    }
+
+    /// MuPDF's warning callback on this thread's context.
+    fn warning_callback() -> mupdf_sys::fz_warning_cb {
+        // SAFETY: the context is this thread's; a null `user` is allowed.
+        unsafe { mupdf_sys::fz_warning_callback(context(), std::ptr::null_mut()) }
+    }
+
+    /// Warn as MuPDF does, through the variadic `fz_warn`.
+    fn warn(message: &std::ffi::CStr) {
+        // SAFETY: the context is this thread's; `%s` takes the one string.
+        unsafe { mupdf_sys::fz_warn(context(), c"%s".as_ptr(), message.as_ptr()) };
+    }
+
+    /// A warning counted before the capture, as a failed read leaves one, does
+    /// not swallow the capture's first identical one; a warning repeated in
+    /// it is reported once and then as MuPDF's count.
+    #[test]
+    fn a_warning_left_counted_does_not_swallow_the_next() {
+        std::thread::spawn(|| {
+            warn(c"left over");
+            let messages = EngineMessages::capture();
+            for _ in 0..3 {
+                warn(c"left over");
+            }
+            assert_eq!(
+                messages.finish(std::path::Path::new("/nowhere.pdf")),
+                ["left over", "... repeated 3 times..."]
+            );
+        })
+        .join()
+        .expect("the thread ran");
+    }
+
+    /// The callback a capture found, none on a fresh thread (`mupdf-sys`
+    /// silences MuPDF), is back once it ends, finished or not, and the path
+    /// read never reaches a message.
+    #[test]
+    fn a_capture_puts_back_what_it_found_and_drops_the_path() {
+        std::thread::spawn(|| {
+            assert!(warning_callback().is_none());
+            let messages = EngineMessages::capture();
+            assert!(warning_callback().is_some());
+            warn(c"cannot read /tmp/probe.pdf");
+            // Set aside on the way in, not only by the predicate's own test.
+            warn(c"found duplicate fz_icc_link in the store");
+            warn(c"");
+            assert_eq!(
+                messages.finish(std::path::Path::new("/tmp/probe.pdf")),
+                ["cannot read the file"]
+            );
+            assert!(warning_callback().is_none());
+            drop(EngineMessages::capture());
+            assert!(warning_callback().is_none());
+        })
+        .join()
+        .expect("the thread ran");
     }
 
     /// A panic while a page is visited reaches the caller, rather than the

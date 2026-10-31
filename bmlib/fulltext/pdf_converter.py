@@ -372,6 +372,80 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
     )
 
 
+@dataclass
+class PDFBlocks:
+    """A PDF's text blocks, and what MuPDF reported while reading them (#599).
+
+    ``warnings`` are MuPDF's own messages, as it words them: a broken xref it
+    repaired, a content stream it stopped reading (``too many syntax errors;
+    ignoring rest of page``), a font with bogus metrics. MuPDF reads past each
+    without failing, so the blocks may be short of the page's text and only
+    these say so. The path read is replaced by "the file". Rust's
+    ``PdfBlocks`` is the same pair.
+    """
+
+    blocks: list[TextBlock]
+    warnings: list[str] = field(default_factory=list)
+
+
+#: MuPDF's ``fz_store_item`` warning when two threads cache the same item at
+#: once; it keeps one and reads on, so the message says nothing about the PDF.
+#: The item's type is a C identifier (``fz_icc_link``), matched as ASCII.
+_STORE_RACE_RE = re.compile(r"found duplicate [A-Za-z0-9_]+ in the store")
+
+
+def is_about_the_file(message: str) -> bool:
+    """Whether a MuPDF message is about the PDF read, not the engine's own cache.
+
+    Every message is, but the store's report of a race between two threads
+    (``found duplicate fz_icc_link in the store``), which costs no text.
+    Rust's ``is_about_the_file`` is the same rule, and the shared fixture
+    ``tests/fixtures/pdf_warnings.json`` pins both.
+    """
+    return _STORE_RACE_RE.fullmatch(message) is None
+
+
+def _reset_engine_messages(pymupdf: Any) -> None:
+    """Forget what MuPDF has reported so far, before reading one PDF.
+
+    Read rather than only reset, since reading flushes a warning MuPDF has
+    counted, which would otherwise swallow this PDF's first identical one.
+    """
+    pymupdf.TOOLS.mupdf_warnings(reset=True)
+
+
+def _engine_messages(pymupdf: Any, pdf_path: Path) -> list[str]:
+    """What MuPDF reported since :func:`_reset_engine_messages`, logged as one WARNING.
+
+    PyMuPDF keeps MuPDF's warnings and the errors MuPDF reads past in one
+    store, which this empties. A repeated warning arrives once, then as
+    ``... repeated N times...``, N counting the first, as MuPDF reports it; a
+    repeated error arrives each time, so a page cut short after too many
+    syntax errors gives a hundred — one line per read, as Rust's
+    ``FullTextService`` logs them, not one per message. A message not
+    :func:`is_about_the_file` is set aside.
+    """
+    # shortcut: PyMuPDF's store is one per process, so two PDFs read at once
+    # on two threads share it, and each may get the other's messages or lose
+    # its own; a per-thread store would need PyMuPDF's callbacks replaced.
+    # A message holding a newline arrives as two, since the store is read
+    # joined by newlines; MuPDF's are one line each. MuPDF cuts a message at
+    # 256 bytes, so a long path cut inside one survives the replacement.
+    messages = [
+        message.replace(str(pdf_path), "the file")
+        for message in pymupdf.TOOLS.mupdf_warnings().split("\n")
+        if message and is_about_the_file(message)
+    ]
+    if messages:
+        logger.warning(
+            "MuPDF reported %d message(s) while reading %s: %s",
+            len(messages),
+            pdf_path,
+            "; ".join(messages),
+        )
+    return messages
+
+
 def _file_codes(mupdf: Any) -> tuple[type, ...]:
     """MuPDF's codes for a fault in the file: ``FORMAT``, ``SYNTAX``, ``UNSUPPORTED``."""
     return (mupdf.FzErrorFormat, mupdf.FzErrorSyntax, mupdf.FzErrorUnsupported)
@@ -487,6 +561,8 @@ class PyMuPDFConverter(PDFConverter):
         password to open is a failed result rather than an empty successful
         one — a file that cannot be read is not a paper without text. A
         ``limit`` reached before a page is a failed result too (#600).
+        What MuPDF reported while reading, a page it stopped reading
+        included, ends ``warnings`` and is logged at WARNING (#599).
         """
         self.validate_pdf_path(pdf_path)
 
@@ -496,6 +572,7 @@ class PyMuPDFConverter(PDFConverter):
         page_count = 0
         metadata: dict[str, Any] = {}
 
+        _reset_engine_messages(self._pymupdf)
         try:
             # Context manager guarantees the document is closed even when a
             # non-PyMuPDF error escapes mid-extraction.
@@ -514,6 +591,7 @@ class PyMuPDFConverter(PDFConverter):
                     # encrypted and extracts perfectly.
                     error = PDFExtractionError.encrypted()
                     logger.error("PDF conversion failed for %s: %s", pdf_path, error)
+                    warnings += _engine_messages(self._pymupdf, pdf_path)
                     return ConversionResult(
                         success=False,
                         text="",
@@ -596,6 +674,7 @@ class PyMuPDFConverter(PDFConverter):
                 warnings.append(f"Title corroboration failed: {e}")
                 logger.warning("Title corroboration failed for %s: %s", pdf_path, e, exc_info=True)
 
+            warnings += _engine_messages(self._pymupdf, pdf_path)
             return ConversionResult(
                 success=True,
                 text=full_text,
@@ -622,6 +701,7 @@ class PyMuPDFConverter(PDFConverter):
                 error,
                 exc_info=error.kind is PDFErrorKind.ENGINE,
             )
+            warnings += _engine_messages(self._pymupdf, pdf_path)
             return ConversionResult(
                 success=False,
                 text="",
@@ -643,7 +723,12 @@ class PyMuPDFConverter(PDFConverter):
         partial text is still useful, this raises: a partial block list is
         indistinguishable from a sparse PDF, so degradation would be
         silent. A page with no extractable text (an image-only scan)
-        contributes no blocks — that is not an error.
+        contributes no blocks — that is not an error. What MuPDF reported
+        while reading is logged as one WARNING and not returned;
+        :meth:`extract_blocks_with_warnings` returns it (#599). Reading
+        empties PyMuPDF's process-wide message store
+        (``TOOLS.mupdf_warnings()``) before and after, as :meth:`convert`
+        does, so a caller reading that store itself finds it empty.
 
         Args:
             pdf_path: Path to the PDF file.
@@ -664,8 +749,24 @@ class PyMuPDFConverter(PDFConverter):
                 is at fault, or that ``limit`` was reached (cancelled, timed
                 out). A ``ValueError`` too.
         """
+        return self.extract_blocks_with_warnings(pdf_path, limit=limit).blocks
+
+    def extract_blocks_with_warnings(
+        self, pdf_path: Path, *, limit: PDFLimit | None = None
+    ) -> PDFBlocks:
+        """:meth:`extract_blocks`, with what MuPDF reported while reading (#599).
+
+        A damaged PDF can read without failing and still lose text: MuPDF
+        repairs a broken xref, and stops a page after too many syntax errors,
+        reporting each only as a message. Those messages are returned beside
+        the blocks and logged at WARNING; on a failure they are logged only.
+
+        Raises:
+            As :meth:`extract_blocks`.
+        """
         self.validate_pdf_path(pdf_path)
         blocks: list[TextBlock] = []
+        _reset_engine_messages(self._pymupdf)
         try:
             with self._pymupdf.open(str(pdf_path)) as doc:
                 if doc.needs_pass:
@@ -683,10 +784,12 @@ class PyMuPDFConverter(PDFConverter):
                             if text_block is not None:
                                 blocks.append(text_block)
         except PDFExtractionError:
+            _engine_messages(self._pymupdf, pdf_path)
             raise
         except Exception as e:  # noqa: BLE001 — any failure is classified, never lost
+            _engine_messages(self._pymupdf, pdf_path)
             raise _classify(e, self._pymupdf, pdf_path) from e
-        return blocks
+        return PDFBlocks(blocks, _engine_messages(self._pymupdf, pdf_path))
 
 
 _WS_RE = re.compile(r"\s+")

@@ -1,10 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session's PR is for #578, #573 and #604**, on
+_Last updated: 2026-11-01 (**this session's PR is for #578, #573 and #604**, on
 `fix/578-573-604-pico-and-pdf-kind`, each with the maintainer's choice of
-remedy; see *This session* below). **0.12.0 is on PyPI** (tag `v0.12.0` on
-`d2ee803`) and **the Rust crate 0.3.0 is on crates.io** from the same commit.
-Unreleased: PR #613 (#574, #570) and this session's PR._
+remedy; see *This session* below). Earlier the same day PR #614 (#599) and PR
+#613 (#574, #570) merged. **0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`,
+the merge of #611) and **the Rust crate 0.3.0 is on crates.io** from the same
+commit; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
+release notes; see `HANDOVER_RUST.md` for the crate's publish. Unreleased:
+PRs #613 and #614 and this session's PR._
 
 ## This session: PICO failures and fields (#573, #578), a PDF failure's kind (#604)
 
@@ -31,6 +34,50 @@ bumped: the `models.py` edit moves no rendering.
 **For StudyAnalyzer**: read `pdf_extraction_failure` as `invalid_input` for
 `"encrypted"`/`"unreadable"`, an error worth a retry for `"engine"`; a
 `PdfExtractor` of its own now returns `PdfExtractError::Conversion(PdfError)`.
+
+## Earlier today: what MuPDF reads past is reported (#599) — PR #614, merged
+
+Found reviewing hherb/StudyAnalyzer#21. MuPDF repairs a broken xref and
+stops a page after too many syntax errors with only a message; `mupdf-sys`
+set both callbacks to NULL and Python never read PyMuPDF's store. Now
+`extract_blocks_with_warnings` → `PdfBlocks`/`PDFBlocks` in both, Rust's
+`MupdfPdfExtractor` fills `PdfText.warnings` (the service logs one WARNING),
+Python's `convert()` ends `warnings` with them and logs each. The CHANGELOG
+entries are the argument. **Traps found**: MuPDF dedupes a warning against
+the previous *warning*, which is the previous read's last one wherever that
+read did not flush (a failed Rust read, or PyMuPDF used outside bmlib), so a
+capture must flush first (Rust
+`fz_flush_warnings`, Python `TOOLS.mupdf_warnings(reset=True)`, not
+`reset_mupdf_warnings()`), both mutation-checked; parallel threads make
+MuPDF's store warn `found duplicate fz_icc_link in the store`, set aside by
+`is_about_the_file`. **#605** is now visible in both languages
+(`too many syntax errors; ignoring rest of page`) without the cookie; whether
+a truncated page should be more than a warning is still the maintainer's
+call, so #605 stays open. **For StudyAnalyzer**: call
+`extract_blocks_with_warnings` and show the messages as a notice. Not done:
+Rust drops the messages on a failed read (it has no logger), where Python
+logs them and a failed `convert()` result carries them in `warnings`, and
+Python's `warnings` mixes bmlib's notes with MuPDF's (**#619**, filed by PR
+#614's review); PyMuPDF's store is per process (`shortcut:`). **PR #614's
+review**: Python logs one WARNING per read rather than one per message (a
+page cut short gave 102 lines); neither service says "likely a scan" when the
+engine reported something, and Rust's lists every message, not three; the
+reset, the path replacement and the store-race filter are pinned in both
+languages, and the Rust service line by a fake extractor. A worker thread
+reports what the main thread does (probed), so the store's sharing is the
+only threading caveat.
+
+## Earlier today: `chat_json(max_retries=0)` (#574), a non-text extraction (#570) — PR #613, merged
+
+**#574** (Python only): `chat_json` clamps `max_retries` to at least one, as
+Rust's `max_retries.max(1)` does, so `0` makes one attempt instead of no
+request and a `ChatJsonUnparseableError` for a reply never asked for. No
+caller in bmlib passes it. **#570** (Python and Rust): `LLMChunkProcessor`'s
+structured path read `extracted_content` through `str()`, storing a `null`
+as `"None"` (Rust: `"null"`) at the model's confidence; an absent or
+non-string value is now `""` at confidence 0.0 with no findings (Python
+WARNs naming the batch; the crate logs nothing anywhere), which `is_valid`
+already drops before consolidation. Both manuals and both CHANGELOGs carry it.
 
 ## What 0.12.0 costs a downstream
 
@@ -59,7 +106,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a

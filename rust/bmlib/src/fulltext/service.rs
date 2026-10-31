@@ -1125,7 +1125,8 @@ pub struct PdfText {
     pub converted_pages: usize,
     /// How many characters were extracted.
     pub char_count: usize,
-    /// Per-page warnings the backend reported.
+    /// What the backend's engine reported while reading (#599): MuPDF's
+    /// messages, the path replaced by "the file", for `MupdfPdfExtractor`.
     pub warnings: Vec<String>,
 }
 
@@ -2403,19 +2404,20 @@ impl FullTextService {
                     return;
                 }
                 if conversion.html.is_empty() {
-                    let warnings = if conversion.warnings.is_empty() {
-                        "no warnings reported".to_string()
+                    // Not "likely a scan" when the engine said why: a page cut
+                    // short after too many syntax errors also yields nothing,
+                    // and its last message is the one that says so (#599).
+                    let cause = if conversion.warnings.is_empty() {
+                        "likely a scan; no warnings reported".to_string()
                     } else {
-                        conversion
-                            .warnings
-                            .iter()
-                            .take(3)
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join("; ")
+                        format!(
+                            "the PDF engine reported {} message(s): {}",
+                            conversion.warnings.len(),
+                            conversion.warnings.join("; ")
+                        )
                     };
                     self.warn(format!(
-                        "PDF {} yielded no extractable text over {} page(s) — likely a scan; {warnings}",
+                        "PDF {} yielded no extractable text over {} page(s) — {cause}",
                         pdf_path.display(),
                         conversion.page_count
                     ));
@@ -2427,6 +2429,15 @@ impl FullTextService {
                         pdf_path.display(),
                         conversion.converted_pages,
                         conversion.page_count
+                    ));
+                }
+                // Python's converter logs each of these itself (#599).
+                if !conversion.warnings.is_empty() {
+                    self.warn(format!(
+                        "PDF {} read with {} message(s) from the PDF engine, so text may be missing: {}",
+                        pdf_path.display(),
+                        conversion.warnings.len(),
+                        conversion.warnings.join("; ")
                     ));
                 }
                 result.html = Some(conversion.html);

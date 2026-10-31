@@ -304,10 +304,19 @@ match MupdfExtractor::new().extract_blocks_within(Path::new("paper.pdf"), &limit
   `extract_blocks_within` and `page_texts_within` with `PdfLimit::default()`,
   which stops never; an implementor of the trait writes the two `_within`
   methods and `name()`.
+- **What MuPDF reads past is reported** *(#599)*:
+  `extract_blocks_with_warnings` returns a `PdfBlocks` (`blocks`, `warnings`),
+  MuPDF's messages while the PDF was read — a repaired xref, a page stopped
+  after too many syntax errors, a font with bogus metrics — none of which
+  fails the call, the path replaced by "the file".
+  `MupdfExtractor::page_texts_with_warnings` gives the same beside page texts.
+  The trait's default reports nothing. On a failure the messages are dropped.
+  `is_about_the_file` sets aside MuPDF's `found duplicate … in the store`.
 - **The service takes a different trait.** `FullTextService` wants HTML for
   the whole document from `PdfExtractor::extract`, and `MupdfPdfExtractor` is
   that adapter over `MupdfExtractor::page_texts`, with no limit. It returns
-  `PdfText` (`html`, page and character counts, `is_complete()`).
+  `PdfText` (`html`, page and character counts, `is_complete()`, and MuPDF's
+  messages in `warnings`, which the service logs as one WARNING line).
   `pdf_text::render_html(success, text, page_texts)` is the reflow it uses:
   page furniture stripped, wrapped lines rejoined into `<p>` paragraphs.
 
