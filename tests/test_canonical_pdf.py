@@ -27,6 +27,7 @@ from bmlib.fulltext.canonical import (
     BlockDraft,
     SourceFormat,
     canonical_from_segmented,
+    join_soft_hyphens,
     split_paragraphs,
 )
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
@@ -51,6 +52,30 @@ class TestSplitParagraphs:
 
     def test_text_with_no_line_is_no_paragraph(self) -> None:
         assert split_paragraphs("\n \n") == []
+
+
+class TestJoinSoftHyphens:
+    def test_a_soft_hyphen_before_white_space_goes_with_it(self) -> None:
+        assert join_soft_hyphens("preva\u00ad lent, spe\u00ad\u3000 cific") == (
+            "prevalent, specific"
+        )
+
+    def test_any_other_soft_hyphen_is_kept(self) -> None:
+        assert join_soft_hyphens("mid\u00adword, end\u00ad") == "mid\u00adword, end\u00ad"
+
+    def test_white_space_is_rusts(self) -> None:
+        # U+001F is ``str.isspace()`` but not Unicode White_Space, so it ends no line.
+        assert join_soft_hyphens("a\u00ad\x1fb") == "a\u00ad\x1fb"
+
+    def test_a_hard_hyphen_is_kept(self) -> None:
+        doc = canonical_from_segmented(
+            SegmentedDocument(
+                sections=[
+                    section(SectionType.RESULTS, "Results", "dose-\nresponse, preva\u00ad\nlent")
+                ]
+            )
+        )
+        assert doc.text == "Results\n\ndose- response, prevalent"
 
 
 class TestCanonicalFromSegmented:
@@ -85,7 +110,7 @@ class TestCanonicalFromSegmented:
 
     def test_format_and_version(self) -> None:
         doc = canonical_from_segmented(SegmentedDocument())
-        assert (doc.source_format, doc.converter_version) == (SourceFormat.PDF, "pdf-1")
+        assert (doc.source_format, doc.converter_version) == (SourceFormat.PDF, "pdf-2")
 
     def test_the_segmenters_output_converts_end_to_end(self) -> None:
         blocks = [

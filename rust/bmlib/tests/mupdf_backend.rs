@@ -14,101 +14,72 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! The PDFium backend — the font-name rules always, extraction when PDFium binds.
+//! The MuPDF backend (#590), against PDFs built here and against the rules it
+//! takes from PyMuPDF.
 //!
-//! The font-name arms run unconditionally because they are the part that was
-//! **wrong first**: PDFium's `font_weight()` and `font_is_italic()` return nothing
-//! usable for a base-14 face, so the name decides. They need no PDF.
-//!
-//! The extraction tests need a bound PDFium, which means a downloaded library.
-//! They **skip loudly** when it is unavailable — printing why, and asserting
-//! nothing — rather than passing quietly, because a silent skip is how a backend
-//! that never worked reports success. Set `PDFIUM_BUNDLED_CACHE_DIR` to a writable
-//! path (a sandbox denies the platform default) and run
-//! `cargo test --features pdf --test pdfium_backend`.
+//! MuPDF is compiled in and linked statically, so these tests always run with
+//! the `pdf` feature: there is no library to bind and nothing to skip. The
+//! byte-level agreement with Python is `pdf_extraction_contract.rs`'s.
 
 #![cfg(feature = "pdf")]
 
+use bmlib::fulltext::mupdf_backend::{pymupdf_font_name, MupdfExtractor};
 use bmlib::fulltext::pdf_text::PdfTextExtractor;
-use bmlib::fulltext::pdfium_backend::{
-    font_name_is_bold, font_name_is_italic, PdfiumExtractor, BOLD_NAME_FRAGMENTS,
-    BOLD_WEIGHT_FLOOR, ITALIC_NAME_FRAGMENTS,
-};
 
-/// The names PyMuPDF reports as bold, and the names it does not.
+/// PyMuPDF's `JM_font_name`: a six-letter subset tag goes, nothing else does.
 #[test]
-fn a_bold_face_is_recognised_from_its_name() {
-    for name in [
-        "Helvetica-Bold",
-        "Helvetica-BoldOblique",
-        "Arial-BoldMT",
-        "HELVETICA-BOLD",
-        "Times-BoldItalic",
-        "Roboto-Black",
-        "Roboto-BlackItalic",
-        "OpenSans-Semibold",
-        "NotoSans-DemiBold",
-        "Helvetica-Heavy",
-        "ArialMT,Bold",
-    ] {
-        assert!(font_name_is_bold(name), "{name} should read as bold");
-    }
-    for name in [
-        "Helvetica",
-        "Helvetica-Oblique",
-        "Times-Roman",
-        "ArialMT",
-        "DejaVuSans",
-        "",
-    ] {
-        assert!(!font_name_is_bold(name), "{name} should not read as bold");
-    }
-    // `Bold` beats the weight floor's own reason: a name that says it needs no
-    // weight at all.
-    assert_eq!(BOLD_WEIGHT_FLOOR, 600);
-    assert!(BOLD_NAME_FRAGMENTS.contains(&"bold"));
+fn a_subset_tag_is_removed_from_the_font_name() {
+    assert_eq!(
+        pymupdf_font_name(b"ABCDEF+Helvetica-Bold"),
+        "Helvetica-Bold"
+    );
+    assert_eq!(pymupdf_font_name(b"Helvetica"), "Helvetica");
+    // A `+` anywhere but at byte 6 is part of the name.
+    assert_eq!(pymupdf_font_name(b"ABC+Helvetica"), "ABC+Helvetica");
+    assert_eq!(pymupdf_font_name(b"CIDFont+F6"), "CIDFont+F6");
+    assert_eq!(pymupdf_font_name(b""), "");
 }
 
-/// Likewise for italic, and `BoldOblique` is both.
+/// A name that is not UTF-8 arrives as its bytes read as Latin-1, as PyMuPDF's
+/// `raw-unicode-escape` gives it — the EUC-KR name a corpus PDF carries.
 #[test]
-fn an_italic_face_is_recognised_from_its_name() {
-    for name in [
-        "Helvetica-Oblique",
-        "Helvetica-BoldOblique",
-        "Times-Italic",
-        "Arial-ItalicMT",
-        "HELVETICA-OBLIQUE",
-    ] {
-        assert!(font_name_is_italic(name), "{name} should read as italic");
-    }
-    for name in ["Helvetica", "Helvetica-Bold", "Times-Roman", ""] {
-        assert!(
-            !font_name_is_italic(name),
-            "{name} should not read as italic"
-        );
-    }
-    // Both, which is the case a rule checking one arm would get wrong.
-    assert!(font_name_is_bold("Helvetica-BoldOblique"));
-    assert!(font_name_is_italic("Helvetica-BoldOblique"));
-    assert!(ITALIC_NAME_FRAGMENTS.contains(&"oblique"));
+fn a_font_name_in_another_encoding_reads_as_latin_1() {
+    let euc_kr = [0xB8, 0xBC, 0xC0, 0xBA, 0xB0, 0xED, 0xB5, 0xF1];
+    assert_eq!(
+        pymupdf_font_name(&euc_kr),
+        "\u{b8}\u{bc}\u{c0}\u{ba}\u{b0}\u{ed}\u{b5}\u{f1}"
+    );
+    // The tag is found in the bytes: a non-ASCII byte before it does not hide it.
+    assert_eq!(pymupdf_font_name(b"AB\xC0DEF+Name"), "Name");
 }
 
 /// A minimal single-page PDF with one text line, built here so the tests need no
-/// fixture file and no Python.
+/// fixture file and no Python. `font` is written into `/BaseFont` as given, so a
+/// `#xx` escape names a byte.
 fn tiny_pdf(text: &str, font: &str, size: u32) -> Vec<u8> {
+    pdf_with(text, font, size, "", &[])
+}
+
+/// [`tiny_pdf`], with `page_extra` added to the page dictionary and `extra`
+/// appended as objects 6, 7, ….
+fn pdf_with(text: &str, font: &str, size: u32, page_extra: &str, extra: &[String]) -> Vec<u8> {
     let stream = format!("BT /F1 {size} Tf 72 700 Td ({text}) Tj ET");
-    let objects = [
+    let mut objects = vec![
         "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_string(),
         "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n".to_string(),
-        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
-         /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
-            .to_string(),
+        format!(
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> {page_extra}>>\nendobj\n"
+        ),
         format!(
             "4 0 obj\n<< /Length {} >>\nstream\n{stream}\nendstream\nendobj\n",
             stream.len()
         ),
         format!("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /{font} >>\nendobj\n"),
     ];
+    for (index, body) in extra.iter().enumerate() {
+        objects.push(format!("{} 0 obj\n{body}\nendobj\n", 6 + index));
+    }
     let mut out = String::from("%PDF-1.4\n");
     let mut offsets = Vec::new();
     for object in &objects {
@@ -165,25 +136,10 @@ impl Drop for TempPdf {
     }
 }
 
-/// Bind PDFium, or say why the extraction tests are skipped.
-fn extractor() -> Option<PdfiumExtractor> {
-    match PdfiumExtractor::bundled() {
-        Ok(extractor) => Some(extractor),
-        Err(error) => {
-            eprintln!(
-                "SKIPPING the PDFium extraction tests: {error}\n\
-                 Set PDFIUM_BUNDLED_CACHE_DIR to a writable directory (a sandbox denies the \
-                 platform default) and re-run with --features pdf."
-            );
-            None
-        }
-    }
-}
-
 /// A real PDF yields a block whose text, size and font are the ones written.
 #[test]
 fn a_pdf_yields_a_block_with_its_font() {
-    let Some(extractor) = extractor() else { return };
+    let extractor = MupdfExtractor::new();
     let (_guard, path) = write_pdf("simple", &tiny_pdf("Hello PDF World", "Helvetica", 24));
     let blocks = extractor.extract_blocks(&path).expect("extracts");
     assert_eq!(blocks.len(), 1, "{blocks:?}");
@@ -193,10 +149,12 @@ fn a_pdf_yields_a_block_with_its_font() {
     assert!(!blocks[0].is_bold);
     assert_eq!(blocks[0].page_num, 0);
     assert!(
-        blocks[0].width > 0.0,
+        blocks[0].width > 0.0 && blocks[0].height > 0.0,
         "the bounding box is read: {blocks:?}"
     );
-    assert_eq!(extractor.name(), "pdfium");
+    // MuPDF's coordinates run down the page: a line 700 pt up sits near the top.
+    assert!(blocks[0].y < 100.0, "{blocks:?}");
+    assert_eq!(extractor.name(), "mupdf");
 
     // And the page text agrees with the block.
     let pages = extractor.page_texts(&path).expect("page texts");
@@ -204,39 +162,83 @@ fn a_pdf_yields_a_block_with_its_font() {
     assert!(pages[0].contains("Hello PDF World"), "{pages:?}");
 }
 
-/// **Bold is read from the font name**, because PDFium's weight accessor returns
-/// nothing usable for a base-14 face. This is the arm that was wrong first: a
-/// `Helvetica-Bold` heading came back `is_bold = false`.
+/// Bold and italic are MuPDF's own reading of the face, which for an unembedded
+/// base-14 font it takes from its own copy — PDFium's accessors returned
+/// nothing there, which is why the old backend guessed from the name.
 #[test]
-fn a_bold_base_font_reads_as_bold() {
-    let Some(extractor) = extractor() else { return };
-    let (_guard, path) = write_pdf("bold", &tiny_pdf("Bold heading", "Helvetica-Bold", 16));
-    let blocks = extractor.extract_blocks(&path).expect("extracts");
-    assert_eq!(blocks.len(), 1, "{blocks:?}");
-    assert!(
-        blocks[0].is_bold,
-        "a Helvetica-Bold face must read as bold: {blocks:?}"
-    );
-    assert_eq!(blocks[0].font_name, "Helvetica-Bold");
-    assert!(!blocks[0].is_italic);
+fn a_base_14_face_reads_as_bold_or_italic() {
+    let extractor = MupdfExtractor::new();
+    for (font, bold, italic) in [
+        ("Helvetica-Bold", true, false),
+        ("Helvetica-Oblique", false, true),
+        ("Times-BoldItalic", true, true),
+        ("Courier", false, false),
+    ] {
+        let (_guard, path) = write_pdf("face", &tiny_pdf("A heading", font, 16));
+        let blocks = extractor.extract_blocks(&path).expect("extracts");
+        assert_eq!(blocks.len(), 1, "{font}: {blocks:?}");
+        assert_eq!(
+            (
+                blocks[0].font_name.as_str(),
+                blocks[0].is_bold,
+                blocks[0].is_italic
+            ),
+            (font, bold, italic)
+        );
+    }
 }
 
-/// An oblique face reads as italic, from the same rule.
+/// A font whose name is not UTF-8 is read, not a panic: the crate's own
+/// `Font::name` unwraps a UTF-8 decode, and a corpus PDF carries such a name.
 #[test]
-fn an_oblique_base_font_reads_as_italic() {
-    let Some(extractor) = extractor() else { return };
-    let (_guard, path) = write_pdf("italic", &tiny_pdf("Italic face", "Helvetica-Oblique", 14));
+fn a_font_name_that_is_not_utf_8_does_not_panic() {
+    let extractor = MupdfExtractor::new();
+    let (_guard, path) = write_pdf("euc-kr", &tiny_pdf("Body text", "#B8#BC#C0#BA", 10));
     let blocks = extractor.extract_blocks(&path).expect("extracts");
     assert_eq!(blocks.len(), 1, "{blocks:?}");
-    assert!(blocks[0].is_italic, "{blocks:?}");
-    assert!(!blocks[0].is_bold, "italic is not bold: {blocks:?}");
+    assert_eq!(blocks[0].text, "Body text");
+    assert_eq!(
+        blocks[0].font_name, "\u{b8}\u{bc}\u{c0}\u{ba}",
+        "{blocks:?}"
+    );
+}
+
+/// A `FreeText` annotation's text is read, as PyMuPDF reads it: PyMuPDF runs
+/// the whole page, and a figure label can be one (three, in one corpus PDF).
+#[test]
+fn an_annotations_text_is_read() {
+    let label = "BT /F1 12 Tf 2 5 Td (Figure 1) Tj ET";
+    let extra = [
+        "<< /Type /Annot /Subtype /FreeText /Rect [100 600 300 620] /Contents (Figure 1) \
+         /DA (/F1 12 Tf 0 g) /AP << /N 7 0 R >> >>"
+            .to_string(),
+        format!(
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 200 20] \
+             /Resources << /Font << /F1 5 0 R >> >> /Length {} >>\nstream\n{label}\nendstream",
+            label.len()
+        ),
+    ];
+    let (_guard, path) = write_pdf(
+        "annot",
+        &pdf_with("Page text", "Helvetica", 10, "/Annots [6 0 R] ", &extra),
+    );
+    let extractor = MupdfExtractor::new();
+    let texts: Vec<String> = extractor
+        .extract_blocks(&path)
+        .expect("extracts")
+        .into_iter()
+        .map(|b| b.text)
+        .collect();
+    assert_eq!(texts, ["Page text", "Figure 1"]);
+    let pages = extractor.page_texts(&path).expect("page texts");
+    assert!(pages[0].contains("Figure 1"), "{pages:?}");
 }
 
 /// An unreadable file is an error naming the path, not an empty extraction — an
 /// empty result for a corrupt PDF would read as a PDF with no text.
 #[test]
 fn a_corrupt_pdf_is_an_error() {
-    let Some(extractor) = extractor() else { return };
+    let extractor = MupdfExtractor::new();
     let (_guard, path) = write_pdf("corrupt", b"not a pdf at all");
     let error = extractor.extract_blocks(&path).expect_err("refuses");
     assert!(error.contains("could not open"), "{error}");
@@ -244,13 +246,14 @@ fn a_corrupt_pdf_is_an_error() {
         error.contains("probe.pdf"),
         "the error names the file: {error}"
     );
+    assert!(extractor.page_texts(&path).is_err());
 }
 
 /// The blocks feed `render_html`, so a real PDF's text reaches an `<p>` — the shape
 /// `FullTextResult.html` carries for an extracted article.
 #[test]
 fn a_pdf_reaches_the_html_renderer() {
-    let Some(extractor) = extractor() else { return };
+    let extractor = MupdfExtractor::new();
     let (_guard, path) = write_pdf("html", &tiny_pdf("Extracted sentence.", "Helvetica", 12));
     let pages = extractor.page_texts(&path).expect("page texts");
     let html = bmlib::fulltext::pdf_text::render_html(true, &pages.join("\n"), &pages);
@@ -266,12 +269,9 @@ fn a_pdf_reaches_the_html_renderer() {
 #[test]
 fn the_service_adapter_produces_html() {
     use bmlib::fulltext::service::{PdfExtractor, PdfText};
-    use bmlib::fulltext::PdfiumPdfExtractor;
+    use bmlib::fulltext::MupdfPdfExtractor;
 
-    let Ok(adapter) = PdfiumPdfExtractor::bundled() else {
-        eprintln!("SKIPPING the service-adapter test: PDFium did not bind");
-        return;
-    };
+    let adapter = MupdfPdfExtractor::new();
     let (_guard, path) = write_pdf("adapter", &tiny_pdf("Adapter sentence.", "Helvetica", 11));
     let PdfText {
         html,

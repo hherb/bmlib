@@ -26,12 +26,12 @@ pub mod canonical;
 pub mod jats_reader;
 pub mod jats_text;
 pub mod models;
+#[cfg(feature = "pdf")]
+pub mod mupdf_backend;
 pub mod parse_audit;
 pub mod pdf_text;
 #[cfg(feature = "pdf")]
-pub mod pdfium_backend;
-#[cfg(feature = "pdf")]
-pub use pdfium_backend::{PdfiumExtractor, PdfiumPdfExtractor};
+pub use mupdf_backend::{MupdfExtractor, MupdfPdfExtractor};
 pub mod segmenter;
 pub mod service;
 pub mod titles;

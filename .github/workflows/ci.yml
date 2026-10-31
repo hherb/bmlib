@@ -181,6 +181,10 @@ jobs:
       - name: clippy (html feature)
         # Off by default too, so `fulltext/canonical/html.rs` is compiled only here.
         run: cargo clippy --all-targets --features html -- -D warnings
+      - name: clippy (pdf feature)
+        # Off by default too, so `fulltext/mupdf_backend.rs` — the one module
+        # here reading a C struct through `unsafe` — is compiled only here.
+        run: cargo clippy --all-targets --features pdf -- -D warnings
       - name: clippy (bmlib without default features)
         # What the mobile apps link. A workspace-wide build cannot see it:
         # resolver 2 unifies bmlib's default features back in for every member,
@@ -202,6 +206,7 @@ jobs:
         run: |
           cargo doc --no-deps
           cargo doc --no-deps --features html
+          cargo doc --no-deps --features pdf
           cargo doc -p bmlib --no-deps --no-default-features
         env:
           RUSTDOCFLAGS: -D warnings
@@ -217,8 +222,9 @@ jobs:
           - label: default
             args: ""
           # `html` rides with `pdf`: both are optional readers of a paper, and
-          # the canonical-text contract runs its HTML cases only with it. The
-          # label stays `pdf`, which the PDFium step and the cache key read.
+          # the canonical-text contract runs its HTML cases only with it. `pdf`
+          # compiles MuPDF from source (bindgen reads its headers through the
+          # runner's libclang), which the cache below then holds.
           - label: pdf
             args: "--features pdf,html"
           # The configuration the mobile apps link (see rust-lint): bmlib
@@ -232,29 +238,14 @@ jobs:
     defaults:
       run:
         working-directory: rust
-    env:
-      # `pdfium-bundled` fetches a prebuilt library at build time. Pointing it
-      # inside the workspace makes what the cache below holds unambiguous.
-      PDFIUM_BUNDLED_CACHE_DIR: ${{ github.workspace }}/rust/.pdfium-cache
     steps:
       - uses: actions/checkout@v7
-      - name: Install PDFium's runtime libraries
-        # PDFium ships as a shared library whose own dependencies include the
-        # font and image stack. The runner image happens to carry most of it;
-        # naming them turns "liblcms2.so.2: cannot open shared object file"
-        # from a red test run into a package install.
-        if: matrix.label == 'pdf'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libfontconfig1 libfreetype6 liblcms2-2 libopenjp2-7 libpng16-16
       - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-            rust/.pdfium-cache
           key: ${{ runner.os }}-rust-${{ matrix.label }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-rust-${{ matrix.label }}-

@@ -1,5 +1,12 @@
 # HANDOVER — bmlib development
 
+_Last updated: 2026-10-31 (**this session is #590 and #591**, Rust's PDF
+backend moved to MuPDF and the segmenter's page furniture, two stacked PRs:
+`fix/rust-pdf-mupdf-590`, then `fix/segmenter-page-furniture-591` on top of
+it). **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
+since — #526 through #589 — is unreleased, **and no StudyAnalyzer item is left
+in bmlib, so a 0.12.0 release is a natural next session** (the Rust crate's
+`pdf` feature changed API in #590: say so in its release notes).
 _Last updated: 2026-10-31 (**this session is #592**, a fresh Rust cache
 saving no PDF, on `fix/cache-dirs`; #587 and #588 were PR #589, merged).
 **0.11.0 is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged
@@ -37,6 +44,38 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
+## This session: MuPDF in Rust (#590), page furniture (#591)
+
+The CHANGELOG's top entries (both files) are the argument. **#590**: Rust's
+`pdf` feature extracts with MuPDF (`mupdf` =0.8.0, MuPDF 1.27.2, linked
+statically; `MupdfExtractor` / `MupdfPdfExtractor`, `PdfiumExtractor` gone —
+breaking), reading a line as PyMuPDF's `get_text("dict")` does; over the
+151-PDF title corpus plus the jptcp paper, 143 give PyMuPDF 1.28.5's lines
+exactly and 149 give 1.27.2's (the crate's MuPDF release; page text 151 of
+151). `canonical_from_segmented` joins a soft hyphen followed by white space
+(`join_soft_hyphens`, both languages). A new contract starts at PDF bytes:
+`tests/fixtures/pdf_extraction.{pdf,json}`, written by
+`scripts/make_pdf_extraction_fixture.py`. **#591**: `segment_document` sets
+page furniture aside first (`page_furniture`, both languages; measured over
+231 PDFs, the 151 plus 80 Unpaywall journal PDFs — Europe PMC's `?pdf=render`
+answered 403 to every request on 2026-10-31, so the journal sample came from
+Unpaywall). `PDF_CANONICAL_VERSION` is 3. **For StudyAnalyzer**: rename
+`PdfiumExtractor::bundled()` to `MupdfExtractor::new()` (nothing to bind or
+cache any more), and a PDF's canonical text is re-made (`pdf-3`).
+
+**Residuals, not filed**: the MuPDF version gap (combining accents, a
+subset-tagged base-14 face's box) closes when the crate bundles MuPDF 1.28;
+two PDFs' no-Unicode glyphs differ; line boxes round maths fonts
+(`JM_char_quad`, which the crate cannot reach). The issue's two Android
+build workarounds and `Font::name`'s panic on a non-UTF-8 name are
+upstream `messense/mupdf-rs` bugs, **not reported** — the maintainer's call.
+
+## Previous session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
+
+PR #589, merged. `search` rebuilds the chunks with `chunk_canonical` and
+refuses a set unless every stored `(section, start, end)` is the rebuilt
+chunk's; `rust/bmlib/tests/vector_store.rs` runs each case on SQLite and
+PostgreSQL. Local run: `BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost
 ## This session: a fresh Rust cache saves its PDFs and HTML (#592)
 
 Found by StudyAnalyzer's manual test: Rust's `FullTextCache` creates no
