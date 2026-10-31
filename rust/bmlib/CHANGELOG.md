@@ -9,6 +9,20 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — breaking: a PDF extraction error is typed (#598)
+`PdfTextExtractor::extract_blocks` and `page_texts` return
+`Result<_, PdfError>` rather than `Result<_, String>`. `PdfError { kind,
+message }` (in `fulltext::pdf_text`, re-exported from `fulltext`) says whose
+fault a failure is: `PdfErrorKind::Encrypted` (the message says to remove the
+password), `Unreadable` (MuPDF's `FORMAT`, `SYNTAX` or `UNSUPPORTED`) or
+`Engine` (every other MuPDF code, the crate's own errors, and anything
+unplaced). The message never names the path; MuPDF's own open messages did,
+and the path is removed. `PdfErrorKind` is `#[non_exhaustive]`, and its
+`as_str()` is Python's `PDFErrorKind` value. `ConversionResult` gains
+`error_kind: Option<PdfErrorKind>` (a struct literal must name it, or use
+`..ConversionResult::default()`). `MupdfPdfExtractor` still reports a failure
+as `PdfExtractError::Conversion(String)`, now the `PdfError`'s message.
+
 ### Fixed, breaking for a struct literal — follows Python's failed PDF download (#594)
 `FullTextResult::pdf_download_failure: Option<String>` (`#[serde(default)]`)
 names why a PDF tier's download left no `file_path`: `"http-<status>"`,

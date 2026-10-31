@@ -287,6 +287,90 @@ pub fn render_html(success: bool, text: &str, page_texts: &[String]) -> String {
         .join("\n")
 }
 
+/// Which side a PDF extraction failure is on.
+///
+/// The split a caller acts on: [`PdfErrorKind::Encrypted`] and
+/// [`PdfErrorKind::Unreadable`] are the **file's** (pick another file, or remove
+/// the password), [`PdfErrorKind::Engine`] is **not** (out of memory, a system
+/// call, a library fault — the same file may read elsewhere or later). A failure
+/// the backend cannot place is `Engine`, so an unknown cause is reported loudly
+/// rather than blamed on the file (#598).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PdfErrorKind {
+    /// The PDF needs a password to open.
+    Encrypted,
+    /// The file is not a PDF the backend can read: damaged, truncated or
+    /// unsupported.
+    Unreadable,
+    /// The engine failed, not the file.
+    Engine,
+}
+
+impl PdfErrorKind {
+    /// The wire name, Python's `PDFErrorKind` value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PdfErrorKind::Encrypted => "encrypted",
+            PdfErrorKind::Unreadable => "unreadable",
+            PdfErrorKind::Engine => "engine",
+        }
+    }
+}
+
+/// Why a PDF could not be extracted: its [`PdfErrorKind`] and a message fit to
+/// show a user.
+///
+/// The message **never carries the path read**, which the caller knows and the
+/// user may never have chosen (a scratch copy, say); Python's
+/// `PDFExtractionError` is the same pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PdfError {
+    /// Which side the failure is on.
+    pub kind: PdfErrorKind,
+    /// What happened.
+    pub message: String,
+}
+
+impl PdfError {
+    /// The PDF needs a password, and the message says what to do about it.
+    #[must_use]
+    pub fn encrypted() -> Self {
+        PdfError {
+            kind: PdfErrorKind::Encrypted,
+            message: "the PDF is password-protected; remove the password and try again"
+                .to_string(),
+        }
+    }
+
+    /// The file could not be read, for `detail`.
+    #[must_use]
+    pub fn unreadable(detail: &str) -> Self {
+        PdfError {
+            kind: PdfErrorKind::Unreadable,
+            message: format!("the PDF could not be read: {detail}"),
+        }
+    }
+
+    /// The engine failed, for `detail`.
+    #[must_use]
+    pub fn engine(detail: &str) -> Self {
+        PdfError {
+            kind: PdfErrorKind::Engine,
+            message: format!("the PDF engine failed: {detail}"),
+        }
+    }
+}
+
+impl std::fmt::Display for PdfError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PdfError {}
+
 /// What a PDF backend must do.
 ///
 /// A trait, so the assembly rules above are testable without a PDF, and so the
@@ -300,22 +384,23 @@ pub trait PdfTextExtractor {
     ///
     /// # Errors
     ///
-    /// When the document cannot be read or the text cannot be extracted.
-    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, String>;
+    /// [`PdfError`] when the document cannot be read or the text cannot be
+    /// extracted.
+    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, PdfError>;
 
     /// The page texts, for the furniture rule.
     ///
     /// # Errors
     ///
     /// As [`PdfTextExtractor::extract_blocks`].
-    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, String>;
+    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, PdfError>;
 }
 
 /// What a conversion produced.
 ///
-/// The fields are the Python dataclass's, in its order, and `title` is declared
-/// **last** there so positional construction stays stable through a change — kept
-/// here for the same reason.
+/// The fields are the Python dataclass's, in its order, and each added field is
+/// declared **after** the rest there (`title`, then `error_kind`) so positional
+/// construction stays stable through a change — kept here for the same reason.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConversionResult {
     /// Whether the conversion ran at all.
@@ -345,6 +430,8 @@ pub struct ConversionResult {
     pub page_texts: Vec<String>,
     /// The document's title, when the PDF states one.
     pub title: Option<String>,
+    /// Which side a failure is on; `None` when the conversion succeeded.
+    pub error_kind: Option<PdfErrorKind>,
 }
 
 impl Default for ConversionResult {
@@ -363,6 +450,7 @@ impl Default for ConversionResult {
             error_message: None,
             page_texts: Vec::new(),
             title: None,
+            error_kind: None,
         }
     }
 }

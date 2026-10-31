@@ -28,6 +28,8 @@ from bmlib.fulltext.pdf_converter import (
     ConversionResult,
     LayoutExtractor,
     PDFConverter,
+    PDFErrorKind,
+    PDFExtractionError,
     PyMuPDFConverter,
     _line_to_block,
     get_converter,
@@ -145,6 +147,21 @@ class TestConversionResult:
         assert "pymupdf" in text
 
 
+class TestPDFExtractionError:
+    """The typed failure both PDF paths report (#598)."""
+
+    def test_it_pickles_with_its_kind(self):
+        import pickle
+
+        error = PDFExtractionError(PDFErrorKind.ENGINE, "the PDF engine failed: x")
+        copy = pickle.loads(pickle.dumps(error))
+        assert copy.kind is PDFErrorKind.ENGINE
+        assert str(copy) == str(error)
+
+    def test_the_kinds_are_rusts_wire_names(self):
+        assert [k.value for k in PDFErrorKind] == ["encrypted", "unreadable", "engine"]
+
+
 class TestRegistry:
     def test_list_converters_includes_pymupdf(self):
         assert "pymupdf" in list_converters()
@@ -205,7 +222,9 @@ class TestPyMuPDFConversion:
         result = get_converter("pymupdf").convert(pdf_path)
         assert result.success is False
         assert result.text == ""
-        assert result.error_message
+        assert result.error_kind is PDFErrorKind.UNREADABLE
+        assert result.error_message.startswith("the PDF could not be read: ")
+        assert "corrupt.pdf" not in result.error_message
 
     def test_a_password_protected_pdf_is_a_failed_conversion(self, tmp_path):
         # PyMuPDF opens an encrypted file without the password, then fails
@@ -217,7 +236,10 @@ class TestPyMuPDFConversion:
         result = get_converter("pymupdf").convert(pdf_path)
         assert result.success is False
         assert result.text == ""
-        assert result.error_message == "PDF is password-protected"
+        assert result.error_kind is PDFErrorKind.ENCRYPTED
+        assert result.error_message == (
+            "the PDF is password-protected; remove the password and try again"
+        )
 
     def test_an_owner_password_alone_does_not_block_conversion(self, tmp_path):
         # Negative control isolating the guard from `is_encrypted`. An
@@ -228,6 +250,7 @@ class TestPyMuPDFConversion:
 
         result = get_converter("pymupdf").convert(pdf_path)
         assert result.success is True
+        assert result.error_kind is None
         assert "Confidential trial results" in result.text
 
 
@@ -545,8 +568,84 @@ class TestExtractBlocks:
         # sparse PDF — so this path raises.
         pdf = tmp_path / "corrupt.pdf"
         pdf.write_bytes(b"%PDF-1.4 this is not a valid pdf body")
-        with pytest.raises(ValueError, match="Failed to extract text blocks"):
+        with pytest.raises(PDFExtractionError) as caught:
             get_converter("pymupdf").extract_blocks(pdf)
+        # Still a ValueError, which is what this path raised before #598.
+        assert isinstance(caught.value, ValueError)
+        assert caught.value.kind is PDFErrorKind.UNREADABLE
+        assert str(caught.value).startswith("the PDF could not be read: ")
+        assert "corrupt.pdf" not in str(caught.value)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param(b"not a pdf at all", id="garbage"),
+            pytest.param(b"%PDF-1.4\n1 0 obj\n<<", id="truncated"),
+            # PyMuPDF's own EmptyFileError, which chains no MuPDF code and
+            # names the path.
+            pytest.param(b"", id="empty"),
+        ],
+    )
+    def test_a_damaged_file_is_the_files_fault_on_both_paths(self, tmp_path, body):
+        # MuPDF's FORMAT and SYNTAX, the codes Rust's classify reads as the
+        # file's too.
+        pdf = tmp_path / "damaged.pdf"
+        pdf.write_bytes(body)
+        converter = get_converter("pymupdf")
+        result = converter.convert(pdf)
+        assert result.error_kind is PDFErrorKind.UNREADABLE
+        assert "damaged.pdf" not in result.error_message
+        with pytest.raises(PDFExtractionError) as caught:
+            converter.extract_blocks(pdf)
+        assert caught.value.kind is PDFErrorKind.UNREADABLE
+        assert "damaged.pdf" not in str(caught.value)
+
+    @pytest.mark.parametrize(
+        "make_error",
+        [
+            pytest.param(lambda m: MemoryError(), id="memory"),
+            pytest.param(lambda m: m.mupdf.FzErrorSystem("out of memory"), id="fz-system"),
+            pytest.param(lambda m: m.mupdf.FzErrorArgument("bad argument"), id="fz-argument"),
+            pytest.param(lambda m: RuntimeError("unplaced"), id="unknown"),
+        ],
+    )
+    def test_an_engine_fault_is_not_the_files(self, tmp_path, monkeypatch, make_error):
+        # An out-of-memory on a large PDF must not tell the user to pick
+        # another file; a cause the backend cannot place is the engine's too.
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        converter = get_converter("pymupdf")
+        error = make_error(converter._pymupdf)
+
+        def fail(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(converter._pymupdf, "open", fail)
+        result = converter.convert(pdf)
+        assert result.error_kind is PDFErrorKind.ENGINE
+        assert result.error_message.startswith("the PDF engine failed: ")
+        with pytest.raises(PDFExtractionError) as caught:
+            converter.extract_blocks(pdf)
+        assert caught.value.kind is PDFErrorKind.ENGINE
+
+    def test_a_chained_mupdf_code_decides_over_the_wrapper(self, tmp_path, monkeypatch):
+        # PyMuPDF raises FileDataError for any open failure and chains
+        # MuPDF's own error as the cause; the cause's code is what decides.
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        converter = get_converter("pymupdf")
+        pymupdf = converter._pymupdf
+
+        def fail(*_args, **_kwargs):
+            try:
+                raise pymupdf.mupdf.FzErrorSystem("cannot allocate")
+            except Exception as cause:
+                raise pymupdf.FileDataError(f"Failed to open file {str(pdf)!r}") from cause
+
+        monkeypatch.setattr(pymupdf, "open", fail)
+        result = converter.convert(pdf)
+        assert result.error_kind is PDFErrorKind.ENGINE
+        assert result.error_message == "the PDF engine failed: cannot allocate"
 
     def test_a_password_protected_pdf_names_the_password(self, tmp_path):
         # This already raised, but only because get_text() happened to fail:
@@ -554,8 +653,9 @@ class TestExtractBlocks:
         # an extraction that ever stopped raising would return [], which is
         # what an image-only scan looks like. The check is explicit instead.
         pdf = _write_encrypted_pdf(tmp_path / "locked.pdf", user_pw="user")
-        with pytest.raises(ValueError, match="password-protected"):
+        with pytest.raises(PDFExtractionError, match="remove the password") as caught:
             get_converter("pymupdf").extract_blocks(pdf)
+        assert caught.value.kind is PDFErrorKind.ENCRYPTED
 
     def test_an_owner_password_alone_does_not_block_extraction(self, tmp_path):
         # Negative control: encrypted, but readable, so blocks come back.

@@ -76,7 +76,7 @@
 //! lays it out.
 
 use crate::fulltext::models::TextBlock;
-use crate::fulltext::pdf_text::{normalize_line, PdfTextExtractor};
+use crate::fulltext::pdf_text::{normalize_line, PdfError, PdfTextExtractor};
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
 use mupdf::{Device, DisplayList, Document, Matrix, Page, Quad, Rect};
 
@@ -292,18 +292,43 @@ impl MupdfExtractor {
     }
 }
 
+/// A MuPDF failure as a [`PdfError`], `context` naming the step.
+///
+/// The file's side is MuPDF's `FORMAT`, `SYNTAX` and `UNSUPPORTED` — what a
+/// damaged, truncated or non-PDF file throws (a garbage or empty file is
+/// `FORMAT`, a truncated one `SYNTAX`, measured). Everything else is the
+/// engine's: `SYSTEM` (out of memory, a syscall — a missing file too),
+/// `LIBRARY`, `ARGUMENT`, `LIMIT`, `GENERIC` and the crate's own errors. MuPDF
+/// names the path in an open failure, and it is removed.
+fn classify(error: &mupdf::Error, context: &str, path: &std::path::Path) -> PdfError {
+    use mupdf_sys::{FZ_ERROR_FORMAT, FZ_ERROR_SYNTAX, FZ_ERROR_UNSUPPORTED};
+    let (detail, the_file) = match error {
+        mupdf::Error::MuPdf(e) => (
+            e.message.clone(),
+            [FZ_ERROR_FORMAT, FZ_ERROR_SYNTAX, FZ_ERROR_UNSUPPORTED]
+                .iter()
+                .any(|&code| e.code == code as i32),
+        ),
+        other => (other.to_string(), false),
+    };
+    // shortcut: MuPDF cuts a message at 256 bytes, so a path long enough to be
+    // cut survives the replace; check the path's length first if one ever does.
+    let detail = format!("{context}: {detail}").replace(&path.display().to_string(), "the file");
+    if the_file {
+        PdfError::unreadable(&detail)
+    } else {
+        PdfError::engine(&detail)
+    }
+}
+
 /// Open a PDF, refusing one that needs a password, as `extract_blocks` does.
-fn open(path: &std::path::Path) -> Result<Document, String> {
-    let document =
-        Document::open(path).map_err(|e| format!("could not open {}: {e}", path.display()))?;
+fn open(path: &std::path::Path) -> Result<Document, PdfError> {
+    let document = Document::open(path).map_err(|e| classify(&e, "could not open it", path))?;
     if document
         .needs_password()
-        .map_err(|e| format!("could not open {}: {e}", path.display()))?
+        .map_err(|e| classify(&e, "could not open it", path))?
     {
-        return Err(format!(
-            "could not open {}: the PDF is password-protected",
-            path.display()
-        ));
+        return Err(PdfError::encrypted());
     }
     Ok(document)
 }
@@ -316,13 +341,14 @@ fn open(path: &std::path::Path) -> Result<Document, String> {
 /// text page comes from an empty display list, the crate's one way to make a
 /// text page from a rectangle. A page is loaded only when it is reached, so a
 /// long document is not held whole.
-fn text_pages(
-    document: &Document,
+fn text_pages<'a>(
+    document: &'a Document,
     flags: TextPageFlags,
-) -> Result<impl Iterator<Item = Result<(Rect, TextPage), String>> + '_, String> {
+    path: &'a std::path::Path,
+) -> Result<impl Iterator<Item = Result<(Rect, TextPage), PdfError>> + 'a, PdfError> {
     let count = document
         .page_count()
-        .map_err(|e| format!("could not count the pages: {e}"))?;
+        .map_err(|e| classify(&e, "could not count the pages", path))?;
     Ok((0..count).map(move |index| {
         let read = |page: Page| -> Result<(Rect, TextPage), mupdf::Error> {
             let bounds = page.bounds()?;
@@ -336,7 +362,7 @@ fn text_pages(
         document
             .load_page(index)
             .and_then(read)
-            .map_err(|e| format!("could not read the text of page {index}: {e}"))
+            .map_err(|e| classify(&e, &format!("could not read the text of page {index}"), path))
     }))
 }
 
@@ -367,10 +393,10 @@ impl PdfTextExtractor for MupdfExtractor {
         "mupdf"
     }
 
-    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, String> {
+    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, PdfError> {
         let document = open(path)?;
         let mut blocks = Vec::new();
-        for (page_index, page) in text_pages(&document, DICT_FLAGS)?.enumerate() {
+        for (page_index, page) in text_pages(&document, DICT_FLAGS, path)?.enumerate() {
             let (bounds, text_page) = page?;
             // `lines()` yields nothing for an image block, which is the
             // `type != 0` skip `extract_blocks` makes.
@@ -383,9 +409,9 @@ impl PdfTextExtractor for MupdfExtractor {
         Ok(blocks)
     }
 
-    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, String> {
+    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, PdfError> {
         let document = open(path)?;
-        let pages = text_pages(&document, TEXT_FLAGS)?
+        let pages = text_pages(&document, TEXT_FLAGS, path)?
             .map(|page| page.map(|(bounds, text_page)| page_text(&text_page, &bounds)))
             .collect();
         pages
@@ -429,7 +455,7 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
         let pages = self
             .extractor
             .page_texts(pdf_path)
-            .map_err(PdfExtractError::Conversion)?;
+            .map_err(|e| PdfExtractError::Conversion(e.to_string()))?;
         let joined = pages.join("\n");
         let html = render_html(true, &joined, &pages);
         let char_count = joined.chars().count();

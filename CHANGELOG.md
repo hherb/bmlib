@@ -6,6 +6,29 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed — breaking for a caller matching the old messages
+- **A PDF that cannot be extracted says whose fault it is** (#598, found
+  reviewing StudyAnalyzer's PR #21). `PyMuPDFConverter.convert()` reported
+  every failure as an `error_message` string and `extract_blocks()` raised a
+  bare `ValueError`, so a caller could not tell a bad file from an engine
+  fault: an out-of-memory on a large PDF told the user to pick another file.
+  `PDFErrorKind` (`ENCRYPTED`, `UNREADABLE`, `ENGINE`) now says which side:
+  MuPDF's `FzErrorFormat`, `FzErrorSyntax` and `FzErrorUnsupported`, chained by
+  PyMuPDF as the cause, are the file's (a garbage or empty file is `FORMAT`, a
+  truncated one `SYNTAX`, measured in both languages), and every other code —
+  `SYSTEM`, `LIBRARY`, `ARGUMENT`, `LIMIT` — a `MemoryError`, and any cause the
+  converter cannot place are the engine's, so an unknown fault is loud rather
+  than blamed on the file. `ConversionResult.error_kind` carries it (declared
+  last; `None` on success), and `extract_blocks()` raises
+  `PDFExtractionError(kind, message)`, a `ValueError` subclass that pickles.
+  **The messages move**: they no longer name the path (the caller knows it,
+  and the user may never have chosen it), *"Invalid or corrupted PDF: …"* and
+  *"Failed to extract text blocks from …"* become *"the PDF could not be
+  read: …"* or *"the PDF engine failed: …"* carrying MuPDF's own text, and
+  *"PDF is password-protected"* becomes *"…; remove the password and try
+  again"*. Rust's `PdfTextExtractor` returns the same pair as `PdfError`
+  (see the crate's CHANGELOG). Nothing stored moves.
+
 ### Changed
 - **The segmenter sets page furniture aside** (#591, `"pdf-3"`).
   `SectionSegmenter.segment_document` put a page's running head, footer,

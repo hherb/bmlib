@@ -39,6 +39,7 @@ import re
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
+from enum import StrEnum
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -78,6 +79,49 @@ _SPAN_BOLD_FLAG = 1 << 4
 _SPAN_ITALIC_FLAG = 1 << 1
 
 
+class PDFErrorKind(StrEnum):
+    """Which side a PDF extraction failure is on (#598).
+
+    ``ENCRYPTED`` and ``UNREADABLE`` are the **file's** (remove the password,
+    or pick another file); ``ENGINE`` is **not** (out of memory, a system
+    call, a library fault — the same file may read elsewhere or later). A
+    failure the backend cannot place is ``ENGINE``, so an unknown cause is
+    reported loudly rather than blamed on the file. Rust's ``PdfErrorKind``,
+    member for member.
+    """
+
+    ENCRYPTED = "encrypted"
+    UNREADABLE = "unreadable"
+    ENGINE = "engine"
+
+
+_ENCRYPTED_MESSAGE = "the PDF is password-protected; remove the password and try again"
+
+
+class PDFExtractionError(ValueError):
+    """A PDF could not be extracted: its :class:`PDFErrorKind` and a message.
+
+    A ``ValueError``, which is what :meth:`PyMuPDFConverter.extract_blocks`
+    raised before it was typed. The message never carries the path read,
+    which the caller knows and the user may never have chosen. Rust's
+    ``PdfError`` is the same pair.
+    """
+
+    def __init__(self, kind: PDFErrorKind, message: str) -> None:
+        """Hold the kind beside the message."""
+        super().__init__(message)
+        self.kind = kind
+
+    @classmethod
+    def encrypted(cls) -> PDFExtractionError:
+        """The PDF needs a password, and the message says what to do."""
+        return cls(PDFErrorKind.ENCRYPTED, _ENCRYPTED_MESSAGE)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickle with both arguments, which ``BaseException`` would drop."""
+        return (type(self), (self.kind, str(self)))
+
+
 @dataclass
 class ConversionResult:
     """Result of a PDF-to-text conversion — a stable interface across backends."""
@@ -104,8 +148,11 @@ class ConversionResult:
     # it, else None (issue #56). ``metadata["title"]`` keeps the verbatim
     # original beside this, junk and all — the dict is a record of what the
     # PDF says, and a caller debugging provenance needs it unaltered.
-    # Declared last so positional construction stays stable.
+    # Declared after the rest so positional construction stays stable.
     title: str | None = None
+    # Which side a failure is on (#598); None when the conversion succeeded.
+    # Declared last for the reason ``title`` is.
+    error_kind: PDFErrorKind | None = None
 
     @property
     def is_complete(self) -> bool:
@@ -241,6 +288,42 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
     )
 
 
+def _classify(e: BaseException, pymupdf: Any, pdf_path: Path) -> PDFExtractionError:
+    """A PyMuPDF failure as a :class:`PDFExtractionError`.
+
+    PyMuPDF chains MuPDF's own error as the cause, and its class is the code:
+    ``FzErrorFormat``, ``FzErrorSyntax`` and ``FzErrorUnsupported`` are the
+    file's — a garbage or empty file is ``FORMAT``, a truncated one
+    ``SYNTAX``, measured — and every other code the engine's, as Rust's
+    ``classify`` decides. A ``FileDataError`` with no MuPDF cause (PyMuPDF's
+    own refusal of an empty file) is the file's; anything else, a
+    ``MemoryError`` included, is the engine's. PyMuPDF names the path in an
+    open failure, and it is removed.
+    """
+    mupdf = pymupdf.mupdf
+    file_codes = (mupdf.FzErrorFormat, mupdf.FzErrorSyntax, mupdf.FzErrorUnsupported)
+    fz_error: BaseException | None = None
+    seen: set[int] = set()
+    link: BaseException | None = e
+    while link is not None and id(link) not in seen and fz_error is None:
+        seen.add(id(link))
+        if isinstance(link, mupdf.FzErrorBase):
+            fz_error = link
+        link = link.__cause__ or link.__context__
+    if fz_error is not None:
+        the_file = isinstance(fz_error, file_codes)
+        # MuPDF's own text, as Rust reports it ("no objects found"), rather
+        # than PyMuPDF's wrapper naming the file.
+        detail = str(getattr(fz_error, "m_text", "") or fz_error)
+    else:
+        the_file = isinstance(e, pymupdf.FileDataError)
+        detail = str(e)
+    detail = detail.replace(str(pdf_path), "the file")
+    if the_file:
+        return PDFExtractionError(PDFErrorKind.UNREADABLE, f"the PDF could not be read: {detail}")
+    return PDFExtractionError(PDFErrorKind.ENGINE, f"the PDF engine failed: {detail}")
+
+
 class PyMuPDFConverter(PDFConverter):
     """PDF converter backed by PyMuPDF (``pymupdf``).
 
@@ -309,8 +392,8 @@ class PyMuPDFConverter(PDFConverter):
                     # ``is_encrypted`` because an owner password restricts
                     # permissions without blocking reads: such a file is
                     # encrypted and extracts perfectly.
-                    error_msg = "PDF is password-protected"
-                    logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
+                    error = PDFExtractionError.encrypted()
+                    logger.error("PDF conversion failed for %s: %s", pdf_path, error)
                     return ConversionResult(
                         success=False,
                         text="",
@@ -321,7 +404,8 @@ class PyMuPDFConverter(PDFConverter):
                         warnings=warnings,
                         converter_name=self.name,
                         converter_version=self.version,
-                        error_message=error_msg,
+                        error_message=str(error),
+                        error_kind=error.kind,
                     )
 
                 try:
@@ -400,25 +484,9 @@ class PyMuPDFConverter(PDFConverter):
                 title=judged_title,
             )
 
-        except self._pymupdf.FileDataError as e:
-            error_msg = f"Invalid or corrupted PDF: {e}"
-            logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
-            return ConversionResult(
-                success=False,
-                text="",
-                format="plaintext",
-                page_count=page_count,
-                converted_pages=0,
-                char_count=0,
-                warnings=warnings,
-                converter_name=self.name,
-                converter_version=self.version,
-                error_message=error_msg,
-            )
-
         except Exception as e:  # noqa: BLE001 — surface any backend failure as a result
-            error_msg = f"PDF conversion failed: {e}"
-            logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
+            error = _classify(e, self._pymupdf, pdf_path)
+            logger.error("PDF conversion failed for %s: %s", pdf_path, error)
             return ConversionResult(
                 success=False,
                 text="",
@@ -429,7 +497,8 @@ class PyMuPDFConverter(PDFConverter):
                 warnings=warnings,
                 converter_name=self.name,
                 converter_version=self.version,
-                error_message=error_msg,
+                error_message=str(error),
+                error_kind=error.kind,
             )
 
     def extract_blocks(self, pdf_path: Path) -> list[TextBlock]:
@@ -453,15 +522,17 @@ class PyMuPDFConverter(PDFConverter):
 
         Raises:
             FileNotFoundError: If the file does not exist.
-            ValueError: If the path is not a PDF file, or the file cannot
-                be parsed (corrupt or encrypted).
+            ValueError: If the path is not a PDF file.
+            PDFExtractionError: If the file cannot be read; its ``kind``
+                says whether the file (encrypted, unreadable) or the engine
+                is at fault. A ``ValueError`` too.
         """
         self.validate_pdf_path(pdf_path)
         blocks: list[TextBlock] = []
         try:
             with self._pymupdf.open(str(pdf_path)) as doc:
                 if doc.needs_pass:
-                    raise ValueError("PDF is password-protected")
+                    raise PDFExtractionError.encrypted()
                 for page_num in range(len(doc)):
                     page_dict = doc[page_num].get_text("dict")
                     for raw_block in page_dict.get("blocks", []):
@@ -471,8 +542,10 @@ class PyMuPDFConverter(PDFConverter):
                             text_block = _line_to_block(raw_line, page_num)
                             if text_block is not None:
                                 blocks.append(text_block)
-        except Exception as e:  # noqa: BLE001 — any parse failure becomes ValueError
-            raise ValueError(f"Failed to extract text blocks from {pdf_path}: {e}") from e
+        except PDFExtractionError:
+            raise
+        except Exception as e:  # noqa: BLE001 — any failure is classified, never lost
+            raise _classify(e, self._pymupdf, pdf_path) from e
         return blocks
 
 
