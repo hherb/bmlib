@@ -110,7 +110,7 @@ class TestCanonicalFromSegmented:
 
     def test_format_and_version(self) -> None:
         doc = canonical_from_segmented(SegmentedDocument())
-        assert (doc.source_format, doc.converter_version) == (SourceFormat.PDF, "pdf-2")
+        assert (doc.source_format, doc.converter_version) == (SourceFormat.PDF, "pdf-3")
 
     def test_the_segmenters_output_converts_end_to_end(self) -> None:
         blocks = [

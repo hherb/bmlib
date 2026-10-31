@@ -45,7 +45,7 @@ use crate::fulltext::models::{Section, SectionType, SegmentedDocument};
 /// against a digest of its own converter, segmenter and extraction; a change to
 /// the Rust segmenter alone is held only by the shared contract and the
 /// segmenter's own oracle.
-pub const PDF_CANONICAL_VERSION: u32 = 2;
+pub const PDF_CANONICAL_VERSION: u32 = 3;
 
 /// The soft hyphen, U+00AD.
 pub const SOFT_HYPHEN: char = '\u{ad}';
@@ -150,7 +150,7 @@ mod tests {
         };
         let doc = canonical_from_segmented(&document);
         assert_eq!(doc.text, "By A. Author\n\nBody.\n\n2. Methods\n\nWe did.");
-        assert_eq!(doc.converter_version, "pdf-2");
+        assert_eq!(doc.converter_version, "pdf-3");
     }
 
     /// A first-page line at height `y`, 12 points tall.

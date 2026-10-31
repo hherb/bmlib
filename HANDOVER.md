@@ -63,6 +63,12 @@ Unpaywall). `PDF_CANONICAL_VERSION` is 3. **For StudyAnalyzer**: rename
 `PdfiumExtractor::bundled()` to `MupdfExtractor::new()` (nothing to bind or
 cache any more), and a PDF's canonical text is re-made (`pdf-3`).
 
+A candidate is furniture only at its page's edge (PR review: a table
+continued on one grid over pages read as furniture). **Filed: #595** —
+`render_html`'s exact-text furniture filter is a second, weaker rule beside
+`page_furniture`. Not measured: a figure label alone at a fixed place atop
+its own page on 40% of the pages is set aside.
+
 **Residuals, not filed**: the MuPDF version gap (combining accents, a
 subset-tagged base-14 face's box) closes when the crate bundles MuPDF 1.28;
 two PDFs' no-Unicode glyphs differ; line boxes round maths fonts

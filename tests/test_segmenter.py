@@ -24,7 +24,15 @@ is tested in ``tests/test_pdf_converter.py``.
 from __future__ import annotations
 
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
-from bmlib.fulltext.segmenter import SectionSegmenter, _median_font_size
+from bmlib.fulltext.segmenter import (
+    FURNITURE_MAX_EDGE_LINES,
+    FURNITURE_MIN_PAGES,
+    FURNITURE_PAGE_RATIO,
+    SectionSegmenter,
+    _median_font_size,
+    drop_page_furniture,
+    page_furniture,
+)
 
 # Font sizes used throughout: body text, a section heading, the paper title.
 BODY_SIZE = 10.0
@@ -484,6 +492,122 @@ class TestAJunkMetadataTitleDoesNotBeatTheTitleOnThePage:
             [block("Late text", page=2)], {"title": "Effects of aspirin on outcomes"}
         )
         assert doc.title == "Effects of aspirin on outcomes"
+
+
+_BODY = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"]
+
+
+def paged(pages: int, head_on: int | None = None) -> list[TextBlock]:
+    """*pages* pages of two body lines and a page number, the first *head_on*
+    (default: all) under a running head."""
+    blocks: list[TextBlock] = []
+    for page in range(pages):
+        if page < (pages if head_on is None else head_on):
+            blocks.append(block("Smith et al. A trial 2024", page=page, y=30.0))
+        blocks.append(block(f"{_BODY[page]} reports", page=page, y=100.0))
+        blocks.append(block(f"{_BODY[page]} replies", page=page, y=114.0))
+        blocks.append(block(str(page + 101), page=page, y=760.0))
+    return blocks
+
+
+class TestPageFurniture:
+    def test_a_running_head_and_a_page_number_are_furniture(self):
+        blocks = paged(4)
+        assert {blocks[i].text for i in page_furniture(blocks)} == {
+            "Smith et al. A trial 2024",
+            "101",
+            "102",
+            "103",
+            "104",
+        }
+
+    def test_digits_aside_the_text_must_agree(self):
+        # A run of digits is one ``#``, so page 9 and page 10 agree.
+        blocks = [block(f"Page {p + 8} of 11", page=p, y=760.0) for p in range(4)]
+        assert page_furniture(blocks) == {0, 1, 2, 3}
+
+    def test_the_height_must_agree_within_the_tolerance(self):
+        moved = [block("Running head", page=p, y=30.0 + 1.5 * p) for p in range(4)]
+        assert page_furniture(moved) == {0, 1, 2, 3}  # each within 2 pt of the last
+        apart = [block("Running head", page=p, y=30.0 + 10 * p) for p in range(4)]
+        assert page_furniture(apart) == set()
+
+    def test_the_share_of_pages_decides(self):
+        assert (FURNITURE_PAGE_RATIO, FURNITURE_MIN_PAGES) == (0.4, 3)
+
+        def heads(blocks: list[TextBlock]) -> int:
+            return sum(blocks[i].text.startswith("Smith") for i in page_furniture(blocks))
+
+        assert heads(paged(8, head_on=4)) == 4  # ceil(3.2) = 4 of 8
+        assert heads(paged(8, head_on=3)) == 0
+        # Two pages are never enough, whatever the share.
+        assert page_furniture(paged(2)) == set()
+
+    def test_a_table_repeating_on_one_grid_is_kept_between_its_page_text(self):
+        # PR review: "0.12" and "3.4" both read "#.#", so a table continued on
+        # the same grid over pages is one run per row; between the page's prose
+        # it is not at an edge.
+        blocks = paged(6)
+        for page in range(6):
+            blocks.append(block("Characteristic n (%) OR (95% CI)", page=page, y=200.0))
+            for row in range(5):
+                blocks.append(
+                    block(f"{row}.{page}{row} ({page + 10}%)", page=page, y=220.0 + 14 * row)
+                )
+            blocks.append(block(f"{_BODY[page]} concludes", page=page, y=400.0))
+        assert {blocks[i].text for i in page_furniture(blocks)} == {
+            "Smith et al. A trial 2024",
+            *(str(p + 101) for p in range(6)),
+        }
+
+    def test_too_many_lines_at_one_edge_are_the_pages_content(self):
+        assert FURNITURE_MAX_EDGE_LINES == 20
+
+        def rows(n: int) -> list[TextBlock]:
+            return [
+                block(f"{r}.{p} {r + p}", page=p, y=40.0 + 14 * r)
+                for p in range(4)
+                for r in range(n)
+            ] + [block(f"{_BODY[p]} below", page=p, y=700.0) for p in range(4)]
+
+        assert len(page_furniture(rows(FURNITURE_MAX_EDGE_LINES))) == 4 * FURNITURE_MAX_EDGE_LINES
+        assert page_furniture(rows(FURNITURE_MAX_EDGE_LINES + 1)) == set()
+
+    def test_a_line_with_no_finite_height_is_never_furniture(self):
+        blocks = paged(4)
+        blocks[0] = block("Smith et al. A trial 2024", page=0, y=float("nan"))
+        furniture = page_furniture(blocks)
+        assert (
+            0 not in furniture and sum(blocks[i].text.startswith("Smith") for i in furniture) == 3
+        )
+
+    def test_line_numbers_are_not_page_numbers(self):
+        # A manuscript numbers its lines, restarting or running on: either way
+        # the number at one height is not its page's index plus a constant.
+        restarting = [
+            block(str(j + 1), page=p, y=100.0 + 14 * j) for p in range(4) for j in range(3)
+        ]
+        running = [
+            block(str(3 * p + j + 1), page=p, y=100.0 + 14 * j) for p in range(4) for j in range(3)
+        ]
+        assert page_furniture(restarting) == set()
+        assert page_furniture(running) == set()
+
+    def test_a_number_and_a_literal_hash_at_one_height_are_not_page_numbers(self):
+        blocks = [block("#" if p == 0 else str(p + 1), page=p, y=760.0) for p in range(4)]
+        assert page_furniture(blocks) == set()
+
+    def test_the_segmenter_sets_furniture_aside_and_rejoins_the_paragraph(self):
+        blocks = paged(3)
+        # A sentence crossing from page 0 to page 1: the page number and the
+        # next page's running head used to sit inside it.
+        blocks[2] = block("The trial enrolled", page=0, y=114.0)
+        blocks[5] = block("patients for a year.", page=1, y=100.0)
+        document = SectionSegmenter().segment_document(blocks)
+        content = "\n".join(s.content for s in document.sections)
+        assert "Smith et al." not in content and "101" not in content
+        assert "The trial enrolled\npatients for a year." in content
+        assert drop_page_furniture(blocks) == [b for b in blocks if b.y in (100.0, 114.0)]
 
 
 class TestPublicExports:

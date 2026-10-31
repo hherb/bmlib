@@ -30,7 +30,9 @@ at a soft hyphen (U+00AD, through an ``/Encoding`` ``/Differences`` entry
 naming ``uni00AD``); a hard hyphen at a line's end, which is kept; and a line
 of five spans whose font is decided by the superscript bit — read as one span
 with the run after it, the raised ``1`` would make Helvetica the line's
-dominant font, where split off it leaves the italic run dominant. The
+dominant font, where split off it leaves the italic run dominant; and on every
+page a running head and a page number, which the segmenter sets aside (#591),
+so a sentence crossing the last page break reads on. The
 expected values are PyMuPDF's output, printed on stderr to be checked by eye.
 
     python scripts/make_pdf_extraction_fixture.py [tests/fixtures]
@@ -97,9 +99,20 @@ PAGES: list[list[tuple[int, int, list[Run]]]] = [
         (72, 700, [("F1", 10, 0, r"Growth was spe\255")]),
         (72, 688, [("F1", 10, 0, "cific to the treated arm.")]),
         (72, 660, [("F2", 12, 0, "Discussion")]),
-        (72, 640, [("F1", 10, 0, "It held.")]),
+        (72, 640, [("F1", 10, 0, "The effect held across")]),
+    ],
+    [
+        (72, 720, [("F1", 10, 0, "every site we visited.")]),
     ],
 ]
+
+#: Page furniture on every page (#591): a running head above the text and the
+#: page number below it, which the segmenter sets aside, so the sentence the
+#: break between the last two pages interrupts reads on.
+RUNNING_HEAD: Run = ("F3", 8, 0, "Smith et al. A soft hyphen trial")
+for _number, _lines in enumerate(PAGES, start=1):
+    _lines.insert(0, (72, 760, [RUNNING_HEAD]))
+    _lines.append((300, 40, [("F1", 8, 0, str(_number))]))
 
 
 def _line(x: int, y: int, runs: list[Run]) -> str:

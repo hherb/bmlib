@@ -86,7 +86,7 @@ bmlib/
 │   ├── jats_parser.py       # JATS XML → structured data
 │   ├── models.py            # FullTextResult, FullTextSourceEntry, JATSArticle, etc.
 │   ├── pdf_converter.py     # Pluggable PDF → text (PDFConverter ABC, PyMuPDF backend)
-│   ├── segmenter.py         # Heading-driven section segmentation of PDF text lines; match_section_type()
+│   ├── segmenter.py         # Heading-driven section segmentation of PDF text lines, page furniture set aside first; match_section_type()
 │   ├── _titles.py           # Is the PDF's metadata title the article's title? (private)
 │   └── service.py           # Tiered FullTextService (known sources → EuropePMC → Unpaywall → DOI)
 ├── llm/                     # Unified LLM client with pluggable providers

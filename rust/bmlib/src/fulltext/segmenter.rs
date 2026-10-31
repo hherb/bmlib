@@ -50,6 +50,185 @@ pub const TITLE_SIZE_RATIO: f64 = 1.5;
 /// paragraphs; the leading **within** a paragraph is smaller.
 pub const PARAGRAPH_GAP_RATIO: f64 = 1.5;
 
+/// Page furniture (#591): a line whose text, digits aside, recurs at one height
+/// on at least this share of the document's pages — and on at least
+/// [`FURNITURE_MIN_PAGES`] of them — is a running head, a footer, a page number
+/// or a licence stamp, if it also sits at its page's top or bottom edge (see
+/// [`page_furniture`]).
+///
+/// Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal PDFs): the
+/// furniture found recurs on 0.35 to 1.0 of the pages (an odd/even running head
+/// at 0.43-0.46; below 0.4 it is kept, e.g. bioRxiv's stamp on a document's
+/// landscape pages), content repeating at one height on at most 0.27 (list
+/// numbering, "Figure 2", table cells), and the threshold moves the lines set
+/// aside by 2% between 0.3 and 0.6.
+pub const FURNITURE_PAGE_RATIO: f64 = 0.4;
+
+/// The fewest pages a line must recur on to be furniture, whatever the share.
+pub const FURNITURE_MIN_PAGES: usize = 3;
+
+/// How far apart, in points, two lines' tops may be and still be one height.
+pub const FURNITURE_Y_TOLERANCE: f64 = 2.0;
+
+/// More furniture lines than this at one edge of one page are the page's own
+/// content (a table filling it), not furniture: the corpus's longest edge run of
+/// furniture is 13 lines, bioRxiv's stamp.
+pub const FURNITURE_MAX_EDGE_LINES: usize = 20;
+
+/// A page number has at most this many digits.
+const PAGE_NUMBER_MAX_DIGITS: usize = 6;
+
+/// `text` with every run of ASCII digits replaced by `#`.
+fn mask_digits(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_run = false;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            if !in_run {
+                out.push('#');
+            }
+            in_run = true;
+        } else {
+            out.push(ch);
+            in_run = false;
+        }
+    }
+    out
+}
+
+/// A page number's value, if `text` is a bare number short enough to be one.
+fn bare_number(text: &str) -> Option<i64> {
+    if text.is_empty()
+        || text.len() > PAGE_NUMBER_MAX_DIGITS
+        || !text.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    text.parse().ok()
+}
+
+/// The indexes of `blocks` that are page furniture.
+///
+/// A line is a candidate when its text with every run of ASCII digits replaced
+/// by `#` (so "Page 3 of 12" and "Page 4 of 12" agree) recurs on at least
+/// `max(FURNITURE_MIN_PAGES, ceil(FURNITURE_PAGE_RATIO * pages))` pages at one
+/// height: lines with the same masked text are taken in order of their `y`, a
+/// run of them whose tops lie within [`FURNITURE_Y_TOLERANCE`] of the previous
+/// one is one height, and every line in a run reaching that many pages is a
+/// candidate. The pages are `max(page_num) + 1`. A run of bare numbers is a
+/// candidate only if each number is its page's index plus one constant, which
+/// is what a page number is and a manuscript's line numbers and a table's
+/// values are not. A run can drift: each top is compared with the previous one,
+/// not with the first.
+///
+/// A candidate is furniture only at its page's edge: the page's lines in order
+/// of `y`, the candidates from the top down to the first other line and from
+/// the bottom up to the last, so a table whose cells repeat at one height
+/// across pages ("0.12" and "3.4" both read `#.#`) is kept wherever it has a
+/// line above and below it. More than [`FURNITURE_MAX_EDGE_LINES`] at one edge
+/// are the page's content and are kept. A line whose `y` is not finite is never
+/// furniture and is passed over.
+#[must_use]
+pub fn page_furniture(blocks: &[TextBlock]) -> std::collections::BTreeSet<usize> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let lines: Vec<usize> = (0..blocks.len())
+        .filter(|&i| blocks[i].y.is_finite())
+        .collect();
+    let mut furniture = BTreeSet::new();
+    let Some(last_page) = lines.iter().map(|&i| blocks[i].page_num).max() else {
+        return furniture;
+    };
+    let pages = last_page as f64 + 1.0;
+    let needed = FURNITURE_MIN_PAGES.max((FURNITURE_PAGE_RATIO * pages).ceil() as usize);
+    // Finite `y` only, so `partial_cmp` is total and -0.0 ties with 0.0, as in
+    // Python's sort.
+    let by_y = |&a: &usize, &b: &usize| {
+        blocks[a]
+            .y
+            .partial_cmp(&blocks[b].y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.cmp(&b))
+    };
+    let mut by_text: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut by_page: BTreeMap<i64, Vec<usize>> = BTreeMap::new();
+    for &i in &lines {
+        by_text
+            .entry(mask_digits(&blocks[i].text))
+            .or_default()
+            .push(i);
+        by_page.entry(blocks[i].page_num).or_default().push(i);
+    }
+    let mut candidates = BTreeSet::new();
+    for mut members in by_text.into_values() {
+        members.sort_by(by_y);
+        let mut run: Vec<usize> = Vec::new();
+        for i in members {
+            if let Some(&previous) = run.last() {
+                if blocks[i].y - blocks[previous].y > FURNITURE_Y_TOLERANCE {
+                    candidates.extend(furniture_run(blocks, &run, needed));
+                    run.clear();
+                }
+            }
+            run.push(i);
+        }
+        candidates.extend(furniture_run(blocks, &run, needed));
+    }
+    for mut on_page in by_page.into_values() {
+        on_page.sort_by(by_y);
+        let top: Vec<usize> = on_page
+            .iter()
+            .copied()
+            .take_while(|i| candidates.contains(i))
+            .collect();
+        let bottom: Vec<usize> = on_page
+            .iter()
+            .rev()
+            .copied()
+            .take_while(|i| candidates.contains(i))
+            .collect();
+        for edge in [top, bottom] {
+            if edge.len() <= FURNITURE_MAX_EDGE_LINES {
+                furniture.extend(edge);
+            }
+        }
+    }
+    furniture
+}
+
+/// `run` if it is furniture (see [`page_furniture`]), else nothing.
+fn furniture_run(blocks: &[TextBlock], run: &[usize], needed: usize) -> Vec<usize> {
+    let pages: std::collections::BTreeSet<i64> = run.iter().map(|&i| blocks[i].page_num).collect();
+    if pages.len() < needed {
+        return Vec::new();
+    }
+    let numbers: Vec<Option<i64>> = run.iter().map(|&i| bare_number(&blocks[i].text)).collect();
+    if numbers.iter().any(Option::is_some) {
+        let offsets: std::collections::BTreeSet<Option<i128>> = run
+            .iter()
+            .zip(&numbers)
+            // Widened, so no page number can overflow the subtraction.
+            .map(|(&i, n)| n.map(|n| i128::from(n) - i128::from(blocks[i].page_num)))
+            .collect();
+        // A non-number in the run is a second offset (`None`) beside the numbers'.
+        if offsets.len() != 1 {
+            return Vec::new();
+        }
+    }
+    run.to_vec()
+}
+
+/// `blocks` without their [`page_furniture`], in order.
+#[must_use]
+pub fn drop_page_furniture(blocks: &[TextBlock]) -> Vec<TextBlock> {
+    let furniture = page_furniture(blocks);
+    blocks
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !furniture.contains(i))
+        .map(|(_, b)| b.clone())
+        .collect()
+}
+
 /// Median font size of `blocks`, ignoring non-positive sizes.
 ///
 /// The **median, not the mean**, so headings and footnotes cannot drag the
@@ -489,7 +668,9 @@ impl SectionSegmenter {
     ///
     /// With no blocks, a document with no sections; with blocks but no detected
     /// headings, **one `UNKNOWN` section titled `"Full Text"`** at 0.5
-    /// confidence.
+    /// confidence. Page furniture ([`page_furniture`]) is set aside first, so a
+    /// running head or a page number is in no section and a paragraph a page
+    /// break interrupted reads on.
     #[must_use]
     pub fn segment_document(
         &self,
@@ -498,6 +679,8 @@ impl SectionSegmenter {
         metadata_title: Option<&str>,
         metadata: serde_json::Value,
     ) -> SegmentedDocument {
+        let kept = drop_page_furniture(blocks);
+        let blocks = kept.as_slice();
         let median = median_font_size(blocks);
         let markers = identify_section_markers(
             blocks,

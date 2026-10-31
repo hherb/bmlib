@@ -40,6 +40,8 @@ Example::
 
 from __future__ import annotations
 
+import itertools
+import math
 import re
 import statistics
 from typing import Any
@@ -69,6 +71,108 @@ _PARAGRAPH_GAP_RATIO = 1.5
 # "1.2  Introduction" -> "introduction"; "Discussion:" -> "discussion".
 _LEADING_NUMBERING_RE = re.compile(r"^[\d.\s)\]]+")
 _TRAILING_PUNCTUATION_RE = re.compile(r"[:.?!]+$")
+
+
+# Page furniture (#591): a line whose text, digits aside, recurs at one height
+# on at least this share of the document's pages, and on at least
+# FURNITURE_MIN_PAGES of them, is a running head, a footer, a page number or a
+# licence stamp, if it also sits at its page's top or bottom edge (see
+# page_furniture). Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal
+# PDFs): the furniture found recurs on 0.35 to 1.0 of the pages (an odd/even
+# running head at 0.43-0.46; below 0.4 it is kept, e.g. bioRxiv's stamp on a
+# document's landscape pages), content repeating at one height on at most 0.27
+# (list numbering, "Figure 2", table cells), and the threshold moves the lines
+# set aside by 2% between 0.3 and 0.6.
+FURNITURE_PAGE_RATIO = 0.4
+FURNITURE_MIN_PAGES = 3
+# How far apart, in points, two lines' tops may be and still be one height.
+FURNITURE_Y_TOLERANCE = 2.0
+# More furniture lines than this at one edge of one page are the page's own
+# content (a table filling it), not furniture: the corpus's longest edge run of
+# furniture is 13 lines, bioRxiv's stamp.
+FURNITURE_MAX_EDGE_LINES = 20
+# A page number has at most this many digits.
+_PAGE_NUMBER_MAX_DIGITS = 6
+
+_ASCII_DIGITS_RE = re.compile(r"[0-9]+")
+
+
+def _is_bare_number(text: str) -> bool:
+    return 0 < len(text) <= _PAGE_NUMBER_MAX_DIGITS and text.isascii() and text.isdigit()
+
+
+def page_furniture(blocks: list[TextBlock]) -> set[int]:
+    """The indexes of *blocks* that are page furniture.
+
+    A line is furniture when its text with every run of ASCII digits replaced
+    by ``#`` (so "Page 3 of 12" and "Page 4 of 12" agree) recurs on at least
+    ``max(FURNITURE_MIN_PAGES, ceil(FURNITURE_PAGE_RATIO * pages))`` pages at
+    one height: lines with the same masked text are taken in order of their
+    ``y``, a run of them whose tops lie within ``FURNITURE_Y_TOLERANCE`` of the
+    previous one is one height, and every line in a run reaching that many
+    pages is a candidate. The pages are ``max(page_num) + 1``. A run of bare
+    numbers is a candidate only if each number is its page's index plus one
+    constant, which is what a page number is and a manuscript's line numbers
+    and a table's values are not. A run can drift: each top is compared with
+    the previous one, not with the first.
+
+    A candidate is furniture only at its page's edge: the page's lines in order
+    of ``y``, the candidates from the top down to the first other line and from
+    the bottom up to the last, so a table whose cells repeat at one height
+    across pages ("0.12" and "3.4" both read ``#.#``) is kept wherever it has a
+    line above and below it. More than ``FURNITURE_MAX_EDGE_LINES`` at one edge
+    are the page's content and are kept. A line whose ``y`` is not finite is
+    never furniture and is passed over.
+    """
+    lines = [i for i, b in enumerate(blocks) if math.isfinite(b.y)]
+    if not lines:
+        return set()
+    pages = max(blocks[i].page_num for i in lines) + 1
+    needed = max(FURNITURE_MIN_PAGES, math.ceil(FURNITURE_PAGE_RATIO * pages))
+    by_text: dict[str, list[int]] = {}
+    by_page: dict[int, list[int]] = {}
+    for i in lines:
+        by_text.setdefault(_ASCII_DIGITS_RE.sub("#", blocks[i].text), []).append(i)
+        by_page.setdefault(blocks[i].page_num, []).append(i)
+    candidates: set[int] = set()
+    for members in by_text.values():
+        members.sort(key=lambda i: (blocks[i].y, i))
+        run: list[int] = []
+        for i in members:
+            if run and blocks[i].y - blocks[run[-1]].y > FURNITURE_Y_TOLERANCE:
+                candidates.update(_furniture_run(blocks, run, needed))
+                run = []
+            run.append(i)
+        candidates.update(_furniture_run(blocks, run, needed))
+    furniture: set[int] = set()
+    for on_page in by_page.values():
+        on_page.sort(key=lambda i: (blocks[i].y, i))
+        for edge in (on_page, on_page[::-1]):
+            run = list(itertools.takewhile(candidates.__contains__, edge))
+            if len(run) <= FURNITURE_MAX_EDGE_LINES:
+                furniture.update(run)
+    return furniture
+
+
+def _furniture_run(blocks: list[TextBlock], run: list[int], needed: int) -> list[int]:
+    """*run* if it is furniture (see :func:`page_furniture`), else nothing."""
+    if len({blocks[i].page_num for i in run}) < needed:
+        return []
+    numbers = [_is_bare_number(blocks[i].text) for i in run]
+    if any(numbers):
+        offsets = {
+            int(blocks[i].text) - blocks[i].page_num if n else None for i, n in zip(run, numbers)
+        }
+        # A non-number in the run is a second offset (None) beside the numbers'.
+        if len(offsets) != 1:
+            return []
+    return run
+
+
+def drop_page_furniture(blocks: list[TextBlock]) -> list[TextBlock]:
+    """*blocks* without their :func:`page_furniture`, in order."""
+    furniture = page_furniture(blocks)
+    return [b for i, b in enumerate(blocks) if i not in furniture]
 
 
 def _median_font_size(blocks: list[TextBlock]) -> float:
@@ -307,9 +411,13 @@ class SectionSegmenter:
         Returns:
             The segmented document. With no blocks, a document with no
             sections; with blocks but no detected headings, one ``UNKNOWN``
-            section titled "Full Text" at 0.5 confidence.
+            section titled "Full Text" at 0.5 confidence. Page furniture
+            (:func:`page_furniture`) is set aside first, so a running head
+            or a page number is in no section and a paragraph a page break
+            interrupted reads on.
         """
         metadata = metadata or {}
+        blocks = drop_page_furniture(blocks)
         median_size = _median_font_size(blocks)
         markers = self._identify_section_markers(blocks, median_size)
         return SegmentedDocument(
