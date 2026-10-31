@@ -8,7 +8,7 @@ Full-text retrieval for biomedical literature. Provides a multi-tier retrieval c
 pip install bmlib                   # JATSParser, FullTextCache, SectionSegmenter, models
 pip install bmlib[fulltext]         # + FullTextService retrieval (httpx)
 pip install bmlib[pdf]              # + PDF → text conversion (pymupdf)
-pip install bmlib[html]             # + canonical_from_html() (markupever; unreleased)
+pip install bmlib[html]             # + canonical_from_html() (markupever; 0.12.0)
 ```
 
 Only `FullTextService` needs `httpx`, and it is resolved on first access, so `import bmlib.fulltext` loads no httpx and does not even load `service` — the parser, the models, the cache and the segmenter all import on core bmlib alone. Constructing the service without the extra raises `ImportError: httpx is required for full-text retrieval, but importing it failed (No module named 'httpx'). Install with: pip install bmlib[fulltext]`. The parenthesised cause is what was actually raised, so a *broken* httpx install is not misreported as an absent one. `pymupdf` is required **only** for `PyMuPDFConverter`; everything else in the module works without it.
@@ -21,9 +21,9 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 | `jats_parser` | `JATSParser` | Yes — used by the service to render XML |
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
 | `models` | `FullTextResult`, `ContentKind`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
-| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PDFErrorKind`, `PDFExtractionError`, `PDFLimit`, `LayoutExtractor`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
-| `segmenter` | `SectionSegmenter`, heading-detection patterns, `match_section_type()` | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()`; `assess_full_text()` classifies headings with `match_section_type()` |
-| `canonical` *(unreleased)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `canonical_from_html()`, `assess_full_text()`, `chunk_canonical()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-unreleased) |
+| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PDFErrorKind`, `PDFExtractionError`, `PDFLimit` *(these three new in 0.12.0)*, `LayoutExtractor`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
+| `segmenter` | `SectionSegmenter`, heading-detection patterns, `match_section_type()` *(public since 0.12.0)*, `page_furniture()` / `drop_page_furniture()` *(0.12.0)* | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()`; `assess_full_text()` classifies headings with `match_section_type()` |
+| `canonical` *(0.12.0)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `canonical_from_html()`, `assess_full_text()`, `chunk_canonical()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-0120) |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
 > When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
@@ -81,7 +81,7 @@ from bmlib.fulltext.jats_parser import RENDERER_VERSION
 from bmlib.fulltext.segmenter import match_section_type
 ```
 
-The canonical-text API is its own subpackage, `bmlib.fulltext.canonical`, and is not re-exported from `bmlib.fulltext`; see [Canonical text](#canonical-text-unreleased) for its 40 names.
+The canonical-text API is its own subpackage, `bmlib.fulltext.canonical`, and is not re-exported from `bmlib.fulltext`; see [Canonical text](#canonical-text-0120) for its 40 names.
 
 ---
 
@@ -215,16 +215,16 @@ All arguments are **keyword-only**.
 |-----------|------|-------------|
 | `fulltext_sources` | `list[FullTextSourceEntry] \| None` | Known source URLs from a publication fetcher — tried first (Tier 0) |
 | `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a, and Tier 1c if Europe PMC gives no body for it. A bare numeric ID is prefixed with `PMC`; anything that is not then `PMC` followed by ASCII digits (*ASCII since 0.11.0 — #472*) is rejected before it reaches a URL, and the chain makes exactly the requests it would have made with no `pmc_id` *(0.11.0)* — the refusal is recorded once on the exhaustion report, and with no `doi` or `pmid` the call raises `"Nothing retrieved…"` rather than `"No identifiers provided"`, since an identifier was given. A well-formed ID that neither source serves does not stop the chain resolving one from `doi`/`pmid` either — see Tier 1b |
-| `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 1b′, 2 and 3. Surrounding whitespace is stripped and a blank one counts as none, so a blank `doi` given alone raises `"No identifiers provided"` where it returned `https://doi.org/  `; its shape is not checked, and a value that is not text is **refused, not raised**, as a refused `pmid` is (a `WARNING`, one count on the exhaustion report). `TransparencyAnalyzer.analyze()` applies the same rule and raises `TypeError` for a DOI that is not text *(0.11.0 — #475)*. Text means a `str` or a subclass, asked of the value's real type: an object only claiming `str` as its class (`Mock(spec=str)`, a proxy) is refused as not text, for `pmc_id`, `pmid` and `identifier` too, where it escaped as `TypeError` *(unreleased — #500)* |
+| `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 1b′, 2 and 3. Surrounding whitespace is stripped and a blank one counts as none, so a blank `doi` given alone raises `"No identifiers provided"` where it returned `https://doi.org/  `; its shape is not checked, and a value that is not text is **refused, not raised**, as a refused `pmid` is (a `WARNING`, one count on the exhaustion report). `TransparencyAnalyzer.analyze()` applies the same rule and raises `TypeError` for a DOI that is not text *(0.11.0 — #475)*. Text means a `str` or a subclass, asked of the value's real type: an object only claiming `str` as its class (`Mock(spec=str)`, a proxy) is refused as not text, for `pmc_id`, `pmid` and `identifier` too, where it escaped as `TypeError` *(0.12.0 — #500)* |
 | `pmid` | `str \| int \| None` | PubMed ID — used for the Tier 1b and 1b′ lookups (the converter prefers it over the DOI) and as the final fallback URL. ASCII digits, not all zeros, **sent without its leading zeros** — Europe PMC finds nothing for `EXT_ID:0033301246` where `EXT_ID:33301246` finds the paper. Surrounding whitespace is stripped, and a blank one, `None` or an integer `0` counts as none; an integer is read as its digits. Anything else (`"1 OR 2"`, `"0"`, `1.5`) is **refused, not raised** *(0.11.0 — #472, #478)*: a `WARNING` names it — checked before the cache, so a cache hit reports it too — the exhaustion report records it once, and the chain makes exactly the requests it would have made with no `pmid` — as for a malformed `pmc_id`, and so with nothing else that retrieves the call raises `"Nothing retrieved…"`. **A PMC ID passed as `pmid`** (`"PMC7745181"`: `PMC` and ASCII digits) is refused as a PMID and **used as the `pmc_id`** when none was given, logged at `WARNING` and not counted on the report; before #478 it reached the ID Converter as given, which resolves a PMCID, and a caller's `pmc_id` beside it wins. `TransparencyAnalyzer.analyze()` raises `ValueError` (or `TypeError` for a value neither text nor an integer) for the same PMIDs; the two agree on which PMIDs are usable, and differ in what they do with one that is not (see `docs/DECISIONS.md`) |
-| `identifier` | `str \| None` | Cache key, typically the DOI. **Disk caching only happens when this is supplied**; without it nothing is read from or written to the cache. It is used as given, padding included; a blank or whitespace-only one counts as none, silently, and one that is not text (`0` and `b""` included) or carries a lone surrogate is set aside with a `WARNING` and the call goes on without the cache — given alone, it raises `"No identifiers provided"`, since a key that cannot be looked up retrieves nothing *(unreleased — #485: a blank key used to be one cache entry shared by every call passing it, so one row's article was served for another's)* |
+| `identifier` | `str \| None` | Cache key, typically the DOI. **Disk caching only happens when this is supplied**; without it nothing is read from or written to the cache. It is used as given, padding included; a blank or whitespace-only one counts as none, silently, and one that is not text (`0` and `b""` included) or carries a lone surrogate is set aside with a `WARNING` and the call goes on without the cache — given alone, it raises `"No identifiers provided"`, since a key that cannot be looked up retrieves nothing *(0.12.0 — #485: a blank key used to be one cache entry shared by every call passing it, so one row's article was served for another's)* |
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
 
 **Raises:** `FullTextError`, in exactly two cases, both needing no usable `doi` and no usable `pmid`:
 
 - `"No identifiers provided"` — `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty, a blank or whitespace-only `pmid` or `doi` being empty *(`doi` since 0.11.0 — #475)*, whatever `identifier` says *(an unusable one raised `TypeError` before #485)*. Raised before any request, and before the warning below, since nothing was asked of any source.
-- `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — a `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'` — a blank or unusable `identifier` is not named, the call not using it *(unreleased — #485)*), since on a call that succeeds by another identifier it is the refusal's only trace *(0.11.0 — #478, #475)*.
+- `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — a `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'` — a blank or unusable `identifier` is not named, the call not using it *(0.12.0 — #485)*), since on a call that succeeds by another identifier it is the refusal's only trace *(0.11.0 — #478, #475)*.
 
 ### Retrieval sequence
 
@@ -233,19 +233,19 @@ The chain is longer than three tiers. In order:
 | Step | Condition | Action | `source` on success |
 |------|-----------|--------|---------------------|
 | Cache | a usable `identifier` given | Look up `sanitize_identifier(identifier)`; an article holding an entry an older renderer wrote is re-fetched first, and that entry served only if the re-fetch returns less *(0.11.0)*; HTML is checked before PDF. A PDF hit that yields no text returns the abstract its retrieval paired it with, cached beside it *(0.11.0)* | `"cached"` |
-| Tier 0 | `fulltext_sources` given | Try entries in priority order `xml` (0) > `pdf` (1), unknown formats last (99); the first `html` entry is **held**, not returned *(unreleased — #579)* | `entry.source` (e.g. `"biorxiv"`) |
+| Tier 0 | `fulltext_sources` given | Try entries in priority order `xml` (0) > `pdf` (1), unknown formats last (99); the first `html` entry is **held**, not returned *(0.12.0 — #579)* | `entry.source` (e.g. `"biorxiv"`) |
 | Tier 1a | A usable `pmc_id` given | `GET .../{PMCxxxx}/fullTextXML`, parsed to HTML by `JATSParser`; Tier 1c follows for the same ID if there is no body | `"europepmc"` |
 | Tier 1b | A usable `doi` or `pmid` given, and no usable `pmc_id` — or one that gave no full text at either source *(0.11.0)* | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid} AND SRC:MED`, the `SRC:MED` *0.11.0 — #474*: other Europe PMC sources number records with bare digits, and a colliding record came first; the PMID canonical, an unusable one never sent — #478); the PMC ID is used only if `inEPMC == "Y"` and it is `PMC` followed by ASCII digits (anything else is logged at `WARNING` and recorded as a fault), then fetched as in 1a and 1c — unless it is the caller's own ID, already tried. One that differs **supersedes** the caller's, logged at `INFO` naming both (#304): the step this replaced already trusted this search hit as the article, taking its free PDF whenever it offered one, so fetching its XML makes no new identity claim. Where the caller's ID was served only as an abstract, the superseding ID's abstract replaces it. The search also yields the free-PDF URL Tier 1d needs | `"europepmc"` |
 | Tier 1b′ | The search reported no usable PMC ID, **or the search itself failed** — and there is no usable `pmc_id`: a converter answer never supersedes a caller's ID, since nothing before #304 trusted one over it *(0.11.0)* | NCBI's [ID Converter](https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/), asked by PMID when there is a usable one and DOI otherwise. Consulted *second* — the Europe PMC search returns the PMC ID and the free-PDF URL in one request, so asking the converter first would cost a request on every lookup or forfeit that URL. But it is consulted even when that search raised, since a second independent resolver is worth most exactly then. A record that is `status: error`, not `live`, or carries a PMC ID failing `PMC\d+` (ASCII digits, *0.11.0 — #472*) resolves to nothing | — |
 | Tier 1c | A PMC ID is in hand — the caller's, or one either resolver found — and Europe PMC gave no body for it. Tried for each ID straight after its Tier 1a, so the caller's ID is asked of both sources before anything supersedes it | `GET eutils…/efetch.fcgi?db=pmc&id={digits}&retmode=xml`, parsed by `JATSParser`. Europe PMC serves the corpus its `inEPMC` flag describes; NCBI serves PMC itself. A reply carrying neither body nor abstract — efetch's answer for an article whose publisher does not release XML — is treated as a failure, not as an abstract | `"ncbi_pmc"` |
-| Tier 1d | A free PDF render URL was found | Take the first `fullTextUrlList` entry whose `site` is `"Europe_PMC"` *(unreleased — #494: Europe PMC also lists free PDFs on `PubMedCentral` (NCBI's host) and `Unpaywall` (a publisher's or repository's), and lists them **first** — all 440 records of a 1,400-record live draw carrying both — so the tier fetched another host's PDF under this label; an entry naming no site is refused, and a blank `url` is skipped for a later entry)*, with `documentStyle == "pdf"` and an accepted availability — `availabilityCode` `OA` or `F`, falling back to the `availability` display string (`"Open access"`/`"Free"`) only for an entry carrying no code; a present-but-unknown code is rejected outright — download and cache it | `"europepmc_pdf"` |
-| Tier 2 | A usable `doi` given, or else a DOI on the Tier 1b search hit *(unreleased — #494: another site's free PDF is left to this tier, so a PMID-only caller reaches it here; the maintainer's choice)* | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
-| Tier 3 | A Tier 0 `html` entry was held *(unreleased — #579)* | Return its URL | `entry.source` |
+| Tier 1d | A free PDF render URL was found | Take the first `fullTextUrlList` entry whose `site` is `"Europe_PMC"` *(0.12.0 — #494: Europe PMC also lists free PDFs on `PubMedCentral` (NCBI's host) and `Unpaywall` (a publisher's or repository's), and lists them **first** — all 440 records of a 1,400-record live draw carrying both — so the tier fetched another host's PDF under this label; an entry naming no site is refused, and a blank `url` is skipped for a later entry)*, with `documentStyle == "pdf"` and an accepted availability — `availabilityCode` `OA` or `F`, falling back to the `availability` display string (`"Open access"`/`"Free"`) only for an entry carrying no code; a present-but-unknown code is rejected outright — download and cache it | `"europepmc_pdf"` |
+| Tier 2 | A usable `doi` given, or else a DOI on the Tier 1b search hit *(0.12.0 — #494: another site's free PDF is left to this tier, so a PMID-only caller reaches it here; the maintainer's choice)* | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
+| Tier 3 | A Tier 0 `html` entry was held *(0.12.0 — #579)* | Return its URL | `entry.source` |
 | Tier 3′ | A usable `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(0.11.0 — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
 | — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise a message naming the missing fallback and summarising the failures | — |
 
-Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(unreleased — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
+Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(0.12.0 — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
 
 Every "downloads and caches" above is conditional on there being somewhere to put the file. When `fetch_fulltext()` was given no usable `identifier` (none, a blank one, or one set aside), or `service.cache is None` (see [the operational notes](#operational-notes)), the PDF tiers set `pdf_url` and stop there: no request is made and `file_path` stays unset. The tier still counts as having produced a result, so the chain does not fall through to the next one.
 
@@ -291,7 +291,7 @@ Every "downloads and caches" above is conditional on there being somewhere to pu
 - **Caching is opt-in per call.** The service normally holds a `FullTextCache`, but reads and writes only occur when a usable `identifier` is passed — not a blank one *(#485)*.
 - **A cache directory that cannot be *created* does not fail construction.** When the service builds the default cache itself and the directory cannot be made — a file standing where it should be, a read-only parent, no determinable home directory — it emits one `WARNING` naming what was raised, sets `service.cache` to `None`, and retrieves without caching. Retrieval never needed a cache, so aborting there would have taken down a run that had every chance of succeeding. A cache you construct and pass in yourself still raises; see [FullTextCache](#fulltextcache).
 - **Without a cache, a PDF is not downloaded at all.** This is the half of the degraded state worth knowing before you rely on it, and the `WARNING` above says so: a PDF is fetched *into* the cache, so with `service.cache is None` the download is skipped, `file_path` is never set, and `convert_pdfs` has nothing to extract from. A PDF-only article therefore comes back carrying `pdf_url` alone — lost content, not merely repeated network traffic. JATS full text is unaffected: it still parses and is still returned, only the write is skipped. The per-article line about the skipped download stays at `DEBUG`, since the construction warning already named the consequence; it is *not* gated on `convert_pdfs`, because `file_path` is lost whatever that flag says.
-- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent. A failed write of the abstract kept beside a PDF has its own one-shot warning *(0.11.0)*, saying the PDF is still cached — it is not the directory-wide fault, and must not spend that warning. A failed write of the JATS XML has its own too *(unreleased)*: `jats/` is created on first save, so an older cache whose root is read-only fails there while `pdfs/` writes fine, and the HTML (or abstract) rendered from it is then not cached either.
+- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent. A failed write of the abstract kept beside a PDF has its own one-shot warning *(0.11.0)*, saying the PDF is still cached — it is not the directory-wide fault, and must not spend that warning. A failed write of the JATS XML has its own too *(0.12.0)*: `jats/` is created on first save, so an older cache whose root is read-only fails there while `pdfs/` writes fine, and the HTML (or abstract) rendered from it is then not cached either.
 - **A cache entry is never half-written.** Every write — HTML, PDF and the abstract beside a PDF — goes to a temporary file and are published with `os.replace`, so a write that fails partway leaves the previous entry — or nothing — rather than a truncated article. This matters because a truncated HTML file decodes perfectly and would then be served as `content_kind="fulltext"` from `source="cached"` on every later run, with nothing logged at any level: `quality/` would score a paper whose Methods and Results do not exist. Note the scope: this closes the window in which such an entry is *written*. It does not detect one already on disk — a truncation of English-language prose usually lands on an ASCII boundary and decodes fine — so a cache written by bmlib before 0.9.0 is best cleared once.
 - **A cache entry that cannot be *read* does not fail the retrieval either.** An entry corrupted by something outside bmlib — a killed process, a manual edit, a filesystem fault — is reported with a `WARNING` naming the cache key and the exception type, and the retrieval chain runs as though the cache had missed. Unlike the write warning above this is emitted per article, because the cause is a property of that one file. The bad entry is not deleted, but it *is* renamed with a `.corrupt` suffix, which takes it out of the lookup path while leaving the bytes for you to inspect. Leaving it in place was not viable: only a re-fetch that returns JATS full text overwrites the HTML entry, so an article served as a PDF kept warning and re-downloading on every run — the undecodable entry is read first, so it hid the freshly cached PDF behind it. `clear()` sweeps the `.corrupt` files up.
 
@@ -339,11 +339,11 @@ class FullTextResult:
     web_url: str | None = None     # Publisher / PubMed website URL
     file_path: str | None = None   # Local cached file path
     content_kind: ContentKind = "none"   # what `html` actually is
-    jats_xml: bytes | None = None  # the JATS `html` was rendered from *(unreleased)*
-    pdf_download_failure: str | None = None  # why a PDF tier left no file *(unreleased)*
+    jats_xml: bytes | None = None  # the JATS `html` was rendered from *(0.12.0)*
+    pdf_download_failure: str | None = None  # why a PDF tier left no file *(0.12.0)*
 ```
 
-### `pdf_download_failure` *(unreleased)*
+### `pdf_download_failure` *(0.12.0)*
 
 Why a PDF tier (a fetcher-supplied PDF, Europe PMC's render, Unpaywall) that
 tried to download `pdf_url` came back without a `file_path` (#594), so a free
@@ -361,7 +361,7 @@ no cache, or no `identifier` to key one by — which, like every non-PDF tier,
 leaves `pdf_url` alone on the result as before. Rust's `FullTextResult` has
 the same field, `Option<String>`, with the same values.
 
-### `jats_xml` *(unreleased)*
+### `jats_xml` *(0.12.0)*
 
 The JATS document `html` was rendered from, byte for byte as served, so a
 caller can build its own structure from it rather than parse bmlib's HTML
@@ -490,12 +490,12 @@ move this output for any document. `FullTextCache` stamps every rendered entry
 with it, so a bump re-fetches what the cache holds rather than serving the
 superseded rendering; a downstream storing the HTML itself can record it beside
 the HTML for the same purpose. An abstract section's title is
-whitespace-normalised, as a body section's is *(unreleased, #514)*.
+whitespace-normalised, as a body section's is *(0.12.0, #514)*.
 So is an exhibit's, a formula's, a reference's and a footnote's `<label>`, and
 the journal title: a no-break, thin or hair space the publisher put between
 `Figure` and `1` reads as a plain space, as it already did in a caption
-*(unreleased, #516)*. So is a cited `<source>`, the journal a reference names
-*(unreleased, #518)*. `RENDERER_VERSION` is **7** at this writing: 4 for
+*(0.12.0, #516)*. So is a cited `<source>`, the journal a reference names
+*(0.12.0, #518)*. `RENDERER_VERSION` is **7** at this writing: 4 for
 #497's `associated-data` section, 5 for #514, 6 for #516, 7 for #518, so a
 cache written by 0.11.0 is re-fetched once after an upgrade.
 
@@ -545,7 +545,7 @@ pass.
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
 | `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
-| `sec[@sec-type="associated-data"]` | **Ignored** — Europe PMC's injected copy of the supplementary legends and data-availability statement, see below *(unreleased, #497)* |
+| `sec[@sec-type="associated-data"]` | **Ignored** — Europe PMC's injected copy of the supplementary legends and data-availability statement, see below *(0.12.0, #497)* |
 
 > **The contributor role may be declared on the group.** JATS spells it two
 > ways: `<contrib contrib-type="author">`, and `content-type="author"` on the
@@ -713,7 +713,7 @@ pass.
 > `content_kind` report only *total* loss.
 >
 > **Europe PMC now injects the `associated-data` block as a `<sec>`**
-> *(unreleased, #497)*: a `<sec sec-type="associated-data">` at the end of
+> *(0.12.0, #497)*: a `<sec sec-type="associated-data">` at the end of
 > `<body>`, holding a copy of every `<supplementary-material>` and of the
 > data-availability section, so each legend and the statement reached
 > `body_sections` and the cached HTML twice. It gets the same suppression,
@@ -1687,7 +1687,7 @@ class JATSAbstractSection:
 ```
 
 > `content` may be empty: a title with no prose is kept as its own section
-> *(unreleased, #498, a decision)*. Most such titles label the sections that
+> *(0.12.0, #498, a decision)*. Most such titles label the sections that
 > follow in their abstract (*Key Points*, *Summary*, a second-language
 > *Resumo*). The rest are nearly all a graphical abstract's label; where its
 > image is deposited as a `<fig>`, it is in `figures`.
@@ -1725,8 +1725,8 @@ class JATSTableInfo:
     html_content: str = ""         # Pre-rendered HTML <table>
     graphic_url: str | None = None # The <graphic> href, as deposited
     footnotes: list[str] = ...     # <table-wrap-foot> notes (marker folded in) and <attrib> credits
-    header_rows: list[list[str]] = ...  # header rows, cell texts as read, unpadded (unreleased)
-    body_rows: list[list[str]] = ...    # body rows (<tfoot> too), read as header_rows (unreleased)
+    header_rows: list[list[str]] = ...  # header rows, cell texts as read, unpadded (0.12.0)
+    body_rows: list[list[str]] = ...    # body rows (<tfoot> too), read as header_rows (0.12.0)
 ```
 
 `graphic_url` on both is the href **as the document deposited it**, which for
@@ -1983,7 +1983,7 @@ anyway, and `citation` still holds what was typeset.
 
 ## FullTextCache
 
-Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)* and `jats/` for the JATS XML an HTML entry was rendered from *(unreleased)*. `FullTextService` writes the XML first and skips the HTML (or the abstract beside a PDF) when that fails, so an entry it writes is written only once its XML is on disk; it does not write an abstract's XML where an HTML entry is present, whose own XML `jats/` holds. `jats/` is created by the first `save_jats()`, and the XML is not stamped. Two processes caching one article at once can still pair one fetch's HTML with the other's XML; the writes are atomic, not locked.
+Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)* and `jats/` for the JATS XML an HTML entry was rendered from *(0.12.0)*. `FullTextService` writes the XML first and skips the HTML (or the abstract beside a PDF) when that fails, so an entry it writes is written only once its XML is on disk; it does not write an abstract's XML where an HTML entry is present, whose own XML `jats/` holds. `jats/` is created by the first `save_jats()`, and the XML is not stamped. Two processes caching one article at once can still pair one fetch's HTML with the other's XML; the writes are atomic, not locked.
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
@@ -1997,7 +1997,7 @@ Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html
 
 `get_html()` and `get_abstract()` strip the line again, and return `None` for an entry stamped with an **older** version than `bmlib.fulltext.jats_parser.RENDERER_VERSION` — including every entry written by a bmlib before the stamp, which carries none — unless called with `stale_ok=True`. An entry stamped **newer** is served, so two stamp-aware bmlib versions (or this library and a port that lags it, once the port reads the stamp) sharing one directory converge on the newer rendering rather than each discarding the other's writes. A reader that does not know the stamp — a bmlib before it, or the Rust port until #436 — serves the line as a leading HTML comment. A first line that names the stamp but cannot be read as one (a BOM, a respaced line) is read as unstamped, and its deletion is logged at `WARNING`, since it may be a newer writer's spelling. `stale_entries()` reports the stale entries and `discard_stale()` deletes them; how `FullTextService` uses the two is in [the operational notes](#operational-notes). A PDF is the publisher's bytes rather than a rendering, and is not stamped. **Upgrading therefore re-fetches every article whose HTML (or, beside a PDF, abstract) an earlier bmlib cached**, at its next lookup. `abstracts/` is itself new in 0.11.0 (#305), so a cache written by 0.10.0 holds none. No cached PDF is deleted, though an article holding a PDF and an abstract may re-download its PDF in that re-fetch.
 
-Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/`, each with `exist_ok=True`, so only a directory that cannot be created raises. `abstracts/` is created by the first `save_abstract()` and `jats/` by the first `save_jats()` *(unreleased)*, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
+Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/`, each with `exist_ok=True`, so only a directory that cannot be created raises. `abstracts/` is created by the first `save_abstract()` and `jats/` by the first `save_jats()` *(0.12.0)*, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
 
 ```python
 class FullTextCache:
@@ -2015,10 +2015,10 @@ class FullTextCache:
     def save_abstract(self, html: str, identifier: str) -> str: ...
     def get_abstract(self, identifier: str) -> str | None: ...
 
-    # The JATS an HTML entry was rendered from, as served (unreleased)
+    # The JATS an HTML entry was rendered from, as served (0.12.0)
     def save_jats(self, data: bytes, identifier: str) -> str: ...
     def get_jats(self, identifier: str) -> bytes | None: ...
-    def has_html(self, identifier: str) -> bool: ...  # present, readable or not (unreleased)
+    def has_html(self, identifier: str) -> bool: ...  # present, readable or not (0.12.0)
 
     # Shared
     def stale_entries(self, identifier: str) -> list[str]: ...   # new in 0.11.0
@@ -2038,14 +2038,14 @@ class FullTextCache:
 | `get_html(id, *, stale_ok=False)` | `str \| None` | Returns the cached HTML content without its stamp, or `None` — also `None` for an entry an older renderer wrote, unless `stale_ok`; such an entry stays on disk until `discard_stale()` *(0.11.0)* |
 | `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`, behind the renderer stamp; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(0.11.0)* |
 | `get_abstract(id, *, stale_ok=False)` | `str \| None` | Returns that abstract, or `None`; stale and raising exactly as `get_html()` is *(0.11.0)* |
-| `save_jats(data, id)` | `str` | Save the JATS bytes an HTML entry (or an abstract beside a PDF) was rendered from, as served, in `jats/`; not stamped, since it is the publisher's bytes and not a rendering. Returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(unreleased)* |
-| `get_jats(id)` | `bytes \| None` | Returns those bytes, or `None` — also beside an HTML entry an earlier bmlib wrote, which cached no XML. Raises `OSError` if the entry cannot be read; `FullTextService` reports that, moves it aside and serves the HTML with `jats_xml=None` *(unreleased)* |
-| `has_html(id)` | `bool` | Whether an HTML entry is on disk, readable or not; reads nothing, so a stale or unreadable entry counts. The service asks it so an abstract's XML never replaces an HTML entry's in `jats/` *(unreleased)* |
+| `save_jats(data, id)` | `str` | Save the JATS bytes an HTML entry (or an abstract beside a PDF) was rendered from, as served, in `jats/`; not stamped, since it is the publisher's bytes and not a rendering. Returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(0.12.0)* |
+| `get_jats(id)` | `bytes \| None` | Returns those bytes, or `None` — also beside an HTML entry an earlier bmlib wrote, which cached no XML. Raises `OSError` if the entry cannot be read; `FullTextService` reports that, moves it aside and serves the HTML with `jats_xml=None` *(0.12.0)* |
+| `has_html(id)` | `bool` | Whether an HTML entry is on disk, readable or not; reads nothing, so a stale or unreadable entry counts. The service asks it so an abstract's XML never replaces an HTML entry's in `jats/` *(0.12.0)* |
 | `stale_entries(id)` | `list[str]` | The rendered entries for the identifier (HTML, then abstract) an older renderer wrote; reads only. A current or newer entry and the PDF are never stale. Raises as `get_html()` does — an undecodable entry is `quarantine()`'s case, not a stale one *(0.11.0)* |
 | `discard_stale(id)` | `list[str]` | Delete those entries; returns the paths removed, each logged at `INFO`. Raises as `stale_entries()` does, and `OSError` if an entry cannot be removed — a read-only cache directory *(0.11.0)* |
 | `quarantine(id)` | `list[str]` | Rename any entry for the identifier that cannot be read to `<name>.corrupt`; returns the paths moved. A readable entry is left alone |
-| `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF, abstract and JATS *(JATS unreleased)* (missing ones are ignored) |
-| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/`, `abstracts/` and `jats/` *(unreleased)*, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` and `jats/` exist only once used — where a missing `pdfs/` or `html/` used to raise *(0.11.0)* |
+| `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF, abstract and JATS *(JATS since 0.12.0)* (missing ones are ignored) |
+| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/`, `abstracts/` and `jats/` *(0.12.0)*, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` and `jats/` exist only once used — where a missing `pdfs/` or `html/` used to raise *(0.11.0)* |
 
 PDF validation uses magic-byte checking against `PDF_MAGIC_BYTES = b"%PDF"`. Non-PDF data is **rejected with a warning log and a `None` return** — no exception is raised.
 
@@ -2110,7 +2110,7 @@ fulltext_cache/
 │   └── PMC7614751.html
 ├── abstracts/            (created on first use)
 │   └── 10.1101_2024.01.01.573000_75b26bb777.html
-└── jats/                 (created on first use; unreleased)
+└── jats/                 (created on first use; 0.12.0)
     └── 10.1234_example_7ddfc9f2f4.xml
 ```
 
@@ -2166,7 +2166,7 @@ class ConversionResult:
     error_message: str | None = None
     page_texts: list[str] = field(default_factory=list)
     title: str | None = None       # 0.9.1
-    error_kind: PDFErrorKind | None = None  # unreleased
+    error_kind: PDFErrorKind | None = None  # 0.12.0
 
     @property
     def is_complete(self) -> bool: ...
@@ -2274,9 +2274,9 @@ Conversion behaviour:
 - A page whose text is whitespace-only (an image-only scan, say) **still counts as converted** but adds the warning `Page {n}: No extractable text`. Watch for this: `is_complete` can be `True` for a scanned PDF that yielded almost no text — check `char_count` and `warnings` too.
 - A page that raises adds `Page {n}: Extraction failed - {e}` and does **not** increment `converted_pages`, so `completion_ratio` drops below 1.0.
 - Page texts are joined with `"\n\n"`.
-- A failure to open or read the document returns `success=False`, keeping the running `converted_pages`, with `error_kind` saying which side it is on and `error_message` a sentence fit to show a user that **never names the path** *(unreleased, #598)*. `PDFErrorKind.UNREADABLE` (`"the PDF could not be read: …"`) is the file's: MuPDF's `FzErrorFormat`, `FzErrorSyntax` or `FzErrorUnsupported` chained as the cause (a garbage file is `FORMAT`, a truncated one `SYNTAX`), or PyMuPDF's own `FileDataError` with no MuPDF cause (an empty file is PyMuPDF's `EmptyFileError`). `PDFErrorKind.ENGINE` (`"the PDF engine failed: …"`) is everything else — `FzErrorSystem` (out of memory, a syscall), `FzErrorLibrary`, `FzErrorArgument`, `FzErrorLimit`, a `MemoryError`, and any cause the converter cannot place (named by its type), so an unknown fault is reported loudly rather than blamed on the file. An engine fault on a page — a `MemoryError`, or a MuPDF code that is not the file's — fails the whole conversion; a page failing for any other reason costs that page alone, as a warning. `PDFErrorKind.is_the_files` is the split a caller acts on, and a successful result never carries an `error_kind`. Before #598 the message was `"Invalid or corrupted PDF: {e}"` for any `FileDataError`, path included, and a caller could not tell an out-of-memory from a bad file.
+- A failure to open or read the document returns `success=False`, keeping the running `converted_pages`, with `error_kind` saying which side it is on and `error_message` a sentence fit to show a user that **never names the path** *(0.12.0, #598)*. `PDFErrorKind.UNREADABLE` (`"the PDF could not be read: …"`) is the file's: MuPDF's `FzErrorFormat`, `FzErrorSyntax` or `FzErrorUnsupported` chained as the cause (a garbage file is `FORMAT`, a truncated one `SYNTAX`), or PyMuPDF's own `FileDataError` with no MuPDF cause (an empty file is PyMuPDF's `EmptyFileError`). `PDFErrorKind.ENGINE` (`"the PDF engine failed: …"`) is everything else — `FzErrorSystem` (out of memory, a syscall), `FzErrorLibrary`, `FzErrorArgument`, `FzErrorLimit`, a `MemoryError`, and any cause the converter cannot place (named by its type), so an unknown fault is reported loudly rather than blamed on the file. An engine fault on a page — a `MemoryError`, or a MuPDF code that is not the file's — fails the whole conversion; a page failing for any other reason costs that page alone, as a warning. `PDFErrorKind.is_the_files` is the split a caller acts on, and a successful result never carries an `error_kind`. Before #598 the message was `"Invalid or corrupted PDF: {e}"` for any `FileDataError`, path included, and a caller could not tell an out-of-memory from a bad file.
 - A PDF needing a password to open returns `success=False` with `error_kind=PDFErrorKind.ENCRYPTED` and `error_message="the PDF is password-protected; remove the password and try again"` (it was `"PDF is password-protected"` before #598). PyMuPDF opens such a file without the password and only fails on use, so without this check every page failed inside the per-page handler and the file came back as a *success* carrying no text — a caller testing `success` alone read an unreadable file as a paper with no text. The test is `doc.needs_pass`, not `doc.is_encrypted`: an owner password restricts permissions without blocking reads, and such a file converts normally.
-- `convert(pdf_path, *, limit=None)` and `extract_blocks(pdf_path, *, limit=None)` take a `PDFLimit(cancel: threading.Event | None = None, deadline: float | None = None)` *(unreleased, #600)*, `deadline` a `time.monotonic()` reading. It is checked **before each page**: a reached limit is a failed result (`convert`, `error_kind` `CANCELLED` or `TIMED_OUT`, `text=""`, logged at INFO since the caller asked for it) or a raised `PDFExtractionError` (`extract_blocks`), never a partial one; a cancel outranks a passed deadline. `PDFLimit` refuses, when built, a `nan` or infinite deadline, a `time.time()` reading (decades past `time.monotonic()`) and a `cancel` that is not an `Event`, each of which would otherwise stop nothing or fail as the engine's fault. PyMuPDF's `get_text()` takes no MuPDF cookie, so one long page runs to its end here — Rust's `PdfLimit` stops a page while it runs. The default stops never, and `FullTextService` passes none.
+- `convert(pdf_path, *, limit=None)` and `extract_blocks(pdf_path, *, limit=None)` take a `PDFLimit(cancel: threading.Event | None = None, deadline: float | None = None)` *(0.12.0, #600)*, `deadline` a `time.monotonic()` reading. It is checked **before each page**: a reached limit is a failed result (`convert`, `error_kind` `CANCELLED` or `TIMED_OUT`, `text=""`, logged at INFO since the caller asked for it) or a raised `PDFExtractionError` (`extract_blocks`), never a partial one; a cancel outranks a passed deadline. `PDFLimit` refuses, when built, a `nan` or infinite deadline, a `time.time()` reading (decades past `time.monotonic()`) and a `cancel` that is not an `Event`, each of which would otherwise stop nothing or fail as the engine's fault. PyMuPDF's `get_text()` takes no MuPDF cookie, so one long page runs to its end here — Rust's `PdfLimit` stops a page while it runs. The default stops never, and `FullTextService` passes none.
 - Exceptions from `validate_pdf_path()` **propagate** — a missing or non-PDF path raises rather than returning a failed `ConversionResult`.
 
 ### Example
@@ -2342,7 +2342,7 @@ if methods is not None:
 print(document.to_markdown())
 ```
 
-### Page furniture *(unreleased)*
+### Page furniture *(0.12.0)*
 
 Before anything else, `segment_document` sets aside **page furniture**
 (#591): running heads, footers, page numbers and licence stamps, which
@@ -2407,6 +2407,10 @@ lower-confidence candidate — a bold "Summary of findings" line or a figure
 caption can produce one — so callers reasoning about section content should
 check `Section.confidence` and filter to 1.0 for certainty. Duplicate
 section types are possible; `get_section()` returns the first.
+`match_section_type(text)` *(0.12.0; it was a private method)* is that
+classification for a heading that did not come from a PDF: `(type, 1.0)` for
+an anchored match, `(type, 0.7)` for a partial one, `(SectionType.UNKNOWN,
+0.0)` for none.
 
 Sections are the text between consecutive headings. Three container rules:
 
@@ -2427,7 +2431,7 @@ characters — so a superscript reference marker cannot restyle its line.
 
 `extract_blocks()` **raises** (`FileNotFoundError`, `ValueError`) rather
 than returning a partial result. A file that cannot be read raises
-`PDFExtractionError` *(unreleased, #598)* — a `ValueError` subclass, so an
+`PDFExtractionError` *(0.12.0, #598)* — a `ValueError` subclass, so an
 existing `except ValueError` still catches it — whose `kind` is the
 `PDFErrorKind` `convert()` reports and whose message is `convert()`'s
 `error_message`, the path left out (it was `ValueError("Failed to extract
@@ -2521,14 +2525,14 @@ The rule and its reject-list backstop are measured against
 bioRxiv PDFs collected by `scripts/sample_pdf_metadata_titles.py`. **Run that
 sampler before changing either.** Its 175 `europepmc` rows predate #494 but are
 Europe PMC's own PDFs all the same (each `file_name` is `<id>?pdf=render`); its
-150 `biorxiv` rows were drawn from `/pubs` on 2026-10-27 *(unreleased)*,
+150 `biorxiv` rows were drawn from `/pubs` on 2026-10-27 *(0.12.0)*,
 replacing 60 drawn from `/details` before #325. Every row carries a
 `definitions` stamp, and rows written since #503 the PDF's `url`; the sampler
 refuses to resume a journal written before #503.
 
 ---
 
-## Canonical text *(unreleased)*
+## Canonical text *(0.12.0)*
 
 `bmlib.fulltext.canonical` turns a paper, whatever its format, into **one
 string** and records the title, every heading and every block as a span into
@@ -2616,9 +2620,9 @@ doc.converter_version                     # "jats-1"
   (U+00AD) followed by white space inside a paragraph is removed with that
   space (`preva\u00ad` / `lent` gives `prevalent`; `join_soft_hyphens`), since
   it says the word was broken; only a PDF that maps its breaks to U+00AD
-  carries one *(unreleased, `"pdf-2"`)*. Both languages extract with MuPDF —
+  carries one *(0.12.0, `"pdf-2"`)*. Both languages extract with MuPDF —
   Python through PyMuPDF, Rust through the `mupdf` crate (PDFium until #590,
-  *unreleased*) — so two fixtures hold them together: one from the
+  *0.12.0*) — so two fixtures hold them together: one from the
   `SegmentedDocument` on (its `to_dict()` form), and `pdf_extraction.json`
   from a committed PDF's bytes to the blocks and the canonical text. The two
   MuPDF builds are different releases (the crate bundles 1.27.2, `pymupdf`
@@ -2668,7 +2672,7 @@ doc.converter_version                     # "jats-1"
 - **Versions**: `converter_version` is `"<format>-<n>"` from
   `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION`, `PLAIN_TEXT_VERSION`,
   `PDF_CANONICAL_VERSION` (which moves with the segmenter too: `"pdf-3"` sets
-  page furniture aside, *unreleased*) and
+  page furniture aside, *0.12.0*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.
@@ -2680,7 +2684,7 @@ doc.converter_version                     # "jats-1"
   (Rust: `CanonicalError`), both languages refusing the same list
   (`refusals` in the shared fixture).
 
-### Chunks for retrieval *(unreleased)*
+### Chunks for retrieval *(0.12.0)*
 
 `chunk_canonical(text, max_chars=DEFAULT_MAX_CHARS, overlap_chars=DEFAULT_OVERLAP_CHARS)`
 splits a `CanonicalText` into `Chunk`s for embedding, section by section in
@@ -2732,7 +2736,7 @@ for chunk in chunk_canonical(doc, max_chars=40, overlap_chars=20):
   embedding stale. Python and Rust are held together by
   `tests/fixtures/canonical_chunks.json`.
 
-### Canonical model reference *(unreleased)*
+### Canonical model reference *(0.12.0)*
 
 All model types are frozen dataclasses except `SectionDraft`.
 

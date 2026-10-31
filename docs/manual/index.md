@@ -1,6 +1,6 @@
 # bmlib API Manual
 
-**Version 0.11.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
+**Version 0.12.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
 
 bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
@@ -28,8 +28,8 @@ pip install -e ".[all,dev]"
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
 | `fulltext`       | `pip install bmlib[fulltext]`      | `FullTextService` retrieval (httpx). The JATS parser, the models and `SectionSegmenter` need nothing beyond core |
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
-| `html`           | `pip install bmlib[html]`          | `canonical_from_html()` — an HTML page's main content as canonical text (markupever, html5ever) *(unreleased)* |
-| `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`)|
+| `html`           | `pip install bmlib[html]`          | `canonical_from_html()` — an HTML page's main content as canonical text (markupever, html5ever) *(0.12.0)* |
+| `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`) *(0.12.0)* |
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all`            | `pip install bmlib[all]`           | Every runtime extra above but `embed` (**not** `dev`)  |
 
@@ -40,16 +40,16 @@ bmlib is organised into eleven modules, each with a focused responsibility:
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | [`bmlib.db`](database.md) | Thin database abstraction over DB-API connections (SQLite + PostgreSQL) | [database.md](database.md) |
-| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, streamed chat *(unreleased)*, tool calling, embeddings, reasoning traces, JSON repair, text chunking | [llm.md](llm.md) |
+| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, streamed chat and context windows *(0.12.0)*, tool calling, embeddings, reasoning traces, JSON repair, text chunking | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
 | [`bmlib.context_processor`](context_processor.md) | Hierarchical map-reduce over content that exceeds one context window | [context_processor.md](context_processor.md) |
-| [`bmlib.quality`](quality.md) | 4-tier quality assessment pipeline (metadata → LLM classifier → deep assessment → Cochrane risk of bias), rule-based extractors | [quality.md](quality.md) |
+| [`bmlib.quality`](quality.md) | 4-tier quality assessment pipeline (metadata → LLM classifier → deep assessment → Cochrane risk of bias), rule-based extractors, PICO extraction with verified quotes *(0.12.0)* | [quality.md](quality.md) |
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, PubMed, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
-| [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
-| [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching; `bmlib.fulltext.canonical` — one canonical text per paper from JATS, Markdown, plain text, a segmented PDF or HTML, with retrieval chunks *(unreleased)* | [fulltext.md](fulltext.md) |
-| [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building (pure stdlib) | [citations.md](citations.md) |
-| [`bmlib.embed`](embeddings.md) | In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download | [embeddings.md](embeddings.md) |
+| [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync; Retraction Watch notices; one paper's record by identifier and a four-state retraction verdict *(0.12.0)* | [publications.md](publications.md) |
+| [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching; `bmlib.fulltext.canonical` — one canonical text per paper from JATS, Markdown, plain text, a segmented PDF or HTML, with retrieval chunks *(0.12.0)* | [fulltext.md](fulltext.md) |
+| [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building, locating an LLM's quoted passage *(0.12.0)* (pure stdlib) | [citations.md](citations.md) |
+| [`bmlib.embed`](embeddings.md) | *(0.12.0)* In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download, a paper's chunks stored and searched | [embeddings.md](embeddings.md) |
 
 ## Architecture Principles
 

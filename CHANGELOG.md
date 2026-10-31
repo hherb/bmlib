@@ -6,6 +6,101 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-31
+
+**The StudyAnalyzer release: the pieces an evidence-appraisal app needs to
+read one paper closely, in Python and in the Rust port alike.**
+`bmlib.fulltext.canonical` makes one canonical text per paper — one string,
+every piece a code-point span — from JATS, Markdown, plain text, a segmented
+PDF or an HTML page (the new `html` extra), and cuts it into sentence-aware
+retrieval chunks; `assess_full_text` says whether it looks like a whole
+paper. `bmlib.embed` embeds those chunks in process with
+snowflake-arctic-embed-l-v2.0 from pinned, verified GGUF files (the new
+`embed` extra, deliberately outside `all`) and stores and searches them per
+paper, refusing a set embedded by another model or recipe. `find_passage`
+locates an LLM's near-verbatim quote in its source and returns the source's
+own span, which is what `PicoAgent` uses to keep only verified quotes.
+`lookup_record` fetches one paper's record by PMID, DOI, PMC ID or PPR;
+`retraction_status` gives one four-state verdict from the Retraction Watch
+export, Crossref and PubMed, and `import_retraction_watch_export` replaces the
+stored notices with one export, refusing a truncated download. The LLM layer
+gains streamed chat and context windows, and condensation takes any prompts.
+
+**PDFs got a pass of their own.** A failed extraction says whose fault it is
+(#598) and can be cancelled or given a deadline (#600); the segmenter sets
+running heads, footers and page numbers aside (#591); a line-end soft hyphen
+joins its word (#590); a PDF download that failed says why (#594).
+
+**This is a minor bump because public APIs break**; every break is gathered
+under *Changed — breaking* below, and the argument stays in the entries under
+*Added*, *Changed* and *Fixed*. The Rust crate's own changes are in
+`rust/bmlib/CHANGELOG.md`.
+
+**The data answer, which the number cannot give:**
+
+- **Cached full text re-renders by itself.** `RENDERER_VERSION` is 7 (3 in
+  0.11.0: #497, #514, #516, #518), so bmlib's own cache re-fetches every HTML
+  or abstract entry at its next lookup. A downstream that stored the HTML
+  itself, or calls `JATSParser` directly, should re-fetch or re-parse.
+- **A stored PDF canonical text is stale**: `PDF_CANONICAL_VERSION` is 3
+  (#590, #591). Nothing stored in 0.11.0 carries one, the module being new.
+- **An OpenAlex sync now stores `pmcid`** where it stored nothing, and a
+  record with one wrong-typed field is stored without that field rather than
+  failing its day.
+- **Re-import the Retraction Watch export** to store a notice's own PMID
+  without leading zeros (#523).
+- **`extract_study_type` moves** for 421 of 5,954 sampled abstracts (#453),
+  for a caller that stores extractor output.
+- **`ensure_schema()` is unchanged.** `bmlib.embed.store` creates its own two
+  tables (`embedded_chunk_sets`, `embedded_chunks`) when first used.
+
+### Changed — breaking
+
+Each entry names what a caller sees change; the argument is in the entry
+cited.
+
+**`fulltext`**
+
+- **A PDF extraction error's message moves** (#598): no path, and *"the PDF
+  could not be read: …"* or *"the PDF engine failed: …"* in place of the old
+  strings. `ConversionResult` gains `error_kind` (declared last) and
+  `extract_blocks()` raises `PDFExtractionError`, a `ValueError` subclass, so
+  an `except ValueError` still catches it. **An engine fault on one page now
+  fails the whole conversion** where it cost that page alone.
+- **A caller's `html` source no longer ends `FullTextService`'s chain**
+  (#579): every tier that can fetch text runs first, so the call may return
+  full text, and make those requests, where it returned a link.
+- **Segmented PDF sections no longer carry page furniture** (#591), so
+  section content moves wherever a page broke.
+
+**`llm`**
+
+- **The `anthropic` extra requires `anthropic>=0.41`** (was `>=0.30`), the
+  first release with `models.retrieve`.
+
+**`context_processor`**
+
+- **A map or reduce reply cut at `max_tokens` fails its batch** rather than
+  being kept as a whole extraction, so such a run is `partial` or failed
+  where it reported `completed`.
+
+**`publications`**
+
+- **The OpenAlex normaliser reads every field type-checked**: an empty
+  `publication_date` is `None` and an `is_oa` that is not a JSON boolean is
+  `False` (`bool("no")` was `True`).
+
+**`quality`**
+
+- **`extract_study_type` reads a review by how it searched** (#453).
+
+**Rust crate** (published separately; see its CHANGELOG): `PdfTextExtractor`
+returns `PdfError` and gains `_within` methods taking a `PdfLimit` (#598,
+#600); `ChatRequest` gains `num_ctx`, `Protocol` an `Ollama` variant,
+`ProtocolError` a `Malformed` variant, and `parse_response` takes the
+request's messages; the `ollama` provider speaks `/api/chat`; `ChatError` is
+`#[non_exhaustive]`; `FullTextResult` gains `pdf_download_failure` (#594).
+
 ### Added
 - **A PDF extraction can be cancelled or bounded in time** (#600, found
   reviewing hherb/StudyAnalyzer#21). `PyMuPDFConverter.convert()` and
@@ -19,76 +114,6 @@ All notable changes to bmlib are documented here. The format is based on
   refused when built: a `nan` or infinite deadline, a `time.time()` reading
   (decades past `time.monotonic()`), and a `cancel` that is not an `Event`.
 
-### Changed — breaking for a caller matching the old messages
-- **A PDF that cannot be extracted says whose fault it is** (#598, found
-  reviewing hherb/StudyAnalyzer#21). `PyMuPDFConverter.convert()` reported
-  every failure as an `error_message` string and `extract_blocks()` raised a
-  bare `ValueError`, so a caller could not tell a bad file from an engine
-  fault: an out-of-memory on a large PDF told the user to pick another file.
-  `PDFErrorKind` (`ENCRYPTED`, `UNREADABLE`, `ENGINE`) now says which side:
-  MuPDF's `FzErrorFormat`, `FzErrorSyntax` and `FzErrorUnsupported`, chained by
-  PyMuPDF as the cause, are the file's (measured: a garbage file is `FORMAT` and a
-  truncated one `SYNTAX`; an empty one is PyMuPDF's own `EmptyFileError`, a
-  `FileDataError` with no MuPDF code, which is the file's too), and every other
-  code — `SYSTEM`, `LIBRARY`, `ARGUMENT`, `LIMIT` — a `MemoryError`, and any
-  cause the converter cannot place are the engine's, so an unknown fault is
-  loud rather than blamed on the file; a cause that is not MuPDF's is named by
-  its type. **An engine fault on one page now fails the conversion** (a
-  `MemoryError`, or a MuPDF code that is not the file's): it used to cost that
-  page alone, with `success=True` and no kind, which was #598's own example.
-  A page failing for any other reason still costs that page alone.
-  `PDFErrorKind.is_the_files` is the split, and a `ConversionResult` with
-  `success=True` and an `error_kind` is refused. `ConversionResult.error_kind` carries it (declared
-  last; `None` on success), and `extract_blocks()` raises
-  `PDFExtractionError(kind, message)`, a `ValueError` subclass that pickles.
-  **The messages move**: they no longer name the path (the caller knows it,
-  and the user may never have chosen it), *"Invalid or corrupted PDF: …"* and
-  *"Failed to extract text blocks from …"* become *"the PDF could not be
-  read: …"* or *"the PDF engine failed: …"* carrying MuPDF's own text, and
-  *"PDF is password-protected"* becomes *"…; remove the password and try
-  again"*. Rust's `PdfTextExtractor` returns the same pair as `PdfError`
-  (see the crate's CHANGELOG). Nothing stored moves.
-
-### Changed
-- **The segmenter sets page furniture aside** (#591, `"pdf-3"`).
-  `SectionSegmenter.segment_document` put a page's running head, footer,
-  page number and licence stamp into the section content wherever a page
-  broke, so a paragraph crossing the break was split around *"Comparison of
-  the effects of ivermectin… 88"* and *"J Popul Ther Clin Pharmacol Vol
-  29(1)…"* — a quote across the break could not be located, and the chunker
-  indexed the boilerplate once per page. `page_furniture` /
-  `drop_page_furniture` (in `bmlib.fulltext.segmenter`, Python and Rust) run
-  first: a line whose text, every run of ASCII digits read as `#`, recurs at
-  one height (a chain of tops each within 2 pt of the one before) on at least
-  0.4 of the pages and at least three of them is a candidate, and a bare
-  number only if it is its page's index plus a constant (a page number, not a
-  manuscript's line numbers). A candidate is furniture only at its page's top
-  or bottom edge, at most 20 lines there, so a table continued on one grid
-  over pages (its decimals all read `#.#`) is kept — the PR's review found
-  that case. Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal
-  PDFs): 50,401 of 355,282 lines set aside in 212 PDFs, and no line inspected
-  was content; canonical text moves in 212, every
-  word lost a word of a set-aside line except a page-1 title the font-size
-  fallback no longer reaches (3 PDFs, the words kept in the front matter) and
-  one page number taken for a title. The median font size is now the body's,
-  so in 7 PDFs a body sentence the furniture had promoted to a heading is
-  prose again. Python and Rust segment the same blocks identically on all 231.
-  `PDF_CANONICAL_VERSION` is 3; the PDF-bytes contract gains a third page,
-  a running head and page numbers.
-- **A soft hyphen that ends a line joins its word** (#590, `"pdf-2"`, the
-  maintainer's call). `canonical_from_segmented` removed nothing, so a PDF
-  that maps its line-end hyphens to U+00AD gave `preva\u00ad lent`, the soft
-  hyphen left in the text. Each paragraph now passes through
-  `join_soft_hyphens` (exported from `bmlib.fulltext.canonical`, and in Rust),
-  which removes a U+00AD followed by white space together with that space; a
-  soft hyphen anywhere else is kept, and a hard line-end hyphen keeps the
-  existing rule (`dose- response`), since nothing in a PDF tells `dose-` from
-  `random-`. `PDF_CANONICAL_VERSION` is 2, so a stored PDF canonical text reads
-  as laid out by an older converter. Most PDFs typeset the break with an
-  ordinary `-`: over #590's 151-PDF corpus PyMuPDF reports 198 soft hyphens,
-  in 4 files. Python and Rust; `canonical_text.json` gains a case.
-
-### Added
 - **A PDF-extraction contract from a PDF's bytes** (#590).
   `tests/fixtures/pdf_extraction.pdf`, written byte for byte by
   `scripts/make_pdf_extraction_fixture.py` (two pages; unembedded Helvetica,
@@ -102,64 +127,6 @@ All notable changes to bmlib are documented here. The format is based on
   at the `SegmentedDocument`, so nothing held the two extractions together
   before.
 
-### Fixed
-- **A failed PDF download says why** (#594, found by StudyAnalyzer; the
-  maintainer chose a field over falling through to the next tier). A PDF tier
-  — a fetcher-supplied PDF, Tier 1d's Europe PMC render, Tier 2's Unpaywall —
-  downloads its `pdf_url`, and on any failure logged it and returned the
-  result with `pdf_url` and no `file_path`: the shape a result has when no
-  download was attempted (no cache, no `identifier`), so a caller could not
-  tell a free PDF a retry would fetch from a bare link, and StudyAnalyzer told
-  its user "no full text yet" as if the paper were paywalled. The download is
-  not recorded on the exhaustion report, the tier returning at once.
-  `FullTextResult.pdf_download_failure` (Python and Rust) now names the cause:
-  `"http-<status>"`, `"not-a-pdf"`, `"request-failed"` (the request raised) or
-  `"write-failed"` (the cache could not save it); `None` when the PDF was
-  cached or no download was attempted. Which tier answers does not move. The
-  shared `tests/fixtures/fulltext_source.json` gains a case per cause and a
-  cached one, and checks the field and `file_path` in every case; each
-  setting site was mutation-checked in both languages.
-- **A fresh Rust cache saves its PDFs and HTML** (#592, found by
-  StudyAnalyzer). Rust's `FullTextCache` creates no directory on construction,
-  and `save_pdf` and `save_html`, unlike `save_jats` and `save_abstract`, never
-  created theirs. So in a fresh cache built on an explicit directory
-  (`default_cache()` already made both), every PDF write failed with
-  `NotFound`, and the service returned a found PDF with no
-  `file_path`: a caller that reads the cached file, as StudyAnalyzer does, saw
-  no full text. Both saves now create their directory (a rejected PDF still
-  creates none). The Rust test helpers in `tests/service.rs` and
-  `tests/fulltext_source_contract.rs` pre-created `html/` and `pdfs/`, as
-  Python's constructor does, which hid it; they no longer do, so the service
-  tests run on a fresh cache. Python's constructor creates both, so it is
-  unchanged. Rust only.
-- **A stored span is the chunker's, or the set is corrupt** (#587, from PR
-  #586's review). `search` checked a stored row's section and span only
-  against the text's bounds, so a span rewritten in bounds — chunk 4 stored as
-  `(0, 3)` — was returned as chunk 4's passage at chunk 4's score. The label
-  already pins the text's bytes, `CHUNKER_VERSION` and the converter's version
-  (not the sections: a hand-built text with the indexed text and converter
-  version but other sections is refused as corrupt too), so `search` now rebuilds the
-  chunks with `chunk_canonical` and refuses the set (`CorruptChunkSetError`,
-  Rust `StoreError::Corrupt`) unless every stored `(section, start, end)` is
-  the rebuilt chunk's and the set holds as many chunks as the text makes;
-  each hit's section and span come from the rebuilt chunk. That also closes a
-  hole the issue did not name: a set whose rows and count were both zeroed
-  agreed with itself, and a text with chunks searched as none. The cost is one
-  chunking pass per search (not measured). The stored spans are still written
-  and compared, not dropped, so a schema change is not needed. Python and Rust.
-- **Rust's chunk-store tests run on PostgreSQL too** (#588). Every
-  `tests/vector_store.rs` case runs on SQLite and, in a `--features postgres`
-  build with `BMLIB_PG_TESTS=1` (CI's PostgreSQL job), again on a private
-  database on a real server, as `tests/test_embed_store.py` does on both
-  backends: the corrupt-store paths, the empty set's LEFT JOIN, the
-  embedder-failure, cancel and stale-label tests among them (36 cases). Five
-  stay SQLite-only and say why: a non-blob vector (BYTEA refuses it), a version
-  past `u32` (`INTEGER` cannot hold it), the per-connection `PRAGMA
-  foreign_keys`, the two-connection race and the `RAISE` trigger. The huge
-  chunk count is `i32::MAX` now on both, as Python's is. `postgres_live.rs`'s
-  private-database harness moved to `tests/common/live_pg.rs` to be shared.
-
-### Added
 - **A paper's chunks, stored and searched** (StudyAnalyzer phase 1, item 8;
   spec `docs/superpowers/specs/2026-10-30-vector-store-design.md`, plan beside
   it). `bmlib.embed.store` (Rust: `bmlib::embed::store`) keeps one paper's
@@ -533,7 +500,201 @@ All notable changes to bmlib are documented here. The format is based on
   `tests/fixtures/fulltext_source.json`. `RENDERER_VERSION` is re-pinned, not
   bumped: the renderer is untouched.
 
+- **The PDF-title sampler can tell its populations apart** (#503, part 1).
+  `scripts/sample_pdf_metadata_titles.py` records each row's and each
+  unmeasured attempt's PDF `url`, and stamps every journal line with
+  `ROW_DEFINITIONS_VERSION` (1: `biorxiv`/`medrxiv` read `/pubs` since #325,
+  and `europepmc` takes Europe PMC's own PDF since #494). A journal holding an
+  entry stamped otherwise, or not at all (a hand-edited `true` or `1.0`
+  included), is refused (exit 2) rather than resumed and pooled under one
+  `source` label, and so is a one-population `--source` at the default `-o`,
+  which would rewrite the committed corpus without the other population.
+  **#503's premise is refuted for `europepmc`**: all 175 committed rows have a
+  `file_name` of `<id>?pdf=render`, Europe PMC's own URL (a `PubMedCentral`
+  entry ends `/pdf/?tool=EBI`, live 2026-10-25), so they are the population
+  #494 draws now. The committed 60 `biorxiv` rows predate #325 and are the
+  `/details` population. The corpus is unchanged and nothing in `bmlib`
+  moves; whether to redraw `biorxiv` is #503's open half.
+- **The extractor sampler measures PubMed's bare `Review`** (#540).
+  `sample_extractor_signals.py abstracts --publication-type T` draws other
+  publication types in the same three years, as a displaced draw that must
+  name its own `-o`, and `LABEL_ORDER` gains `review_only` — `Review` and
+  nothing more specific, last so a "case report and review of the literature"
+  stays a case report. It moves 4 records of the committed abstract corpus
+  from `other` to `review_only`, three of them Network Meta-Analyses. The
+  displaced draw, `tests/data/extractor_abstracts_review.json` (900 abstracts,
+  0 unmeasured), is committed and pinned to `extractors.py` like the other two
+  corpora, so an extractor change now re-measures three. Over its 760
+  `review_only` records #453's search wording moves 7, all to
+  `systematic_review`: 2 were `meta_analysis`, 3 are database-searched reviews,
+  1 is borderline and 1 is a narrative review misread — 1 or 2 of 760, read by
+  hand (`docs/DECISIONS.md`). Nothing in `bmlib` moves.
+
+- **`bmlib.embed`'s errors can be told apart by type, as Rust's are** (#532;
+  the embedder is unreleased, so nothing shipped moves). Every embedder failure
+  is still an `EmbedError` with `.index`, now raised as one of five subclasses
+  mirroring the Rust variants: `EmptyTextError` (now an `EmbedError` as well
+  as a `ValueError`, raised directly rather than re-wrapped; Rust
+  `EmptyText`), `TextTooLongError` with `.tokens` (`TooLong`),
+  `UnusableOutputError` with `.error`, the `VectorError` (`Vector`),
+  `ModelLoadError` for a failed import, an unloadable file, a context llama.cpp
+  will not create or a model narrower than 256 (`Load`; Rust makes its context
+  per call, so it reports that one as `Decode`), and `BatchDecodeError`
+  (`Decode`). A text that cannot be tokenized (a lone surrogate) is an
+  `EmbedError` naming its index, where it escaped as `UnicodeEncodeError`; Rust
+  cannot meet it. A model that fails its check is a `SizeMismatchError` or a
+  `ChecksumMismatchError`, both `ModelVerificationError`s, `.what` now their
+  class attribute. Every one survives pickling, so it crosses a process pool.
+  In Rust, `EmbedError::Llama` splits into `Load` and `Decode`. `VectorError::NotScalable` still carries no
+  norm (left as is: see #532's last comment).
+- **`bmlib.embed.Embedder`: in-process embedding over llama-cpp-python** (new
+  `bmlib[embed]` extra). `embed_documents` / `embed_query` return 256-dimension
+  unit vectors, held to the shared reference vectors (cosine >= 0.999 on F16,
+  0.998 on Q8_0). Nothing is truncated silently: an empty or over-long text
+  raises `EmbedError` naming its index. **`embed` is not part of `all`**: it
+  compiles llama.cpp, so `bmlib[all]` stays installable without a C++
+  toolchain. Ask for it explicitly (`bmlib[all,embed]`).
+- **`bmlib.embed`: embedding constants, vector rules and a verified model
+  download.** `truncate_and_normalize`, `query_text`, `check_texts` (pinned by
+  the shared `embedding_contract.json`) and `download_model`, which streams the
+  pinned arctic-embed-l-v2.0 GGUF into a temporary file of its own (so
+  concurrent calls are safe) and keeps nothing that fails its size or sha256.
+  A `progress` hook returning `False` cancels it (`DownloadCancelled`).
+  `ModelFile` refuses a revision that is not a commit, a file that is not a
+  bare name and a malformed sha256.
+
+- **`bmlib.citations.find_passage` locates an LLM's near-verbatim quote in
+  its source** and returns the source's own span (`PassageMatch`: similarity,
+  start, end, text, exact), with the normalisation helpers `fold_char`,
+  `normalize_with_offsets` and `occurs_once`. Moved from bmlibrarian, with its
+  tests and more, and held to the Rust port by the shared contract
+  `tests/fixtures/passage_match.json`. One behaviour differs from upstream: an
+  occurrence that starts or ends inside a word or inside one source character
+  is no longer an exact match (`HR 0.9` in `HR 0.95`, `effective` in
+  `ineffective`, `=` in `≠`, #527), so the search goes on to the next
+  occurrence and then to the fuzzy search. A `bool` threshold is refused, and
+  a vanishingly small one no longer raises `OverflowError`.
+- **`import_retraction_watch_export()`: one export replaces the stored
+  notices** (issues #509, #510). It parses and stores a whole Retraction Watch
+  export in one transaction and **deletes the stored notices the export no
+  longer carries**, as the apps' rebuilt `RetractionIndex` does, so a paper
+  gets the same verdict on the desktop and in an app (the maintainer's
+  choice). Measured, 2026-03 copy against the export of 2026-10-21: 6 of
+  69,318 records left, 4 re-keyed and 2 retractions dropped outright, which
+  `store_retraction_notices()` never deleted. A notice whose row the export
+  still carries but the parser now skips is removed too: replayed through this
+  function, the March copy and then the October export store 64,133 and 68,135
+  notices and remove 7 — the 6 that left, and record 2558, still in the export
+  with its DOI blanked to `unavailable` and its PMID to `00000000`. It refuses,
+  writing nothing, an export with no usable row; one in which no notice
+  carries a findable DOI, none a PMID, or none a `RetractionNature` this
+  version recognises (a renamed column, #509; the first two are the Rust index
+  build's rule); and a removal above 1% of the stored notices a lookup can
+  find unless `allow_large_removal=True`, since the export is sorted newest
+  first and a truncated download loses the oldest records. A notice nothing
+  could find is removed without counting. Two imports are serialised by a lock,
+  and a removal is logged at WARNING naming the records. Returns
+  `RetractionImport(stored, removed)`.
+  `store_retraction_notices()` is unchanged and stays for batch callers. The
+  Rust desktop store follows in #520.
+
+- **`bmlib.publications.retraction_status`: one four-state retraction
+  verdict from three sources** (issue #504, for bmlibrarian_lite's three
+  platforms). `retraction_status()` takes a paper's Retraction Watch evidence
+  (`evidence_from_notices(lookup_retractions(...))`), its Crossref result and
+  its publication types, and returns `retracted`, `concern`, `clear` or
+  `unchecked`, with the deciding notice and the lookups that did not answer.
+  **Clear needs the export consulted and Crossref to have served the DOI**;
+  anything less, a DOI Crossref does not know included, is `unchecked` — and
+  so is a lookup that returned a notice of a kind bmlib cannot read, since
+  Crossref deposits misspell decisive types (`retration`,
+  `expression-of-concern`). `crossref_retraction_requests()` builds batched
+  `filter=doi:…` URLs (50 DOIs, at most 4,000 characters) and
+  `parse_crossref_retraction_response()` reads one batch's answer (keyed by
+  `crossref_key(doi)`), a failed
+  batch making every DOI in it unreachable — "not JSON" meaning what
+  `serde_json` refuses, so the Rust port agrees; the transport stays the
+  caller's. The "a notice never flags
+  itself" guard covers `publisher` relations only, because the retracted
+  Surgisphere Lancet paper lists its own notices in its `update-to` (see
+  `docs/DECISIONS.md`). `tests/fixtures/retraction_status.json` is the shared
+  contract — 47 rule cases built from live Crossref answers and export rows
+  where they exist, 24 parse and 5 request cases — which the Rust port
+  asserts against and the apps are to. A served Crossref result carries its
+  own DOI, and the rule reads one served for another DOI as Crossref not
+  having answered, so a result filed under the wrong paper is never `clear`
+  (#508; two rule cases). The Rust port follows in the same PR, with
+  `RetractionIndex`, the export as one file a phone keeps, and UniFFI exports
+  in `bmlib-ffi`.
+
 ### Changed
+- **A PDF that cannot be extracted says whose fault it is** (#598, found
+  reviewing hherb/StudyAnalyzer#21). `PyMuPDFConverter.convert()` reported
+  every failure as an `error_message` string and `extract_blocks()` raised a
+  bare `ValueError`, so a caller could not tell a bad file from an engine
+  fault: an out-of-memory on a large PDF told the user to pick another file.
+  `PDFErrorKind` (`ENCRYPTED`, `UNREADABLE`, `ENGINE`) now says which side:
+  MuPDF's `FzErrorFormat`, `FzErrorSyntax` and `FzErrorUnsupported`, chained by
+  PyMuPDF as the cause, are the file's (measured: a garbage file is `FORMAT` and a
+  truncated one `SYNTAX`; an empty one is PyMuPDF's own `EmptyFileError`, a
+  `FileDataError` with no MuPDF code, which is the file's too), and every other
+  code — `SYSTEM`, `LIBRARY`, `ARGUMENT`, `LIMIT` — a `MemoryError`, and any
+  cause the converter cannot place are the engine's, so an unknown fault is
+  loud rather than blamed on the file; a cause that is not MuPDF's is named by
+  its type. **An engine fault on one page now fails the conversion** (a
+  `MemoryError`, or a MuPDF code that is not the file's): it used to cost that
+  page alone, with `success=True` and no kind, which was #598's own example.
+  A page failing for any other reason still costs that page alone.
+  `PDFErrorKind.is_the_files` is the split, and a `ConversionResult` with
+  `success=True` and an `error_kind` is refused. `ConversionResult.error_kind` carries it (declared
+  last; `None` on success), and `extract_blocks()` raises
+  `PDFExtractionError(kind, message)`, a `ValueError` subclass that pickles.
+  **The messages move**: they no longer name the path (the caller knows it,
+  and the user may never have chosen it), *"Invalid or corrupted PDF: …"* and
+  *"Failed to extract text blocks from …"* become *"the PDF could not be
+  read: …"* or *"the PDF engine failed: …"* carrying MuPDF's own text, and
+  *"PDF is password-protected"* becomes *"…; remove the password and try
+  again"*. Rust's `PdfTextExtractor` returns the same pair as `PdfError`
+  (see the crate's CHANGELOG). Nothing stored moves.
+
+- **The segmenter sets page furniture aside** (#591, `"pdf-3"`).
+  `SectionSegmenter.segment_document` put a page's running head, footer,
+  page number and licence stamp into the section content wherever a page
+  broke, so a paragraph crossing the break was split around *"Comparison of
+  the effects of ivermectin… 88"* and *"J Popul Ther Clin Pharmacol Vol
+  29(1)…"* — a quote across the break could not be located, and the chunker
+  indexed the boilerplate once per page. `page_furniture` /
+  `drop_page_furniture` (in `bmlib.fulltext.segmenter`, Python and Rust) run
+  first: a line whose text, every run of ASCII digits read as `#`, recurs at
+  one height (a chain of tops each within 2 pt of the one before) on at least
+  0.4 of the pages and at least three of them is a candidate, and a bare
+  number only if it is its page's index plus a constant (a page number, not a
+  manuscript's line numbers). A candidate is furniture only at its page's top
+  or bottom edge, at most 20 lines there, so a table continued on one grid
+  over pages (its decimals all read `#.#`) is kept — the PR's review found
+  that case. Measured over 231 PDFs (bioRxiv/medRxiv and Unpaywall journal
+  PDFs): 50,401 of 355,282 lines set aside in 212 PDFs, and no line inspected
+  was content; canonical text moves in 212, every
+  word lost a word of a set-aside line except a page-1 title the font-size
+  fallback no longer reaches (3 PDFs, the words kept in the front matter) and
+  one page number taken for a title. The median font size is now the body's,
+  so in 7 PDFs a body sentence the furniture had promoted to a heading is
+  prose again. Python and Rust segment the same blocks identically on all 231.
+  `PDF_CANONICAL_VERSION` is 3; the PDF-bytes contract gains a third page,
+  a running head and page numbers.
+- **A soft hyphen that ends a line joins its word** (#590, `"pdf-2"`, the
+  maintainer's call). `canonical_from_segmented` removed nothing, so a PDF
+  that maps its line-end hyphens to U+00AD gave `preva\u00ad lent`, the soft
+  hyphen left in the text. Each paragraph now passes through
+  `join_soft_hyphens` (exported from `bmlib.fulltext.canonical`, and in Rust),
+  which removes a U+00AD followed by white space together with that space; a
+  soft hyphen anywhere else is kept, and a hard line-end hyphen keeps the
+  existing rule (`dose- response`), since nothing in a PDF tells `dose-` from
+  `random-`. `PDF_CANONICAL_VERSION` is 2, so a stored PDF canonical text reads
+  as laid out by an older converter. Most PDFs typeset the break with an
+  ordinary `-`: over #590's 151-PDF corpus PyMuPDF reports 198 soft hyphens,
+  in 4 files. Python and Rust; `canonical_text.json` gains a case.
+
 - **A caller's `html` source no longer ends `FullTextService`'s chain**
   (#579, found designing StudyAnalyzer's item 5). Tier 0 returned an `html`
   entry at once as a bare `web_url`, so Europe PMC, the PMC tiers, Unpaywall
@@ -636,38 +797,6 @@ All notable changes to bmlib are documented here. The format is based on
   re-measured, and one was already false: a good title did carry the
   `Appligent` creator, in both corpora.
 
-### Added
-- **The PDF-title sampler can tell its populations apart** (#503, part 1).
-  `scripts/sample_pdf_metadata_titles.py` records each row's and each
-  unmeasured attempt's PDF `url`, and stamps every journal line with
-  `ROW_DEFINITIONS_VERSION` (1: `biorxiv`/`medrxiv` read `/pubs` since #325,
-  and `europepmc` takes Europe PMC's own PDF since #494). A journal holding an
-  entry stamped otherwise, or not at all (a hand-edited `true` or `1.0`
-  included), is refused (exit 2) rather than resumed and pooled under one
-  `source` label, and so is a one-population `--source` at the default `-o`,
-  which would rewrite the committed corpus without the other population.
-  **#503's premise is refuted for `europepmc`**: all 175 committed rows have a
-  `file_name` of `<id>?pdf=render`, Europe PMC's own URL (a `PubMedCentral`
-  entry ends `/pdf/?tool=EBI`, live 2026-10-25), so they are the population
-  #494 draws now. The committed 60 `biorxiv` rows predate #325 and are the
-  `/details` population. The corpus is unchanged and nothing in `bmlib`
-  moves; whether to redraw `biorxiv` is #503's open half.
-- **The extractor sampler measures PubMed's bare `Review`** (#540).
-  `sample_extractor_signals.py abstracts --publication-type T` draws other
-  publication types in the same three years, as a displaced draw that must
-  name its own `-o`, and `LABEL_ORDER` gains `review_only` — `Review` and
-  nothing more specific, last so a "case report and review of the literature"
-  stays a case report. It moves 4 records of the committed abstract corpus
-  from `other` to `review_only`, three of them Network Meta-Analyses. The
-  displaced draw, `tests/data/extractor_abstracts_review.json` (900 abstracts,
-  0 unmeasured), is committed and pinned to `extractors.py` like the other two
-  corpora, so an extractor change now re-measures three. Over its 760
-  `review_only` records #453's search wording moves 7, all to
-  `systematic_review`: 2 were `meta_analysis`, 3 are database-searched reviews,
-  1 is borderline and 1 is a narrative review misread — 1 or 2 of 760, read by
-  hand (`docs/DECISIONS.md`). Nothing in `bmlib` moves.
-
-### Changed
 - **`extract_study_type` reads a review by how it searched** (#453). 403 of
   the extractor sampler's 1,771 PubMed reviews read `unknown`, saying how they
   searched rather than naming themselves. `systematic_review` gains the
@@ -697,6 +826,62 @@ All notable changes to bmlib are documented here. The format is based on
   extractor output sees `study_type` move as above.
 
 ### Fixed
+- **A failed PDF download says why** (#594, found by StudyAnalyzer; the
+  maintainer chose a field over falling through to the next tier). A PDF tier
+  — a fetcher-supplied PDF, Tier 1d's Europe PMC render, Tier 2's Unpaywall —
+  downloads its `pdf_url`, and on any failure logged it and returned the
+  result with `pdf_url` and no `file_path`: the shape a result has when no
+  download was attempted (no cache, no `identifier`), so a caller could not
+  tell a free PDF a retry would fetch from a bare link, and StudyAnalyzer told
+  its user "no full text yet" as if the paper were paywalled. The download is
+  not recorded on the exhaustion report, the tier returning at once.
+  `FullTextResult.pdf_download_failure` (Python and Rust) now names the cause:
+  `"http-<status>"`, `"not-a-pdf"`, `"request-failed"` (the request raised) or
+  `"write-failed"` (the cache could not save it); `None` when the PDF was
+  cached or no download was attempted. Which tier answers does not move. The
+  shared `tests/fixtures/fulltext_source.json` gains a case per cause and a
+  cached one, and checks the field and `file_path` in every case; each
+  setting site was mutation-checked in both languages.
+- **A fresh Rust cache saves its PDFs and HTML** (#592, found by
+  StudyAnalyzer). Rust's `FullTextCache` creates no directory on construction,
+  and `save_pdf` and `save_html`, unlike `save_jats` and `save_abstract`, never
+  created theirs. So in a fresh cache built on an explicit directory
+  (`default_cache()` already made both), every PDF write failed with
+  `NotFound`, and the service returned a found PDF with no
+  `file_path`: a caller that reads the cached file, as StudyAnalyzer does, saw
+  no full text. Both saves now create their directory (a rejected PDF still
+  creates none). The Rust test helpers in `tests/service.rs` and
+  `tests/fulltext_source_contract.rs` pre-created `html/` and `pdfs/`, as
+  Python's constructor does, which hid it; they no longer do, so the service
+  tests run on a fresh cache. Python's constructor creates both, so it is
+  unchanged. Rust only.
+- **A stored span is the chunker's, or the set is corrupt** (#587, from PR
+  #586's review). `search` checked a stored row's section and span only
+  against the text's bounds, so a span rewritten in bounds — chunk 4 stored as
+  `(0, 3)` — was returned as chunk 4's passage at chunk 4's score. The label
+  already pins the text's bytes, `CHUNKER_VERSION` and the converter's version
+  (not the sections: a hand-built text with the indexed text and converter
+  version but other sections is refused as corrupt too), so `search` now rebuilds the
+  chunks with `chunk_canonical` and refuses the set (`CorruptChunkSetError`,
+  Rust `StoreError::Corrupt`) unless every stored `(section, start, end)` is
+  the rebuilt chunk's and the set holds as many chunks as the text makes;
+  each hit's section and span come from the rebuilt chunk. That also closes a
+  hole the issue did not name: a set whose rows and count were both zeroed
+  agreed with itself, and a text with chunks searched as none. The cost is one
+  chunking pass per search (not measured). The stored spans are still written
+  and compared, not dropped, so a schema change is not needed. Python and Rust.
+- **Rust's chunk-store tests run on PostgreSQL too** (#588). Every
+  `tests/vector_store.rs` case runs on SQLite and, in a `--features postgres`
+  build with `BMLIB_PG_TESTS=1` (CI's PostgreSQL job), again on a private
+  database on a real server, as `tests/test_embed_store.py` does on both
+  backends: the corrupt-store paths, the empty set's LEFT JOIN, the
+  embedder-failure, cancel and stale-label tests among them (36 cases). Five
+  stay SQLite-only and say why: a non-blob vector (BYTEA refuses it), a version
+  past `u32` (`INTEGER` cannot hold it), the per-connection `PRAGMA
+  foreign_keys`, the two-connection race and the `RAISE` trigger. The huge
+  chunk count is `i32::MAX` now on both, as Python's is. `postgres_live.rs`'s
+  private-database harness moved to `tests/common/live_pg.rs` to be shared.
+
 - **Rust: `ChatError` is `#[non_exhaustive]`** and gains `Stream` and
   `StreamingToolsUnsupported`: a downstream `match` listing every variant
   needs a wildcard arm, once, and later variants will not break it.
@@ -734,41 +919,6 @@ All notable changes to bmlib are documented here. The format is based on
   `fetch_fulltext` already did. No draw has seen one, so this pins a
   direction; nothing stored moves.
 
-### Added
-- **`bmlib.embed`'s errors can be told apart by type, as Rust's are** (#532;
-  the embedder is unreleased, so nothing shipped moves). Every embedder failure
-  is still an `EmbedError` with `.index`, now raised as one of five subclasses
-  mirroring the Rust variants: `EmptyTextError` (now an `EmbedError` as well
-  as a `ValueError`, raised directly rather than re-wrapped; Rust
-  `EmptyText`), `TextTooLongError` with `.tokens` (`TooLong`),
-  `UnusableOutputError` with `.error`, the `VectorError` (`Vector`),
-  `ModelLoadError` for a failed import, an unloadable file, a context llama.cpp
-  will not create or a model narrower than 256 (`Load`; Rust makes its context
-  per call, so it reports that one as `Decode`), and `BatchDecodeError`
-  (`Decode`). A text that cannot be tokenized (a lone surrogate) is an
-  `EmbedError` naming its index, where it escaped as `UnicodeEncodeError`; Rust
-  cannot meet it. A model that fails its check is a `SizeMismatchError` or a
-  `ChecksumMismatchError`, both `ModelVerificationError`s, `.what` now their
-  class attribute. Every one survives pickling, so it crosses a process pool.
-  In Rust, `EmbedError::Llama` splits into `Load` and `Decode`. `VectorError::NotScalable` still carries no
-  norm (left as is: see #532's last comment).
-- **`bmlib.embed.Embedder`: in-process embedding over llama-cpp-python** (new
-  `bmlib[embed]` extra). `embed_documents` / `embed_query` return 256-dimension
-  unit vectors, held to the shared reference vectors (cosine >= 0.999 on F16,
-  0.998 on Q8_0). Nothing is truncated silently: an empty or over-long text
-  raises `EmbedError` naming its index. **`embed` is not part of `all`**: it
-  compiles llama.cpp, so `bmlib[all]` stays installable without a C++
-  toolchain. Ask for it explicitly (`bmlib[all,embed]`).
-- **`bmlib.embed`: embedding constants, vector rules and a verified model
-  download.** `truncate_and_normalize`, `query_text`, `check_texts` (pinned by
-  the shared `embedding_contract.json`) and `download_model`, which streams the
-  pinned arctic-embed-l-v2.0 GGUF into a temporary file of its own (so
-  concurrent calls are safe) and keeps nothing that fails its size or sha256.
-  A `progress` hook returning `False` cancels it (`DownloadCancelled`).
-  `ModelFile` refuses a revision that is not a commit, a file that is not a
-  bare name and a malformed sha256.
-
-### Fixed
 - **An embedding that is NaN, infinite or zero is refused, not stored** (#530,
   from the embedder's own review; the embedder is unreleased, so nothing
   stored moves). `truncate_and_normalize` passed a non-finite value through —
@@ -809,72 +959,6 @@ All notable changes to bmlib are documented here. The format is based on
   nature sat on an unfindable notice was imported. The Rust desktop store's
   import is to take the rule when #520 lands.
 
-### Added
-- **`bmlib.citations.find_passage` locates an LLM's near-verbatim quote in
-  its source** and returns the source's own span (`PassageMatch`: similarity,
-  start, end, text, exact), with the normalisation helpers `fold_char`,
-  `normalize_with_offsets` and `occurs_once`. Moved from bmlibrarian, with its
-  tests and more, and held to the Rust port by the shared contract
-  `tests/fixtures/passage_match.json`. One behaviour differs from upstream: an
-  occurrence that starts or ends inside a word or inside one source character
-  is no longer an exact match (`HR 0.9` in `HR 0.95`, `effective` in
-  `ineffective`, `=` in `≠`, #527), so the search goes on to the next
-  occurrence and then to the fuzzy search. A `bool` threshold is refused, and
-  a vanishingly small one no longer raises `OverflowError`.
-- **`import_retraction_watch_export()`: one export replaces the stored
-  notices** (issues #509, #510). It parses and stores a whole Retraction Watch
-  export in one transaction and **deletes the stored notices the export no
-  longer carries**, as the apps' rebuilt `RetractionIndex` does, so a paper
-  gets the same verdict on the desktop and in an app (the maintainer's
-  choice). Measured, 2026-03 copy against the export of 2026-10-21: 6 of
-  69,318 records left, 4 re-keyed and 2 retractions dropped outright, which
-  `store_retraction_notices()` never deleted. A notice whose row the export
-  still carries but the parser now skips is removed too: replayed through this
-  function, the March copy and then the October export store 64,133 and 68,135
-  notices and remove 7 — the 6 that left, and record 2558, still in the export
-  with its DOI blanked to `unavailable` and its PMID to `00000000`. It refuses,
-  writing nothing, an export with no usable row; one in which no notice
-  carries a findable DOI, none a PMID, or none a `RetractionNature` this
-  version recognises (a renamed column, #509; the first two are the Rust index
-  build's rule); and a removal above 1% of the stored notices a lookup can
-  find unless `allow_large_removal=True`, since the export is sorted newest
-  first and a truncated download loses the oldest records. A notice nothing
-  could find is removed without counting. Two imports are serialised by a lock,
-  and a removal is logged at WARNING naming the records. Returns
-  `RetractionImport(stored, removed)`.
-  `store_retraction_notices()` is unchanged and stays for batch callers. The
-  Rust desktop store follows in #520.
-
-- **`bmlib.publications.retraction_status`: one four-state retraction
-  verdict from three sources** (issue #504, for bmlibrarian_lite's three
-  platforms). `retraction_status()` takes a paper's Retraction Watch evidence
-  (`evidence_from_notices(lookup_retractions(...))`), its Crossref result and
-  its publication types, and returns `retracted`, `concern`, `clear` or
-  `unchecked`, with the deciding notice and the lookups that did not answer.
-  **Clear needs the export consulted and Crossref to have served the DOI**;
-  anything less, a DOI Crossref does not know included, is `unchecked` — and
-  so is a lookup that returned a notice of a kind bmlib cannot read, since
-  Crossref deposits misspell decisive types (`retration`,
-  `expression-of-concern`). `crossref_retraction_requests()` builds batched
-  `filter=doi:…` URLs (50 DOIs, at most 4,000 characters) and
-  `parse_crossref_retraction_response()` reads one batch's answer (keyed by
-  `crossref_key(doi)`), a failed
-  batch making every DOI in it unreachable — "not JSON" meaning what
-  `serde_json` refuses, so the Rust port agrees; the transport stays the
-  caller's. The "a notice never flags
-  itself" guard covers `publisher` relations only, because the retracted
-  Surgisphere Lancet paper lists its own notices in its `update-to` (see
-  `docs/DECISIONS.md`). `tests/fixtures/retraction_status.json` is the shared
-  contract — 47 rule cases built from live Crossref answers and export rows
-  where they exist, 24 parse and 5 request cases — which the Rust port
-  asserts against and the apps are to. A served Crossref result carries its
-  own DOI, and the rule reads one served for another DOI as Crossref not
-  having answered, so a result filed under the wrong paper is never `clear`
-  (#508; two rule cases). The Rust port follows in the same PR, with
-  `RetractionIndex`, the export as one file a phone keeps, and UniFFI exports
-  in `bmlib-ffi`.
-
-### Fixed
 - **A download cut part-way through a row is refused, not stored.** The
   reader filled a row shorter than its header with `None` (Python) or `""`
   (Rust), so a truncated download replaced the oldest record's good notice
@@ -1098,6 +1182,19 @@ All notable changes to bmlib are documented here. The format is based on
   the same rule in the same change, blank by Python's `str.isspace`. No draw
   has measured how often a caller passes a blank key, so this pins a
   direction.
+
+### Documentation
+- **The Rust manual covers every module.** `rust/bmlib/docs/manual/` gains
+  pages for `citations`, `context_processor`, `fulltext`, `publications`,
+  `quality`, `transparency`, `llm`, `agents`, `templates`, `http` and
+  `atomic`, beside `db` and `embed`; every `rust` block is compiled and run as
+  a doctest. Writing them found two Rust defects, fixed in the crate's
+  CHANGELOG: `sync()` stored a timestamp its own durability rule could not
+  read, so every completed day was re-fetched on every run, and a failed
+  `atomic_write` left its temporary file behind. The Python manual was audited
+  against every entry below, and #571's stale documentation outside it
+  (`stream.py`, `CLAUDE.md`, the Rust `llm` module doc and README) is
+  corrected.
 
 ## [0.11.0] — 2026-10-17
 

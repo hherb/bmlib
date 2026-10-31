@@ -23,7 +23,7 @@ pip install bmlib[anthropic,ollama,openai]
 pip install bmlib[all]
 ```
 
-The `anthropic` extra requires `anthropic>=0.41` *(unreleased; it was `>=0.30`)*, the first release with `models.retrieve`, which [`LLMClient.context_window`](#llmclientcontext_window-unreleased) uses.
+The `anthropic` extra requires `anthropic>=0.41` *(0.12.0; it was `>=0.30`)*, the first release with `models.retrieve`, which [`LLMClient.context_window`](#llmclientcontext_window-0120) uses.
 
 ## Imports
 
@@ -38,7 +38,7 @@ from bmlib.llm import (
     LLMResponse,
     LLMToolCall,
     LLMToolDefinition,
-    # Streaming (unreleased)
+    # Streaming (0.12.0)
     StreamDelta,
     StreamError,
     StreamState,
@@ -78,7 +78,7 @@ from bmlib.llm.providers import (
 )
 ```
 
-`TokenUsageRecord` and `TokenUsageSummary` live in `bmlib.llm.token_tracker`, and `extract_json` in `bmlib.llm.utils`. *(unreleased)* The stream constants and a provider author's helpers (`STREAM_PROTOCOLS`, `STREAM_USAGE_PROVIDERS`, `CANCELLED_STOP_REASON`, `closing_stream`, `refuse_tools`, `sdk_events`) live in `bmlib.llm.stream`; the context-window errors and table (`ContextWindowError`, `NoSuchModelError`, `KNOWN_CONTEXT_WINDOWS`, `known_context_window`) in `bmlib.llm.context_window`.
+`TokenUsageRecord` and `TokenUsageSummary` live in `bmlib.llm.token_tracker`, and `extract_json` in `bmlib.llm.utils`. *(0.12.0)* The stream constants and a provider author's helpers (`STREAM_PROTOCOLS`, `STREAM_USAGE_PROVIDERS`, `CANCELLED_STOP_REASON`, `closing_stream`, `refuse_tools`, `sdk_events`) live in `bmlib.llm.stream`; the context-window errors and table (`ContextWindowError`, `NoSuchModelError`, `KNOWN_CONTEXT_WINDOWS`, `known_context_window`) in `bmlib.llm.context_window`.
 
 ---
 
@@ -324,7 +324,7 @@ Send a chat request, routing to the appropriate provider. Token usage is automat
 | `json_mode` | `bool` | `False` | Request JSON output. For Anthropic, extracts JSON from code blocks if needed. For Ollama, uses native `format="json"`. For OpenAI-compatible providers, sets `response_format={"type": "json_object"}`. |
 | `tools` | `list[LLMToolDefinition] \| None` | `None` | Tool definitions the model may call. See [Tool Calling](#tool-calling). |
 | `tool_choice` | `str` | `"auto"` | Tool selection strategy. Ignored when `tools` is `None`. |
-| `**kwargs` | `object` | | Provider-specific options, plus the cross-provider `think` kwarg — see [Thinking / Reasoning](#thinking--reasoning) — and *(unreleased)* Ollama's `num_ctx` — see [Context windows](#context-windows-unreleased). |
+| `**kwargs` | `object` | | Provider-specific options, plus the cross-provider `think` kwarg — see [Thinking / Reasoning](#thinking--reasoning) — and *(0.12.0)* Ollama's `num_ctx` — see [Context windows](#context-windows-0120). |
 
 **Returns:** `LLMResponse` with the model's response content, any tool calls, and token usage.
 
@@ -365,7 +365,7 @@ response = client.chat(
 
 ---
 
-### `LLMClient.chat_stream` *(unreleased)*
+### `LLMClient.chat_stream` *(0.12.0)*
 
 ```python
 def chat_stream(
@@ -381,7 +381,7 @@ def chat_stream(
 ) -> LLMResponse
 ```
 
-Send a chat request and stream the answer as the model writes it. Routes and builds the request as `chat()` does, calls `on_delta` once per [`StreamDelta`](#streamdelta-unreleased), in order, and returns the same `LLMResponse` once the stream ends, recording its usage with the global `TokenTracker`. Implemented by the Anthropic, OpenAI-compatible (OpenAI, DeepSeek, Mistral, Gemini) and Ollama providers. See [Streaming](#streaming-unreleased) for what a delta is and how a stream fails.
+Send a chat request and stream the answer as the model writes it. Routes and builds the request as `chat()` does, calls `on_delta` once per [`StreamDelta`](#streamdelta-0120), in order, and returns the same `LLMResponse` once the stream ends, recording its usage with the global `TokenTracker`. Implemented by the Anthropic, OpenAI-compatible (OpenAI, DeepSeek, Mistral, Gemini) and Ollama providers. See [Streaming](#streaming-0120) for what a delta is and how a stream fails.
 
 **Parameters:** as for [`chat()`](#llmclientchat), less `tools` / `tool_choice`, plus:
 
@@ -606,17 +606,17 @@ def get_model_metadata(
 ) -> ModelMetadata | None
 ```
 
-Return metadata for a specific model, or `None` if unavailable. Any error is swallowed into `None`. Its `context_window` (and the one `list_models()` reports) may be a fallback guess rather than a figure the provider stated (#566); use [`context_window()`](#llmclientcontext_window-unreleased) when the number matters.
+Return metadata for a specific model, or `None` if unavailable. Any error is swallowed into `None`. Its `context_window` (and the one `list_models()` reports) may be a fallback guess rather than a figure the provider stated (#566); use [`context_window()`](#llmclientcontext_window-0120) when the number matters.
 
 ---
 
-### `LLMClient.context_window` *(unreleased)*
+### `LLMClient.context_window` *(0.12.0)*
 
 ```python
 def context_window(self, model: str, provider: str | None = None) -> int | None
 ```
 
-Return *model*'s context window in tokens, or `None` when the provider did not say — never a guess, since a wrong window silently truncates or overflows a prompt. Routes `"provider:model"` as `get_model_metadata()` does (no prefix and no *provider* means `default_provider`). **Read the number as a total, input and answer together**, so a prompt that fills it leaves no room to reply — although providers state it in different terms (Anthropic and Gemini give the input limit, Ollama the trained window) and bmlib reports each as given. Per-provider sources are under [Context windows](#context-windows-unreleased).
+Return *model*'s context window in tokens, or `None` when the provider did not say — never a guess, since a wrong window silently truncates or overflows a prompt. Routes `"provider:model"` as `get_model_metadata()` does (no prefix and no *provider* means `default_provider`). **Read the number as a total, input and answer together**, so a prompt that fills it leaves no room to reply — although providers state it in different terms (Anthropic and Gemini give the input limit, Ollama the trained window) and bmlib reports each as given. Per-provider sources are under [Context windows](#context-windows-0120).
 
 **Raises:** unlike `get_model_metadata()`, this does not swallow errors — `NoSuchModelError` if the provider has no such model; `ContextWindowError` (its base class) if the metadata could not be fetched. Both live in `bmlib.llm.context_window` and carry `provider` and `model` attributes. Before any lookup: `ValueError` for an unknown provider, `ImportError` if its SDK is not installed, and the SDK's own error when its API key is missing.
 
@@ -649,7 +649,7 @@ It answers for a built-in whose SDK is **not installed** too — none of these f
 
 ## Tool Calling
 
-Pass `tools` to `chat()` to let the model invoke functions you define. Each `LLMToolDefinition` is translated into the provider's native format. When the model chooses to call a tool, the response carries parsed `LLMToolCall` objects in `LLMResponse.tool_calls`, and `stop_reason` is `"tool_use"` (Anthropic) or `"tool_calls"` (OpenAI-compatible, Ollama). To continue the conversation, append the assistant turn (with its `tool_calls`) and one `role="tool"` message per call carrying the JSON-encoded result, then re-send the whole message list — see the [multi-turn example](#multi-turn-example). [`chat_stream()`](#llmclientchat_stream-unreleased) does not carry tools.
+Pass `tools` to `chat()` to let the model invoke functions you define. Each `LLMToolDefinition` is translated into the provider's native format. When the model chooses to call a tool, the response carries parsed `LLMToolCall` objects in `LLMResponse.tool_calls`, and `stop_reason` is `"tool_use"` (Anthropic) or `"tool_calls"` (OpenAI-compatible, Ollama). To continue the conversation, append the assistant turn (with its `tool_calls`) and one `role="tool"` message per call carrying the JSON-encoded result, then re-send the whole message list — see the [multi-turn example](#multi-turn-example). [`chat_stream()`](#llmclientchat_stream-0120) does not carry tools.
 
 ### `tool_choice` values
 
@@ -833,9 +833,9 @@ requests and untouched `content`; `thinking` is simply `None`.
 
 ---
 
-## Streaming *(unreleased)*
+## Streaming *(0.12.0)*
 
-[`LLMClient.chat_stream()`](#llmclientchat_stream-unreleased) hands the answer to a callback piece by piece. Underneath it is a pure reducer, `StreamState`, which reads a stream's events in order, returns the deltas each carries, and builds the final `LLMResponse`. The providers feed it the events their SDKs yield; the Rust port (`bmlib::llm::stream`) feeds it the events it parses off the wire, and both are held to the shared contract `tests/fixtures/chat_stream.json` (24 cases). Three protocols are read:
+[`LLMClient.chat_stream()`](#llmclientchat_stream-0120) hands the answer to a callback piece by piece. Underneath it is a pure reducer, `StreamState`, which reads a stream's events in order, returns the deltas each carries, and builds the final `LLMResponse`. The providers feed it the events their SDKs yield; the Rust port (`bmlib::llm::stream`) feeds it the events it parses off the wire, and both are held to the shared contract `tests/fixtures/chat_stream.json` (24 cases). Three protocols are read:
 
 | Protocol | Events | End marker |
 |----------|--------|------------|
@@ -845,7 +845,7 @@ requests and untouched `content`; `thinking` is simply `None`.
 
 **A stream that ends before its end marker is an error**, never a short answer: a dropped connection would otherwise read as a model that stopped early. Reasoning is read as `chat()` reads it — Anthropic's `thinking` blocks (two blocks joined by a blank line; `redacted_thinking` skipped), `reasoning_content` *or* `reasoning` on an OpenAI-compatible server (the first that is set, so a server sending both is read once), Ollama's `message.thinking`. A tool call in any protocol raises `StreamError`.
 
-### `StreamDelta` *(unreleased)*
+### `StreamDelta` *(0.12.0)*
 
 ```python
 @dataclass(frozen=True)
@@ -856,7 +856,7 @@ class StreamDelta:
 
 One piece of a streamed answer: `"text"` for the answer itself, `"thinking"` for the model's separated reasoning trace. `text` is never empty — an empty piece is not sent — and construction raises `ValueError` for an unknown `kind` or empty `text`.
 
-### `StreamError` *(unreleased)*
+### `StreamError` *(0.12.0)*
 
 ```python
 class StreamError(RuntimeError)
@@ -864,7 +864,7 @@ class StreamError(RuntimeError)
 
 A stream that failed or ended before the answer was complete: an `error` event or object (the server's own message is quoted), a stream that broke off after it opened (the providers wrap their SDK's exception, kept as `__cause__`), an event that is not a JSON object, a tool call, or a missing end marker. The deltas already handed to `on_delta` stay valid as what arrived. A request refused before the stream opened raises what `chat()` would, not this.
 
-### `StreamState` *(unreleased)*
+### `StreamState` *(0.12.0)*
 
 ```python
 class StreamState:
@@ -878,7 +878,7 @@ Feed every event to `apply()`, which returns the deltas it carries, in order; th
 
 **Raises:** `ValueError` for an unknown protocol; `StreamError` from `apply()` (server error, non-object event, tool call) and from `finish()` (no end marker, not cancelled).
 
-### `run_stream` *(unreleased)*
+### `run_stream` *(0.12.0)*
 
 ```python
 def run_stream(
@@ -940,9 +940,9 @@ Every model entry of a built-in provider that streams declares `ProviderCapabili
 
 ---
 
-## Context windows *(unreleased)*
+## Context windows *(0.12.0)*
 
-Two separate numbers: the window a model **supports**, which [`LLMClient.context_window()`](#llmclientcontext_window-unreleased) reports, and the window Ollama **loads it with**, which `num_ctx` sets.
+Two separate numbers: the window a model **supports**, which [`LLMClient.context_window()`](#llmclientcontext_window-0120) reports, and the window Ollama **loads it with**, which `num_ctx` sets.
 
 ### Ollama's `num_ctx`
 
@@ -1644,7 +1644,7 @@ print(source)   # "full_text" | "abstract" | "content" | "text" | "none"
 
 ## Provider Details
 
-The *Context* columns below are the models' listing metadata, which may be a fallback guess (#566); [`LLMClient.context_window()`](#llmclientcontext_window-unreleased) asks the provider. Every built-in provider implements `chat_stream()` *(unreleased)*.
+The *Context* columns below are the models' listing metadata, which may be a fallback guess (#566); [`LLMClient.context_window()`](#llmclientcontext_window-0120) asks the provider. Every built-in provider implements `chat_stream()` *(0.12.0)*.
 
 ### Anthropic
 
@@ -1775,7 +1775,7 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | Is free | Yes |
 | Tool calling | Yes (`tool_choice` ignored) |
 | Embeddings | Yes — the only built-in provider implementing `embed()` / `embed_batch()` (both via `/api/embed`) |
-| Extra kwargs | `think=True` for thinking mode; `num_ctx=` for the window to load the model with *(unreleased)* — see [Context windows](#context-windows-unreleased) |
+| Extra kwargs | `think=True` for thinking mode; `num_ctx=` for the window to load the model with *(0.12.0)* — see [Context windows](#context-windows-0120) |
 
 ---
 
@@ -1899,8 +1899,8 @@ def __init__(
 | Method / Property | Type | Default behaviour |
 |-------------------|------|-------------------|
 | `api_key_env_var` | `property -> str` | Returns `""`. |
-| `chat_stream(messages, on_delta, model=None, temperature=0.7, max_tokens=4096, **kwargs)` *(unreleased)* | `method -> LLMResponse` | Raises `NotImplementedError` — never falls back to `chat()`. See [Writing a streaming provider](#writing-a-streaming-provider). |
-| `context_window(model)` *(unreleased)* | `method -> int \| None` | `known_context_window(PROVIDER_NAME, model)`; no request. |
+| `chat_stream(messages, on_delta, model=None, temperature=0.7, max_tokens=4096, **kwargs)` *(0.12.0)* | `method -> LLMResponse` | Raises `NotImplementedError` — never falls back to `chat()`. See [Writing a streaming provider](#writing-a-streaming-provider). |
+| `context_window(model)` *(0.12.0)* | `method -> int \| None` | `known_context_window(PROVIDER_NAME, model)`; no request. |
 | `embed(text, model=None, **kwargs)` | `method -> EmbeddingResponse` | Raises `NotImplementedError`. |
 | `embed_batch(texts, model=None, max_batch_size=None, **kwargs)` | `method -> BatchEmbeddingResponse` | Raises `NotImplementedError`. |
 | `get_model_pricing(model)` | `method -> ModelPricing` | Returns zero-cost pricing. |

@@ -29,8 +29,8 @@ Three protocols:
 * ``"anthropic"``: Anthropic's Messages stream (``message_start``,
   ``content_block_*``, ``message_delta``, ``message_stop``).
 * ``"openai"``: OpenAI-compatible ``chat.completion.chunk`` objects.
-* ``"ollama"``: Ollama's native ``/api/chat`` chunks. Only Python reads this
-  one; the Rust client reaches Ollama through its OpenAI-compatible endpoint.
+* ``"ollama"``: Ollama's native ``/api/chat`` chunks, one JSON object per
+  line, which both clients read.
 
 **A stream that ends before its end marker is an error**, never a short
 answer: a dropped connection would otherwise read as a model that stopped

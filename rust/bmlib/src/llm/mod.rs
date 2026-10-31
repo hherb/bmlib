@@ -14,19 +14,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Unified LLM access — the **pure** half, so far.
+//! Unified LLM access.
 //!
-//! A port of `bmlib/llm/` (5,114 Python lines). What is here needs no
-//! provider, client or network; the two wire protocols described in the port
-//! plan's §4 are a later phase.
+//! A port of `bmlib/llm/`. There are no per-provider SDKs: a provider is a
+//! row in [`provider_specs`], and every request goes through one
+//! [`LlmClient`] over an injected
+//! [`HttpClient`](crate::publications::fetchers::registry::HttpClient), in
+//! one of three wire protocols — Anthropic's Messages API, the
+//! OpenAI-compatible chat API, and Ollama's native `/api/chat`.
 //!
 //! | Python | Here | Status |
 //! |---|---|---|
+//! | `llm/client.py`, `llm/providers/*` | [`client`], [`protocol`], [`pricing`] | ported: chat, tool calling, thinking, cost; no embeddings or model listing |
+//! | `llm/stream.py` | [`stream`] | ported |
+//! | `llm/context_window.py` | [`context_window`] | ported |
+//! | `llm/data_types.py` | [`data_types`] | ported |
+//! | `llm/token_tracker.py` | [`token_tracker`] | ported |
 //! | `llm/text_utils.py` | [`text_utils`] | ported |
 //! | `llm/json_repair.py` | [`json_repair`] | ported (fixes #299) |
 //! | `llm/utils.py` | [`utils`] | ported |
-//! | `llm/providers/*` | — | phase 3 |
-//! | `llm/client.py` | — | phase 3 |
 
 pub mod client;
 pub mod context_window;

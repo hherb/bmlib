@@ -133,13 +133,13 @@ Send a chat request through the LLM client using the agent's configured model an
 | `json_mode` | `bool` | `False` | Request JSON-formatted output. |
 | `temperature` | `float \| None` | `None` | Override the agent's default temperature. |
 | `max_tokens` | `int \| None` | `None` | Override the agent's default max tokens. |
-| `**kwargs` | `Any` | | Forwarded to `LLMClient.chat()` and on to the provider — e.g. `think=True`, `tools=`, or, for Ollama, `num_ctx=` *(unreleased)* to load the model with that context window. See [`bmlib.llm`](llm.md). |
+| `**kwargs` | `Any` | | Forwarded to `LLMClient.chat()` and on to the provider — e.g. `think=True`, `tools=`, or, for Ollama, `num_ctx=` *(0.12.0)* to load the model with that context window. See [`bmlib.llm`](llm.md). |
 
 **Returns:** `LLMResponse`
 
 The per-call `temperature` and `max_tokens` substitute the agent's defaults only when they are `None`; passing `0` or `0.0` is honoured as an explicit value.
 
-> **No streaming or context-window wrapper** *(unreleased)*. `BaseAgent` has no `chat_stream()` and no `context_window()`; call them on the client, `agent.llm.chat_stream(...)` / `agent.llm.context_window(agent.model)`. A streamed call made that way is not recorded into [`PerformanceMetrics`](#performance-metrics), which only `chat()` writes.
+> **No streaming or context-window wrapper** *(0.12.0)*. `BaseAgent` has no `chat_stream()` and no `context_window()`; call them on the client, `agent.llm.chat_stream(...)` / `agent.llm.context_window(agent.model)`. A streamed call made that way is not recorded into [`PerformanceMetrics`](#performance-metrics), which only `chat()` writes.
 
 ---
 
@@ -199,9 +199,9 @@ The truncation check runs **first on every attempt** — before the empty-conten
 | Outcome | Condition | Behaviour |
 |---------|-----------|-----------|
 | **Complete despite truncation** | `stop_reason` is a truncation reason, but the content is complete JSON **as written** — it parses directly or as a whole span (stages 1–2 of [`parse_json()`](#baseagentparse_json)), with no repair and no fragment | The parsed value is **returned as-is**. A truncation `stop_reason` is not automatically a failure. |
-| **Truncated at temperature 0** | Content is not complete as written and the effective temperature is exactly `0.0` | Raises `ValueError` **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. |
+| **Truncated at temperature 0** | Content is not complete as written and the effective temperature is exactly `0.0` | Raises `ValueError` (*(0.12.0)* `ChatJsonTruncatedError`) **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. |
 | **Truncated above temperature 0** | Content is not complete as written and the effective temperature is `> 0` | Logged at ERROR with the full response, then falls into the normal retry path — a resample may produce a shorter completion that fits. The truncation message is kept as `last_error`, so the final exhaustion error names truncation as the real cause. |
-| **Exhaustion** | All `max_retries` attempts consumed | Raises `ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")`, where `context` is `" for <retry_context>"`, or empty — *(unreleased)* the `ChatJson*Error` subclass naming the last attempt's cause; see [Which failure it was](#which-failure-it-was-unreleased). |
+| **Exhaustion** | All `max_retries` attempts consumed | Raises `ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")`, where `context` is `" for <retry_context>"`, or empty — *(0.12.0)* the `ChatJson*Error` subclass naming the last attempt's cause; see [Which failure it was](#which-failure-it-was-0120). |
 
 The effective temperature is `temperature if temperature is not None else self.temperature` — an agent constructed with `temperature=0.0` gets the no-retry policy even when the call site passes nothing.
 
@@ -261,13 +261,13 @@ A wrong shape is not a parse failure, and the two are reported separately: `chat
 | Effective temperature | Behaviour on a wrong shape |
 |---|---|
 | `> 0` | Logged at ERROR, then the normal backoff retry — a resample may answer with the object that was asked for. The final exhaustion error names the shape. |
-| exactly `0.0` | Raises `ValueError` **immediately — no retry**. Greedy sampling returns the same array from the same messages, exactly as it reproduces a truncation. |
+| exactly `0.0` | Raises `ValueError` (*(0.12.0)* `ChatJsonWrongShapeError`) **immediately — no retry**. Greedy sampling returns the same array from the same messages, exactly as it reproduces a truncation. |
 
 This mirrors the truncation policy deliberately: two adjacent branches in one method must not sit on opposite rules for the same reason. It matters for a caller pinning temperature 0 for reproducibility — which is exactly the caller most likely to want `require_dict`.
 
 ---
 
-#### Which failure it was *(unreleased)*
+#### Which failure it was *(0.12.0)*
 
 Every way `chat_json()` gives up raises a subclass of `ChatJsonError`, itself a `ValueError`, so an existing `except ValueError` still catches all of them:
 

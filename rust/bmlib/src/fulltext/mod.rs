@@ -20,6 +20,15 @@
 //! |---|---|---|
 //! | `fulltext/jats_parser.py`'s text primitives | [`jats_text`] | ported |
 //! | `fulltext/jats_parser.py`'s reader | [`jats_reader`] | ported |
+//! | `fulltext/_parse_audit.py` | [`parse_audit`] | ported |
+//! | `fulltext/models.py` | [`models`] | ported |
+//! | `fulltext/cache.py` | [`cache`] | ported |
+//! | `fulltext/service.py` | [`service`] | ported |
+//! | `fulltext/pdf_converter.py`'s pure half | [`pdf_text`] | ported |
+//! | `fulltext/pdf_converter.py`'s PyMuPDF backend | `mupdf_backend` | ported, behind the `pdf` feature |
+//! | `fulltext/segmenter.py` | [`segmenter`] | ported |
+//! | `fulltext/_titles.py` | [`titles`] | ported |
+//! | `fulltext/canonical/` | [`canonical`] | ported |
 
 pub mod cache;
 pub mod canonical;

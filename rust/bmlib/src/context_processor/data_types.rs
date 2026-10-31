@@ -178,8 +178,11 @@ impl std::error::Error for ConfigError {}
 /// Configuration for one processing run.
 ///
 /// Every batching decision reads it, and a caller mutating it mid-run would
-/// leave the recorded statistics describing a configuration that never ran —
-/// so it is built through [`ProcessingConfig::new`], which validates.
+/// leave the recorded statistics describing a configuration that never ran.
+/// Its fields are public and [`ProcessingConfig::new`] is [`Default`], which
+/// validates nothing: the bounds are checked by [`ProcessingConfig::validate`]
+/// (or [`ProcessingConfig::validated`]), and `ProcessingCore::new` runs that
+/// check before a core can be built.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcessingConfig {
     /// Maximum characters in one batch's formatted content. **This is the

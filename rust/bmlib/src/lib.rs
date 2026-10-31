@@ -84,4 +84,26 @@ mod manual {
     struct Db;
     #[doc = include_str!("../docs/manual/embed.md")]
     struct Embed;
+    #[doc = include_str!("../docs/manual/agents.md")]
+    struct Agents;
+    #[doc = include_str!("../docs/manual/atomic.md")]
+    struct Atomic;
+    #[doc = include_str!("../docs/manual/citations.md")]
+    struct Citations;
+    #[doc = include_str!("../docs/manual/context_processor.md")]
+    struct ContextProcessor;
+    #[doc = include_str!("../docs/manual/fulltext.md")]
+    struct Fulltext;
+    #[doc = include_str!("../docs/manual/http.md")]
+    struct Http;
+    #[doc = include_str!("../docs/manual/llm.md")]
+    struct Llm;
+    #[doc = include_str!("../docs/manual/publications.md")]
+    struct Publications;
+    #[doc = include_str!("../docs/manual/quality.md")]
+    struct Quality;
+    #[doc = include_str!("../docs/manual/templates.md")]
+    struct Templates;
+    #[doc = include_str!("../docs/manual/transparency.md")]
+    struct Transparency;
 }

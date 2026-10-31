@@ -145,7 +145,7 @@ missing = find_missing_documents(text, metadata)   # one Citation per unresolved
 
 Check `find_missing_documents()` before publishing output — a placeholder in a reference list is visible, but it is still a placeholder.
 
-## Locating quoted passages *(unreleased)*
+## Locating quoted passages *(0.12.0)*
 
 LLMs asked to quote a passage "verbatim" often change whitespace, case or a punctuation mark. `find_passage()` finds where the quote really is in the source and returns the source's own wording for that span, so you can store the original text instead of the model's copy.
 
@@ -186,18 +186,11 @@ The normalisation is public, for callers that need to compare text the way the s
 
 This section applies to the Rust crate too: `bmlib::citations::find_passage` returns the same span and the same similarity as Python, held to it by the shared fixture `tests/fixtures/passage_match.json` and a differential oracle, for text whose code points both Unicode versions assign (Rust's tables are newer than Python's, and a character assigned since can fold differently). In Rust the span is `Option<PassageSpan>` (`start`, `end`, `text`) and its offsets are `char` indices (Unicode code points, as Python's string indices), not byte offsets; an invalid `min_similarity` (or NaN) is an `Err(InvalidSimilarity)`.
 
-```rust
-use bmlib::citations::find_passage;
-
-let found = find_passage(llm_quote, full_text, 0.95)?;
-if let Some(span) = &found.span {
-    println!("{} {} {} {}", span.start, span.end, span.text, found.exact);
-}
-```
+The Rust manual's [citations page](../../rust/bmlib/docs/manual/citations.md) has a compiled example.
 
 ## Differences from bmlibrarian
 
-*(unreleased)* `find_passage` came from bmlibrarian's `utils/passage_match.py` with one behaviour change: upstream accepted an exact match that started or ended inside a word or inside one source character (`HR 0.9` in `HR 0.95`, `=` in `≠`), and bmlib does not (see above). The rest of this section is about the 2026-08 port of the citation markers and reference builder.
+*(0.12.0)* `find_passage` came from bmlibrarian's `utils/passage_match.py` with one behaviour change: upstream accepted an exact match that started or ended inside a word or inside one source character (`HR 0.9` in `HR 0.95`, `=` in `≠`), and bmlib does not (see above). The rest of this section is about the 2026-08 port of the citation markers and reference builder.
 
 The port is output-faithful to upstream's code, with six defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
 

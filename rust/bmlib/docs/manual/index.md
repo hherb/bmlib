@@ -46,21 +46,20 @@ canonical-text model, the JSON repair, the citation formatter) need no feature.
 | Module | Contents | Python page | Rust page |
 |---|---|---|---|
 | `db` | `Db` trait over SQLite and PostgreSQL, one `Row`/`Value` type, savepoint-nesting transactions, migrations, placeholder rewriting | [database.md](../../../../docs/manual/database.md) | [db.md](db.md) |
-| `citations` | `[@id:N:Label]` markers, Vancouver / APA / Harvard / Chicago, reference lists, `find_passage` | [citations.md](../../../../docs/manual/citations.md) | — |
-| `context_processor` | Hierarchical map-reduce over content larger than one context window | [context_processor.md](../../../../docs/manual/context_processor.md) | — |
-| `fulltext` | Tiered retrieval, JATS parsing and rendering, PDF → text, section segmentation, disk cache, canonical text and chunks | [fulltext.md](../../../../docs/manual/fulltext.md) | — |
-| `publications` | Fetchers, dedup-by-DOI/PMID storage, date-range sync, Retraction Watch, `RetractionIndex`, retraction status | [publications.md](../../../../docs/manual/publications.md) | — |
-| `quality` | Metadata classification, LLM classifier, deep assessment, Cochrane risk of bias, rule-based extractors | [quality.md](../../../../docs/manual/quality.md) | — |
-| `transparency` | CrossRef / Europe PMC / PubMed / OpenAlex / ClinicalTrials.gov → a 0–100 transparency score | [transparency.md](../../../../docs/manual/transparency.md) | — |
-| `llm` | `LlmClient` over the OpenAI-compatible, Anthropic and Ollama wire protocols; streaming; context windows; JSON repair; chunking; token tracking | [llm.md](../../../../docs/manual/llm.md) | — |
-| `agents` | `BaseAgent`'s retry/truncation loop and per-agent metrics | [agents.md](../../../../docs/manual/agents.md) | — |
+| `citations` | `[@id:N:Label]` markers, Vancouver / APA / Harvard / Chicago, reference lists, `find_passage` | [citations.md](../../../../docs/manual/citations.md) | [citations.md](citations.md) |
+| `context_processor` | Hierarchical map-reduce over content larger than one context window | [context_processor.md](../../../../docs/manual/context_processor.md) | [context_processor.md](context_processor.md) |
+| `fulltext` | Tiered retrieval, JATS parsing and rendering, PDF → text, section segmentation, disk cache, canonical text and chunks | [fulltext.md](../../../../docs/manual/fulltext.md) | [fulltext.md](fulltext.md) |
+| `publications` | Fetchers, dedup-by-DOI/PMID storage, date-range sync, Retraction Watch, `RetractionIndex`, retraction status | [publications.md](../../../../docs/manual/publications.md) | [publications.md](publications.md) |
+| `quality` | Metadata classification, LLM classifier, deep assessment, Cochrane risk of bias, rule-based extractors | [quality.md](../../../../docs/manual/quality.md) | [quality.md](quality.md) |
+| `transparency` | CrossRef / Europe PMC / PubMed / OpenAlex / ClinicalTrials.gov → a 0–100 transparency score | [transparency.md](../../../../docs/manual/transparency.md) | [transparency.md](transparency.md) |
+| `llm` | `LlmClient` over the OpenAI-compatible, Anthropic and Ollama wire protocols; streaming; context windows; JSON repair; chunking; token tracking | [llm.md](../../../../docs/manual/llm.md) | [llm.md](llm.md) |
+| `agents` | `chat_json`'s retry/truncation loop and per-agent metrics (no `BaseAgent` type) | [agents.md](../../../../docs/manual/agents.md) | [agents.md](agents.md) |
 | `embed` | arctic-embed-l-v2.0 GGUF in process, pinned and verified model files, vector rules, a paper's chunks stored and searched | [embeddings.md](../../../../docs/manual/embeddings.md) | [embed.md](embed.md) |
-| `templates` | `{{ variable }}` prompt templates with a user/default directory lookup | [templates.md](../../../../docs/manual/templates.md) | — |
-| `http` | `UreqClient`, the one implementation of `HttpClient` that goes out | — | — |
-| `atomic` | `atomic_write`: publish a file so no partial version is visible | — | — |
+| `templates` | `{{ variable }}` prompt templates with a user/default directory lookup | [templates.md](../../../../docs/manual/templates.md) | [templates.md](templates.md) |
+| `http` | `UreqClient`, the one implementation of `HttpClient` that goes out | — | [http.md](http.md) |
+| `atomic` | `atomic_write`: publish a file so no partial version is visible | — | [atomic.md](atomic.md) |
 
-A dash in the last column is a page not yet written; until it is, the
-module's rustdoc and the Python page are the reference.
+Every module has a page. The item-level reference is still the rustdoc.
 
 ## Conventions across the crate
 

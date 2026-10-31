@@ -2378,12 +2378,12 @@
   {
     "name": "user_agent/basic",
     "ok": true,
-    "value": "bmlib/0.11.0 (mailto:a@b.c) python-httpx/0.27.0"
+    "value": "bmlib/0.12.0 (mailto:a@b.c) python-httpx/0.27.0"
   },
   {
     "name": "user_agent/empty-email",
     "ok": true,
-    "value": "bmlib/0.11.0 (mailto:) python-httpx/"
+    "value": "bmlib/0.12.0 (mailto:) python-httpx/"
   },
   {
     "name": "data_patterns/order",
