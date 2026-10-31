@@ -272,7 +272,7 @@ class TestStructuredExtraction:
         "answer",
         [
             '{"extracted_content": null, "confidence": 0.8}',
-            '{"extracted_content": {"a": 1}, "confidence": 0.8}',
+            '{"extracted_content": {"a": 1}, "confidence": 0.8, "key_findings": ["k"]}',
             '{"extracted_content": ["x"], "confidence": 0.8}',
             '{"extracted_content": 5, "confidence": 0.8}',
             '{"confidence": 0.8}',
@@ -287,8 +287,8 @@ class TestStructuredExtraction:
         agent = make_agent(answer)
         processor = LLMChunkProcessor(agent, use_structured_output=True)
         with caplog.at_level(logging.WARNING, logger="bmlib.context_processor.llm_processor"):
-            content, confidence, _ = processor._extract_structured("p", "batch 0")
-        assert (content, confidence) == ("", 0.0)
+            answer_read = processor._extract_structured("p", "batch 0")
+        assert answer_read == ("", 0.0, [])
         assert "extracted_content that is not text in batch 0" in caplog.text
 
     def test_malformed_json_is_repaired_by_the_agent(self) -> None:
