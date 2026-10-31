@@ -1,12 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-31 (**this session is #594**, a failed PDF download
-says why, on `fix/pdf-download-fault-594`). **0.11.0 is released** (`v0.11.0`
-on 8edd3d7, on PyPI). Every PR merged since — #526 through #597 — is
-unreleased, **and no StudyAnalyzer item is left in bmlib, so a 0.12.0 release
-is a natural next session** (the Rust crate's `pdf` feature changed API in
-#590, and `FullTextResult` gained a field in #594: say both in its release
-notes)._
+_Last updated: 2026-10-31 (**this session is #598 + #600**, PDF extraction
+errors typed and extraction bounded, on `fix/pdf-extract-error-598`). **0.11.0
+is released** (`v0.11.0` on 8edd3d7, on PyPI). Every PR merged since — #526
+through #601 — is unreleased, **and no StudyAnalyzer item is left in bmlib, so
+a 0.12.0 release is a natural next session** (the maintainer chose the PDF
+issues over it this session). Its release notes must say: the Rust crate's
+`pdf` feature changed API in #590 and again here (`PdfError`, `PdfLimit`),
+`FullTextResult` gained a field in #594, and Python's PDF error messages move
+(#598)._
 
 ## What 0.11.0 costs a downstream
 
@@ -29,7 +31,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -39,24 +41,43 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a failed PDF download says why (#594)
+## This session: whose fault a PDF failure is (#598), and a bound on extraction (#600)
 
-Found by StudyAnalyzer. A PDF tier (Tier 0's fetcher-supplied PDF, 1d, 2)
-whose download failed returned `pdf_url` and no `file_path` — the shape of a
-download never attempted — so a free PDF a retry would fetch read as a link.
-`FullTextResult.pdf_download_failure` (Python and Rust) names the cause:
-`"http-<status>"`, `"not-a-pdf"`, `"request-failed"`, `"write-failed"`;
-`None` when cached or not attempted. **The maintainer chose the field over
-falling through to the next tier**, so which tier answers does not move. The
-shared `tests/fixtures/fulltext_source.json` gains five cases (a `raise`
-answer and a `seed_pdfs_dir_as_file` seed are new to both harnesses), every
-case now checks the field and `file_path`, and each setting site was
-mutation-checked in both languages. `test_renderer_version.py`'s three digests
-were re-pinned with no version bumped (a result field moves no rendering).
-**For StudyAnalyzer**: a result with `pdf_download_failure` set is "a free
-PDF whose download failed" (worth a retry, never "no full text yet"); its PR
-#16 deadline rule is unaffected, since a download cut off by the app's own
-deadline never returns a result.
+Both found reviewing StudyAnalyzer's PR #21. **#598**: `PdfErrorKind` (Rust)
+/ `PDFErrorKind` (Python) — `encrypted`, `unreadable`, `engine`, and from
+#600 `cancelled`, `timed-out`. MuPDF's `FORMAT`, `SYNTAX`, `UNSUPPORTED` are
+the file's (measured: garbage and empty files are `FORMAT`, a truncated one
+`SYNTAX`, a missing file `SYSTEM`); every other code and anything unplaced is
+`engine`, so an unknown cause is loud. Rust's `PdfTextExtractor` returns
+`PdfError { kind, message }`; Python's `ConversionResult.error_kind` and
+`extract_blocks()`'s `PDFExtractionError` (a `ValueError`, pickles). Messages
+never name the path (MuPDF's open messages did; it is replaced by "the
+file" — a `shortcut:` comment notes MuPDF's 256-byte message cut). **#600**:
+`PdfLimit` / `PDFLimit` (cancel flag, deadline). **The maintainer chose
+mid-page in Rust, per-page in Python**: Rust runs every page with one MuPDF
+cookie and a scoped watcher thread sets its `abort` (the crate's `Cookie` is
+`!Send`, so the field is reached through its pointer, one documented
+`unsafe`); MuPDF ends an aborted page silently, so the flag is read back. A
+4.6 s page stops ~60 ms after a 50 ms deadline. PyMuPDF's `get_text()` takes
+no cookie. A reached limit logs at INFO in Python's `convert()`. Both
+mutation-checked in both languages; **one survivor, timing-equivalent**: the
+check before each page, which the watcher always beats on a short page — kept
+for determinism. `MupdfPdfExtractor` (the service's adapter) takes no limit,
+and neither does `FullTextService`.
+
+**For StudyAnalyzer**: map `PdfErrorKind::Unreadable`/`Encrypted` to
+`invalid_input` (the encrypted message says to remove the password) and
+`Engine` to an error; pass `PdfLimit { cancel, deadline }` to
+`extract_blocks_within` / `page_texts_within` from the app's `Limit`.
+
+## Previous session: a failed PDF download says why (#594)
+
+PR #601, merged. `FullTextResult.pdf_download_failure` (Python and Rust)
+names why a PDF tier's download left no `file_path`: `"http-<status>"`,
+`"not-a-pdf"`, `"request-failed"`, `"write-failed"`; `None` when cached or not
+attempted. The maintainer chose the field over falling through to the next
+tier. **For StudyAnalyzer**: a result with it set is a free PDF worth a retry,
+never "no full text yet".
 
 ## Previous sessions: MuPDF in Rust (#590), page furniture (#591), a fresh Rust cache (#592)
 
@@ -169,47 +190,18 @@ with `db.md` as the template. Filed: **#570** (`context_processor` stores a
 null `extracted_content` as `"None"`) and **#571** (stale docs outside the
 manual).
 
-## Earlier: context windows (StudyAnalyzer item 11)
+## Earlier: context windows (item 11) and streamed chat (item 6)
 
-PR #568, branch `feat/context-window`. Spec `docs/superpowers/specs/2026-10-29-context-window-design.md`,
-plan `docs/superpowers/plans/2026-10-29-context-window.md`; the CHANGELOG
-entry *Context windows, and Ollama's `num_ctx`* is the argument.
-`context_window()` on both clients; `None` = the provider did not say,
-`NoSuchModel` = a mistyped model; every number is a total. Rust's Ollama
-moved to `/api/chat` (breaking: `ChatRequest.num_ctx`, `Protocol::Ollama`,
-`ProtocolError::Malformed`, `parse_response`'s `messages`); `anthropic>=0.41`.
-Owed: #566 (Python's `get_model_metadata()` guesses).
-**For StudyAnalyzer plan 2b**: the app clamps the user's setting to the
-maximum `context_window()` gives; sends `num_ctx` for Ollama (its default is
-small, whatever the model's window); treats `None` as retrieval mode until the
-user enters a number; and shows `NoSuchModel` as a mistyped model, not an
-outage.
-
-## Previous session: streamed chat (StudyAnalyzer item 6)
-
-PR #562. Plan: `docs/superpowers/plans/2026-10-29-streaming-chat.md`. `chat_stream(…,
-on_delta)` beside `chat()` in both languages, returning `chat()`'s
-`LLMResponse`; `on_delta` returning `False` / `ControlFlow::Break` stops it
-(`stop_reason="cancelled"`). **Transport differs, the reducer does not**:
-Python reads its SDKs' events (`to_dict()`, Ollama's `model_dump()`), Rust
-reads SSE off `HttpClient::post_json_stream` (`SseEvents`); both feed
-`StreamState`, held to `tests/fixtures/chat_stream.json`. **Ollama** (as of item 11, Rust too
-streams the native `/api/chat`, NDJSON; when this PR landed the five `ollama`
-cases were Python's alone). A stream without its end marker, or carrying a
-tool call or a non-object event, is a `StreamError` / `ChatError::Stream`.
-Tools are refused. Ollama's SDK sends a streamed request only on the first
-`next()`, so that read is outside the `StreamError` wrapper (`_opened`). Python's providers now
-build `chat()`'s request in `_request_kwargs`, shared with `chat_stream`.
-Rust's `UreqClient` gives a stream's response headers and body
-`stream_timeout_seconds` (600) each; `chat_stream` retries opening on a
-`FetchError::Transport` or a retryable status, never after the first byte.
-`ChatError` is now `#[non_exhaustive]`. **Rust's `chat()` retries nothing**,
-where Python's Anthropic and OpenAI SDKs retry twice (**#561**). Fixed on the
-way, in Rust's `chat()`: Anthropic `think` sent `temperature`, which the API
-refuses, and only the first reasoning block was kept. The
-reducer is mutation-checked in both languages, and the PR's review fixes
-were checked the same way (14 Python and 11 Rust mutants, all killed). **Next for StudyAnalyzer**:
-phase 2 can start; items 5 and 8 remain in bmlib (item 7 is this session).
+PRs #568 and #562; the CHANGELOG entries *Context windows, and Ollama's
+`num_ctx`* and the streamed-chat entry are the argument. `context_window()`
+on both clients (`None` = the provider did not say, `NoSuchModel` = a mistyped
+model). Owed: **#566** (Python's `get_model_metadata()` guesses) and **#561**
+(Rust's `chat()` retries nothing, where Python's SDKs retry twice).
+**For StudyAnalyzer plan 2b**: clamp the user's setting to `context_window()`,
+send `num_ctx` for Ollama, treat `None` as retrieval mode, and show
+`NoSuchModel` as a mistyped model. `chat_stream(…, on_delta)` returns
+`chat()`'s `LLMResponse`; `on_delta` returning `False` /
+`ControlFlow::Break` stops it (`stop_reason="cancelled"`).
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
@@ -279,8 +271,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,737 passing + 164 skipped** on `fix/pdf-download-fault-594`
-  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,353 with `--features pdf,html`; the embedder's live tests skip
+- **Tests: 8,751 passing + 164 skipped** on `fix/pdf-extract-error-598`
+  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,345 with `cargo test -p bmlib --features pdf,html`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -309,11 +301,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**120 open** (`gh issue list --state open --limit 300 --json number`,
-2026-10-31, once this PR closes #594; #560–#600 are not yet sorted into the
-lists below). **#598**, **#599** and **#600** (PDF extraction: a `String`
-error, MuPDF's silenced warnings, no cancellation or time bound) and **#595**
-(`render_html`'s weaker furniture rule) are the PDF path's open work. **#528** and
+**118 open** (`gh issue list --state open --limit 300 --json number`,
+2026-10-31, once this PR closes #598 and #600; #560–#597 are not yet sorted
+into the lists below). **#599** (Rust silences MuPDF's warnings, so a
+repaired PDF's lost text goes unreported; the cookie this session added
+counts `errors`, which may help) and **#595** (`render_html`'s weaker
+furniture rule; measure the move by diffing before choosing) are the PDF
+path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
 digit makes different numbers match exactly (`10³` vs `103`), and a quote
 whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI
