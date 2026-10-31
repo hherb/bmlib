@@ -53,8 +53,9 @@ class PicoErrorKind(Enum):
     #: The title and text were both empty, so no model call was made.
     EMPTY_INPUT = "empty_input"
     #: The request raised: the provider was unreachable or refused it, so
-    #: retrying may help — though any other exception the request raises lands
-    #: here too (#573).
+    #: retrying may help.  A bmlib defect, an unknown provider or a missing SDK
+    #: is not this: those propagate unwrapped (#573), the first only when the
+    #: text was sent whole (#616).
     REQUEST_FAILED = "request_failed"
     #: The reply hit the output ceiling; raise ``max_tokens``.
     TRUNCATED = "truncated"
@@ -286,8 +287,8 @@ class PicoExtraction:
         comparison: What it was compared against.
         outcome: What was measured.
         study_type: The design, as the model named it; not verified.
-        sample_size: The number of participants, as the model gave it; not
-            verified.
+        sample_size: The number of participants, as the model gave it (an
+            integer reply as its digits, ``"150"``); not verified.
         overall_confidence: The mean confidence of the parts that are
             reported and carry one; ``None`` when none does.
         condensed_from_chars: The stripped text's length in characters when

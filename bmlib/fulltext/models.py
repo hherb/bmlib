@@ -861,6 +861,23 @@ class FullTextResult:
     # ``None`` when the PDF was cached, and when no download was attempted —
     # no cache, or no ``identifier`` to key one by — as for every non-PDF tier.
     pdf_download_failure: str | None = None
+    # Why extracting the cached PDF's text failed (#604), as a
+    # ``PDFErrorKind`` value:
+    #
+    #   "encrypted", "unreadable" — the file's: look for another copy
+    #   "engine"                  — not the file's: the same PDF may read later
+    #                               or elsewhere; also a failure the backend did
+    #                               not place, and any exception while
+    #                               converting or rendering (a vanished cache
+    #                               file included)
+    #   "cancelled", "timed-out"  — a limit the backend was given was reached;
+    #                               only a third-party backend, since the
+    #                               service passes the built-in ones none
+    #
+    # ``None`` when the text was extracted, when no extraction was attempted
+    # (``convert_pdfs`` off, an earlier tier's text, no PDF backend usable), and
+    # when the PDF opened and yielded no text, a scan, which is not a failure.
+    pdf_extraction_failure: str | None = None
 
 
 class SectionType(Enum):

@@ -63,6 +63,8 @@ pub enum PicoError {
     /// The title and text were both empty, so no model call was made.
     EmptyInput,
     /// The provider was unreachable or refused the request; retrying may help.
+    /// Unlike Python, every `ChatError` lands here, an unknown provider and a
+    /// missing key included, which no retry cures (see `docs/DECISIONS.md`).
     RequestFailed(String),
     /// The reply hit the output ceiling; raise `max_tokens`.
     Truncated(String),

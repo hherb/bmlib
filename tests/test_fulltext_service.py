@@ -36,7 +36,7 @@ import bmlib.fulltext
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.jats_parser import RENDERER_VERSION
 from bmlib.fulltext.models import ContentKind, FullTextResult, FullTextSourceEntry
-from bmlib.fulltext.pdf_converter import ConversionResult
+from bmlib.fulltext.pdf_converter import ConversionResult, PDFErrorKind
 from bmlib.fulltext.service import (
     _CONTENT_RANK,
     FullTextError,
@@ -1026,6 +1026,56 @@ class TestPDFTextExtraction:
 
         assert result.html is None
         assert result.content_kind == "none"
+        # A failure the backend did not place is the engine's (#604).
+        assert result.pdf_extraction_failure == "engine"
+
+    @pytest.mark.parametrize("kind", list(PDFErrorKind), ids=str)
+    def test_a_failed_conversion_says_which_side_it_is_on(self, tmp_path, kind):
+        """#604: the converter's kind reaches the service's caller."""
+        failed = ConversionResult(
+            success=False,
+            text="",
+            format="plaintext",
+            page_count=1,
+            converted_pages=0,
+            char_count=0,
+            error_message="it failed",
+            error_kind=kind,
+        )
+        _, result = self._fetch(tmp_path, MagicMock(return_value=self._stub_converter(failed)))
+
+        assert result.pdf_extraction_failure == kind.value
+
+    def test_a_converter_that_raises_is_an_engine_failure(self, tmp_path):
+        converter = MagicMock()
+        converter.convert.side_effect = RuntimeError("backend exploded")
+        _, result = self._fetch(tmp_path, MagicMock(return_value=converter))
+
+        assert result.pdf_extraction_failure == "engine"
+        assert result.file_path is not None
+
+    def test_no_failure_where_nothing_failed(self, tmp_path):
+        """A success, a scan, no backend and extraction off all leave it ``None``."""
+        empty = ConversionResult(
+            success=True,
+            text="",
+            format="plaintext",
+            page_count=1,
+            converted_pages=1,
+            char_count=0,
+        )
+        cases = [
+            (MagicMock(return_value=self._stub_converter(self._conversion())), {}),
+            (MagicMock(return_value=self._stub_converter(empty)), {}),
+            (MagicMock(side_effect=ImportError("no extra")), {}),
+            (
+                MagicMock(return_value=self._stub_converter(self._conversion())),
+                {"convert_pdfs": False},
+            ),
+        ]
+        for run, (get_converter, kwargs) in enumerate(cases):
+            _, result = self._fetch(tmp_path / f"run{run}", get_converter, **kwargs)
+            assert result.pdf_extraction_failure is None
 
     def test_a_scanned_pdf_yielding_no_text_is_reported(self, tmp_path, caplog):
         """An image-only scan extracts cleanly to nothing — say so."""

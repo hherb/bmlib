@@ -384,7 +384,13 @@ Citation offsets are `char` indices into `text` exactly as passed. Quotes are
 always verified against the original text, never a digest. `min_similarity`
 outside (0, 1] is `PicoError::InvalidSimilarity` before any request (Python
 raises `ValueError`); `PicoError::kind()` gives Python's `PicoErrorKind`
-value, and the enum is `#[non_exhaustive]`.
+value, and the enum is `#[non_exhaustive]`. A part whose `description` is
+blank is refused and re-asked as a non-text one is, and an integer
+`sample_size` is kept as its digits (`150` → `"150"`, a float refused)
+*(unreleased, #578)*. Every `ChatError` the client returns to the request, an
+unknown provider or a missing API key included, is `RequestFailed` (during
+the condensation of a long text it is `CondensationFailed`), where Python lets those
+propagate as exceptions (#573; see `docs/DECISIONS.md`).
 
 **Long papers.** Text over the threshold (48,000 characters, like the
 Cochrane assessor) needs a condenser over the PICO prompts, built by

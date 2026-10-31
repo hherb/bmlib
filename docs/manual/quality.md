@@ -978,7 +978,7 @@ extract(title: str | None, text: str | None, *, min_similarity: float) -> PicoEx
 
 `PicoPart` carries `description`, `state`, `confidence` (clamped to 0–1, `None` when unreadable), `citations` (`PicoCitation`: `start`, `end`, `text`, `similarity`, `exact`), `quotes_not_found` and `quotes_dropped` (quotes that were not usable text: not a string, blank, or a `quotes` value that was not a list).
 
-`PicoExtraction` adds `study_type` and `sample_size` (plain strings, not verified) and `overall_confidence`: the mean of the confidences of the parts that are reported and carry one, so a correctly identified absence does not pull it down; `None` when none does. **Nothing is discarded for low confidence**, unlike upstream's 0.5 cut.
+`PicoExtraction` adds `study_type` and `sample_size` (plain strings, not verified; *(unreleased, #578)* an integer `sample_size` reply is kept as its digits, `150` → `"150"`, where a float or a `bool` is unstated) and `overall_confidence`: the mean of the confidences of the parts that are reported and carry one, so a correctly identified absence does not pull it down; `None` when none does. **Nothing is discarded for low confidence**, unlike upstream's 0.5 cut.
 
 `PicoSuitability` requires only `is_suitable` of the model; `is_intervention_study`, `has_comparison`, `study_type`, `confidence` and `rationale` are `None` when absent or of the wrong type.
 
@@ -988,17 +988,19 @@ Both results carry `condensed_from_chars` (the stripped text's length in charact
 
 ### Failures
 
-A call returns its result or raises `PicoError`, whose `kind` (`PicoErrorKind`) says why:
+A call returns its result or raises `PicoError`, whose `kind` (`PicoErrorKind`) says why — unless what failed is no outage (below):
 
 | Kind | Cause | What helps |
 |---|---|---|
 | `EMPTY_INPUT` | Title and text both empty; no request made | Pass the paper |
-| `REQUEST_FAILED` | The request raised: the provider unreachable or refusing, though any other exception from the request lands here too (#573) | Retry later |
+| `REQUEST_FAILED` | The request raised: the provider unreachable or refusing | Retry later |
 | `TRUNCATED` | The reply hit `max_tokens` | Raise `max_tokens` |
 | `UNUSABLE_REPLY` | Empty, unparseable, not a JSON object, or missing a required field after the retries | Another model |
 | `CONDENSATION_FAILED` | Too long for one context, and the map-reduce produced no digest that fits; the message says why — the run failed (a provider outage during it included), the digest was empty, or it is still over the budget | Retry for an outage; a larger budget or another model otherwise |
 
-Every kind but `EMPTY_INPUT` chains the exception that caused it as `__cause__`: the provider's exception, the `ChatJson*Error`, the last reply's reading problem, or the condensation's refusal. A reply missing a part (or a suitability reply without a boolean `is_suitable`) is asked for again once, as the Cochrane assessor retries an unusable parse.
+Every kind but `EMPTY_INPUT` chains the exception that caused it as `__cause__`: the provider's exception, the `ChatJson*Error`, the last reply's reading problem, or the condensation's refusal. A reply missing a part, one whose `description` is not text or *(unreleased, #578)* is blank, or a suitability reply without a boolean `is_suitable` is asked for again once, as the Cochrane assessor retries an unusable parse.
+
+**What no retry or other model can cure is not a `PicoError`** *(unreleased, #573)*. It propagates unwrapped, so an app does not retry it as an outage: a bmlib defect (`TypeError`, `AttributeError`, `NameError`, `KeyError`, `IndexError`, or a `ValueError` raised by bmlib's own code while reading a reply, which is no longer re-requested as the model's fault), an unknown provider (`ValueError`) and a provider SDK not installed (`ImportError`), both refused before any request is made, and a missing Anthropic API key (the SDK raises `TypeError`). A `ValueError` the request itself raises is still `REQUEST_FAILED`: an SDK reading a 200 body that is not JSON raises one, which is the remote's. On a text condensed first, a bmlib defect or the missing key raised during the condensation is `CONDENSATION_FAILED`, the map-reduce reporting a failed run rather than raising (#616). The Rust port differs here: it has no exception to propagate, so an unknown provider or a missing key is `RequestFailed` there (see `docs/DECISIONS.md`).
 
 ### Long papers
 

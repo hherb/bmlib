@@ -718,7 +718,7 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
         let (pages, warnings) = self
             .extractor
             .page_texts_with_warnings(pdf_path, &PdfLimit::default())
-            .map_err(|e| PdfExtractError::Conversion(e.to_string()))?;
+            .map_err(PdfExtractError::Conversion)?;
         let joined = pages.join("\n");
         let html = render_html(true, &joined, &pages);
         let char_count = joined.chars().count();

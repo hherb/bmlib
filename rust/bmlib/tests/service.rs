@@ -26,8 +26,8 @@ use bmlib::fulltext::{
     render_jats_html, sanitize_identifier, ContentKind, FullTextCache, FullTextError,
     FullTextRequest, FullTextService, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
-    JATSReferenceInfo, JATSTableInfo, PdfExtractError, PdfExtractor, PdfText, TierFailures,
-    TierFault,
+    JATSReferenceInfo, JATSTableInfo, PdfError, PdfExtractError, PdfExtractor, PdfText,
+    TierFailures, TierFault,
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use serde_json::{json, Map, Value};
@@ -2411,7 +2411,9 @@ fn text_extraction_is_best_effort_and_never_costs_the_pdf() {
     struct Failing;
     impl PdfExtractor for Failing {
         fn extract(&self, _path: &Path) -> Result<PdfText, PdfExtractError> {
-            Err(PdfExtractError::Conversion("backend exploded".to_string()))
+            Err(PdfExtractError::Conversion(PdfError::unreadable(
+                "backend exploded",
+            )))
         }
     }
 
@@ -2435,10 +2437,51 @@ fn text_extraction_is_best_effort_and_never_costs_the_pdf() {
     assert!(result.file_path.is_some(), "the cached PDF survives");
     assert_eq!(result.pdf_url.as_deref(), Some("https://ex/a.pdf"));
     assert_eq!(result.content_kind, ContentKind::None);
+    assert_eq!(result.pdf_extraction_failure.as_deref(), Some("unreadable"));
     assert!(service
         .warnings()
         .iter()
         .any(|line| line.contains("PDF text extraction failed")));
+}
+
+/// **#604**: a failed `PdfText` names no kind, so its failure is the unplaced
+/// one, `engine`; an extraction that worked, or yielded no text, has none.
+#[test]
+fn an_extraction_failure_names_its_side() {
+    struct Unsuccessful(bool, &'static str);
+    impl PdfExtractor for Unsuccessful {
+        fn extract(&self, _path: &Path) -> Result<PdfText, PdfExtractError> {
+            Ok(PdfText {
+                html: self.1.to_string(),
+                success: self.0,
+                error_message: (!self.0).then(|| "it failed".to_string()),
+                page_count: 1,
+                converted_pages: usize::from(self.0),
+                char_count: self.1.len(),
+                warnings: Vec::new(),
+            })
+        }
+    }
+
+    for (extractor, expected) in [
+        (Unsuccessful(false, ""), Some("engine")),
+        (Unsuccessful(true, ""), None),
+        (Unsuccessful(true, "<p>Prose</p>"), None),
+    ] {
+        let dir = TempDir::new("extract-kind");
+        let cache = dir.cache();
+        cache
+            .save_pdf(b"%PDF-1.4 fake", &sanitize_identifier("10.1/test"))
+            .expect("cache write");
+        let service = service(ScriptedClient::new(vec![]))
+            .with_cache(Some(cache))
+            .with_pdf_extractor(Arc::new(extractor));
+        let mut request = request();
+        request.identifier = Some("10.1/test".to_string());
+
+        let result = service.fetch_fulltext(&request).expect("retrieved");
+        assert_eq!(result.pdf_extraction_failure.as_deref(), expected);
+    }
 }
 
 /// **A binary PDF reaches the cache byte for byte** — the end-to-end form of

@@ -819,6 +819,18 @@ pub struct FullTextResult {
     /// cache, or no `identifier` to key one by — as for every non-PDF tier.
     #[serde(default)]
     pub pdf_download_failure: Option<String>,
+    /// Why extracting the cached PDF's text failed (#604), as a
+    /// [`PdfErrorKind`](crate::fulltext::pdf_text::PdfErrorKind) wire name:
+    /// `"encrypted"` or `"unreadable"` (the file's: look for another copy),
+    /// `"engine"` (not the file's: the same PDF may read later or elsewhere; a
+    /// failure the backend did not place is this too), `"cancelled"` or
+    /// `"timed-out"`.
+    ///
+    /// `None` when the text was extracted, when no extraction was attempted
+    /// (`convert_pdfs` off, an earlier tier's text, no PDF backend usable), and
+    /// when the PDF opened and yielded no text, a scan, which is not a failure.
+    #[serde(default)]
+    pub pdf_extraction_failure: Option<String>,
 }
 
 /// What a [`FullTextResult::html`] payload actually is.

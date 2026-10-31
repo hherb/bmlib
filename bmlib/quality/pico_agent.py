@@ -76,6 +76,36 @@ _READ_ATTEMPTS = 2
 
 _T = TypeVar("_T")
 
+#: Exceptions that can only mean bmlib is wrong — ``transparency``'s
+#: ``_BUG_TYPES``, restated rather than imported, and held to agreeing by
+#: ``tests/test_transparency.py``.
+_BUG_TYPES: tuple[type[BaseException], ...] = (
+    TypeError,
+    AttributeError,
+    NameError,
+    KeyError,
+    IndexError,
+)
+
+#: What a request may raise that is not the provider failing, so is not
+#: ``REQUEST_FAILED`` (#573): a bmlib defect and a provider SDK that will not
+#: import.  They propagate, since retrying cannot cure them.  A missing
+#: Anthropic key raises ``TypeError`` from the SDK and propagates too, which is
+#: right for a configuration error.  ``ValueError`` is not a member: an SDK
+#: reading a 200 body that is not JSON raises one, which is the remote's
+#: (PR #615's review).  An unknown provider is refused before any request
+#: instead, by :meth:`PicoAgent._check_provider`.
+_NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ImportError)
+
+
+class _UnreadableReplyError(ValueError):
+    """A reply that parsed but cannot be read; asking again may help.
+
+    Its own class so that :meth:`PicoAgent._ask` re-asks for this alone: a
+    ``ValueError`` from bmlib's own code while reading is a defect and
+    propagates, rather than being re-requested as the model's fault (#573).
+    """
+
 
 # --- Prompts (byte-identical in the Rust port) ---
 
@@ -328,14 +358,17 @@ def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
     """Read one PICO part and verify its quotes.
 
     Raises:
-        ValueError: When *value* is not an object carrying a string
-            ``description`` — a part that cannot be shown at all.
+        ValueError: When *value* is not an object carrying a non-blank
+            string ``description`` — a part that cannot be shown at all.
     """
     if not isinstance(value, dict):
-        raise ValueError(f"expected an object, got {type(value).__name__}")
+        raise _UnreadableReplyError(f"expected an object, got {type(value).__name__}")
     description = value.get("description")
     if not isinstance(description, str):
-        raise ValueError(f"description is a {type(description).__name__}, not text")
+        raise _UnreadableReplyError(f"description is a {type(description).__name__}, not text")
+    # A blank description shows nothing, as ``null`` does, so it is asked again (#578).
+    if not description.strip():
+        raise _UnreadableReplyError("description is blank")
 
     confidence = clamped_confidence(value.get("confidence"))
     # Only an explicit ``false`` is an absence: ``bool("no")`` is ``True``, and
@@ -359,8 +392,8 @@ def read_extraction(data: dict[str, Any], text: str, min_similarity: float) -> P
     for name in PICO_PARTS:
         try:
             parts[name] = read_part(data.get(name), text, min_similarity)
-        except ValueError as exc:
-            raise ValueError(f"{name}: {exc}") from None
+        except _UnreadableReplyError as exc:
+            raise _UnreadableReplyError(f"{name}: {exc}") from None
 
     return PicoExtraction(
         population=parts["population"],
@@ -368,9 +401,24 @@ def read_extraction(data: dict[str, Any], text: str, min_similarity: float) -> P
         comparison=parts["comparison"],
         outcome=parts["outcome"],
         study_type=as_text(data.get("study_type"), "study_type"),
-        sample_size=as_text(data.get("sample_size"), "sample_size"),
+        sample_size=_sample_size(data.get("sample_size")),
         overall_confidence=mean_confidence(list(parts.values())),
     )
+
+
+def _sample_size(value: object) -> str | None:
+    """The reply's ``sample_size`` as text: a string verbatim, an integer as its digits.
+
+    ``"sample_size": 150`` is the natural answer to the prompt, and was lost
+    to ``as_text`` (#578).  A ``bool`` and a float are not counts: Python's
+    ``str(150.0)`` is ``"150.0"`` where Rust's is ``"150"``, so a float is
+    refused in both rather than spelt two ways.
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        # shortcut: past 64 bits Rust's serde_json reads the integer as a float
+        # and refuses it, where Python keeps it; no participant count is that big.
+        return str(value)
+    return as_text(value, "sample_size")
 
 
 def read_suitability(data: dict[str, Any]) -> PicoSuitability:
@@ -382,7 +430,7 @@ def read_suitability(data: dict[str, Any]) -> PicoSuitability:
     """
     is_suitable = data.get("is_suitable")
     if not isinstance(is_suitable, bool):
-        raise ValueError(f"is_suitable is a {type(is_suitable).__name__}, not a boolean")
+        raise _UnreadableReplyError(f"is_suitable is a {type(is_suitable).__name__}, not a boolean")
     return PicoSuitability(
         is_suitable=is_suitable,
         is_intervention_study=as_bool(data.get("is_intervention_study"), "is_intervention_study"),
@@ -418,12 +466,21 @@ class PicoAgent(BaseAgent):
     has a PICO at all, and :meth:`extract` extracts it.  A caller may run the
     extraction whatever the check answered.
 
-    Each call either returns its result or raises :class:`PicoError` (or, from
+    Each call returns its result or raises :class:`PicoError` (or, from
     :meth:`extract`, ``ValueError`` for a bad ``min_similarity``), whose
-    ``kind`` says why — so an app can retry an outage, ask for a larger
-    ``max_tokens`` after a truncation, and suggest another model when the
-    replies are unusable.  An outage during the condensation of a long text
-    is ``CONDENSATION_FAILED``, its message naming the failed map-reduce.
+    ``kind`` says why, unless what failed is no outage (below) — so an app
+    can retry an outage, ask for a larger ``max_tokens`` after a truncation,
+    and suggest another model when the replies are unusable.  An outage
+    during the condensation of a long text is ``CONDENSATION_FAILED``, its
+    message naming the failed map-reduce.
+    What no retry or other model can cure propagates unwrapped instead (#573):
+    a bmlib defect (``TypeError``, ``AttributeError``, ``NameError``,
+    ``KeyError``, ``IndexError``, or a ``ValueError`` raised while reading a
+    reply), an unknown provider (``ValueError``) and a provider SDK not
+    installed (``ImportError``), both refused before any request, and a missing
+    Anthropic key (the SDK's ``TypeError``).  The last two kinds, raised during
+    the condensation of a long text, are ``CONDENSATION_FAILED`` instead: the
+    map-reduce reports a failed run rather than raising (#616).
 
     Args:
         llm: The client requests go through.
@@ -471,6 +528,8 @@ class PicoAgent(BaseAgent):
 
         Raises:
             PicoError: Naming why no answer could be made.
+            ValueError: The model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
         """
         title, text, notes, condensed_from, status = self._prepare(
             title, text, "the suitability check"
@@ -506,7 +565,9 @@ class PicoAgent(BaseAgent):
             The breakdown.  Nothing is discarded for low confidence.
 
         Raises:
-            ValueError: *min_similarity* is not a number in (0, 1].
+            ValueError: *min_similarity* is not a number in (0, 1], or the
+                model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
             PicoError: Naming why no breakdown could be made.
         """
         similarity = _check_similarity(min_similarity)
@@ -542,6 +603,7 @@ class PicoAgent(BaseAgent):
         text = (text or "").strip()
         if not title and not text:
             raise PicoError(PicoErrorKind.EMPTY_INPUT, "both the title and the text are empty")
+        self._check_provider()
         if len(text) <= self.condense_config.max_context_chars:
             return title, text, [], None, None
 
@@ -563,6 +625,20 @@ class PicoAgent(BaseAgent):
                 f"{self.condense_config.max_context_chars} characters: {exc}",
             ) from exc
         return title, digest, notes, len(text), status.value
+
+    def _check_provider(self) -> None:
+        """Resolve the model's provider before any request is made (#573).
+
+        An unknown provider (``ValueError``) and an uninstalled SDK
+        (``ImportError``) then propagate whatever the text's length, rather
+        than failing the condensation of a long one as an outage would.
+
+        Raises:
+            ValueError: No provider is registered under the model's name.
+            ImportError: The provider's SDK is not installed.
+        """
+        provider = self.model.split(":", 1)[0] if ":" in self.model else self.llm.default_provider
+        self.llm._get_provider(provider or self.llm.default_provider)
 
     def _ask(
         self,
@@ -586,7 +662,7 @@ class PicoAgent(BaseAgent):
         )
         messages = [self.system_msg(PICO_SYSTEM_PROMPT), self.user_msg(prompt)]
 
-        problem: ValueError | None = None
+        problem: _UnreadableReplyError | None = None
         for attempt in range(_READ_ATTEMPTS):
             try:
                 data = self.chat_json(messages, retry_context=label, require_dict=True)
@@ -594,11 +670,13 @@ class PicoAgent(BaseAgent):
                 raise PicoError(PicoErrorKind.TRUNCATED, str(exc)) from exc
             except ChatJsonError as exc:
                 raise PicoError(PicoErrorKind.UNUSABLE_REPLY, str(exc)) from exc
+            except _NOT_A_REQUEST_FAILURE:
+                raise
             except Exception as exc:
                 raise PicoError(PicoErrorKind.REQUEST_FAILED, str(exc)) from exc
             try:
                 return read(data)
-            except ValueError as exc:
+            except _UnreadableReplyError as exc:
                 problem = exc
                 logger.warning(
                     "Unusable reply for %s (attempt %d/%d): %s",

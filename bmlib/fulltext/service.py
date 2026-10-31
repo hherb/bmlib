@@ -52,7 +52,7 @@ from bmlib.fulltext.models import ContentKind, FullTextResult, FullTextSourceEnt
 
 # Imported eagerly — pdf_converter loads its PyMuPDF backend lazily, so this
 # costs nothing when the optional ``bmlib[pdf]`` extra is absent.
-from bmlib.fulltext.pdf_converter import get_converter, render_html
+from bmlib.fulltext.pdf_converter import PDFErrorKind, get_converter, render_html
 
 logger = logging.getLogger(__name__)
 
@@ -2159,15 +2159,18 @@ class FullTextService:
         populated — an earlier tier's text is never overwritten.
 
         Otherwise best-effort: a PDF backend that cannot be constructed (the
-        ``bmlib[pdf]`` extra missing, or broken) or an unreadable PDF leaves
-        the result untouched, so the caller still has the PDF itself.
+        ``bmlib[pdf]`` extra missing, or broken) leaves the result untouched,
+        and an unreadable PDF leaves it untouched but for
+        ``pdf_extraction_failure``, so the caller still has the PDF itself.
         ``result.pdf_url`` and ``result.file_path`` are deliberately left in
         place — extracted text recovers the prose but not figures, tables or
         layout, so the original stays worth offering.
 
         Every way this can come up empty is logged at WARNING: a scanned PDF
         that yields nothing is invisible otherwise, and a partial extraction
-        must not be mistaken for a whole article.
+        must not be mistaken for a whole article.  That field holds a failed
+        conversion's kind (#604), so a caller can tell a damaged file from an
+        engine fault.
         """
         if not self.convert_pdfs or result.html:
             return
@@ -2201,12 +2204,15 @@ class FullTextService:
             html = render_html(conversion)
         except Exception:
             logger.warning("PDF text extraction failed for %s", pdf_path, exc_info=True)
+            result.pdf_extraction_failure = PDFErrorKind.ENGINE.value
             return
 
         if not conversion.success:
             logger.warning(
                 "PDF text extraction failed for %s: %s", pdf_path, conversion.error_message
             )
+            # A failure the backend did not place is the engine's (#598, #604).
+            result.pdf_extraction_failure = (conversion.error_kind or PDFErrorKind.ENGINE).value
             return
         if not html:
             logger.warning(
