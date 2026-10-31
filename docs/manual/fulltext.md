@@ -353,7 +353,7 @@ PDF a retry may fetch is not mistaken for a bare link:
 |-------|---------------|
 | `"http-<status>"` | The server answered with that non-200 status (`"http-503"`) |
 | `"not-a-pdf"` | It answered 200 with a body that is not a PDF — often a landing page or a bot wall |
-| `"request-failed"` | The request failed before any answer: a timeout, a reset, DNS |
+| `"request-failed"` | The request failed before any answer: a timeout, a reset, DNS. In Python, also a defect in bmlib itself, which a retry will not cure |
 | `"write-failed"` | The PDF arrived and the cache could not save it |
 
 `None` when the PDF was cached, and when no download was attempted at all —

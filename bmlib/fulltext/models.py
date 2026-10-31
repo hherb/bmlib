@@ -854,7 +854,8 @@ class FullTextResult:
     #
     #   "http-<status>"  — the server answered with that non-200 status
     #   "not-a-pdf"      — it answered 200 with a body that is not a PDF
-    #   "request-failed" — the request raised (a timeout, a reset, DNS)
+    #   "request-failed" — the request raised: a timeout, a reset, DNS, or a
+    #                      defect in bmlib itself, which a retry will not cure
     #   "write-failed"   — the PDF arrived and the cache could not save it
     #
     # ``None`` when the PDF was cached, and when no download was attempted —
