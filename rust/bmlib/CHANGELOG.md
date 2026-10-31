@@ -9,6 +9,22 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — a PDF extraction can be cancelled or bounded in time (#600)
+`PdfLimit { cancel: Option<Arc<AtomicBool>>, deadline: Option<Instant> }`
+(`fulltext::pdf_text`, re-exported) and `PdfTextExtractor::extract_blocks_within`
+/ `page_texts_within`; `extract_blocks` and `page_texts` are now provided
+methods passing `PdfLimit::default()`, which stops never (an implementor of the
+trait must implement the two `_within` methods instead — breaking for one).
+`MupdfExtractor` runs every page with one MuPDF cookie, and while a limit is
+set a scoped watcher thread checks it every `LIMIT_WATCH_INTERVAL` (10 ms) and
+sets the cookie's `abort`, so **one pathological page stops while it runs**:
+measured, a page taking 4.6 s unlimited (debug) stops about 60 ms after a 50 ms
+deadline or a cancel. MuPDF ends an aborted page silently, so the flag is read
+back after each page and a page cut short is `PdfErrorKind::Cancelled` or
+`TimedOut`, never a short page. Passing a cookie changes nothing else MuPDF does
+but count: the PDF-bytes contract is unchanged. `MupdfPdfExtractor` (the
+service's adapter) takes no limit.
+
 ### Changed — breaking: a PDF extraction error is typed (#598)
 `PdfTextExtractor::extract_blocks` and `page_texts` return
 `Result<_, PdfError>` rather than `Result<_, String>`. `PdfError { kind,

@@ -305,6 +305,10 @@ pub enum PdfErrorKind {
     Unreadable,
     /// The engine failed, not the file.
     Engine,
+    /// The caller's [`PdfLimit::cancel`] flag was set.
+    Cancelled,
+    /// The caller's [`PdfLimit::deadline`] passed.
+    TimedOut,
 }
 
 impl PdfErrorKind {
@@ -315,6 +319,8 @@ impl PdfErrorKind {
             PdfErrorKind::Encrypted => "encrypted",
             PdfErrorKind::Unreadable => "unreadable",
             PdfErrorKind::Engine => "engine",
+            PdfErrorKind::Cancelled => "cancelled",
+            PdfErrorKind::TimedOut => "timed-out",
         }
     }
 }
@@ -339,8 +345,7 @@ impl PdfError {
     pub fn encrypted() -> Self {
         PdfError {
             kind: PdfErrorKind::Encrypted,
-            message: "the PDF is password-protected; remove the password and try again"
-                .to_string(),
+            message: "the PDF is password-protected; remove the password and try again".to_string(),
         }
     }
 
@@ -360,6 +365,70 @@ impl PdfError {
             kind: PdfErrorKind::Engine,
             message: format!("the PDF engine failed: {detail}"),
         }
+    }
+}
+
+impl PdfError {
+    /// The caller cancelled the extraction.
+    #[must_use]
+    pub fn cancelled() -> Self {
+        PdfError {
+            kind: PdfErrorKind::Cancelled,
+            message: "the PDF extraction was cancelled".to_string(),
+        }
+    }
+
+    /// The extraction ran past the caller's deadline.
+    #[must_use]
+    pub fn timed_out() -> Self {
+        PdfError {
+            kind: PdfErrorKind::TimedOut,
+            message: "the PDF extraction ran past its deadline".to_string(),
+        }
+    }
+}
+
+/// When a PDF extraction should stop, so a caller can bound it (#600).
+///
+/// The default stops never. The MuPDF backend watches the limit **while a page
+/// runs**, not only between pages, so one pathological page cannot outlast it;
+/// a stopped extraction is an error ([`PdfErrorKind::Cancelled`] or
+/// [`PdfErrorKind::TimedOut`]), never a partial result. Python's
+/// `PyMuPDFConverter` takes the same pair and checks it between pages.
+#[derive(Debug, Clone, Default)]
+pub struct PdfLimit {
+    /// Set to `true`, from any thread, to cancel.
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// The instant past which the extraction stops.
+    pub deadline: Option<std::time::Instant>,
+}
+
+impl PdfLimit {
+    /// Whether anything can stop the extraction.
+    #[must_use]
+    pub fn is_set(&self) -> bool {
+        self.cancel.is_some() || self.deadline.is_some()
+    }
+
+    /// Why the extraction must stop now, if it must; a cancel outranks a
+    /// passed deadline.
+    #[must_use]
+    pub fn reached(&self) -> Option<PdfError> {
+        use std::sync::atomic::Ordering;
+        if self
+            .cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Acquire))
+        {
+            return Some(PdfError::cancelled());
+        }
+        if self
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            return Some(PdfError::timed_out());
+        }
+        None
     }
 }
 
@@ -386,14 +455,41 @@ pub trait PdfTextExtractor {
     ///
     /// [`PdfError`] when the document cannot be read or the text cannot be
     /// extracted.
-    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, PdfError>;
+    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, PdfError> {
+        self.extract_blocks_within(path, &PdfLimit::default())
+    }
+
+    /// [`PdfTextExtractor::extract_blocks`], stopping at `limit`.
+    ///
+    /// # Errors
+    ///
+    /// As [`PdfTextExtractor::extract_blocks`], and [`PdfErrorKind::Cancelled`]
+    /// or [`PdfErrorKind::TimedOut`] when `limit` is reached.
+    fn extract_blocks_within(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<Vec<TextBlock>, PdfError>;
 
     /// The page texts, for the furniture rule.
     ///
     /// # Errors
     ///
     /// As [`PdfTextExtractor::extract_blocks`].
-    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, PdfError>;
+    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, PdfError> {
+        self.page_texts_within(path, &PdfLimit::default())
+    }
+
+    /// [`PdfTextExtractor::page_texts`], stopping at `limit`.
+    ///
+    /// # Errors
+    ///
+    /// As [`PdfTextExtractor::extract_blocks_within`].
+    fn page_texts_within(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<Vec<String>, PdfError>;
 }
 
 /// What a conversion produced.

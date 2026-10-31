@@ -56,10 +56,9 @@ pub use models::{
 pub use parse_audit::{unwind_diagnostics, ParseUnwindState};
 pub use pdf_text::{
     converted_content_kind, group_paragraphs, line_to_block, normalize_line, render_html,
-    repeated_lines, span_text_weight, split_on_short_lines, ConversionResult, PdfError, PdfErrorKind,
-    PdfTextExtractor,
-    PARAGRAPH_BREAK_RATIO, PARAGRAPH_WIDTH_MIN_LINES, REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO,
-    SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
+    repeated_lines, span_text_weight, split_on_short_lines, ConversionResult, PdfError,
+    PdfErrorKind, PdfLimit, PdfTextExtractor, PARAGRAPH_BREAK_RATIO, PARAGRAPH_WIDTH_MIN_LINES,
+    REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO, SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
 };
 pub use segmenter::{
     extract_sections, extract_title, identify_section_markers, is_potential_header, join_blocks,

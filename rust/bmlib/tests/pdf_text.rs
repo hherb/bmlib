@@ -381,3 +381,27 @@ fn a_failure_result_names_its_cause() {
     assert!(text.contains("FAILED"), "{text}");
     assert!(text.contains("incomplete"), "{text}");
 }
+
+/// A cancel outranks a passed deadline, and a limit with neither never stops
+/// (#600).
+#[test]
+fn a_pdf_limit_says_why_it_stops() {
+    use bmlib::fulltext::pdf_text::{PdfError, PdfLimit};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    assert!(!PdfLimit::default().is_set());
+    assert_eq!(PdfLimit::default().reached(), None);
+    let both = PdfLimit {
+        cancel: Some(Arc::new(AtomicBool::new(true))),
+        deadline: Some(Instant::now()),
+    };
+    assert_eq!(both.reached(), Some(PdfError::cancelled()));
+    let later = PdfLimit {
+        cancel: Some(Arc::new(AtomicBool::new(false))),
+        deadline: Some(Instant::now() + Duration::from_secs(60)),
+    };
+    assert!(later.is_set());
+    assert_eq!(later.reached(), None);
+}

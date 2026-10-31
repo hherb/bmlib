@@ -76,9 +76,14 @@
 //! lays it out.
 
 use crate::fulltext::models::TextBlock;
-use crate::fulltext::pdf_text::{normalize_line, PdfError, PdfTextExtractor};
+use crate::fulltext::pdf_text::{normalize_line, PdfError, PdfLimit, PdfTextExtractor};
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
-use mupdf::{Device, DisplayList, Document, Matrix, Page, Quad, Rect};
+use mupdf::{Cookie, Device, DisplayList, Document, Matrix, Page, Quad, Rect};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+
+/// How often the watcher looks at a [`PdfLimit`] while a page runs: the most a
+/// cancel or a deadline can be overrun by, a page's own last operator aside.
+pub const LIMIT_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// PyMuPDF's `TEXTFLAGS_DICT` (199), the flags `get_text("dict")` reads with.
 pub const DICT_FLAGS: TextPageFlags = TextPageFlags::PRESERVE_LIGATURES
@@ -333,7 +338,32 @@ fn open(path: &std::path::Path) -> Result<Document, PdfError> {
     Ok(document)
 }
 
-/// Each page's bounds and text, in order, read with `flags`.
+/// A cookie's `abort` field, for the watcher thread to set.
+///
+/// MuPDF's cookie is its documented way for one thread to stop another's run,
+/// "unsynchronized without locking": `fz_run_page` reads `abort` before each
+/// content-stream operator and ends the page early, silently, when it is set.
+/// The crate's [`Cookie`] cannot cross threads (`abort` takes `&mut`, and it is
+/// `!Send`), so the field is reached through its pointer and written
+/// atomically.
+fn abort_flag(cookie: &Cookie) -> &AtomicI32 {
+    use mupdf_sys::fz_cookie;
+    // `Cookie` is one `*mut fz_cookie` (`mupdf` 0.8.0, pinned exactly); a crate
+    // that added a field would fail this assertion.
+    const _: () = assert!(std::mem::size_of::<Cookie>() == std::mem::size_of::<*mut fz_cookie>());
+    // SAFETY: the copy is the pointer `cookie` holds, valid while `cookie` is
+    // borrowed, which the returned reference is tied to; the copy is not
+    // dropped (`*mut` has no destructor), so the cookie is freed once, by
+    // `cookie`. `abort` is an aligned C `int`, which is what `AtomicI32` needs;
+    // MuPDF reads it plainly, as the cookie's protocol has it.
+    unsafe {
+        let raw: *mut fz_cookie = std::mem::transmute_copy(cookie);
+        AtomicI32::from_ptr(std::ptr::addr_of_mut!((*raw).abort))
+    }
+}
+
+/// Visit each page's bounds and text, in order, read with `flags`, stopping at
+/// `limit`.
 ///
 /// The whole page is run (`fz_run_page`: contents, then annotations and
 /// widgets) into one device over an empty text page bounded by the page, which
@@ -341,29 +371,73 @@ fn open(path: &std::path::Path) -> Result<Document, PdfError> {
 /// text page comes from an empty display list, the crate's one way to make a
 /// text page from a rectangle. A page is loaded only when it is reached, so a
 /// long document is not held whole.
-fn text_pages<'a>(
-    document: &'a Document,
+///
+/// Every page runs with one cookie, which changes nothing else MuPDF does but
+/// count. When `limit` is set, a scoped watcher thread checks it every
+/// [`LIMIT_WATCH_INTERVAL`] and sets the cookie's `abort`, which stops the page
+/// running; since that stop is silent, the flag is read back after each page,
+/// so a page cut short is an error and never a short page (#600).
+fn each_page(
+    document: &Document,
     flags: TextPageFlags,
-    path: &'a std::path::Path,
-) -> Result<impl Iterator<Item = Result<(Rect, TextPage), PdfError>> + 'a, PdfError> {
+    path: &std::path::Path,
+    limit: &PdfLimit,
+    mut visit: impl FnMut(Rect, TextPage),
+) -> Result<(), PdfError> {
     let count = document
         .page_count()
         .map_err(|e| classify(&e, "could not count the pages", path))?;
-    Ok((0..count).map(move |index| {
-        let read = |page: Page| -> Result<(Rect, TextPage), mupdf::Error> {
-            let bounds = page.bounds()?;
-            let text_page = DisplayList::new(bounds)?.to_text_page(flags)?;
-            let device = Device::from_text_page(&text_page, flags)?;
-            page.run(&device, &Matrix::IDENTITY)?;
-            // Dropping the device closes it, which flushes its last line.
-            drop(device);
-            Ok((bounds, text_page))
+    let cookie = Cookie::new().map_err(|e| classify(&e, "could not start", path))?;
+    let abort = abort_flag(&cookie);
+    let done = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let watcher = limit.is_set().then(|| {
+            scope.spawn(|| {
+                while !done.load(Ordering::Acquire) {
+                    if limit.reached().is_some() {
+                        abort.store(1, Ordering::Release);
+                        return;
+                    }
+                    std::thread::park_timeout(LIMIT_WATCH_INTERVAL);
+                }
+            })
+        });
+        let mut walk = || -> Result<(), PdfError> {
+            for index in 0..count {
+                if let Some(stop) = limit.reached() {
+                    return Err(stop);
+                }
+                let read = |page: Page| -> Result<(Rect, TextPage), mupdf::Error> {
+                    let bounds = page.bounds()?;
+                    let text_page = DisplayList::new(bounds)?.to_text_page(flags)?;
+                    let device = Device::from_text_page(&text_page, flags)?;
+                    page.run_with_cookie(&device, &Matrix::IDENTITY, &cookie)?;
+                    // Dropping the device closes it, which flushes its last line.
+                    drop(device);
+                    Ok((bounds, text_page))
+                };
+                let page = document.load_page(index).and_then(read);
+                if abort.load(Ordering::Acquire) != 0 {
+                    return Err(limit.reached().unwrap_or_else(PdfError::cancelled));
+                }
+                let (bounds, text_page) = page.map_err(|e| {
+                    classify(
+                        &e,
+                        &format!("could not read the text of page {index}"),
+                        path,
+                    )
+                })?;
+                visit(bounds, text_page);
+            }
+            Ok(())
         };
-        document
-            .load_page(index)
-            .and_then(read)
-            .map_err(|e| classify(&e, &format!("could not read the text of page {index}"), path))
-    }))
+        let result = walk();
+        done.store(true, Ordering::Release);
+        if let Some(watcher) = watcher {
+            watcher.thread().unpark();
+        }
+        result
+    })
 }
 
 /// A page's text as PyMuPDF's `get_text()` writes it (see the module docs).
@@ -393,28 +467,38 @@ impl PdfTextExtractor for MupdfExtractor {
         "mupdf"
     }
 
-    fn extract_blocks(&self, path: &std::path::Path) -> Result<Vec<TextBlock>, PdfError> {
+    fn extract_blocks_within(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<Vec<TextBlock>, PdfError> {
         let document = open(path)?;
         let mut blocks = Vec::new();
-        for (page_index, page) in text_pages(&document, DICT_FLAGS, path)?.enumerate() {
-            let (bounds, text_page) = page?;
+        let mut page_index = 0;
+        each_page(&document, DICT_FLAGS, path, limit, |bounds, text_page| {
             // `lines()` yields nothing for an image block, which is the
             // `type != 0` skip `extract_blocks` makes.
             for block in text_page.blocks() {
                 for line in block.lines() {
-                    blocks.extend(line_block(&line, &bounds, page_index as i64));
+                    blocks.extend(line_block(&line, &bounds, page_index));
                 }
             }
-        }
+            page_index += 1;
+        })?;
         Ok(blocks)
     }
 
-    fn page_texts(&self, path: &std::path::Path) -> Result<Vec<String>, PdfError> {
+    fn page_texts_within(
+        &self,
+        path: &std::path::Path,
+        limit: &PdfLimit,
+    ) -> Result<Vec<String>, PdfError> {
         let document = open(path)?;
-        let pages = text_pages(&document, TEXT_FLAGS, path)?
-            .map(|page| page.map(|(bounds, text_page)| page_text(&text_page, &bounds)))
-            .collect();
-        pages
+        let mut pages = Vec::new();
+        each_page(&document, TEXT_FLAGS, path, limit, |bounds, text_page| {
+            pages.push(page_text(&text_page, &bounds));
+        })?;
+        Ok(pages)
     }
 }
 

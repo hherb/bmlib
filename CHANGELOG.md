@@ -6,6 +6,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **A PDF extraction can be cancelled or bounded in time** (#600, found
+  reviewing StudyAnalyzer's PR #21). `PyMuPDFConverter.convert()` and
+  `extract_blocks()` take `limit=PDFLimit(cancel=threading.Event,
+  deadline=time.monotonic() + seconds)`, checked before each page; a reached
+  limit is `PDFErrorKind.CANCELLED` or `TIMED_OUT` (a failed result, logged at
+  INFO, or a raised `PDFExtractionError`), never a partial result. PyMuPDF's
+  `get_text()` takes no MuPDF cookie, so a single long page runs to its end in
+  Python; Rust's `PdfLimit` stops a page mid-run. The default stops never, so
+  nothing moves for a caller passing none.
+
 ### Changed — breaking for a caller matching the old messages
 - **A PDF that cannot be extracted says whose fault it is** (#598, found
   reviewing StudyAnalyzer's PR #21). `PyMuPDFConverter.convert()` reported

@@ -30,6 +30,7 @@ from bmlib.fulltext.pdf_converter import (
     PDFConverter,
     PDFErrorKind,
     PDFExtractionError,
+    PDFLimit,
     PyMuPDFConverter,
     _line_to_block,
     get_converter,
@@ -159,7 +160,38 @@ class TestPDFExtractionError:
         assert str(copy) == str(error)
 
     def test_the_kinds_are_rusts_wire_names(self):
-        assert [k.value for k in PDFErrorKind] == ["encrypted", "unreadable", "engine"]
+        assert [k.value for k in PDFErrorKind] == [
+            "encrypted",
+            "unreadable",
+            "engine",
+            "cancelled",
+            "timed-out",
+        ]
+
+
+class TestPDFLimit:
+    """When an extraction should stop (#600)."""
+
+    def test_the_default_never_stops(self):
+        assert PDFLimit().reached() is None
+
+    def test_a_cancel_outranks_a_passed_deadline(self):
+        import threading
+        import time
+
+        cancel = threading.Event()
+        cancel.set()
+        stop = PDFLimit(cancel=cancel, deadline=time.monotonic() - 1).reached()
+        assert stop is not None and stop.kind is PDFErrorKind.CANCELLED
+
+    def test_a_deadline_stops_once_passed(self):
+        import threading
+        import time
+
+        assert PDFLimit(cancel=threading.Event(), deadline=time.monotonic() + 60).reached() is None
+        stop = PDFLimit(deadline=time.monotonic() - 1).reached()
+        assert stop is not None and stop.kind is PDFErrorKind.TIMED_OUT
+        assert str(stop) == "the PDF extraction ran past its deadline"
 
 
 class TestRegistry:
@@ -656,6 +688,44 @@ class TestExtractBlocks:
         with pytest.raises(PDFExtractionError, match="remove the password") as caught:
             get_converter("pymupdf").extract_blocks(pdf)
         assert caught.value.kind is PDFErrorKind.ENCRYPTED
+
+    def test_a_limit_reached_between_pages_stops_both_paths(self, tmp_path, caplog):
+        # Python checks before each page (PyMuPDF's get_text takes no cookie):
+        # cancelled after page 1 of 3, neither path returns a partial result.
+        import threading
+
+        class SetOnSecondCheck(threading.Event):
+            def __init__(self) -> None:
+                super().__init__()
+                self.checks = 0
+
+            def is_set(self) -> bool:
+                self.checks += 1
+                return self.checks >= 2
+
+        pdf = tmp_path / "three.pdf"
+        self._write_pdf(pdf, [[(72, 72, f"Page {n}", "helv", 12)] for n in ("one", "two", "three")])
+        converter = get_converter("pymupdf")
+
+        cancel = SetOnSecondCheck()
+        with caplog.at_level("INFO", logger="bmlib.fulltext.pdf_converter"):
+            result = converter.convert(pdf, limit=PDFLimit(cancel=cancel))
+        assert result.success is False
+        assert result.text == ""
+        assert result.error_kind is PDFErrorKind.CANCELLED
+        assert result.converted_pages == 1
+        # The caller asked for the stop, so it is not reported as a fault.
+        assert [r.levelname for r in caplog.records] == ["INFO"]
+
+        cancel = SetOnSecondCheck()
+        with pytest.raises(PDFExtractionError) as caught:
+            converter.extract_blocks(pdf, limit=PDFLimit(cancel=cancel))
+        assert caught.value.kind is PDFErrorKind.CANCELLED
+        assert cancel.checks == 2
+
+        unset = PDFLimit(cancel=threading.Event())
+        assert len(converter.extract_blocks(pdf, limit=unset)) == 3
+        assert converter.convert(pdf, limit=unset).converted_pages == 3
 
     def test_an_owner_password_alone_does_not_block_extraction(self, tmp_path):
         # Negative control: encrypted, but readable, so blocks come back.
