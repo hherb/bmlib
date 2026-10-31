@@ -97,6 +97,7 @@ use crate::fulltext::models::{
     join_citation_parts, ContentKind, FullTextResult, FullTextSourceEntry, JATSArticle,
     JATSBodySection, JATSFundingAward, JATSReferenceInfo,
 };
+use crate::fulltext::pdf_text::{PdfError, PdfErrorKind};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
 use crate::pyvalue::{python_repr, python_str, python_strip, truthy};
 use regex::Regex;
@@ -1141,7 +1142,8 @@ impl PdfText {
 /// The two arms are Python's two separate handlers in `_attach_pdf_text`:
 /// `Backend` is `get_converter()` failing (the extra is missing, or the backend
 /// is broken), reported once per cause; `Conversion` is `convert`/`render_html`
-/// raising, reported per PDF.
+/// raising, reported per PDF, its kind reaching
+/// [`FullTextResult::pdf_extraction_failure`] (#604).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PdfExtractError {
     /// No backend could be constructed.
@@ -1151,8 +1153,9 @@ pub enum PdfExtractError {
         /// What happened.
         message: String,
     },
-    /// The backend raised while converting.
-    Conversion(String),
+    /// The backend raised while converting: which side the failure is on, and
+    /// what happened.
+    Conversion(PdfError),
 }
 
 /// A pluggable PDF-to-text backend.
@@ -2378,14 +2381,18 @@ impl FullTextService {
                     ),
                 );
             }
-            Err(PdfExtractError::Conversion(message)) => {
+            Err(PdfExtractError::Conversion(error)) => {
                 self.warn(format!(
-                    "PDF text extraction failed for {}: {message}",
-                    pdf_path.display()
+                    "PDF text extraction failed for {}: {}",
+                    pdf_path.display(),
+                    error.message
                 ));
+                result.pdf_extraction_failure = Some(error.kind.as_str().to_string());
             }
             Ok(conversion) => {
                 if !conversion.success {
+                    // A `PdfText` names no kind, so the failure is unplaced: `Engine`.
+                    result.pdf_extraction_failure = Some(PdfErrorKind::Engine.as_str().to_string());
                     self.warn(format!(
                         "PDF text extraction failed for {}: {}",
                         pdf_path.display(),
@@ -3026,6 +3033,7 @@ fn empty_result(source: impl Into<String>) -> FullTextResult {
         content_kind: ContentKind::None,
         jats_xml: None,
         pdf_download_failure: None,
+        pdf_extraction_failure: None,
     }
 }
 

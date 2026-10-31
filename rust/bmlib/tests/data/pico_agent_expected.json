@@ -1970,5 +1970,285 @@
       "SUITABILITY_RESPONSE_FORMAT": "Respond with JSON in exactly this shape:\n\n{\n    \"is_intervention_study\": true,\n    \"has_comparison\": true,\n    \"is_suitable\": true,\n    \"confidence\": 0.9,\n    \"rationale\": \"This is an RCT testing intervention X in population Y with control group Z.\",\n    \"study_type\": \"randomized controlled trial\"\n}",
       "SUITABILITY_TASK_PROMPT": "Determine whether the document below is an INTERVENTION STUDY suitable for PICO (Population, Intervention, Comparison, Outcome) extraction.\n\nA document is SUITABLE if it is:\n- A randomized controlled trial (RCT)\n- A clinical trial with an intervention\n- A cohort study with an intervention or exposure\n- A case-control study\n- A comparative effectiveness study\n- Any primary research testing an intervention, treatment, or exposure\n\nA document is NOT SUITABLE if it is:\n- A systematic review or meta-analysis (it reviews other studies and does not test an intervention itself)\n- A narrative review or literature review\n- An editorial, commentary, or opinion piece\n- A case report or case series (no comparison group)\n- A cross-sectional survey (no intervention)\n- A basic science or laboratory study (not clinical)\n- A qualitative study without quantifiable outcomes\n\nKEY INDICATORS of an intervention study:\n- It tests a specific treatment, drug, procedure, or intervention\n- It has a defined patient population or study participants\n- It includes a control or comparison group (or a baseline comparison)\n- It measures specific outcomes or endpoints\n- It reports results from actual participants, not a review of literature\n\nAssess:\n1. is_intervention_study: does this study test an intervention, treatment or exposure on participants?\n2. has_comparison: does it have a control or comparison group?\n3. is_suitable: should PICO components be extracted? (true for an intervention study)\n4. confidence: how confident you are in this assessment (0.0-1.0)\n5. rationale: a brief explanation (2-3 sentences)\n6. study_type: the type of study (e.g. \"RCT\", \"cohort study\", \"systematic review\", \"case-control study\")\n\nDo not confuse a systematic review (which reviews other studies) with primary research. Look for evidence of actual participant enrollment and intervention. If uncertain, lean towards NOT SUITABLE and say why in the rationale."
     }
+  },
+  {
+    "name": "sample_size_integer",
+    "ok": true,
+    "value": {
+      "messages": [
+        [
+          {
+            "content": "You are an expert in clinical research methodology and evidence-based medicine.\n\nCRITICAL RULES:\n1. Base everything ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume, or fabricate any information\n3. Describe THIS study, not studies it references\n4. Return ONLY valid JSON, no explanation",
+            "role": "system"
+          },
+          {
+            "content": "Extract the PICO components (Population, Intervention, Comparison, Outcome) from the research paper below.\n\nFor EACH of the four components give:\n- description: what the paper says, specific and close to its wording\n- reported: false ONLY when the paper says nothing about this component; otherwise true\n- confidence: 0.0-1.0, using the scale below\n- quotes: 1-3 passages copied VERBATIM from the paper that support the description. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences. Give no quotes when reported is false.\n\n1. Population (P): who was studied — demographics (age, sex, condition), inclusion and exclusion criteria, setting.\n   Example: \"Adults aged 40-65 with type 2 diabetes and HbA1c > 7%, recruited from primary care clinics\"\n\n2. Intervention (I): what was done to the study population — the treatment, procedure or exposure, with dose, frequency and duration where stated.\n   Example: \"Metformin 1000mg twice daily for 12 weeks\"\n\n3. Comparison (C): what the intervention was compared against — placebo, standard care, no treatment, or an alternative intervention.\n   Example: \"Placebo tablets twice daily for 12 weeks\"\n   A study the paper describes as single-arm or uncontrolled HAS a reported comparison: say there was no comparison group, set reported to true, and quote the passage that says so.\n\n4. Outcome (O): what was measured — primary and secondary outcomes, how they were measured, and when.\n   Example: \"Change in HbA1c from baseline to 12 weeks (primary); fasting glucose and body weight (secondary)\"\n\nAlso give:\n- study_type: the study design if clear (RCT, cohort study, case-control, cross-sectional, ...), or null\n- sample_size: the number of participants if stated (e.g. \"N=150\"), or null\n\nConfidence scale:\n- 1.0 = explicitly stated, no ambiguity\n- 0.8 = clearly stated but some details missing\n- 0.6 = can be inferred but not explicitly stated\n- 0.4 = partially mentioned, significant uncertainty\n- 0.2 = barely mentioned, high uncertainty\n\nPaper Title: A trial\n\nPaper Text:\nAdults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"population\": {\n        \"description\": \"who was studied\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"intervention\": {\n        \"description\": \"what was done\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"comparison\": {\n        \"description\": \"what it was compared against\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"outcome\": {\n        \"description\": \"what was measured\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"study_type\": \"randomized controlled trial\",\n    \"sample_size\": \"N=150\"\n}",
+            "role": "user"
+          }
+        ]
+      ],
+      "result": {
+        "comparison": {
+          "citations": [
+            {
+              "end": 57,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 50,
+              "text": "placebo"
+            }
+          ],
+          "confidence": 0.8,
+          "description": "Placebo",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "condensation_status": null,
+        "condensed_from_chars": null,
+        "intervention": {
+          "citations": [
+            {
+              "end": 46,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 37,
+              "text": "metformin"
+            }
+          ],
+          "confidence": 0.9,
+          "description": "Metformin",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "notes": [],
+        "outcome": {
+          "citations": [
+            {
+              "end": 90,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 72,
+              "text": "HbA1c was measured"
+            }
+          ],
+          "confidence": 0.7,
+          "description": "HbA1c",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "overall_confidence": 0.825,
+        "population": {
+          "citations": [
+            {
+              "end": 17,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 0,
+              "text": "Adults aged 40-65"
+            }
+          ],
+          "confidence": 0.9,
+          "description": "Adults aged 40 to 65",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "sample_size": "150",
+        "study_type": "RCT"
+      }
+    }
+  },
+  {
+    "name": "sample_size_float",
+    "ok": true,
+    "value": {
+      "messages": [
+        [
+          {
+            "content": "You are an expert in clinical research methodology and evidence-based medicine.\n\nCRITICAL RULES:\n1. Base everything ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume, or fabricate any information\n3. Describe THIS study, not studies it references\n4. Return ONLY valid JSON, no explanation",
+            "role": "system"
+          },
+          {
+            "content": "Extract the PICO components (Population, Intervention, Comparison, Outcome) from the research paper below.\n\nFor EACH of the four components give:\n- description: what the paper says, specific and close to its wording\n- reported: false ONLY when the paper says nothing about this component; otherwise true\n- confidence: 0.0-1.0, using the scale below\n- quotes: 1-3 passages copied VERBATIM from the paper that support the description. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences. Give no quotes when reported is false.\n\n1. Population (P): who was studied — demographics (age, sex, condition), inclusion and exclusion criteria, setting.\n   Example: \"Adults aged 40-65 with type 2 diabetes and HbA1c > 7%, recruited from primary care clinics\"\n\n2. Intervention (I): what was done to the study population — the treatment, procedure or exposure, with dose, frequency and duration where stated.\n   Example: \"Metformin 1000mg twice daily for 12 weeks\"\n\n3. Comparison (C): what the intervention was compared against — placebo, standard care, no treatment, or an alternative intervention.\n   Example: \"Placebo tablets twice daily for 12 weeks\"\n   A study the paper describes as single-arm or uncontrolled HAS a reported comparison: say there was no comparison group, set reported to true, and quote the passage that says so.\n\n4. Outcome (O): what was measured — primary and secondary outcomes, how they were measured, and when.\n   Example: \"Change in HbA1c from baseline to 12 weeks (primary); fasting glucose and body weight (secondary)\"\n\nAlso give:\n- study_type: the study design if clear (RCT, cohort study, case-control, cross-sectional, ...), or null\n- sample_size: the number of participants if stated (e.g. \"N=150\"), or null\n\nConfidence scale:\n- 1.0 = explicitly stated, no ambiguity\n- 0.8 = clearly stated but some details missing\n- 0.6 = can be inferred but not explicitly stated\n- 0.4 = partially mentioned, significant uncertainty\n- 0.2 = barely mentioned, high uncertainty\n\nPaper Title: A trial\n\nPaper Text:\nAdults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"population\": {\n        \"description\": \"who was studied\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"intervention\": {\n        \"description\": \"what was done\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"comparison\": {\n        \"description\": \"what it was compared against\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"outcome\": {\n        \"description\": \"what was measured\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"study_type\": \"randomized controlled trial\",\n    \"sample_size\": \"N=150\"\n}",
+            "role": "user"
+          }
+        ]
+      ],
+      "result": {
+        "comparison": {
+          "citations": [
+            {
+              "end": 57,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 50,
+              "text": "placebo"
+            }
+          ],
+          "confidence": 0.8,
+          "description": "Placebo",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "condensation_status": null,
+        "condensed_from_chars": null,
+        "intervention": {
+          "citations": [
+            {
+              "end": 46,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 37,
+              "text": "metformin"
+            }
+          ],
+          "confidence": 0.9,
+          "description": "Metformin",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "notes": [],
+        "outcome": {
+          "citations": [
+            {
+              "end": 90,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 72,
+              "text": "HbA1c was measured"
+            }
+          ],
+          "confidence": 0.7,
+          "description": "HbA1c",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "overall_confidence": 0.825,
+        "population": {
+          "citations": [
+            {
+              "end": 17,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 0,
+              "text": "Adults aged 40-65"
+            }
+          ],
+          "confidence": 0.9,
+          "description": "Adults aged 40 to 65",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "sample_size": null,
+        "study_type": "RCT"
+      }
+    }
+  },
+  {
+    "name": "blank_description_then_whole",
+    "ok": true,
+    "value": {
+      "messages": [
+        [
+          {
+            "content": "You are an expert in clinical research methodology and evidence-based medicine.\n\nCRITICAL RULES:\n1. Base everything ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume, or fabricate any information\n3. Describe THIS study, not studies it references\n4. Return ONLY valid JSON, no explanation",
+            "role": "system"
+          },
+          {
+            "content": "Extract the PICO components (Population, Intervention, Comparison, Outcome) from the research paper below.\n\nFor EACH of the four components give:\n- description: what the paper says, specific and close to its wording\n- reported: false ONLY when the paper says nothing about this component; otherwise true\n- confidence: 0.0-1.0, using the scale below\n- quotes: 1-3 passages copied VERBATIM from the paper that support the description. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences. Give no quotes when reported is false.\n\n1. Population (P): who was studied — demographics (age, sex, condition), inclusion and exclusion criteria, setting.\n   Example: \"Adults aged 40-65 with type 2 diabetes and HbA1c > 7%, recruited from primary care clinics\"\n\n2. Intervention (I): what was done to the study population — the treatment, procedure or exposure, with dose, frequency and duration where stated.\n   Example: \"Metformin 1000mg twice daily for 12 weeks\"\n\n3. Comparison (C): what the intervention was compared against — placebo, standard care, no treatment, or an alternative intervention.\n   Example: \"Placebo tablets twice daily for 12 weeks\"\n   A study the paper describes as single-arm or uncontrolled HAS a reported comparison: say there was no comparison group, set reported to true, and quote the passage that says so.\n\n4. Outcome (O): what was measured — primary and secondary outcomes, how they were measured, and when.\n   Example: \"Change in HbA1c from baseline to 12 weeks (primary); fasting glucose and body weight (secondary)\"\n\nAlso give:\n- study_type: the study design if clear (RCT, cohort study, case-control, cross-sectional, ...), or null\n- sample_size: the number of participants if stated (e.g. \"N=150\"), or null\n\nConfidence scale:\n- 1.0 = explicitly stated, no ambiguity\n- 0.8 = clearly stated but some details missing\n- 0.6 = can be inferred but not explicitly stated\n- 0.4 = partially mentioned, significant uncertainty\n- 0.2 = barely mentioned, high uncertainty\n\nPaper Title: A trial\n\nPaper Text:\nAdults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"population\": {\n        \"description\": \"who was studied\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"intervention\": {\n        \"description\": \"what was done\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"comparison\": {\n        \"description\": \"what it was compared against\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"outcome\": {\n        \"description\": \"what was measured\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"study_type\": \"randomized controlled trial\",\n    \"sample_size\": \"N=150\"\n}",
+            "role": "user"
+          }
+        ],
+        [
+          {
+            "content": "You are an expert in clinical research methodology and evidence-based medicine.\n\nCRITICAL RULES:\n1. Base everything ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume, or fabricate any information\n3. Describe THIS study, not studies it references\n4. Return ONLY valid JSON, no explanation",
+            "role": "system"
+          },
+          {
+            "content": "Extract the PICO components (Population, Intervention, Comparison, Outcome) from the research paper below.\n\nFor EACH of the four components give:\n- description: what the paper says, specific and close to its wording\n- reported: false ONLY when the paper says nothing about this component; otherwise true\n- confidence: 0.0-1.0, using the scale below\n- quotes: 1-3 passages copied VERBATIM from the paper that support the description. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences. Give no quotes when reported is false.\n\n1. Population (P): who was studied — demographics (age, sex, condition), inclusion and exclusion criteria, setting.\n   Example: \"Adults aged 40-65 with type 2 diabetes and HbA1c > 7%, recruited from primary care clinics\"\n\n2. Intervention (I): what was done to the study population — the treatment, procedure or exposure, with dose, frequency and duration where stated.\n   Example: \"Metformin 1000mg twice daily for 12 weeks\"\n\n3. Comparison (C): what the intervention was compared against — placebo, standard care, no treatment, or an alternative intervention.\n   Example: \"Placebo tablets twice daily for 12 weeks\"\n   A study the paper describes as single-arm or uncontrolled HAS a reported comparison: say there was no comparison group, set reported to true, and quote the passage that says so.\n\n4. Outcome (O): what was measured — primary and secondary outcomes, how they were measured, and when.\n   Example: \"Change in HbA1c from baseline to 12 weeks (primary); fasting glucose and body weight (secondary)\"\n\nAlso give:\n- study_type: the study design if clear (RCT, cohort study, case-control, cross-sectional, ...), or null\n- sample_size: the number of participants if stated (e.g. \"N=150\"), or null\n\nConfidence scale:\n- 1.0 = explicitly stated, no ambiguity\n- 0.8 = clearly stated but some details missing\n- 0.6 = can be inferred but not explicitly stated\n- 0.4 = partially mentioned, significant uncertainty\n- 0.2 = barely mentioned, high uncertainty\n\nPaper Title: A trial\n\nPaper Text:\nAdults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"population\": {\n        \"description\": \"who was studied\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"intervention\": {\n        \"description\": \"what was done\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"comparison\": {\n        \"description\": \"what it was compared against\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"outcome\": {\n        \"description\": \"what was measured\",\n        \"reported\": true,\n        \"confidence\": 0.9,\n        \"quotes\": [\"a passage copied verbatim from the paper\"]\n    },\n    \"study_type\": \"randomized controlled trial\",\n    \"sample_size\": \"N=150\"\n}",
+            "role": "user"
+          }
+        ]
+      ],
+      "result": {
+        "comparison": {
+          "citations": [
+            {
+              "end": 57,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 50,
+              "text": "placebo"
+            }
+          ],
+          "confidence": 0.8,
+          "description": "Placebo",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "condensation_status": null,
+        "condensed_from_chars": null,
+        "intervention": {
+          "citations": [
+            {
+              "end": 46,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 37,
+              "text": "metformin"
+            }
+          ],
+          "confidence": 0.9,
+          "description": "Metformin",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "notes": [],
+        "outcome": {
+          "citations": [
+            {
+              "end": 90,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 72,
+              "text": "HbA1c was measured"
+            }
+          ],
+          "confidence": 0.7,
+          "description": "HbA1c",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "overall_confidence": 0.825,
+        "population": {
+          "citations": [
+            {
+              "end": 17,
+              "exact": true,
+              "similarity": 1.0,
+              "start": 0,
+              "text": "Adults aged 40-65"
+            }
+          ],
+          "confidence": 0.9,
+          "description": "Adults aged 40 to 65",
+          "quotes_dropped": 0,
+          "quotes_not_found": [],
+          "state": "verified"
+        },
+        "sample_size": null,
+        "study_type": "RCT"
+      }
+    }
   }
 ]

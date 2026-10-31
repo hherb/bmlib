@@ -9,8 +9,29 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added
+
+- **`FullTextResult::pdf_extraction_failure`** (#604, with the Python
+  library): the `PdfErrorKind` wire name of a failed extraction of the cached
+  PDF (`"encrypted"`, `"unreadable"`, `"engine"`, `"cancelled"`,
+  `"timed-out"`), so a service caller can tell a damaged file from an engine
+  fault. A `PdfText` with `success` false names no kind and is `"engine"`.
+  `None` when the text extracted, nothing was tried, or a scan yielded none.
+
+### Changed — breaking
+
+- **`PdfExtractError::Conversion` carries the `PdfError`**, not a `String`
+  (#604), so its kind reaches the result; `MupdfPdfExtractor` passes the
+  extractor's error through. A third-party `PdfExtractor` builds one with
+  `PdfError::unreadable(..)`, `PdfError::engine(..)` and so on.
+- **`FullTextResult` has a new field**, `pdf_extraction_failure`; a struct
+  literal must name it.
+
 ### Fixed
 
+- **PICO: an integer `sample_size` is kept as its digits, and a blank part
+  `description` is refused and re-asked** (#578, with the Python library). A
+  float `sample_size` is still unstated, as in Python.
 - **A structured extraction whose `extracted_content` is not a string is no
   content** (#570, with the Python library). `extract_from_batch` stored a
   JSON `null` as the text `"null"` at the model's confidence, and an object

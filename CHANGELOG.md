@@ -6,8 +6,49 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`FullTextResult.pdf_extraction_failure` says which side a failed PDF
+  extraction is on** (#604). `ConversionResult.error_kind` (#598) stopped at
+  the converter: `FullTextService` logged the message and dropped the kind, so
+  a service caller could not tell *this PDF is damaged, look for another copy*
+  from *the engine failed, retry*. The field holds the `PDFErrorKind` value of
+  a failed conversion (`"encrypted"`, `"unreadable"`, `"engine"`,
+  `"cancelled"`, `"timed-out"`), beside `pdf_download_failure` (#594). A
+  failure the converter did not place, and an exception it raised, is
+  `"engine"`, the rule #598 made for an unplaced cause. `None` when the text
+  extracted, when no extraction was tried (no backend included), and for a
+  scan yielding no text, which is not a failure. The maintainer's choice of
+  shape. The Rust port carries the same field.
+
+### Changed
+
+- **`PicoAgent` no longer reports what no retry cures as `REQUEST_FAILED`**
+  (#573). Every exception the request raised that was not a `ChatJsonError`
+  was `REQUEST_FAILED`, which an app retries as an outage: a bmlib
+  `TypeError` or `AttributeError`, an unknown provider (`ValueError`), and a
+  missing Anthropic key (the SDK's `TypeError`) included. Those now propagate
+  unwrapped, as does a provider SDK not installed (`ImportError`); a
+  `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` is
+  read as bmlib's own defect, the deny-list `transparency` and `fulltext` use.
+  Likewise a `ValueError` raised by bmlib's own code while reading a reply
+  propagates, where it was re-requested and reported as `UNUSABLE_REPLY`
+  ("another model may do better"): the readers raise a private subclass, and
+  only that is re-asked. **This changes the "result or `PicoError`"
+  contract**: a caller catching only `PicoError` now sees those exceptions.
+  The maintainer's choice, over logging at ERROR and over a new kind. The Rust
+  port keeps every `ChatError` as `RequestFailed` (see `docs/DECISIONS.md`).
+
 ### Fixed
 
+- **An integer `sample_size` in a PICO extraction reply is kept** (#578).
+  `"sample_size": 150` is the natural answer to the prompt's *"the number of
+  participants"*, and was read as unstated, logged only at DEBUG; it is now
+  `"150"`. A float or a `bool` is still unstated, since Python's
+  `str(150.0)` is `"150.0"` where Rust's is `"150"`. Python and Rust alike.
+- **A blank PICO part `description` is asked for again** (#578), as a missing
+  or non-text one is: it was accepted and shown as an empty part. Python and
+  Rust alike; the oracle corpus carries both cases.
 - **`chat_json(max_retries=0)` makes one attempt** (#574). It made no
   request and raised `ChatJsonUnparseableError("Failed after 0 attempts:
   None")`, naming a cause that never happened. Fewer than one attempt is now

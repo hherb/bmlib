@@ -257,7 +257,8 @@ pub fn verify_quotes(
 ///
 /// # Errors
 ///
-/// A message when `value` is not an object carrying a string `description`.
+/// A message when `value` is not an object carrying a non-blank string
+/// `description`.
 pub fn read_part(
     value: Option<&Value>,
     text: &str,
@@ -277,6 +278,10 @@ pub fn read_part(
                 .map_or("NoneType", crate::agents::json_type_name)
         ));
     };
+    // A blank description shows nothing, as `null` does, so it is asked again (#578).
+    if python_strip(description).is_empty() {
+        return Err("description is blank".to_string());
+    }
     let description = description.to_string();
     let confidence = clamped_confidence(object.get("confidence"));
     // Only an explicit `false` is an absence: a garbled flag must not hide a
@@ -349,7 +354,7 @@ pub fn read_extraction(
         comparison: next(),
         outcome: next(),
         study_type: as_text(data.get("study_type")),
-        sample_size: as_text(data.get("sample_size")),
+        sample_size: sample_size(data.get("sample_size")),
         overall_confidence,
         condensed_from_chars: None,
         condensation_status: None,
@@ -644,6 +649,20 @@ fn as_text(value: Option<&Value>) -> Option<String> {
     value.and_then(Value::as_str).map(str::to_string)
 }
 
+/// Python's `_sample_size`: a string verbatim, an integer as its digits (#578).
+///
+/// A float is refused, as in Python, whose `str(150.0)` is `"150.0"`. An
+/// integer past 64 bits arrives here as a float and is refused, where Python
+/// keeps it; no participant count is that big.
+fn sample_size(value: Option<&Value>) -> Option<String> {
+    match value {
+        Some(Value::Number(number)) if number.is_i64() || number.is_u64() => {
+            Some(number.to_string())
+        }
+        other => as_text(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -711,6 +730,37 @@ mod tests {
         });
         let error = read_extraction(&data, TEXT, SIM).expect_err("comparison is missing");
         assert!(error.starts_with("comparison: "), "{error}");
+    }
+
+    #[test]
+    fn a_blank_description_is_refused_as_null_is() {
+        for blank in ["", "   ", "\n\t"] {
+            let error = read_part(Some(&part(json!({"description": blank}))), TEXT, SIM)
+                .expect_err("a blank description");
+            assert_eq!(error, "description is blank");
+        }
+    }
+
+    #[test]
+    fn an_integer_sample_size_is_kept_as_its_digits() {
+        for (value, expected) in [
+            (json!(150), Some("150")),
+            (json!(0), Some("0")),
+            (json!(150.0), None),
+            (json!(true), None),
+            (json!("N=150"), Some("N=150")),
+            (Value::Null, None),
+        ] {
+            let mut data = json!({
+                "population": part(json!({})),
+                "intervention": part(json!({})),
+                "comparison": part(json!({})),
+                "outcome": part(json!({})),
+            });
+            data["sample_size"] = value.clone();
+            let extraction = read_extraction(&data, TEXT, SIM).expect("an extraction");
+            assert_eq!(extraction.sample_size.as_deref(), expected, "{value}");
+        }
     }
 
     #[test]

@@ -137,6 +137,14 @@ class TestReadingAReply:
         with pytest.raises(ValueError):
             read_part(part(description=None), TEXT, SIM)
 
+    @pytest.mark.parametrize("blank", ["", "   ", "\n\t"])
+    def test_a_blank_description_raises_as_null_does(self, blank: str) -> None:
+        """#578: a blank description shows nothing, so it is asked again."""
+        with pytest.raises(ValueError, match="blank"):
+            read_part(part(description=blank), TEXT, SIM)
+        with pytest.raises(ValueError, match="blank"):
+            read_part(part(description=blank, reported=False), TEXT, SIM)
+
     def test_a_missing_part_raises(self) -> None:
         data = reply()
         del data["comparison"]
@@ -173,6 +181,17 @@ class TestReadingAReply:
 
         assert extraction.study_type is None
         assert extraction.sample_size == "N=120"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(150, "150"), (0, "0"), (150.0, None), (True, None), ("N=150", "N=150"), (None, None)],
+        ids=["int", "zero", "float", "bool", "text", "null"],
+    )
+    def test_an_integer_sample_size_is_kept_as_its_digits(
+        self, value: object, expected: str | None
+    ) -> None:
+        """#578: ``"sample_size": 150`` is the natural answer; a float is not a count."""
+        assert read_extraction(reply(sample_size=value), TEXT, SIM).sample_size == expected
 
     def test_suitability_requires_a_bool_is_suitable(self) -> None:
         with pytest.raises(ValueError, match="is_suitable"):
@@ -333,6 +352,37 @@ class TestTheExtraction:
 
         assert caught.value.kind is PicoErrorKind.REQUEST_FAILED
         assert caught.value.__cause__ is refused
+
+    @pytest.mark.parametrize(
+        "raised",
+        [
+            TypeError("bmlib defect"),
+            AttributeError("bmlib defect"),
+            KeyError("bmlib defect"),
+            ValueError("Unknown provider 'nosuch'"),
+            ImportError("the provider's SDK is not installed"),
+        ],
+        ids=lambda e: type(e).__name__,
+    )
+    def test_what_no_retry_cures_propagates(self, raised: Exception) -> None:
+        """#573: only a provider failure is ``REQUEST_FAILED``, which an app retries."""
+        with pytest.raises(type(raised)) as caught:
+            make_agent(raised).extract("A trial", TEXT, min_similarity=SIM)
+
+        assert caught.value is raised
+
+    def test_a_defect_while_reading_propagates_and_is_not_re_asked(self) -> None:
+        """#573: a ``ValueError`` from bmlib's own reading is not an unusable reply."""
+        agent = make_agent(reply(), reply())
+        broken = ValueError("a broken invariant")
+        with (
+            patch("bmlib.quality.pico_agent.find_passage", side_effect=broken),
+            pytest.raises(ValueError) as caught,
+        ):
+            agent.extract("A trial", TEXT, min_similarity=SIM)
+
+        assert caught.value is broken
+        assert agent.llm.chat.call_count == 1
 
     def test_truncation_is_truncated(self) -> None:
         agent = make_agent(temperature=0.0)

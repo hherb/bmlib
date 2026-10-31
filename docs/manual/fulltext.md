@@ -341,6 +341,7 @@ class FullTextResult:
     content_kind: ContentKind = "none"   # what `html` actually is
     jats_xml: bytes | None = None  # the JATS `html` was rendered from *(0.12.0)*
     pdf_download_failure: str | None = None  # why a PDF tier left no file *(0.12.0)*
+    pdf_extraction_failure: str | None = None  # why its text did not extract *(unreleased)*
 ```
 
 ### `pdf_download_failure` *(0.12.0)*
@@ -360,6 +361,26 @@ PDF a retry may fetch is not mistaken for a bare link:
 no cache, or no `identifier` to key one by — which, like every non-PDF tier,
 leaves `pdf_url` alone on the result as before. Rust's `FullTextResult` has
 the same field, `Option<String>`, with the same values.
+
+### `pdf_extraction_failure` *(unreleased)*
+
+Why extracting the text of the cached PDF failed (#604), as a
+[`PDFErrorKind`](#pdf-conversion) value, so a caller can tell *this PDF is
+damaged, look for another copy* from *the engine failed, retry*:
+
+| Value | What happened |
+|-------|---------------|
+| `"encrypted"`, `"unreadable"` | The file's fault: it needs a password, or is damaged, truncated or unsupported. Another copy is the remedy |
+| `"engine"` | Not the file's: the same PDF may read later or elsewhere. Also a failure the backend did not place, and an exception the converter raised |
+| `"cancelled"`, `"timed-out"` | A limit the backend was given was reached |
+
+`None` when the text was extracted, when no extraction was attempted
+(`convert_pdfs=False`, an earlier tier's text, no PDF backend usable — that
+one is warned about once), and when the PDF opened and yielded no text, a
+scan, which is not a failure. Rust's `FullTextResult` has the same field,
+`Option<String>`, with the same values; there `PdfExtractError::Conversion`
+carries the `PdfError` whose kind it is, and a `PdfText` with `success`
+false, which names no kind, is `"engine"`.
 
 ### `jats_xml` *(0.12.0)*
 
