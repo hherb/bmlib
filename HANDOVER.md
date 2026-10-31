@@ -1,15 +1,31 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-01 (**this session's PR is for #578, #573 and #604**, on
-`fix/578-573-604-pico-and-pdf-kind`, each with the maintainer's choice of
-remedy; see *This session* below). Earlier the same day PR #614 (#599) and PR
-#613 (#574, #570) merged. **0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`,
-the merge of #611) and **the Rust crate 0.3.0 is on crates.io** from the same
-commit; the CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the
-release notes; see `HANDOVER_RUST.md` for the crate's publish. Unreleased:
-PRs #613 and #614 and this session's PR._
+_Last updated: 2026-11-01 (**this session's PR is for #617**, on
+`fix/617-openai-compat-no-choices`; see *This session* below). Earlier the
+same day PRs #615 (#578, #573, #604), #614 (#599) and #613 (#574, #570)
+merged. **0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`, the merge of
+#611) and **the Rust crate 0.3.0 is on crates.io** from the same commit; the
+CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the release
+notes; see `HANDOVER_RUST.md` for the crate's publish. Unreleased: PRs #613,
+#614, #615 and this session's PR._
 
-## This session: PICO failures and fields (#573, #578), a PDF failure's kind (#604)
+## This session: an OpenAI-compatible error-shaped 200 (#617)
+
+`OpenAICompatibleProvider.chat()` read `response.choices[0]` unguarded. The
+openai SDK (3.42.0, probed through `httpx.MockTransport`) hands back an
+unvalidated `ChatCompletion` for `choices: []` or `choices: null` + `error`,
+and the body itself (`str`, `list`) for a non-JSON content type or a JSON
+array, so each raised a `_BUG_TYPES` member that `PicoAgent` (#573)
+propagates as a bmlib defect. Now `ValueError("<provider>: no choices in the
+response (server said: …)")`, Rust's `parse_openai_response` wording; a
+choice with no `message` is empty content, as in Rust. Tests drive the real
+SDK and fail on `main` (6 of 6). **The Ollama half stays open by the
+maintainer's choice**: the ollama SDK raises `TypeError` itself
+(`cls(**body)`) for a JSON array body, which only the traceback tells from a
+bmlib defect, and no draw has seen one. `chat_stream` reads chunks through
+`run_stream`, untouched.
+
+## Earlier today: PICO failures and fields (#573, #578), a PDF failure's kind (#604) — PR #615, merged
 
 **#578** (Python, Rust, oracle): an integer `sample_size` is kept as its
 digits (`150` → `"150"`; a float or `bool` stays unstated, since Python's
@@ -67,36 +83,11 @@ languages, and the Rust service line by a fake extractor. A worker thread
 reports what the main thread does (probed), so the store's sharing is the
 only threading caveat.
 
-## Earlier today: `chat_json(max_retries=0)` (#574), a non-text extraction (#570) — PR #613, merged
-
-**#574** (Python only): `chat_json` clamps `max_retries` to at least one, as
-Rust's `max_retries.max(1)` does, so `0` makes one attempt instead of no
-request and a `ChatJsonUnparseableError` for a reply never asked for. No
-caller in bmlib passes it. **#570** (Python and Rust): `LLMChunkProcessor`'s
-structured path read `extracted_content` through `str()`, storing a `null`
-as `"None"` (Rust: `"null"`) at the model's confidence; an absent or
-non-string value is now `""` at confidence 0.0 with no findings (Python
-WARNs naming the batch; the crate logs nothing anywhere), which `is_valid`
-already drops before consolidation. Both manuals and both CHANGELOGs carry it.
-
 ## What 0.12.0 costs a downstream
 
 **Read the CHANGELOG's `[0.12.0]` summary and its *Changed — breaking*
-heading**, as for 0.11.0 below. The README's *Upgrading to 0.12* note points
+heading** (the 0.11.0 heading likewise). The README's *Upgrading to 0.12* note points
 at it; the Rust crate's 0.3.0 breaks are gathered in `rust/bmlib/CHANGELOG.md`.
-
-## What 0.11.0 costs a downstream
-
-**Read the CHANGELOG's `[0.11.0]` summary and its *Changed — breaking*
-heading** — the summary gives the data answer, the heading gathers every API
-break (they had been scattered under *Fixed*), and the per-PR argument and
-every population figure stay in the entries under *Added*, *Changed* and
-*Fixed*. In one line each: cached full text re-fetches by itself (#172);
-stored transparency results want recomputing (#184, #194) and
-`risk_indicators` strings move (#203, #227); the preprint population is
-published preprints only (#325); `ensure_schema()` adds
-`download_days.peak_count` and `download_day_parts`. The README has a short
-*Upgrading to 0.11* note pointing at the heading until 0.12.0 replaced it.
 
 ## Rules carried forward, and previous sessions
 
@@ -106,7 +97,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -206,22 +197,6 @@ constructor makes both, so it is unchanged. Filed from the same test: **#590**
 (Rust's PDF backend to MuPDF: PDFium's U+0002 hyphen markers and duplicated
 characters, with a build trial for macOS, iOS and Android) and **#591** (running page headers and footers inside paragraphs).
 
-## Previous session: a stored span is the chunker's (#587), Rust's store tests on PostgreSQL (#588)
-
-The CHANGELOG's two *Fixed* entries at the top of `[Unreleased]` are the
-argument. `search` rebuilds the chunks with `chunk_canonical` (the label pins
-the text's bytes, the chunker and the converter's version — not the sections,
-so a hand-built text sectioned otherwise is refused as corrupt too) and refuses a set unless every stored
-`(section, start, end)` is the rebuilt chunk's and the counts agree — which
-also caught a set whose rows and count were both zeroed. Python and Rust; the
-spans are still stored, so no schema change. `rust/bmlib/tests/vector_store.rs`
-now generates each case twice with a local `store_test!` macro (SQLite, and
-PostgreSQL via `common::on_postgres` when `BMLIB_PG_TESTS=1`); five cases stay
-SQLite-only and say why. `postgres_live.rs`'s `TestDb` moved to
-`tests/common/live_pg.rs`. Local run: `BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost
-BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres cargo test -p bmlib --features
-postgres --test vector_store` (77 = 41 + 36).
-
 ## Previous session: a paper's chunks, stored and searched (StudyAnalyzer item 8)
 
 PR #586, merged. `bmlib.embed.store` (imported as that, **not re-exported**)
@@ -267,13 +242,6 @@ Python, so catch them beside `PicoError` (#616: during condensation the defect
 and the key error are still `CONDENSATION_FAILED`). In Rust, configure
 `PicoAgent::pico_condenser` for long papers. Its reviews filed #572, #573,
 #574, #576, #577 and #578.
-
-## Since: the manual refresh (PR #569)
-
-Every `docs/manual/` page was audited against the source. The Rust manual at
-`rust/bmlib/docs/manual/` has a page per module, compiled as doctests (`mod
-manual` in `lib.rs`; a new page needs a line there). Filed from it: #571
-(stale docs outside the manual, since closed).
 
 ## Earlier: context windows (item 11) and streamed chat (item 6)
 
@@ -333,8 +301,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,797 passing + 164 skipped** on `fix/578-573-604-pico-and-pdf-kind`
-  (`uv run pytest tests/ -v`, 2026-10-31; Rust 1,403 with `cargo test -p bmlib --features pdf,html`, manual doctests included; the embedder's live tests skip
+- **Tests: 8,833 passing + 164 skipped** on `fix/617-openai-compat-no-choices`
+  (`uv run pytest tests/ -v`, 2026-11-01; Rust last counted 2026-10-31, Rust 1,403 with `cargo test -p bmlib --features pdf,html`, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -363,11 +331,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**119 open** (`gh issue list --state open --limit 300 --json number`,
-2026-10-31, counting #573, #578 and #604 as done; #556–#609 are not yet
-sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`), **#617** (`openai_compat` indexes `choices` unguarded) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#599** (Rust silences MuPDF's warnings, so a
-repaired PDF's lost text goes unreported; the cookie this session added
-counts `errors`, which may help) and **#595** (`render_html`'s weaker
+**122 open** (`gh issue list --state open --limit 300 --json number`,
+2026-11-01, #617 still open for its Ollama half; #556–#619 are not yet
+sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done this session; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#605** (whether a truncated page is more than a warning; the maintainer's call), **#603** (a PDF tier's result drops earlier tiers' faults) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) are the PDF
 path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript

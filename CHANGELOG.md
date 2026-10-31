@@ -79,6 +79,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An OpenAI-compatible server's error-shaped 200 is a `ValueError` naming
+  what arrived** (#617, found in PR #615's review). `chat()` read
+  `response.choices[0]` unguarded, so a 200 with `choices: []` (a content
+  filter), `choices: null` beside an `error` object (OpenRouter's shape for an
+  upstream failure), a body that is not JSON (the openai SDK then hands back the
+  text) or a JSON array raised `IndexError`, `TypeError` or `AttributeError` —
+  each a `_BUG_TYPES` member, so since #573 `PicoAgent` propagated the server's
+  failure as a bmlib defect instead of `REQUEST_FAILED`. It now raises
+  `ValueError("<provider>: no choices in the response (server said: …)")`, the
+  server's own `error.message` quoted, or the body's first 200 characters,
+  Rust's `parse_openai_response` wording; a choice with no `message` reads as
+  empty content, as in Rust. Applies to OpenAI, DeepSeek, Mistral, Gemini and
+  any `OpenAICompatibleProvider`. Ollama's half is left open by decision: its
+  SDK raises `TypeError` itself for a JSON array body, which only the traceback
+  tells from a bmlib defect, and no draw has seen one.
+
 - **An integer `sample_size` in a PICO extraction reply is kept** (#578).
   `"sample_size": 150` is the natural answer to the prompt's *"the number of
   participants"*, and was read as unstated, logged only at DEBUG; it is now

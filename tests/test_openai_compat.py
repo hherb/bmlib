@@ -156,6 +156,71 @@ class TestChat:
         assert any(m["role"] == "system" for m in sent_messages)
 
 
+def _served(body: bytes, content_type: str = "application/json"):
+    """A real openai client whose server answers every request 200 with *body*."""
+    import httpx
+    from openai import OpenAI
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, content=body, headers={"content-type": content_type})
+    )
+    return OpenAI(
+        api_key="k",
+        base_url="https://api.stub.test/v1",
+        http_client=httpx.Client(transport=transport),
+        max_retries=0,
+    )
+
+
+class TestAnErrorShaped200IsTheServers:
+    """A 200 carrying no choice is the server's failure, not a bmlib defect (#617).
+
+    Driven through the real SDK, since what it hands back for each body
+    (a ``ChatCompletion`` built unvalidated, or the body itself) is the input.
+    """
+
+    @pytest.mark.parametrize(
+        ("body", "content_type", "message"),
+        [
+            (b'{"choices": []}', "application/json", "stub: no choices in the response"),
+            (
+                b'{"choices": null, "error": {"message": "upstream down", "code": 502}}',
+                "application/json",
+                "stub: no choices in the response (server said: upstream down)",
+            ),
+            (
+                b"<html>bad gateway</html>",
+                "text/html",
+                "stub: no choices in the response (body: '<html>bad gateway</html>')",
+            ),
+            (b"[1, 2]", "application/json", "stub: no choices in the response (body: '[1, 2]')"),
+        ],
+        ids=["empty", "error-object", "not-json", "array"],
+    )
+    def test_it_is_a_value_error_naming_what_arrived(
+        self, StubProvider, body, content_type, message
+    ):
+        p = StubProvider(api_key="k")
+        p._client = _served(body, content_type)
+        with pytest.raises(ValueError) as caught:
+            p.chat([LLMMessage(role="user", content="Hi")])
+        assert type(caught.value) is ValueError
+        assert str(caught.value) == message
+
+    @pytest.mark.parametrize(
+        "body",
+        [b'{"choices": [{"index": 0, "finish_reason": "stop"}]}', b'{"choices": ["x"]}'],
+        ids=["no-message", "not-an-object"],
+    )
+    def test_a_choice_without_a_message_is_empty_content(self, StubProvider, body):
+        # Rust's parse_openai_response reads both as empty content.
+        p = StubProvider(api_key="k")
+        p._client = _served(body)
+        result = p.chat([LLMMessage(role="user", content="Hi")])
+        assert result.content == ""
+        assert result.tool_calls is None
+
+
 class TestListModels:
     def test_list_models_from_api(self, StubProvider):
         p = StubProvider(api_key="test-key")

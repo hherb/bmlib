@@ -328,7 +328,7 @@ Send a chat request, routing to the appropriate provider. Token usage is automat
 
 **Returns:** `LLMResponse` with the model's response content, any tool calls, and token usage.
 
-**Raises:** `NotImplementedError` if `tools` is not `None` and the resolved provider is not tool-capable. The check happens before any network call. On Ollama, `ValueError` if `num_ctx` is not a positive `int` of at most `2**32 - 1`.
+**Raises:** `NotImplementedError` if `tools` is not `None` and the resolved provider is not tool-capable. The check happens before any network call. On Ollama, `ValueError` if `num_ctx` is not a positive `int` of at most `2**32 - 1`. *(unreleased, #617)* On an OpenAI-compatible provider, `ValueError` for a 200 answer carrying no choice — `choices` empty or null, or a body that is not a JSON object — quoting the server's `error.message` or the body's start: the server's failure, not bmlib's.
 
 **Example:**
 

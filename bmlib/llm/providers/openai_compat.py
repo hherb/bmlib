@@ -166,8 +166,15 @@ class OpenAICompatibleProvider(BaseProvider):
 
         response = client.chat.completions.create(**request_kwargs)
 
-        choice = response.choices[0]
-        content = choice.message.content or ""
+        # An error-shaped 200 is the server's failure, not bmlib's (#617), so it
+        # is a ValueError naming what arrived, as Rust's parse_openai_response.
+        choices = getattr(response, "choices", None)
+        if not isinstance(choices, list) or not choices:
+            raise ValueError(f"{self.PROVIDER_NAME}: {_no_choices(response)}")
+        choice = choices[0]
+        # A choice without a message reads as empty content, as in Rust.
+        message = getattr(choice, "message", None)
+        content = getattr(message, "content", None) or ""
 
         # Separated reasoning output: DeepSeek / vLLM / SGLang use
         # ``reasoning_content``; OpenRouter-style servers use ``reasoning``.
@@ -176,7 +183,7 @@ class OpenAICompatibleProvider(BaseProvider):
         # so existing callers see byte-identical content.
         thinking: str | None = None
         for attr in ("reasoning_content", "reasoning"):
-            value = getattr(choice.message, attr, None)
+            value = getattr(message, attr, None)
             if isinstance(value, str) and value:
                 thinking = value
                 break
@@ -187,7 +194,7 @@ class OpenAICompatibleProvider(BaseProvider):
         # choice.message.tool_calls with .id, .function.name,
         # .function.arguments (a JSON string).
         tool_calls: list[LLMToolCall] = []
-        raw_calls = getattr(choice.message, "tool_calls", None) or []
+        raw_calls = getattr(message, "tool_calls", None) or []
         for raw in raw_calls:
             call_id = getattr(raw, "id", "") or ""
             fn = getattr(raw, "function", None)
@@ -219,7 +226,7 @@ class OpenAICompatibleProvider(BaseProvider):
             model=model,
             input_tokens=response.usage.prompt_tokens if response.usage else 0,
             output_tokens=response.usage.completion_tokens if response.usage else 0,
-            stop_reason=choice.finish_reason,
+            stop_reason=getattr(choice, "finish_reason", None),
             tool_calls=tool_calls if tool_calls else None,
             thinking=thinking,
         )
@@ -434,6 +441,22 @@ class OpenAICompatibleProvider(BaseProvider):
 #    the message dict.
 #  * tool_choice values: "auto" / "required" / "none" / {"type":"function","function":{"name":...}}.
 #    bmlib's "any" alias maps to "required".
+
+
+def _no_choices(response: object) -> str:
+    """Say what arrived in place of a choice, in Rust's wording (#617).
+
+    The SDK hands back a ``ChatCompletion`` it built without validating, or,
+    for a body it could not model (not JSON, or JSON that is not an object),
+    the body itself.
+    """
+    error = getattr(response, "error", None)
+    said = error.get("message") if isinstance(error, dict) else None
+    if isinstance(said, str):
+        return f"no choices in the response (server said: {said})"
+    if isinstance(response, (str, list)):
+        return f"no choices in the response (body: {str(response)[:200]!r})"
+    return "no choices in the response"
 
 
 # Leading <think>…</think> block emitted inline by some local
