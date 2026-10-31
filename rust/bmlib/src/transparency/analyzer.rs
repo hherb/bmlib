@@ -388,8 +388,9 @@ pub const CLINICALTRIALS_STUDY_URL: &str = "https://clinicaltrials.gov/api/v2/st
 
 /// The per-request headers CrossRef and OpenAlex are sent.
 ///
-/// [`HttpClient`] cannot carry a header, so this is a value a real transport
-/// sends rather than something this module can attach. It is kept because the
+/// The analyzer requests through [`HttpClient::get`], which sends no
+/// per-request header, so this is a value a real transport sends rather than
+/// something this module attaches. It is kept because the
 /// Python side's sampler probes *these* strings, so a measurement cannot be of
 /// a request bmlib does not make. Same reason as the URL constants.
 pub const JSON_ACCEPT_HEADERS: &[(&str, &str)] = &[("Accept", "application/json")];
@@ -2559,10 +2560,10 @@ impl TransparencyResult {
     /// is a non-empty string, so the test is really "is it `None`".
     ///
     /// `analyzed_at` is written as an ISO-8601 instant. Python writes
-    /// `datetime.isoformat()` (`...+00:00`) and this writes RFC 3339 (`...Z`); the
-    /// two are the same instant and each parser accepts the other's spelling, so a
-    /// row written by either round-trips through both. The **string** differs,
-    /// which is recorded in the plan's §9 rather than papered over.
+    /// `datetime.isoformat()` and this writes RFC 3339 through chrono's
+    /// `to_rfc3339()`; both end `+00:00`, and each parser accepts the other's
+    /// spelling, so a row written by either round-trips through both. The
+    /// fractional seconds may still differ (Python omits them at zero).
     #[must_use]
     pub fn to_dict(&self) -> serde_json::Value {
         use serde_json::json;

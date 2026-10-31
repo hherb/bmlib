@@ -199,7 +199,7 @@ nothing.
 
 | `FullTextResult` field | Holds |
 |---|---|
-| `source` | the tier or fetcher: `"europepmc"`, `"europepmc_pdf"`, `"unpaywall"`, `"doi"`, `"pubmed"`, `"cached"`, or a fetcher source such as `"biorxiv"` |
+| `source` | the tier or fetcher: `"europepmc"`, `"europepmc_pdf"`, `"ncbi_pmc"`, `"unpaywall"`, `"doi"`, `"pubmed"`, `"cached"`, or a fetcher source such as `"biorxiv"` |
 | `html` | the payload, or `None` |
 | `content_kind` | what `html` is: `ContentKind::Fulltext` (JATS with a body), `Abstract` (a body-less JATS rendering, returned only as a last resort), `Extracted` (a PDF's prose), `None` (nothing) |
 | `jats_xml` | the JATS bytes `html` was rendered from, as served, for `Fulltext` and `Abstract` from JATS |
@@ -242,7 +242,9 @@ assert!(cache.get_html(&key).is_none());
 
 - `save_pdf` returns `Ok(None)` for bytes that are not a PDF and `Err` for a
   write that failed: two different outcomes.
-- A `get_*` returns `None` for a missing **or unreadable** entry;
+- `get_html`, `get_pdf` and `get_abstract` return `None` for a missing **or
+  unreadable** entry, while `get_jats` returns `io::Result` and is `Err` for a
+  read that failed other than a missing file;
   `quarantine(key)` renames the unreadable ones aside (`.corrupt`) so the next
   lookup is a clean miss, and `clear()` removes everything.
 - `sanitize_identifier` truncates the readable part to `MAX_PREFIX_CHARS` and
@@ -296,7 +298,7 @@ match MupdfExtractor::new().extract_blocks_within(Path::new("paper.pdf"), &limit
   error, never a short result. `extract_blocks` and `page_texts` are
   `extract_blocks_within` and `page_texts_within` with `PdfLimit::default()`,
   which stops never; an implementor of the trait writes the two `_within`
-  methods.
+  methods and `name()`.
 - **The service takes a different trait.** `FullTextService` wants HTML for
   the whole document from `PdfExtractor::extract`, and `MupdfPdfExtractor` is
   that adapter over `MupdfExtractor::page_texts`, with no limit. It returns

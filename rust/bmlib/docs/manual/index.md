@@ -93,8 +93,8 @@ investigated non-fixes: those are specification, not defects.
 - *The differential oracle*: corpora under `rust/oracle/` and
   `rust/bmlib/tests/data/`, regenerated from the live Python library by the
   `oracle/dump_*.py` drivers (`scripts/rerun_rust_oracle.py`), which the Rust
-  tests must match case by case. `db` has no oracle; its rules are pinned by
-  named tests run under both dialects.
+  tests must match case by case (`db`'s is `tests/db_oracle.rs`, beside
+  named tests run under both dialects).
 
 ## Testing
 

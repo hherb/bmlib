@@ -220,10 +220,8 @@ fn either_datetime_spelling_reads_back_to_the_same_instant() {
     .expect("reads")
     .to_dict();
     let written = data["analyzed_at"].as_str().expect("a string").to_string();
-    assert!(
-        written.ends_with('Z') || written.ends_with("+00:00"),
-        "an ISO-8601 instant: {written}"
-    );
+    // Python's `isoformat()` ending, which the manual documents.
+    assert_eq!(written, FIXED, "an ISO-8601 instant ending +00:00");
 
     // Accept the other language's spelling of the same instant.
     data["analyzed_at"] = json!(FIXED);

@@ -46,7 +46,12 @@ carries the argument.
 - **Struct literals**: `FullTextResult` gains `pdf_download_failure` (#594),
   and `JATSTableInfo` (with the FFI's `JatsTable`) `header_rows` and
   `body_rows`.
-- **`SourceFormat`** gains `Pdf` and `Html` and is `#[non_exhaustive]`.
+- **`publications::sync::sync()` returns `Result<SyncReport, DbError>`**
+  (was `Result<SyncOutcome, DbError>`; `SyncOutcome` is gone, and the source
+  list is `SyncReport::sources_synced`).
+- **`quality::next_tier()` takes a fifth argument, `deep_attempted: bool`**
+  (Python's #489: a Tier 3 result naming no design leaves a conclusive Tier 1
+  standing).
 - **`atomic::TEMP_SUFFIX_LEN`** is 61 (was 18), the exact length a temporary
   name adds.
 
@@ -65,6 +70,9 @@ argument:
   `temperature` and `top_p`, and every thinking block is kept.
 - **`publications::lookup::lookup_record`**: one paper's record by PMID, DOI,
   PMC ID or PPR accession.
+- **A Tier 3 result naming no study design no longer replaces a conclusive
+  Tier 1** (#489): `assess` goes on as if Tier 3 had not been asked, and
+  `next_tier` takes `deep_attempted` (the break above).
 - **A caller's `html` source no longer ends `FullTextService`'s chain**
   (#579), and the OpenAlex normaliser reads `ids.pmcid`.
 - **A fresh `FullTextCache` saves its PDFs and HTML** (#592).
@@ -248,9 +256,10 @@ Python's by the `html` cases of `tests/fixtures/canonical_text.json` (run only
 with `html`; CI's `pdf` test row now enables it) and by
 `tests/fixtures/full_text_assessment.json`.
 
-### Changed — breaking (item 4c)
+### Changed (item 4c)
 `SourceFormat` gains `Html` and is now `#[non_exhaustive]`, so a `match` on it
-needs a wildcard arm; a format added later is then not a breaking change.
+needs a wildcard arm; a format added later is then not a breaking change. The
+enum is new in this release (item 4a), so no released `match` breaks.
 
 ### Added — follows Python's canonical text from a PDF (StudyAnalyzer item 4b)
 `fulltext::canonical::canonical_from_segmented` and `PDF_CANONICAL_VERSION`,
@@ -259,9 +268,9 @@ needs a wildcard arm; a format added later is then not a breaking change.
 `tests/fixtures/canonical_text.json`. Compiled without the `pdf` feature: it
 reads the segmenter's `SegmentedDocument`.
 
-### Changed — breaking (item 4b)
-`SourceFormat` gains `Pdf`, so an exhaustive `match` on it must name the new
-variant.
+### Changed (item 4b)
+`SourceFormat` gains `Pdf`. The enum is new in this release (item 4a), so no
+released `match` breaks.
 
 ### Added — follows Python's canonical-text chunker (StudyAnalyzer item 3)
 `fulltext::canonical::chunk_canonical`, `Chunk`, `ChunkError`,

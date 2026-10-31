@@ -74,8 +74,8 @@ not a `Result`: one dead API costs a component, never the analysis.
 thread using one analyzer.
 
 For the network, use `bmlib::http::UreqClient` and **give it the analyzer's
-user agent**. `HttpClient` carries no headers, so the analyzer cannot attach
-one itself, and ClinicalTrials.gov answers a request without the
+user agent**. The analyzer requests through `HttpClient::get`, which sends
+no per-request header, so the client must carry it, and ClinicalTrials.gov answers a request without the
 `python-httpx` token with a 403:
 
 ```rust,ignore
@@ -181,8 +181,8 @@ assert!(r.validate().is_err());
 Two corrections against Python's model: `coi_disclosed` defaults to `None`
 (Python's dataclass default is `True`), so `TransparencyResult::new` and
 `from_dict` on a row without it claim nothing; and `analyzed_at`
-(`chrono::DateTime<Utc>`) is written as RFC 3339 (`…Z`) where Python writes
-`…+00:00` — the same instant, read by both.
+(`chrono::DateTime<Utc>`) is written as RFC 3339, ending `+00:00` as Python's
+`isoformat()` does, and read by both.
 
 ## The risk level
 
