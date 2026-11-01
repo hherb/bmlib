@@ -1,14 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-01 (**this session's PR is on `fix/628-bold-from-font-name`,
-for #628 (part)**; see *This session* below). Earlier the same day PRs #629
+_Last updated: 2026-11-01 (**this session's PR is #630, for #628 (part)**, on
+`fix/628-bold-from-font-name`; see *This session* below). Earlier the same day PRs #629
 (#628, heading faces), #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4),
 #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI**
 (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
-crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629 and this
-session's PR._
+crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629 and #630._
 
 ## This session: a face named bold or italic is read as one (#628, part)
 
