@@ -178,20 +178,42 @@ pub const BUG_TYPE_NAMES: [&str; 5] = [
 pub enum FullTextError {
     /// A source answered, and it has no free full text for this article.
     ///
-    /// Raised where a source replied and had nothing. A transport or protocol
-    /// fault — a 5xx, a timeout, unparseable JSON — is [`FullTextError::Other`].
+    /// Python's `FullTextUnavailableError`. Inside the chain a tier records an
+    /// absence as a [`TierFault`] directly, so `fetch_fulltext` never returns
+    /// this.
     Unavailable(String),
-    /// Any other retrieval failure: a transport fault, a malformed body, or an
-    /// exhausted chain with nowhere left to degrade to.
+    /// A PMC ID that is not `PMC` and digits ([`normalise_pmc_id`]), or a call
+    /// naming no article (`"No identifiers provided"`). Inside the chain a
+    /// transport fault or a malformed body is a [`TierFault`], never this.
     Other(String),
+    /// The chain retrieved nothing and has no link to fall back on (#565).
+    ///
+    /// Python's `FullTextExhaustedError`. A caller tells "something failed, a
+    /// retry may succeed" from "nothing failed" by `faults` alone, without
+    /// parsing `message`.
+    Exhausted {
+        /// The exhaustion report, as it was worded before #565.
+        message: String,
+        /// The fault type names the tiers swallowed, in order — what
+        /// [`FullTextResult::tier_faults`] carries on a returned result. Empty
+        /// when nothing the chain asked failed, so a retry now would get the
+        /// same answers: every source asked had nothing (`absences > 0`), or
+        /// none could be asked (`absences == 0`, the only identifier given
+        /// having been refused). A caller's refused identifier is not a fault
+        /// (#603). A transport failure is named `TransportError` here and by
+        /// httpx's class (`ConnectError`, `ReadTimeout`) in Python.
+        faults: Vec<String>,
+        /// How many sources answered and had nothing.
+        absences: usize,
+    },
 }
 
 impl std::fmt::Display for FullTextError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FullTextError::Unavailable(message) | FullTextError::Other(message) => {
-                write!(f, "{message}")
-            }
+            FullTextError::Unavailable(message)
+            | FullTextError::Other(message)
+            | FullTextError::Exhausted { message, .. } => write!(f, "{message}"),
         }
     }
 }
@@ -281,6 +303,9 @@ impl From<FullTextError> for TierFault {
         match error {
             FullTextError::Unavailable(message) => TierFault::unavailable(message),
             FullTextError::Other(message) => TierFault::fault("FullTextError", message),
+            FullTextError::Exhausted { message, .. } => {
+                TierFault::fault("FullTextExhaustedError", message)
+            }
         }
     }
 }
@@ -1495,9 +1520,10 @@ impl FullTextService {
     ///
     /// # Errors
     ///
-    /// [`FullTextError::Other`] when no identifiers at all were given, and when
-    /// the chain exhausted with no link to degrade to. A tier failing never
-    /// aborts the chain; it is recorded on the exhaustion report instead.
+    /// [`FullTextError::Other`] when no identifiers at all were given, and
+    /// [`FullTextError::Exhausted`] when the chain exhausted with no link to
+    /// degrade to. A tier failing never aborts the chain; it is recorded on the
+    /// exhaustion report instead.
     pub fn fetch_fulltext(
         &self,
         request: &FullTextRequest,
@@ -1765,10 +1791,14 @@ impl FullTextService {
             // an exhausted chain with no link to degrade to. Saying "no
             // identifiers provided" here sent the reader looking in the wrong
             // place.
-            None => Err(FullTextError::Other(format!(
-                "Nothing retrieved and no DOI or PMID to fall back on — {}",
-                failures.describe()
-            ))),
+            None => Err(FullTextError::Exhausted {
+                message: format!(
+                    "Nothing retrieved and no DOI or PMID to fall back on — {}",
+                    failures.describe()
+                ),
+                faults: failures.faults().iter().map(ToString::to_string).collect(),
+                absences: failures.absences(),
+            }),
             Some(url) => Ok(FullTextResult {
                 web_url: Some(url),
                 ..empty_result(link_source)

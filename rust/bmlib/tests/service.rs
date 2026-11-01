@@ -1211,6 +1211,26 @@ fn a_pmc_only_exhausted_chain_raises_with_the_report() {
 }
 
 #[test]
+fn an_exhausted_chain_carries_its_faults_in_the_order_they_happened() {
+    // Two fault types, so a sorted, reversed or renamed list cannot pass:
+    // Europe PMC's 503, then NCBI's transport failure.
+    let client = ScriptedClient::new(vec![status(503), transport("network is down")]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmc_id = Some("PMC9".to_string());
+
+    match service.fetch_fulltext(&request).expect_err("raises") {
+        FullTextError::Exhausted {
+            faults, absences, ..
+        } => {
+            assert_eq!(faults, ["FullTextError", "TransportError"]);
+            assert_eq!(absences, 0);
+        }
+        other => panic!("not the exhaustion error: {other:?}"),
+    }
+}
+
+#[test]
 fn a_chain_where_every_attempt_failed_says_so() {
     let client = ScriptedClient::new(vec![
         transport("down"),

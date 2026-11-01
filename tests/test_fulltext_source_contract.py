@@ -35,7 +35,7 @@ import pytest
 
 from bmlib.fulltext.cache import FullTextCache, sanitize_identifier
 from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
-from bmlib.fulltext.service import FullTextService
+from bmlib.fulltext.service import FullTextError, FullTextExhaustedError, FullTextService
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONTRACT = json.loads((FIXTURES / "fulltext_source.json").read_text(encoding="utf-8"))
@@ -75,14 +75,15 @@ def _fetch(
         return _response(answer)
 
     sources = [FullTextSourceEntry.from_dict(s) for s in request.get("fulltext_sources", [])]
-    with patch.object(service, "_http_get", side_effect=http_get):
-        result = service.fetch_fulltext(
-            fulltext_sources=sources or None,
-            pmc_id=request.get("pmc_id"),
-            identifier=request.get("identifier"),
-        )
-    assert len(asked) == len(answers), asked
-    return result
+    try:
+        with patch.object(service, "_http_get", side_effect=http_get):
+            return service.fetch_fulltext(
+                fulltext_sources=sources or None,
+                pmc_id=request.get("pmc_id"),
+                identifier=request.get("identifier"),
+            )
+    finally:  # a raising call must have asked for every answer too
+        assert len(asked) == len(answers), asked
 
 
 def _check(result: FullTextResult, expected: dict[str, Any]) -> None:
@@ -109,6 +110,15 @@ def test_contract_case(case: dict[str, Any], tmp_path: Path) -> None:
         (tmp_path / "pdfs").write_bytes(b"")
     service = FullTextService(email="test@example.com", cache=cache)
 
+    if "raises" in case["expected"]:
+        raises = case["expected"]["raises"]
+        with pytest.raises(FullTextError) as raised:
+            _fetch(service, case["request"], case["responses"])
+        assert isinstance(raised.value, FullTextExhaustedError) == raises["exhausted"]
+        if raises["exhausted"]:
+            assert raised.value.faults == raises["faults"]
+            assert raised.value.absences == raises["absences"]
+        return
     _check(_fetch(service, case["request"], case["responses"]), case["expected"])
     if case.get("moved_aside"):
         assert not jats_entry.exists()

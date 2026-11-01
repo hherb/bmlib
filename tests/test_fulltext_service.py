@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import get_args
 from unittest.mock import MagicMock, Mock, patch
 
+import httpx
 import pytest
 
 import bmlib.fulltext
@@ -40,6 +41,7 @@ from bmlib.fulltext.pdf_converter import ConversionResult, PDFErrorKind
 from bmlib.fulltext.service import (
     _CONTENT_RANK,
     FullTextError,
+    FullTextExhaustedError,
     FullTextService,
     FullTextUnavailableError,
     _extract_free_pdf_url,
@@ -2048,6 +2050,8 @@ class TestPackageImports:
 
         assert "FullTextService" in package.__all__
         assert "FullTextError" in package.__all__
+        assert "FullTextExhaustedError" in package.__all__
+        assert package.FullTextExhaustedError is FullTextExhaustedError
 
     def test_a_name_the_package_does_not_have_still_raises(self):
         """``__getattr__`` must not swallow a typo into something falsy."""
@@ -2434,10 +2438,12 @@ class TestAnExhaustedChainReportsItself:
         """
         service = FullTextService(email="test@example.com")
         with caplog.at_level("WARNING"):
-            with pytest.raises(FullTextError, match="No identifiers provided"):
+            with pytest.raises(FullTextError, match="No identifiers provided") as raised:
                 service.fetch_fulltext()
 
         assert caplog.text == ""
+        # Not the exhaustion error, nor the internal absence signal (#565).
+        assert type(raised.value) is FullTextError
 
     def test_an_article_404_is_an_absence_from_every_source(self, caplog):
         """One status code must not land in two buckets for the same reason.
@@ -5949,14 +5955,43 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         with (
             http,
             caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
-            pytest.raises(FullTextError) as raised,
+            pytest.raises(FullTextExhaustedError) as raised,
         ):
             service.fetch_fulltext(pmid="1 OR 2")
         assert str(raised.value) == (
             "Nothing retrieved and no DOI or PMID to fall back on — "
             "1 attempt failed (FullTextError)"
         )
+        # The refusal is counted by the message, and is not a fault (#603, #565).
+        assert (raised.value.faults, raised.value.absences) == ([], 0)
         assert urls == []
+
+    def test_an_exhausted_chain_carries_its_faults_in_the_order_they_happened(self):
+        # Two fault types, so a sorted, reversed or renamed list cannot pass:
+        # Europe PMC's 503, then NCBI's transport failure, named by httpx.
+        service = FullTextService(email="test@example.com")
+        answers = [MagicMock(status_code=503), httpx.ConnectError("down")]
+        with (
+            patch.object(service, "_http_get", side_effect=answers),
+            pytest.raises(FullTextExhaustedError) as raised,
+        ):
+            service.fetch_fulltext(pmc_id="PMC9")
+        assert (raised.value.faults, raised.value.absences) == (
+            ["FullTextError", "ConnectError"],
+            0,
+        )
+
+    def test_an_exhausted_chain_error_pickles_with_its_fields(self):
+        error = FullTextExhaustedError("Nothing retrieved", ["FullTextError", "ConnectError"], 3)
+        error.add_note("row 12")
+        copy_ = pickle.loads(pickle.dumps(error))
+        assert type(copy_) is FullTextExhaustedError
+        assert (str(copy_), copy_.faults, copy_.absences, copy_.__notes__) == (
+            "Nothing retrieved",
+            ["FullTextError", "ConnectError"],
+            3,
+            ["row 12"],
+        )
 
     @staticmethod
     def _service_routing(urls: list[str], search_pmcid: str | None = None):

@@ -37,6 +37,7 @@ from bmlib.fulltext import (
     # Service (resolved on first access; needs bmlib[fulltext])
     FullTextService,
     FullTextError,
+    FullTextExhaustedError,
     FullTextUnavailableError,
     # Parser
     JATSParser,
@@ -221,10 +222,10 @@ All arguments are **keyword-only**.
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
 
-**Raises:** `FullTextError`, in exactly two cases, both needing no usable `doi` and no usable `pmid`:
+**Raises:** `FullTextError`, in exactly two cases, both needing no usable `doi` and no usable `pmid`; the second is its subclass `FullTextExhaustedError` *(unreleased — #565)*:
 
 - `"No identifiers provided"` — `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty, a blank or whitespace-only `pmid` or `doi` being empty *(`doi` since 0.11.0 — #475)*, whatever `identifier` says *(an unusable one raised `TypeError` before #485)*. Raised before any request, and before the warning below, since nothing was asked of any source.
-- `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — a `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'` — a blank or unusable `identifier` is not named, the call not using it *(0.12.0 — #485)*), since on a call that succeeds by another identifier it is the refusal's only trace *(0.11.0 — #478, #475)*.
+- `FullTextExhaustedError`, `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — its `faults` (the fault type names the tiers swallowed, in order, as `tier_faults` carries them on a returned result) and `absences` (how many sources answered and had nothing) say what the summary does, less the refused identifiers it counts as failed attempts, so a caller need not parse it: **empty `faults` means nothing the chain asked failed, and a retry now would get the same answers** — every source asked had nothing (`absences > 0`), or none could be asked (`absences == 0`); a non-empty one means a retry may succeed, though a malformed remote answer or a bmlib defect (`TypeError`) is a fault a retry will not cure. A refused identifier is not a fault (#603), so a refused `pmid` given alone raises with both empty, while the summary reads `1 attempt failed (FullTextError)`. A `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'` — a blank or unusable `identifier` is not named, the call not using it *(0.12.0 — #485)*), since on a call that succeeds by another identifier it is the refusal's only trace *(0.11.0 — #478, #475)*.
 
 ### Retrieval sequence
 
@@ -243,7 +244,7 @@ The chain is longer than three tiers. In order:
 | Tier 3 | A Tier 0 `html` entry was held *(0.12.0 — #579)* | Return its URL | `entry.source` |
 | Tier 3′ | A usable `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(0.11.0 — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
-| — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise a message naming the missing fallback and summarising the failures | — |
+| — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise `FullTextExhaustedError`, a message naming the missing fallback and summarising the failures, with its `faults` and `absences` *(unreleased — #565)* | — |
 
 Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(0.12.0 — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
 
@@ -309,7 +310,7 @@ Read it in two halves. The first says what came back — one of three:
 
 - `nothing was retrieved` — the chain fell through to a DOI or PubMed link.
 - `returning the abstract only` — a body-less JATS document was held back earlier and is returned with the link hung off it.
-- `nothing was retrieved and there is no link to fall back on` — no usable `doi` or `pmid`, so there is nothing to degrade to and `fetch_fulltext()` raises after this line.
+- `nothing was retrieved and there is no link to fall back on` — no usable `doi` or `pmid`, so there is nothing to degrade to and `fetch_fulltext()` raises `FullTextExhaustedError` after this line.
 
 The second half sorts what happened into two buckets, and only one of them is worth acting on:
 
@@ -2876,7 +2877,7 @@ The helpers the converters share are public too:
 | `is_abbreviation(text, start, mark)` | Whether the token before `text[mark]`, not reaching back past `start`, is in `ABBREVIATIONS` |
 | `ABBREVIATIONS` | The chunker's frozenset of abbreviation tokens (lower-case, no final `.`) |
 
-## FullTextError and FullTextUnavailableError
+## FullTextError, FullTextUnavailableError and FullTextExhaustedError
 
 ```python
 class FullTextError(Exception):
@@ -2885,14 +2886,22 @@ class FullTextError(Exception):
 
 class FullTextUnavailableError(FullTextError):
     """A source answered, and it has no free full text for this article."""
+
+
+class FullTextExhaustedError(FullTextError):
+    """The chain retrieved nothing and has no link to fall back on (#565)."""
+    faults: list[str]   # fault type names the tiers swallowed, in order
+    absences: int       # sources that answered and had nothing
 ```
 
-Both are defined in `bmlib.fulltext.service` and exported from `bmlib.fulltext`. `FullTextError` is used in two ways:
+All three are defined in `bmlib.fulltext.service` and exported from `bmlib.fulltext`. `FullTextError` is used in two ways:
 
 - **Internally**, by the fetch helpers to signal a failed attempt (`Europe PMC HTTP 503`, `Unpaywall HTTP 500`, and so on). These are caught by `fetch_fulltext()`, logged individually at `DEBUG`, and never reach the caller — though their *number* and type reach the log at `WARNING` if the whole chain then comes up empty.
 - **Externally**, from `fetch_fulltext()` itself, when nothing was retrieved and neither a `doi` nor a `pmid` is available for a fallback URL. See **Raises** under `fetch_fulltext()` for the two messages.
 
-`FullTextUnavailableError` is the subclass raised where a source *answered* and had nothing: any 404 from Europe PMC, NCBI, Unpaywall or a fetcher-supplied URL, an Unpaywall record with no OA location, an NCBI reply carrying no article at all. It is an **internal signal and never escapes** — every tier swallows it, and both of `fetch_fulltext()`'s own raises construct a plain `FullTextError`. It exists so the exhaustion summary can separate "this paper is paywalled" from "this source is down", which one type could not do (`Unpaywall HTTP 503` and `DOI not found in Unpaywall` were both plain `FullTextError`). Nothing that catches `FullTextError` is affected by the split.
+`FullTextUnavailableError` is the subclass raised where a source *answered* and had nothing: any 404 from Europe PMC, NCBI, Unpaywall or a fetcher-supplied URL, an Unpaywall record with no OA location, an NCBI reply carrying no article at all. It is an **internal signal and never escapes** — every tier swallows it, and neither of `fetch_fulltext()`'s own raises is one. It exists so the exhaustion summary can separate "this paper is paywalled" from "this source is down", which one type could not do (`Unpaywall HTTP 503` and `DOI not found in Unpaywall` were both plain `FullTextError`). Nothing that catches `FullTextError` is affected by the split.
+
+`FullTextExhaustedError` *(unreleased — #565)* is the subclass `fetch_fulltext()` raises for an exhausted chain with no link to degrade to. Read `faults` rather than the message: empty means nothing the chain asked failed (a refused identifier is not a fault, #603), so a retry now would get the same answers; non-empty means a retry may succeed. It pickles with its fields and anything added to it (a note). Rust's `FullTextError::Exhausted { message, faults, absences }` is the same, with the fault names `tier_faults` uses in each language: a non-200 is `FullTextError` in both, while a transport failure is httpx's class name in Python (`ConnectError`) and `TransportError` in Rust — so branch on whether `faults` is empty, not on the names.
 
 Helpers called directly (e.g. `JATSParser`) may raise their own exceptions unchanged.
 

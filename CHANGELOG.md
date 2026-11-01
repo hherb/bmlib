@@ -35,6 +35,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An exhausted chain raises `FullTextExhaustedError`** (#565, the raise-path
+  half of #603, from hherb/StudyAnalyzer). `fetch_fulltext` with no link to
+  degrade to raised a bare `FullTextError` whether its sources failed or all
+  had nothing, so a caller told "something failed" from "nothing failed" by
+  parsing the message. The subclass carries `faults` (the fault type names,
+  in order, as `tier_faults` carries them) and `absences`; empty `faults`
+  means nothing the chain asked failed, so a retry now would get the same
+  answers (`absences` is 0 where nothing could be asked), and a refused
+  identifier is not a fault. The message is unchanged, and
+  `except FullTextError` still catches it; `"No identifiers provided"` stays
+  a plain `FullTextError`. Rust's `FullTextError::Exhausted { message, faults,
+  absences }` is the same, with each language's fault names (a transport
+  failure is httpx's class in Python, `TransportError` in Rust), held by six
+  new cases in `tests/fixtures/fulltext_source.json`.
+
 - **`FullTextResult.tier_faults` carries the faults the chain swallowed
   before it** (#603, from hherb/StudyAnalyzer PR #23). A tier returns as soon
   as it has a result — a PDF tier as soon as it has a URL, whether or not the
