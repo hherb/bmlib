@@ -1288,5 +1288,637 @@
       ],
       "title": null
     }
+  },
+  {
+    "name": "join_blocks/two_line_references_are_not_paragraphs",
+    "ok": true,
+    "value": "[1] Smith A, Jones B. A long title that wraps to\nthe next line. 2020.\n[2] Brown C, Lee D. Another long title that\nwraps too. 2021.\n[3] Lee E. Short."
+  },
+  {
+    "name": "join_blocks/indent_after_a_short_last_line_is_a_paragraph",
+    "ok": true,
+    "value": "The first paragraph runs to the margin and\nends here.\n\nThe second paragraph opens set in and runs\non to the margin as justified text does."
+  },
+  {
+    "name": "join_blocks/indent_after_a_full_last_line_is_not_marked",
+    "ok": true,
+    "value": "The first paragraph runs to the margin and\nits last line happens to fill the measure too\nThe second paragraph opens set in and runs\non to the margin as justified text does."
+  },
+  {
+    "name": "join_blocks/sub_em_jitter_is_not_an_indent",
+    "ok": true,
+    "value": "A paragraph's short last line.\na line set in by a fraction of a point\nand the next line back at the edge again."
+  },
+  {
+    "name": "join_blocks/an_indent_above_the_line_before_is_not_one",
+    "ok": true,
+    "value": "A line low in the first column, short\nA line at the top of the next column\nand the next line back at that edge."
+  },
+  {
+    "name": "join_blocks/the_left_edge_tolerates_a_fraction_of_a_point",
+    "ok": true,
+    "value": "The first paragraph ends short.\n\nThe second paragraph opens set in and runs\non to the margin a little off the edge."
+  },
+  {
+    "name": "segment_document/unnamed_subsection_not_under_its_number",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body one.\n3. Metformin lowers glucose in mice\nBody two.\n3.1. Fasting glucose\nBody three.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "2. Materials and methods"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body four.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "discussion",
+          "subsections": [],
+          "title": "4. Discussion"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/decimal_quantity_is_not_a_heading",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body one.\n0.5 mM\nBody two.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/unnamed_numbered_first_heading_is_text",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.\n1.1. Something unnamed here\nBody one.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body two.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "2. Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_unnamed_heading_takes_its_nearest_parents_type",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body one.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body two.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "discussion",
+              "subsections": [
+                {
+                  "confidence": 1.0,
+                  "content": "Body three.",
+                  "page_end": 0,
+                  "page_start": 0,
+                  "section_type": "discussion",
+                  "subsections": [],
+                  "title": "2.1.1. Something unnamed"
+                }
+              ],
+              "title": "2.1. Discussion"
+            },
+            {
+              "confidence": 1.0,
+              "content": "Body four.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.2. Another unnamed thing"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/heading_sized_partial_match_keeps_its_type",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 0.7,
+          "content": "Body one.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Statistical methods used"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/numbered_body_sized_partial_match_keeps_its_type",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 0.7,
+          "content": "Body one.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "discussion",
+          "subsections": [],
+          "title": "4. Discussion and outlook"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/italic_body_after_a_short_subheading_is_not_its_title",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "We hypothesised that metformin would lower fasting\nglucose in mice.\nBody one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. Hypothesis"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_heading_wraps_over_three_lines_and_no_more",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "and a fourth\nBody one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past the end of the first line and the second and the third line too"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_same_styled_line_past_the_gap_is_not_a_wrap",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "the end of the line\nBody one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_same_styled_line_above_is_not_a_wrap",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "the end of the line\nBody one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_same_styled_line_set_in_is_not_a_wrap",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "the end of the line\nBody one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/adjacent_numbered_headings_are_two",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past"
+            },
+            {
+              "confidence": 1.0,
+              "content": "Body one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.2. Another finding"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_line_in_another_font_is_not_a_wrap",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "the end of the line\nBody one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_line_on_the_next_page_is_not_a_wrap",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "the end of the line\nBody one.",
+              "page_end": 0,
+              "page_start": 1,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "heading_depth/subsection",
+    "ok": true,
+    "value": 2
+  },
+  {
+    "name": "heading_depth/no_trailing_dot",
+    "ok": true,
+    "value": 2
+  },
+  {
+    "name": "heading_depth/year_is_not_a_number",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "heading_depth/leading_zero_is_a_quantity",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "heading_depth/vulgar_fraction_is_not_a_letter",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "heading_depth/accented_letter",
+    "ok": true,
+    "value": 1
+  },
+  {
+    "name": "heading_depth/combining_mark_is_not_a_letter",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "heading_depth/no_letter",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "is_potential_header/bold_between_floor_and_larger_body",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "segment_document/a_heading_with_no_width_still_wraps",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Front matter.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body one.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. A finding whose name runs on past the end of the line"
+            }
+          ],
+          "title": "2. Materials and methods"
+        }
+      ],
+      "title": null
+    }
   }
 ]

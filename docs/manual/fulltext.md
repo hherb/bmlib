@@ -2298,7 +2298,7 @@ Conversion behaviour:
 - A failure to open or read the document returns `success=False`, keeping the running `converted_pages`, with `error_kind` saying which side it is on and `error_message` a sentence fit to show a user that **never names the path** *(0.12.0, #598)*. `PDFErrorKind.UNREADABLE` (`"the PDF could not be read: …"`) is the file's: MuPDF's `FzErrorFormat`, `FzErrorSyntax` or `FzErrorUnsupported` chained as the cause (a garbage file is `FORMAT`, a truncated one `SYNTAX`), or PyMuPDF's own `FileDataError` with no MuPDF cause (an empty file is PyMuPDF's `EmptyFileError`). `PDFErrorKind.ENGINE` (`"the PDF engine failed: …"`) is everything else — `FzErrorSystem` (out of memory, a syscall), `FzErrorLibrary`, `FzErrorArgument`, `FzErrorLimit`, a `MemoryError`, and any cause the converter cannot place (named by its type), so an unknown fault is reported loudly rather than blamed on the file. An engine fault on a page — a `MemoryError`, or a MuPDF code that is not the file's — fails the whole conversion; a page failing for any other reason costs that page alone, as a warning. `PDFErrorKind.is_the_files` is the split a caller acts on, and a successful result never carries an `error_kind`. Before #598 the message was `"Invalid or corrupted PDF: {e}"` for any `FileDataError`, path included, and a caller could not tell an out-of-memory from a bad file.
 - A PDF needing a password to open returns `success=False` with `error_kind=PDFErrorKind.ENCRYPTED` and `error_message="the PDF is password-protected; remove the password and try again"` (it was `"PDF is password-protected"` before #598). PyMuPDF opens such a file without the password and only fails on use, so without this check every page failed inside the per-page handler and the file came back as a *success* carrying no text — a caller testing `success` alone read an unreadable file as a paper with no text. The test is `doc.needs_pass`, not `doc.is_encrypted`: an owner password restricts permissions without blocking reads, and such a file converts normally.
 - `convert(pdf_path, *, limit=None)` and `extract_blocks(pdf_path, *, limit=None)` take a `PDFLimit(cancel: threading.Event | None = None, deadline: float | None = None)` *(0.12.0, #600)*, `deadline` a `time.monotonic()` reading. It is checked **before each page**: a reached limit is a failed result (`convert`, `error_kind` `CANCELLED` or `TIMED_OUT`, `text=""`, logged at INFO since the caller asked for it) or a raised `PDFExtractionError` (`extract_blocks`), never a partial one; a cancel outranks a passed deadline. `PDFLimit` refuses, when built, a `nan` or infinite deadline, a `time.time()` reading (decades past `time.monotonic()`) and a `cancel` that is not an `Event`, each of which would otherwise stop nothing or fail as the engine's fault. PyMuPDF's `get_text()` takes no MuPDF cookie, so one long page runs to its end here — Rust's `PdfLimit` stops a page while it runs. The default stops never, and `FullTextService` passes none.
-- **What MuPDF reads past is reported** *(#599)*: a broken xref it repaired, a page it stopped after too many syntax errors (`too many syntax errors; ignoring rest of page`), a font with bogus metrics. MuPDF fails none of these, so the text can be short and only its messages say so. `convert()` ends `warnings` with them and `extract_blocks_with_warnings(pdf_path, *, limit=None)` returns a `PDFBlocks(blocks, warnings, metadata_title)`, `metadata_title` being the PDF's own `/Title`, verbatim, or `None` (pass it to `segment_document()` as `metadata["title"]`, which believes it only where page 1 prints it; without it, the largest line on page 1 may be a journal's masthead); those two and `extract_blocks()` log them as one WARNING per read (the count, then every message), on a failure too, with the path replaced by "the file" in each message. A repeated warning arrives once, then as `... repeated N times...`, N counting the first. Each read empties PyMuPDF's process-wide store (`TOOLS.mupdf_warnings()`) before and after, so a caller reading that store itself finds it empty. `is_about_the_file()` sets aside MuPDF's `found duplicate … in the store`, two threads caching one item. PyMuPDF keeps one store per process, so two PDFs read at once on two threads can get each other's messages.
+- **What MuPDF reads past is reported** *(#599)*: a broken xref it repaired, a page it stopped after too many syntax errors (`too many syntax errors; ignoring rest of page`), a font with bogus metrics. MuPDF fails none of these, so the text can be short and only its messages say so. `convert()` ends `warnings` with them and `extract_blocks_with_warnings(pdf_path, *, limit=None)` returns a `PDFBlocks(blocks, warnings, metadata_title)`, `metadata_title` being the PDF's own `/Title`, verbatim, or `None` (a title MuPDF cannot read is logged at WARNING on a line of its own and ends `warnings` as `Failed to extract metadata: …`; pass it to `segment_document()` as `metadata["title"]`, which believes it only where page 1 prints it; without it, the largest line on page 1 may be a journal's masthead); those two and `extract_blocks()` log them as one WARNING per read (the count, then every message), on a failure too, with the path replaced by "the file" in each message. A repeated warning arrives once, then as `... repeated N times...`, N counting the first. Each read empties PyMuPDF's process-wide store (`TOOLS.mupdf_warnings()`) before and after, so a caller reading that store itself finds it empty. `is_about_the_file()` sets aside MuPDF's `found duplicate … in the store`, two threads caching one item. PyMuPDF keeps one store per process, so two PDFs read at once on two threads can get each other's messages.
 - Exceptions from `validate_pdf_path()` **propagate** — a missing or non-PDF path raises rather than returning a failed `ConversionResult`.
 
 ### Example
@@ -2432,19 +2432,29 @@ partial pass reads a bold credit line ("Methodology. A. Smith: ...") as
 Methods.
 
 **Numbered headings nest** *(unreleased)*. A heading opening with a section
-number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits) sits at that
-number's depth; an unnumbered one is top level. A heading goes into the
-`subsections` of the nearest earlier heading that is shallower, so
-`"2.1. Patients"` is a subsection of `"2. Materials and methods"`. A
-subsection that names no section (`"2.1. Patients"` names none) takes its
-parent's type and confidence; a top-level heading that names none is still
-not a heading. A heading may **wrap** over up to three lines that share its
-font, size, weight, slant and page, sit just below it on its left edge, and
-carry no number of their own; their text is joined by a space into the
-title. A first line that matches a pattern exactly is a whole heading. A 0.7 match is a
-lower-confidence candidate — a bold "Summary of findings" line or a figure
-caption can produce one — so callers reasoning about section content should
-check `Section.confidence` and filter to 1.0 for certainty. Duplicate
+number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first
+not starting with 0, then a letter) sits at that number's depth; an
+unnumbered one is top level. A heading goes into the `subsections` of the
+nearest earlier heading that is shallower, so `"2.1. Patients"` is a
+subsection of `"2. Materials and methods"`. A subsection that names no
+section (`"2.1. Patients"` names none) takes its parent's type and
+confidence, unless the parent's own number does not open its number: after
+an unnamed `"3. Metformin lowers glucose"`, which is not a heading, a
+`"3.1. Fasting glucose"` is text of `"2. Materials and methods"` rather than a
+Methods subsection. A top-level heading that names none is still not a
+heading. A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
+`"2."`) still reads as one; `"0.5 mM"` does not. A heading may **wrap** over
+up to three lines in all, the continuation lines sharing its font, size,
+weight, slant and page, starting at most 1.5 line heights below the line
+above (top to top) on its left edge, carrying no number of their own, and
+opening with a word that would not have fitted on the line above — so a
+short italic `"2.1. Hypothesis"` does not take the italic body under it.
+Their text is joined by a space into the title. A first line that matches a
+pattern exactly is a whole heading. A 0.7 match is a lower-confidence
+candidate — a heading-sized bold "Summary of findings" line or figure caption
+can produce one — so callers reasoning about section content should check
+`Section.confidence` and filter to 1.0 for certainty; a subsection that takes
+its parent's type takes its confidence too. Duplicate
 section types are possible; `get_section()` returns the first.
 `match_section_type(text)` *(0.12.0; it was a private method)* is that
 classification for a heading that did not come from a PDF: `(type, 1.0)` for
@@ -2462,9 +2472,12 @@ Sections are the text between consecutive headings. Three container rules:
 A section's content is its lines joined by `"\n"`, with a blank line at each
 paragraph boundary: a vertical gap over 1.5× the line's height, or *(unreleased)*
 a **first-line indent** — a line set in from the line above by ½ to 4 ems,
-the line after it back at the left edge, which journals set without space
-between paragraphs use instead. A hanging indent (a reference list) is not
-one, since its next line stays set in.
+the line above ending short of its right edge as a paragraph's last line
+does, and the line after it back at the left edge — which journals set
+without space between paragraphs use instead. A hanging indent (a reference
+list) is not one: a reference's first line wraps at the margin, and its
+further wrapped lines stay set in. A paragraph whose last line happens to
+fill the measure gets no break.
 
 ### `TextBlock` granularity
 
@@ -2474,9 +2487,15 @@ mixed-font heading into fragments no anchored pattern can match. Font
 attributes (`font_size`, `font_name`, `is_bold`, `is_italic`) are those of
 the line's *dominant* span — the one contributing the most non-whitespace
 characters — so a superscript reference marker cannot restyle its line.
-A spacing accent drawn as a glyph of its own before its letter, as TeX sets
-them (`"Nicol´as"`), is joined to the letter (`"Nicolás"`) where Unicode has
-the pair as one character (`join_spacing_accents()`, *unreleased*).
+A spacing accent drawn as a glyph of its own over the letter after it, as TeX
+sets them (`"Nicol´as"`), is joined to the letter (`"Nicolás"`) where Unicode
+has the pair as one character (`join_spacing_accents()`, *unreleased*). The
+letter must start left of the accent's middle, read from each character's
+box (the blocks come from `get_text("rawdict")`), so a `´` typed as an
+apostrophe (`"Alzheimer´s"`), a backtick quoting code and a ring used as a
+degree sign, each followed one advance on, are kept. In a local draw of 401
+PDFs (not committed), 1,403 accents in 41 of them sat over their letter and
+105 in 31 did not.
 
 `extract_blocks()` **raises** (`FileNotFoundError`, `ValueError`) rather
 than returning a partial result. A file that cannot be read raises
@@ -2721,9 +2740,10 @@ doc.converter_version                     # "jats-1"
 - **Versions**: `converter_version` is `"<format>-<n>"` from
   `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION`, `PLAIN_TEXT_VERSION`,
   `PDF_CANONICAL_VERSION` (which moves with the segmenter too: `"pdf-3"` sets
-  page furniture aside, *0.12.0*; `"pdf-4"` joins spacing accents, nests
-  numbered headings and breaks paragraphs at first-line indents,
-  *unreleased*) and
+  page furniture aside, *0.12.0*; `"pdf-4"` caps the heading floor at the
+  body size, takes italic as well as bold, refuses a partial match at body
+  size, nests numbered headings, wraps headings, joins spacing accents and
+  breaks paragraphs at first-line indents, *unreleased*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.

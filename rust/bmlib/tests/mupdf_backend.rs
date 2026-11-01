@@ -165,6 +165,19 @@ fn a_pdf_yields_a_block_with_its_font() {
     assert!(pages[0].contains("Hello PDF World"), "{pages:?}");
 }
 
+/// A PDF with no `/Title` has none beside its blocks: MuPDF reads the absent key
+/// as `""`, which is no title, not an empty one.
+#[test]
+fn a_pdf_with_no_title_has_none_beside_its_blocks() {
+    let (_guard, path) = write_pdf("untitled", &tiny_pdf("Hello PDF World", "Helvetica", 24));
+    let read = MupdfExtractor::new()
+        .extract_blocks_with_warnings(&path, &PdfLimit::default())
+        .expect("extracts");
+    assert_eq!(read.metadata_title, None);
+    assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+    assert_eq!(read.blocks.len(), 1);
+}
+
 /// Bold and italic are MuPDF's own reading of the face, which for an unembedded
 /// base-14 font it takes from its own copy — PDFium's accessors returned
 /// nothing there, which is why the old backend guessed from the name.

@@ -17,7 +17,7 @@
 //! Heading-driven section segmentation of a PDF's text lines.
 //!
 //! Headings are detected by font size against the document's **median** — with
-//! bold as the rescue for body-sized headings — and classified against an
+//! bold or italic as the rescue for body-sized headings — and classified against an
 //! anchored pattern table, with an unanchored word-bounded search as the
 //! lower-confidence fallback.
 
@@ -271,11 +271,13 @@ pub fn median_font_size(blocks: &[TextBlock]) -> f64 {
 
 /// Whether `blocks[i]` is a paragraph's indented first line.
 ///
-/// It sits below the line before it (same column), set in from that line's left
-/// edge by [`PARAGRAPH_INDENT_MIN_EM`] to [`PARAGRAPH_INDENT_MAX_EM`] ems, and the
-/// line after it, if any, returns to that edge. The last test keeps a reference
-/// list's hanging indent, whose wrapped lines are all set in, from reading as a
-/// paragraph per line.
+/// It sits below the line before it, set in from that line's left edge by
+/// [`PARAGRAPH_INDENT_MIN_EM`] to [`PARAGRAPH_INDENT_MAX_EM`] ems; the line before
+/// it ends short of its own right edge, as a paragraph's last line does; and the
+/// line after it, if any, returns to the left edge. The last two keep a
+/// reference list's hanging indent from reading as paragraphs: a reference's
+/// wrapped first line runs to the margin, and its further wrapped lines are all
+/// set in.
 fn starts_indented(blocks: &[TextBlock], i: usize) -> bool {
     if i == 0 {
         return false;
@@ -288,9 +290,13 @@ fn starts_indented(blocks: &[TextBlock], i: usize) -> bool {
     {
         return false;
     }
+    let tolerance = LEFT_EDGE_TOLERANCE_EM * em;
+    if previous.x + previous.width >= block.x + block.width - tolerance {
+        return false;
+    }
     blocks
         .get(i + 1)
-        .is_none_or(|next| (next.x - previous.x).abs() <= LEFT_EDGE_TOLERANCE_EM * em)
+        .is_none_or(|next| (next.x - previous.x).abs() <= tolerance)
 }
 
 /// Join lines, inserting a blank line at each paragraph boundary.
@@ -409,7 +415,6 @@ pub const SECTION_PATTERNS: &[(SectionType, &[&str])] = &[
             "^competing\\s+interests?$",
             "^disclosures?$",
             "^declaration\\s+of\\s+interests?$",
-            "^declaration\\s+of\\s+competing\\s+interests?$",
             "^financial\\s+disclosures?$",
             "^conflict\\s+of\\s+interest\\s+statement$",
             "^declaration\\s+of\\s+competing\\s+interests?$",
@@ -445,7 +450,9 @@ pub const SECTION_PATTERNS: &[(SectionType, &[&str])] = &[
 static LEADING_NUMBERING: OnceLock<Regex> = OnceLock::new();
 /// A section number opening a heading: `"2."`, `"2.1."` or `"2.1.3"` and then a
 /// letter. Each part has at most two digits, so a year (`"2025 Elsevier"`) is
-/// not one. Group 1 is the number, whose parts give the heading's depth.
+/// not one, and the first does not start with 0, so a quantity (`"0.5 mM"`) is
+/// not. Group 1 is the number, whose parts give the heading's depth; the letter
+/// is Unicode category L, as Python's check of the character after the number.
 static HEADING_NUMBER: OnceLock<Regex> = OnceLock::new();
 /// The punctuation a heading may trail: `"Discussion:"`.
 static TRAILING_PUNCTUATION: OnceLock<Regex> = OnceLock::new();
@@ -462,13 +469,60 @@ fn leading_numbering() -> &'static Regex {
     LEADING_NUMBERING.get_or_init(|| Regex::new(r"^[\d.\s)\]]+").expect("a fixed pattern"))
 }
 
+/// The section number opening a heading (`"2.1"` for `"2.1. Animals"`), else
+/// `None`.
+#[must_use]
+pub fn heading_number(text: &str) -> Option<&str> {
+    let number = HEADING_NUMBER.get_or_init(|| {
+        Regex::new(r"^([1-9][0-9]?(?:\.[0-9]{1,2})*)\.?\s+\p{L}").expect("a fixed pattern")
+    });
+    number
+        .captures(text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
+}
+
 /// How deep a numbered heading sits (`"2."` is 1, `"2.1."` is 2), else `None`.
 #[must_use]
 pub fn heading_depth(text: &str) -> Option<usize> {
-    let number = HEADING_NUMBER.get_or_init(|| {
-        Regex::new(r"^([0-9]{1,2}(?:\.[0-9]{1,2})*)\.?\s+[^\W\d_]").expect("a fixed pattern")
-    });
-    number.captures(text).map(|c| c[1].matches('.').count() + 1)
+    heading_number(text).map(|n| n.matches('.').count() + 1)
+}
+
+/// Whether a heading titled `title` numbers from a parent numbered
+/// `parent_number`: an unnumbered parent (`None`) contradicts no number.
+fn numbers_from(title: &str, parent_number: Option<&str>) -> bool {
+    parent_number.is_none_or(|n| {
+        title
+            .strip_prefix(n)
+            .is_some_and(|rest| rest.starts_with('.'))
+    })
+}
+
+/// Whether `line`'s first word would have fitted at the end of `above`.
+///
+/// A wrapped line holds what did not fit on the line before, so its first word
+/// and a space added to `above` reach past the column; `line` is at most the
+/// column's width, so if they do not reach past `line`'s own width the word
+/// fitted and `line` is not a wrap. The word's width is `line`'s width shared
+/// out per character. A line with no width (a degenerate bbox) gives no
+/// evidence either way, so the wrap is not refused for it. Python's
+/// `_first_word_fits`.
+fn first_word_fits(above: &TextBlock, line: &TextBlock) -> bool {
+    let chars = line.text.chars().count();
+    if chars == 0 || above.width <= 0.0 || line.width <= 0.0 {
+        return false;
+    }
+    let word = line
+        .text
+        .split(' ')
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .count()
+        + 1;
+    #[allow(clippy::cast_precision_loss)] // a line's length, far below 2^52
+    let share = word as f64 / chars as f64;
+    above.width + line.width * share <= line.width
 }
 
 fn trailing_punctuation() -> &'static Regex {
@@ -580,8 +634,13 @@ pub struct Marker {
 /// bold credit line, `"Methodology. A. Smith: ..."`, as Methods. A numbered
 /// heading's depth is its number's; an unnumbered one is top level. A heading
 /// that names no section is kept only as a subsection under an earlier,
-/// shallower heading, whose type and confidence it takes; at top level there is
-/// no type to give it.
+/// shallower heading, whose type and confidence it takes, unless that heading's
+/// own number does not open this one's: at top level there is no type to give
+/// it, and under a heading it does not number from, the heading it does belong
+/// to was not found (`"3.1."` after an unnamed `"3. Metformin lowers glucose"`
+/// is not Methods' because `"2."` was). A bold quantity numbered like a
+/// subsection (`"2.5 mg/kg"` under `"2."`, `"1.5 h"` under an unnumbered
+/// `"Results"`) still reads as one.
 #[must_use]
 pub fn identify_section_markers(
     blocks: &[TextBlock],
@@ -621,7 +680,10 @@ pub fn identify_section_markers(
             .filter(|&m| markers[m].depth < depth)
             .collect();
         if section_type == SectionType::Unknown {
-            let Some(&parent) = parents.last().filter(|_| depth > 1) else {
+            let Some(&parent) = parents
+                .last()
+                .filter(|&&p| depth > 1 && numbers_from(&title, heading_number(&markers[p].title)))
+            else {
                 index += 1;
                 continue;
             };
@@ -646,11 +708,13 @@ pub fn identify_section_markers(
 /// One past the last line of the heading that starts at `blocks[i]`.
 ///
 /// A heading wraps onto the lines after it that share its font, size, weight,
-/// slant and page, sit just below it (within the paragraph gap) on its left
-/// edge, and carry no section number of their own — at most
-/// [`MAX_HEADING_LINES`] lines in all. A first line that names a section
-/// exactly is a whole heading, so `"Methods"` over a same-styled
-/// `"Study design"` stays two headings.
+/// slant and page, start below it by at most 1.5 times its height (top to top),
+/// on its left edge, carry no section number of their own, and open with a word
+/// that would not have fitted on the line above — at most [`MAX_HEADING_LINES`]
+/// lines in all. The last test keeps a short italic subheading
+/// (`"2.1. Hypothesis"`) from taking the italic body lines under it. A first
+/// line that names a section exactly is a whole heading, so `"Methods"` over a
+/// same-styled line is titled `"Methods"` alone.
 fn heading_end(blocks: &[TextBlock], i: usize) -> usize {
     let first = &blocks[i];
     if match_section_type(&first.text).1 == 1.0 {
@@ -671,6 +735,7 @@ fn heading_end(blocks: &[TextBlock], i: usize) -> usize {
             || !(0.0 < step && step <= above.height * PARAGRAPH_GAP_RATIO)
             || (line.x - first.x).abs() > LEFT_EDGE_TOLERANCE_EM * first.font_size
             || heading_depth(&line.text).is_some()
+            || first_word_fits(above, line)
         {
             break;
         }
@@ -805,7 +870,7 @@ pub fn extract_title(
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionSegmenter {
     /// Multiplier over the median above which a line is heading-sized without
-    /// being bold.
+    /// being bold or italic.
     pub font_size_threshold: f64,
     /// Font-size floor for headings, capped at the body text's median size, so
     /// a paper set small still has its bold body-size headings.

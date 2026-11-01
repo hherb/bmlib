@@ -12,18 +12,26 @@ All notable changes to bmlib are documented here. The format is based on
   hherb/StudyAnalyzer with a *Life Sciences* paper). Its headings are 8 pt
   bold in an 8 pt body, under the segmenter's 10 pt floor, so no heading was
   found and the paper read as one "Full Text" block. The floor is now capped at
-  the body's median size. Numbered headings (`"2.1."`) nest as subsections at
-  their number's depth, an unnamed one taking its parent's type; italic as
-  well as bold sets a body-sized heading apart; a heading may wrap over three
-  lines; a body-sized one must match exactly or be numbered, so a bold credit
-  line is not Methods. A first-line indent starts a paragraph, the only
-  paragraph signal in a journal set without space between paragraphs. Accents
-  TeX draws as glyphs of their own (`"Nicol´as"`) are joined to their letters
-  (`join_spacing_accents()`). `"CRediT authorship contribution statement"`
-  and `"Declaration of competing interest"` are recognised.
-  `PDF_CANONICAL_VERSION` is 4 (`"pdf-4"`). Python and Rust alike, held by
-  the oracle corpora and the extraction contract's PDF, which carries each
-  shape.
+  the body's median size. Numbered headings (`"2.1."`, the first part not
+  starting with 0, so `"0.5 mM"` is not one) nest as subsections at their
+  number's depth, an unnamed one taking its parent's type unless the parent's
+  own number does not open its number; italic as well as bold sets a
+  body-sized heading apart; a heading may wrap over three lines, a line whose
+  first word would have fitted on the line above not being a wrap; a
+  body-sized one must match exactly or be numbered, so a bold credit line is
+  not Methods. A first-line indent starts a paragraph, the only paragraph
+  signal in a journal set without space between paragraphs, where the line
+  above ends short of the margin, so a reference list's hanging indent does
+  not. Accents TeX draws as glyphs of their own over their letters
+  (`"Nicol´as"`) are joined to them (`join_spacing_accents()`, which takes
+  each character's box, so the blocks are read with `get_text("rawdict")`); a
+  `´` typed as an apostrophe (`"Alzheimer´s"`) is kept. The pattern
+  `"CRediT authorship contribution statement"` is recognised (it matched only
+  partially, at 0.7). `Section.to_markdown()` renders every level of
+  subsections, not only the first. `PDF_CANONICAL_VERSION` is 4 (`"pdf-4"`).
+  Python and Rust alike, held by the oracle corpora, and by the extraction
+  contract's PDF for the title, the accents (one typed as an apostrophe), the
+  wrapped numbered heading and the indent.
 
 ### Added
 
@@ -31,8 +39,9 @@ All notable changes to bmlib are documented here. The format is based on
   `extract_blocks_with_warnings()` returned no metadata, so a caller
   segmenting its blocks had no title to offer and the largest line on page 1
   won: on a journal's first page, its masthead. Verbatim and unjudged, `None`
-  when absent; a title that cannot be read adds a warning. Rust's
-  `PdfBlocks` has the same field.
+  when absent; a title that cannot be read adds a warning (read through
+  MuPDF's own lookup, since PyMuPDF's `doc.metadata` reads a failed lookup as
+  no title). Rust's `PdfBlocks` has the same field.
 
 - **`FullTextResult.pdf_extraction_failure` says which side a failed PDF
   extraction is on** (#604). `ConversionResult.error_kind` (#598) stopped at

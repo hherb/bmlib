@@ -91,8 +91,9 @@ def test_the_contract_carries_the_shapes_it_is_for() -> None:
     assert [t for t in texts if t.isdigit()] == ["1", "2", "3"]
     # The five-span line, whose font only the superscript split makes italic.
     assert "Cultures of Escherichia coli were grown1 overnight." in texts
-    # Spacing accents joined to their letters; a heading that wraps; an indent.
-    assert "Patients were enrolled by Nicolás Pérez." in texts
+    # Spacing accents drawn over their letters joined to them, one typed as an
+    # apostrophe kept; a heading that wraps; an indent.
+    assert "Patients were enrolled by Nicolás Pérez with Alzheimer´s." in texts
     assert ["2.1. Study population and", "setting"] == [
         t for t in texts if t.startswith("2.1.") or t == "setting"
     ]

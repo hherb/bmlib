@@ -36,7 +36,8 @@ so a sentence crossing the last page break reads on. And the layout of a
 journal set without space between paragraphs: a ``/Title`` in the document
 information, which the blocks carry as ``metadata_title``; names whose
 accents are spacing glyphs of their own (``Nicol\\264as``, WinAnsi's 0xB4
-acute), as TeX sets them; a numbered italic subheading at body size that
+acute), drawn over their letters as TeX sets them, beside one typed as an
+apostrophe (``Alzheimer\\264s``), which is not; a numbered italic subheading at body size that
 wraps onto a second line; and a paragraph begun by a first-line indent. The
 expected values are PyMuPDF's output, printed on stderr to be checked by eye.
 
@@ -75,8 +76,14 @@ FONTS = {
     "F3": ("Times-Italic", False),
 }
 
-#: A run of one line: (font, size, text rise, text).
-Run = tuple[str, int, int, str]
+#: A run of one line: (font, size, text rise, text). A list for the text is
+#: shown with ``TJ``: its numbers move the next string back by that many
+#: thousandths of an em, which is how TeX draws an accent over its letter.
+Run = tuple[str, int, int, str | list[str | int]]
+
+#: Helvetica's acute (WinAnsi 0xB4) is 333 thousandths of an em wide, so moving
+#: back by it starts the letter where the accent starts.
+ACUTE_WIDTH = 333
 
 #: Each page's lines: (x, y, runs). ``\255`` is byte 173, which F1's encoding
 #: maps to U+00AD.
@@ -100,7 +107,24 @@ PAGES: list[list[tuple[int, int, list[Run]]]] = [
         ),
         (72, 580, [("F3", 10, 0, "2.1. Study population and")]),
         (72, 568, [("F3", 10, 0, "setting")]),
-        (72, 550, [("F1", 10, 0, r"Patients were enrolled by Nicol\264as P\264erez.")]),
+        (
+            72,
+            550,
+            [
+                (
+                    "F1",
+                    10,
+                    0,
+                    [
+                        r"Patients were enrolled by Nicol\264",
+                        ACUTE_WIDTH,
+                        r"as P\264",
+                        ACUTE_WIDTH,
+                        r"erez with Alzheimer\264s.",
+                    ],
+                )
+            ],
+        ),
     ],
     [
         (72, 720, [("F2", 12, 0, "Results")]),
@@ -128,8 +152,16 @@ for _number, _lines in enumerate(PAGES, start=1):
     _lines.append((300, 40, [("F1", 8, 0, str(_number))]))
 
 
+def _shown(text: str | list[str | int]) -> str:
+    if isinstance(text, str):
+        return f"({text}) Tj"
+    return "[" + " ".join(f"({p})" if isinstance(p, str) else str(p) for p in text) + "] TJ"
+
+
 def _line(x: int, y: int, runs: list[Run]) -> str:
-    shown = " ".join(f"/{font} {size} Tf {rise} Ts ({text}) Tj" for font, size, rise, text in runs)
+    shown = " ".join(
+        f"/{font} {size} Tf {rise} Ts {_shown(text)}" for font, size, rise, text in runs
+    )
     return f"BT {x} {y} Td {shown} ET"
 
 

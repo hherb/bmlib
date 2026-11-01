@@ -46,6 +46,7 @@ def block(
     page: int = 0,
     size: float = BODY_SIZE,
     bold: bool = False,
+    italic: bool = False,
     y: float = 0.0,
     height: float = 12.0,
 ) -> TextBlock:
@@ -56,7 +57,7 @@ def block(
         font_size=size,
         font_name="Helvetica",
         is_bold=bold,
-        is_italic=False,
+        is_italic=italic,
         x=72.0,
         y=y,
         width=400.0,
@@ -87,6 +88,20 @@ class TestSectionModels:
         ).to_markdown()
         assert "### Participants" in md
         assert "Adults." in md
+
+    def test_a_subsections_own_subsections_render_one_level_deeper(self):
+        # The segmenter nests "2.8.1." under "2.8." under "2."; rendering one
+        # level of subsections dropped the third, heading and text.
+        power = Section(SectionType.METHODS, "2.8.1. Power", "Eighty per cent.", 0, 0)
+        stats = Section(SectionType.METHODS, "2.8. Statistics", "Tests.", 0, 0, subsections=[power])
+        md = Section(
+            SectionType.METHODS, "2. Methods", "Overview.", 0, 0, subsections=[stats]
+        ).to_markdown()
+        assert md == (
+            "## 2. Methods\n\nOverview.\n\n"
+            "### 2.8. Statistics\n\nTests.\n\n"
+            "#### 2.8.1. Power\n\nEighty per cent.\n"
+        )
 
     def test_document_markdown_carries_title_authors_and_sections(self):
         doc = SegmentedDocument(
@@ -261,9 +276,10 @@ class TestHeadingDetection:
         assert self.segmenter._is_potential_header(block("Methods", size=8.0, bold=True), 8.0)
         assert not self.segmenter._is_potential_header(block("Table 1", size=7.2, bold=True), 8.0)
 
-    def test_body_sized_text_must_be_bold(self):
+    def test_body_sized_text_must_be_bold_or_italic(self):
         assert not self.segmenter._is_potential_header(block("Methods", size=10.0), 10.0)
         assert self.segmenter._is_potential_header(block("Methods", size=10.0, bold=True), 10.0)
+        assert self.segmenter._is_potential_header(block("Methods", size=10.0, italic=True), 10.0)
 
     def test_a_clearly_larger_font_needs_no_bold(self):
         assert self.segmenter._is_potential_header(block("Methods", size=13.0), 10.0)

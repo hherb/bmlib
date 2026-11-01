@@ -44,6 +44,7 @@ import itertools
 import math
 import re
 import statistics
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -83,8 +84,12 @@ MAX_HEADING_LINES = 3
 
 # A section number opening a heading: "2.", "2.1." or "2.1.3" and then a
 # letter. Each part has at most two digits, so a year ("2025 Elsevier") is not
-# one. Group 1 is the number, whose parts give the heading's depth.
-_HEADING_NUMBER_RE = re.compile(r"^([0-9]{1,2}(?:\.[0-9]{1,2})*)\.?\s+[^\W\d_]")
+# one, and the first does not start with 0, so a quantity ("0.5 mM") is not.
+# Group 1 is the number, whose parts give the heading's depth; group 2 the
+# character after it, which must be a letter (Unicode category L, the test
+# Rust's ``\p{L}`` makes: ``[^\W\d_]`` admits "½" here and a combining mark
+# there).
+_HEADING_NUMBER_RE = re.compile(r"^([1-9][0-9]?(?:\.[0-9]{1,2})*)\.?\s+(.)")
 
 # "1.2  Introduction" -> "introduction"; "Discussion:" -> "discussion".
 _LEADING_NUMBERING_RE = re.compile(r"^[\d.\s)\]]+")
@@ -205,20 +210,30 @@ def _median_font_size(blocks: list[TextBlock]) -> float:
     return float(statistics.median(sizes))
 
 
+def heading_number(text: str) -> str | None:
+    """The section number opening a heading ("2.1" for "2.1. Animals"), else None."""
+    match = _HEADING_NUMBER_RE.match(text)
+    if match is None or not unicodedata.category(match.group(2)).startswith("L"):
+        return None
+    return match.group(1)
+
+
 def heading_depth(text: str) -> int | None:
     """How deep a numbered heading sits ("2." is 1, "2.1." is 2), else None."""
-    match = _HEADING_NUMBER_RE.match(text)
-    return match.group(1).count(".") + 1 if match else None
+    number = heading_number(text)
+    return number.count(".") + 1 if number is not None else None
 
 
 def _starts_indented(blocks: list[TextBlock], i: int) -> bool:
     """Whether ``blocks[i]`` is a paragraph's indented first line.
 
-    It sits below the line before it (same column), set in from that line's
-    left edge by PARAGRAPH_INDENT_MIN_EM to PARAGRAPH_INDENT_MAX_EM ems, and
-    the line after it, if any, returns to that edge. The last test keeps a
-    reference list's hanging indent, whose wrapped lines are all set in, from
-    reading as a paragraph per line.
+    It sits below the line before it, set in from that line's left edge by
+    PARAGRAPH_INDENT_MIN_EM to PARAGRAPH_INDENT_MAX_EM ems; the line before it
+    ends short of its own right edge, as a paragraph's last line does; and the
+    line after it, if any, returns to the left edge. The last two keep a
+    reference list's hanging indent from reading as paragraphs: a reference's
+    wrapped first line runs to the margin, and its further wrapped lines are
+    all set in.
     """
     if i == 0:
         return False
@@ -229,9 +244,36 @@ def _starts_indented(blocks: list[TextBlock], i: int) -> bool:
         PARAGRAPH_INDENT_MIN_EM * em <= indent <= PARAGRAPH_INDENT_MAX_EM * em
     ):
         return False
+    tolerance = LEFT_EDGE_TOLERANCE_EM * em
+    if previous.x + previous.width >= block.x + block.width - tolerance:
+        return False
     if i + 1 == len(blocks):
         return True
     return abs(blocks[i + 1].x - previous.x) <= LEFT_EDGE_TOLERANCE_EM * em
+
+
+def _numbers_from(title: str, parent_number: str | None) -> bool:
+    """Whether a heading titled *title* numbers from a parent numbered *parent_number*.
+
+    An unnumbered parent (None) contradicts no number.
+    """
+    return parent_number is None or title.startswith(parent_number + ".")
+
+
+def _first_word_fits(above: TextBlock, line: TextBlock) -> bool:
+    """Whether *line*'s first word would have fitted at the end of *above*.
+
+    A wrapped line holds what did not fit on the line before, so its first word
+    and a space added to *above* reach past the column; *line* is at most the
+    column's width, so if they do not reach past *line*'s own width the word
+    fitted and *line* is not a wrap. The word's width is *line*'s width shared
+    out per character. A line with no width (a degenerate bbox) gives no
+    evidence either way, so the wrap is not refused for it.
+    """
+    if not line.text or above.width <= 0 or line.width <= 0:
+        return False
+    word = len(line.text.split(" ", 1)[0]) + 1
+    return above.width + line.width * word / len(line.text) <= line.width
 
 
 def _join_blocks(blocks: list[TextBlock]) -> str:
@@ -282,7 +324,7 @@ class SectionSegmenter:
     """Segment a biomedical publication's text lines into standard sections.
 
     Headings are detected by font size against the document's median — with
-    bold as the rescue for body-sized headings — and classified against an
+    bold or italic as the rescue for body-sized headings — and classified against an
     anchored pattern table, with an unanchored word-bounded search as the
     lower-confidence fallback.
     """
@@ -369,7 +411,6 @@ class SectionSegmenter:
             r"^competing\s+interests?$",
             r"^disclosures?$",
             r"^declaration\s+of\s+interests?$",
-            r"^declaration\s+of\s+competing\s+interests?$",
             r"^financial\s+disclosures?$",
             r"^conflict\s+of\s+interest\s+statement$",
             r"^declaration\s+of\s+competing\s+interests?$",
@@ -403,7 +444,8 @@ class SectionSegmenter:
 
         Args:
             font_size_threshold: Multiplier over the document's median font
-                size above which a line is heading-sized without being bold.
+                size above which a line is heading-sized without being bold or
+                italic.
             min_heading_size: Font-size floor for headings, capped at the
                 body text's median size, so a paper set small still has its
                 bold body-size headings.
@@ -478,9 +520,9 @@ class SectionSegmenter:
                 :meth:`PyMuPDFConverter.extract_blocks
                 <bmlib.fulltext.pdf_converter.PyMuPDFConverter.extract_blocks>`.
             metadata: Optional document metadata; only ``title`` and
-                ``file_path`` are read, so a caller who has not run
-                ``convert()`` can pass nothing and loses only the metadata
-                title. Stored on the result as-is.
+                ``file_path`` are read. Without a ``title`` (from ``convert()``
+                or ``extract_blocks_with_warnings().metadata_title``) only the
+                metadata title is lost. Stored on the result as-is.
 
         Returns:
             The segmented document. With no blocks, a document with no
@@ -513,7 +555,13 @@ class SectionSegmenter:
         Methods. A numbered heading's depth is its number's ("2.1." is 2); an
         unnumbered one is top level. A heading that names no section is kept
         only as a subsection under an earlier, shallower heading, whose type
-        and confidence it takes; at top level there is no type to give it.
+        and confidence it takes, unless that heading's own number does not
+        open this one's: at top level there is no type to give it, and under a
+        heading it does not number from, the heading it does belong to was not
+        found ("3.1." after an unnamed "3. Metformin lowers glucose" is not
+        Methods' because "2." was). A bold quantity numbered like a subsection
+        ("2.5 mg/kg" under "2.", "1.5 h" under an unnumbered "Results") still
+        reads as one.
         """
         markers: list[_Marker] = []
         # The headings enclosing the current one, outermost first.
@@ -536,7 +584,8 @@ class SectionSegmenter:
             # closes nothing.
             parents = [m for m in enclosing if m.depth < depth]
             if section_type is SectionType.UNKNOWN:
-                if depth == 1 or not parents:
+                parent_number = heading_number(parents[-1].title) if parents else None
+                if depth == 1 or not parents or not _numbers_from(title, parent_number):
                     i += 1
                     continue
                 section_type, confidence = parents[-1].section_type, parents[-1].confidence
@@ -550,11 +599,14 @@ class SectionSegmenter:
         """One past the last line of the heading that starts at ``blocks[i]``.
 
         A heading wraps onto the lines after it that share its font, size,
-        weight, slant and page, sit just below it (within the paragraph gap)
-        on its left edge, and carry no section number of their own — at most
-        MAX_HEADING_LINES lines in all. A first line that names a section
-        exactly is a whole heading, so "Methods" over a same-styled
-        "Study design" stays two headings.
+        weight, slant and page, start below it by at most 1.5 times its
+        height (top to top), on its left edge, carry no section number of
+        their own, and open with a word that would not have fitted on the line
+        above — at most MAX_HEADING_LINES lines in all. The last test keeps a
+        short italic subheading ("2.1. Hypothesis") from taking the italic
+        body lines under it. A first line that names a section exactly is a
+        whole heading, so "Methods" over a same-styled line is titled
+        "Methods" alone.
         """
         first = blocks[i]
         if self._match_section_type(first.text)[1] == 1.0:
@@ -573,6 +625,8 @@ class SectionSegmenter:
             if abs(line.x - first.x) > LEFT_EDGE_TOLERANCE_EM * first.font_size:
                 break
             if heading_depth(line.text) is not None:
+                break
+            if _first_word_fits(above, line):
                 break
             end += 1
         return end

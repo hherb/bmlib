@@ -139,7 +139,7 @@
     },
     {
       "pdf": "pdf_extraction.pdf",
-      "pdf_sha256": "8d8d2d26eb81c4866bb9e9d11c1c110dd67c0e2eb26aea059e54f2cae502c8cf",
+      "pdf_sha256": "c0c6239f11f406d04edf3c957e72b8dbd01ebe9011bdd9069c54bc8409af22fa",
       "texts": [
         "Smith et al. A soft hyphen trial",
         "A soft hyphen trial",
@@ -150,7 +150,7 @@
         "Cultures of Escherichia coli were grown1 overnight.",
         "2.1. Study population and",
         "setting",
-        "Patients were enrolled by Nicolás Pérez.",
+        "Patients were enrolled by Nicolás Pérez with Alzheimer´s.",
         "1",
         "Smith et al. A soft hyphen trial",
         "Results",

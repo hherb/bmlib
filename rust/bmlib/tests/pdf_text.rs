@@ -16,7 +16,7 @@
 
 //! PDF text assembly — the oracle and the named tests.
 //!
-//! The corpus (62 cases) diffs every pure helper against Python's. The named
+//! The corpus (71 cases) diffs every pure helper against Python's. The named
 //! tests state why the rules exist: one block per *line*, the dominant span, and
 //! what "complete" means.
 
@@ -36,7 +36,23 @@ fn run(case: &Value) -> Value {
     match case["fn"].as_str().unwrap_or_default() {
         "normalize" => json!(normalize_line(a["line"].as_str().unwrap_or_default())),
         "join_spacing_accents" => {
-            json!(join_spacing_accents(a["text"].as_str().unwrap_or_default()))
+            let glyphs: Vec<(char, f64, f64)> = a["glyphs"]
+                .as_array()
+                .map(|glyphs| {
+                    glyphs
+                        .iter()
+                        .map(|g| {
+                            let c = g[0].as_str().and_then(|c| c.chars().next());
+                            (
+                                c.unwrap_or_default(),
+                                g[1].as_f64().unwrap_or(f64::NAN),
+                                g[2].as_f64().unwrap_or(f64::NAN),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            json!(join_spacing_accents(&glyphs))
         }
         "span_text_weight" => json!(span_text_weight(&a["span"])),
         "line_to_block" => match line_to_block(&a["line"], a["page_num"].as_i64().unwrap_or(0)) {

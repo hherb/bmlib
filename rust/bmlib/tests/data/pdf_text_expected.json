@@ -407,5 +407,83 @@
       "x": 1.0,
       "y": 2.0
     }
+  },
+  {
+    "name": "line_to_block/spacing_accent_with_no_glyph_edges_is_kept",
+    "ok": true,
+    "value": {
+      "font_name": "CharisSIL",
+      "font_size": 10.6,
+      "height": 10.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Nicol´as P´erez",
+      "width": 29.0,
+      "x": 1.0,
+      "y": 2.0
+    }
+  },
+  {
+    "name": "join_spacing_accents/breve_macron_double_acute_dot_above",
+    "ok": true,
+    "value": "ă ē ő ż"
+  },
+  {
+    "name": "join_spacing_accents/typed_apostrophe_kept",
+    "ok": true,
+    "value": "Alzheimer´s"
+  },
+  {
+    "name": "join_spacing_accents/backtick_quote_kept",
+    "ok": true,
+    "value": "the `each` loop"
+  },
+  {
+    "name": "join_spacing_accents/accent_just_short_of_its_middle_joins",
+    "ok": true,
+    "value": "Pé"
+  },
+  {
+    "name": "join_spacing_accents/letter_at_the_accents_middle_is_kept",
+    "ok": true,
+    "value": "P´e"
+  },
+  {
+    "name": "join_spacing_accents/no_edges_kept",
+    "ok": true,
+    "value": "P´e"
+  },
+  {
+    "name": "line_to_block/typed_apostrophe_across_spans_kept",
+    "ok": true,
+    "value": {
+      "font_name": "Times",
+      "font_size": 10.0,
+      "height": 10.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Alzheimer´s disease",
+      "width": 59.0,
+      "x": 1.0,
+      "y": 2.0
+    }
+  },
+  {
+    "name": "line_to_block/accent_drawn_over_a_letter_in_the_next_span",
+    "ok": true,
+    "value": {
+      "font_name": "Times",
+      "font_size": 10.0,
+      "height": 10.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Pérez",
+      "width": 59.0,
+      "x": 1.0,
+      "y": 2.0
+    }
   }
 ]
