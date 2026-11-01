@@ -318,10 +318,10 @@ class TestMedianFontSize:
 def paper_blocks() -> list[TextBlock]:
     """A miniature paper: front matter, four sections, two pages.
 
-    Sizes matter: the median is 11.5 (five body lines at 10, four headings
-    at 13, one title at 20), so 13-point headings are below 1.2x the median
-    and need their bold; the 20-point title clears every threshold but
-    matches no pattern.
+    Sizes matter: by characters the median is 10 (the body lines hold 122 of
+    the 184 characters), so the 13-point headings clear 1.2x the median
+    whether or not they are bold; the 20-point title clears every threshold
+    but matches no pattern.
     """
     return [
         block("Aspirin and Mortality: A Trial", size=TITLE_SIZE),
@@ -479,10 +479,11 @@ class TestAJunkMetadataTitleDoesNotBeatTheTitleOnThePage:
         that rejected every metadata title would pass the first test by
         accident.
 
-        Sizes matter here as they do in ``paper_blocks``: five body lines
-        against the two title lines put the median at 10, so the 20-point
-        title clears ``_TITLE_SIZE_RATIO``. With only two body lines the
-        median is 15 and the fallback rejects its own title.
+        Sizes matter here as they do in ``paper_blocks``: the body lines hold
+        140 of the 169 characters, so the median is 10 and the 20-point title
+        clears ``_TITLE_SIZE_RATIO``. Were the title lines to hold half the
+        characters, the median would rise toward 20 and the fallback would
+        reject its own title.
         """
         return [
             block("Effects of aspirin", size=TITLE_SIZE, y=72.0),

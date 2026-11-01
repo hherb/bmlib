@@ -61,6 +61,17 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **The body size is the median of the lines' characters, not of the lines**
+  (pdf-5, with the Python library). `fulltext::median_font_size` counts each
+  line by its code points, averages the sizes either side of an exact half,
+  and leaves out a line with no text, so a long table set small, one short
+  cell per line, no longer makes every body line heading-sized.
+  `PDF_CANONICAL_VERSION` is 5. Real headings set only slightly larger than
+  the now accurate body size can miss the ratio or the floor (#628).
+- **A PDF set the way Elsevier sets it segments** (pdf-4, #622, with the
+  Python library): the heading floor is capped at the body median, numbered
+  headings nest, a first-line indent starts a paragraph, and TeX spacing
+  accents are joined to their letters. `PDF_CANONICAL_VERSION` was 4.
 - **PICO: an integer `sample_size` is kept as its digits, and a blank part
   `description` is refused and re-asked** (#578, with the Python library). A
   float `sample_size` is still unstated, as in Python.

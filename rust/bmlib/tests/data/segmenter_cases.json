@@ -930,6 +930,90 @@
   }
  },
  {
+  "name": "median_font_size/code-points",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "ééé",
+     "font_size": 10
+    },
+    {
+     "text": "abcd",
+     "font_size": 12
+    }
+   ]
+  }
+ },
+ {
+  "name": "median_font_size/only-empty-text",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "",
+     "font_size": 10
+    }
+   ]
+  }
+ },
+ {
+  "name": "median_font_size/empty-text-at-the-half",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "aaa",
+     "font_size": 10
+    },
+    {
+     "text": "",
+     "font_size": 11
+    },
+    {
+     "text": "bbb",
+     "font_size": 12
+    }
+   ]
+  }
+ },
+ {
+  "name": "median_font_size/unsorted",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "c",
+     "font_size": 14
+    },
+    {
+     "text": "a",
+     "font_size": 10
+    },
+    {
+     "text": "b",
+     "font_size": 12
+    }
+   ]
+  }
+ },
+ {
+  "name": "median_font_size/fractional-half",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "aaa",
+     "font_size": 10
+    },
+    {
+     "text": "bbb",
+     "font_size": 11
+    }
+   ]
+  }
+ },
+ {
   "name": "join_blocks/no-gap",
   "fn": "join_blocks",
   "args": {
@@ -1168,6 +1252,113 @@
      "text": "Method text.",
      "page_num": 1,
      "y": 20
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/no-headings-multi-page",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Some prose",
+     "page_num": 0,
+     "y": 0
+    },
+    {
+     "text": "More prose",
+     "page_num": 1,
+     "y": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/small-table-lines-make-no-body-line-a-heading",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Methods",
+     "font_size": 13,
+     "is_bold": true,
+     "y": 0
+    },
+    {
+     "text": "Two reviewers screened every record and graded the evidence with",
+     "font_size": 10,
+     "y": 20
+    },
+    {
+     "text": "n = 12",
+     "font_size": 7,
+     "y": 40
+    },
+    {
+     "text": "n = 13",
+     "font_size": 7,
+     "y": 50
+    },
+    {
+     "text": "n = 14",
+     "font_size": 7,
+     "y": 60
+    },
+    {
+     "text": "n = 15",
+     "font_size": 7,
+     "y": 70
+    },
+    {
+     "text": "n = 16",
+     "font_size": 7,
+     "y": 80
+    },
+    {
+     "text": "n = 17",
+     "font_size": 7,
+     "y": 90
+    },
+    {
+     "text": "n = 18",
+     "font_size": 7,
+     "y": 100
+    },
+    {
+     "text": "n = 19",
+     "font_size": 7,
+     "y": 110
+    },
+    {
+     "text": "n = 20",
+     "font_size": 7,
+     "y": 120
+    },
+    {
+     "text": "n = 21",
+     "font_size": 7,
+     "y": 130
+    },
+    {
+     "text": "n = 22",
+     "font_size": 7,
+     "y": 140
+    },
+    {
+     "text": "n = 23",
+     "font_size": 7,
+     "y": 150
+    },
+    {
+     "text": "the GRADE approach. Results: Thirty-four trials were included, and",
+     "font_size": 10,
+     "y": 160
+    },
+    {
+     "text": "most were at low risk of bias in every domain the tool assesses.",
+     "font_size": 10,
+     "y": 180
     }
    ]
   }

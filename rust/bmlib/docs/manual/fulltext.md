@@ -335,7 +335,8 @@ or a title you have, to the segmenter as `metadata_title`.
 `SectionSegmenter::default().segment_document(blocks, file_path,
 metadata_title, metadata)` turns lines into a `SegmentedDocument` of typed
 `Section`s. Page furniture (running heads, page numbers) is set aside first;
-a heading is a short line larger than the body median by
+a heading is a short line larger than the body median (the median of the
+lines' characters, not of the lines, *unreleased*) by
 `font_size_threshold`, or a bold or italic one at body size, which must match
 a pattern exactly or carry a section number (`"2.1."`); the size floor
 `min_heading_size` is capped at the body median, so a journal set in 8 pt
@@ -370,7 +371,9 @@ let doc = SectionSegmenter::default().segment_document(
 );
 let types: Vec<SectionType> = doc.sections.iter().map(|s| s.section_type).collect();
 assert_eq!(types, [SectionType::Methods, SectionType::Results]);
-assert_eq!(doc.title, None); // "A trial" is not printed on page 1, so it is not believed
+// "A trial" is not printed on page 1, so it is not believed, and no line is
+// half again the 10 pt body (14 pt headings, so "Methods" is not taken instead).
+assert_eq!(doc.title, None);
 
 let canonical = canonical_from_segmented(&doc);
 assert_eq!(canonical.converter_version, "pdf-5");

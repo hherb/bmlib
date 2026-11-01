@@ -2456,7 +2456,12 @@ Methods. The median counts each line by its characters *(unreleased,
 body's lines while holding a fraction of its text, and a median over lines
 then took the table's size for the body's, so every body line was
 heading-sized and each naming a section ("Methods: Five databases ...")
-became a heading.
+became a heading. Where the characters split exactly in half, the sizes
+either side are averaged, and a line with no text does not count. With the
+body size right, real headings set only slightly larger than it, or bold and
+slightly smaller, can now miss the 1.2× ratio or the floor — about 210
+headings in some 50 of 1,114 local journal PDFs, against about 550 body lines
+no longer made headings in 60 (#628).
 
 **Numbered headings nest** *(unreleased)*. A heading opening with a section
 number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first

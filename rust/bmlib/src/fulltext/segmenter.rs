@@ -245,7 +245,7 @@ pub fn drop_page_furniture(blocks: &[TextBlock]) -> Vec<TextBlock> {
         .collect()
 }
 
-/// Median font size of the characters of `blocks`, ignoring non-positive sizes.
+/// Median font size of the characters of `blocks`.
 ///
 /// The **median, not the mean**, so headings and footnotes cannot drag the
 /// body-text estimate. Each line counts by its characters (code points), not
@@ -253,8 +253,9 @@ pub fn drop_page_furniture(blocks: &[TextBlock]) -> Vec<TextBlock> {
 /// lines while holding a fraction of its text, and a line median then reads
 /// the table's size as the body's, so every body line looks heading-sized.
 /// Where the characters split exactly in half, the two sizes either side are
-/// averaged, so one-character lines give the plain median. Returns
-/// [`DEFAULT_FONT_SIZE`] when no block carries a usable size and some text.
+/// averaged, so lines of one length give the plain median. A line with no text
+/// or a non-positive size does not count; returns [`DEFAULT_FONT_SIZE`] when no
+/// block carries both a usable size and some text.
 #[must_use]
 pub fn median_font_size(blocks: &[TextBlock]) -> f64 {
     let mut weighted: Vec<(f64, usize)> = blocks

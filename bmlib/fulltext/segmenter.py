@@ -198,7 +198,7 @@ def drop_page_furniture(blocks: list[TextBlock]) -> list[TextBlock]:
 
 
 def _median_font_size(blocks: list[TextBlock]) -> float:
-    """Median font size of the characters of *blocks*, ignoring non-positive sizes.
+    """Median font size of the characters of *blocks*.
 
     The median, not the mean, so headings and footnotes cannot drag the
     body-text estimate. Each line counts by its characters (code points), not
@@ -206,8 +206,9 @@ def _median_font_size(blocks: list[TextBlock]) -> float:
     lines while holding a fraction of its text, and a line median then reads
     the table's size as the body's, so every body line looks heading-sized.
     Where the characters split exactly in half, the two sizes either side are
-    averaged, so one-character lines give the plain median. Returns 12.0 when
-    no block carries a usable size and some text.
+    averaged, so lines of one length give the plain median. A line with no
+    text or a non-positive size does not count; returns 12.0 when no block
+    carries both a usable size and some text.
     """
     weighted = sorted((b.font_size, len(b.text)) for b in blocks if b.font_size > 0 and b.text)
     total = sum(weight for _, weight in weighted)

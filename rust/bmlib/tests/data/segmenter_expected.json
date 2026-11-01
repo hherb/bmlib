@@ -837,6 +837,31 @@
     "value": 10.0
   },
   {
+    "name": "median_font_size/code-points",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/only-empty-text",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/empty-text-at-the-half",
+    "ok": true,
+    "value": 11.0
+  },
+  {
+    "name": "median_font_size/unsorted",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/fractional-half",
+    "ok": true,
+    "value": 10.5
+  },
+  {
     "name": "join_blocks/no-gap",
     "ok": true,
     "value": "one\ntwo"
@@ -1012,6 +1037,44 @@
           "content": "Method text.",
           "page_end": 1,
           "page_start": 1,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/no-headings-multi-page",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Some prose\nMore prose",
+          "page_end": 1,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/small-table-lines-make-no-body-line-a-heading",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 1.0,
+          "content": "Two reviewers screened every record and graded the evidence with\nn = 12\nn = 13\nn = 14\nn = 15\nn = 16\nn = 17\nn = 18\nn = 19\nn = 20\nn = 21\nn = 22\nn = 23\nthe GRADE approach. Results: Thirty-four trials were included, and\nmost were at low risk of bias in every domain the tool assesses.",
+          "page_end": 0,
+          "page_start": 0,
           "section_type": "methods",
           "subsections": [],
           "title": "Methods"

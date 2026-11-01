@@ -11,16 +11,30 @@ All notable changes to bmlib are documented here. The format is based on
 - **A long table set small no longer makes every body line a heading**
   (found smoke-testing hherb/StudyAnalyzer with an MDPI review). The body
   size the heading and title rules measure against was the median over
-  *lines*; the paper's five-page table, 7 pt with one short cell per line,
-  gave 1,294 lines to the body's 523, so the "body" was 7 pt, every 10 pt
-  body line was heading-sized, and each holding "Background:", "Methods:" or
-  "Results:" became a heading. The median now counts each line by its
-  characters (`median_font_size` / `_median_font_size`), and an exact half
-  split averages the sizes either side, so one-character lines give the old
-  median. `PDF_CANONICAL_VERSION` is 5 (`"pdf-5"`). Python and Rust alike,
-  held by the segmenter oracle (three new cases; four `segment_document`
-  cases whose 16 pt headings sat over one 12 pt line now find them; two whose
-  body was a placeholder shorter than their headings got a line of body text).
+  *lines*; the paper's lines at ~7 pt, mostly its five-page table with one
+  short cell per line, were 1,294 holding 7,877 characters, against the
+  body's 523 lines and 38,300 characters at ~10 pt, so the "body" was 7 pt,
+  every 10 pt body line was heading-sized, and each holding "Background:",
+  "Methods:" or "Results:" became a heading. The median now counts each line
+  by its characters (`median_font_size` / `_median_font_size`), an exact half
+  split averages the sizes either side (so lines of one length give the old
+  median), and a line with no text does not count. On that paper the body
+  now measures 9.87 pt and its 31 headings are found. `PDF_CANONICAL_VERSION`
+  is 5 (`"pdf-5"`). Python and Rust alike, held by the segmenter oracle
+  (eight new `median_font_size` cases, among them non-ASCII text, an unsorted
+  list and a fractional half; two `segment_document` cases, small table lines
+  that made a body line a heading and a fallback spanning two pages; four
+  `segment_document` cases where each
+  16 pt heading sat over one 12 pt line now find them; two whose body was a
+  placeholder shorter than their headings got a line of body text).
+  **Measured** over 1,114 Europe PMC journal PDFs held locally (no list is
+  committed), segmented with both medians from the same lines: 90 move.
+  About 550 body lines in 60 papers are no longer headings; about 210 real
+  headings in some 50 papers are lost, set only slightly larger than the now
+  accurate body size (Cell's 8.97 pt over 8 pt, 1.12×) or bold and slightly
+  smaller (9.5 pt under 10 pt), so they miss the 1.2× ratio or the floor the
+  heading rules were tuned to with the line median. That regression is #628;
+  neither a 1.1 ratio nor a lower floor fixes it cleanly.
 
 - **A PDF set the way Elsevier sets it segments** (found smoke-testing
   hherb/StudyAnalyzer with a *Life Sciences* paper). Its headings are 8 pt
