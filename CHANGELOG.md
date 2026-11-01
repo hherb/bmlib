@@ -79,6 +79,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The Rust port reads the Retraction Watch export in linear time, and
+  names a skipped row's last line as Python does.** `csv::Reader` recounted
+  the newlines from the start of the file for every record, so the parse was
+  quadratic: building a `RetractionIndex` from the 68 MB export of 2026-11-01
+  took 849 s, and the iPhone app never stored one. It counts on from the last
+  record now. The count also stopped short of the record's real end (the
+  record's field bytes carry no commas, quotes or terminator), so a row whose
+  embedded newline sat in a late field (`Notes`) was reported a line early,
+  where Python's `line_num` names the line it ended on; it counts to the
+  reader's position after the record now.
+
 - **An OpenAI-compatible server's error-shaped 200 is a `ValueError` naming
   what arrived** (#617, found in PR #615's review). `chat()` read
   `response.choices[0]` unguarded, so a 200 with `choices: []` (a content

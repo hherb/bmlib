@@ -629,6 +629,71 @@ fn a_reported_line_accounts_for_an_embedded_newline() {
     assert_eq!(outcome.skipped[0].line, 5);
 }
 
+/// A newline late in a row is counted too, so a skipped row reports the line it
+/// ended on, as Python's `line_num` does: counted only to the row's start plus
+/// its field bytes (which carry no commas, quotes or terminator), a newline in
+/// the `Notes` column fell past the count and the row read as ending a line early.
+#[test]
+fn a_skipped_rows_line_counts_a_newline_in_its_last_field() {
+    let unusable = csv_row(
+        "3",
+        "3/9/2026 0:00",
+        "10.1/n",
+        "1",
+        "5/6/2023 0:00",
+        "Unavailable",
+        "0",
+        "Retraction",
+        "x;",
+        "T",
+        "J",
+    )
+    .replace(",Notes,", ",\"Notes\nmore\",");
+    let outcome = parse_doc(&(HEADER.to_string() + &unusable));
+    // Lines: 1 header, 2-3 the unusable row.
+    assert_eq!(outcome.skipped[0].line, 3);
+    let unterminated = parse_doc(&(HEADER.to_string() + unusable.trim_end_matches('\n')));
+    assert_eq!(
+        unterminated.skipped[0].line, 3,
+        "a last row with no newline"
+    );
+}
+
+/// Each record's line is counted on from the last, not from the file's start:
+/// recounting made the parse quadratic, and the 73k-row export took over ten
+/// minutes, a run waiting on it all the while. 50k rows take milliseconds
+/// counted on and minutes recounted.
+#[test]
+fn a_late_rows_line_is_counted_without_rescanning_the_file() {
+    let rows = 50_000;
+    let unusable = csv_row(
+        "3",
+        "3/9/2026 0:00",
+        "10.1/n",
+        "1",
+        "5/6/2023 0:00",
+        "Unavailable",
+        "0",
+        "Retraction",
+        "x;",
+        "T",
+        "J",
+    );
+    let doc = HEADER.to_string() + &default_row().repeat(rows) + &unusable;
+    let started = std::time::Instant::now();
+    let outcome = parse_doc(&doc);
+    assert_eq!(
+        outcome.skipped[0].line,
+        rows + 2,
+        "header 1, rows 2..=50001"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
 /// An unknown nature still yields a notice — it must cost one row of fidelity
 /// rather than abort the import — but it is **reported once per distinct
 /// value**, because `is_retracted` reads it as evidence of nothing and a silent
