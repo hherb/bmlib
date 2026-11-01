@@ -72,6 +72,12 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A line set in a paper's own heading face counts as bold** (#628, with the
+  Python library). `identify_section_markers` learns the faces of the lines
+  that are headings naming a section exactly, less the body's face (most
+  characters, first seen on a tie) and an unnamed one, and holds a line in
+  one of them to the bold rules, so Frontiers' unflagged numbered
+  subsections at the body size are headings. `PDF_CANONICAL_VERSION` stays 5.
 - **The body size is the median of the lines' characters, not of the lines**
   (pdf-5, with the Python library). `fulltext::median_font_size` counts each
   line by its code points, averages the sizes either side of an exact half,
