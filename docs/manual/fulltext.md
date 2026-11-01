@@ -2476,13 +2476,16 @@ sample reads as genuine about half the time — mostly a numbered subsection
 **A line in the paper's own heading face counts as bold** *(unreleased,
 `"pdf-5"`, #628)*. MuPDF flags bold and italic from the font's own flags,
 never from its name, and some journals set headings in a face of their own
-that is flagged neither (Frontiers' numbered subsections, Cell's semibold).
+that is flagged neither (Frontiers' numbered subsections, for one).
 The faces of the lines that are headings and name a section exactly — less
 the body's own face, the one holding the most characters, and a face with no
 name — are the paper's heading faces, and a line in one is judged as a bold
-line would be: a numbered one at the body size or over is a heading, an exact
-section name down to 0.9 of it. Over the same 1,114 PDFs this finds 177
-headings in 36 papers and loses none. What it does not reach: a numbered
+line would be: a numbered one at the heading floor or over (the smaller of
+`min_heading_size` and the body size) is a heading, an exact section name
+down to 0.9 of the body size. Over the same 1,114 PDFs this finds 177
+headings in 36 papers and loses none. Like a bold line, a line in a heading
+face that opens with a quantity numbered like a subsection reads as one, a
+line of prose included (#623). What it does not reach: a numbered
 heading naming no section at top level is still dropped, and every numbered
 subsection under it with it; a heading run in with its first sentence on one
 line; a face named bold or italic but flagged neither, where no exact-match

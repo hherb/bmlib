@@ -467,6 +467,7 @@ class TestAHeadingFaceIsSetApartAsBoldIs:
 
     def test_the_same_line_in_the_body_face_is_body_text(self):
         intro = SectionSegmenter().segment_document(self.paper("Helvetica")).sections[-1]
+        assert intro.title == "1 Introduction"
         assert intro.subsections == []
         assert "1.1 Low pH" in intro.content
 
@@ -479,7 +480,44 @@ class TestAHeadingFaceIsSetApartAsBoldIs:
             block("Body text of the paper.", y=48.0),
         ]
         results = SectionSegmenter().segment_document(blocks).sections[-1]
+        assert results.title == "Results"
         assert results.subsections == []
+
+    def test_a_partial_match_teaches_no_face(self):
+        blocks = [
+            *self.paper("Head")[:3],
+            in_face(block("Results of the trial", size=HEADING_SIZE, y=36.0), "Other"),
+            block("Body text of the paper.", y=48.0),
+            in_face(block("1.1 Low pH", y=60.0), "Other"),
+            block("Body text of the paper.", y=72.0),
+        ]
+        results = SectionSegmenter().segment_document(blocks).sections[-1]
+        assert results.title == "Results of the trial"
+        assert results.subsections == []
+        assert "1.1 Low pH" in results.content
+
+    def test_a_line_naming_a_section_that_is_no_heading_teaches_no_face(self):
+        blocks = [
+            *self.paper("Head")[:3],
+            in_face(block("Results", y=36.0), "Caption"),
+            in_face(block("1.1 Low pH", y=48.0), "Caption"),
+            block("Body text of the paper.", y=60.0),
+        ]
+        intro = SectionSegmenter().segment_document(blocks).sections[-1]
+        assert intro.title == "1 Introduction"
+        assert intro.subsections == []
+
+    def test_an_exact_name_in_the_heading_face_counts_down_to_the_floor(self):
+        blocks = [
+            *self.paper("Head")[:3],
+            in_face(block("Results", size=BODY_SIZE * 0.95, y=36.0), "Head"),
+            block("Body text of the paper.", y=48.0),
+            in_face(block("Discussion", size=BODY_SIZE * 0.85, y=60.0), "Head"),
+            block("Body text of the paper.", y=72.0),
+        ]
+        doc = SectionSegmenter().segment_document(blocks)
+        assert [s.title for s in doc.sections] == ["Front Matter", "1 Introduction", "Results"]
+        assert "Discussion" in doc.sections[-1].content
 
 
 class TestTitleExtraction:

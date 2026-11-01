@@ -544,8 +544,8 @@ class SectionSegmenter:
 
         MuPDF flags a line bold or italic only when its font says so, and some
         journals set their headings in a face of their own that says neither:
-        Frontiers' numbered subsections at about the body size, Cell's
-        semibold. A line in one of these faces is set apart as a bold one is.
+        Frontiers' numbered subsections at about the body size, for one. A
+        line in one of these faces is judged as a bold one is.
         The body's own face, the one holding the most characters (the first
         seen on a tie), is never one, or one body line naming a section would
         make every body line bold; nor is a face with no name.
@@ -612,10 +612,11 @@ class SectionSegmenter:
         heading it does not number from, the heading it does belong to was not
         found ("3.1." after an unnamed "3. Metformin lowers glucose" is not
         Methods' because "2." was). A line in a face the paper's exact-match
-        headings are set in (:meth:`_heading_faces`) counts as bold. A bold
-        quantity numbered like a subsection
+        headings are set in (:meth:`_heading_faces`) counts as bold for the
+        heading test alone. A bold quantity numbered like a subsection
         ("2.5 mg/kg" under "2.", "1.5 h" under an unnumbered "Results") still
-        reads as one.
+        reads as one, and so does a line of prose opening with one in a
+        heading face (#623).
         """
         markers: list[_Marker] = []
         # The headings enclosing the current one, outermost first.

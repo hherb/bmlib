@@ -13,12 +13,19 @@ PRs #613-#615, #620-#622, #625-#627 and this session's PR._
 
 MuPDF flags bold and italic from a font's own flags, and Frontiers sets its
 numbered subsections, flagged neither, in a heading face at about the body
-size, so once pdf-5 measured the body size right they missed the 1.2× ratio.
+size, so they missed the 1.2× ratio (only 17 of the 177 were found even
+before pdf-5).
 `SectionSegmenter._heading_faces` / Rust `heading_faces` learn each paper's
 faces from its exact-match headings (less the body's face, most characters,
 first seen on a tie, and an unnamed face); `_identify_section_markers` judges
-a line in one as bold. Six `segment_document` oracle cases (each guard
-mutation-killed in both languages), three unit tests. **Measured** over the
+a line in one as bold. Ten `segment_document` oracle cases, six unit tests;
+every guard mutation-killed in both languages (three guards and Rust's
+characters-not-bytes count were unpinned until PR #629's review). A line of
+prose opening with a numbered quantity in a heading face reads as a
+subsection, as a bold one does: posted on **#623**, since a length cap and a
+no-wrap rule were both measured and would lose genuine headings (a learned
+face's mean line runs up to 1.09× the body's; 28 of the 177 wrap).
+**Measured** over the
 1,114 local PDFs (`~/europepmc_pdf/pdf`, the lines cached in one extraction):
 36 papers move, 177 headings found, 0 lost, all read by hand and genuine.
 `PDF_CANONICAL_VERSION` stays 5 (unreleased), digest re-pinned. **#628 stays
