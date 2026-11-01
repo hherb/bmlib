@@ -2443,7 +2443,14 @@ contains at least one letter. A line's font must also reach the floor
 `min_heading_size` (a constructor parameter, default 10.0), **capped at the
 body's median size** *(unreleased, `"pdf-4"`)*: a journal set in 8 pt sets its
 headings in 8 pt bold, which the plain 10 pt floor refused, so such a paper
-had no headings at all. Candidate headings are classified against an
+had no headings at all. **A line naming a section exactly** ("Results",
+"INTRODUCTION", "2. Methods") needs less *(unreleased, `"pdf-5"`, #628)*: any
+size above the body's, or bold or italic down to 0.9 of it
+(`_EXACT_HEADING_FLOOR_RATIO`). Cell sets its headings unbolded at 8.97 pt over
+an 8 pt body (1.12×), and others set bold 9.5 pt headings under a 10 pt body;
+both missed the ratio or the floor once the body size was measured by
+characters. A partial match keeps both, since that is how a body line naming a
+section became a heading. Candidate headings are classified against an
 anchored, case-insensitive pattern table (`"3.  Results"` matches: leading
 numbering and trailing punctuation are stripped first). A heading no
 anchored pattern claims gets a second, word-bounded partial pass at 0.7
@@ -2457,11 +2464,13 @@ body's lines while holding a fraction of its text, and a median over lines
 then took the table's size for the body's, so every body line was
 heading-sized and each naming a section ("Methods: Five databases ...")
 became a heading. Where the characters split exactly in half, the sizes
-either side are averaged, and a line with no text does not count. With the
-body size right, real headings set only slightly larger than it, or bold and
-slightly smaller, can now miss the 1.2× ratio or the floor — about 210
-headings in some 50 of 1,114 local journal PDFs, against about 550 body lines
-no longer made headings in 60 (#628).
+either side are averaged, and a line with no text does not count. Measured
+over 1,114 local journal PDFs against the line median and the rules before
+#628, the two changes together move 195 papers: about 550 body lines are no
+longer headings, 482 headings are found that were not (most of them a plain
+"Methods" or "References" just over the body), and 181 are lost, of which a
+sample reads as genuine about half the time — mostly a numbered subsection
+("3.3.1 Nitroimidazole") set at body size, which only a partial match names.
 
 **Numbered headings nest** *(unreleased)*. A heading opening with a section
 number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first

@@ -66,8 +66,11 @@ The Python library is documented separately, in the repository's
   line by its code points, averages the sizes either side of an exact half,
   and leaves out a line with no text, so a long table set small, one short
   cell per line, no longer makes every body line heading-sized.
-  `PDF_CANONICAL_VERSION` is 5. Real headings set only slightly larger than
-  the now accurate body size can miss the ratio or the floor (#628).
+  `PDF_CANONICAL_VERSION` is 5. With the body size right, a line matching a
+  section pattern exactly is a heading over the body at any size, or bold or
+  italic down to `EXACT_HEADING_FLOOR_RATIO` (0.9) of it (#628), since real
+  headings set just over the body or bold just under it missed the 1.2 ratio
+  or the floor; `FONT_SIZE_TOLERANCE` is the slack those comparisons take.
 - **A PDF set the way Elsevier sets it segments** (pdf-4, #622, with the
   Python library): the heading floor is capped at the body median, numbered
   headings nest, a first-line indent starts a paragraph, and TeX spacing

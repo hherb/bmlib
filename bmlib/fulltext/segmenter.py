@@ -62,6 +62,12 @@ PARTIAL_MATCH_CONFIDENCE = 0.7
 _DEFAULT_FONT_SIZE = 12.0
 # A heading is short; a line longer than this is prose whatever its font.
 _MAX_HEADING_CHARS = 100
+# A line naming a section exactly is a heading when it is larger than the
+# body at all, or bold or italic down to this fraction of the body size (#628):
+# Cell sets 8.97 pt headings over an 8 pt body, others bold 9.5 pt under 10 pt.
+_EXACT_HEADING_FLOOR_RATIO = 0.9
+# Font sizes are compared with this much slack, so equal sizes compare equal.
+_FONT_SIZE_TOLERANCE = 1e-6
 # The title fallback must exceed the body median by this factor before the
 # largest first-page line is believed to be the title.
 _TITLE_SIZE_RATIO = 1.5
@@ -510,17 +516,28 @@ class SectionSegmenter:
         at least one alphabetic character — a bare "3." is numbering, not a
         heading. The floor is ``min_heading_size`` or the body size, whichever
         is smaller: a journal set in 8 pt sets its headings in 8 pt bold.
+
+        A line naming a section exactly ("Results", "INTRODUCTION") needs
+        less (#628): any size above the body's, or bold or italic down to
+        ``_EXACT_HEADING_FLOOR_RATIO`` of it. With the body size measured by
+        characters, headings set just over the body, or bold just under it,
+        would miss the ratio or the floor; a partial match still needs both,
+        since that is how a body line naming a section became a heading.
         """
-        if block.font_size < min(self.min_heading_size, median_font_size):
-            return False
-        heading_sized = block.font_size >= median_font_size * self.font_size_threshold
-        if not heading_sized and not (block.is_bold or block.is_italic):
-            return False
         if len(block.text) > _MAX_HEADING_CHARS:
             return False
         if not any(c.isalpha() for c in block.text):
             return False
-        return True
+        styled = block.is_bold or block.is_italic
+        if block.font_size >= min(self.min_heading_size, median_font_size):
+            if styled or block.font_size >= median_font_size * self.font_size_threshold:
+                return True
+        if self._match_section_type(block.text)[1] < 1.0:
+            return False
+        if block.font_size > median_font_size + _FONT_SIZE_TOLERANCE:
+            return True
+        floor = median_font_size * _EXACT_HEADING_FLOOR_RATIO - _FONT_SIZE_TOLERANCE
+        return styled and block.font_size >= floor
 
     def segment_document(
         self, blocks: list[TextBlock], metadata: dict[str, Any] | None = None

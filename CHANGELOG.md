@@ -29,12 +29,23 @@ All notable changes to bmlib are documented here. The format is based on
   placeholder shorter than their headings got a line of body text).
   **Measured** over 1,114 Europe PMC journal PDFs held locally (no list is
   committed), segmented with both medians from the same lines: 90 move.
-  About 550 body lines in 60 papers are no longer headings; about 210 real
-  headings in some 50 papers are lost, set only slightly larger than the now
+  About 550 body lines in 60 papers are no longer headings, but about 210
+  real headings in some 50 are lost, set only slightly larger than the now
   accurate body size (Cell's 8.97 pt over 8 pt, 1.12×) or bold and slightly
   smaller (9.5 pt under 10 pt), so they miss the 1.2× ratio or the floor the
-  heading rules were tuned to with the line median. That regression is #628;
-  neither a 1.1 ratio nor a lower floor fixes it cleanly.
+  heading rules were tuned to with the line median (#628). Neither a 1.1
+  ratio nor a lower floor fixed that cleanly, so **a line naming a section
+  exactly** ("Results", "INTRODUCTION", "2. Methods") is now a heading at
+  any size over the body, or bold or italic down to 0.9 of it; a partial
+  match still needs the ratio and the floor. Against the line median and
+  the old rules, the two changes move 195 papers: about 550 body-line
+  headings go, 482 headings are found that were not, most a plain
+  "Methods" or "References" just over the body (30 of 30 sampled are
+  genuine), and 181 are lost, about half of a sample genuinely headings —
+  mostly a numbered subsection set at body size, which #628 keeps open.
+  Title extraction does not use the heading rule, and the real-PDF
+  extraction fixture did not move; the oracle case `is_potential_header/heading-sized` (an unbolded "Methods",
+  14 pt over 12 pt) now reads `true`, as its name always said.
 
 - **A PDF set the way Elsevier sets it segments** (found smoke-testing
   hherb/StudyAnalyzer with a *Life Sciences* paper). Its headings are 8 pt

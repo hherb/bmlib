@@ -1364,6 +1364,44 @@
   }
  },
  {
+  "name": "segment_document/exact-headings-just-over-the-body",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "INTRODUCTION",
+     "font_size": 8.97,
+     "y": 0
+    },
+    {
+     "text": "Cells were cultured in medium supplemented with serum and antibiotics as before.",
+     "font_size": 8,
+     "y": 20
+    },
+    {
+     "text": "Cells were cultured in medium supplemented with serum and antibiotics as before.",
+     "font_size": 8,
+     "y": 32
+    },
+    {
+     "text": "RESULTS",
+     "font_size": 8.97,
+     "y": 60
+    },
+    {
+     "text": "Cells were cultured in medium supplemented with serum and antibiotics as before.",
+     "font_size": 8,
+     "y": 80
+    },
+    {
+     "text": "Cells were cultured in medium supplemented with serum and antibiotics as before.",
+     "font_size": 8,
+     "y": 92
+    }
+   ]
+  }
+ },
+ {
   "name": "segment_document/metadata-title-corroborated",
   "fn": "segment_document",
   "args": {
@@ -3332,6 +3370,98 @@
     "is_bold": true
    },
    "median_font_size": 12
+  }
+ },
+ {
+  "name": "is_potential_header/exact-just-over-the-body-unbolded",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "INTRODUCTION",
+    "font_size": 8.97
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "is_potential_header/partial-just-over-the-body-unbolded",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "the GRADE approach. Results: Thirty-four",
+    "font_size": 8.97
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "is_potential_header/exact-at-the-body-size-unbolded",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Results",
+    "font_size": 8.0
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "is_potential_header/exact-bold-just-under-the-body",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods",
+    "font_size": 9.5,
+    "is_bold": true
+   },
+   "median_font_size": 10.0
+  }
+ },
+ {
+  "name": "is_potential_header/exact-italic-at-the-exact-floor",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods",
+    "font_size": 9.0,
+    "is_italic": true
+   },
+   "median_font_size": 10.0
+  }
+ },
+ {
+  "name": "is_potential_header/exact-bold-under-the-exact-floor",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods",
+    "font_size": 8.9,
+    "is_bold": true
+   },
+   "median_font_size": 10.0
+  }
+ },
+ {
+  "name": "is_potential_header/exact-unbolded-just-under-the-body",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods",
+    "font_size": 9.5
+   },
+   "median_font_size": 10.0
+  }
+ },
+ {
+  "name": "is_potential_header/partial-bold-just-under-the-body",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods of study",
+    "font_size": 9.5,
+    "is_bold": true
+   },
+   "median_font_size": 10.0
   }
  },
  {

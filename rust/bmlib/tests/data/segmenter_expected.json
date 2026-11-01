@@ -754,7 +754,7 @@
   {
     "name": "is_potential_header/heading-sized",
     "ok": true,
-    "value": false
+    "value": true
   },
   {
     "name": "is_potential_header/body-sized-not-bold",
@@ -1078,6 +1078,34 @@
           "section_type": "methods",
           "subsections": [],
           "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/exact-headings-just-over-the-body",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 1.0,
+          "content": "Cells were cultured in medium supplemented with serum and antibiotics as before.\nCells were cultured in medium supplemented with serum and antibiotics as before.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "INTRODUCTION"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Cells were cultured in medium supplemented with serum and antibiotics as before.\nCells were cultured in medium supplemented with serum and antibiotics as before.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "RESULTS"
         }
       ],
       "title": null
@@ -2005,6 +2033,46 @@
     "name": "is_potential_header/bold_between_floor_and_larger_body",
     "ok": true,
     "value": true
+  },
+  {
+    "name": "is_potential_header/exact-just-over-the-body-unbolded",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/partial-just-over-the-body-unbolded",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exact-at-the-body-size-unbolded",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exact-bold-just-under-the-body",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/exact-italic-at-the-exact-floor",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/exact-bold-under-the-exact-floor",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exact-unbolded-just-under-the-body",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/partial-bold-just-under-the-body",
+    "ok": true,
+    "value": false
   },
   {
     "name": "segment_document/a_heading_with_no_width_still_wraps",

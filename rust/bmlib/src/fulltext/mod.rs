@@ -73,8 +73,8 @@ pub use pdf_text::{
 pub use segmenter::{
     extract_sections, extract_title, identify_section_markers, is_potential_header, join_blocks,
     match_section_type, median_font_size, Marker, SectionSegmenter, DEFAULT_FONT_SIZE,
-    FALLBACK_CONFIDENCE, MAX_HEADING_CHARS, PARAGRAPH_GAP_RATIO, PARTIAL_MATCH_CONFIDENCE,
-    SECTION_PATTERNS, TITLE_SIZE_RATIO,
+    EXACT_HEADING_FLOOR_RATIO, FALLBACK_CONFIDENCE, FONT_SIZE_TOLERANCE, MAX_HEADING_CHARS,
+    PARAGRAPH_GAP_RATIO, PARTIAL_MATCH_CONFIDENCE, SECTION_PATTERNS, TITLE_SIZE_RATIO,
 };
 pub use service::{
     default_cache, entry_is_free, extract_free_pdf_url, html_escape, normalise_pmc_id,

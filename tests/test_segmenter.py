@@ -290,6 +290,26 @@ class TestHeadingDetection:
     def test_digits_alone_are_not_a_heading(self):
         assert not self.segmenter._is_potential_header(block("123 456", size=14.0, bold=True), 10.0)
 
+    def test_an_exact_section_name_just_over_the_body_needs_no_bold(self):
+        # Cell: 8.97 pt headings over an 8 pt body, 1.12x, not flagged bold (#628).
+        assert self.segmenter._is_potential_header(block("INTRODUCTION", size=8.97), 8.0)
+        # A partial match still needs the ratio: that is how body lines became headings.
+        assert not self.segmenter._is_potential_header(
+            block("the GRADE approach. Results: Thirty-four", size=8.97), 8.0
+        )
+        # Exactly the body size is not "over" it.
+        assert not self.segmenter._is_potential_header(block("Results", size=8.0), 8.0)
+
+    def test_an_exact_bold_section_name_may_sit_just_under_the_body(self):
+        # Bold 9.5 pt headings under a 10 pt body (#628), down to 0.9 of it.
+        assert self.segmenter._is_potential_header(block("Methods", size=9.5, bold=True), 10.0)
+        assert self.segmenter._is_potential_header(block("Methods", size=9.0, italic=True), 10.0)
+        assert not self.segmenter._is_potential_header(block("Methods", size=8.9, bold=True), 10.0)
+        assert not self.segmenter._is_potential_header(block("Methods", size=9.5), 10.0)
+        assert not self.segmenter._is_potential_header(
+            block("Methods of study", size=9.5, bold=True), 10.0
+        )
+
 
 class TestMedianFontSize:
     def test_the_median_not_the_mean(self):
