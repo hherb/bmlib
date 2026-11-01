@@ -129,15 +129,19 @@ class FullTextExhaustedError(FullTextError):
     """The chain retrieved nothing and has no link to fall back on (#565).
 
     Raised by :meth:`FullTextService.fetch_fulltext` instead of a bare
-    ``FullTextError``, so a caller tells "the sources failed, try again" from
-    "no free full text exists" without parsing the message. The message is
+    ``FullTextError``, so a caller tells "something failed, a retry may
+    succeed" from "nothing failed" without parsing the message. The message is
     unchanged.
 
     Attributes:
         faults: The fault type names the tiers swallowed, in order — what
             ``FullTextResult.tier_faults`` carries on a returned result. Empty
-            when every source answered and had nothing, so a retry is
-            pointless. A caller's refused identifier is not a fault (#603).
+            when nothing the chain asked failed, so a retry now would get the
+            same answers: every source asked had nothing (``absences > 0``), or
+            none could be asked (``absences == 0``, the only identifier given
+            having been refused). A caller's refused identifier is not a fault
+            (#603). Non-empty may still not be cured by a retry: a malformed
+            remote answer or a bmlib defect (``TypeError``) is a fault too.
         absences: How many sources answered and had nothing.
     """
 
@@ -147,7 +151,7 @@ class FullTextExhaustedError(FullTextError):
         self.absences = absences
 
     def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
-        return type(self), (self.args[0], self.faults, self.absences)
+        return type(self), (self.args[0], self.faults, self.absences), self.__dict__
 
 
 def _plural(n: int, noun: str) -> str:
@@ -850,9 +854,10 @@ class FullTextService:
                 PMID to fall back on — …"`` when identifiers were given,
                 nothing was retrieved, and there is no held ``html`` source and
                 no usable DOI or PMID to build a link from, which includes a
-                refused *pmid* or *doi* given alone. Its ``faults`` say
-                whether anything failed (#565). Every tier failure is
-                swallowed and counted on the exhaustion report.
+                refused *pmid* or *doi*, or a malformed *pmc_id*, given
+                alone. Its ``faults`` say whether anything failed (#565).
+                Every tier failure is swallowed and counted on the exhaustion
+                report.
 
         Tries:
           Cache: check disk cache for HTML/PDF (if identifier given). Where

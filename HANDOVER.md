@@ -21,23 +21,31 @@ maintainer's choice of shape: one type, no separate `Unavailable` for the
 no-fault case, no `NoIdentifiers` variant (`"No identifiers provided"` stays
 plain/`Other`). The message is unchanged; a refused identifier is not a fault
 (#603's rule), so a refused PMID alone raises with both fields empty. The
-Python error pickles with its fields (`__reduce__`, the `embed` errors'
-idiom). Held by four new cases in `tests/fixtures/fulltext_source.json` (both
-runners now check that a raising call asked for every scripted answer too), a
-pickle test and the refused-PMID test; mutating the faults or absences
-argument (both languages for faults) fails them. Breaking for an exhaustive
-Rust `match` on `FullTextError`.
+Python error pickles with its fields and its notes (`__reduce__`, the `embed`
+errors' idiom). Held by six new cases in `tests/fixtures/fulltext_source.json`
+(both runners now check that a raising call asked for every scripted answer
+too) — two of them the same two-fault chain with and without the caller's
+link, holding the raised `faults` to a returned result's `tier_faults` — an
+order test per language (the transport fault's name differs: httpx's class in
+Python, `TransportError` in Rust), a pickle test and the refused-PMID test;
+mutating the faults or absences argument (both languages for faults) fails
+them. Breaking for an exhaustive Rust `match` on `FullTextError`;
+`#[non_exhaustive]` was not added (a decision for the maintainer, cheapest in
+this release).
 
-**For StudyAnalyzer**: catch `FullTextError::Exhausted { faults, .. }`; empty
-`faults` is "no free full text exists", non-empty is "the sources could not be
-reached, try again". Stop parsing `describe()`'s wording.
+**For StudyAnalyzer**: match `FullTextError::Exhausted { faults, .. }`; empty
+`faults` is "nothing failed: the sources asked had nothing" (`absences == 0`:
+none could be asked), non-empty is "something failed; a retry may succeed" (a
+`TypeError` there is a bmlib bug, not an outage). Stop parsing `describe()`'s
+wording.
 
 ## Earlier today (all merged; the CHANGELOG entries are the argument)
 
 - **PR #625** (#603): `FullTextResult.tier_faults`, the fault type names the
   chain swallowed before a returned result; `[]` on a cache hit; a stale
   rendering served over a failed re-fetch carries the re-fetch's faults; a
-  refused caller identifier is kept apart (`refuse()`) and not listed.
+  refused caller identifier is kept apart (`refuse()`) and not listed. A
+  returned result carries no absence count (only `FullTextExhaustedError` does).
 - **PR #622** (pdf-4): a PDF set the way Elsevier sets it segments — heading
   floor capped at the body size, numbered headings nest, first-line indents
   start paragraphs, TeX spacing accents joined by glyph position,

@@ -190,10 +190,14 @@ How construction differs from Python:
   *"N attempts failed"*, is Python's, and so is its meaning.
 
 `fetch_fulltext` returns `Err(FullTextError::Other)` when no identifier was
-given at all, and when the chain found nothing and has no DOI or PMID link to
-degrade to. A tier failing never aborts the chain. `FullTextError::Unavailable`
-is Python's `FullTextUnavailableError`: a source that answered and has
-nothing.
+given at all, and `Err(FullTextError::Exhausted { message, faults, absences })`
+when the chain found nothing and has no DOI or PMID link to degrade to *(unreleased
+— #565; it was `Other`)*. Match on `faults`, not on `message`: empty means nothing
+the chain asked failed, so a retry now would get the same answers (`absences` is 0
+where nothing could be asked, the only identifier given being refused); non-empty
+means a retry may succeed. A tier failing never aborts the chain.
+`FullTextError::Unavailable` is Python's `FullTextUnavailableError`: a source that
+answered and has nothing.
 
 ### What came back
 

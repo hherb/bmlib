@@ -166,6 +166,29 @@
    "expected": {"raises": {"exhausted": true, "faults": [], "absences": 0}}
   },
   {
+   "name": "two-faults-before-the-callers-link",
+   "request": {
+    "fulltext_sources": [
+     {"url": "https://www.medrxiv.org/n1.source.xml", "format": "xml", "source": "medrxiv"},
+     {"url": "https://www.medrxiv.org/n2.source.xml", "format": "xml", "source": "medrxiv"},
+     {"url": "https://www.medrxiv.org/n", "format": "html", "source": "medrxiv"}
+    ]
+   },
+   "responses": [{"status": 503}, {"status": 503}],
+   "expected": {"source": "medrxiv", "content_kind": "none", "jats_xml": null, "tier_faults": ["FullTextError", "FullTextError"]}
+  },
+  {
+   "name": "exhausted-the-same-two-faults-with-no-link",
+   "request": {
+    "fulltext_sources": [
+     {"url": "https://www.medrxiv.org/n1.source.xml", "format": "xml", "source": "medrxiv"},
+     {"url": "https://www.medrxiv.org/n2.source.xml", "format": "xml", "source": "medrxiv"}
+    ]
+   },
+   "responses": [{"status": 503}, {"status": 503}],
+   "expected": {"raises": {"exhausted": true, "faults": ["FullTextError", "FullTextError"], "absences": 0}}
+  },
+  {
    "name": "no-identifiers-is-not-exhaustion",
    "request": {},
    "responses": [],

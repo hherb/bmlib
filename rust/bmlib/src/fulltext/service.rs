@@ -178,24 +178,30 @@ pub const BUG_TYPE_NAMES: [&str; 5] = [
 pub enum FullTextError {
     /// A source answered, and it has no free full text for this article.
     ///
-    /// Raised where a source replied and had nothing. A transport or protocol
-    /// fault — a 5xx, a timeout, unparseable JSON — is [`FullTextError::Other`].
+    /// Python's `FullTextUnavailableError`. Inside the chain a tier records an
+    /// absence as a [`TierFault`] directly, so `fetch_fulltext` never returns
+    /// this.
     Unavailable(String),
-    /// Any other retrieval failure: a transport fault, a malformed body, or a
-    /// call naming no article (`"No identifiers provided"`).
+    /// A PMC ID that is not `PMC` and digits ([`normalise_pmc_id`]), or a call
+    /// naming no article (`"No identifiers provided"`). Inside the chain a
+    /// transport fault or a malformed body is a [`TierFault`], never this.
     Other(String),
     /// The chain retrieved nothing and has no link to fall back on (#565).
     ///
-    /// Python's `FullTextExhaustedError`. A caller tells "the sources failed,
-    /// try again" from "no free full text exists" by `faults` alone, without
+    /// Python's `FullTextExhaustedError`. A caller tells "something failed, a
+    /// retry may succeed" from "nothing failed" by `faults` alone, without
     /// parsing `message`.
     Exhausted {
         /// The exhaustion report, as it was worded before #565.
         message: String,
         /// The fault type names the tiers swallowed, in order — what
         /// [`FullTextResult::tier_faults`] carries on a returned result. Empty
-        /// when every source answered and had nothing, so a retry is
-        /// pointless. A caller's refused identifier is not a fault (#603).
+        /// when nothing the chain asked failed, so a retry now would get the
+        /// same answers: every source asked had nothing (`absences > 0`), or
+        /// none could be asked (`absences == 0`, the only identifier given
+        /// having been refused). A caller's refused identifier is not a fault
+        /// (#603). A transport failure is named `TransportError` here and by
+        /// httpx's class (`ConnectError`, `ReadTimeout`) in Python.
         faults: Vec<String>,
         /// How many sources answered and had nothing.
         absences: usize,

@@ -14,9 +14,9 @@ The Python library is documented separately, in the repository's
 - **`FullTextError::Exhausted { message, faults, absences }`** (#565, with the
   Python library's `FullTextExhaustedError`): `fetch_fulltext`'s error when
   the chain retrieved nothing and has no link to fall back on, which was
-  `Other`. Empty `faults` means every source answered and had nothing, so a
-  retry is pointless; `Display` is the old message. Breaking for an exhaustive
-  `match` on `FullTextError`. `"No identifiers provided"` stays `Other`.
+  `Other`. Empty `faults` means nothing the chain asked failed, so a retry now
+  would get the same answers (`absences` is 0 where nothing could be asked);
+  `Display` is the old message. `"No identifiers provided"` stays `Other`.
 
 - **`FullTextResult::tier_faults`** (#603, with the Python library): the type
   names of the faults the tier chain swallowed before the result it returned,
@@ -65,6 +65,10 @@ The Python library is documented separately, in the repository's
   `PdfError::unreadable(..)`, `PdfError::engine(..)` and so on.
 - **`FullTextResult` has a new field**, `pdf_extraction_failure`; a struct
   literal must name it.
+- **`FullTextResult` has a new field**, `tier_faults` (#603); a struct literal
+  must name it (`Vec::new()`).
+- **`FullTextError` has a new variant**, `Exhausted` (#565), which an exhaustive
+  `match` must handle; the chain's exhaustion is no longer `Other`.
 
 ### Fixed
 
