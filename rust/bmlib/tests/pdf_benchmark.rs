@@ -22,6 +22,8 @@
 //! With `BMLIB_BENCHMARK_OUT` set it also writes the canonical text there, to
 //! diff against Python's `tests/test_pdf_benchmark.py`, which writes the same.
 
+#![cfg(feature = "pdf")]
+
 use bmlib::fulltext::canonical::canonical_from_segmented;
 use bmlib::fulltext::pdf_text::{PdfLimit, PdfTextExtractor, SPACING_ACCENTS};
 use bmlib::fulltext::segmenter::SectionSegmenter;
