@@ -12,23 +12,28 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629 and #630.
 ## This session: a face named bold or italic is read as one (#628, part)
 
 MuPDF flags bold and italic from a font's own data and leaves Advent 3B2's
-`AdvOT….B`/`.I`/`.BI` faces (223 / 203 of the 1,114 local PDFs), `Heavy`,
+`AdvOT….B`/`.I`/`.BI` faces (a `.B`/`.BI` face in 223 of the 1,114 local PDFs, a
+`.I`/`.BI` one in 203), `Heavy`,
 `Black`, `Extrabold`, `Demi` and a run-together `…It` unflagged.
 `TextBlock.is_bold`/`is_italic` are now the dominant span's flag **or** its
 font's name (`_named_bold`/`_named_italic` in `pdf_converter.py`, Rust
 `named_bold`/`named_italic` in `pdf_text.rs`, used by `line_to_block` and
 `MupdfExtractor`); a span keeps MuPDF's flags. Each word was kept only where it
-adds a face the flags miss (`Bd`, `Ital`, `Oblique` left out; `Medium`/`SemiCn`
-are not bold). Held by 16 `pdf_text` oracle cases and the `pdf_extraction`
+adds a face the flags miss (`Bd`, `Ital`, `Oblique` left out; `Medium` and `Semi`
+alone are not bold, nor `DemiLight`). Held by 25 `pdf_text` oracle cases and the `pdf_extraction`
 fixture (new faces `AdvOTtest.B`, `AdvOTtest.I`; `pdf_warnings.json`'s control
 sha moved with it, its warnings did not); every clause mutation-killed in both
 languages. **Measured** over `~/europepmc_pdf/pdf` (the lines cached by #629's
 session in one extraction): 44 papers move, 320 heading lines gained (250
-genuine, 29 *Front Matter*, 39 Hindawi run-ins carrying their first words, 2 a
-bold table cell), 30 lost, each a lone *Full Text* placeholder.
+genuine, 29 *Front Matter*, 39 Hindawi run-ins carrying their first words, 2
+bold table header cells), 30 lost, each a lone *Full Text* placeholder.
 `PDF_CANONICAL_VERSION` stays 5, digest re-pinned. **#628 stays open** for an
 unnamed numbered parent dropping its children (a decision), run-in headings,
-and bold back matter under 0.9 of the body.
+and bold back matter under 0.9 of the body. PR #630's review added the
+`DemiLight` refusal (no corpus PDF uses it) and found an `Ita` suffix unread:
+MuPDF flags every `Ita` face found italic but `MetaSerifOT-BookIta` (one PDF),
+posted on #628 as its own item, since reading it needs the 44-paper diff
+re-run.
 
 ## Earlier today (all merged; the CHANGELOG entries are the argument)
 
@@ -227,7 +232,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,902 passing + 165 skipped** on `fix/628-bold-from-font-name`
+- **Tests: 8,906 passing + 165 skipped** on `fix/628-bold-from-font-name`
   (`uv run pytest tests/ -v`, 2026-11-01; Rust 1,416 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need

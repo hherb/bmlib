@@ -57,26 +57,30 @@ pub const SPAN_ITALIC_FLAG: i32 = 1 << 1;
 
 /// Whether a font's name says **bold**, where MuPDF's flag may not (#628).
 ///
-/// MuPDF flags bold from the font's own data, and leaves Advent 3B2's
-/// `AdvOT….B` faces (in 223 of 1,114 corpus PDFs), `Heavy`, `Black`,
-/// `Extrabold` and `Demi` unflagged. `Demi` is matched capitalised so a family
-/// name holding the letters cannot; `Medium` and `Semi` alone (`SemiCn` is
+/// MuPDF flags bold from the font's own data, and leaves some faces whose names
+/// say bold unflagged: Advent 3B2's `AdvOT….B` and `.BI` (a face in 223 of 1,114
+/// corpus PDFs), `Heavy`, `Black`, `Extrabold` and `Demi`. So a name is bold if
+/// it contains `bold`, `black` or `heavy` in any case (`Semibold` and
+/// `Extrabold` too), contains `Demi` but not `DemiLight` (a weight lighter than
+/// regular, in Noto Sans CJK), or ends in `.B` or `.BI`. `Demi` is matched
+/// capitalised so a family name holding the letters in lower case
+/// (`Academic…`) cannot; `Medium` and `Semi` alone (`SemiCn` is
 /// semi-condensed) are not bold. Python's `_named_bold`, rule for rule.
 #[must_use]
 pub fn named_bold(font: &str) -> bool {
     let low = font.to_lowercase();
     ["bold", "black", "heavy"].iter().any(|w| low.contains(w))
-        || font.contains("Demi")
+        || (font.contains("Demi") && !low.contains("demilight"))
         || font.ends_with(".B")
         || font.ends_with(".BI")
 }
 
 /// Whether a font's name says *italic*, where MuPDF's flag may not (#628).
 ///
-/// `italic` in any case, Advent 3B2's `.I`/`.BI` suffixes, and an `It`/`IT`
-/// closing a name after a
-/// lower-case letter or a hyphen (`MinionProIt`, `GulliverIT`), not after a
-/// capital (an acronym). Python's `_named_italic`, rule for rule.
+/// A name containing `italic` in any case, ending in Advent 3B2's `.I` or `.BI`,
+/// or ending in `It`/`IT` only after a lower-case letter or a hyphen
+/// (`MinionProIt`, `GulliverIT`; not `ArialKIT`, an acronym, nor a bare `IT`).
+/// An `Ita` suffix is not read (#628). Python's `_named_italic`, rule for rule.
 #[must_use]
 pub fn named_italic(font: &str) -> bool {
     if font.to_lowercase().contains("italic") || font.ends_with(".I") || font.ends_with(".BI") {

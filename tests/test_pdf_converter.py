@@ -577,9 +577,12 @@ class TestLineToBlock:
         assert (result.width, result.height) == (228.0, 12.0)
         assert result.page_num == 3
 
-    # Faces MuPDF flags neither bold nor italic, each from the 1,114-PDF corpus
-    # (#628): Advent 3B2's ``.B``/``.I``/``.BI`` suffixes, the heavier weights,
-    # and an italic suffix run into the family name.
+    # What a face's name alone says, with no flag set (#628). The first eleven
+    # are from the 1,114-PDF corpus, faces MuPDF leaves unflagged: Advent 3B2's
+    # ``.B``/``.I``/``.BI`` suffixes, the heavier weights, and an italic suffix
+    # run into the family name. ``aIt`` is the shortest name that suffix is
+    # read on, and the next two pin that ``bold`` and ``italic`` match in any
+    # case, the corpus rows above spelling them in lower case.
     @pytest.mark.parametrize(
         ("font", "bold", "italic"),
         [
@@ -590,15 +593,19 @@ class TestLineToBlock:
             ("Frutiger-UltraBlack", True, False),
             ("OpenSans-Extrabold", True, False),
             ("ZapfHumanist601BT-Demi", True, False),
-            ("SwlhbwZapfHumanist601BT-DemiIta", True, False),
             ("Advhelvneue-italic", False, True),
             ("MinionProIt", False, True),
             ("MinionPro-It", False, True),
             ("GulliverIT", False, True),
-            # Not a weight or a slant: semi-condensed, a medium weight, a body face,
-            # a lower-case "demi" inside a word, and an "IT" closing a capital run.
+            ("aIt", False, True),
+            ("Univers-Bold", True, False),
+            ("Helvetica-Italic", False, True),
+            # Not a weight or a slant: semi-condensed, a medium weight, a weight
+            # lighter than regular, a body face, a lower-case "demi" inside a
+            # word, and an "IT" closing a capital run.
             ("MyriadPro-SemiCn", False, False),
             ("GillSansMTPro-Medium", False, False),
+            ("NotoSansCJKjp-DemiLight", False, False),
             ("AdvOT1ef757c0", False, False),
             ("AcademicSans", False, False),
             ("ArialKIT", False, False),
@@ -612,6 +619,14 @@ class TestLineToBlock:
 
     def test_a_flag_still_counts_where_the_name_says_nothing(self):
         line = self._line([self._span("Methods", font="CMBX10", flags=16 | 2)])
+        result = _line_to_block(line, page_num=0)
+        assert (result.is_bold, result.is_italic) == (True, True)
+
+    def test_a_flag_and_a_name_each_add_their_own_half(self):
+        # MuPDF reports this corpus face cut to 31 characters (from
+        # ``…-DemiItalic``) and flags it italic, not bold: the name supplies the
+        # bold, the flag the italic, ``Ita`` being a suffix the rule does not read.
+        line = self._line([self._span("Methods", font="SwlhbwZapfHumanist601BT-DemiIta", flags=2)])
         result = _line_to_block(line, page_num=0)
         assert (result.is_bold, result.is_italic) == (True, True)
 

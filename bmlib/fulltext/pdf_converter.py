@@ -86,19 +86,23 @@ _SPAN_ITALIC_FLAG = 1 << 1
 def _named_bold(font: str) -> bool:
     """Whether a font's name says bold, where MuPDF's flag may not (#628).
 
-    MuPDF flags bold from the font's own data, and leaves Advent 3B2's
-    ``AdvOT….B`` faces (in 223 of 1,114 corpus PDFs), ``Heavy``,
-    ``Black``, ``Extrabold`` and ``Demi`` unflagged. ``Demi`` is matched
-    capitalised so a family name holding the letters cannot; ``Medium`` and
-    ``Semi`` alone (``SemiCn`` is semi-condensed) are not bold. Rust's
-    ``named_bold``, rule for rule.
+    MuPDF flags bold from the font's own data, and leaves some faces whose
+    names say bold unflagged: Advent 3B2's ``AdvOT….B`` and ``.BI`` (a face
+    in 223 of 1,114 corpus PDFs), ``Heavy``, ``Black``, ``Extrabold`` and
+    ``Demi``. So a name is bold if it contains ``bold``, ``black`` or
+    ``heavy`` in any case (``Semibold`` and ``Extrabold`` too), contains
+    ``Demi`` but not ``DemiLight`` (a weight lighter than regular, in Noto
+    Sans CJK), or ends in ``.B`` or ``.BI``. ``Demi`` is matched capitalised
+    so a family name holding the letters in lower case (``Academic…``)
+    cannot; ``Medium`` and ``Semi`` alone (``SemiCn`` is semi-condensed) are
+    not bold. Rust's ``named_bold``, rule for rule.
     """
     low = font.lower()
     return (
         "bold" in low
         or "black" in low
         or "heavy" in low
-        or "Demi" in font
+        or ("Demi" in font and "demilight" not in low)
         or font.endswith((".B", ".BI"))
     )
 
@@ -106,9 +110,10 @@ def _named_bold(font: str) -> bool:
 def _named_italic(font: str) -> bool:
     """Whether a font's name says italic, where MuPDF's flag may not (#628).
 
-    ``italic`` in any case, Advent 3B2's ``.I``/``.BI`` suffixes, and an
-    ``It``/``IT`` closing a name after a lower-case letter or a hyphen
-    (``MinionProIt``, ``GulliverIT``), not after a capital (an acronym). Rust's
+    A name containing ``italic`` in any case, ending in Advent 3B2's ``.I``
+    or ``.BI``, or ending in ``It``/``IT`` only after a lower-case letter or
+    a hyphen (``MinionProIt``, ``GulliverIT``; not ``ArialKIT``, an acronym,
+    nor a bare ``IT``). An ``Ita`` suffix is not read (#628). Rust's
     ``named_italic``, rule for rule.
     """
     if "italic" in font.lower() or font.endswith((".I", ".BI")):

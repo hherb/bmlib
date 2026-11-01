@@ -77,8 +77,9 @@ The Python library is documented separately, in the repository's
   and `line_to_block`, are the dominant span's flag **or** its font's name
   (`named_bold`, `named_italic`, new in `fulltext::pdf_text`), since MuPDF
   leaves Advent 3B2's `AdvOT….B`/`.I`/`.BI` faces, `Heavy`, `Black`,
-  `Extrabold`, `Demi` and a run-together `…It` unflagged. A span keeps
-  MuPDF's flags. Held by sixteen new `pdf_text` oracle cases and by the
+  `Extrabold`, `Demi` and a run-together `…It` unflagged (`DemiLight`, a
+  weight lighter than regular, is not bold; an `Ita` suffix is not read). A
+  span keeps MuPDF's flags. Held by twenty-five new `pdf_text` oracle cases and by the
   shared `pdf_extraction` fixture, which gains a heading set in
   `AdvOTtest.B` at body size and an italic run in `AdvOTtest.I`.
 

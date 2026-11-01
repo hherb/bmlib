@@ -2495,22 +2495,29 @@ line; and bold back matter set under 0.9 of the body.
 #628)*. MuPDF leaves some faces unflagged that their names call bold or
 italic: Advent 3B2's `AdvOT….B`, `.I` and `.BI` (Elsevier and others),
 `Heavy`, `Black`, `Extrabold` and `Demi` weights, and an italic suffix run
-into the family name (`MinionProIt`, `GulliverIT`). A block is bold when
+into the family name (`MinionProIt`, `GulliverIT`): a `.B` or `.BI` face
+in 223 of the 1,114 PDFs, a `.I` or `.BI` one in 203. A block is bold when
 its dominant span is flagged bold **or** its font's name contains `bold`,
-`black` or `heavy` (any case) or `Demi`, or ends in `.B` or `.BI`; italic when
-flagged italic or its name contains `italic` (any case), ends in `.I` or
-`.BI`, or ends in `It` or `IT` after a lower-case letter or a hyphen. `Medium`
-and `Semi` alone (`SemiCn` is semi-condensed) are not bold, and an `IT`
-closing a run of capitals is an acronym. The span's flags are left as MuPDF
-set them; only the block reads the name. Over the same 1,114 PDFs, 44 papers
-move: 320 heading lines are gained, 250 of them genuine headings, 29 the
-*Front Matter* section a paper opens once it has headings, 39 Hindawi
-headings run in with their paragraph's first words (as a flagged bold one
-already is), and 2 a table's header cell; the 30 lost are each a paper's lone
-*Full Text* placeholder. Of the 2,500 faces in those PDFs, the names call
-926 bold (MuPDF flags 814 of them) and 347 italic (it flags 248); the rule is
-narrower than the flags on purpose, its words being only those that add a face.
-None of the 9 papers whose body face the name calls bold segments differently.
+`black` or `heavy` (any case, so `Semibold` too), or `Demi` but not
+`DemiLight` (lighter than regular, in Noto Sans CJK), or ends in `.B` or
+`.BI`; italic when flagged italic or its name contains `italic` (any case),
+ends in `.I` or `.BI`, or ends in `It` or `IT` only after a lower-case letter
+or a hyphen. `Medium` and `Semi` alone (`SemiCn` is semi-condensed) are not
+bold, and an `IT` closing a run of capitals is an acronym. An `Ita` suffix is
+not read: of the `Ita` faces found in the PDFs whose fonts name one, MuPDF
+flags all but one italic, `MetaSerifOT-BookIta` in one PDF, which stays body
+text (#628). The span's
+flags are left as MuPDF set them; only the block reads the name. Over the
+same 1,114 PDFs, 44 papers move: 320 heading lines are gained, 250 of them
+genuine headings, 29 the *Front Matter* section a paper opens once it has
+headings, 39 Hindawi headings run in with their paragraph's first words (as a
+flagged bold one already is), and 2 bold table header cells ("Results", on
+two pages of PMC9798000); the 30 lost are each a paper's lone *Full Text*
+placeholder. Of the about 2,500 faces in those PDFs, a wider word list
+(`Bd`, `Ital` and `Oblique` among its words) calls 926 bold, of which MuPDF
+flags 814, and 347 italic, of which it flags 248; the rule keeps only the
+words that add a face the flags miss. None of the 9 papers whose body face
+the name calls bold segments differently.
 
 **Numbered headings nest** *(unreleased)*. A heading opening with a section
 number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first

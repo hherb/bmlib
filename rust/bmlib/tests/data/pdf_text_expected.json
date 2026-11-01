@@ -741,5 +741,149 @@
       "x": 72.0,
       "y": 100.0
     }
+  },
+  {
+    "name": "line_to_block/named-face/aIt",
+    "ok": true,
+    "value": {
+      "font_name": "aIt",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/Univers-Bold",
+    "ok": true,
+    "value": {
+      "font_name": "Univers-Bold",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": true,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/Helvetica-Italic",
+    "ok": true,
+    "value": {
+      "font_name": "Helvetica-Italic",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/NotoSansCJKjp-DemiLight",
+    "ok": true,
+    "value": {
+      "font_name": "NotoSansCJKjp-DemiLight",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/AdvOT1ef757c0",
+    "ok": true,
+    "value": {
+      "font_name": "AdvOT1ef757c0",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/(empty)",
+    "ok": true,
+    "value": {
+      "font_name": "",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/flag-and-name-each-add-a-half",
+    "ok": true,
+    "value": {
+      "font_name": "SwlhbwZapfHumanist601BT-DemiIta",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": true,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/the-dominant-spans-name",
+    "ok": true,
+    "value": {
+      "font_name": "Helvetica",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "2. Methods and data",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/no-font-key",
+    "ok": true,
+    "value": {
+      "font_name": "",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
   }
 ]

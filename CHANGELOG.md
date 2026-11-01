@@ -17,14 +17,18 @@ All notable changes to bmlib are documented here. The format is based on
   `GulliverIT`) — so a heading set in one at the body size was body text, and
   a paper whose every heading was set that way collapsed into one *Full Text*
   section. `TextBlock.is_bold` is now the dominant span's flag **or** a name
-  containing `bold`, `black` or `heavy` (any case) or `Demi`, or ending in
-  `.B` or `.BI`; `is_italic` the flag or a name containing `italic`, ending in
+  containing `bold`, `black` or `heavy` (any case, so `Semibold` too) or
+  `Demi` but not `DemiLight` (a weight lighter than regular, in Noto Sans
+  CJK, which no corpus PDF uses), or ending in `.B` or `.BI`; `is_italic` the flag or a name containing `italic`, ending in
   `.I` or `.BI`, or ending in `It`/`IT` after a lower-case letter or a hyphen.
   Each word was kept only if it adds a face the flags miss: `Bd`, `Ital` and
   `Oblique` match only faces MuPDF already flags and were left out, and
   `Medium` and `Semi` alone (`MyriadPro-SemiCn` is semi-condensed) are not
-  bold. Python and Rust alike (`_named_bold`/`named_bold`), held by sixteen
-  new `pdf_text` oracle cases and by the shared `pdf_extraction` fixture,
+  bold. An `Ita` suffix is not read: of the `Ita` faces found, MuPDF flags
+  all but `MetaSerifOT-BookIta` (one PDF) italic, so that one stays body
+  text (#628). Python and Rust alike (`_named_bold`/`_named_italic`, Rust's
+  `named_bold`/`named_italic`), held by twenty-five new `pdf_text` oracle
+  cases and by the shared `pdf_extraction` fixture,
   which gains a "Discussion" heading at body size in `AdvOTtest.B` (lost
   without the rule) and an italic run in `AdvOTtest.I`; every clause is
   mutation-killed in both languages. **Measured** over the same 1,114 local
@@ -33,7 +37,7 @@ All notable changes to bmlib are documented here. The format is based on
   gained are genuine headings, 29 the *Front Matter* section a paper opens
   once it has headings, 39 Hindawi headings run in with their paragraph's
   first words (as a flagged bold one already is; #628's run-in item), and 2
-  a bold table header cell ("Results"); every one lost is a paper's lone
+  bold table header cells ("Results", on two pages of PMC9798000); every one lost is a paper's lone
   *Full Text* placeholder. None of the 9 papers whose body face the name
   calls bold (`ZapfHumanist601BT-Demi`, `AdvTT4fa15320.B`) segments
   differently. `PDF_CANONICAL_VERSION` stays 5 (unreleased); its digest is
