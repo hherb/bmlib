@@ -360,9 +360,9 @@ let line = |text: &str, y: f64, size: f64| TextBlock {
     is_bold: false, is_italic: false, x: 72.0, y, width: 400.0, height: size,
 };
 let blocks = [
-    line("Methods", 100.0, 16.0),
+    line("Methods", 100.0, 14.0),
     line("We enrolled forty patients.", 130.0, 10.0),
-    line("Results", 160.0, 16.0),
+    line("Results", 160.0, 14.0),
     line("Mortality fell.", 190.0, 10.0),
 ];
 let doc = SectionSegmenter::default().segment_document(
@@ -373,7 +373,7 @@ assert_eq!(types, [SectionType::Methods, SectionType::Results]);
 assert_eq!(doc.title, None); // "A trial" is not printed on page 1, so it is not believed
 
 let canonical = canonical_from_segmented(&doc);
-assert_eq!(canonical.converter_version, "pdf-4");
+assert_eq!(canonical.converter_version, "pdf-5");
 ```
 
 ## Canonical text

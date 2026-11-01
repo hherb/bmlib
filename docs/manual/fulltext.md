@@ -2451,7 +2451,12 @@ confidence (`"Supplementary materials online"` → `SUPPLEMENTARY`), but only
 when it is heading-sized or numbered: a body-sized line set apart only by
 bold or italic must match exactly or carry a section number, since the
 partial pass reads a bold credit line ("Methodology. A. Smith: ...") as
-Methods.
+Methods. The median counts each line by its characters *(unreleased,
+`"pdf-5"`)*: a table set small, one short cell per line, can outnumber the
+body's lines while holding a fraction of its text, and a median over lines
+then took the table's size for the body's, so every body line was
+heading-sized and each naming a section ("Methods: Five databases ...")
+became a heading.
 
 **Numbered headings nest** *(unreleased)*. A heading opening with a section
 number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first
@@ -2765,7 +2770,8 @@ doc.converter_version                     # "jats-1"
   page furniture aside, *0.12.0*; `"pdf-4"` caps the heading floor at the
   body size, takes italic as well as bold, refuses a partial match at body
   size, nests numbered headings, wraps headings, joins spacing accents and
-  breaks paragraphs at first-line indents, *unreleased*) and
+  breaks paragraphs at first-line indents, *unreleased*; `"pdf-5"` measures
+  the body size by characters, not lines, *unreleased*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.

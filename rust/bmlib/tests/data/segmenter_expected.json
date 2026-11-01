@@ -822,6 +822,21 @@
     "value": 12.0
   },
   {
+    "name": "median_font_size/by-characters",
+    "ok": true,
+    "value": 10.0
+  },
+  {
+    "name": "median_font_size/even-characters",
+    "ok": true,
+    "value": 11.0
+  },
+  {
+    "name": "median_font_size/empty-text",
+    "ok": true,
+    "value": 10.0
+  },
+  {
     "name": "join_blocks/no-gap",
     "ok": true,
     "value": "one\ntwo"
@@ -881,13 +896,13 @@
       "file_path": "",
       "sections": [
         {
-          "confidence": 0.5,
-          "content": "Methods\nWe did things.",
+          "confidence": 1.0,
+          "content": "We did things.",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "methods",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Methods"
         }
       ],
       "title": null
@@ -900,13 +915,22 @@
       "file_path": "",
       "sections": [
         {
-          "confidence": 0.5,
-          "content": "Introduction\nIntro text.\nMethods\nMethod text.",
+          "confidence": 1.0,
+          "content": "Intro text.",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "introduction",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Method text.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
       "title": null
@@ -920,15 +944,33 @@
       "sections": [
         {
           "confidence": 0.5,
-          "content": "A Paper Title\nAuthor One\nAbstract\nThe abstract.\nMethods\nThe methods.",
+          "content": "A Paper Title\nAuthor One",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "front_matter",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The abstract.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "abstract",
+          "subsections": [],
+          "title": "Abstract"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The methods.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
-      "title": null
+      "title": "A Paper Title"
     }
   },
   {
@@ -957,13 +999,22 @@
       "file_path": "",
       "sections": [
         {
-          "confidence": 0.5,
-          "content": "Introduction\nIntro text.\nMethods\nMethod text.",
-          "page_end": 1,
+          "confidence": 1.0,
+          "content": "Intro text.",
+          "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "introduction",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Method text.",
+          "page_end": 1,
+          "page_start": 1,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
       "title": null
@@ -1015,12 +1066,21 @@
       "sections": [
         {
           "confidence": 0.5,
-          "content": "The Largest Line\n\nbody\nMethods\nText.",
+          "content": "The Largest Line\n\nThe body of the paper runs on for a full line, as body text does.",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "front_matter",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Text of the methods, at the body's size and as long as a line.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
       "title": "The Largest Line"
@@ -1486,7 +1546,7 @@
         },
         {
           "confidence": 0.7,
-          "content": "Body one.",
+          "content": "Body one, a line of body text long enough to be the paper's bulk.",
           "page_end": 0,
           "page_start": 0,
           "section_type": "methods",

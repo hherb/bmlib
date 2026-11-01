@@ -43,7 +43,6 @@ from __future__ import annotations
 import itertools
 import math
 import re
-import statistics
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -199,15 +198,27 @@ def drop_page_furniture(blocks: list[TextBlock]) -> list[TextBlock]:
 
 
 def _median_font_size(blocks: list[TextBlock]) -> float:
-    """Median font size of *blocks*, ignoring non-positive sizes.
+    """Median font size of the characters of *blocks*, ignoring non-positive sizes.
 
     The median, not the mean, so headings and footnotes cannot drag the
-    body-text estimate. Returns 12.0 when no block carries a usable size.
+    body-text estimate. Each line counts by its characters (code points), not
+    once: a table set small, one short cell per line, can outnumber the body's
+    lines while holding a fraction of its text, and a line median then reads
+    the table's size as the body's, so every body line looks heading-sized.
+    Where the characters split exactly in half, the two sizes either side are
+    averaged, so one-character lines give the plain median. Returns 12.0 when
+    no block carries a usable size and some text.
     """
-    sizes = [b.font_size for b in blocks if b.font_size > 0]
-    if not sizes:
-        return _DEFAULT_FONT_SIZE
-    return float(statistics.median(sizes))
+    weighted = sorted((b.font_size, len(b.text)) for b in blocks if b.font_size > 0 and b.text)
+    total = sum(weight for _, weight in weighted)
+    seen = 0
+    for i, (size, weight) in enumerate(weighted):
+        seen += weight
+        if 2 * seen > total:
+            return float(size)
+        if 2 * seen == total:
+            return (size + weighted[i + 1][0]) / 2
+    return _DEFAULT_FONT_SIZE
 
 
 def heading_number(text: str) -> str | None:

@@ -245,28 +245,36 @@ pub fn drop_page_furniture(blocks: &[TextBlock]) -> Vec<TextBlock> {
         .collect()
 }
 
-/// Median font size of `blocks`, ignoring non-positive sizes.
+/// Median font size of the characters of `blocks`, ignoring non-positive sizes.
 ///
 /// The **median, not the mean**, so headings and footnotes cannot drag the
-/// body-text estimate. Returns [`DEFAULT_FONT_SIZE`] when no block carries a
-/// usable size.
+/// body-text estimate. Each line counts by its characters (code points), not
+/// once: a table set small, one short cell per line, can outnumber the body's
+/// lines while holding a fraction of its text, and a line median then reads
+/// the table's size as the body's, so every body line looks heading-sized.
+/// Where the characters split exactly in half, the two sizes either side are
+/// averaged, so one-character lines give the plain median. Returns
+/// [`DEFAULT_FONT_SIZE`] when no block carries a usable size and some text.
 #[must_use]
 pub fn median_font_size(blocks: &[TextBlock]) -> f64 {
-    let mut sizes: Vec<f64> = blocks
+    let mut weighted: Vec<(f64, usize)> = blocks
         .iter()
-        .filter(|b| b.font_size > 0.0)
-        .map(|b| b.font_size)
+        .filter(|b| b.font_size > 0.0 && !b.text.is_empty())
+        .map(|b| (b.font_size, b.text.chars().count()))
         .collect();
-    if sizes.is_empty() {
-        return DEFAULT_FONT_SIZE;
+    weighted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total: usize = weighted.iter().map(|(_, w)| w).sum();
+    let mut seen = 0;
+    for (i, (size, weight)) in weighted.iter().enumerate() {
+        seen += weight;
+        if 2 * seen > total {
+            return *size;
+        }
+        if 2 * seen == total {
+            return (size + weighted[i + 1].0) / 2.0;
+        }
     }
-    sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mid = sizes.len() / 2;
-    if sizes.len() % 2 == 1 {
-        sizes[mid]
-    } else {
-        (sizes[mid - 1] + sizes[mid]) / 2.0
-    }
+    DEFAULT_FONT_SIZE
 }
 
 /// Whether `blocks[i]` is a paragraph's indented first line.

@@ -842,6 +842,94 @@
   }
  },
  {
+  "name": "median_font_size/by-characters",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "ab",
+     "font_size": 7
+    },
+    {
+     "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "font_size": 10
+    },
+    {
+     "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "font_size": 10
+    }
+   ]
+  }
+ },
+ {
+  "name": "median_font_size/even-characters",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "aaa",
+     "font_size": 10
+    },
+    {
+     "text": "bbb",
+     "font_size": 12
+    }
+   ]
+  }
+ },
+ {
+  "name": "median_font_size/empty-text",
+  "fn": "median_font_size",
+  "args": {
+   "blocks": [
+    {
+     "text": "",
+     "font_size": 20
+    },
+    {
+     "text": "a",
+     "font_size": 10
+    }
+   ]
+  }
+ },
+ {
   "name": "join_blocks/no-gap",
   "fn": "join_blocks",
   "args": {
@@ -1147,7 +1235,7 @@
      "y": 0
     },
     {
-     "text": "body",
+     "text": "The body of the paper runs on for a full line, as body text does.",
      "font_size": 12,
      "y": 30
     },
@@ -1157,7 +1245,7 @@
      "y": 50
     },
     {
-     "text": "Text.",
+     "text": "Text of the methods, at the body's size and as long as a line.",
      "font_size": 12,
      "y": 70
     }
@@ -2409,7 +2497,7 @@
      "is_bold": true
     },
     {
-     "text": "Body one.",
+     "text": "Body one, a line of body text long enough to be the paper's bulk.",
      "x": 0,
      "y": 30,
      "width": 300,

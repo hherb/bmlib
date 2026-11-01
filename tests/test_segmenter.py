@@ -303,6 +303,16 @@ class TestMedianFontSize:
     def test_no_usable_sizes_returns_the_default(self):
         assert _median_font_size([]) == 12.0
         assert _median_font_size([block("a", size=0.0)]) == 12.0
+        assert _median_font_size([block("", size=10.0)]) == 12.0
+
+    def test_lines_count_by_their_characters(self):
+        # A table's short 7 pt cells outnumber the body's lines, not its text.
+        cells = [block("n = 12", size=7.0) for _ in range(10)]
+        body = [block("Patients were enrolled at three sites in 2024.", size=10.0)] * 3
+        assert _median_font_size(cells + body) == 10.0
+
+    def test_an_exact_half_averages_the_sizes_either_side(self):
+        assert _median_font_size([block("aaa", size=10.0), block("bbb", size=12.0)]) == 11.0
 
 
 def paper_blocks() -> list[TextBlock]:
