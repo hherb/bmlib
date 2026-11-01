@@ -83,6 +83,9 @@ def test_the_contract_carries_the_shapes_it_is_for() -> None:
         ("Helvetica", False, False),
         ("Helvetica-Bold", True, False),
         ("Times-Italic", False, True),
+        # Unflagged by MuPDF; bold or italic by its name (#628).
+        ("AdvOTtest.B", True, False),
+        ("AdvOTtest.I", False, True),
     }
     assert {b["page_num"] for b in CONTRACT["blocks"]} == {0, 1, 2}
     # A running head and a page number on every page, set aside by the
@@ -116,6 +119,13 @@ def test_the_segmented_blocks_are_the_expected_canonical_text() -> None:
     assert "dose- response" in canonical.text and "­" not in canonical.text
     assert "Smith et al." not in canonical.text
     assert "The effect held across every site we visited." in canonical.text
+    # A heading at body size, bold only by its face's name (#628).
+    headings = [
+        canonical.text[s["heading_span"]["start"] : s["heading_span"]["end"]]
+        for s in CONTRACT["canonical"]["sections"]
+        if s["heading_span"] is not None
+    ]
+    assert headings == ["Methods", "2.1. Study population and setting", "Results", "Discussion"]
 
 
 def test_the_generator_still_builds_the_pdf() -> None:

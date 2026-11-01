@@ -47,7 +47,9 @@
 //!   (which drops a glyph with an empty box too), and a line's box is the union
 //!   of the characters kept.
 //! * **Bold and italic** are MuPDF's `fz_font_is_bold`/`fz_font_is_italic`, the
-//!   span's `flags` bits 4 and 1, not a guess from the font's name.
+//!   span's `flags` bits 4 and 1. A line's block is bold or italic by its
+//!   dominant span's flag or its font's name ([`named_bold`], [`named_italic`],
+//!   #628), as `line_to_block`'s is; the span keeps MuPDF's flags.
 //! * **The font name** is MuPDF's bytes read as Latin-1, which is what PyMuPDF's
 //!   `raw-unicode-escape` decoding gives for a name with no backslash: a name in
 //!   another encoding (EUC-KR, in one corpus PDF) arrives as Latin-1 characters
@@ -77,7 +79,8 @@
 
 use crate::fulltext::models::TextBlock;
 use crate::fulltext::pdf_text::{
-    join_spacing_accents, normalize_line, PdfBlocks, PdfError, PdfLimit, PdfTextExtractor,
+    join_spacing_accents, named_bold, named_italic, normalize_line, PdfBlocks, PdfError, PdfLimit,
+    PdfTextExtractor,
 };
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
 use mupdf::{Cookie, Device, DisplayList, Document, Matrix, MetadataName, Page, Quad, Rect};
@@ -288,8 +291,8 @@ pub fn line_block(line: &TextLine<'_>, page: &Rect, page_num: i64) -> Option<Tex
         page_num,
         font_size: dominant.size,
         font_name: dominant.font.clone(),
-        is_bold: dominant.flags & 16 != 0,
-        is_italic: dominant.flags & 2 != 0,
+        is_bold: dominant.flags & 16 != 0 || named_bold(&dominant.font),
+        is_italic: dominant.flags & 2 != 0 || named_italic(&dominant.font),
         x: f64::from(bounds.x0),
         y: f64::from(bounds.y0),
         width: f64::from(bounds.x1 - bounds.x0),

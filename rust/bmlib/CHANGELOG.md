@@ -72,6 +72,16 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A face named bold or italic is read as one** (#628, with the Python
+  library): `TextBlock::is_bold` and `is_italic`, from both `MupdfExtractor`
+  and `line_to_block`, are the dominant span's flag **or** its font's name
+  (`named_bold`, `named_italic`, new in `fulltext::pdf_text`), since MuPDF
+  leaves Advent 3B2's `AdvOT….B`/`.I`/`.BI` faces, `Heavy`, `Black`,
+  `Extrabold`, `Demi` and a run-together `…It` unflagged. A span keeps
+  MuPDF's flags. Held by sixteen new `pdf_text` oracle cases and by the
+  shared `pdf_extraction` fixture, which gains a heading set in
+  `AdvOTtest.B` at body size and an italic run in `AdvOTtest.I`.
+
 - **A line set in a paper's own heading face counts as bold** (#628, with the
   Python library). `identify_section_markers` learns the faces of the lines
   that are headings naming a section exactly, less the body's face (most

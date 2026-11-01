@@ -38,7 +38,10 @@ information, which the blocks carry as ``metadata_title``; names whose
 accents are spacing glyphs of their own (``Nicol\\264as``, WinAnsi's 0xB4
 acute), drawn over their letters as TeX sets them, beside one typed as an
 apostrophe (``Alzheimer\\264s``), which is not; a numbered italic subheading at body size that
-wraps onto a second line; and a paragraph begun by a first-line indent. The
+wraps onto a second line; a paragraph begun by a first-line indent; and a
+heading at body size in a face MuPDF does not flag bold but whose name says
+it is (``AdvOTtest.B``, #628), as the five-span line's italic run is italic by
+its name alone (``AdvOTtest.I``). The
 expected values are PyMuPDF's output, printed on stderr to be checked by eye.
 
     python scripts/make_pdf_extraction_fixture.py [tests/fixtures]
@@ -74,6 +77,11 @@ FONTS = {
     "F1": ("Helvetica", True),
     "F2": ("Helvetica-Bold", False),
     "F3": ("Times-Italic", False),
+    # Advent 3B2's bold and italic suffixes, which MuPDF does not flag (#628):
+    # unembedded faces of no base-14 name, so MuPDF substitutes a serif and
+    # keeps the name.
+    "F4": ("AdvOTtest.B", False),
+    "F5": ("AdvOTtest.I", False),
 }
 
 #: A run of one line: (font, size, text rise, text). A list for the text is
@@ -99,7 +107,7 @@ PAGES: list[list[tuple[int, int, list[Run]]]] = [
             600,
             [
                 ("F1", 10, 0, "Cultures of "),
-                ("F3", 10, 0, "Escherichia coli"),
+                ("F5", 10, 0, "Escherichia coli"),
                 ("F1", 10, 0, " were grown"),
                 ("F1", 10, 4, "1"),
                 ("F1", 10, 0, " overnight."),
@@ -130,7 +138,7 @@ PAGES: list[list[tuple[int, int, list[Run]]]] = [
         (72, 720, [("F2", 12, 0, "Results")]),
         (72, 700, [("F1", 10, 0, r"Growth was spe\255")]),
         (72, 688, [("F1", 10, 0, "cific to the treated arm.")]),
-        (72, 660, [("F2", 12, 0, "Discussion")]),
+        (72, 660, [("F4", 10, 0, "Discussion")]),
         (72, 640, [("F1", 10, 0, "The effect held across")]),
     ],
     [

@@ -2475,8 +2475,9 @@ sample reads as genuine about half the time — mostly a numbered subsection
 
 **A line in the paper's own heading face counts as bold** *(unreleased,
 `"pdf-5"`, #628)*. MuPDF flags bold and italic from the font's own flags,
-never from its name, and some journals set headings in a face of their own
-that is flagged neither (Frontiers' numbered subsections, for one).
+and some journals set headings in a face of their own that is flagged
+neither and whose name says nothing either (Frontiers' numbered subsections,
+for one).
 The faces of the lines that are headings and name a section exactly — less
 the body's own face, the one holding the most characters, and a face with no
 name — are the paper's heading faces, and a line in one is judged as a bold
@@ -2488,9 +2489,28 @@ face that opens with a quantity numbered like a subsection reads as one, a
 line of prose included (#623). What it does not reach: a numbered
 heading naming no section at top level is still dropped, and every numbered
 subsection under it with it; a heading run in with its first sentence on one
-line; a face named bold or italic but flagged neither, where no exact-match
-heading clears the body size to teach it; and bold back matter set under 0.9
-of the body.
+line; and bold back matter set under 0.9 of the body.
+
+**A face named bold or italic is read as one** *(unreleased, `"pdf-5"`,
+#628)*. MuPDF leaves some faces unflagged that their names call bold or
+italic: Advent 3B2's `AdvOT….B`, `.I` and `.BI` (Elsevier and others),
+`Heavy`, `Black`, `Extrabold` and `Demi` weights, and an italic suffix run
+into the family name (`MinionProIt`, `GulliverIT`). A block is bold when
+its dominant span is flagged bold **or** its font's name contains `bold`,
+`black` or `heavy` (any case) or `Demi`, or ends in `.B` or `.BI`; italic when
+flagged italic or its name contains `italic` (any case), ends in `.I` or
+`.BI`, or ends in `It` or `IT` after a lower-case letter or a hyphen. `Medium`
+and `Semi` alone (`SemiCn` is semi-condensed) are not bold, and an `IT`
+closing a run of capitals is an acronym. The span's flags are left as MuPDF
+set them; only the block reads the name. Over the same 1,114 PDFs, 44 papers
+move: 320 heading lines are gained, 250 of them genuine headings, 29 the
+*Front Matter* section a paper opens once it has headings, 39 Hindawi
+headings run in with their paragraph's first words (as a flagged bold one
+already is), and 2 a table's header cell; the 30 lost are each a paper's lone
+*Full Text* placeholder. Of the 2,500 faces in those PDFs, the names call
+926 bold (MuPDF flags 814 of them) and 347 italic (it flags 248); the rule is
+narrower than the flags on purpose, its words being only those that add a face.
+None of the 9 papers whose body face the name calls bold segments differently.
 
 **Numbered headings nest** *(unreleased)*. A heading opening with a section
 number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first
@@ -2547,7 +2567,9 @@ a new span at every font change, so span-level blocks would shatter a
 mixed-font heading into fragments no anchored pattern can match. Font
 attributes (`font_size`, `font_name`, `is_bold`, `is_italic`) are those of
 the line's *dominant* span — the one contributing the most non-whitespace
-characters — so a superscript reference marker cannot restyle its line.
+characters — so a superscript reference marker cannot restyle its line;
+`is_bold` and `is_italic` are its flags or its font's name (see above,
+*unreleased*).
 A spacing accent drawn as a glyph of its own over the letter after it, as TeX
 sets them (`"Nicol´as"`), is joined to the letter (`"Nicolás"`) where Unicode
 has the pair as one character (`join_spacing_accents()`, *unreleased*). The

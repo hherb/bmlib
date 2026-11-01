@@ -577,6 +577,50 @@ class TestLineToBlock:
         assert (result.width, result.height) == (228.0, 12.0)
         assert result.page_num == 3
 
+    # Faces MuPDF flags neither bold nor italic, each from the 1,114-PDF corpus
+    # (#628): Advent 3B2's ``.B``/``.I``/``.BI`` suffixes, the heavier weights,
+    # and an italic suffix run into the family name.
+    @pytest.mark.parametrize(
+        ("font", "bold", "italic"),
+        [
+            ("AdvOTb65e897d.B", True, False),
+            ("AdvOT7d6df7ab.I", False, True),
+            ("AdvOT45bf69de.BI", True, True),
+            ("CaeciliaLTStd-Heavy", True, False),
+            ("Frutiger-UltraBlack", True, False),
+            ("OpenSans-Extrabold", True, False),
+            ("ZapfHumanist601BT-Demi", True, False),
+            ("SwlhbwZapfHumanist601BT-DemiIta", True, False),
+            ("Advhelvneue-italic", False, True),
+            ("MinionProIt", False, True),
+            ("MinionPro-It", False, True),
+            ("GulliverIT", False, True),
+            # Not a weight or a slant: semi-condensed, a medium weight, a body face,
+            # a lower-case "demi" inside a word, and an "IT" closing a capital run.
+            ("MyriadPro-SemiCn", False, False),
+            ("GillSansMTPro-Medium", False, False),
+            ("AdvOT1ef757c0", False, False),
+            ("AcademicSans", False, False),
+            ("ArialKIT", False, False),
+            ("IT", False, False),
+            ("", False, False),
+        ],
+    )
+    def test_a_face_named_bold_or_italic_is_read_as_one(self, font, bold, italic):
+        result = _line_to_block(self._line([self._span("Methods", font=font)]), page_num=0)
+        assert (result.is_bold, result.is_italic) == (bold, italic)
+
+    def test_a_flag_still_counts_where_the_name_says_nothing(self):
+        line = self._line([self._span("Methods", font="CMBX10", flags=16 | 2)])
+        result = _line_to_block(line, page_num=0)
+        assert (result.is_bold, result.is_italic) == (True, True)
+
+    def test_the_name_read_is_the_dominant_spans(self):
+        line = self._line(
+            [self._span("2. ", font="AdvOTb65e897d.B"), self._span("Methods and data")]
+        )
+        assert _line_to_block(line, page_num=0).is_bold is False
+
 
 @pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestExtractBlocks:
