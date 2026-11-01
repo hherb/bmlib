@@ -19,6 +19,7 @@ from bmlib.fulltext.pdf_converter import (
     _repeated_lines,
     _span_text_weight,
     _split_on_short_lines,
+    join_spacing_accents,
     render_html,
 )
 
@@ -28,6 +29,8 @@ def run(case):
     a = case.get("args", {})
     if fn == "normalize":
         return _normalize(a["line"])
+    if fn == "join_spacing_accents":
+        return join_spacing_accents(a["text"])
     if fn == "span_text_weight":
         return _span_text_weight(a["span"])
     if fn == "line_to_block":

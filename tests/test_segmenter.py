@@ -251,10 +251,15 @@ class TestHeadingDetection:
         self.segmenter = SectionSegmenter()
 
     def test_a_font_below_the_minimum_is_not_a_heading(self):
-        # 9pt clears the ratio rule against this median without needing
-        # bold (6.0 * 1.2 = 7.2 < 9.0), so only the absolute floor — 10.0,
-        # `min_heading_size`'s default — can be what rejects it.
-        assert not self.segmenter._is_potential_header(block("Methods", size=9.0), 6.0)
+        # Under a 12pt body the floor is `min_heading_size`'s 10.0, so a 9pt
+        # bold line is refused though bold rescues body-sized headings.
+        assert not self.segmenter._is_potential_header(block("Methods", size=9.0, bold=True), 12.0)
+
+    def test_the_floor_is_the_body_size_in_small_print(self):
+        # A journal set in 8pt sets its headings in 8pt bold; the floor drops
+        # to the body size, and no lower (a 7.2pt bold "Table 1" is not one).
+        assert self.segmenter._is_potential_header(block("Methods", size=8.0, bold=True), 8.0)
+        assert not self.segmenter._is_potential_header(block("Table 1", size=7.2, bold=True), 8.0)
 
     def test_body_sized_text_must_be_bold(self):
         assert not self.segmenter._is_potential_header(block("Methods", size=10.0), 10.0)

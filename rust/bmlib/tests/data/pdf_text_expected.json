@@ -351,5 +351,61 @@
     "name": "completion_ratio/zero-both",
     "ok": true,
     "value": 0.0
+  },
+  {
+    "name": "join_spacing_accents/acute_lower",
+    "ok": true,
+    "value": "Nicolás González Pérez"
+  },
+  {
+    "name": "join_spacing_accents/acute_capital_after_space",
+    "ok": true,
+    "value": "Luciano Arcucci a,b, Ángeles"
+  },
+  {
+    "name": "join_spacing_accents/grave_diaeresis_circumflex_tilde_caron",
+    "ok": true,
+    "value": "à ü ê ñ š"
+  },
+  {
+    "name": "join_spacing_accents/ring_cedilla_ogonek",
+    "ok": true,
+    "value": "å ç ę"
+  },
+  {
+    "name": "join_spacing_accents/no_precomposed_letter_kept",
+    "ok": true,
+    "value": "´x ´1 ´ a"
+  },
+  {
+    "name": "join_spacing_accents/accent_at_end_kept",
+    "ok": true,
+    "value": "prime´"
+  },
+  {
+    "name": "join_spacing_accents/already_composed_untouched",
+    "ok": true,
+    "value": "Biología Clínica"
+  },
+  {
+    "name": "join_spacing_accents/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "line_to_block/spacing_accent",
+    "ok": true,
+    "value": {
+      "font_name": "CharisSIL",
+      "font_size": 10.6,
+      "height": 10.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Nicolás Pérez",
+      "width": 29.0,
+      "x": 1.0,
+      "y": 2.0
+    }
   }
 ]

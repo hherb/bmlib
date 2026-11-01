@@ -61,7 +61,9 @@ def _load_generator() -> Any:
 
 
 def test_the_blocks_are_the_expected_ones() -> None:
-    blocks = [b.to_dict() for b in PyMuPDFConverter().extract_blocks(PDF)]
+    read = PyMuPDFConverter().extract_blocks_with_warnings(PDF)
+    assert read.metadata_title == CONTRACT["metadata_title"]
+    blocks = [b.to_dict() for b in read.blocks]
     expected = CONTRACT["blocks"]
     tolerance = CONTRACT["geometry_tolerance"]
     assert [{k: v for k, v in b.items() if k not in _GEOMETRY} for b in blocks] == [
@@ -89,12 +91,26 @@ def test_the_contract_carries_the_shapes_it_is_for() -> None:
     assert [t for t in texts if t.isdigit()] == ["1", "2", "3"]
     # The five-span line, whose font only the superscript split makes italic.
     assert "Cultures of Escherichia coli were grown1 overnight." in texts
+    # Spacing accents joined to their letters; a heading that wraps; an indent.
+    assert "Patients were enrolled by Nicolás Pérez." in texts
+    assert ["2.1. Study population and", "setting"] == [
+        t for t in texts if t.startswith("2.1.") or t == "setting"
+    ]
+    assert any(b["x"] > 80 and b["text"] == "A second paragraph starts" for b in CONTRACT["blocks"])
+    assert CONTRACT["metadata_title"] == "A soft hyphen trial"
 
 
 def test_the_segmented_blocks_are_the_expected_canonical_text() -> None:
     blocks = [TextBlock.from_dict(b) for b in CONTRACT["blocks"]]
-    canonical = canonical_from_segmented(SectionSegmenter().segment_document(blocks))
+    document = SectionSegmenter().segment_document(blocks, {"title": CONTRACT["metadata_title"]})
+    canonical = canonical_from_segmented(document)
     assert canonical.to_dict() == CONTRACT["canonical"]
+    # The wrapped subheading is one heading, nested a level under Methods.
+    assert [(s["level"], s["heading_span"] is not None) for s in CONTRACT["canonical"]["sections"]][
+        2
+    ] == (2, True)
+    assert "2.1. Study population and setting" in canonical.text
+    assert "visited.\n\nA second paragraph starts here and ends." in canonical.text
     assert "prevalent" in canonical.text and "specific" in canonical.text
     assert "dose- response" in canonical.text and "­" not in canonical.text
     assert "Smith et al." not in canonical.text

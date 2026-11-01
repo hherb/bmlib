@@ -1072,5 +1072,221 @@
       ],
       "title": null
     }
+  },
+  {
+    "name": "join_blocks/first_line_indent",
+    "ok": true,
+    "value": "one\ntwo\n\nThree\nfour"
+  },
+  {
+    "name": "join_blocks/hanging_indent_is_not_paragraphs",
+    "ok": true,
+    "value": "[1] Smith\nwrapped\nwrapped\n[2] Jones\n\nwrapped"
+  },
+  {
+    "name": "join_blocks/indented_last_line",
+    "ok": true,
+    "value": "one\n\nTwo"
+  },
+  {
+    "name": "join_blocks/column_jump_is_not_an_indent",
+    "ok": true,
+    "value": "left\nright\nright"
+  },
+  {
+    "name": "join_blocks/too_deep_is_not_an_indent",
+    "ok": true,
+    "value": "one\nTwo\nthree"
+  },
+  {
+    "name": "is_potential_header/bold_body_size_in_small_print",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/italic_body_size",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/bold_below_body_size",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "match_section_type/credit_authorship_contribution_statement",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/declaration_of_competing_interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "segment_document/small_print_numbered_tree",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text about the trial.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body text one.\nBody text two.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body text three.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [
+                {
+                  "confidence": 1.0,
+                  "content": "Body text four.",
+                  "page_end": 0,
+                  "page_start": 0,
+                  "section_type": "methods",
+                  "subsections": [],
+                  "title": "2.1.1. Data repository"
+                }
+              ],
+              "title": "2.1. Patients and analysis from the NACC database"
+            },
+            {
+              "confidence": 1.0,
+              "content": "Body text five.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.2. Animals"
+            }
+          ],
+          "title": "2. Materials and methods"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Highlighted aside\nBody text six.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body text seven.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "results",
+              "subsections": [],
+              "title": "3.1. A finding without a section name"
+            }
+          ],
+          "title": "3. Results"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body text eight.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "acknowledgments",
+          "subsections": [],
+          "title": "Acknowledgements"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/bold_credit_line_is_not_methods",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text.\nMethodology. A. Smith: Writing\nMore body.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/exact_first_line_does_not_wrap",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Study design\nBody two.\nBody three.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/untyped_numbered_top_level_is_text",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body.\n6. Limitations\nBody two.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
   }
 ]

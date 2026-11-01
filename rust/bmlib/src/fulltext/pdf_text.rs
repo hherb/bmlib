@@ -74,6 +74,55 @@ pub fn normalize_line(line: &str) -> String {
     out.trim().to_string()
 }
 
+/// Each spacing accent a PDF may draw as a glyph of its own, with the combining
+/// mark it stands for. TeX-made PDFs (Elsevier's among them) set an accented
+/// letter as the accent, then the letter, so MuPDF reads "Nicol´as".
+pub const SPACING_ACCENTS: [(char, char); 13] = [
+    ('\u{b4}', '\u{301}'),  // acute
+    ('\u{60}', '\u{300}'),  // grave
+    ('\u{a8}', '\u{308}'),  // diaeresis
+    ('\u{2c6}', '\u{302}'), // circumflex
+    ('\u{2dc}', '\u{303}'), // tilde
+    ('\u{2c7}', '\u{30c}'), // caron
+    ('\u{2d8}', '\u{306}'), // breve
+    ('\u{2da}', '\u{30a}'), // ring above
+    ('\u{af}', '\u{304}'),  // macron
+    ('\u{2dd}', '\u{30b}'), // double acute
+    ('\u{2d9}', '\u{307}'), // dot above
+    ('\u{b8}', '\u{327}'),  // cedilla
+    ('\u{2db}', '\u{328}'), // ogonek
+];
+
+/// `text` with each spacing accent and the letter after it made one letter.
+///
+/// `"Nicol´as"` gives `"Nicolás"`. A pair is joined only where Unicode has the
+/// accented letter as one character (NFC gives one code point), so an accent
+/// before a digit, a space or a letter it never sits on is kept as it stands.
+/// Only accent-then-letter is joined, the order the PDFs seen so far draw them
+/// in. Python's `join_spacing_accents`.
+#[must_use]
+pub fn join_spacing_accents(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        let mark = SPACING_ACCENTS
+            .iter()
+            .find(|(accent, _)| *accent == ch)
+            .map(|&(_, mark)| mark);
+        if let (Some(mark), Some(&base)) = (mark, chars.peek()) {
+            let mut joined = [base, mark].into_iter().nfc();
+            if let (Some(letter), None) = (joined.next(), joined.next()) {
+                out.push(letter);
+                chars.next();
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+    out
+}
+
 /// Non-whitespace characters a span contributes to its line.
 #[must_use]
 pub fn span_text_weight(span: &Value) -> usize {
@@ -109,7 +158,7 @@ pub fn line_to_block(raw_line: &Value, page_num: i64) -> Option<TextBlock> {
                 .collect()
         })
         .unwrap_or_default();
-    let text = normalize_line(&joined);
+    let text = join_spacing_accents(&normalize_line(&joined));
     if text.is_empty() {
         return None;
     }
@@ -484,8 +533,8 @@ pub trait PdfTextExtractor {
     /// [`PdfTextExtractor::extract_blocks_within`], with what the engine
     /// reported while reading (#599).
     ///
-    /// The default reports nothing, for a backend that cannot; the MuPDF
-    /// backend returns MuPDF's messages.
+    /// The default reports nothing and no title, for a backend that cannot;
+    /// the MuPDF backend returns MuPDF's messages and the PDF's `/Title`.
     ///
     /// # Errors
     ///
@@ -498,6 +547,7 @@ pub trait PdfTextExtractor {
         Ok(PdfBlocks {
             blocks: self.extract_blocks_within(path, limit)?,
             warnings: Vec::new(),
+            metadata_title: None,
         })
     }
 
@@ -542,6 +592,15 @@ pub struct PdfBlocks {
     pub blocks: Vec<TextBlock>,
     /// The engine's messages, in the order it reported them.
     pub warnings: Vec<String>,
+    /// The PDF's own `/Title`, verbatim and unjudged; `None` when it has none
+    /// (or it could not be read, which adds a warning). Pass it to
+    /// [`SectionSegmenter::segment_document`] as its `metadata_title`: the
+    /// segmenter believes it only where page 1 prints it, and otherwise takes
+    /// the largest line on page 1, which on a journal's first page may be its
+    /// masthead.
+    ///
+    /// [`SectionSegmenter::segment_document`]: crate::fulltext::segmenter::SectionSegmenter::segment_document
+    pub metadata_title: Option<String>,
 }
 
 /// What a conversion produced.

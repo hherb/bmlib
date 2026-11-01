@@ -38,6 +38,7 @@ import math
 import re
 import threading
 import time
+import unicodedata
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
@@ -352,7 +353,7 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
     Returns None for a line with no non-whitespace text.
     """
     spans = raw_line.get("spans", [])
-    text = _normalize("".join(span.get("text", "") for span in spans))
+    text = join_spacing_accents(_normalize("".join(span.get("text", "") for span in spans)))
     if not text:
         return None
     dominant = max(spans, key=_span_text_weight)
@@ -381,11 +382,20 @@ class PDFBlocks:
     ignoring rest of page``), a font with bogus metrics. MuPDF reads past each
     without failing, so the blocks may be short of the page's text and only
     these say so. The path read is replaced by "the file". Rust's
-    ``PdfBlocks`` is the same pair.
+    ``PdfBlocks`` is the same.
+
+    ``metadata_title`` is the PDF's own ``/Title``, verbatim and unjudged, or
+    None when it has none (or it could not be read, which adds a warning).
+    Pass it to :meth:`SectionSegmenter.segment_document
+    <bmlib.fulltext.segmenter.SectionSegmenter.segment_document>` as
+    ``metadata["title"]``: the segmenter believes it only where page 1 prints
+    it, and otherwise takes the largest line on page 1, which on a journal's
+    first page may be its masthead.
     """
 
     blocks: list[TextBlock]
     warnings: list[str] = field(default_factory=list)
+    metadata_title: str | None = None
 
 
 #: MuPDF's ``fz_store_item`` warning when two threads cache the same item at
@@ -766,11 +776,18 @@ class PyMuPDFConverter(PDFConverter):
         """
         self.validate_pdf_path(pdf_path)
         blocks: list[TextBlock] = []
+        metadata_title: str | None = None
+        metadata_warning: str | None = None
         _reset_engine_messages(self._pymupdf)
         try:
             with self._pymupdf.open(str(pdf_path)) as doc:
                 if doc.needs_pass:
                     raise PDFExtractionError.encrypted()
+                try:
+                    metadata_title = (doc.metadata or {}).get("title") or None
+                except Exception as e:  # noqa: BLE001 — metadata is best-effort
+                    metadata_warning = f"Failed to extract metadata: {e}"
+                    logger.warning("Metadata extraction failed for %s: %s", pdf_path, e)
                 for page_num in range(len(doc)):
                     stop = limit.reached() if limit is not None else None
                     if stop is not None:
@@ -789,7 +806,10 @@ class PyMuPDFConverter(PDFConverter):
         except Exception as e:  # noqa: BLE001 — any failure is classified, never lost
             _engine_messages(self._pymupdf, pdf_path)
             raise _classify(e, self._pymupdf, pdf_path) from e
-        return PDFBlocks(blocks, _engine_messages(self._pymupdf, pdf_path))
+        warnings = _engine_messages(self._pymupdf, pdf_path)
+        if metadata_warning is not None:
+            warnings.append(metadata_warning)
+        return PDFBlocks(blocks, warnings, metadata_title)
 
 
 _WS_RE = re.compile(r"\s+")
@@ -798,6 +818,50 @@ _WS_RE = re.compile(r"\s+")
 def _normalize(line: str) -> str:
     """Collapse runs of whitespace so lines compare on their words alone."""
     return _WS_RE.sub(" ", line).strip()
+
+
+#: Each spacing accent a PDF may draw as a glyph of its own, mapped to the
+#: combining mark it stands for. TeX-made PDFs (Elsevier's among them) set an
+#: accented letter as the accent, then the letter, so MuPDF reads "Nicol´as".
+SPACING_ACCENTS: dict[str, str] = {
+    "\u00b4": "\u0301",  # acute
+    "\u0060": "\u0300",  # grave
+    "\u00a8": "\u0308",  # diaeresis
+    "\u02c6": "\u0302",  # circumflex
+    "\u02dc": "\u0303",  # tilde
+    "\u02c7": "\u030c",  # caron
+    "\u02d8": "\u0306",  # breve
+    "\u02da": "\u030a",  # ring above
+    "\u00af": "\u0304",  # macron
+    "\u02dd": "\u030b",  # double acute
+    "\u02d9": "\u0307",  # dot above
+    "\u00b8": "\u0327",  # cedilla
+    "\u02db": "\u0328",  # ogonek
+}
+
+
+def join_spacing_accents(text: str) -> str:
+    """*text* with each spacing accent and the letter after it made one letter.
+
+    ``"Nicol´as"`` gives ``"Nicolás"``. A pair is joined only where Unicode has
+    the accented letter as one character (NFC gives one code point), so an
+    accent before a digit, a space or a letter it never sits on is kept as it
+    stands. Only accent-then-letter is joined, the order the PDFs seen so far
+    draw them in.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        mark = SPACING_ACCENTS.get(text[i])
+        if mark is not None and i + 1 < len(text):
+            joined = unicodedata.normalize("NFC", text[i + 1] + mark)
+            if len(joined) == 1:
+                out.append(joined)
+                i += 2
+                continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
 
 
 def _repeated_lines(page_texts: list[str]) -> set[str]:

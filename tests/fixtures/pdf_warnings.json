@@ -139,7 +139,7 @@
     },
     {
       "pdf": "pdf_extraction.pdf",
-      "pdf_sha256": "48301c7edafa22849c61f9713b39d52ac4ee79284178c1c7a73a1e75b02c02f1",
+      "pdf_sha256": "8d8d2d26eb81c4866bb9e9d11c1c110dd67c0e2eb26aea059e54f2cae502c8cf",
       "texts": [
         "Smith et al. A soft hyphen trial",
         "A soft hyphen trial",
@@ -148,6 +148,9 @@
         "response curve that rose steadily.",
         "Methods",
         "Cultures of Escherichia coli were grown1 overnight.",
+        "2.1. Study population and",
+        "setting",
+        "Patients were enrolled by Nicolás Pérez.",
         "1",
         "Smith et al. A soft hyphen trial",
         "Results",
@@ -158,6 +161,8 @@
         "2",
         "Smith et al. A soft hyphen trial",
         "every site we visited.",
+        "A second paragraph starts",
+        "here and ends.",
         "3"
       ],
       "warnings": []

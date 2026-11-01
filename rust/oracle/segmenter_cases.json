@@ -1205,5 +1205,589 @@
     }
    ]
   }
+ },
+ {
+  "name": "join_blocks/first_line_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "one",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "two",
+     "x": 0,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Three",
+     "x": 12,
+     "y": 20,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "four",
+     "x": 0,
+     "y": 30,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/hanging_indent_is_not_paragraphs",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "[1] Smith",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wrapped",
+     "x": 12,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wrapped",
+     "x": 12,
+     "y": 20,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "[2] Jones",
+     "x": 0,
+     "y": 30,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wrapped",
+     "x": 12,
+     "y": 40,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/indented_last_line",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "one",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Two",
+     "x": 12,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/column_jump_is_not_an_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "left",
+     "x": 0,
+     "y": 100,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "right",
+     "x": 300,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "right",
+     "x": 300,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/too_deep_is_not_an_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "one",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Two",
+     "x": 60,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "three",
+     "x": 0,
+     "y": 20,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "is_potential_header/bold_body_size_in_small_print",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "1. Introduction",
+    "x": 0.0,
+    "y": 0.0,
+    "font_size": 8,
+    "height": 12.0,
+    "font_name": "Body-Bold",
+    "page_num": 0,
+    "is_bold": true
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "is_potential_header/italic_body_size",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "2.1. Patients",
+    "x": 0.0,
+    "y": 0.0,
+    "font_size": 12.0,
+    "height": 12.0,
+    "font_name": "Body-Italic",
+    "page_num": 0,
+    "is_italic": true
+   },
+   "median_font_size": 12.0
+  }
+ },
+ {
+  "name": "is_potential_header/bold_below_body_size",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Table 1",
+    "x": 0.0,
+    "y": 0.0,
+    "font_size": 7.2,
+    "height": 12.0,
+    "font_name": "Body-Bold",
+    "page_num": 0,
+    "is_bold": true
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "match_section_type/credit_authorship_contribution_statement",
+  "fn": "match_section_type",
+  "args": {
+   "text": "CRediT authorship contribution statement"
+  }
+ },
+ {
+  "name": "match_section_type/declaration_of_competing_interest",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Declaration of competing interest"
+  }
+ },
+ {
+  "name": "segment_document/small_print_numbered_tree",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text about the trial.",
+     "x": 0.0,
+     "y": 10,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "x": 0.0,
+     "y": 20,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body text one.",
+     "x": 0.0,
+     "y": 30,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body text two.",
+     "x": 0.0,
+     "y": 40,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0.0,
+     "y": 50,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. Patients and analysis",
+     "x": 0.0,
+     "y": 60,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "from the NACC database",
+     "x": 0.0,
+     "y": 70,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text three.",
+     "x": 0.0,
+     "y": 80,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1.1. Data repository",
+     "x": 0.0,
+     "y": 90,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text four.",
+     "x": 0.0,
+     "y": 100,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.2. Animals",
+     "x": 0.0,
+     "y": 110,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text five.",
+     "x": 0.0,
+     "y": 120,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3. Results",
+     "x": 0.0,
+     "y": 130,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Highlighted aside",
+     "x": 0.0,
+     "y": 140,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body text six.",
+     "x": 0.0,
+     "y": 150,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. A finding without a",
+     "x": 0.0,
+     "y": 160,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "section name",
+     "x": 0.0,
+     "y": 170,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text seven.",
+     "x": 0.0,
+     "y": 180,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Acknowledgements",
+     "x": 0.0,
+     "y": 190,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body text eight.",
+     "x": 0.0,
+     "y": 200,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/bold_credit_line_is_not_methods",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text.",
+     "x": 0.0,
+     "y": 10,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Methodology. A. Smith: Writing",
+     "x": 0.0,
+     "y": 20,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "More body.",
+     "x": 0.0,
+     "y": 30,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/exact_first_line_does_not_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body.",
+     "x": 0.0,
+     "y": 0,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Methods",
+     "x": 0.0,
+     "y": 20,
+     "font_size": 14,
+     "height": 16,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Study design",
+     "x": 0.0,
+     "y": 34,
+     "font_size": 14,
+     "height": 16,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0.0,
+     "y": 50,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body three.",
+     "x": 0.0,
+     "y": 60,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/untyped_numbered_top_level_is_text",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body.",
+     "x": 0.0,
+     "y": 0,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "6. Limitations",
+     "x": 0.0,
+     "y": 12,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0.0,
+     "y": 24,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
  }
 ]

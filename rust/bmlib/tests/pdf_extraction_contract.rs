@@ -28,7 +28,7 @@
 
 use bmlib::fulltext::canonical::canonical_from_segmented;
 use bmlib::fulltext::models::TextBlock;
-use bmlib::fulltext::pdf_text::PdfTextExtractor;
+use bmlib::fulltext::pdf_text::{PdfLimit, PdfTextExtractor};
 use bmlib::fulltext::segmenter::SectionSegmenter;
 use bmlib::fulltext::MupdfExtractor;
 use serde_json::Value;
@@ -53,9 +53,14 @@ fn the_blocks_are_the_expected_ones() {
         .expect("a tolerance");
     let expected: Vec<TextBlock> =
         serde_json::from_value(contract["blocks"].clone()).expect("blocks");
-    let blocks = MupdfExtractor::new()
-        .extract_blocks(&pdf_path())
+    let read = MupdfExtractor::new()
+        .extract_blocks_with_warnings(&pdf_path(), &PdfLimit::default())
         .expect("extracts");
+    assert_eq!(
+        read.metadata_title.as_deref(),
+        contract["metadata_title"].as_str()
+    );
+    let blocks = read.blocks;
     assert_eq!(blocks.len(), expected.len(), "{blocks:#?}");
     for (got, want) in blocks.iter().zip(&expected) {
         assert_eq!(
@@ -96,8 +101,12 @@ fn the_segmented_blocks_are_the_expected_canonical_text() {
     let contract = contract();
     let blocks: Vec<TextBlock> =
         serde_json::from_value(contract["blocks"].clone()).expect("blocks");
-    let document =
-        SectionSegmenter::default().segment_document(&blocks, "", None, serde_json::json!({}));
+    let document = SectionSegmenter::default().segment_document(
+        &blocks,
+        "",
+        contract["metadata_title"].as_str(),
+        serde_json::json!({}),
+    );
     let canonical = canonical_from_segmented(&document);
     assert_eq!(
         serde_json::to_value(&canonical).expect("serialisable"),
@@ -111,6 +120,14 @@ fn the_segmented_blocks_are_the_expected_canonical_text() {
     assert!(canonical
         .text
         .contains("The effect held across every site we visited."));
+    // Spacing accents joined; the wrapped subheading one heading, a level under
+    // Methods; a paragraph begun by its first-line indent.
+    assert!(canonical.text.contains("Nicolás Pérez"));
+    assert!(canonical.text.contains("2.1. Study population and setting"));
+    assert_eq!(canonical.sections[2].level, 2);
+    assert!(canonical
+        .text
+        .contains("visited.\n\nA second paragraph starts here and ends."));
 }
 
 /// The PDF is the one the generator writes (its digest is in the fixture), so

@@ -361,7 +361,7 @@ assert_eq!(types, [SectionType::Methods, SectionType::Results]);
 assert_eq!(doc.title, None); // "A trial" is not printed on page 1, so it is not believed
 
 let canonical = canonical_from_segmented(&doc);
-assert_eq!(canonical.converter_version, "pdf-3");
+assert_eq!(canonical.converter_version, "pdf-4");
 ```
 
 ## Canonical text

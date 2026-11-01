@@ -2298,7 +2298,7 @@ Conversion behaviour:
 - A failure to open or read the document returns `success=False`, keeping the running `converted_pages`, with `error_kind` saying which side it is on and `error_message` a sentence fit to show a user that **never names the path** *(0.12.0, #598)*. `PDFErrorKind.UNREADABLE` (`"the PDF could not be read: …"`) is the file's: MuPDF's `FzErrorFormat`, `FzErrorSyntax` or `FzErrorUnsupported` chained as the cause (a garbage file is `FORMAT`, a truncated one `SYNTAX`), or PyMuPDF's own `FileDataError` with no MuPDF cause (an empty file is PyMuPDF's `EmptyFileError`). `PDFErrorKind.ENGINE` (`"the PDF engine failed: …"`) is everything else — `FzErrorSystem` (out of memory, a syscall), `FzErrorLibrary`, `FzErrorArgument`, `FzErrorLimit`, a `MemoryError`, and any cause the converter cannot place (named by its type), so an unknown fault is reported loudly rather than blamed on the file. An engine fault on a page — a `MemoryError`, or a MuPDF code that is not the file's — fails the whole conversion; a page failing for any other reason costs that page alone, as a warning. `PDFErrorKind.is_the_files` is the split a caller acts on, and a successful result never carries an `error_kind`. Before #598 the message was `"Invalid or corrupted PDF: {e}"` for any `FileDataError`, path included, and a caller could not tell an out-of-memory from a bad file.
 - A PDF needing a password to open returns `success=False` with `error_kind=PDFErrorKind.ENCRYPTED` and `error_message="the PDF is password-protected; remove the password and try again"` (it was `"PDF is password-protected"` before #598). PyMuPDF opens such a file without the password and only fails on use, so without this check every page failed inside the per-page handler and the file came back as a *success* carrying no text — a caller testing `success` alone read an unreadable file as a paper with no text. The test is `doc.needs_pass`, not `doc.is_encrypted`: an owner password restricts permissions without blocking reads, and such a file converts normally.
 - `convert(pdf_path, *, limit=None)` and `extract_blocks(pdf_path, *, limit=None)` take a `PDFLimit(cancel: threading.Event | None = None, deadline: float | None = None)` *(0.12.0, #600)*, `deadline` a `time.monotonic()` reading. It is checked **before each page**: a reached limit is a failed result (`convert`, `error_kind` `CANCELLED` or `TIMED_OUT`, `text=""`, logged at INFO since the caller asked for it) or a raised `PDFExtractionError` (`extract_blocks`), never a partial one; a cancel outranks a passed deadline. `PDFLimit` refuses, when built, a `nan` or infinite deadline, a `time.time()` reading (decades past `time.monotonic()`) and a `cancel` that is not an `Event`, each of which would otherwise stop nothing or fail as the engine's fault. PyMuPDF's `get_text()` takes no MuPDF cookie, so one long page runs to its end here — Rust's `PdfLimit` stops a page while it runs. The default stops never, and `FullTextService` passes none.
-- **What MuPDF reads past is reported** *(#599)*: a broken xref it repaired, a page it stopped after too many syntax errors (`too many syntax errors; ignoring rest of page`), a font with bogus metrics. MuPDF fails none of these, so the text can be short and only its messages say so. `convert()` ends `warnings` with them and `extract_blocks_with_warnings(pdf_path, *, limit=None)` returns a `PDFBlocks(blocks, warnings)`; those two and `extract_blocks()` log them as one WARNING per read (the count, then every message), on a failure too, with the path replaced by "the file" in each message. A repeated warning arrives once, then as `... repeated N times...`, N counting the first. Each read empties PyMuPDF's process-wide store (`TOOLS.mupdf_warnings()`) before and after, so a caller reading that store itself finds it empty. `is_about_the_file()` sets aside MuPDF's `found duplicate … in the store`, two threads caching one item. PyMuPDF keeps one store per process, so two PDFs read at once on two threads can get each other's messages.
+- **What MuPDF reads past is reported** *(#599)*: a broken xref it repaired, a page it stopped after too many syntax errors (`too many syntax errors; ignoring rest of page`), a font with bogus metrics. MuPDF fails none of these, so the text can be short and only its messages say so. `convert()` ends `warnings` with them and `extract_blocks_with_warnings(pdf_path, *, limit=None)` returns a `PDFBlocks(blocks, warnings, metadata_title)`, `metadata_title` being the PDF's own `/Title`, verbatim, or `None` (pass it to `segment_document()` as `metadata["title"]`, which believes it only where page 1 prints it; without it, the largest line on page 1 may be a journal's masthead); those two and `extract_blocks()` log them as one WARNING per read (the count, then every message), on a failure too, with the path replaced by "the file" in each message. A repeated warning arrives once, then as `... repeated N times...`, N counting the first. Each read empties PyMuPDF's process-wide store (`TOOLS.mupdf_warnings()`) before and after, so a caller reading that store itself finds it empty. `is_about_the_file()` sets aside MuPDF's `found duplicate … in the store`, two threads caching one item. PyMuPDF keeps one store per process, so two PDFs read at once on two threads can get each other's messages.
 - Exceptions from `validate_pdf_path()` **propagate** — a missing or non-PDF path raises rather than returning a failed `ConversionResult`.
 
 ### Example
@@ -2416,15 +2416,32 @@ head in a document of five pages or fewer — is not caught.
 
 A line is a candidate heading when its font size clears the document's
 median by the configured factor (`font_size_threshold`, default 1.2) — or
-fails that but is bold — and it is short (≤100 characters) and contains at
-least one letter. A line's font must also reach the absolute floor
-`min_heading_size` (a constructor parameter, default 10.0) before it can be
-a heading at all, regardless of boldness or how it compares to the median.
-Candidate headings are classified against an anchored, case-insensitive
-pattern table (`"3.  Results"` matches: leading numbering and trailing
-punctuation are stripped first). A heading no anchored pattern claims gets a
-second, word-bounded partial pass at 0.7 confidence
-(`"Supplementary materials online"` → `SUPPLEMENTARY`). A 0.7 match is a
+fails that but is bold or italic — and it is short (≤100 characters) and
+contains at least one letter. A line's font must also reach the floor
+`min_heading_size` (a constructor parameter, default 10.0), **capped at the
+body's median size** *(unreleased, `"pdf-4"`)*: a journal set in 8 pt sets its
+headings in 8 pt bold, which the plain 10 pt floor refused, so such a paper
+had no headings at all. Candidate headings are classified against an
+anchored, case-insensitive pattern table (`"3.  Results"` matches: leading
+numbering and trailing punctuation are stripped first). A heading no
+anchored pattern claims gets a second, word-bounded partial pass at 0.7
+confidence (`"Supplementary materials online"` → `SUPPLEMENTARY`), but only
+when it is heading-sized or numbered: a body-sized line set apart only by
+bold or italic must match exactly or carry a section number, since the
+partial pass reads a bold credit line ("Methodology. A. Smith: ...") as
+Methods.
+
+**Numbered headings nest** *(unreleased)*. A heading opening with a section
+number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits) sits at that
+number's depth; an unnumbered one is top level. A heading goes into the
+`subsections` of the nearest earlier heading that is shallower, so
+`"2.1. Patients"` is a subsection of `"2. Materials and methods"`. A
+subsection that names no section (`"2.1. Patients"` names none) takes its
+parent's type and confidence; a top-level heading that names none is still
+not a heading. A heading may **wrap** over up to three lines that share its
+font, size, weight, slant and page, sit just below it on its left edge, and
+carry no number of their own; their text is joined by a space into the
+title. A first line that matches a pattern exactly is a whole heading. A 0.7 match is a
 lower-confidence candidate — a bold "Summary of findings" line or a figure
 caption can produce one — so callers reasoning about section content should
 check `Section.confidence` and filter to 1.0 for certainty. Duplicate
@@ -2442,6 +2459,13 @@ Sections are the text between consecutive headings. Three container rules:
 | No headings detected at all | One `UNKNOWN` section titled "Full Text", confidence 0.5 |
 | A heading directly followed by another | Reported with `content == ""`, not dropped |
 
+A section's content is its lines joined by `"\n"`, with a blank line at each
+paragraph boundary: a vertical gap over 1.5× the line's height, or *(unreleased)*
+a **first-line indent** — a line set in from the line above by ½ to 4 ems,
+the line after it back at the left edge, which journals set without space
+between paragraphs use instead. A hanging indent (a reference list) is not
+one, since its next line stays set in.
+
 ### `TextBlock` granularity
 
 `extract_blocks()` emits one `TextBlock` per text **line**. PyMuPDF starts
@@ -2450,6 +2474,9 @@ mixed-font heading into fragments no anchored pattern can match. Font
 attributes (`font_size`, `font_name`, `is_bold`, `is_italic`) are those of
 the line's *dominant* span — the one contributing the most non-whitespace
 characters — so a superscript reference marker cannot restyle its line.
+A spacing accent drawn as a glyph of its own before its letter, as TeX sets
+them (`"Nicol´as"`), is joined to the letter (`"Nicolás"`) where Unicode has
+the pair as one character (`join_spacing_accents()`, *unreleased*).
 
 `extract_blocks()` **raises** (`FileNotFoundError`, `ValueError`) rather
 than returning a partial result. A file that cannot be read raises
@@ -2694,7 +2721,9 @@ doc.converter_version                     # "jats-1"
 - **Versions**: `converter_version` is `"<format>-<n>"` from
   `JATS_CANONICAL_VERSION`, `MARKDOWN_VERSION`, `PLAIN_TEXT_VERSION`,
   `PDF_CANONICAL_VERSION` (which moves with the segmenter too: `"pdf-3"` sets
-  page furniture aside, *0.12.0*) and
+  page furniture aside, *0.12.0*; `"pdf-4"` joins spacing accents, nests
+  numbered headings and breaks paragraphs at first-line indents,
+  *unreleased*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.

@@ -16,14 +16,15 @@
 
 //! PDF text assembly — the oracle and the named tests.
 //!
-//! The corpus (53 cases) diffs every pure helper against Python's. The named
+//! The corpus (62 cases) diffs every pure helper against Python's. The named
 //! tests state why the rules exist: one block per *line*, the dominant span, and
 //! what "complete" means.
 
 use bmlib::fulltext::pdf_text::{
-    group_paragraphs, line_to_block, normalize_line, render_html, repeated_lines, span_text_weight,
-    split_on_short_lines, ConversionResult, PdfError, PdfErrorKind, PARAGRAPH_BREAK_RATIO,
-    REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO, SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
+    group_paragraphs, join_spacing_accents, line_to_block, normalize_line, render_html,
+    repeated_lines, span_text_weight, split_on_short_lines, ConversionResult, PdfError,
+    PdfErrorKind, PARAGRAPH_BREAK_RATIO, REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO,
+    SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
 };
 use serde_json::{json, Value};
 
@@ -34,6 +35,9 @@ fn run(case: &Value) -> Value {
     let a = &case["args"];
     match case["fn"].as_str().unwrap_or_default() {
         "normalize" => json!(normalize_line(a["line"].as_str().unwrap_or_default())),
+        "join_spacing_accents" => {
+            json!(join_spacing_accents(a["text"].as_str().unwrap_or_default()))
+        }
         "span_text_weight" => json!(span_text_weight(&a["span"])),
         "line_to_block" => match line_to_block(&a["line"], a["page_num"].as_i64().unwrap_or(0)) {
             None => Value::Null,

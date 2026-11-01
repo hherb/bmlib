@@ -553,5 +553,90 @@
    "page_count": 0,
    "converted_pages": 0
   }
+ },
+ {
+  "name": "join_spacing_accents/acute_lower",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "Nicol´as Gonz´alez P´erez"
+  }
+ },
+ {
+  "name": "join_spacing_accents/acute_capital_after_space",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "Luciano Arcucci a,b, ´Angeles"
+  }
+ },
+ {
+  "name": "join_spacing_accents/grave_diaeresis_circumflex_tilde_caron",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "`a ¨u ˆe ˜n ˇs"
+  }
+ },
+ {
+  "name": "join_spacing_accents/ring_cedilla_ogonek",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "˚a ¸c ˛e"
+  }
+ },
+ {
+  "name": "join_spacing_accents/no_precomposed_letter_kept",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "´x ´1 ´ a"
+  }
+ },
+ {
+  "name": "join_spacing_accents/accent_at_end_kept",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "prime´"
+  }
+ },
+ {
+  "name": "join_spacing_accents/already_composed_untouched",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": "Biología Clínica"
+  }
+ },
+ {
+  "name": "join_spacing_accents/empty",
+  "fn": "join_spacing_accents",
+  "args": {
+   "text": ""
+  }
+ },
+ {
+  "name": "line_to_block/spacing_accent",
+  "fn": "line_to_block",
+  "args": {
+   "page_num": 0,
+   "line": {
+    "bbox": [
+     1,
+     2,
+     30,
+     12
+    ],
+    "spans": [
+     {
+      "text": "Nicol´as ",
+      "size": 10.6,
+      "font": "CharisSIL",
+      "flags": 0
+     },
+     {
+      "text": "P´erez",
+      "size": 10.6,
+      "font": "CharisSIL",
+      "flags": 0
+     }
+    ]
+   }
+  }
  }
 ]

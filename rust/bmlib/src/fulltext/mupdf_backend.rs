@@ -76,9 +76,11 @@
 //! lays it out.
 
 use crate::fulltext::models::TextBlock;
-use crate::fulltext::pdf_text::{normalize_line, PdfBlocks, PdfError, PdfLimit, PdfTextExtractor};
+use crate::fulltext::pdf_text::{
+    join_spacing_accents, normalize_line, PdfBlocks, PdfError, PdfLimit, PdfTextExtractor,
+};
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
-use mupdf::{Cookie, Device, DisplayList, Document, Matrix, Page, Quad, Rect};
+use mupdf::{Cookie, Device, DisplayList, Document, Matrix, MetadataName, Page, Quad, Rect};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 /// How often the watcher looks at a [`PdfLimit`] while a page runs. A cancel or
@@ -259,7 +261,7 @@ pub fn line_block(line: &TextLine<'_>, page: &Rect, page_num: i64) -> Option<Tex
     let (spans, bounds) = line_spans(line, page);
     let bounds = bounds?;
     let joined: String = spans.iter().map(|s| s.text.as_str()).collect();
-    let text = normalize_line(&joined);
+    let text = join_spacing_accents(&normalize_line(&joined));
     if text.is_empty() {
         return None;
     }
@@ -629,6 +631,12 @@ impl PdfTextExtractor for MupdfExtractor {
     ) -> Result<PdfBlocks, PdfError> {
         let messages = EngineMessages::capture();
         let document = open(path)?;
+        // Best-effort, as Python's: a title that cannot be read is a warning,
+        // which the caller logs with the engine's.
+        let (metadata_title, metadata_warning) = match document.metadata(MetadataName::Title) {
+            Ok(title) => ((!title.is_empty()).then_some(title), None),
+            Err(e) => (None, Some(format!("Failed to extract metadata: {e}"))),
+        };
         let mut blocks = Vec::new();
         let mut page_index = 0;
         each_page(&document, DICT_FLAGS, path, limit, |bounds, text_page| {
@@ -642,9 +650,12 @@ impl PdfTextExtractor for MupdfExtractor {
             page_index += 1;
         })?;
         drop(document);
+        let mut warnings = messages.finish(path);
+        warnings.extend(metadata_warning);
         Ok(PdfBlocks {
             blocks,
-            warnings: messages.finish(path),
+            warnings,
+            metadata_title,
         })
     }
 

@@ -32,7 +32,12 @@ of five spans whose font is decided by the superscript bit — read as one span
 with the run after it, the raised ``1`` would make Helvetica the line's
 dominant font, where split off it leaves the italic run dominant; and on every
 page a running head and a page number, which the segmenter sets aside (#591),
-so a sentence crossing the last page break reads on. The
+so a sentence crossing the last page break reads on. And the layout of a
+journal set without space between paragraphs: a ``/Title`` in the document
+information, which the blocks carry as ``metadata_title``; names whose
+accents are spacing glyphs of their own (``Nicol\\264as``, WinAnsi's 0xB4
+acute), as TeX sets them; a numbered italic subheading at body size that
+wraps onto a second line; and a paragraph begun by a first-line indent. The
 expected values are PyMuPDF's output, printed on stderr to be checked by eye.
 
     python scripts/make_pdf_extraction_fixture.py [tests/fixtures]
@@ -93,6 +98,9 @@ PAGES: list[list[tuple[int, int, list[Run]]]] = [
                 ("F1", 10, 0, " overnight."),
             ],
         ),
+        (72, 580, [("F3", 10, 0, "2.1. Study population and")]),
+        (72, 568, [("F3", 10, 0, "setting")]),
+        (72, 550, [("F1", 10, 0, r"Patients were enrolled by Nicol\264as P\264erez.")]),
     ],
     [
         (72, 720, [("F2", 12, 0, "Results")]),
@@ -103,12 +111,17 @@ PAGES: list[list[tuple[int, int, list[Run]]]] = [
     ],
     [
         (72, 720, [("F1", 10, 0, "every site we visited.")]),
+        (84, 708, [("F1", 10, 0, "A second paragraph starts")]),
+        (72, 696, [("F1", 10, 0, "here and ends.")]),
     ],
 ]
 
 #: Page furniture on every page (#591): a running head above the text and the
 #: page number below it, which the segmenter sets aside, so the sentence the
 #: break between the last two pages interrupts reads on.
+#: The document information's ``/Title``, which page 1 prints as its title.
+TITLE = "A soft hyphen trial"
+
 RUNNING_HEAD: Run = ("F3", 8, 0, "Smith et al. A soft hyphen trial")
 for _number, _lines in enumerate(PAGES, start=1):
     _lines.insert(0, (72, 760, [RUNNING_HEAD]))
@@ -137,6 +150,7 @@ def build_pdf() -> bytes:
         "<< /Type /Catalog /Pages 2 0 R >>",
         "",  # the page tree, once the page ids are known
     ]
+    info_id = 3 + len(FONTS) + 2 * len(PAGES)
     objects += [_font_object(*FONTS[name]) for name in FONTS]
     fonts = " ".join(f"/{name} {font_ids[name]} 0 R" for name in FONTS)
     page_ids = []
@@ -151,6 +165,7 @@ def build_pdf() -> bytes:
         objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
     kids = " ".join(f"{i} 0 R" for i in page_ids)
     objects[1] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>"
+    objects.append(f"<< /Title ({TITLE}) >>")
 
     out = "%PDF-1.4\n"
     offsets = []
@@ -160,19 +175,24 @@ def build_pdf() -> bytes:
     xref = len(out)
     out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n"
     out += "".join(f"{offset:010} 00000 n \n" for offset in offsets)
-    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info {info_id} 0 R >>\n"
+        f"startxref\n{xref}\n%%EOF\n"
+    )
     return out.encode("latin-1")
 
 
 def build_contract(pdf_path: Path) -> dict[str, Any]:
     """The expected blocks and canonical text, from PyMuPDF and the segmenter."""
-    blocks = PyMuPDFConverter().extract_blocks(pdf_path)
-    canonical = canonical_from_segmented(SectionSegmenter().segment_document(blocks))
+    read = PyMuPDFConverter().extract_blocks_with_warnings(pdf_path)
+    document = SectionSegmenter().segment_document(read.blocks, {"title": read.metadata_title})
+    canonical = canonical_from_segmented(document)
     return {
         "pdf": PDF_NAME,
         "pdf_sha256": hashlib.sha256(pdf_path.read_bytes()).hexdigest(),
         "geometry_tolerance": GEOMETRY_TOLERANCE,
-        "blocks": [b.to_dict() for b in blocks],
+        "metadata_title": read.metadata_title,
+        "blocks": [b.to_dict() for b in read.blocks],
         "canonical": canonical.to_dict(),
     }
 

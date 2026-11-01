@@ -16,7 +16,7 @@
 
 //! The PDF section segmenter — the oracle and the named tests.
 //!
-//! The corpus (125 cases) diffs every pattern, the heading predicate, the
+//! The corpus (139 cases) diffs every pattern, the heading predicate, the
 //! paragraph rule and 13 whole documents against Python's. The named tests state
 //! the rules the oracle cannot: why the fallback has its own confidence, and why
 //! a negative gap is not a paragraph break.
@@ -245,10 +245,10 @@ fn every_pattern_compiles_and_matches_something() {
         );
         total += patterns.len();
     }
-    assert_eq!(total, 61, "the table's size is a decision, not a detail");
+    assert_eq!(total, 63, "the table's size is a decision, not a detail");
 
     // **Every pattern is exercised by the oracle**, which carries one case per
-    // heading spelling — 94 of the 125 cases are pattern cases. This test asserts
+    // heading spelling — 96 of the 139 cases are pattern cases. This test asserts
     // that the corpus still covers the table, so a pattern added without a case
     // fails here rather than going unexercised.
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
@@ -268,8 +268,8 @@ fn every_pattern_compiles_and_matches_something() {
 // The heading predicate
 // ---------------------------------------------------------------------------
 
-/// **A heading is short, has letters, and is either heading-sized or bold at body
-/// size.** Each clause refuses a real shape: a body line, a bare `"3."`, and a
+/// **A heading is short, has letters, and is either heading-sized or bold or
+/// italic at body size.** Each clause refuses a real shape: a body line, a bare `"3."`, and a
 /// paragraph.
 #[test]
 fn the_heading_predicate_refuses_prose_and_numbering() {
@@ -312,10 +312,24 @@ fn the_heading_predicate_refuses_prose_and_numbering() {
         1.2,
         10.0
     ));
-    // Below the absolute floor, bold or not.
+    // Below the floor (10 pt under a 12 pt body), bold or not.
     assert!(!is_potential_header(
         &heading("Methods", 9.0, true),
         12.0,
+        1.2,
+        10.0
+    ));
+    // In small print the floor is the body size: an 8 pt journal's 8 pt bold
+    // heading is one, its 7.2 pt bold "Table 1" is not.
+    assert!(is_potential_header(
+        &heading("Methods", 8.0, true),
+        8.0,
+        1.2,
+        10.0
+    ));
+    assert!(!is_potential_header(
+        &heading("Table 1", 7.2, true),
+        8.0,
         1.2,
         10.0
     ));
