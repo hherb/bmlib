@@ -328,7 +328,7 @@ Send a chat request, routing to the appropriate provider. Token usage is automat
 
 **Returns:** `LLMResponse` with the model's response content, any tool calls, and token usage.
 
-**Raises:** `NotImplementedError` if `tools` is not `None` and the resolved provider is not tool-capable. The check happens before any network call. On Ollama, `ValueError` if `num_ctx` is not a positive `int` of at most `2**32 - 1`.
+**Raises:** `NotImplementedError` if `tools` is not `None` and the resolved provider is not tool-capable. The check happens before any network call. On Ollama, `ValueError` if `num_ctx` is not a positive `int` of at most `2**32 - 1`. *(unreleased, #617)* On an OpenAI-compatible provider, `ValueError` for a 200 answer carrying no choice — `choices` absent, empty or not a list, or a body that is not a JSON object — quoting the server's `error` message, or else the body's first 200 characters: the server's failure, not bmlib's. A field of the wrong type in an answer that does carry a choice raises nothing and reads as Rust reads it: token counts 0, a tool call naming no function dropped, and content that is not text (or a choice with no message) as `""`, with a WARNING.
 
 **Example:**
 
