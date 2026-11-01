@@ -754,7 +754,7 @@
   {
     "name": "is_potential_header/heading-sized",
     "ok": true,
-    "value": false
+    "value": true
   },
   {
     "name": "is_potential_header/body-sized-not-bold",
@@ -822,6 +822,46 @@
     "value": 12.0
   },
   {
+    "name": "median_font_size/by-characters",
+    "ok": true,
+    "value": 10.0
+  },
+  {
+    "name": "median_font_size/even-characters",
+    "ok": true,
+    "value": 11.0
+  },
+  {
+    "name": "median_font_size/empty-text",
+    "ok": true,
+    "value": 10.0
+  },
+  {
+    "name": "median_font_size/code-points",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/only-empty-text",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/empty-text-at-the-half",
+    "ok": true,
+    "value": 11.0
+  },
+  {
+    "name": "median_font_size/unsorted",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/fractional-half",
+    "ok": true,
+    "value": 10.5
+  },
+  {
     "name": "join_blocks/no-gap",
     "ok": true,
     "value": "one\ntwo"
@@ -881,13 +921,13 @@
       "file_path": "",
       "sections": [
         {
-          "confidence": 0.5,
-          "content": "Methods\nWe did things.",
+          "confidence": 1.0,
+          "content": "We did things.",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "methods",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Methods"
         }
       ],
       "title": null
@@ -900,13 +940,22 @@
       "file_path": "",
       "sections": [
         {
-          "confidence": 0.5,
-          "content": "Introduction\nIntro text.\nMethods\nMethod text.",
+          "confidence": 1.0,
+          "content": "Intro text.",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "introduction",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Method text.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
       "title": null
@@ -920,15 +969,33 @@
       "sections": [
         {
           "confidence": 0.5,
-          "content": "A Paper Title\nAuthor One\nAbstract\nThe abstract.\nMethods\nThe methods.",
+          "content": "A Paper Title\nAuthor One",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "front_matter",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The abstract.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "abstract",
+          "subsections": [],
+          "title": "Abstract"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The methods.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
-      "title": null
+      "title": "A Paper Title"
     }
   },
   {
@@ -957,13 +1024,88 @@
       "file_path": "",
       "sections": [
         {
+          "confidence": 1.0,
+          "content": "Intro text.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Method text.",
+          "page_end": 1,
+          "page_start": 1,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/no-headings-multi-page",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
           "confidence": 0.5,
-          "content": "Introduction\nIntro text.\nMethods\nMethod text.",
+          "content": "Some prose\nMore prose",
           "page_end": 1,
           "page_start": 0,
           "section_type": "unknown",
           "subsections": [],
           "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/small-table-lines-make-no-body-line-a-heading",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 1.0,
+          "content": "Two reviewers screened every record and graded the evidence with\nn = 12\nn = 13\nn = 14\nn = 15\nn = 16\nn = 17\nn = 18\nn = 19\nn = 20\nn = 21\nn = 22\nn = 23\nthe GRADE approach. Results: Thirty-four trials were included, and\nmost were at low risk of bias in every domain the tool assesses.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/exact-headings-just-over-the-body",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 1.0,
+          "content": "Cells were cultured in medium supplemented with serum and antibiotics as before.\nCells were cultured in medium supplemented with serum and antibiotics as before.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "INTRODUCTION"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Cells were cultured in medium supplemented with serum and antibiotics as before.\nCells were cultured in medium supplemented with serum and antibiotics as before.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "RESULTS"
         }
       ],
       "title": null
@@ -1015,12 +1157,21 @@
       "sections": [
         {
           "confidence": 0.5,
-          "content": "The Largest Line\n\nbody\nMethods\nText.",
+          "content": "The Largest Line\n\nThe body of the paper runs on for a full line, as body text does.",
           "page_end": 0,
           "page_start": 0,
-          "section_type": "unknown",
+          "section_type": "front_matter",
           "subsections": [],
-          "title": "Full Text"
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Text of the methods, at the body's size and as long as a line.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
         }
       ],
       "title": "The Largest Line"
@@ -1486,7 +1637,7 @@
         },
         {
           "confidence": 0.7,
-          "content": "Body one.",
+          "content": "Body one, a line of body text long enough to be the paper's bulk.",
           "page_end": 0,
           "page_start": 0,
           "section_type": "methods",
@@ -1882,6 +2033,46 @@
     "name": "is_potential_header/bold_between_floor_and_larger_body",
     "ok": true,
     "value": true
+  },
+  {
+    "name": "is_potential_header/exact-just-over-the-body-unbolded",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/partial-just-over-the-body-unbolded",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exact-at-the-body-size-unbolded",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exact-bold-just-under-the-body",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/exact-italic-at-the-exact-floor",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/exact-bold-under-the-exact-floor",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exact-unbolded-just-under-the-body",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/partial-bold-just-under-the-body",
+    "ok": true,
+    "value": false
   },
   {
     "name": "segment_document/a_heading_with_no_width_still_wraps",

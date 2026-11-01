@@ -8,6 +8,45 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A long table set small no longer makes every body line a heading**
+  (found smoke-testing hherb/StudyAnalyzer with an MDPI review). The body
+  size the heading and title rules measure against was the median over
+  *lines*; the paper's lines at ~7 pt, mostly its five-page table with one
+  short cell per line, were 1,294 holding 7,877 characters, against the
+  body's 523 lines and 38,300 characters at ~10 pt, so the "body" was 7 pt,
+  every 10 pt body line was heading-sized, and each holding "Background:",
+  "Methods:" or "Results:" became a heading. The median now counts each line
+  by its characters (`median_font_size` / `_median_font_size`), an exact half
+  split averages the sizes either side (so lines of one length give the old
+  median), and a line with no text does not count. On that paper the body
+  now measures 9.87 pt and its 31 headings are found. `PDF_CANONICAL_VERSION`
+  is 5 (`"pdf-5"`). Python and Rust alike, held by the segmenter oracle
+  (eight new `median_font_size` cases, among them non-ASCII text, an unsorted
+  list and a fractional half; two `segment_document` cases, small table lines
+  that made a body line a heading and a fallback spanning two pages; four
+  `segment_document` cases where each
+  16 pt heading sat over one 12 pt line now find them; two whose body was a
+  placeholder shorter than their headings got a line of body text).
+  **Measured** over 1,114 Europe PMC journal PDFs held locally (no list is
+  committed), segmented with both medians from the same lines: 90 move.
+  About 550 body lines in 60 papers are no longer headings, but about 210
+  real headings in some 50 are lost, set only slightly larger than the now
+  accurate body size (Cell's 8.97 pt over 8 pt, 1.12×) or bold and slightly
+  smaller (9.5 pt under 10 pt), so they miss the 1.2× ratio or the floor the
+  heading rules were tuned to with the line median (#628). Neither a 1.1
+  ratio nor a lower floor fixed that cleanly, so **a line naming a section
+  exactly** ("Results", "INTRODUCTION", "2. Methods") is now a heading at
+  any size over the body, or bold or italic down to 0.9 of it; a partial
+  match still needs the ratio and the floor. Against the line median and
+  the old rules, the two changes move 195 papers: about 550 body-line
+  headings go, 482 headings are found that were not, most a plain
+  "Methods" or "References" just over the body (30 of 30 sampled are
+  genuine), and 181 are lost, about half of a sample genuinely headings —
+  mostly a numbered subsection set at body size, which #628 keeps open.
+  Title extraction does not use the heading rule, and the real-PDF
+  extraction fixture did not move; the oracle case `is_potential_header/heading-sized` (an unbolded "Methods",
+  14 pt over 12 pt) now reads `true`, as its name always said.
+
 - **A PDF set the way Elsevier sets it segments** (found smoke-testing
   hherb/StudyAnalyzer with a *Life Sciences* paper). Its headings are 8 pt
   bold in an 8 pt body, under the segmenter's 10 pt floor, so no heading was

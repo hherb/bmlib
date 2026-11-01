@@ -186,7 +186,9 @@ _TAG_RE = re.compile(r"<[^>]+>")
 #: redrawn under 1 (#503); the ``europepmc`` rows predate it and were stamped
 #: 1 by hand, being this population already: every one's ``file_name`` is
 #: ``<id>?pdf=render``, Europe PMC's own URL, where a ``PubMedCentral`` entry
-#: ends ``/pdf/?tool=EBI``.
+#: ends ``/pdf/?tool=EBI``. Every committed row's ``median_font_size`` is the
+#: line median the segmenter computed before pdf-5, which counts characters, so
+#: the next top-up must bump this and redraw or re-measure, or the two pool (#628).
 ROW_DEFINITIONS_VERSION = 1
 
 

@@ -285,15 +285,22 @@ fn the_heading_predicate_refuses_prose_and_numbering() {
     // `12.0 * 1.2` is `14.399999999999999` in floating point, so 14.0 falls below
     // it. A first cut of this test used 14.0 and asserted `true`, which is the
     // arithmetic error the corpus case for this shape also carries — both were
-    // checked against Python, which agrees. 15.0 is the honest value.
+    // checked against Python, which agrees. 15.0 is the honest value. A partial
+    // match, since an exact section name needs only to be over the body (#628).
     assert!(!is_potential_header(
-        &heading("Methods", 14.0, false),
+        &heading("Methods of study", 14.0, false),
         12.0,
         1.2,
         10.0
     ));
     assert!(is_potential_header(
-        &heading("Methods", 15.0, false),
+        &heading("Methods of study", 15.0, false),
+        12.0,
+        1.2,
+        10.0
+    ));
+    assert!(is_potential_header(
+        &heading("Methods", 14.0, false),
         12.0,
         1.2,
         10.0

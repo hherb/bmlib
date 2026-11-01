@@ -290,6 +290,26 @@ class TestHeadingDetection:
     def test_digits_alone_are_not_a_heading(self):
         assert not self.segmenter._is_potential_header(block("123 456", size=14.0, bold=True), 10.0)
 
+    def test_an_exact_section_name_just_over_the_body_needs_no_bold(self):
+        # Cell: 8.97 pt headings over an 8 pt body, 1.12x, not flagged bold (#628).
+        assert self.segmenter._is_potential_header(block("INTRODUCTION", size=8.97), 8.0)
+        # A partial match still needs the ratio: that is how body lines became headings.
+        assert not self.segmenter._is_potential_header(
+            block("the GRADE approach. Results: Thirty-four", size=8.97), 8.0
+        )
+        # Exactly the body size is not "over" it.
+        assert not self.segmenter._is_potential_header(block("Results", size=8.0), 8.0)
+
+    def test_an_exact_bold_section_name_may_sit_just_under_the_body(self):
+        # Bold 9.5 pt headings under a 10 pt body (#628), down to 0.9 of it.
+        assert self.segmenter._is_potential_header(block("Methods", size=9.5, bold=True), 10.0)
+        assert self.segmenter._is_potential_header(block("Methods", size=9.0, italic=True), 10.0)
+        assert not self.segmenter._is_potential_header(block("Methods", size=8.9, bold=True), 10.0)
+        assert not self.segmenter._is_potential_header(block("Methods", size=9.5), 10.0)
+        assert not self.segmenter._is_potential_header(
+            block("Methods of study", size=9.5, bold=True), 10.0
+        )
+
 
 class TestMedianFontSize:
     def test_the_median_not_the_mean(self):
@@ -303,15 +323,25 @@ class TestMedianFontSize:
     def test_no_usable_sizes_returns_the_default(self):
         assert _median_font_size([]) == 12.0
         assert _median_font_size([block("a", size=0.0)]) == 12.0
+        assert _median_font_size([block("", size=10.0)]) == 12.0
+
+    def test_lines_count_by_their_characters(self):
+        # A table's short 7 pt cells outnumber the body's lines, not its text.
+        cells = [block("n = 12", size=7.0) for _ in range(10)]
+        body = [block("Patients were enrolled at three sites in 2024.", size=10.0)] * 3
+        assert _median_font_size(cells + body) == 10.0
+
+    def test_an_exact_half_averages_the_sizes_either_side(self):
+        assert _median_font_size([block("aaa", size=10.0), block("bbb", size=12.0)]) == 11.0
 
 
 def paper_blocks() -> list[TextBlock]:
     """A miniature paper: front matter, four sections, two pages.
 
-    Sizes matter: the median is 11.5 (five body lines at 10, four headings
-    at 13, one title at 20), so 13-point headings are below 1.2x the median
-    and need their bold; the 20-point title clears every threshold but
-    matches no pattern.
+    Sizes matter: by characters the median is 10 (the body lines hold 122 of
+    the 184 characters), so the 13-point headings clear 1.2x the median
+    whether or not they are bold; the 20-point title clears every threshold
+    but matches no pattern.
     """
     return [
         block("Aspirin and Mortality: A Trial", size=TITLE_SIZE),
@@ -469,10 +499,11 @@ class TestAJunkMetadataTitleDoesNotBeatTheTitleOnThePage:
         that rejected every metadata title would pass the first test by
         accident.
 
-        Sizes matter here as they do in ``paper_blocks``: five body lines
-        against the two title lines put the median at 10, so the 20-point
-        title clears ``_TITLE_SIZE_RATIO``. With only two body lines the
-        median is 15 and the fallback rejects its own title.
+        Sizes matter here as they do in ``paper_blocks``: the body lines hold
+        140 of the 169 characters, so the median is 10 and the 20-point title
+        clears ``_TITLE_SIZE_RATIO``. Were the title lines to hold half the
+        characters, the median would rise toward 20 and the fallback would
+        reject its own title.
         """
         return [
             block("Effects of aspirin", size=TITLE_SIZE, y=72.0),

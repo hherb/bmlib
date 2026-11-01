@@ -339,9 +339,12 @@ or a title you have, to the segmenter as `metadata_title`.
 `SectionSegmenter::default().segment_document(blocks, file_path,
 metadata_title, metadata)` turns lines into a `SegmentedDocument` of typed
 `Section`s. Page furniture (running heads, page numbers) is set aside first;
-a heading is a short line larger than the body median by
+a heading is a short line larger than the body median (the median of the
+lines' characters, not of the lines, *unreleased*) by
 `font_size_threshold`, or a bold or italic one at body size, which must match
-a pattern exactly or carry a section number (`"2.1."`); the size floor
+a pattern exactly or carry a section number (`"2.1."`); a line matching a
+pattern exactly needs only to be over the body, or bold or italic down to
+`EXACT_HEADING_FLOOR_RATIO` of it (*unreleased*, #628); the size floor
 `min_heading_size` is capped at the body median, so a journal set in 8 pt
 finds its 8 pt bold headings. It is classified by `match_section_type`, and a
 heading may wrap over up to three lines in all. A numbered heading nests as a
@@ -364,9 +367,9 @@ let line = |text: &str, y: f64, size: f64| TextBlock {
     is_bold: false, is_italic: false, x: 72.0, y, width: 400.0, height: size,
 };
 let blocks = [
-    line("Methods", 100.0, 16.0),
+    line("Methods", 100.0, 14.0),
     line("We enrolled forty patients.", 130.0, 10.0),
-    line("Results", 160.0, 16.0),
+    line("Results", 160.0, 14.0),
     line("Mortality fell.", 190.0, 10.0),
 ];
 let doc = SectionSegmenter::default().segment_document(
@@ -374,10 +377,12 @@ let doc = SectionSegmenter::default().segment_document(
 );
 let types: Vec<SectionType> = doc.sections.iter().map(|s| s.section_type).collect();
 assert_eq!(types, [SectionType::Methods, SectionType::Results]);
-assert_eq!(doc.title, None); // "A trial" is not printed on page 1, so it is not believed
+// "A trial" is not printed on page 1, so it is not believed, and no line is
+// half again the 10 pt body (14 pt headings, so "Methods" is not taken instead).
+assert_eq!(doc.title, None);
 
 let canonical = canonical_from_segmented(&doc);
-assert_eq!(canonical.converter_version, "pdf-4");
+assert_eq!(canonical.converter_version, "pdf-5");
 ```
 
 ## Canonical text

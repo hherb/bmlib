@@ -42,6 +42,15 @@ pub const DEFAULT_FONT_SIZE: f64 = 12.0;
 /// A heading is short; a line longer than this is prose whatever its font.
 pub const MAX_HEADING_CHARS: usize = 100;
 
+/// A line naming a section exactly is a heading when it is larger than the
+/// body at all, or bold or italic down to this fraction of the body size
+/// (#628): Cell sets 8.97 pt headings over an 8 pt body, others bold 9.5 pt
+/// under 10 pt.
+pub const EXACT_HEADING_FLOOR_RATIO: f64 = 0.9;
+
+/// Font sizes are compared with this much slack, so equal sizes compare equal.
+pub const FONT_SIZE_TOLERANCE: f64 = 1e-6;
+
 /// The title fallback must exceed the body median by this factor before the
 /// largest first-page line is believed to be the title.
 pub const TITLE_SIZE_RATIO: f64 = 1.5;
@@ -245,28 +254,37 @@ pub fn drop_page_furniture(blocks: &[TextBlock]) -> Vec<TextBlock> {
         .collect()
 }
 
-/// Median font size of `blocks`, ignoring non-positive sizes.
+/// Median font size of the characters of `blocks`.
 ///
 /// The **median, not the mean**, so headings and footnotes cannot drag the
-/// body-text estimate. Returns [`DEFAULT_FONT_SIZE`] when no block carries a
-/// usable size.
+/// body-text estimate. Each line counts by its characters (code points), not
+/// once: a table set small, one short cell per line, can outnumber the body's
+/// lines while holding a fraction of its text, and a line median then reads
+/// the table's size as the body's, so every body line looks heading-sized.
+/// Where the characters split exactly in half, the two sizes either side are
+/// averaged, so lines of one length give the plain median. A line with no text
+/// or a non-positive size does not count; returns [`DEFAULT_FONT_SIZE`] when no
+/// block carries both a usable size and some text.
 #[must_use]
 pub fn median_font_size(blocks: &[TextBlock]) -> f64 {
-    let mut sizes: Vec<f64> = blocks
+    let mut weighted: Vec<(f64, usize)> = blocks
         .iter()
-        .filter(|b| b.font_size > 0.0)
-        .map(|b| b.font_size)
+        .filter(|b| b.font_size > 0.0 && !b.text.is_empty())
+        .map(|b| (b.font_size, b.text.chars().count()))
         .collect();
-    if sizes.is_empty() {
-        return DEFAULT_FONT_SIZE;
+    weighted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total: usize = weighted.iter().map(|(_, w)| w).sum();
+    let mut seen = 0;
+    for (i, (size, weight)) in weighted.iter().enumerate() {
+        seen += weight;
+        if 2 * seen > total {
+            return *size;
+        }
+        if 2 * seen == total {
+            return (size + weighted[i + 1].0) / 2.0;
+        }
     }
-    sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mid = sizes.len() / 2;
-    if sizes.len() % 2 == 1 {
-        sizes[mid]
-    } else {
-        (sizes[mid - 1] + sizes[mid]) / 2.0
-    }
+    DEFAULT_FONT_SIZE
 }
 
 /// Whether `blocks[i]` is a paragraph's indented first line.
@@ -584,6 +602,13 @@ pub fn match_section_type(text: &str) -> (SectionType, f64) {
 /// least one alphabetic character — a bare `"3."` is numbering, not a heading.
 /// The floor is `min_heading_size` or the body size, whichever is smaller: a
 /// journal set in 8 pt sets its headings in 8 pt bold.
+///
+/// A line naming a section exactly (`"Results"`, `"INTRODUCTION"`) needs less
+/// (#628): any size above the body's, or bold or italic down to
+/// [`EXACT_HEADING_FLOOR_RATIO`] of it. With the body size measured by
+/// characters, headings set just over the body, or bold just under it, would
+/// miss the ratio or the floor; a partial match still needs both, since that
+/// is how a body line naming a section became a heading.
 #[must_use]
 pub fn is_potential_header(
     block: &TextBlock,
@@ -591,13 +616,6 @@ pub fn is_potential_header(
     font_size_threshold: f64,
     min_heading_size: f64,
 ) -> bool {
-    if block.font_size < min_heading_size.min(median) {
-        return false;
-    }
-    let heading_sized = block.font_size >= median * font_size_threshold;
-    if !heading_sized && !(block.is_bold || block.is_italic) {
-        return false;
-    }
     // Characters, not bytes: a multi-byte heading is not "long" because its
     // UTF-8 encoding is.
     if block.text.chars().count() > MAX_HEADING_CHARS {
@@ -606,7 +624,19 @@ pub fn is_potential_header(
     if !block.text.chars().any(char::is_alphabetic) {
         return false;
     }
-    true
+    let styled = block.is_bold || block.is_italic;
+    if block.font_size >= min_heading_size.min(median)
+        && (styled || block.font_size >= median * font_size_threshold)
+    {
+        return true;
+    }
+    if match_section_type(&block.text).1 < 1.0 {
+        return false;
+    }
+    if block.font_size > median + FONT_SIZE_TOLERANCE {
+        return true;
+    }
+    styled && block.font_size >= median * EXACT_HEADING_FLOOR_RATIO - FONT_SIZE_TOLERANCE
 }
 
 /// One heading found in the block list.

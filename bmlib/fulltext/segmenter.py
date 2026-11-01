@@ -43,7 +43,6 @@ from __future__ import annotations
 import itertools
 import math
 import re
-import statistics
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -63,6 +62,12 @@ PARTIAL_MATCH_CONFIDENCE = 0.7
 _DEFAULT_FONT_SIZE = 12.0
 # A heading is short; a line longer than this is prose whatever its font.
 _MAX_HEADING_CHARS = 100
+# A line naming a section exactly is a heading when it is larger than the
+# body at all, or bold or italic down to this fraction of the body size (#628):
+# Cell sets 8.97 pt headings over an 8 pt body, others bold 9.5 pt under 10 pt.
+_EXACT_HEADING_FLOOR_RATIO = 0.9
+# Font sizes are compared with this much slack, so equal sizes compare equal.
+_FONT_SIZE_TOLERANCE = 1e-6
 # The title fallback must exceed the body median by this factor before the
 # largest first-page line is believed to be the title.
 _TITLE_SIZE_RATIO = 1.5
@@ -199,15 +204,28 @@ def drop_page_furniture(blocks: list[TextBlock]) -> list[TextBlock]:
 
 
 def _median_font_size(blocks: list[TextBlock]) -> float:
-    """Median font size of *blocks*, ignoring non-positive sizes.
+    """Median font size of the characters of *blocks*.
 
     The median, not the mean, so headings and footnotes cannot drag the
-    body-text estimate. Returns 12.0 when no block carries a usable size.
+    body-text estimate. Each line counts by its characters (code points), not
+    once: a table set small, one short cell per line, can outnumber the body's
+    lines while holding a fraction of its text, and a line median then reads
+    the table's size as the body's, so every body line looks heading-sized.
+    Where the characters split exactly in half, the two sizes either side are
+    averaged, so lines of one length give the plain median. A line with no
+    text or a non-positive size does not count; returns 12.0 when no block
+    carries both a usable size and some text.
     """
-    sizes = [b.font_size for b in blocks if b.font_size > 0]
-    if not sizes:
-        return _DEFAULT_FONT_SIZE
-    return float(statistics.median(sizes))
+    weighted = sorted((b.font_size, len(b.text)) for b in blocks if b.font_size > 0 and b.text)
+    total = sum(weight for _, weight in weighted)
+    seen = 0
+    for i, (size, weight) in enumerate(weighted):
+        seen += weight
+        if 2 * seen > total:
+            return float(size)
+        if 2 * seen == total:
+            return (size + weighted[i + 1][0]) / 2
+    return _DEFAULT_FONT_SIZE
 
 
 def heading_number(text: str) -> str | None:
@@ -498,17 +516,28 @@ class SectionSegmenter:
         at least one alphabetic character — a bare "3." is numbering, not a
         heading. The floor is ``min_heading_size`` or the body size, whichever
         is smaller: a journal set in 8 pt sets its headings in 8 pt bold.
+
+        A line naming a section exactly ("Results", "INTRODUCTION") needs
+        less (#628): any size above the body's, or bold or italic down to
+        ``_EXACT_HEADING_FLOOR_RATIO`` of it. With the body size measured by
+        characters, headings set just over the body, or bold just under it,
+        would miss the ratio or the floor; a partial match still needs both,
+        since that is how a body line naming a section became a heading.
         """
-        if block.font_size < min(self.min_heading_size, median_font_size):
-            return False
-        heading_sized = block.font_size >= median_font_size * self.font_size_threshold
-        if not heading_sized and not (block.is_bold or block.is_italic):
-            return False
         if len(block.text) > _MAX_HEADING_CHARS:
             return False
         if not any(c.isalpha() for c in block.text):
             return False
-        return True
+        styled = block.is_bold or block.is_italic
+        if block.font_size >= min(self.min_heading_size, median_font_size):
+            if styled or block.font_size >= median_font_size * self.font_size_threshold:
+                return True
+        if self._match_section_type(block.text)[1] < 1.0:
+            return False
+        if block.font_size > median_font_size + _FONT_SIZE_TOLERANCE:
+            return True
+        floor = median_font_size * _EXACT_HEADING_FLOOR_RATIO - _FONT_SIZE_TOLERANCE
+        return styled and block.font_size >= floor
 
     def segment_document(
         self, blocks: list[TextBlock], metadata: dict[str, Any] | None = None
