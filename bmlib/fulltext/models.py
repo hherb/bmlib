@@ -878,6 +878,14 @@ class FullTextResult:
     # (``convert_pdfs`` off, an earlier tier's text, no PDF backend usable), and
     # when the PDF opened and yielded no text, a scan, which is not a failure.
     pdf_extraction_failure: str | None = None
+    # The type names of the faults the tier chain swallowed before this
+    # result, in the order they happened (#603): the same names the "No full
+    # text found" WARNING lists, so a PDF or a link returned while Europe PMC
+    # and NCBI answered 503 (``["FullTextError", "FullTextError"]``) is not
+    # mistaken for the best a retry can do. A source answering that it has
+    # nothing is not a fault and is not listed. Empty on a cache hit, a stale
+    # rendering served after a re-fetch included, since no chain ran for it.
+    tier_faults: list[str] = field(default_factory=list)
 
 
 class SectionType(Enum):

@@ -945,14 +945,20 @@ class FullTextService:
                 return cached
 
         def retrieve() -> FullTextResult:
-            return self._retrieve(
+            # Every tier swallows its own exception so the next one still
+            # runs; this is what remembers that they did.
+            failures = _TierFailures(on_bug=self._warn_swallowed_bug)
+            result = self._retrieve(
                 fulltext_sources=fulltext_sources,
                 pmc_id=pmc_id,
                 doi=doi,
                 pmid=usable_pmid,
                 refusals=tuple(refusals),
                 cache_id=cache_id,
+                failures=failures,
             )
+            result.tier_faults = list(failures.faults)
+            return result
 
         if stale and cache_id and self.cache is not None:
             # INFO, the level of a cache hit: after an upgrade this fires for
@@ -1184,21 +1190,20 @@ class FullTextService:
         pmid: str,
         refusals: tuple[FullTextError, ...],
         cache_id: str | None,
+        failures: _TierFailures,
     ) -> FullTextResult:
         """The retrieval chain behind the cache check, as :meth:`fetch_fulltext` documents it.
 
         *pmid* is canonical or ``""`` and *doi* stripped or ``None``,
         :meth:`fetch_fulltext` having read the caller's; *refusals* says why
-        either was set aside, if it was.
+        either was set aside, if it was. *failures* is filled as the tiers
+        run, so the caller can put its faults on the result whichever tier
+        returns it.
         """
         # A body-less JATS rendering picked up along the way. Held back as a
         # last resort rather than returned, since it carries only the
         # abstract while a later tier may still find the whole article.
         abstract_only: FullTextResult | None = None
-
-        # Every tier below swallows its own exception so the next one still
-        # runs; this is what remembers that they did.
-        failures = _TierFailures(on_bug=self._warn_swallowed_bug)
 
         # A PMID (issue #478) or DOI (#475) set aside is recorded once, like a
         # malformed PMC ID below (#304), and the chain goes on with whatever

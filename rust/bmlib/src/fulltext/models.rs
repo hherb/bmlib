@@ -831,6 +831,15 @@ pub struct FullTextResult {
     /// when the PDF opened and yielded no text, a scan, which is not a failure.
     #[serde(default)]
     pub pdf_extraction_failure: Option<String>,
+    /// The type names of the faults the tier chain swallowed before this
+    /// result, in the order they happened (#603): the names the "No full text
+    /// found" warning lists, so a PDF or a link returned while Europe PMC and
+    /// NCBI answered 503 (`["FullTextError", "FullTextError"]`) is not mistaken
+    /// for the best a retry can do. A source answering that it has nothing is
+    /// not a fault and is not listed. Empty on a cache hit, since no chain ran
+    /// for it.
+    #[serde(default)]
+    pub tier_faults: Vec<String>,
 }
 
 /// What a [`FullTextResult::html`] payload actually is.

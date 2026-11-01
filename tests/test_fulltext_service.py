@@ -2170,6 +2170,8 @@ class TestAnExhaustedChainReportsItself:
         # "3 attempts failed", and Tier 0 records once per fetcher-supplied
         # source, so a two-digit count is reachable in production.
         assert "nothing was retrieved; 3 attempts failed (OSError)" in caplog.text
+        # And on the result, which is what a caller can branch on (#603).
+        assert result.tier_faults == ["OSError", "OSError", "OSError"]
         # Three attempts are made on this path: the Europe PMC search, the ID
         # Converter, and Unpaywall. The PDF-render lookup does not run — it is
         # gated on xml_failed, which only the Tier 1a block sets, and Tier 1a
@@ -2206,6 +2208,7 @@ class TestAnExhaustedChainReportsItself:
         # and it must not say anything failed.
         assert "nothing was retrieved; 3 sources had nothing" in caplog.text
         assert "failed" not in caplog.text
+        assert result.tier_faults == []
 
     def test_an_unreachable_source_is_a_failure_not_an_absence(self, caplog):
         """The regression this pair was blind to.
@@ -2228,6 +2231,7 @@ class TestAnExhaustedChainReportsItself:
         assert result.source == "doi"
         assert "3 attempts failed (FullTextError)" in caplog.text
         assert "had nothing" not in caplog.text
+        assert result.tier_faults == ["FullTextError", "FullTextError", "FullTextError"]
 
     def test_the_abstract_only_exit_carries_the_same_report(self, caplog):
         """The one warning that already existed keeps working, and gains the count.
@@ -2270,6 +2274,7 @@ class TestAnExhaustedChainReportsItself:
             "returning the abstract only; 2 attempts failed (OSError); 1 source had nothing"
             in caplog.text
         )
+        assert result.tier_faults == ["OSError", "OSError"]
 
     def test_a_successful_retrieval_reports_nothing(self, caplog):
         """Negative control: the warning is not simply always emitted."""
@@ -2286,6 +2291,7 @@ class TestAnExhaustedChainReportsItself:
 
         assert result.content_kind == "fulltext"
         assert caplog.text == ""
+        assert result.tier_faults == []
 
     def test_a_chain_that_failed_and_then_recovered_stays_silent(self, caplog):
         """Stronger than the control above, which never fails an attempt.
@@ -2316,6 +2322,68 @@ class TestAnExhaustedChainReportsItself:
 
         assert result.content_kind == "fulltext"
         assert caplog.text == ""
+        # Silent in the log, and still on the result: the blip a caller may
+        # want to know about without a WARNING per transient fault (#603).
+        assert result.tier_faults == ["OSError"]
+
+    def test_a_pdf_returned_after_the_structured_sources_failed_says_they_did(self, caplog):
+        """Issue #603's own case: the PDF tier returns, so nothing is logged.
+
+        Europe PMC's and NCBI's JATS both answer 503 and Tier 1d's PDF does
+        too. The chain ends at the PDF tier, before the exhaustion report, so
+        only ``tier_faults`` tells the caller the better sources were down
+        and a retry may do more than fetch the same PDF.
+        """
+        down = MagicMock()
+        down.status_code = 503
+        search = MagicMock()
+        search.status_code = 200
+        search.json.return_value = {
+            "resultList": {
+                "result": [
+                    {
+                        "pmcid": "PMC123",
+                        "inEPMC": "N",
+                        "fullTextUrlList": {
+                            "fullTextUrl": [
+                                {
+                                    "site": "Europe_PMC",
+                                    "documentStyle": "pdf",
+                                    "availabilityCode": "OA",
+                                    "url": "https://ex/a.pdf",
+                                }
+                            ]
+                        },
+                    }
+                ]
+            }
+        }
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service,
+                "_http_get",
+                # Tier 1a, Tier 1c, the Europe PMC search, Tier 1d's download.
+                side_effect=[down, down, search, down],
+            ),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", identifier="x")
+
+        assert (result.source, result.pdf_url) == ("europepmc_pdf", "https://ex/a.pdf")
+        assert result.tier_faults == ["FullTextError", "FullTextError"]
+        assert "No full text found" not in caplog.text
+
+    def test_a_cache_hit_carries_no_faults(self, tmp_path):
+        """No chain ran, so a cached result has nothing to report (#603)."""
+        cache = FullTextCache(tmp_path)
+        cache.save_html("<p>cached</p>", _sanitize_identifier("10.1/test"))
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", side_effect=AssertionError("no request")):
+            result = service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
+
+        assert result.source == "cached"
+        assert result.tier_faults == []
 
     def test_a_call_with_identifiers_that_all_failed_does_not_blame_the_caller(self, caplog):
         """The third empty-handed exit, which reported nothing at all.

@@ -11,6 +11,13 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`FullTextResult::tier_faults`** (#603, with the Python library): the type
+  names of the faults the tier chain swallowed before the result it returned,
+  in order, so a PDF or a link returned while the structured sources failed
+  says so (a non-200 is `"FullTextError"`, a transport failure
+  `"TransportError"`). Empty on a cache hit. Breaking for a `FullTextResult`
+  struct literal, which must name it (`Vec::new()`).
+
 - **`FullTextResult::pdf_extraction_failure`** (#604, with the Python
   library): the `PdfErrorKind` wire name of a failed extraction of the cached
   PDF (`"encrypted"`, `"unreadable"`, `"engine"`, `"cancelled"`,

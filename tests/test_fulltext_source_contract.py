@@ -14,12 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The shared ``FullTextResult.jats_xml`` and ``pdf_download_failure`` contract.
+"""The shared ``FullTextResult.jats_xml``, ``pdf_download_failure`` and ``tier_faults`` contract.
 
 The same file Rust's ``rust/bmlib/tests/fulltext_source_contract.rs`` asserts
 against: the service hands back the JATS it rendered, byte for byte as served,
 and the cache keeps it beside the HTML; a PDF download that leaves no file
-says why (#594).
+says why (#594); a result carries the faults the tiers before it swallowed
+(#603).
 """
 
 from __future__ import annotations
@@ -91,6 +92,7 @@ def _check(result: FullTextResult, expected: dict[str, Any]) -> None:
     assert result.jats_xml == _body(expected["jats_xml"])
     assert result.pdf_download_failure == expected.get("pdf_download_failure")
     assert (result.file_path is not None) == expected.get("pdf_cached", False)
+    assert result.tier_faults == expected.get("tier_faults", [])
 
 
 @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])

@@ -14,11 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! The shared `FullTextResult::jats_xml` and `pdf_download_failure` contract —
-//! the same file Python's `tests/test_fulltext_source_contract.py` asserts
-//! against: the service hands back the JATS it rendered, byte for byte as
-//! served, and the cache keeps it beside the HTML; a PDF download that leaves
-//! no file says why (#594).
+//! The shared `FullTextResult::jats_xml`, `pdf_download_failure` and
+//! `tier_faults` contract — the same file Python's
+//! `tests/test_fulltext_source_contract.py` asserts against: the service hands
+//! back the JATS it rendered, byte for byte as served, and the cache keeps it
+//! beside the HTML; a PDF download that leaves no file says why (#594); a
+//! result carries the faults the tiers before it swallowed (#603).
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -151,6 +152,11 @@ fn check(name: &str, result: &FullTextResult, expected: &Value) {
         expected["pdf_cached"].as_bool().unwrap_or(false),
         "{name}"
     );
+    let tier_faults: Vec<&str> = expected["tier_faults"]
+        .as_array()
+        .map(|names| names.iter().map(|n| n.as_str().expect("a name")).collect())
+        .unwrap_or_default();
+    assert_eq!(result.tier_faults, tier_faults, "{name}");
 }
 
 #[test]

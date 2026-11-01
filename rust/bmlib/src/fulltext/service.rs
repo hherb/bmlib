@@ -1517,7 +1517,13 @@ impl FullTextService {
             }
         }
 
-        self.retrieve(request, cache_id.as_deref())
+        // Every tier below swallows its own failure so the next one still
+        // runs; this is what remembers that they did, whichever tier returns.
+        let on_bug = |fault: &TierFault| self.warn_swallowed_bug(fault);
+        let mut failures = TierFailures::reported(&on_bug);
+        let mut result = self.retrieve(request, cache_id.as_deref(), &mut failures)?;
+        result.tier_faults = failures.faults().iter().map(ToString::to_string).collect();
+        Ok(result)
     }
 
     /// The tier chain. Every return is an exit a caller can observe.
@@ -1525,6 +1531,7 @@ impl FullTextService {
         &self,
         request: &FullTextRequest,
         cache_id: Option<&str>,
+        failures: &mut TierFailures<'_>,
     ) -> Result<FullTextResult, FullTextError> {
         // Python's truthiness, once, so every gate below reads what it read.
         let pmc_id = request
@@ -1542,16 +1549,11 @@ impl FullTextService {
         // while a later tier may still find the whole article.
         let mut abstract_only: Option<FullTextResult> = None;
 
-        // Every tier below swallows its own failure so the next one still
-        // runs; this is what remembers that they did.
-        let on_bug = |fault: &TierFault| self.warn_swallowed_bug(fault);
-        let mut failures = TierFailures::reported(&on_bug);
-
         // Tier 0: fetcher-provided sources.
         let mut held_link: Option<FullTextSourceEntry> = None;
         if !request.fulltext_sources.is_empty() {
             let (result, held_back, link) =
-                self.try_known_sources(&request.fulltext_sources, cache_id, &mut failures);
+                self.try_known_sources(&request.fulltext_sources, cache_id, failures);
             abstract_only = held_back;
             held_link = link;
             if let Some(result) = result {
@@ -1581,8 +1583,7 @@ impl FullTextService {
         let mut abstract_came_from_caller = false;
         if let Some(id) = caller_pmc_id.as_deref() {
             let held_before = abstract_only.is_some();
-            let (result, held_back) =
-                self.try_pmc_id(id, cache_id, &mut failures, abstract_only.take());
+            let (result, held_back) = self.try_pmc_id(id, cache_id, failures, abstract_only.take());
             abstract_only = held_back;
             if let Some(result) = result {
                 return Ok(result);
@@ -1605,7 +1606,7 @@ impl FullTextService {
         let mut hit_doi: Option<String> = None;
         if has_fallback_identifier {
             let (discovered_pmc_id, url, found_doi) =
-                self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), &mut failures);
+                self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), failures);
             pdf_render_url = url;
             hit_doi = found_doi;
             if let Some(id) = discovered_pmc_id {
@@ -1616,7 +1617,7 @@ impl FullTextService {
                         ));
                     }
                     let (result, discovered_abstract) =
-                        self.try_pmc_id(&id, cache_id, &mut failures, None);
+                        self.try_pmc_id(&id, cache_id, failures, None);
                     if let Some(result) = result {
                         return Ok(result);
                     }
@@ -3047,6 +3048,7 @@ fn empty_result(source: impl Into<String>) -> FullTextResult {
         jats_xml: None,
         pdf_download_failure: None,
         pdf_extraction_failure: None,
+        tier_faults: Vec::new(),
     }
 }
 
