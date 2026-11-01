@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-01 (**this session's PR is for #628, part**, on
+_Last updated: 2026-11-01 (**this session's PR is #629, for #628 (part)**, on
 `fix/628-body-size-headings`; see *This session* below). Earlier the same day PRs
 #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4), #621 (Rust CSV), #620
 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI** (tag `v0.12.0` on
