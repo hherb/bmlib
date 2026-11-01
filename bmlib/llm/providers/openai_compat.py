@@ -167,14 +167,28 @@ class OpenAICompatibleProvider(BaseProvider):
         response = client.chat.completions.create(**request_kwargs)
 
         # An error-shaped 200 is the server's failure, not bmlib's (#617), so it
-        # is a ValueError naming what arrived, as Rust's parse_openai_response.
+        # is a ValueError naming what arrived.
         choices = getattr(response, "choices", None)
         if not isinstance(choices, list) or not choices:
             raise ValueError(f"{self.PROVIDER_NAME}: {_no_choices(response)}")
         choice = choices[0]
-        # A choice without a message reads as empty content, as in Rust.
+        finish_reason = getattr(choice, "finish_reason", None)
+        stop_reason = finish_reason if isinstance(finish_reason, str) else None
+        # Every field is read as Rust reads it: a value of the wrong type is
+        # absent, never a TypeError from bmlib (#617). A choice with no message,
+        # or content that is not text, reads as empty content, as in Rust, and
+        # says so, being otherwise a model that said nothing.
         message = getattr(choice, "message", None)
-        content = getattr(message, "content", None) or ""
+        raw_content = getattr(message, "content", None)
+        content = raw_content if isinstance(raw_content, str) else ""
+        if message is None or not isinstance(raw_content, (str, type(None))):
+            what = "no message" if message is None else f"{type(raw_content).__name__} content"
+            logger.warning(
+                "%s: the response's choice carries %s (finish_reason %r); read as empty content",
+                self.PROVIDER_NAME,
+                what,
+                stop_reason,
+            )
 
         # Separated reasoning output: DeepSeek / vLLM / SGLang use
         # ``reasoning_content``; OpenRouter-style servers use ``reasoning``.
@@ -194,13 +208,15 @@ class OpenAICompatibleProvider(BaseProvider):
         # choice.message.tool_calls with .id, .function.name,
         # .function.arguments (a JSON string).
         tool_calls: list[LLMToolCall] = []
-        raw_calls = getattr(message, "tool_calls", None) or []
-        for raw in raw_calls:
-            call_id = getattr(raw, "id", "") or ""
+        raw_calls = getattr(message, "tool_calls", None)
+        for raw in raw_calls if isinstance(raw_calls, list) else []:
             fn = getattr(raw, "function", None)
-            if fn is None:
+            name = getattr(fn, "name", None)
+            # A call naming no function is dropped, as in Rust.
+            if not isinstance(name, str):
                 continue
-            name = getattr(fn, "name", "") or ""
+            call_id = getattr(raw, "id", None)
+            call_id = call_id if isinstance(call_id, str) else ""
             args_raw = getattr(fn, "arguments", "") or ""
             # OpenAI sends arguments as a JSON string. Parse to dict.
             args: dict[str, Any] = {}
@@ -224,9 +240,9 @@ class OpenAICompatibleProvider(BaseProvider):
         return LLMResponse(
             content=content,
             model=model,
-            input_tokens=response.usage.prompt_tokens if response.usage else 0,
-            output_tokens=response.usage.completion_tokens if response.usage else 0,
-            stop_reason=getattr(choice, "finish_reason", None),
+            input_tokens=_token_count(response, "prompt_tokens"),
+            output_tokens=_token_count(response, "completion_tokens"),
+            stop_reason=stop_reason,
             tool_calls=tool_calls if tool_calls else None,
             thinking=thinking,
         )
@@ -444,19 +460,53 @@ class OpenAICompatibleProvider(BaseProvider):
 
 
 def _no_choices(response: object) -> str:
-    """Say what arrived in place of a choice, in Rust's wording (#617).
+    """Say what arrived in place of a choice (#617).
 
-    The SDK hands back a ``ChatCompletion`` it built without validating, or,
-    for a body it could not model (not JSON, or JSON that is not an object),
-    the body itself.
+    The server's own words where it sent them — ``error.message``, which is
+    what Rust's ``parse_openai_response`` quotes, or an ``error`` that is a
+    bare string — else the body's first 200 characters, as Rust's
+    ``http_error`` quotes a non-2xx body. The SDK hands back a
+    ``ChatCompletion`` it built without validating, the parsed JSON when the
+    body is not an object, or the text when it is not JSON, so the body is
+    re-serialised from what it handed back: the bytes are not kept.
     """
     error = getattr(response, "error", None)
-    said = error.get("message") if isinstance(error, dict) else None
-    if isinstance(said, str):
+    said = error if isinstance(error, str) else _dict_text(error, "message")
+    if said.strip():
         return f"no choices in the response (server said: {said})"
-    if isinstance(response, (str, list)):
-        return f"no choices in the response (body: {str(response)[:200]!r})"
-    return "no choices in the response"
+    body = (
+        response
+        if isinstance(response, str)
+        else json.dumps(response, default=_sdk_object_as_json, ensure_ascii=False)
+    )
+    return f"no choices in the response (body: {body[:200]})"
+
+
+def _dict_text(obj: object, key: str) -> str:
+    """Return ``obj[key]`` when *obj* is a dict holding text there, else ``""``."""
+    value = obj.get(key) if isinstance(obj, dict) else None
+    return value if isinstance(value, str) else ""
+
+
+def _sdk_object_as_json(obj: object) -> object:
+    """The JSON an SDK model was built from: the fields the server sent alone.
+
+    Anything else serialises as its ``repr``, so an object of unknown type
+    still quotes.
+    """
+    to_dict = getattr(type(obj), "to_dict", None)
+    if callable(to_dict):
+        return to_dict(obj, warnings=False)
+    return repr(obj)
+
+
+def _token_count(response: object, key: str) -> int:
+    """Return ``response.usage.<key>`` when it is a token count, else 0, as Rust.
+
+    A ``bool`` is not a count, though Python reads it as an ``int``.
+    """
+    value = getattr(getattr(response, "usage", None), key, None)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 # Leading <think>…</think> block emitted inline by some local

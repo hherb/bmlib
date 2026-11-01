@@ -182,20 +182,57 @@ class TestAnErrorShaped200IsTheServers:
     @pytest.mark.parametrize(
         ("body", "content_type", "message"),
         [
-            (b'{"choices": []}', "application/json", "stub: no choices in the response"),
+            (b'{"choices": []}', "application/json", '(body: {"choices": []})'),
             (
                 b'{"choices": null, "error": {"message": "upstream down", "code": 502}}',
                 "application/json",
-                "stub: no choices in the response (server said: upstream down)",
+                "(server said: upstream down)",
+            ),
+            (b'{"error": "rate limited"}', "application/json", "(server said: rate limited)"),
+            (
+                b'{"error": {"code": 429, "metadata": {"raw": "upstream x"}}}',
+                "application/json",
+                '(body: {"error": {"code": 429, "metadata": {"raw": "upstream x"}}})',
             ),
             (
-                b"<html>bad gateway</html>",
-                "text/html",
-                "stub: no choices in the response (body: '<html>bad gateway</html>')",
+                b'{"error": {"message": " "}}',
+                "application/json",
+                '(body: {"error": {"message": " "}})',
             ),
-            (b"[1, 2]", "application/json", "stub: no choices in the response (body: '[1, 2]')"),
+            (
+                b'{"error": {"message": 42}}',
+                "application/json",
+                '(body: {"error": {"message": 42}})',
+            ),
+            (b"<html>bad gateway</html>", "text/html", "(body: <html>bad gateway</html>)"),
+            (b"[1, 2]", "application/json", "(body: [1, 2])"),
+            # Each object element is built into a ChatCompletion; the quote is
+            # what the server sent, not that model's repr.
+            (
+                b'[{"error": {"message": "quota"}}]',
+                "application/json",
+                '(body: [{"error": {"message": "quota"}}])',
+            ),
+            (b"null", "application/json", "(body: null)"),
+            (b'{"choices": "x"}', "application/json", '(body: {"choices": "x"})'),
+            (b'{"choices": {"0": {}}}', "application/json", '(body: {"choices": {"0": {}}})'),
+            (b"x" * 500, "text/plain", "(body: " + "x" * 200 + ")"),
         ],
-        ids=["empty", "error-object", "not-json", "array"],
+        ids=[
+            "empty",
+            "error-object",
+            "error-string",
+            "error-without-message",
+            "blank-message",
+            "message-not-text",
+            "not-json",
+            "array",
+            "array-of-objects",
+            "json-null",
+            "choices-a-string",
+            "choices-an-object",
+            "long-body",
+        ],
     )
     def test_it_is_a_value_error_naming_what_arrived(
         self, StubProvider, body, content_type, message
@@ -205,20 +242,73 @@ class TestAnErrorShaped200IsTheServers:
         with pytest.raises(ValueError) as caught:
             p.chat([LLMMessage(role="user", content="Hi")])
         assert type(caught.value) is ValueError
-        assert str(caught.value) == message
+        assert str(caught.value) == f"stub: no choices in the response {message}"
 
     @pytest.mark.parametrize(
-        "body",
-        [b'{"choices": [{"index": 0, "finish_reason": "stop"}]}', b'{"choices": ["x"]}'],
-        ids=["no-message", "not-an-object"],
+        ("body", "stop_reason", "what"),
+        [
+            (b'{"choices": [{"index": 0, "finish_reason": "stop"}]}', "stop", "no message"),
+            (b'{"choices": ["x"]}', None, "no message"),
+            (b'{"choices": [{"message": {"content": 5}}]}', None, "int content"),
+            (
+                b'{"choices": [{"message": {"content": [{"type": "text", "text": "x"}]}}]}',
+                None,
+                "list content",
+            ),
+        ],
+        ids=["no-message", "not-an-object", "content-a-number", "content-a-list"],
     )
-    def test_a_choice_without_a_message_is_empty_content(self, StubProvider, body):
-        # Rust's parse_openai_response reads both as empty content.
+    def test_a_choice_carrying_no_text_is_empty_content_and_says_so(
+        self, StubProvider, caplog, body, stop_reason, what
+    ):
+        # Rust's parse_openai_response reads each as empty content; json_mode
+        # is chat_json's, and once fed a number to json.loads.
         p = StubProvider(api_key="k")
         p._client = _served(body)
-        result = p.chat([LLMMessage(role="user", content="Hi")])
+        with caplog.at_level("WARNING", logger="bmlib.llm.providers.openai_compat"):
+            result = p.chat([LLMMessage(role="user", content="Hi")], json_mode=True)
         assert result.content == ""
         assert result.tool_calls is None
+        assert result.stop_reason == stop_reason
+        assert caplog.messages == [
+            f"stub: the response's choice carries {what} "
+            f"(finish_reason {stop_reason!r}); read as empty content"
+        ]
+
+    @pytest.mark.parametrize(
+        "usage",
+        [b'"x"', b'{"prompt_tokens": null, "completion_tokens": "7"}', b'{"prompt_tokens": true}'],
+        ids=["a-string", "not-counts", "a-bool"],
+    )
+    def test_usage_that_is_not_a_count_reads_as_zero(self, StubProvider, usage):
+        p = StubProvider(api_key="k")
+        p._client = _served(
+            b'{"choices": [{"message": {"content": "hi"}}], "usage": ' + usage + b"}"
+        )
+        result = p.chat([LLMMessage(role="user", content="Hi")])
+        assert (result.content, result.input_tokens, result.output_tokens) == ("hi", 0, 0)
+
+    def test_a_finish_reason_that_is_not_text_is_none(self, StubProvider):
+        p = StubProvider(api_key="k")
+        p._client = _served(b'{"choices": [{"message": {"content": "hi"}, "finish_reason": 5}]}')
+        assert p.chat([LLMMessage(role="user", content="Hi")]).stop_reason is None
+
+    def test_tool_calls_that_are_not_a_list_are_none(self, StubProvider):
+        p = StubProvider(api_key="k")
+        p._client = _served(b'{"choices": [{"message": {"content": "hi", "tool_calls": 5}}]}')
+        assert p.chat([LLMMessage(role="user", content="Hi")]).tool_calls is None
+
+    def test_a_tool_call_naming_no_function_is_dropped(self, StubProvider):
+        # As Rust; a non-text id reads as "".
+        p = StubProvider(api_key="k")
+        p._client = _served(
+            b'{"choices": [{"message": {"tool_calls": ['
+            b'{"id": "a", "function": "f"},'
+            b'{"id": "b", "function": {"arguments": "{}"}},'
+            b'{"id": 7, "function": {"name": "g", "arguments": "{\\"q\\": 1}"}}]}}]}'
+        )
+        result = p.chat([LLMMessage(role="user", content="Hi")])
+        assert [(c.id, c.name, c.arguments) for c in result.tool_calls] == [("", "g", {"q": 1})]
 
 
 class TestListModels:

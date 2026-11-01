@@ -87,10 +87,18 @@ All notable changes to bmlib are documented here. The format is based on
   text) or a JSON array raised `IndexError`, `TypeError` or `AttributeError` —
   each a `_BUG_TYPES` member, so since #573 `PicoAgent` propagated the server's
   failure as a bmlib defect instead of `REQUEST_FAILED`. It now raises
-  `ValueError("<provider>: no choices in the response (server said: …)")`, the
-  server's own `error.message` quoted, or the body's first 200 characters,
-  Rust's `parse_openai_response` wording; a choice with no `message` reads as
-  empty content, as in Rust. Applies to OpenAI, DeepSeek, Mistral, Gemini and
+  `ValueError("<provider>: no choices in the response (server said: …)")`,
+  quoting the server's own `error.message` (as Rust's `parse_openai_response`
+  does) or a bare-string `error`, and otherwise `(body: …)`, the body's first
+  200 characters (as Rust's `http_error` quotes a non-2xx body). The other
+  fields of a 200 that does carry a choice are read as Rust reads them, where
+  a wrong-typed one raised the same way: a `usage` that is not token counts is
+  0, `content` that is not text is `""` (a number reached `json.loads` under
+  `json_mode`), a `tool_calls` that is not a list is none, a tool call naming
+  no function is dropped, and a non-text call `id` or `finish_reason` is `""`
+  or `None`. A choice with no `message`, or with content that is not text,
+  reads as empty content, as in Rust, and logs a WARNING naming the provider
+  and `finish_reason`. Applies to OpenAI, DeepSeek, Mistral, Gemini and
   any `OpenAICompatibleProvider`. Ollama's half is left open by decision: its
   SDK raises `TypeError` itself for a JSON array body, which only the traceback
   tells from a bmlib defect, and no draw has seen one.

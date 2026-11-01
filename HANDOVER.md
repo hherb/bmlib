@@ -17,9 +17,22 @@ unvalidated `ChatCompletion` for `choices: []` or `choices: null` + `error`,
 and the body itself (`str`, `list`) for a non-JSON content type or a JSON
 array, so each raised a `_BUG_TYPES` member that `PicoAgent` (#573)
 propagates as a bmlib defect. Now `ValueError("<provider>: no choices in the
-response (server said: …)")`, Rust's `parse_openai_response` wording; a
-choice with no `message` is empty content, as in Rust. Tests drive the real
-SDK and fail on `main` (6 of 6). **The Ollama half stays open by the
+response (server said: …)")` — the server's `error.message` as Rust's
+`parse_openai_response` quotes it, or a bare-string `error` — else `(body: …)`,
+the first 200 characters re-serialised from what the SDK handed back (each
+object of an array is a `ChatCompletion` whose `repr` was a first cut's
+quote), as Rust's `http_error` quotes a non-2xx body; that half is Python's
+own wording. **PR #620's review** found the same defect one field over and it
+is fixed here, every field read as Rust reads it: a `usage` that is not counts
+is 0 (it raised `AttributeError`/`TypeError`), non-text `content` is `""` (a
+number reached `json.loads` under `chat_json`'s `json_mode`), a `tool_calls`
+that is not a list is none, a call naming no function is dropped, a non-text
+call `id` or `finish_reason` is `""`/`None`. A choice with no message or with
+non-text content is empty, as in Rust, **and logs a WARNING** naming the
+provider and `finish_reason`, being otherwise a model that said nothing
+(`chat_json` then re-asks it as one). Tests drive the real SDK (results
+identical on openai 2.46.0 and 3.42.0); 12 mutants of the guards, 12 killed.
+**The Ollama half stays open by the
 maintainer's choice**: the ollama SDK raises `TypeError` itself
 (`cls(**body)`) for a JSON array body, which only the traceback tells from a
 bmlib defect, and no draw has seen one. `chat_stream` reads chunks through
@@ -301,7 +314,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,833 passing + 164 skipped** on `fix/617-openai-compat-no-choices`
+- **Tests: 8,850 passing + 164 skipped** on `fix/617-openai-compat-no-choices`
   (`uv run pytest tests/ -v`, 2026-11-01; Rust last counted 2026-10-31, Rust 1,403 with `cargo test -p bmlib --features pdf,html`, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
