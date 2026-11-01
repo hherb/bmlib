@@ -58,15 +58,16 @@ impl std::fmt::Display for CsvError {
 
 impl std::error::Error for CsvError {}
 
-/// Count the `\n` bytes in `raw[..offset]`.
+/// Count the `\n` bytes in `raw[from..to]`, clamped to `raw`.
 ///
 /// Python's reader counts line endings per *record*, and a byte offset that
 /// falls immediately after a record's own terminator has one more `\n` before
 /// it than the record's line index — so the count is taken over the bytes
 /// **including** the terminator the offset points past. The caller adjusts by
 /// one for that; see [`Reader::next_record`].
-fn newlines_before(raw: &[u8], offset: usize) -> usize {
-    raw[..offset.min(raw.len())]
+fn newlines_between(raw: &[u8], from: usize, to: usize) -> usize {
+    let to = to.min(raw.len());
+    raw[from.min(to)..to]
         .iter()
         .filter(|b| **b == b'\n')
         .count()
@@ -78,6 +79,11 @@ pub struct Reader {
     header: Vec<String>,
     raw: Vec<u8>,
     base_line: usize,
+    /// `\n` bytes in `raw[..counted_to]`: records end in file order, so each
+    /// count starts where the last stopped (from the start, 73k records of a
+    /// 68 MB export took over ten minutes).
+    newlines: usize,
+    counted_to: usize,
 }
 
 impl std::fmt::Debug for Reader {
@@ -117,6 +123,8 @@ impl Reader {
             header,
             raw,
             base_line: 1,
+            newlines: 0,
+            counted_to: 0,
         })
     }
 
@@ -145,7 +153,9 @@ impl Reader {
                     .position()
                     .map_or(0, |p| usize::try_from(p.byte()).unwrap_or(0));
                 let end = start + record.as_slice().len();
-                let line = newlines_before(&self.raw, end) + self.base_line;
+                self.newlines += newlines_between(&self.raw, self.counted_to, end);
+                self.counted_to = self.counted_to.max(end);
+                let line = self.newlines + self.base_line;
 
                 // A record **shorter** than its header is: it is what a
                 // download cut part-way through a row leaves, and read with
