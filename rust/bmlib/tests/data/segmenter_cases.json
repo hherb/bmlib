@@ -3524,5 +3524,625 @@
     }
    ]
   }
+ },
+ {
+  "name": "segment_document/heading_face_numbered_line_at_body_size_is_a_heading",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1 Introduction",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Low pH",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/the_body_face_is_never_a_heading_face",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Results",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 11,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1 months after surgery",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_face_naming_no_section_teaches_nothing",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Introduction",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Low pH",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Other",
+     "page_num": 0
+    },
+    {
+     "text": "Characteristics of hypoxia",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Other",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_face_with_no_name_is_never_a_heading_face",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1 Introduction",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Low pH",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The body text of this paper runs on at its own size.",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/on_a_tie_the_first_face_seen_is_the_body",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "abcdefghijklmn",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Methods",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Sub",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/on_a_tie_the_first_face_seen_is_the_body_heading_first",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Methods",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "abcdefghijklmn",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Sub",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_partial_match_teaches_no_face",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1 Introduction",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Results of the trial",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Other",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Low pH",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Other",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_line_naming_a_section_that_is_no_heading_teaches_no_face",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1 Introduction",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Results",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Caption",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Low pH",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Caption",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_exact_name_in_a_heading_face_counts_down_to_the_floor",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1 Introduction",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Results",
+     "x": 0.0,
+     "y": 36,
+     "width": 300,
+     "font_size": 9.5,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Discussion",
+     "x": 0.0,
+     "y": 60,
+     "width": 300,
+     "font_size": 8.5,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "Body text of the paper runs on at its own size.",
+     "x": 0.0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/the_body_face_is_counted_in_characters_not_bytes",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "éééééééééé",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Methods",
+     "x": 0.0,
+     "y": 12,
+     "width": 300,
+     "font_size": 13,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    },
+    {
+     "text": "1.1 Sub",
+     "x": 0.0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Head",
+     "page_num": 0
+    }
+   ]
+  }
  }
 ]

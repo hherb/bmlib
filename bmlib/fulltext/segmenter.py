@@ -44,7 +44,7 @@ import itertools
 import math
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from bmlib.fulltext._titles import accepted_metadata_title
@@ -539,6 +539,29 @@ class SectionSegmenter:
         floor = median_font_size * _EXACT_HEADING_FLOOR_RATIO - _FONT_SIZE_TOLERANCE
         return styled and block.font_size >= floor
 
+    def _heading_faces(self, blocks: list[TextBlock], median_font_size: float) -> set[str]:
+        """The faces of the lines that are headings naming a section exactly (#628).
+
+        MuPDF flags a line bold or italic only when its font says so, and some
+        journals set their headings in a face of their own that says neither:
+        Frontiers' numbered subsections at about the body size, for one. A
+        line in one of these faces is judged as a bold one is.
+        The body's own face, the one holding the most characters (the first
+        seen on a tie), is never one, or one body line naming a section would
+        make every body line bold; nor is a face with no name.
+        """
+        chars: dict[str, int] = {}
+        for b in blocks:
+            chars[b.font_name] = chars.get(b.font_name, 0) + len(b.text)
+        body = max(chars, key=chars.__getitem__, default=None)
+        return {
+            b.font_name
+            for b in blocks
+            if b.font_name not in (body, "")
+            and self._match_section_type(b.text)[1] == 1.0
+            and self._is_potential_header(b, median_font_size)
+        }
+
     def segment_document(
         self, blocks: list[TextBlock], metadata: dict[str, Any] | None = None
     ) -> SegmentedDocument:
@@ -588,17 +611,22 @@ class SectionSegmenter:
         open this one's: at top level there is no type to give it, and under a
         heading it does not number from, the heading it does belong to was not
         found ("3.1." after an unnamed "3. Metformin lowers glucose" is not
-        Methods' because "2." was). A bold quantity numbered like a subsection
+        Methods' because "2." was). A line in a face the paper's exact-match
+        headings are set in (:meth:`_heading_faces`) counts as bold for the
+        heading test alone. A bold quantity numbered like a subsection
         ("2.5 mg/kg" under "2.", "1.5 h" under an unnumbered "Results") still
-        reads as one.
+        reads as one, and so does a line of prose opening with one in a
+        heading face (#623).
         """
         markers: list[_Marker] = []
         # The headings enclosing the current one, outermost first.
         enclosing: list[_Marker] = []
+        faces = self._heading_faces(blocks, median_font_size)
         i = 0
         while i < len(blocks):
             block = blocks[i]
-            if not self._is_potential_header(block, median_font_size):
+            styled = replace(block, is_bold=True) if block.font_name in faces else block
+            if not self._is_potential_header(styled, median_font_size):
                 i += 1
                 continue
             end = self._heading_end(blocks, i)

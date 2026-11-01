@@ -344,7 +344,10 @@ lines' characters, not of the lines, *unreleased*) by
 `font_size_threshold`, or a bold or italic one at body size, which must match
 a pattern exactly or carry a section number (`"2.1."`); a line matching a
 pattern exactly needs only to be over the body, or bold or italic down to
-`EXACT_HEADING_FLOOR_RATIO` of it (*unreleased*, #628); the size floor
+`EXACT_HEADING_FLOOR_RATIO` of it (*unreleased*, #628); a line in a face
+the paper's exact-match headings are set in, other than the body's own or an
+unnamed one, counts as bold (*unreleased*, #628), since MuPDF flags such a
+face (Frontiers', for one) neither bold nor italic; the size floor
 `min_heading_size` is capped at the body median, so a journal set in 8 pt
 finds its 8 pt bold headings. It is classified by `match_section_type`, and a
 heading may wrap over up to three lines in all. A numbered heading nests as a

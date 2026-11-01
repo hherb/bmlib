@@ -2111,5 +2111,314 @@
       ],
       "title": null
     }
+  },
+  {
+    "name": "segment_document/heading_face_numbered_line_at_body_size_is_a_heading",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "The body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "The body text of this paper runs on at its own size.\nThe body text of this paper runs on at its own size.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "introduction",
+              "subsections": [],
+              "title": "1.1 Low pH"
+            }
+          ],
+          "title": "1 Introduction"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/the_body_face_is_never_a_heading_face",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "The body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The body text of this paper runs on at its own size.\n2.1 months after surgery\nThe body text of this paper runs on at its own size.\nThe body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_face_naming_no_section_teaches_nothing",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "The body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The body text of this paper runs on at its own size.\n1.1 Low pH\nCharacteristics of hypoxia\nThe body text of this paper runs on at its own size.\nThe body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "Introduction"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_face_with_no_name_is_never_a_heading_face",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "The body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "The body text of this paper runs on at its own size.\n1.1 Low pH\nThe body text of this paper runs on at its own size.\nThe body text of this paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1 Introduction"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/on_a_tie_the_first_face_seen_is_the_body",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "abcdefghijklmn",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "1.1 Sub"
+            }
+          ],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/on_a_tie_the_first_face_seen_is_the_body_heading_first",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 1.0,
+          "content": "abcdefghijklmn\n1.1 Sub",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_partial_match_teaches_no_face",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1 Introduction"
+        },
+        {
+          "confidence": 0.7,
+          "content": "Body text of the paper runs on at its own size.\n1.1 Low pH\nBody text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "Results of the trial"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_line_naming_a_section_that_is_no_heading_teaches_no_face",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body text of the paper runs on at its own size.\nResults\n1.1 Low pH\nBody text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1 Introduction"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_exact_name_in_a_heading_face_counts_down_to_the_floor",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1 Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body text of the paper runs on at its own size.\nDiscussion\nBody text of the paper runs on at its own size.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/the_body_face_is_counted_in_characters_not_bytes",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "éééééééééé",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "1.1 Sub",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
   }
 ]

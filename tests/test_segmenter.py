@@ -441,6 +441,85 @@ class TestSectionExtraction:
         assert doc.metadata == {}
 
 
+def in_face(b: TextBlock, face: str) -> TextBlock:
+    b.font_name = face
+    return b
+
+
+class TestAHeadingFaceIsSetApartAsBoldIs:
+    """#628: Frontiers sets its numbered subsections, unflagged, in its heading face."""
+
+    def paper(self, face: str) -> list[TextBlock]:
+        return [
+            block("Body text of the paper.", y=0.0),
+            in_face(block("1 Introduction", size=HEADING_SIZE, y=12.0), "Head"),
+            block("Body text of the paper.", y=24.0),
+            in_face(block("1.1 Low pH", y=36.0), face),
+            block("Body text of the paper.", y=48.0),
+        ]
+
+    def test_a_numbered_line_in_the_heading_face_is_a_subsection(self):
+        intro = SectionSegmenter().segment_document(self.paper("Head")).sections[-1]
+        assert intro.title == "1 Introduction"
+        assert [(s.title, s.section_type) for s in intro.subsections] == [
+            ("1.1 Low pH", SectionType.INTRODUCTION)
+        ]
+
+    def test_the_same_line_in_the_body_face_is_body_text(self):
+        intro = SectionSegmenter().segment_document(self.paper("Helvetica")).sections[-1]
+        assert intro.title == "1 Introduction"
+        assert intro.subsections == []
+        assert "1.1 Low pH" in intro.content
+
+    def test_a_body_line_naming_a_section_does_not_teach_the_body_face(self):
+        blocks = [
+            block("Body text of the paper.", y=0.0),
+            block("Results", size=BODY_SIZE + 1, y=12.0),
+            block("Body text of the paper.", y=24.0),
+            block("2.1 months after surgery", y=36.0),
+            block("Body text of the paper.", y=48.0),
+        ]
+        results = SectionSegmenter().segment_document(blocks).sections[-1]
+        assert results.title == "Results"
+        assert results.subsections == []
+
+    def test_a_partial_match_teaches_no_face(self):
+        blocks = [
+            *self.paper("Head")[:3],
+            in_face(block("Results of the trial", size=HEADING_SIZE, y=36.0), "Other"),
+            block("Body text of the paper.", y=48.0),
+            in_face(block("1.1 Low pH", y=60.0), "Other"),
+            block("Body text of the paper.", y=72.0),
+        ]
+        results = SectionSegmenter().segment_document(blocks).sections[-1]
+        assert results.title == "Results of the trial"
+        assert results.subsections == []
+        assert "1.1 Low pH" in results.content
+
+    def test_a_line_naming_a_section_that_is_no_heading_teaches_no_face(self):
+        blocks = [
+            *self.paper("Head")[:3],
+            in_face(block("Results", y=36.0), "Caption"),
+            in_face(block("1.1 Low pH", y=48.0), "Caption"),
+            block("Body text of the paper.", y=60.0),
+        ]
+        intro = SectionSegmenter().segment_document(blocks).sections[-1]
+        assert intro.title == "1 Introduction"
+        assert intro.subsections == []
+
+    def test_an_exact_name_in_the_heading_face_counts_down_to_the_floor(self):
+        blocks = [
+            *self.paper("Head")[:3],
+            in_face(block("Results", size=BODY_SIZE * 0.95, y=36.0), "Head"),
+            block("Body text of the paper.", y=48.0),
+            in_face(block("Discussion", size=BODY_SIZE * 0.85, y=60.0), "Head"),
+            block("Body text of the paper.", y=72.0),
+        ]
+        doc = SectionSegmenter().segment_document(blocks)
+        assert [s.title for s in doc.sections] == ["Front Matter", "1 Introduction", "Results"]
+        assert "Discussion" in doc.sections[-1].content
+
+
 class TestTitleExtraction:
     def setup_method(self):
         self.segmenter = SectionSegmenter()

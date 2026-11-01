@@ -639,6 +639,51 @@ pub fn is_potential_header(
     styled && block.font_size >= median * EXACT_HEADING_FLOOR_RATIO - FONT_SIZE_TOLERANCE
 }
 
+/// The faces of the lines that are headings naming a section exactly (#628).
+///
+/// MuPDF flags a line bold or italic only when its font says so, and some
+/// journals set their headings in a face of their own that says neither:
+/// Frontiers' numbered subsections at about the body size, for one. A line in
+/// one of these faces is judged as a bold one is. The body's own
+/// face, the one holding the most characters (the first seen on a tie), is
+/// never one, or one body line naming a section would make every body line
+/// bold; nor is a face with no name.
+fn heading_faces(
+    blocks: &[TextBlock],
+    median: f64,
+    font_size_threshold: f64,
+    min_heading_size: f64,
+) -> Vec<&str> {
+    // Characters per face, in the order each face is first seen.
+    let mut chars: Vec<(&str, usize)> = Vec::new();
+    for b in blocks {
+        let n = b.text.chars().count();
+        match chars.iter_mut().find(|(face, _)| *face == b.font_name) {
+            Some((_, count)) => *count += n,
+            None => chars.push((&b.font_name, n)),
+        }
+    }
+    let mut body: Option<(&str, usize)> = None;
+    for &(face, count) in &chars {
+        if body.is_none_or(|(_, most)| count > most) {
+            body = Some((face, count));
+        }
+    }
+    let body = body.map(|(face, _)| face);
+    let mut faces: Vec<&str> = Vec::new();
+    for b in blocks {
+        if !b.font_name.is_empty()
+            && Some(b.font_name.as_str()) != body
+            && !faces.contains(&b.font_name.as_str())
+            && match_section_type(&b.text).1 == 1.0
+            && is_potential_header(b, median, font_size_threshold, min_heading_size)
+        {
+            faces.push(&b.font_name);
+        }
+    }
+    faces
+}
+
 /// One heading found in the block list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Marker {
@@ -668,9 +713,11 @@ pub struct Marker {
 /// own number does not open this one's: at top level there is no type to give
 /// it, and under a heading it does not number from, the heading it does belong
 /// to was not found (`"3.1."` after an unnamed `"3. Metformin lowers glucose"`
-/// is not Methods' because `"2."` was). A bold quantity numbered like a
-/// subsection (`"2.5 mg/kg"` under `"2."`, `"1.5 h"` under an unnumbered
-/// `"Results"`) still reads as one.
+/// is not Methods' because `"2."` was). A line in a face the paper's
+/// exact-match headings are set in counts as bold for the heading test alone
+/// (#628). A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
+/// `"2."`, `"1.5 h"` under an unnumbered `"Results"`) still reads as one, and
+/// so does a line of prose opening with one in a heading face (#623).
 #[must_use]
 pub fn identify_section_markers(
     blocks: &[TextBlock],
@@ -682,10 +729,21 @@ pub fn identify_section_markers(
     // The headings enclosing the current one, outermost first, as indices
     // into `markers`.
     let mut enclosing: Vec<usize> = Vec::new();
+    let faces = heading_faces(blocks, median, font_size_threshold, min_heading_size);
     let mut index = 0;
     while index < blocks.len() {
         let block = &blocks[index];
-        if !is_potential_header(block, median, font_size_threshold, min_heading_size) {
+        let as_bold;
+        let styled = if faces.contains(&block.font_name.as_str()) {
+            as_bold = TextBlock {
+                is_bold: true,
+                ..block.clone()
+            };
+            &as_bold
+        } else {
+            block
+        };
+        if !is_potential_header(styled, median, font_size_threshold, min_heading_size) {
             index += 1;
             continue;
         }

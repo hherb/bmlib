@@ -8,6 +8,37 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A line set in a paper's own heading face counts as bold** (#628, part).
+  MuPDF flags a line bold or italic only when its font says so, and some
+  journals set their headings in a face of their own that says neither —
+  Frontiers' numbered subsections at about the body size, for one — so a
+  numbered subsection ("3.2.2.1 Manganese", 9 pt over a 9 pt body) missed
+  the 1.2× ratio and was body text. The segmenter now learns each
+  paper's heading faces: the faces of the lines that are headings and name a
+  section exactly, less the body's own face (the one holding the most
+  characters, the first seen on a tie) and a face with no name. A line in
+  one of them is held to the bold rules: a numbered line at the heading
+  floor or over (the smaller of `min_heading_size` and the body size) is a
+  heading, an exact section name down to 0.9 of the body size; a partial
+  match still is not. Python and Rust alike, held by ten new
+  `segment_document` oracle cases (every guard has its own, mutation-checked
+  in both languages) and six unit tests; no existing case moved. A line of
+  prose opening with a quantity numbered like a subsection reads as one in a
+  heading face as it does in bold (#623's second item, now reachable through
+  a face too; none in the corpus below). **Measured** over the same 1,114 local
+  Europe PMC PDFs, segmented from one extraction with `main`'s rule and this
+  one: 36 papers move, **177 headings are found and none lost**, every one
+  read by hand and every one genuine (109 numbered subsections, 68 exact
+  names such as "REFERENCES" or "AUTHOR CONTRIBUTIONS" set in the heading
+  face at the body size). Two variants were refused: any line in the face
+  down to 0.9 of the body found 2 more genuine headings but also took four
+  axis labels ("1.0 IU/ml") and three run-in lines, and the same with a
+  body-size floor lost 9 genuine headings ("SUMMARY", "Abstract") the rule
+  kept finds. Only 17 of the
+  177 were found before #627, so most of #628's losses remain, each with a
+  cause of its own (see #628). `PDF_CANONICAL_VERSION` stays 5, pdf-5 being
+  unreleased; its digest is re-pinned.
+
 - **A long table set small no longer makes every body line a heading**
   (found smoke-testing hherb/StudyAnalyzer with an MDPI review). The body
   size the heading and title rules measure against was the median over
