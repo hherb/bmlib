@@ -883,8 +883,11 @@ class FullTextResult:
     # text found" WARNING lists, so a PDF or a link returned while Europe PMC
     # and NCBI answered 503 (``["FullTextError", "FullTextError"]``) is not
     # mistaken for the best a retry can do. A source answering that it has
-    # nothing is not a fault and is not listed. Empty on a cache hit, a stale
-    # rendering served after a re-fetch included, since no chain ran for it.
+    # nothing is not a fault and is not listed, nor is a caller's identifier
+    # refused before any request, which the WARNING counts and no retry
+    # changes. Empty on a cache hit, since no
+    # chain ran for it; a stale rendering served over a re-fetch that came back
+    # with less carries the re-fetch's faults, which are why it was served.
     tier_faults: list[str] = field(default_factory=list)
 
 

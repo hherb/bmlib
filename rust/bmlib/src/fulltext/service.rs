@@ -303,9 +303,15 @@ impl From<FullTextError> for TierFault {
 /// count because only their number is. Type names, not messages: a message
 /// carries the URL and the identifier, so nine of them would be as long as the
 /// DEBUG log this summary exists to replace.
+///
+/// A caller's identifier set aside before any request is *refused*, kept apart
+/// from the faults met while fetching: the log line counts both as failed
+/// attempts, while [`FullTextResult::tier_faults`] lists only the faults, since
+/// a retry cannot change the caller's own input (#603).
 pub struct TierFailures<'a> {
     faults: Vec<&'static str>,
     absences: usize,
+    refused: Vec<&'static str>,
     /// Called at the moment a defect-shaped failure is swallowed, not at an
     /// exit. Every alternative reads this record at some exit, which is exactly
     /// issue #72: `describe()` is already consulted at one exit, and that is why
@@ -322,6 +328,7 @@ impl<'a> TierFailures<'a> {
         TierFailures {
             faults: Vec::new(),
             absences: 0,
+            refused: Vec::new(),
             on_bug: Some(on_bug),
         }
     }
@@ -332,6 +339,7 @@ impl<'a> TierFailures<'a> {
         TierFailures {
             faults: Vec::new(),
             absences: 0,
+            refused: Vec::new(),
             on_bug: None,
         }
     }
@@ -355,6 +363,11 @@ impl<'a> TierFailures<'a> {
         self.absences += 1;
     }
 
+    /// Note a caller's identifier set aside before any request was made.
+    pub fn refuse(&mut self, fault: &TierFault) {
+        self.refused.push(fault.name);
+    }
+
     /// The fault type names recorded, in the order they happened.
     #[must_use]
     pub fn faults(&self) -> &[&'static str] {
@@ -376,13 +389,14 @@ impl<'a> TierFailures<'a> {
     #[must_use]
     pub fn describe(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
-        if !self.faults.is_empty() {
-            let mut kinds: Vec<&str> = self.faults.to_vec();
+        let failed: Vec<&str> = self.refused.iter().chain(&self.faults).copied().collect();
+        if !failed.is_empty() {
+            let mut kinds = failed.clone();
             kinds.sort_unstable();
             kinds.dedup();
             parts.push(format!(
                 "{} failed ({})",
-                plural(self.faults.len(), "attempt"),
+                plural(failed.len(), "attempt"),
                 kinds.join(", ")
             ));
         }
@@ -1572,7 +1586,7 @@ impl FullTextService {
                 Ok(id) => caller_pmc_id = Some(id),
                 Err(error) => {
                     self.debug(format!("Caller-supplied PMC ID {raw:?} is not usable"));
-                    failures.record(&TierFault::from(error));
+                    failures.refuse(&TierFault::from(error));
                 }
             }
         }

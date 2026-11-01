@@ -356,9 +356,12 @@ PMC's and NCBI's JATS both answered 503 carries `["FullTextError",
 "FullTextError"]`: the better sources were down, and a retry may do more than
 fetch the same PDF. Set on every result the chain returns — full text, a PDF,
 an abstract, a link — and an empty list where nothing failed. A source
-answering that it has nothing is not a fault and is not listed. A cache hit
-carries none, no chain having run for it, and so does a stale rendering
-served after a re-fetch. Rust's `FullTextResult` has the same field,
+answering that it has nothing is not a fault and is not listed, nor is a
+caller's PMID, DOI or PMC ID refused before any request: the WARNING counts
+it, but no retry changes the caller's own input. A cache hit
+carries none, no chain having run for it; a stale rendering served because
+the re-fetch came back with less carries the re-fetch's faults, which are why
+it was served. Rust's `FullTextResult` has the same field,
 `Vec<String>`; a non-200 is `"FullTextError"` in both languages, a transport
 failure is httpx's own name (`"ConnectError"`, `"ReadTimeout"`) in Python and
 `"TransportError"` in Rust.

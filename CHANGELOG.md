@@ -45,12 +45,14 @@ All notable changes to bmlib are documented here. The format is based on
   names that WARNING lists, in order (`["FullTextError", "FullTextError"]`
   for the two 503s), on every result the chain returns: full text, a PDF,
   an abstract, a link. A source answering that it has nothing is not a fault
-  and is not listed; a cache hit has none, since no chain ran (in Python a
-  stale rendering served after a re-fetch is a cache hit). Rust's
+  and is not listed, nor is a caller's PMID, DOI or PMC ID refused before any
+  request, which the WARNING still counts and no retry changes; a cache hit has none, since no chain ran, while in Python
+  a stale rendering served over a re-fetch that came back with less carries
+  the re-fetch's faults. Rust's
   `FullTextResult` has the same field, `Vec<String>`; the names agree where
   the two languages name a fault alike (a non-200 is `FullTextError` in both,
   a transport failure `ConnectError` and the like in Python and
-  `TransportError` in Rust). Held by three new cases of the shared
+  `TransportError` in Rust). Held by four new cases of the shared
   `tests/fixtures/fulltext_source.json`, every existing case now asserting an
   empty list. Nothing stored moves; `test_renderer_version.py`'s three
   digests are re-pinned for the `models.py` edit, no version bumped.

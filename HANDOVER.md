@@ -17,14 +17,20 @@ WARNING fires only on the empty-handed exits, so a PDF returned while Europe
 PMC and NCBI answered 503 hid the outage at DEBUG. Now
 `FullTextResult.tier_faults` (Python `list[str]`, Rust `Vec<String>`): the
 fault type names `_TierFailures`/`TierFailures` recorded, in order, set on
-every result the chain returns; `[]` on a cache hit (and, in Python, a stale
-rendering served after a re-fetch). The record is now made by the caller of
-the chain (`fetch_fulltext`'s `retrieve()` in Python, `fetch_fulltext` in
-Rust) and passed in, so every return carries it with no per-exit code. Held
-by three new cases in `tests/fixtures/fulltext_source.json` (every existing
-case asserts `[]`), six assertions on `TestAnExhaustedChainReportsItself`'s
-scenarios and two new tests (the issue's own Tier 1d case, a cache hit);
-the setter mutated out in each language, killed both. Names agree across
+every result the chain returns; `[]` on a cache hit. The record is now made
+by `fetch_fulltext` and passed into the chain, so every return carries it with
+no per-exit code. **The PR's review moved two things**: in Python a stale
+rendering served over a re-fetch that came back with less (an outage after a
+`RENDERER_VERSION` bump) carries the re-fetch's faults, where the first cut
+called it a cache hit and dropped them; and a caller's refused PMID/DOI/PMC ID
+is kept on the record apart from the faults (`refuse()`), still counted by the
+WARNING but not listed in `tier_faults`, since no retry changes it (the
+maintainer's choice; it also removes a split, Rust having no PMID/DOI
+refusal). Held by four new cases in `tests/fixtures/fulltext_source.json`
+(every existing case asserts `[]`), seven assertions on existing tests and four
+new ones (the issue's own Tier 1d case, a cache hit, the stale outage, the
+order of mixed fault names); the setter, a sort of the list and `refuse` put
+back to `record` each mutated, all killed (the last in both languages). Names agree across
 languages for a non-200 (`FullTextError`); a transport failure is httpx's
 name in Python and `TransportError` in Rust, so the fixture uses 503s.
 `test_renderer_version.py`'s three digests re-pinned, no version bumped.
@@ -216,7 +222,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,860 passing + 165 skipped** on `feat/603-tier-faults`
+- **Tests: 8,863 passing + 165 skipped** on `feat/603-tier-faults`
   (`uv run pytest tests/ -v`, 2026-11-01; Rust 1,415 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need

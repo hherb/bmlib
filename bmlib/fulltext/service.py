@@ -189,10 +189,16 @@ class _TierFailures:
     Type names, not messages: a message carries the URL and the identifier,
     so nine of them would be as long as the DEBUG log this summary exists to
     replace. Each full message and traceback is already at DEBUG.
+
+    A caller's identifier set aside before any request is *refused*, kept
+    apart from the faults met while fetching: the log line counts both as
+    failed attempts, while ``FullTextResult.tier_faults`` lists only the
+    faults, since a retry cannot change the caller's own input (#603).
     """
 
     faults: list[str] = field(default_factory=list)
     absences: int = 0
+    refused: list[str] = field(default_factory=list)
     # Called at the moment a defect-shaped exception is swallowed, not at an
     # exit. Every alternative reads this record at some exit, which is exactly
     # issue #72: `describe()` is already consulted at one exit, and that is why
@@ -236,6 +242,10 @@ class _TierFailures:
         """Note a source that reported an absence by returning, not raising."""
         self.absences += 1
 
+    def refuse(self, exc: FullTextError) -> None:
+        """Note a caller's identifier set aside before any request was made."""
+        self.refused.append(type(exc).__name__)
+
     def describe(self) -> str:
         """Summarise the attempts for a log line.
 
@@ -245,9 +255,10 @@ class _TierFailures:
         attempted four.
         """
         parts = []
-        if self.faults:
-            kinds = ", ".join(sorted(set(self.faults)))
-            parts.append(f"{_plural(len(self.faults), 'attempt')} failed ({kinds})")
+        failed = self.refused + self.faults
+        if failed:
+            kinds = ", ".join(sorted(set(failed)))
+            parts.append(f"{_plural(len(failed), 'attempt')} failed ({kinds})")
         if self.absences:
             parts.append(f"{_plural(self.absences, 'source')} had nothing")
         return "; ".join(parts) if parts else "no attempt reported a failure"
@@ -944,11 +955,14 @@ class FullTextService:
             if cached is not None:
                 return cached
 
+        # Every tier swallows its own exception so the next one still runs;
+        # this is what remembers that they did. Made out here, not inside
+        # retrieve(), so a cached copy served over the re-fetch below carries
+        # the faults too: an outage is why it was served.
+        failures = _TierFailures(on_bug=self._warn_swallowed_bug)
+
         def retrieve() -> FullTextResult:
-            # Every tier swallows its own exception so the next one still
-            # runs; this is what remembers that they did.
-            failures = _TierFailures(on_bug=self._warn_swallowed_bug)
-            result = self._retrieve(
+            return self._retrieve(
                 fulltext_sources=fulltext_sources,
                 pmc_id=pmc_id,
                 doi=doi,
@@ -957,8 +971,6 @@ class FullTextService:
                 cache_id=cache_id,
                 failures=failures,
             )
-            result.tier_faults = list(failures.faults)
-            return result
 
         if stale and cache_id and self.cache is not None:
             # INFO, the level of a cache hit: after an upgrade this fires for
@@ -971,8 +983,11 @@ class FullTextService:
                 cache_id,
                 RENDERER_VERSION,
             )
-            return self._retrieve_over_stale(self.cache, cache_id, retrieve)
-        return retrieve()
+            result = self._retrieve_over_stale(self.cache, cache_id, retrieve)
+        else:
+            result = retrieve()
+        result.tier_faults = list(failures.faults)
+        return result
 
     def _retrieve_over_stale(
         self,
@@ -1209,7 +1224,7 @@ class FullTextService:
         # malformed PMC ID below (#304), and the chain goes on with whatever
         # else was given.
         for refusal in refusals:
-            failures.record(refusal)
+            failures.refuse(refusal)
 
         # Tier 0: Try fetcher-provided sources
         held_link: FullTextSourceEntry | None = None
@@ -1231,7 +1246,7 @@ class FullTextService:
                 caller_pmc_id = _normalise_pmc_id(pmc_id)
             except FullTextError as exc:
                 logger.debug("Caller-supplied PMC ID %r is not usable", pmc_id, exc_info=True)
-                failures.record(exc)
+                failures.refuse(exc)
         caller_abstract: FullTextResult | None = None
         if caller_pmc_id:
             held_before = abstract_only

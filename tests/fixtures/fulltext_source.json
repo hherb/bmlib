@@ -134,6 +134,18 @@
    },
    "responses": [{"status": 503}],
    "expected": {"source": "medrxiv", "content_kind": "none", "jats_xml": null, "tier_faults": ["FullTextError"]}
+  },
+  {
+   "name": "a-refused-pmc-id-is-not-a-fault",
+   "request": {
+    "pmc_id": "not-a-pmc-id",
+    "fulltext_sources": [
+     {"url": "https://www.medrxiv.org/m.source.xml", "format": "xml", "source": "medrxiv"},
+     {"url": "https://www.medrxiv.org/m", "format": "html", "source": "medrxiv"}
+    ]
+   },
+   "responses": [{"status": 503}],
+   "expected": {"source": "medrxiv", "content_kind": "none", "jats_xml": null, "tier_faults": ["FullTextError"]}
   }
  ]
 }
