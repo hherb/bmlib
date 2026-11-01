@@ -342,7 +342,29 @@ class FullTextResult:
     jats_xml: bytes | None = None  # the JATS `html` was rendered from *(0.12.0)*
     pdf_download_failure: str | None = None  # why a PDF tier left no file *(0.12.0)*
     pdf_extraction_failure: str | None = None  # why its text did not extract *(unreleased)*
+    tier_faults: list[str] = []    # faults the chain swallowed before it *(unreleased)*
 ```
+
+### `tier_faults` *(unreleased)*
+
+The type names of the faults the tier chain swallowed before this result, in
+the order they happened (#603) — the names the *No full text found* WARNING
+lists, which is logged only when the chain comes back empty-handed. A tier
+returns as soon as it has a result, a PDF tier as soon as it has a URL, so a
+PDF returned (or failed to download, see `pdf_download_failure`) while Europe
+PMC's and NCBI's JATS both answered 503 carries `["FullTextError",
+"FullTextError"]`: the better sources were down, and a retry may do more than
+fetch the same PDF. Set on every result the chain returns — full text, a PDF,
+an abstract, a link — and an empty list where nothing failed. A source
+answering that it has nothing is not a fault and is not listed, nor is a
+caller's PMID, DOI or PMC ID refused before any request: the WARNING counts
+it, but no retry changes the caller's own input. A cache hit
+carries none, no chain having run for it; a stale rendering served because
+the re-fetch came back with less carries the re-fetch's faults, which are why
+it was served. Rust's `FullTextResult` has the same field,
+`Vec<String>`; a non-200 is `"FullTextError"` in both languages, a transport
+failure is httpx's own name (`"ConnectError"`, `"ReadTimeout"`) in Python and
+`"TransportError"` in Rust.
 
 ### `pdf_download_failure` *(0.12.0)*
 

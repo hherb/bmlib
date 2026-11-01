@@ -303,9 +303,15 @@ impl From<FullTextError> for TierFault {
 /// count because only their number is. Type names, not messages: a message
 /// carries the URL and the identifier, so nine of them would be as long as the
 /// DEBUG log this summary exists to replace.
+///
+/// A caller's identifier set aside before any request is *refused*, kept apart
+/// from the faults met while fetching: the log line counts both as failed
+/// attempts, while [`FullTextResult::tier_faults`] lists only the faults, since
+/// a retry cannot change the caller's own input (#603).
 pub struct TierFailures<'a> {
     faults: Vec<&'static str>,
     absences: usize,
+    refused: Vec<&'static str>,
     /// Called at the moment a defect-shaped failure is swallowed, not at an
     /// exit. Every alternative reads this record at some exit, which is exactly
     /// issue #72: `describe()` is already consulted at one exit, and that is why
@@ -322,6 +328,7 @@ impl<'a> TierFailures<'a> {
         TierFailures {
             faults: Vec::new(),
             absences: 0,
+            refused: Vec::new(),
             on_bug: Some(on_bug),
         }
     }
@@ -332,6 +339,7 @@ impl<'a> TierFailures<'a> {
         TierFailures {
             faults: Vec::new(),
             absences: 0,
+            refused: Vec::new(),
             on_bug: None,
         }
     }
@@ -355,6 +363,11 @@ impl<'a> TierFailures<'a> {
         self.absences += 1;
     }
 
+    /// Note a caller's identifier set aside before any request was made.
+    pub fn refuse(&mut self, fault: &TierFault) {
+        self.refused.push(fault.name);
+    }
+
     /// The fault type names recorded, in the order they happened.
     #[must_use]
     pub fn faults(&self) -> &[&'static str] {
@@ -376,13 +389,14 @@ impl<'a> TierFailures<'a> {
     #[must_use]
     pub fn describe(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
-        if !self.faults.is_empty() {
-            let mut kinds: Vec<&str> = self.faults.to_vec();
+        let failed: Vec<&str> = self.refused.iter().chain(&self.faults).copied().collect();
+        if !failed.is_empty() {
+            let mut kinds = failed.clone();
             kinds.sort_unstable();
             kinds.dedup();
             parts.push(format!(
                 "{} failed ({})",
-                plural(self.faults.len(), "attempt"),
+                plural(failed.len(), "attempt"),
                 kinds.join(", ")
             ));
         }
@@ -1517,7 +1531,13 @@ impl FullTextService {
             }
         }
 
-        self.retrieve(request, cache_id.as_deref())
+        // Every tier below swallows its own failure so the next one still
+        // runs; this is what remembers that they did, whichever tier returns.
+        let on_bug = |fault: &TierFault| self.warn_swallowed_bug(fault);
+        let mut failures = TierFailures::reported(&on_bug);
+        let mut result = self.retrieve(request, cache_id.as_deref(), &mut failures)?;
+        result.tier_faults = failures.faults().iter().map(ToString::to_string).collect();
+        Ok(result)
     }
 
     /// The tier chain. Every return is an exit a caller can observe.
@@ -1525,6 +1545,7 @@ impl FullTextService {
         &self,
         request: &FullTextRequest,
         cache_id: Option<&str>,
+        failures: &mut TierFailures<'_>,
     ) -> Result<FullTextResult, FullTextError> {
         // Python's truthiness, once, so every gate below reads what it read.
         let pmc_id = request
@@ -1542,16 +1563,11 @@ impl FullTextService {
         // while a later tier may still find the whole article.
         let mut abstract_only: Option<FullTextResult> = None;
 
-        // Every tier below swallows its own failure so the next one still
-        // runs; this is what remembers that they did.
-        let on_bug = |fault: &TierFault| self.warn_swallowed_bug(fault);
-        let mut failures = TierFailures::reported(&on_bug);
-
         // Tier 0: fetcher-provided sources.
         let mut held_link: Option<FullTextSourceEntry> = None;
         if !request.fulltext_sources.is_empty() {
             let (result, held_back, link) =
-                self.try_known_sources(&request.fulltext_sources, cache_id, &mut failures);
+                self.try_known_sources(&request.fulltext_sources, cache_id, failures);
             abstract_only = held_back;
             held_link = link;
             if let Some(result) = result {
@@ -1570,7 +1586,7 @@ impl FullTextService {
                 Ok(id) => caller_pmc_id = Some(id),
                 Err(error) => {
                     self.debug(format!("Caller-supplied PMC ID {raw:?} is not usable"));
-                    failures.record(&TierFault::from(error));
+                    failures.refuse(&TierFault::from(error));
                 }
             }
         }
@@ -1581,8 +1597,7 @@ impl FullTextService {
         let mut abstract_came_from_caller = false;
         if let Some(id) = caller_pmc_id.as_deref() {
             let held_before = abstract_only.is_some();
-            let (result, held_back) =
-                self.try_pmc_id(id, cache_id, &mut failures, abstract_only.take());
+            let (result, held_back) = self.try_pmc_id(id, cache_id, failures, abstract_only.take());
             abstract_only = held_back;
             if let Some(result) = result {
                 return Ok(result);
@@ -1605,7 +1620,7 @@ impl FullTextService {
         let mut hit_doi: Option<String> = None;
         if has_fallback_identifier {
             let (discovered_pmc_id, url, found_doi) =
-                self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), &mut failures);
+                self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), failures);
             pdf_render_url = url;
             hit_doi = found_doi;
             if let Some(id) = discovered_pmc_id {
@@ -1616,7 +1631,7 @@ impl FullTextService {
                         ));
                     }
                     let (result, discovered_abstract) =
-                        self.try_pmc_id(&id, cache_id, &mut failures, None);
+                        self.try_pmc_id(&id, cache_id, failures, None);
                     if let Some(result) = result {
                         return Ok(result);
                     }
@@ -3047,6 +3062,7 @@ fn empty_result(source: impl Into<String>) -> FullTextResult {
         jats_xml: None,
         pdf_download_failure: None,
         pdf_extraction_failure: None,
+        tier_faults: Vec::new(),
     }
 }
 

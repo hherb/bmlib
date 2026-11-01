@@ -206,11 +206,14 @@ nothing.
 | `pdf_url`, `web_url`, `file_path` | a PDF address, a landing page, the cached file |
 | `pdf_download_failure` | why a PDF tier's download left no `file_path`: `"http-<status>"`, `"not-a-pdf"`, `"request-failed"` or `"write-failed"`; `None` when the PDF was cached or no download was tried |
 | `pdf_extraction_failure` | why the cached PDF's text did not extract, a `PdfErrorKind` wire name: `"encrypted"` or `"unreadable"` (the file's), `"engine"` (not the file's, and a `PdfText` with `success` false, which names no kind), `"cancelled"`, `"timed-out"`; `None` when it extracted, was not tried, or was a scan yielding no text *(unreleased)* |
+| `tier_faults` | the type names of the faults the chain swallowed before this result, in order: `"FullTextError"` for a non-200, `"TransportError"` for a failed request; a malformed caller PMC ID is not listed, though the warning counts it; on every result the chain returns, empty on a cache hit *(unreleased)* |
 
 **Branch on `content_kind`, not on `html` being set**, or an abstract is
 analysed as an article. `pdf_download_failure` tells a free PDF a retry may
 fetch from a bare link, and `pdf_extraction_failure` a damaged file from an
-engine fault; a `FullTextResult` struct literal must name both. A
+engine fault; `tier_faults` tells a PDF or link returned while the structured
+sources were down from one returned because they had nothing; a
+`FullTextResult` struct literal must name all three. A
 `PdfExtractor` reports a failed conversion as
 `PdfExtractError::Conversion(PdfError)`, whose kind becomes
 `pdf_extraction_failure` *(unreleased; it carried a `String`)*.

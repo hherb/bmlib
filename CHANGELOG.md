@@ -35,6 +35,28 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`FullTextResult.tier_faults` carries the faults the chain swallowed
+  before it** (#603, from hherb/StudyAnalyzer PR #23). A tier returns as soon
+  as it has a result — a PDF tier as soon as it has a URL, whether or not the
+  download worked — and the "No full text found … N attempts failed (…)"
+  WARNING is logged only on the empty-handed exits, so a PDF returned while
+  Europe PMC's and NCBI's JATS both answered 503 looked like the best a retry
+  could do, the outage being at DEBUG alone. The field lists the fault type
+  names that WARNING lists, in order (`["FullTextError", "FullTextError"]`
+  for the two 503s), on every result the chain returns: full text, a PDF,
+  an abstract, a link. A source answering that it has nothing is not a fault
+  and is not listed, nor is a caller's PMID, DOI or PMC ID refused before any
+  request, which the WARNING still counts and no retry changes; a cache hit has none, since no chain ran, while in Python
+  a stale rendering served over a re-fetch that came back with less carries
+  the re-fetch's faults. Rust's
+  `FullTextResult` has the same field, `Vec<String>`; the names agree where
+  the two languages name a fault alike (a non-200 is `FullTextError` in both,
+  a transport failure `ConnectError` and the like in Python and
+  `TransportError` in Rust). Held by four new cases of the shared
+  `tests/fixtures/fulltext_source.json`, every existing case now asserting an
+  empty list. Nothing stored moves; `test_renderer_version.py`'s three
+  digests are re-pinned for the `models.py` edit, no version bumped.
+
 - **`PDFBlocks.metadata_title` is the PDF's own `/Title`** (same report).
   `extract_blocks_with_warnings()` returned no metadata, so a caller
   segmenting its blocks had no title to offer and the largest line on page 1
