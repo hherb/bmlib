@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-01 (**this session's PR is for #603**, on
+_Last updated: 2026-11-01 (**this session's PR is #625, for #603**, on
 `feat/603-tier-faults`; see *This session* below). Earlier the same day PRs
 #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged.
 **0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and
