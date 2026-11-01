@@ -62,12 +62,15 @@ from bmlib.fulltext.segmenter import SectionSegmenter
 if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
     from bmlib.fulltext.service import (
         FullTextError,
+        FullTextExhaustedError,
         FullTextService,
         FullTextUnavailableError,
     )
 
 #: Names living in ``service``, resolved on first access.
-_LAZY_EXPORTS = frozenset({"FullTextError", "FullTextService", "FullTextUnavailableError"})
+_LAZY_EXPORTS = frozenset(
+    {"FullTextError", "FullTextExhaustedError", "FullTextService", "FullTextUnavailableError"}
+)
 
 
 def __getattr__(name: str) -> Any:
@@ -115,6 +118,7 @@ __all__ = [
     "ConversionResult",
     "FullTextCache",
     "FullTextError",
+    "FullTextExhaustedError",
     "FullTextResult",
     "FullTextService",
     "FullTextSourceEntry",

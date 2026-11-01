@@ -26,8 +26,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use bmlib::fulltext::{
-    sanitize_identifier, FullTextCache, FullTextRequest, FullTextResult, FullTextService,
-    FullTextSourceEntry,
+    sanitize_identifier, FullTextCache, FullTextError, FullTextRequest, FullTextResult,
+    FullTextService, FullTextSourceEntry,
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use serde_json::Value;
@@ -90,8 +90,14 @@ impl Drop for TempDir {
 }
 
 /// Run `fetch_fulltext` for `request` against a transport answering `answers`
-/// in order, and assert every answer was asked for and no more.
-fn fetch(cache: &FullTextCache, name: &str, request: &Value, answers: &[Value]) -> FullTextResult {
+/// in order, and assert every answer was asked for and no more — of a call
+/// that fails as of one that returns.
+fn fetch(
+    cache: &FullTextCache,
+    name: &str,
+    request: &Value,
+    answers: &[Value],
+) -> Result<FullTextResult, FullTextError> {
     let script = answers
         .iter()
         .map(|answer| {
@@ -121,9 +127,7 @@ fn fetch(cache: &FullTextCache, name: &str, request: &Value, answers: &[Value]) 
         identifier: request["identifier"].as_str().map(str::to_string),
         ..FullTextRequest::default()
     };
-    let result = service
-        .fetch_fulltext(&request)
-        .unwrap_or_else(|e| panic!("{name}: {e}"));
+    let result = service.fetch_fulltext(&request);
     let asked = client.asked.lock().expect("lock").clone();
     assert_eq!(asked.len(), answers.len(), "{name}: asked {asked:?}");
     result
@@ -178,11 +182,38 @@ fn contract_case() {
             std::fs::write(cache.pdf_dir(), b"").expect("a file where pdfs/ belongs");
         }
         let answers = case["responses"].as_array().expect("responses");
-        check(
-            name,
-            &fetch(&cache, name, &case["request"], answers),
-            &case["expected"],
-        );
+        let outcome = fetch(&cache, name, &case["request"], answers);
+        if let Some(raises) = case["expected"].get("raises") {
+            let error = outcome.expect_err(name);
+            match (&error, raises["exhausted"].as_bool().expect("exhausted")) {
+                (
+                    FullTextError::Exhausted {
+                        faults, absences, ..
+                    },
+                    true,
+                ) => {
+                    let expected: Vec<&str> = raises["faults"]
+                        .as_array()
+                        .expect("faults")
+                        .iter()
+                        .map(|n| n.as_str().expect("a name"))
+                        .collect();
+                    assert_eq!(faults, &expected, "{name}");
+                    assert_eq!(
+                        *absences as u64,
+                        raises["absences"].as_u64().expect("absences"),
+                        "{name}"
+                    );
+                }
+                (FullTextError::Exhausted { .. }, false) => panic!("{name}: {error:?}"),
+                (_, exhausted) => assert!(!exhausted, "{name}: {error:?}"),
+            }
+            continue;
+        }
+        let unwrap = |outcome: Result<FullTextResult, FullTextError>| {
+            outcome.unwrap_or_else(|e| panic!("{name}: {e}"))
+        };
+        check(name, &unwrap(outcome), &case["expected"]);
         if case["moved_aside"].as_bool() == Some(true) {
             assert!(!jats_entry.exists(), "{name}");
             assert!(
@@ -191,7 +222,11 @@ fn contract_case() {
             );
         }
         if let Some(then) = case.get("then") {
-            check(name, &fetch(&cache, name, &case["request"], &[]), then);
+            check(
+                name,
+                &unwrap(fetch(&cache, name, &case["request"], &[])),
+                then,
+            );
         }
     }
 }

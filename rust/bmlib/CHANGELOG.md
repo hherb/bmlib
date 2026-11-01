@@ -11,6 +11,13 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`FullTextError::Exhausted { message, faults, absences }`** (#565, with the
+  Python library's `FullTextExhaustedError`): `fetch_fulltext`'s error when
+  the chain retrieved nothing and has no link to fall back on, which was
+  `Other`. Empty `faults` means every source answered and had nothing, so a
+  retry is pointless; `Display` is the old message. Breaking for an exhaustive
+  `match` on `FullTextError`. `"No identifiers provided"` stays `Other`.
+
 - **`FullTextResult::tier_faults`** (#603, with the Python library): the type
   names of the faults the tier chain swallowed before the result it returned,
   in order, so a PDF or a link returned while the structured sources failed

@@ -40,6 +40,7 @@ from bmlib.fulltext.pdf_converter import ConversionResult, PDFErrorKind
 from bmlib.fulltext.service import (
     _CONTENT_RANK,
     FullTextError,
+    FullTextExhaustedError,
     FullTextService,
     FullTextUnavailableError,
     _extract_free_pdf_url,
@@ -2048,6 +2049,7 @@ class TestPackageImports:
 
         assert "FullTextService" in package.__all__
         assert "FullTextError" in package.__all__
+        assert package.FullTextExhaustedError is FullTextExhaustedError
 
     def test_a_name_the_package_does_not_have_still_raises(self):
         """``__getattr__`` must not swallow a typo into something falsy."""
@@ -5949,14 +5951,26 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         with (
             http,
             caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
-            pytest.raises(FullTextError) as raised,
+            pytest.raises(FullTextExhaustedError) as raised,
         ):
             service.fetch_fulltext(pmid="1 OR 2")
         assert str(raised.value) == (
             "Nothing retrieved and no DOI or PMID to fall back on — "
             "1 attempt failed (FullTextError)"
         )
+        # The refusal is counted by the message, and is not a fault (#603, #565).
+        assert (raised.value.faults, raised.value.absences) == ([], 0)
         assert urls == []
+
+    def test_an_exhausted_chain_error_pickles_with_its_fields(self):
+        error = FullTextExhaustedError("Nothing retrieved", ["FullTextError", "ConnectError"], 3)
+        copy_ = pickle.loads(pickle.dumps(error))
+        assert type(copy_) is FullTextExhaustedError
+        assert (str(copy_), copy_.faults, copy_.absences) == (
+            "Nothing retrieved",
+            ["FullTextError", "ConnectError"],
+            3,
+        )
 
     @staticmethod
     def _service_routing(urls: list[str], search_pmcid: str | None = None):

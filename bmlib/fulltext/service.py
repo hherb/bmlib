@@ -125,6 +125,31 @@ class FullTextUnavailableError(FullTextError):
     """
 
 
+class FullTextExhaustedError(FullTextError):
+    """The chain retrieved nothing and has no link to fall back on (#565).
+
+    Raised by :meth:`FullTextService.fetch_fulltext` instead of a bare
+    ``FullTextError``, so a caller tells "the sources failed, try again" from
+    "no free full text exists" without parsing the message. The message is
+    unchanged.
+
+    Attributes:
+        faults: The fault type names the tiers swallowed, in order — what
+            ``FullTextResult.tier_faults`` carries on a returned result. Empty
+            when every source answered and had nothing, so a retry is
+            pointless. A caller's refused identifier is not a fault (#603).
+        absences: How many sources answered and had nothing.
+    """
+
+    def __init__(self, message: str, faults: list[str], absences: int) -> None:
+        super().__init__(message)
+        self.faults = faults
+        self.absences = absences
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
+        return type(self), (self.args[0], self.faults, self.absences)
+
+
 def _plural(n: int, noun: str) -> str:
     """Render ``n`` with its noun, pluralised the naive way."""
     return f"1 {noun}" if n == 1 else f"{n} {noun}s"
@@ -820,12 +845,14 @@ class FullTextService:
         Raises:
             FullTextError: ``"No identifiers provided"`` when no source, PMC
                 ID, DOI or PMID was given — a blank or whitespace-only *pmid*
-                or *doi* being none; or ``"Nothing retrieved and no DOI or
+                or *doi* being none.
+            FullTextExhaustedError: ``"Nothing retrieved and no DOI or
                 PMID to fall back on — …"`` when identifiers were given,
                 nothing was retrieved, and there is no held ``html`` source and
                 no usable DOI or PMID to build a link from, which includes a
-                refused *pmid* or *doi* given alone. Every tier
-                failure is swallowed and counted on the exhaustion report.
+                refused *pmid* or *doi* given alone. Its ``faults`` say
+                whether anything failed (#565). Every tier failure is
+                swallowed and counted on the exhaustion report.
 
         Tries:
           Cache: check disk cache for HTML/PDF (if identifier given). Where
@@ -1386,8 +1413,10 @@ class FullTextService:
             # is an exhausted chain with no link to degrade to. Saying "no
             # identifiers provided" here, as it used to, sent the reader
             # looking in the wrong place.
-            raise FullTextError(
-                f"Nothing retrieved and no DOI or PMID to fall back on — {failures.describe()}"
+            raise FullTextExhaustedError(
+                f"Nothing retrieved and no DOI or PMID to fall back on — {failures.describe()}",
+                list(failures.faults),
+                failures.absences,
             )
 
         return FullTextResult(source=link_source, web_url=web_url)
