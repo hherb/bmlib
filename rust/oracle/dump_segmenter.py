@@ -15,6 +15,7 @@ from bmlib.fulltext.segmenter import (
     SectionSegmenter,
     _join_blocks,
     _median_font_size,
+    heading_depth,
 )
 
 # `_match_section_type` and `_is_potential_header` are instance methods, and they
@@ -59,6 +60,8 @@ def run(case):
     if fn == "match_section_type":
         section_type, confidence = _SEGMENTER._match_section_type(a["text"])
         return {"section_type": section_type.value, "confidence": confidence}
+    if fn == "heading_depth":
+        return heading_depth(a["text"])
     if fn == "is_potential_header":
         return _SEGMENTER._is_potential_header(block(a["block"]), a["median_font_size"])
     if fn == "segment_document":

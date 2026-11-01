@@ -19,6 +19,7 @@ from bmlib.fulltext.pdf_converter import (
     _repeated_lines,
     _span_text_weight,
     _split_on_short_lines,
+    join_spacing_accents,
     render_html,
 )
 
@@ -28,6 +29,13 @@ def run(case):
     a = case.get("args", {})
     if fn == "normalize":
         return _normalize(a["line"])
+    if fn == "join_spacing_accents":
+        # JSON has no NaN: a null edge is the edge a glyph without a box has.
+        nan = float("nan")
+        glyphs = [
+            (c, nan if x0 is None else x0, nan if x1 is None else x1) for c, x0, x1 in a["glyphs"]
+        ]
+        return join_spacing_accents(glyphs)
     if fn == "span_text_weight":
         return _span_text_weight(a["span"])
     if fn == "line_to_block":

@@ -16,14 +16,15 @@
 
 //! PDF text assembly — the oracle and the named tests.
 //!
-//! The corpus (53 cases) diffs every pure helper against Python's. The named
+//! The corpus (71 cases) diffs every pure helper against Python's. The named
 //! tests state why the rules exist: one block per *line*, the dominant span, and
 //! what "complete" means.
 
 use bmlib::fulltext::pdf_text::{
-    group_paragraphs, line_to_block, normalize_line, render_html, repeated_lines, span_text_weight,
-    split_on_short_lines, ConversionResult, PdfError, PdfErrorKind, PARAGRAPH_BREAK_RATIO,
-    REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO, SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
+    group_paragraphs, join_spacing_accents, line_to_block, normalize_line, render_html,
+    repeated_lines, span_text_weight, split_on_short_lines, ConversionResult, PdfError,
+    PdfErrorKind, PARAGRAPH_BREAK_RATIO, REPEATED_LINE_MIN_PAGES, REPEATED_LINE_RATIO,
+    SPAN_BOLD_FLAG, SPAN_ITALIC_FLAG,
 };
 use serde_json::{json, Value};
 
@@ -34,6 +35,25 @@ fn run(case: &Value) -> Value {
     let a = &case["args"];
     match case["fn"].as_str().unwrap_or_default() {
         "normalize" => json!(normalize_line(a["line"].as_str().unwrap_or_default())),
+        "join_spacing_accents" => {
+            let glyphs: Vec<(char, f64, f64)> = a["glyphs"]
+                .as_array()
+                .map(|glyphs| {
+                    glyphs
+                        .iter()
+                        .map(|g| {
+                            let c = g[0].as_str().and_then(|c| c.chars().next());
+                            (
+                                c.unwrap_or_default(),
+                                g[1].as_f64().unwrap_or(f64::NAN),
+                                g[2].as_f64().unwrap_or(f64::NAN),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            json!(join_spacing_accents(&glyphs))
+        }
         "span_text_weight" => json!(span_text_weight(&a["span"])),
         "line_to_block" => match line_to_block(&a["line"], a["page_num"].as_i64().unwrap_or(0)) {
             None => Value::Null,

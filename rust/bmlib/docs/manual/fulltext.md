@@ -305,10 +305,13 @@ match MupdfExtractor::new().extract_blocks_within(Path::new("paper.pdf"), &limit
   which stops never; an implementor of the trait writes the two `_within`
   methods and `name()`.
 - **What MuPDF reads past is reported** *(#599)*:
-  `extract_blocks_with_warnings` returns a `PdfBlocks` (`blocks`, `warnings`),
-  MuPDF's messages while the PDF was read — a repaired xref, a page stopped
-  after too many syntax errors, a font with bogus metrics — none of which
-  fails the call, the path replaced by "the file".
+  `extract_blocks_with_warnings` returns a `PdfBlocks` (`blocks`, `warnings`,
+  `metadata_title`), MuPDF's messages while the PDF was read — a repaired
+  xref, a page stopped after too many syntax errors, a font with bogus metrics
+  — none of which fails the call, the path replaced by "the file".
+  `metadata_title` is the PDF's own `/Title`, verbatim and unjudged, `None`
+  when absent; a title MuPDF cannot read adds `Failed to extract metadata: …`
+  to the end of `warnings`.
   `MupdfExtractor::page_texts_with_warnings` gives the same beside page texts.
   The trait's default reports nothing. On a failure the messages are dropped.
   `is_about_the_file` sets aside MuPDF's `found duplicate … in the store`.
@@ -321,8 +324,8 @@ match MupdfExtractor::new().extract_blocks_within(Path::new("paper.pdf"), &limit
   page furniture stripped, wrapped lines rejoined into `<p>` paragraphs.
 
 There is no `convert()` here: `ConversionResult` exists, with `error_kind`, but
-nothing in the crate builds one from a PDF, and the backend does not read the
-PDF's `/Title`. Pass a title you have to the segmenter instead.
+nothing in the crate builds one from a PDF. Pass `PdfBlocks::metadata_title`,
+or a title you have, to the segmenter as `metadata_title`.
 
 ## Section segmentation
 
@@ -330,9 +333,15 @@ PDF's `/Title`. Pass a title you have to the segmenter instead.
 metadata_title, metadata)` turns lines into a `SegmentedDocument` of typed
 `Section`s. Page furniture (running heads, page numbers) is set aside first;
 a heading is a short line larger than the body median by
-`font_size_threshold`, or a bold one; it is classified by
-`match_section_type`; text before the first heading is `FrontMatter`, and a
-document with no heading is one `Unknown` section titled `"Full Text"`. The
+`font_size_threshold`, or a bold or italic one at body size, which must match
+a pattern exactly or carry a section number (`"2.1."`); the size floor
+`min_heading_size` is capped at the body median, so a journal set in 8 pt
+finds its 8 pt bold headings. It is classified by `match_section_type`, and a
+heading may wrap over up to three lines in all. A numbered heading nests as a
+subsection at its number's depth, one naming no section taking its parent's
+type unless the parent's own number does not open its number. Text before the
+first heading is `FrontMatter`, and a document with no heading is one
+`Unknown` section titled `"Full Text"`. Python's manual has the rules in full. The
 title is the metadata title where page 1 prints it (`accepted_metadata_title`),
 else a first-page line half again larger than the body.
 
@@ -361,7 +370,7 @@ assert_eq!(types, [SectionType::Methods, SectionType::Results]);
 assert_eq!(doc.title, None); // "A trial" is not printed on page 1, so it is not believed
 
 let canonical = canonical_from_segmented(&doc);
-assert_eq!(canonical.converter_version, "pdf-3");
+assert_eq!(canonical.converter_version, "pdf-4");
 ```
 
 ## Canonical text

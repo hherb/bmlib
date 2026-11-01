@@ -38,8 +38,10 @@ import math
 import re
 import threading
 import time
+import unicodedata
 from abc import ABC, abstractmethod
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from html import escape as html_escape
@@ -331,13 +333,35 @@ class LayoutExtractor(Protocol):
         ...
 
 
+def _span_text(span: dict[str, Any]) -> str:
+    """A span's text: ``get_text("rawdict")`` gives it as ``chars``."""
+    if "chars" in span:
+        return "".join(str(c.get("c", "")) for c in span["chars"])
+    return str(span.get("text", ""))
+
+
+def _span_glyphs(span: dict[str, Any]) -> list[tuple[str, float, float]]:
+    """A span's characters with their left and right edges.
+
+    A span given as ``text`` has no edges; its characters get NaN, which no
+    accent test passes, so an accent in it is kept as it stands.
+    """
+    if "chars" not in span:
+        return [(c, math.nan, math.nan) for c in str(span.get("text", ""))]
+    glyphs: list[tuple[str, float, float]] = []
+    for char in span["chars"]:
+        x0, _, x1, _ = char.get("bbox", (math.nan, 0.0, math.nan, 0.0))
+        glyphs.extend((c, float(x0), float(x1)) for c in str(char.get("c", "")))
+    return glyphs
+
+
 def _span_text_weight(span: dict[str, Any]) -> int:
     """Non-whitespace characters a span contributes to its line."""
-    return sum(not c.isspace() for c in span.get("text", ""))
+    return sum(not c.isspace() for c in _span_text(span))
 
 
 def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
-    """Collapse one PyMuPDF line dict into a :class:`TextBlock`.
+    """Collapse one PyMuPDF line dict (``get_text("rawdict")``) into a :class:`TextBlock`.
 
     One block per *line*, not per span: PyMuPDF starts a new span at every
     font change, so a heading numbered in a different weight ("2." +
@@ -352,7 +376,7 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
     Returns None for a line with no non-whitespace text.
     """
     spans = raw_line.get("spans", [])
-    text = _normalize("".join(span.get("text", "") for span in spans))
+    text = _normalize(join_spacing_accents([g for span in spans for g in _span_glyphs(span)]))
     if not text:
         return None
     dominant = max(spans, key=_span_text_weight)
@@ -381,11 +405,20 @@ class PDFBlocks:
     ignoring rest of page``), a font with bogus metrics. MuPDF reads past each
     without failing, so the blocks may be short of the page's text and only
     these say so. The path read is replaced by "the file". Rust's
-    ``PdfBlocks`` is the same pair.
+    ``PdfBlocks`` is the same.
+
+    ``metadata_title`` is the PDF's own ``/Title``, verbatim and unjudged, or
+    None when it has none (or it could not be read, which adds a warning).
+    Pass it to :meth:`SectionSegmenter.segment_document
+    <bmlib.fulltext.segmenter.SectionSegmenter.segment_document>` as
+    ``metadata["title"]``: the segmenter believes it only where page 1 prints
+    it, and otherwise takes the largest line on page 1, which on a journal's
+    first page may be its masthead.
     """
 
     blocks: list[TextBlock]
     warnings: list[str] = field(default_factory=list)
+    metadata_title: str | None = None
 
 
 #: MuPDF's ``fz_store_item`` warning when two threads cache the same item at
@@ -766,16 +799,30 @@ class PyMuPDFConverter(PDFConverter):
         """
         self.validate_pdf_path(pdf_path)
         blocks: list[TextBlock] = []
+        metadata_title: str | None = None
+        metadata_warning: str | None = None
         _reset_engine_messages(self._pymupdf)
         try:
             with self._pymupdf.open(str(pdf_path)) as doc:
                 if doc.needs_pass:
                     raise PDFExtractionError.encrypted()
+                try:
+                    # MuPDF's own lookup, as Rust's ``Document::metadata``
+                    # makes it, not ``doc.metadata``: PyMuPDF fills that at
+                    # open and reads a failed lookup as "", which is "no
+                    # title". An absent key is None here, not an error.
+                    lookup = self._pymupdf.mupdf.fz_lookup_metadata
+                    metadata_title = lookup(doc.this, "info:Title") or None
+                except Exception as e:  # noqa: BLE001 — metadata is best-effort
+                    metadata_warning = f"Failed to extract metadata: {e}"
+                    logger.warning("Metadata extraction failed for %s: %s", pdf_path, e)
                 for page_num in range(len(doc)):
                     stop = limit.reached() if limit is not None else None
                     if stop is not None:
                         raise stop
-                    page_dict = doc[page_num].get_text("dict")
+                    # "rawdict", not "dict": the same spans, with each
+                    # character's box, which join_spacing_accents reads.
+                    page_dict = doc[page_num].get_text("rawdict")
                     for raw_block in page_dict.get("blocks", []):
                         if raw_block.get("type") != 0:  # not a text block (image)
                             continue
@@ -789,7 +836,10 @@ class PyMuPDFConverter(PDFConverter):
         except Exception as e:  # noqa: BLE001 — any failure is classified, never lost
             _engine_messages(self._pymupdf, pdf_path)
             raise _classify(e, self._pymupdf, pdf_path) from e
-        return PDFBlocks(blocks, _engine_messages(self._pymupdf, pdf_path))
+        warnings = _engine_messages(self._pymupdf, pdf_path)
+        if metadata_warning is not None:
+            warnings.append(metadata_warning)
+        return PDFBlocks(blocks, warnings, metadata_title)
 
 
 _WS_RE = re.compile(r"\s+")
@@ -798,6 +848,58 @@ _WS_RE = re.compile(r"\s+")
 def _normalize(line: str) -> str:
     """Collapse runs of whitespace so lines compare on their words alone."""
     return _WS_RE.sub(" ", line).strip()
+
+
+#: Each spacing accent a PDF may draw as a glyph of its own, mapped to the
+#: combining mark it stands for. TeX-made PDFs (Elsevier's among them) set an
+#: accented letter as the accent, then the letter drawn over it, so MuPDF
+#: reads "Nicol´as".
+SPACING_ACCENTS: dict[str, str] = {
+    "\u00b4": "\u0301",  # acute
+    "\u0060": "\u0300",  # grave
+    "\u00a8": "\u0308",  # diaeresis
+    "\u02c6": "\u0302",  # circumflex
+    "\u02dc": "\u0303",  # tilde
+    "\u02c7": "\u030c",  # caron
+    "\u02d8": "\u0306",  # breve
+    "\u02da": "\u030a",  # ring above
+    "\u00af": "\u0304",  # macron
+    "\u02dd": "\u030b",  # double acute
+    "\u02d9": "\u0307",  # dot above
+    "\u00b8": "\u0327",  # cedilla
+    "\u02db": "\u0328",  # ogonek
+}
+
+
+def join_spacing_accents(glyphs: Sequence[tuple[str, float, float]]) -> str:
+    """The text of *glyphs*, each spacing accent drawn over a letter made one with it.
+
+    *glyphs* are ``(character, left edge, right edge)`` in reading order. An
+    accent and the glyph after it are one letter where that glyph starts left
+    of the accent's middle — drawn over it, as TeX sets ``Nicol´as``, its
+    letter starting within 0.9 pt of the accent's own left edge in the paper
+    this was found on — and Unicode has the pair as one character (NFC gives
+    one code point). A ``´`` typed as an apostrophe (``Alzheimer´s``) or a
+    backtick as a quote is followed one advance on, so it is kept as it
+    stands, as is an accent before a digit, a space or a letter it never sits
+    on. Only accent-then-letter is joined, the order the PDFs seen so far draw
+    them in.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(glyphs):
+        char, x0, x1 = glyphs[i]
+        mark = SPACING_ACCENTS.get(char)
+        if mark is not None and i + 1 < len(glyphs):
+            letter, letter_x0, _ = glyphs[i + 1]
+            joined = unicodedata.normalize("NFC", letter + mark)
+            if letter_x0 < (x0 + x1) / 2 and len(joined) == 1:
+                out.append(joined)
+                i += 2
+                continue
+        out.append(char)
+        i += 1
+    return "".join(out)
 
 
 def _repeated_lines(page_texts: list[str]) -> set[str]:

@@ -1205,5 +1205,1915 @@
     }
    ]
   }
+ },
+ {
+  "name": "join_blocks/first_line_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "one",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "two",
+     "x": 0,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Three",
+     "x": 12,
+     "y": 20,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "four",
+     "x": 0,
+     "y": 30,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/hanging_indent_is_not_paragraphs",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "[1] Smith",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wrapped",
+     "x": 12,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wrapped",
+     "x": 12,
+     "y": 20,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "[2] Jones",
+     "x": 0,
+     "y": 30,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wrapped",
+     "x": 12,
+     "y": 40,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/indented_last_line",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "one",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Two",
+     "x": 12,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/column_jump_is_not_an_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "left",
+     "x": 0,
+     "y": 100,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "right",
+     "x": 300,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "right",
+     "x": 300,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/too_deep_is_not_an_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "one",
+     "x": 0,
+     "y": 0,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Two",
+     "x": 60,
+     "y": 10,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "three",
+     "x": 0,
+     "y": 20,
+     "font_size": 12.0,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "is_potential_header/bold_body_size_in_small_print",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "1. Introduction",
+    "x": 0.0,
+    "y": 0.0,
+    "font_size": 8,
+    "height": 12.0,
+    "font_name": "Body-Bold",
+    "page_num": 0,
+    "is_bold": true
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "is_potential_header/italic_body_size",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "2.1. Patients",
+    "x": 0.0,
+    "y": 0.0,
+    "font_size": 12.0,
+    "height": 12.0,
+    "font_name": "Body-Italic",
+    "page_num": 0,
+    "is_italic": true
+   },
+   "median_font_size": 12.0
+  }
+ },
+ {
+  "name": "is_potential_header/bold_below_body_size",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Table 1",
+    "x": 0.0,
+    "y": 0.0,
+    "font_size": 7.2,
+    "height": 12.0,
+    "font_name": "Body-Bold",
+    "page_num": 0,
+    "is_bold": true
+   },
+   "median_font_size": 8.0
+  }
+ },
+ {
+  "name": "match_section_type/credit_authorship_contribution_statement",
+  "fn": "match_section_type",
+  "args": {
+   "text": "CRediT authorship contribution statement"
+  }
+ },
+ {
+  "name": "match_section_type/declaration_of_competing_interest",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Declaration of competing interest"
+  }
+ },
+ {
+  "name": "segment_document/small_print_numbered_tree",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text about the trial.",
+     "x": 0.0,
+     "y": 10,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "x": 0.0,
+     "y": 20,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body text one.",
+     "x": 0.0,
+     "y": 30,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body text two.",
+     "x": 0.0,
+     "y": 40,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0.0,
+     "y": 50,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. Patients and analysis",
+     "x": 0.0,
+     "y": 60,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "from the NACC database",
+     "x": 0.0,
+     "y": 70,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text three.",
+     "x": 0.0,
+     "y": 80,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1.1. Data repository",
+     "x": 0.0,
+     "y": 90,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text four.",
+     "x": 0.0,
+     "y": 100,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.2. Animals",
+     "x": 0.0,
+     "y": 110,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text five.",
+     "x": 0.0,
+     "y": 120,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3. Results",
+     "x": 0.0,
+     "y": 130,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Highlighted aside",
+     "x": 0.0,
+     "y": 140,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body text six.",
+     "x": 0.0,
+     "y": 150,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. A finding without a",
+     "x": 0.0,
+     "y": 160,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "section name",
+     "x": 0.0,
+     "y": 170,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body text seven.",
+     "x": 0.0,
+     "y": 180,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Acknowledgements",
+     "x": 0.0,
+     "y": 190,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body text eight.",
+     "x": 0.0,
+     "y": 200,
+     "font_size": 8,
+     "height": 13,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/bold_credit_line_is_not_methods",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text.",
+     "x": 0.0,
+     "y": 10,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Methodology. A. Smith: Writing",
+     "x": 0.0,
+     "y": 20,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "More body.",
+     "x": 0.0,
+     "y": 30,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/exact_first_line_does_not_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body.",
+     "x": 0.0,
+     "y": 0,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Methods",
+     "x": 0.0,
+     "y": 20,
+     "font_size": 14,
+     "height": 16,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Study design",
+     "x": 0.0,
+     "y": 34,
+     "font_size": 14,
+     "height": 16,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0.0,
+     "y": 50,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body three.",
+     "x": 0.0,
+     "y": 60,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/untyped_numbered_top_level_is_text",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body.",
+     "x": 0.0,
+     "y": 0,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "6. Limitations",
+     "x": 0.0,
+     "y": 12,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0.0,
+     "y": 24,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/two_line_references_are_not_paragraphs",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "[1] Smith A, Jones B. A long title that wraps to",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "the next line. 2020.",
+     "x": 12,
+     "y": 12,
+     "width": 150,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "[2] Brown C, Lee D. Another long title that",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "wraps too. 2021.",
+     "x": 12,
+     "y": 36,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "[3] Lee E. Short.",
+     "x": 0,
+     "y": 48,
+     "width": 120,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/indent_after_a_short_last_line_is_a_paragraph",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "The first paragraph runs to the margin and",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "ends here.",
+     "x": 0,
+     "y": 12,
+     "width": 80,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The second paragraph opens set in and runs",
+     "x": 12,
+     "y": 24,
+     "width": 288,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "on to the margin as justified text does.",
+     "x": 0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/indent_after_a_full_last_line_is_not_marked",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "The first paragraph runs to the margin and",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "its last line happens to fill the measure too",
+     "x": 0,
+     "y": 12,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The second paragraph opens set in and runs",
+     "x": 12,
+     "y": 24,
+     "width": 288,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "on to the margin as justified text does.",
+     "x": 0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/sub_em_jitter_is_not_an_indent",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "A paragraph's short last line.",
+     "x": 0,
+     "y": 0,
+     "width": 150,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "a line set in by a fraction of a point",
+     "x": 3,
+     "y": 12,
+     "width": 297,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "and the next line back at the edge again.",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/an_indent_above_the_line_before_is_not_one",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "A line low in the first column, short",
+     "x": 0,
+     "y": 500,
+     "width": 150,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "A line at the top of the next column",
+     "x": 20,
+     "y": 40,
+     "width": 280,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "and the next line back at that edge.",
+     "x": 0,
+     "y": 52,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "join_blocks/the_left_edge_tolerates_a_fraction_of_a_point",
+  "fn": "join_blocks",
+  "args": {
+   "blocks": [
+    {
+     "text": "The first paragraph ends short.",
+     "x": 0,
+     "y": 0,
+     "width": 150,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "The second paragraph opens set in and runs",
+     "x": 12,
+     "y": 12,
+     "width": 288,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "on to the margin a little off the edge.",
+     "x": 1.5,
+     "y": 24,
+     "width": 298.5,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/unnamed_subsection_not_under_its_number",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3. Metformin lowers glucose in mice",
+     "x": 0,
+     "y": 36,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. Fasting glucose",
+     "x": 0,
+     "y": 60,
+     "width": 90,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body three.",
+     "x": 0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "4. Discussion",
+     "x": 0,
+     "y": 84,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body four.",
+     "x": 0,
+     "y": 96,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/decimal_quantity_is_not_a_heading",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Results",
+     "x": 0,
+     "y": 12,
+     "width": 60,
+     "font_size": 12,
+     "height": 14,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 28,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "0.5 mM",
+     "x": 0,
+     "y": 40,
+     "width": 40,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0,
+     "y": 52,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/unnamed_numbered_first_heading_is_text",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1. Something unnamed here",
+     "x": 0,
+     "y": 12,
+     "width": 150,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Methods",
+     "x": 0,
+     "y": 36,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnamed_heading_takes_its_nearest_parents_type",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Discussion",
+     "x": 0,
+     "y": 36,
+     "width": 80,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body two.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1.1. Something unnamed",
+     "x": 0,
+     "y": 60,
+     "width": 120,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body three.",
+     "x": 0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.2. Another unnamed thing",
+     "x": 0,
+     "y": 84,
+     "width": 130,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body four.",
+     "x": 0,
+     "y": 96,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/heading_sized_partial_match_keeps_its_type",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Statistical methods used",
+     "x": 0,
+     "y": 12,
+     "width": 150,
+     "font_size": 14,
+     "height": 16,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 30,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/numbered_body_sized_partial_match_keeps_its_type",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "4. Discussion and outlook",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/italic_body_after_a_short_subheading_is_not_its_title",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. Hypothesis",
+     "x": 0,
+     "y": 24,
+     "width": 70,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "We hypothesised that metformin would lower fasting",
+     "x": 0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "glucose in mice.",
+     "x": 0,
+     "y": 48,
+     "width": 90,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 60,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_heading_wraps_over_three_lines_and_no_more",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the first line and the second",
+     "x": 0,
+     "y": 36,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "and the third line too",
+     "x": 0,
+     "y": 48,
+     "width": 140,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "and a fourth",
+     "x": 0,
+     "y": 60,
+     "width": 80,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_same_styled_line_past_the_gap_is_not_a_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the line",
+     "x": 0,
+     "y": 60,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 72,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_same_styled_line_above_is_not_a_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 500,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 512,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the line",
+     "x": 0,
+     "y": 40,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 52,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_same_styled_line_set_in_is_not_a_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the line",
+     "x": 20,
+     "y": 36,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/adjacent_numbered_headings_are_two",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "2.2. Another finding",
+     "x": 0,
+     "y": 36,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_line_in_another_font_is_not_a_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the line",
+     "x": 0,
+     "y": 36,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Other-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_line_on_the_next_page_is_not_a_wrap",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0,
+     "y": 24,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the line",
+     "x": 0,
+     "y": 36,
+     "width": 110,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 1,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "heading_depth/subsection",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2.1. Animals"
+  }
+ },
+ {
+  "name": "heading_depth/no_trailing_dot",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2.1 Animals"
+  }
+ },
+ {
+  "name": "heading_depth/year_is_not_a_number",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2025 Elsevier Ltd"
+  }
+ },
+ {
+  "name": "heading_depth/leading_zero_is_a_quantity",
+  "fn": "heading_depth",
+  "args": {
+   "text": "0.5 mM"
+  }
+ },
+ {
+  "name": "heading_depth/vulgar_fraction_is_not_a_letter",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2. ½ dose"
+  }
+ },
+ {
+  "name": "heading_depth/accented_letter",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2. Étude"
+  }
+ },
+ {
+  "name": "heading_depth/combining_mark_is_not_a_letter",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2. ́x"
+  }
+ },
+ {
+  "name": "heading_depth/no_letter",
+  "fn": "heading_depth",
+  "args": {
+   "text": "2.1. 3"
+  }
+ },
+ {
+  "name": "is_potential_header/bold_between_floor_and_larger_body",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods",
+    "x": 0.0,
+    "y": 0.0,
+    "width": 100.0,
+    "font_size": 11,
+    "height": 12.0,
+    "font_name": "Body-Bold",
+    "page_num": 0,
+    "is_bold": true
+   },
+   "median_font_size": 12
+  }
+ },
+ {
+  "name": "segment_document/a_heading_with_no_width_still_wraps",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Front matter.",
+     "x": 0.0,
+     "y": 0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Materials and methods",
+     "x": 0.0,
+     "y": 12,
+     "width": 200,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Bold",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "2.1. A finding whose name runs on past",
+     "x": 0.0,
+     "y": 24,
+     "width": 0,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "the end of the line",
+     "x": 0.0,
+     "y": 36,
+     "width": 0,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body-Italic",
+     "page_num": 0,
+     "is_italic": true
+    },
+    {
+     "text": "Body one.",
+     "x": 0.0,
+     "y": 48,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
  }
 ]

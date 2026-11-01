@@ -981,8 +981,8 @@ class Section:
     content blocks; for a heading with no body they are the heading's page.
     ``confidence`` is 1.0 for an exact heading match, 0.7 for a partial one,
     and 0.5 for the two container sections (front matter, the no-headings
-    fallback). ``subsections`` is carried for callers but never populated by
-    the segmenter, which emits a flat list.
+    fallback). ``subsections`` holds the numbered headings under this one
+    ("2.1." under "2."), each with its own.
     """
 
     section_type: SectionType
@@ -994,11 +994,19 @@ class Section:
     subsections: list[Section] = field(default_factory=list)
 
     def to_markdown(self) -> str:
-        """Render as markdown — ``#`` for a TITLE section, ``##`` otherwise."""
-        level = "#" if self.section_type is SectionType.TITLE else "##"
-        md = f"{level} {self.title}\n\n{self.content}\n"
+        """Render as markdown — ``#`` for a TITLE section, ``##`` otherwise.
+
+        Each level of subsections is one ``#`` deeper (``###``, ``####``, ...,
+        at most ``######``).
+        """
+        level = 1 if self.section_type is SectionType.TITLE else 2
+        return self._markdown(level)
+
+    def _markdown(self, level: int) -> str:
+        """This section at heading *level*, its subsections one level deeper."""
+        md = f"{'#' * min(level, 6)} {self.title}\n\n{self.content}\n"
         for subsection in self.subsections:
-            md += f"\n### {subsection.title}\n\n{subsection.content}\n"
+            md += "\n" + subsection._markdown(level + 1)
         return md
 
     def __str__(self) -> str:

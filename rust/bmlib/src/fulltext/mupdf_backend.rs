@@ -76,9 +76,11 @@
 //! lays it out.
 
 use crate::fulltext::models::TextBlock;
-use crate::fulltext::pdf_text::{normalize_line, PdfBlocks, PdfError, PdfLimit, PdfTextExtractor};
+use crate::fulltext::pdf_text::{
+    join_spacing_accents, normalize_line, PdfBlocks, PdfError, PdfLimit, PdfTextExtractor,
+};
 use mupdf::text_page::{TextCharFlags, TextLine, TextPage, TextPageFlags};
-use mupdf::{Cookie, Device, DisplayList, Document, Matrix, Page, Quad, Rect};
+use mupdf::{Cookie, Device, DisplayList, Document, Matrix, MetadataName, Page, Quad, Rect};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 /// How often the watcher looks at a [`PdfLimit`] while a page runs. A cancel or
@@ -107,6 +109,8 @@ const SUPERSCRIPT_FLAG: i32 = 1;
 pub struct Span {
     /// The span's text.
     pub text: String,
+    /// Each of `text`'s characters' left and right edges, in order.
+    pub edges: Vec<(f64, f64)>,
     /// The font size.
     pub size: f64,
     /// The font name, less a subset tag.
@@ -237,6 +241,7 @@ pub fn line_spans(line: &TextLine<'_>, page: &Rect) -> (Vec<Span>, Option<Rect>)
         if current.as_ref() != Some(&style) {
             spans.push(Span {
                 text: String::new(),
+                edges: Vec::new(),
                 size: f64::from(style.size),
                 font: style.font.clone(),
                 flags: style.flags,
@@ -246,6 +251,7 @@ pub fn line_spans(line: &TextLine<'_>, page: &Rect) -> (Vec<Span>, Option<Rect>)
         if let Some(span) = spans.last_mut() {
             span.text
                 .push(ch.char().unwrap_or(char::REPLACEMENT_CHARACTER));
+            span.edges.push((f64::from(rect.x0), f64::from(rect.x1)));
         }
     }
     (spans, bounds)
@@ -258,8 +264,16 @@ pub fn line_spans(line: &TextLine<'_>, page: &Rect) -> (Vec<Span>, Option<Rect>)
 pub fn line_block(line: &TextLine<'_>, page: &Rect, page_num: i64) -> Option<TextBlock> {
     let (spans, bounds) = line_spans(line, page);
     let bounds = bounds?;
-    let joined: String = spans.iter().map(|s| s.text.as_str()).collect();
-    let text = normalize_line(&joined);
+    let glyphs: Vec<(char, f64, f64)> = spans
+        .iter()
+        .flat_map(|s| {
+            s.text
+                .chars()
+                .zip(&s.edges)
+                .map(|(c, &(x0, x1))| (c, x0, x1))
+        })
+        .collect();
+    let text = normalize_line(&join_spacing_accents(&glyphs));
     if text.is_empty() {
         return None;
     }
@@ -629,6 +643,12 @@ impl PdfTextExtractor for MupdfExtractor {
     ) -> Result<PdfBlocks, PdfError> {
         let messages = EngineMessages::capture();
         let document = open(path)?;
+        // Best-effort, as Python's: a title that cannot be read is a warning
+        // after the engine's (Python also logs it on a line of its own).
+        let (metadata_title, metadata_warning) = match document.metadata(MetadataName::Title) {
+            Ok(title) => ((!title.is_empty()).then_some(title), None),
+            Err(e) => (None, Some(format!("Failed to extract metadata: {e}"))),
+        };
         let mut blocks = Vec::new();
         let mut page_index = 0;
         each_page(&document, DICT_FLAGS, path, limit, |bounds, text_page| {
@@ -642,9 +662,12 @@ impl PdfTextExtractor for MupdfExtractor {
             page_index += 1;
         })?;
         drop(document);
+        let mut warnings = messages.finish(path);
+        warnings.extend(metadata_warning);
         Ok(PdfBlocks {
             blocks,
-            warnings: messages.finish(path),
+            warnings,
+            metadata_title,
         })
     }
 

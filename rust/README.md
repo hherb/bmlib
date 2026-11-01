@@ -170,12 +170,12 @@ registry, and `.gitignore` covers it.
 | `fulltext/models` | 915 lines | 1 file | **ported** — 14 structs, 2 enums; every field list diffed against Python's. 4 unit tests |
 | `transparency/models` | 707 lines | 1 file | **ported** — 4 enums, both partitions named, `calculate_risk_level`. 9 named tests + 43 oracle cases |
 | `fulltext/jats_parser` (reader) | 3,214 code | 1 file | **ported** — 77/77 oracle documents byte-for-byte; 13 QUIRKs recorded. 23 named tests + 77 oracle cases |
-| `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 125 oracle cases |
+| `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 169 oracle cases |
 | `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache, plus the platform/home table `default_cache_dir` is built from. 20 named tests + 33 oracle cases + 7 unit tests |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
 | `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 64 named tests + 73 oracle cases |
 | `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 28 named tests, 351 oracle cases, and `tests/funder_matching.rs` re-deriving the industry-funder matcher's stated counts |
-| `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 53 oracle cases |
+| `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 71 oracle cases |
 | `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — MuPDF (the `mupdf` crate, the engine PyMuPDF binds; PDFium until #590) behind the optional `pdf` feature, plus the `FullTextService` adapter. 9 tests (six over PDFs the tests build, three on the pure rules), and the PDF-bytes contract `pdf_extraction_contract.rs` |
 | `llm/text_utils` | 364 lines | 1 file | **ported**, covered by the context oracle |
 | `llm/json_repair` | 637 lines | 1 file | **ported** (fixes #299), 15 named tests + 64 oracle cases |
@@ -388,9 +388,9 @@ rust/bmlib/tests/data/funder_matcher_expected.json 417 names, 407 of them scorin
 rust/oracle/dump_jats.py          the JATS reader, over 77 whole articles
 rust/oracle/jats_cases.json       the corpus the reader port targets
 rust/oracle/dump_segmenter.py     the PDF section segmenter
-rust/oracle/segmenter_cases.json  125 cases, all diffed strictly
+rust/oracle/segmenter_cases.json  169 cases, all diffed strictly
 rust/oracle/dump_pdf_text.py      PDF line/span assembly behind the PdfTextExtractor trait
-rust/oracle/pdf_text_cases.json   53 cases, all diffed strictly
+rust/oracle/pdf_text_cases.json   71 cases, all diffed strictly
 rust/oracle/dump_cache.py         cache-filename sanitisation
 rust/oracle/cache_cases.json      33 cases, all diffed strictly
 rust/oracle/dump_service.py       the full-text tier chain's helpers

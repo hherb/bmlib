@@ -74,12 +74,113 @@ pub fn normalize_line(line: &str) -> String {
     out.trim().to_string()
 }
 
+/// Each spacing accent a PDF may draw as a glyph of its own, with the combining
+/// mark it stands for. TeX-made PDFs (Elsevier's among them) set an accented
+/// letter as the accent, then the letter, so MuPDF reads "Nicol´as".
+pub const SPACING_ACCENTS: [(char, char); 13] = [
+    ('\u{b4}', '\u{301}'),  // acute
+    ('\u{60}', '\u{300}'),  // grave
+    ('\u{a8}', '\u{308}'),  // diaeresis
+    ('\u{2c6}', '\u{302}'), // circumflex
+    ('\u{2dc}', '\u{303}'), // tilde
+    ('\u{2c7}', '\u{30c}'), // caron
+    ('\u{2d8}', '\u{306}'), // breve
+    ('\u{2da}', '\u{30a}'), // ring above
+    ('\u{af}', '\u{304}'),  // macron
+    ('\u{2dd}', '\u{30b}'), // double acute
+    ('\u{2d9}', '\u{307}'), // dot above
+    ('\u{b8}', '\u{327}'),  // cedilla
+    ('\u{2db}', '\u{328}'), // ogonek
+];
+
+/// The text of `glyphs`, each spacing accent drawn over a letter made one with
+/// it.
+///
+/// `glyphs` are `(character, left edge, right edge)` in reading order. An accent
+/// and the glyph after it are one letter where that glyph starts left of the
+/// accent's middle — drawn over it, as TeX sets `Nicol´as` — and Unicode has the
+/// pair as one character (NFC gives one code point). A `´` typed as an
+/// apostrophe (`Alzheimer´s`) or a backtick as a quote is followed one advance
+/// on, so it is kept as it stands, as is an accent before a digit, a space or a
+/// letter it never sits on. Only accent-then-letter is joined, the order the
+/// PDFs seen so far draw them in. Python's `join_spacing_accents`.
+#[must_use]
+pub fn join_spacing_accents(glyphs: &[(char, f64, f64)]) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let mut out = String::with_capacity(glyphs.len());
+    let mut i = 0;
+    while i < glyphs.len() {
+        let (ch, x0, x1) = glyphs[i];
+        let mark = SPACING_ACCENTS
+            .iter()
+            .find(|(accent, _)| *accent == ch)
+            .map(|&(_, mark)| mark);
+        if let (Some(mark), Some(&(base, base_x0, _))) = (mark, glyphs.get(i + 1)) {
+            let mut joined = [base, mark].into_iter().nfc();
+            if let (true, Some(letter), None) =
+                (base_x0 < (x0 + x1) / 2.0, joined.next(), joined.next())
+            {
+                out.push(letter);
+                i += 2;
+                continue;
+            }
+        }
+        out.push(ch);
+        i += 1;
+    }
+    out
+}
+
+/// A reader span's text: given as `chars` (PyMuPDF's `get_text("rawdict")`) or
+/// as `text`.
+#[must_use]
+pub fn span_text(span: &Value) -> String {
+    match span.get("chars").and_then(Value::as_array) {
+        Some(chars) => chars
+            .iter()
+            .filter_map(|c| c.get("c").and_then(Value::as_str))
+            .collect(),
+        None => span
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+/// A reader span's characters with their left and right edges. A span given as
+/// `text` has no edges; its characters get NaN, which no accent test passes.
+#[must_use]
+pub fn span_glyphs(span: &Value) -> Vec<(char, f64, f64)> {
+    let Some(chars) = span.get("chars").and_then(Value::as_array) else {
+        return span_text(span)
+            .chars()
+            .map(|c| (c, f64::NAN, f64::NAN))
+            .collect();
+    };
+    chars
+        .iter()
+        .flat_map(|c| {
+            let bbox = c.get("bbox").and_then(Value::as_array);
+            let edge = |index: usize| {
+                bbox.and_then(|b| b.get(index))
+                    .and_then(Value::as_f64)
+                    .unwrap_or(f64::NAN)
+            };
+            let (x0, x1) = (edge(0), edge(2));
+            c.get("c")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .chars()
+                .map(move |ch| (ch, x0, x1))
+        })
+        .collect()
+}
+
 /// Non-whitespace characters a span contributes to its line.
 #[must_use]
 pub fn span_text_weight(span: &Value) -> usize {
-    span.get("text")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
+    span_text(span)
         .chars()
         .filter(|c| !c.is_whitespace())
         .count()
@@ -101,15 +202,10 @@ pub fn span_text_weight(span: &Value) -> usize {
 #[must_use]
 pub fn line_to_block(raw_line: &Value, page_num: i64) -> Option<TextBlock> {
     let spans = raw_line.get("spans").and_then(Value::as_array);
-    let joined: String = spans
-        .map(|spans| {
-            spans
-                .iter()
-                .map(|s| s.get("text").and_then(Value::as_str).unwrap_or_default())
-                .collect()
-        })
+    let glyphs: Vec<(char, f64, f64)> = spans
+        .map(|spans| spans.iter().flat_map(span_glyphs).collect())
         .unwrap_or_default();
-    let text = normalize_line(&joined);
+    let text = normalize_line(&join_spacing_accents(&glyphs));
     if text.is_empty() {
         return None;
     }
@@ -484,8 +580,8 @@ pub trait PdfTextExtractor {
     /// [`PdfTextExtractor::extract_blocks_within`], with what the engine
     /// reported while reading (#599).
     ///
-    /// The default reports nothing, for a backend that cannot; the MuPDF
-    /// backend returns MuPDF's messages.
+    /// The default reports nothing and no title, for a backend that cannot;
+    /// the MuPDF backend returns MuPDF's messages and the PDF's `/Title`.
     ///
     /// # Errors
     ///
@@ -498,6 +594,7 @@ pub trait PdfTextExtractor {
         Ok(PdfBlocks {
             blocks: self.extract_blocks_within(path, limit)?,
             warnings: Vec::new(),
+            metadata_title: None,
         })
     }
 
@@ -540,8 +637,18 @@ pub struct PdfBlocks {
     /// One block per visual line, in the content stream's order (usually
     /// reading order, as Python's `extract_blocks` says).
     pub blocks: Vec<TextBlock>,
-    /// The engine's messages, in the order it reported them.
+    /// The engine's messages, in the order it reported them, then a `/Title`
+    /// that could not be read, if any.
     pub warnings: Vec<String>,
+    /// The PDF's own `/Title`, verbatim and unjudged; `None` when it has none
+    /// (or it could not be read, which adds a warning). Pass it to
+    /// [`SectionSegmenter::segment_document`] as its `metadata_title`: the
+    /// segmenter believes it only where page 1 prints it, and otherwise takes
+    /// the largest line on page 1, which on a journal's first page may be its
+    /// masthead.
+    ///
+    /// [`SectionSegmenter::segment_document`]: crate::fulltext::segmenter::SectionSegmenter::segment_document
+    pub metadata_title: Option<String>,
 }
 
 /// What a conversion produced.

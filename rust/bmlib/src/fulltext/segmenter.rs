@@ -17,7 +17,7 @@
 //! Heading-driven section segmentation of a PDF's text lines.
 //!
 //! Headings are detected by font size against the document's **median** — with
-//! bold as the rescue for body-sized headings — and classified against an
+//! bold or italic as the rescue for body-sized headings — and classified against an
 //! anchored pattern table, with an unanchored word-bounded search as the
 //! lower-confidence fallback.
 
@@ -49,6 +49,22 @@ pub const TITLE_SIZE_RATIO: f64 = 1.5;
 /// A vertical gap larger than this multiple of the line height separates
 /// paragraphs; the leading **within** a paragraph is smaller.
 pub const PARAGRAPH_GAP_RATIO: f64 = 1.5;
+
+/// A line set in from the line above by at least this many ems (its own font
+/// size), and at most [`PARAGRAPH_INDENT_MAX_EM`], starts a paragraph when the
+/// line after it returns to the left edge: a first-line indent, the only
+/// paragraph signal in a journal set without space between paragraphs.
+pub const PARAGRAPH_INDENT_MIN_EM: f64 = 0.5;
+
+/// Further in than this is another column or a centred line, not an indent.
+pub const PARAGRAPH_INDENT_MAX_EM: f64 = 4.0;
+
+/// How far, in ems, two lines' left edges may differ and still be one edge.
+pub const LEFT_EDGE_TOLERANCE_EM: f64 = 0.25;
+
+/// The most lines one heading may wrap over (`"3.2. Metformin modulated ..."` /
+/// `"function in mice ..."` / `"mellitus"`).
+pub const MAX_HEADING_LINES: usize = 3;
 
 /// Page furniture (#591): a line whose text, digits aside, recurs at one height
 /// on at least this share of the document's pages — and on at least
@@ -253,28 +269,59 @@ pub fn median_font_size(blocks: &[TextBlock]) -> f64 {
     }
 }
 
-/// Join lines, inserting a blank line at each paragraph-sized gap.
+/// Whether `blocks[i]` is a paragraph's indented first line.
 ///
-/// A vertical gap larger than 1.5× the line's height is a paragraph boundary —
-/// the leading within a paragraph is smaller. A column or page boundary sends the
-/// gap **negative**, so no break is inserted there: a paragraph continuing across
-/// the boundary stays one paragraph, and a PDF gives no signal that would
-/// distinguish it from one that ends at it.
+/// It sits below the line before it, set in from that line's left edge by
+/// [`PARAGRAPH_INDENT_MIN_EM`] to [`PARAGRAPH_INDENT_MAX_EM`] ems; the line before
+/// it ends short of its own right edge, as a paragraph's last line does; and the
+/// line after it, if any, returns to the left edge. The last two keep a
+/// reference list's hanging indent from reading as paragraphs: a reference's
+/// wrapped first line runs to the margin, and its further wrapped lines are all
+/// set in.
+fn starts_indented(blocks: &[TextBlock], i: usize) -> bool {
+    if i == 0 {
+        return false;
+    }
+    let (previous, block) = (&blocks[i - 1], &blocks[i]);
+    let em = block.font_size;
+    let indent = block.x - previous.x;
+    if block.y <= previous.y
+        || !(PARAGRAPH_INDENT_MIN_EM * em <= indent && indent <= PARAGRAPH_INDENT_MAX_EM * em)
+    {
+        return false;
+    }
+    let tolerance = LEFT_EDGE_TOLERANCE_EM * em;
+    if previous.x + previous.width >= block.x + block.width - tolerance {
+        return false;
+    }
+    blocks
+        .get(i + 1)
+        .is_none_or(|next| (next.x - previous.x).abs() <= tolerance)
+}
+
+/// Join lines, inserting a blank line at each paragraph boundary.
+///
+/// A vertical gap larger than 1.5x the line's height is a paragraph boundary —
+/// the leading within a paragraph is smaller. So is a first-line indent
+/// (`starts_indented`), which journals set without space between paragraphs
+/// use instead. A column or page boundary sends the gap **negative**, so no
+/// break is inserted there: a paragraph continuing across the boundary stays one
+/// paragraph, and a PDF gives no signal that would distinguish it from one that
+/// ends at it.
 #[must_use]
 pub fn join_blocks(blocks: &[TextBlock]) -> String {
     let mut lines: Vec<&str> = Vec::with_capacity(blocks.len());
     let mut previous_bottom: Option<f64> = None;
-    for block in blocks {
+    for (i, block) in blocks.iter().enumerate() {
         // A degenerate bbox (`height == 0`) makes the threshold 0, so any
         // positive gap ahead of this block reads as a paragraph break. Left
         // as-is: a degenerate bbox gives no usable leading to derive a real
         // threshold from, and guessing a floor would be an assumed size — against
         // this module's measured-not-assumed rule.
         let gap_threshold = block.height * PARAGRAPH_GAP_RATIO;
-        if let Some(bottom) = previous_bottom {
-            if block.y - bottom > gap_threshold {
-                lines.push("");
-            }
+        let gap = previous_bottom.is_some_and(|bottom| block.y - bottom > gap_threshold);
+        if gap || starts_indented(blocks, i) {
+            lines.push("");
         }
         lines.push(&block.text);
         previous_bottom = Some(block.y + block.height);
@@ -392,6 +439,8 @@ pub const SECTION_PATTERNS: &[(SectionType, &[&str])] = &[
             "^authors?['\u{2019}]?s?\\s+contributions?$",
             "^contributors?$",
             "^credit\\s+authorship$",
+            // Elsevier's wording: "CRediT authorship contribution statement".
+            "^credit\\s+authorship\\s+contributions?(?:\\s+statement)?$",
             "^authorship\\s+contributions?$",
         ],
     ),
@@ -399,6 +448,12 @@ pub const SECTION_PATTERNS: &[(SectionType, &[&str])] = &[
 
 /// The leading numbering a heading may carry: `"1.2  Introduction"`.
 static LEADING_NUMBERING: OnceLock<Regex> = OnceLock::new();
+/// A section number opening a heading: `"2."`, `"2.1."` or `"2.1.3"` and then a
+/// letter. Each part has at most two digits, so a year (`"2025 Elsevier"`) is
+/// not one, and the first does not start with 0, so a quantity (`"0.5 mM"`) is
+/// not. Group 1 is the number, whose parts give the heading's depth; the letter
+/// is Unicode category L, as Python's check of the character after the number.
+static HEADING_NUMBER: OnceLock<Regex> = OnceLock::new();
 /// The punctuation a heading may trail: `"Discussion:"`.
 static TRAILING_PUNCTUATION: OnceLock<Regex> = OnceLock::new();
 /// The compiled tables: anchored patterns, then the partial-search ones.
@@ -412,6 +467,62 @@ static COMPILED: OnceLock<CompiledTables> = OnceLock::new();
 
 fn leading_numbering() -> &'static Regex {
     LEADING_NUMBERING.get_or_init(|| Regex::new(r"^[\d.\s)\]]+").expect("a fixed pattern"))
+}
+
+/// The section number opening a heading (`"2.1"` for `"2.1. Animals"`), else
+/// `None`.
+#[must_use]
+pub fn heading_number(text: &str) -> Option<&str> {
+    let number = HEADING_NUMBER.get_or_init(|| {
+        Regex::new(r"^([1-9][0-9]?(?:\.[0-9]{1,2})*)\.?\s+\p{L}").expect("a fixed pattern")
+    });
+    number
+        .captures(text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
+}
+
+/// How deep a numbered heading sits (`"2."` is 1, `"2.1."` is 2), else `None`.
+#[must_use]
+pub fn heading_depth(text: &str) -> Option<usize> {
+    heading_number(text).map(|n| n.matches('.').count() + 1)
+}
+
+/// Whether a heading titled `title` numbers from a parent numbered
+/// `parent_number`: an unnumbered parent (`None`) contradicts no number.
+fn numbers_from(title: &str, parent_number: Option<&str>) -> bool {
+    parent_number.is_none_or(|n| {
+        title
+            .strip_prefix(n)
+            .is_some_and(|rest| rest.starts_with('.'))
+    })
+}
+
+/// Whether `line`'s first word would have fitted at the end of `above`.
+///
+/// A wrapped line holds what did not fit on the line before, so its first word
+/// and a space added to `above` reach past the column; `line` is at most the
+/// column's width, so if they do not reach past `line`'s own width the word
+/// fitted and `line` is not a wrap. The word's width is `line`'s width shared
+/// out per character. A line with no width (a degenerate bbox) gives no
+/// evidence either way, so the wrap is not refused for it. Python's
+/// `_first_word_fits`.
+fn first_word_fits(above: &TextBlock, line: &TextBlock) -> bool {
+    let chars = line.text.chars().count();
+    if chars == 0 || above.width <= 0.0 || line.width <= 0.0 {
+        return false;
+    }
+    let word = line
+        .text
+        .split(' ')
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .count()
+        + 1;
+    #[allow(clippy::cast_precision_loss)] // a line's length, far below 2^52
+    let share = word as f64 / chars as f64;
+    above.width + line.width * share <= line.width
 }
 
 fn trailing_punctuation() -> &'static Regex {
@@ -469,8 +580,10 @@ pub fn match_section_type(text: &str) -> (SectionType, f64) {
 
 /// Whether `block` looks like a section heading.
 ///
-/// Heading-sized (or body-sized but **bold**), short, and carrying at least one
-/// alphabetic character — a bare `"3."` is numbering, not a heading.
+/// Heading-sized (or body-sized but **bold or italic**), short, and carrying at
+/// least one alphabetic character — a bare `"3."` is numbering, not a heading.
+/// The floor is `min_heading_size` or the body size, whichever is smaller: a
+/// journal set in 8 pt sets its headings in 8 pt bold.
 #[must_use]
 pub fn is_potential_header(
     block: &TextBlock,
@@ -478,10 +591,11 @@ pub fn is_potential_header(
     font_size_threshold: f64,
     min_heading_size: f64,
 ) -> bool {
-    if block.font_size < min_heading_size {
+    if block.font_size < min_heading_size.min(median) {
         return false;
     }
-    if block.font_size < median * font_size_threshold && !block.is_bold {
+    let heading_sized = block.font_size >= median * font_size_threshold;
+    if !heading_sized && !(block.is_bold || block.is_italic) {
         return false;
     }
     // Characters, not bytes: a multi-byte heading is not "long" because its
@@ -498,17 +612,35 @@ pub fn is_potential_header(
 /// One heading found in the block list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Marker {
-    /// The block index the heading sits at.
+    /// The block index of the heading's first line.
     pub index: usize,
+    /// One past the index of its last line (a heading may wrap).
+    pub end: usize,
     /// What it was classified as.
     pub section_type: SectionType,
-    /// The heading's own text.
+    /// The heading's own text, its lines joined by a space.
     pub title: String,
     /// How sure the classification is.
     pub confidence: f64,
+    /// 1 at top level, else its section number's depth (`"2.1."` is 2).
+    pub depth: usize,
 }
 
-/// Find the heading blocks, in order.
+/// Find the headings, in order, each with the lines it wraps over and its depth.
+///
+/// A heading-sized line is classified by the anchored patterns, then the
+/// word-bounded search. A body-sized one, set apart only by bold or italic, must
+/// match a pattern exactly or carry a section number: the search would read a
+/// bold credit line, `"Methodology. A. Smith: ..."`, as Methods. A numbered
+/// heading's depth is its number's; an unnumbered one is top level. A heading
+/// that names no section is kept only as a subsection under an earlier,
+/// shallower heading, whose type and confidence it takes, unless that heading's
+/// own number does not open this one's: at top level there is no type to give
+/// it, and under a heading it does not number from, the heading it does belong
+/// to was not found (`"3.1."` after an unnamed `"3. Metformin lowers glucose"`
+/// is not Methods' because `"2."` was). A bold quantity numbered like a
+/// subsection (`"2.5 mg/kg"` under `"2."`, `"1.5 h"` under an unnumbered
+/// `"Results"`) still reads as one.
 #[must_use]
 pub fn identify_section_markers(
     blocks: &[TextBlock],
@@ -516,22 +648,100 @@ pub fn identify_section_markers(
     font_size_threshold: f64,
     min_heading_size: f64,
 ) -> Vec<Marker> {
-    let mut markers = Vec::new();
-    for (index, block) in blocks.iter().enumerate() {
+    let mut markers: Vec<Marker> = Vec::new();
+    // The headings enclosing the current one, outermost first, as indices
+    // into `markers`.
+    let mut enclosing: Vec<usize> = Vec::new();
+    let mut index = 0;
+    while index < blocks.len() {
+        let block = &blocks[index];
         if !is_potential_header(block, median, font_size_threshold, min_heading_size) {
+            index += 1;
             continue;
         }
-        let (section_type, confidence) = match_section_type(&block.text);
-        if section_type != SectionType::Unknown {
-            markers.push(Marker {
-                index,
-                section_type,
-                title: block.text.clone(),
-                confidence,
-            });
+        let end = heading_end(blocks, index);
+        let title = blocks[index..end]
+            .iter()
+            .map(|b| b.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let numbered = heading_depth(&title);
+        let depth = numbered.unwrap_or(1);
+        let (mut section_type, mut confidence) = match_section_type(&title);
+        let heading_sized = block.font_size >= median * font_size_threshold;
+        if !heading_sized && confidence < 1.0 && numbered.is_none() {
+            section_type = SectionType::Unknown;
         }
+        // Left as is until a marker is made: a line that is not one closes
+        // nothing.
+        let parents: Vec<usize> = enclosing
+            .iter()
+            .copied()
+            .filter(|&m| markers[m].depth < depth)
+            .collect();
+        if section_type == SectionType::Unknown {
+            let Some(&parent) = parents
+                .last()
+                .filter(|&&p| depth > 1 && numbers_from(&title, heading_number(&markers[p].title)))
+            else {
+                index += 1;
+                continue;
+            };
+            section_type = markers[parent].section_type;
+            confidence = markers[parent].confidence;
+        }
+        markers.push(Marker {
+            index,
+            end,
+            section_type,
+            title,
+            confidence,
+            depth,
+        });
+        enclosing = parents;
+        enclosing.push(markers.len() - 1);
+        index = end;
     }
     markers
+}
+
+/// One past the last line of the heading that starts at `blocks[i]`.
+///
+/// A heading wraps onto the lines after it that share its font, size, weight,
+/// slant and page, start below it by at most 1.5 times its height (top to top),
+/// on its left edge, carry no section number of their own, and open with a word
+/// that would not have fitted on the line above — at most [`MAX_HEADING_LINES`]
+/// lines in all. The last test keeps a short italic subheading
+/// (`"2.1. Hypothesis"`) from taking the italic body lines under it. A first
+/// line that names a section exactly is a whole heading, so `"Methods"` over a
+/// same-styled line is titled `"Methods"` alone.
+fn heading_end(blocks: &[TextBlock], i: usize) -> usize {
+    let first = &blocks[i];
+    if match_section_type(&first.text).1 == 1.0 {
+        return i + 1;
+    }
+    let same_style = |line: &TextBlock| {
+        line.font_name == first.font_name
+            && line.font_size == first.font_size
+            && line.is_bold == first.is_bold
+            && line.is_italic == first.is_italic
+            && line.page_num == first.page_num
+    };
+    let mut end = i + 1;
+    while end < blocks.len() && end - i < MAX_HEADING_LINES {
+        let (line, above) = (&blocks[end], &blocks[end - 1]);
+        let step = line.y - above.y;
+        if !same_style(line)
+            || !(0.0 < step && step <= above.height * PARAGRAPH_GAP_RATIO)
+            || (line.x - first.x).abs() > LEFT_EDGE_TOLERANCE_EM * first.font_size
+            || heading_depth(&line.text).is_some()
+            || first_word_fits(above, line)
+        {
+            break;
+        }
+        end += 1;
+    }
+    end
 }
 
 /// Slice `blocks` into sections at the marker boundaries.
@@ -568,29 +778,50 @@ pub fn extract_sections(blocks: &[TextBlock], markers: &[Marker]) -> Vec<Section
         });
     }
 
+    let mut flat = Vec::with_capacity(markers.len());
     for (position, marker) in markers.iter().enumerate() {
         let end_index = markers
             .get(position + 1)
             .map_or(blocks.len(), |next| next.index);
-        let section_blocks = &blocks[marker.index + 1..end_index];
+        let section_blocks = &blocks[marker.end..end_index];
         let heading = &blocks[marker.index];
         // A section whose heading is the last block carries **no** content, and
         // its pages are the heading's own rather than nothing.
-        sections.push(Section {
-            section_type: marker.section_type,
-            title: marker.title.clone(),
-            content: join_blocks(section_blocks),
-            page_start: section_blocks
-                .first()
-                .map_or(heading.page_num, |b| b.page_num),
-            page_end: section_blocks
-                .last()
-                .map_or(heading.page_num, |b| b.page_num),
-            confidence: marker.confidence,
-            subsections: Vec::new(),
-        });
+        flat.push((
+            marker.depth,
+            Section {
+                section_type: marker.section_type,
+                title: marker.title.clone(),
+                content: join_blocks(section_blocks),
+                page_start: section_blocks
+                    .first()
+                    .map_or(heading.page_num, |b| b.page_num),
+                page_end: section_blocks
+                    .last()
+                    .map_or(heading.page_num, |b| b.page_num),
+                confidence: marker.confidence,
+                subsections: Vec::new(),
+            },
+        ));
     }
+    sections.extend(nest(&mut flat.into_iter().peekable(), 1));
     sections
+}
+
+/// The sections at `depth` or deeper from `items`, each with the deeper ones
+/// after it as its subsections: each section goes under the nearest earlier one
+/// that is shallower. Stops at the first item shallower than `depth`, which
+/// belongs to an enclosing call.
+fn nest(
+    items: &mut std::iter::Peekable<impl Iterator<Item = (usize, Section)>>,
+    depth: usize,
+) -> Vec<Section> {
+    let mut out = Vec::new();
+    while let Some((own, mut section)) = items.next_if(|(d, _)| *d >= depth) {
+        section.subsections = nest(items, own + 1);
+        out.push(section);
+    }
+    out
 }
 
 /// Document title from corroborated metadata, else the largest first-page line.
@@ -639,9 +870,10 @@ pub fn extract_title(
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionSegmenter {
     /// Multiplier over the median above which a line is heading-sized without
-    /// being bold.
+    /// being bold or italic.
     pub font_size_threshold: f64,
-    /// Absolute font-size floor for headings.
+    /// Font-size floor for headings, capped at the body text's median size, so
+    /// a paper set small still has its bold body-size headings.
     pub min_heading_size: f64,
 }
 

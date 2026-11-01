@@ -938,6 +938,35 @@ class TestTheConvertedResultCarriesAJudgedTitle:
         result = get_converter("pymupdf").convert(pdf)
         assert result.title is None
 
+    def test_the_blocks_carry_the_metadata_title_verbatim(self, tmp_path):
+        pdf = self._write_pdf(tmp_path / "junk3.pdf", "Microsoft Word - ms.docx")
+        read = get_converter("pymupdf").extract_blocks_with_warnings(pdf)
+        assert read.metadata_title == "Microsoft Word - ms.docx"
+        assert read.warnings == []
+
+    def test_a_pdf_with_no_metadata_title_has_none_beside_its_blocks(self, tmp_path):
+        # MuPDF reads an absent /Title as "", which is no title, not an empty one.
+        pdf = self._write_pdf(tmp_path / "blank2.pdf", "")
+        read = get_converter("pymupdf").extract_blocks_with_warnings(pdf)
+        assert read.metadata_title is None
+        assert read.blocks
+
+    def test_a_title_that_cannot_be_read_is_a_warning(self, tmp_path, monkeypatch):
+        # Rust's Document::metadata raises; PyMuPDF's doc.metadata would read
+        # the same failure as "" and say nothing, so the lookup is made direct.
+        import pymupdf
+
+        pdf = self._write_pdf(tmp_path / "titled.pdf", "Effects of aspirin on outcomes")
+
+        def broken(document, key):
+            raise RuntimeError("bad /Info")
+
+        monkeypatch.setattr(pymupdf.mupdf, "fz_lookup_metadata", broken)
+        read = get_converter("pymupdf").extract_blocks_with_warnings(pdf)
+        assert read.metadata_title is None
+        assert read.warnings == ["Failed to extract metadata: bad /Info"]
+        assert read.blocks
+
     def test_the_title_is_judged_against_page_one_not_the_first_page_with_text(self, tmp_path):
         """``page_texts`` omits a page that yielded nothing, so its first entry
         is page 1's text only when page 1 had any.

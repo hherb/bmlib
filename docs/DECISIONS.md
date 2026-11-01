@@ -4067,9 +4067,10 @@ commented for that reason. The entries here are the pointers.
 - **Nothing is dropped for being empty or unclassified**, each with a named
   test: front matter is a 0.5-confidence section (if the real first heading
   was missed, it has swallowed the introduction); a heading with no body is
-  reported with `content == ""`; and `SectionType.TITLE`,
-  `SegmentedDocument.authors` and `Section.subsections` are reserved, not
-  dead (the `outcome_switching_detected` precedent).
+  reported with `content == ""`; and `SectionType.TITLE` and
+  `SegmentedDocument.authors` are reserved, not dead (the
+  `outcome_switching_detected` precedent). `Section.subsections` was too,
+  until `"pdf-4"` nested numbered headings into it.
 - **`extract_blocks()` raises where `convert()` returns a failed result** —
   a partial block list is indistinguishable from a sparse PDF, so degrading
   would be silent, where `converted_pages` says how partial a conversion was.
@@ -4081,11 +4082,13 @@ commented for that reason. The entries here are the pointers.
 - **CONFLICTS owns the disclosure family, in both numbers** — listing the
   singular under FUNDING put the two numbers of one heading in different
   sections, decided by dict iteration order. A comment wards off re-adding it.
-- **Two spec-level limits are documented in `docs/manual/fulltext.md` rather
-  than fixed:** the 0.7 partial-match pass can fire on a bold figure caption
-  ("Fig. 3 Study results" → RESULTS), and `min_heading_size` is an absolute
-  floor (10.0) in an otherwise median-relative design, so it can silence the
-  segmenter on a 9pt two-column layout. Callers check `Section.confidence`.
+- **One spec-level limit is documented in `docs/manual/fulltext.md` rather
+  than fixed:** the 0.7 partial-match pass can fire on a heading-sized bold
+  figure caption ("Fig. 3 Study results" → RESULTS); a body-sized one is
+  refused since `"pdf-4"`, which must match exactly or be numbered. Callers
+  check `Section.confidence`. The second limit recorded here,
+  `min_heading_size` as an absolute 10.0 floor silencing a small-print
+  layout, was fixed in `"pdf-4"` by capping the floor at the body median.
 
 ## citations (merged, PR #58)
 
