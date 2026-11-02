@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-02 (**this session's PR is on `fix/628-unnamed-parent`, for
+_Last updated: 2026-11-02 (**this session's PR is #637**, on `fix/628-unnamed-parent`, for
 #628 (part)**; see *This session* below). PRs #631 (#628, `Ita`), #630 (#628,
 faces named bold or italic), #629 (#628, heading faces), #627 (pdf-5), #626
 (#565), #625 (#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614
