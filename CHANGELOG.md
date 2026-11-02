@@ -40,7 +40,8 @@ All notable changes to bmlib are documented here. The format is based on
   Each word was kept only if it adds a face the flags miss: `Bd`, `Ital` and
   `Oblique` match only faces MuPDF already flags and were left out, and
   `Medium` and `Semi` alone (`MyriadPro-SemiCn` is semi-condensed) are not
-  bold. (An `Ita` suffix is read too since the entry above.) Python and Rust alike (`_named_bold`/`_named_italic`, Rust's
+  bold. (An `Ita` suffix is read too since the entry above.) Python and
+  Rust alike (`_named_bold`/`_named_italic`, Rust's
   `named_bold`/`named_italic`), held by twenty-five new `pdf_text` oracle
   cases and by the shared `pdf_extraction` fixture,
   which gains a "Discussion" heading at body size in `AdvOTtest.B` (lost

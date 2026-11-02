@@ -15,14 +15,16 @@ Rust crate 0.3.0 is on crates.io** from the same commit; the CHANGELOG's
 `_named_italic` / Rust `named_italic` read a name ending in `Ita` after a
 lower-case letter or a hyphen as italic, as for `It`/`IT`. Four new
 `pdf_text` oracle cases; the clause is mutation-killed in both languages.
-**Measured** over the 1,114 cached PDFs (`/private/tmp/claude-501/-Users-hherb-src-bmlib/4a712057-6c90-4e29-a200-2246394e60e8/scratchpad/blocks.pkl`,
-one `TextBlock` list per PDF with MuPDF's flags only, segmented with and without the clause): the one unflagged `Ita`
-face, `MetaSerifOT-BookIta`, sets 17 lines in PMC10017001, all reference-list
+**Measured** over the 1,114 PDFs in `~/europepmc_pdf/pdf`, from one
+`extract_blocks` pass with MuPDF's flags only (held in a session scratchpad,
+so gone; rebuild it from the PDFs), segmented with and without the clause, and
+re-checked in PR #631's review: the one unflagged `Ita` face, `MetaSerifOT-BookIta`, sets 17 lines in PMC10017001, all reference-list
 book titles. **No paper segments differently**, so #628's guess that it set a
 heading was wrong. `PDF_CANONICAL_VERSION` stays 5, digest re-pinned.
 
 **#628 stays open** for three items: run-in headings; bold back matter under
-0.9 of the body; and an unnumbered numbered parent that drops its children.
+0.9 of the body; and an unnamed numbered parent (a numbered top-level heading naming no
+section) that drops its children.
 **The maintainer decided that last one this session (2026-11-02): keep such a
 parent as an `OTHER` section when numbered children follow it**, so the
 children survive (PMC9798000 loses 19). It is ready to build: measure it over
@@ -231,7 +233,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,910 passing + 165 skipped** on `fix/628-ita-suffix`
+- **Tests: 8,911 passing + 165 skipped** on `fix/628-ita-suffix`
   (`uv run pytest tests/ -v`, 2026-11-02; Rust 1,416 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need

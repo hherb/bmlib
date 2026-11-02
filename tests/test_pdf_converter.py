@@ -600,6 +600,8 @@ class TestLineToBlock:
             ("aIt", False, True),
             ("MetaSerifOT-BookIta", False, True),
             ("ITCGaramondStd-LtIta", False, True),
+            # A corpus face, cut to 31 characters by MuPDF: both halves by name.
+            ("SwlhbwZapfHumanist601BT-DemiIta", True, True),
             ("Univers-Bold", True, False),
             ("Helvetica-Italic", False, True),
             # Not a weight or a slant: semi-condensed, a medium weight, a weight
