@@ -16,8 +16,8 @@ Rust crate 0.3.0 is on crates.io** from the same commit; the CHANGELOG's
 lower-case letter or a hyphen as italic, as for `It`/`IT`. Four new
 `pdf_text` oracle cases; the clause is mutation-killed in both languages.
 **Measured** over the 1,114 PDFs in `~/europepmc_pdf/pdf`, from one
-`extract_blocks` pass with MuPDF's flags only (held in a session scratchpad,
-so gone; rebuild it from the PDFs), segmented with and without the clause, and
+`extract_blocks` pass with MuPDF's flags only (kept only in a session
+scratchpad, so rebuild it from the PDFs), segmented with and without the clause, and
 re-checked in PR #631's review: the one unflagged `Ita` face,
 `MetaSerifOT-BookIta`, sets 17 lines in PMC10017001, all reference-list book
 titles. **No paper segments differently**, so #628's guess that it set a
