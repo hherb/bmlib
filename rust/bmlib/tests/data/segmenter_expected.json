@@ -1487,12 +1487,31 @@
         },
         {
           "confidence": 1.0,
-          "content": "Body one.\n3. Metformin lowers glucose in mice\nBody two.\n3.1. Fasting glucose\nBody three.",
+          "content": "Body one.",
           "page_end": 0,
           "page_start": 0,
           "section_type": "methods",
           "subsections": [],
           "title": "2. Materials and methods"
+        },
+        {
+          "confidence": 0.0,
+          "content": "Body two.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "other",
+          "subsections": [
+            {
+              "confidence": 0.0,
+              "content": "Body three.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "other",
+              "subsections": [],
+              "title": "3.1. Fasting glucose"
+            }
+          ],
+          "title": "3. Metformin lowers glucose in mice"
         },
         {
           "confidence": 1.0,
@@ -2416,6 +2435,297 @@
           "section_type": "methods",
           "subsections": [],
           "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_unnamed_numbered_parent_is_kept_for_its_children",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 0.0,
+          "content": "Body under 2. Characteristics of hypoxia.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "other",
+          "subsections": [
+            {
+              "confidence": 0.0,
+              "content": "Body under 2.1. Low pH.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "other",
+              "subsections": [],
+              "title": "2.1. Low pH"
+            },
+            {
+              "confidence": 1.0,
+              "content": "Body under 2.2. Methods.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.2. Methods"
+            }
+          ],
+          "title": "2. Characteristics of hypoxia"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_unnamed_parent_no_heading_numbers_from_is_text",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.\n2. Characteristics of hypoxia\nBody under 2. Characteristics of hypoxia.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 3. Results.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body under 3.1. Low pH.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "results",
+              "subsections": [],
+              "title": "3.1. Low pH"
+            }
+          ],
+          "title": "3. Results"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_marker_between_unnamed_parent_and_child_lets_it_go",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.\n2. Characteristics of hypoxia\nBody under 2. Characteristics of hypoxia.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under Results.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body under 2.1. Low pH.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "results",
+              "subsections": [],
+              "title": "2.1. Low pH"
+            }
+          ],
+          "title": "Results"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_unnamed_parent_repeating_the_open_number_is_text",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 2. Results.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body under 2.1. Imaging.\n2 Theta degrees\nBody under 2 Theta degrees.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "results",
+              "subsections": [],
+              "title": "2.1. Imaging"
+            },
+            {
+              "confidence": 1.0,
+              "content": "Body under 2.2. Magnetism.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "results",
+              "subsections": [],
+              "title": "2.2. Magnetism"
+            }
+          ],
+          "title": "2. Results"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_unnumbered_unnamed_line_is_not_held",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.\nCharacteristics of hypoxia\nBody under Characteristics of hypoxia.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body under 1.1. Low pH.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "introduction",
+              "subsections": [],
+              "title": "1.1. Low pH"
+            }
+          ],
+          "title": "1. Introduction"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_top_level_peer_with_the_same_number_is_no_child",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.\n2 Theta degrees\nBody under 2 Theta degrees.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 2. Results.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [
+            {
+              "confidence": 1.0,
+              "content": "Body under 2.1. Imaging.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "results",
+              "subsections": [],
+              "title": "2.1. Imaging"
+            }
+          ],
+          "title": "2. Results"
         }
       ],
       "title": null

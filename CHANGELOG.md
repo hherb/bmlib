@@ -8,6 +8,36 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An unnamed numbered parent keeps its subsections** (#628, part; the
+  maintainer's rule, 2026-11-02). A numbered top-level heading that names no
+  section ("2 Characteristics of hypoxia") was dropped, and every subsection
+  numbered from it went with it, or was filed under whatever unnumbered
+  heading came earlier (an *Abstract*, a *References*, which contradict no
+  number). It is now **kept as the new `SectionType.OTHER`** when the next
+  heading found numbers from it, and its unnamed subsections take `OTHER` from
+  it (Rust `SectionType::Other`, wire name `"other"`). It is not kept if
+  another heading comes first, if it is unnumbered, or if it repeats the
+  number of the top-level heading still open: a figure's "2θ degrees" axis
+  label, read as "2 Theta degrees" under "2. Results", took that paper's
+  "2.4." and "2.5." in the first cut. **Measured** over the 1,114 local
+  journal PDFs (`~/europepmc_pdf/pdf`, one `extract_blocks` pass, segmented
+  with and without the change): 49 papers move, 47 canonical texts; 96
+  parents kept, every one read by hand and a real section heading; 326
+  subsections found that were lost; **none lost**; and 50 subsections move out
+  from under a wrong Abstract (33), Introduction (6), References (6) or
+  Acknowledgments (5) heading. PMC9798000's "2" and "3" now hold their 2.1-2.4
+  and 3.1-3.3.3. 9 of the parents are a name the patterns miss ("2. Method",
+  "3. Result", "5. Discussions", "2. Experimental"), filed as #636. Rust
+  agrees with Python on all 1,114 papers' blocks (the segmenter oracle test
+  run once over them). `OTHER` prints its heading in the canonical text, as
+  `FRONT_MATTER` and `UNKNOWN` do not. Its confidence is 0.0, what
+  `match_section_type` gives it. Six new segmenter oracle cases; one existing
+  case (`unnamed_subsection_not_under_its_number`, whose "3.1." is set as a
+  heading) now keeps its "3." as `OTHER`. Each clause is mutation-killed.
+  **`PDF_CANONICAL_VERSION` is 6** (unreleased); the JATS canonical and
+  renderer digests are re-pinned without a bump, an enum member moving
+  neither.
+
 - **An `Ita` suffix is read as italic** (#628, part). `_named_italic` (Rust
   `named_italic`) now reads a name ending in `Ita` after a lower-case letter
   or a hyphen as italic, as it reads `It` and `IT`. MuPDF flags every `Ita`

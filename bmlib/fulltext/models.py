@@ -900,6 +900,8 @@ class SectionType(Enum):
     for, and :meth:`Section.to_markdown` renders it at heading level one.
     ``FRONT_MATTER`` and ``UNKNOWN`` are containers, not classifications —
     what precedes the first detected heading, and text no heading claimed.
+    ``OTHER`` is a heading that names no section, kept because numbered
+    subsections number from it ("2. Characteristics of hypoxia" over "2.1.").
     Every other member has at least one heading pattern in
     :data:`bmlib.fulltext.segmenter.SectionSegmenter.SECTION_PATTERNS`.
     """
@@ -921,6 +923,7 @@ class SectionType(Enum):
     DATA_AVAILABILITY = "data_availability"
     AUTHOR_CONTRIBUTIONS = "author_contributions"
     FRONT_MATTER = "front_matter"
+    OTHER = "other"
     UNKNOWN = "unknown"
 
 

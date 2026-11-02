@@ -2486,10 +2486,9 @@ line would be: a numbered one at the heading floor or over (the smaller of
 down to 0.9 of the body size. Over the same 1,114 PDFs this finds 177
 headings in 36 papers and loses none. Like a bold line, a line in a heading
 face that opens with a quantity numbered like a subsection reads as one, a
-line of prose included (#623). What it does not reach: a numbered
-heading naming no section at top level is still dropped, and every numbered
-subsection under it with it; a heading run in with its first sentence on one
-line; and bold back matter set under 0.9 of the body.
+line of prose included (#623). What it does not reach: a heading run in
+with its first sentence on one line, and bold back matter set under 0.9 of
+the body.
 
 **A face named bold or italic is read as one** *(unreleased, `"pdf-5"`,
 #628)*. MuPDF leaves some faces unflagged that their names call bold or
@@ -2529,8 +2528,25 @@ section (`"2.1. Patients"` names none) takes its parent's type and
 confidence, unless the parent's own number does not open its number: after
 an unnamed `"3. Metformin lowers glucose"`, which is not a heading, a
 `"3.1. Fasting glucose"` is text of `"2. Materials and methods"` rather than a
-Methods subsection. A top-level heading that names none is still not a
-heading. A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
+Methods subsection. **A numbered top-level heading that names none is kept
+as an `OTHER` section when the next heading found numbers from it**
+*(unreleased, `"pdf-6"`, #628)*, and its unnamed subsections take `OTHER`
+from it — so the `"3.1. Fasting glucose"` just described, set as a heading,
+makes `"3. Metformin lowers glucose"` an `OTHER` section with it as a
+subsection. Before, the parent was dropped and every subsection numbered from
+it with it, or filed under whatever unnumbered heading came earlier (an
+*Abstract*, a *References*), since an unnumbered parent contradicts no number:
+PMC9798000 lost 19. Such a heading is not kept if any other heading comes
+before its first subsection, nor if it is unnumbered, nor if it repeats the
+number of the top-level heading still open (a figure's `"2θ degrees"` axis
+label under `"2. Results"` is read as `"2 Theta degrees"`). Over the 1,114
+local journal PDFs this keeps 96 such parents in 49 papers, every one read by
+hand and a real section heading, finds 326 subsections that were lost, loses
+none, and moves 50 subsections out from under the wrong parent; 9 of the
+parents are a heading whose name the patterns miss (`"2. Method"`,
+`"3. Result"`, `"5. Discussions"`, `"2. Experimental"`). Its confidence is
+0.0, what `match_section_type` gives it, and its subsections take that too.
+A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
 `"2."`) still reads as one; `"0.5 mM"` does not. A heading may **wrap** over
 up to three lines in all, the continuation lines sharing its font, size,
 weight, slant and page, starting at most 1.5 line heights below the line
@@ -2549,12 +2565,13 @@ classification for a heading that did not come from a PDF: `(type, 1.0)` for
 an anchored match, `(type, 0.7)` for a partial one, `(SectionType.UNKNOWN,
 0.0)` for none.
 
-Sections are the text between consecutive headings. Three container rules:
+Sections are the text between consecutive headings. Four rules:
 
 | Situation | Result |
 |---|---|
 | Text before the first heading | A `FRONT_MATTER` section, confidence 0.5 |
 | No headings detected at all | One `UNKNOWN` section titled "Full Text", confidence 0.5 |
+| A numbered top-level heading naming no section, a subsection numbered from it next | An `OTHER` section, confidence 0.0 *(unreleased)* |
 | A heading directly followed by another | Reported with `content == ""`, not dropped |
 
 A section's content is its lines joined by `"\n"`, with a blank line at each
@@ -2834,7 +2851,9 @@ doc.converter_version                     # "jats-1"
   body size, takes italic as well as bold, refuses a partial match at body
   size, nests numbered headings, wraps headings, joins spacing accents and
   breaks paragraphs at first-line indents, *unreleased*; `"pdf-5"` measures
-  the body size by characters, not lines, *unreleased*) and
+  the body size by characters, not lines, *unreleased*; `"pdf-6"` keeps an
+  unnamed numbered top-level heading its subsections number from, as
+  `OTHER`, *unreleased*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.

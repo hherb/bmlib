@@ -901,8 +901,10 @@ impl ContentKind {
 /// member stays as the name a caller building one by hand would reach for.
 /// [`SectionType::FrontMatter`] and [`SectionType::Unknown`] are containers, not
 /// classifications — what precedes the first detected heading, and text no
-/// heading claimed. Every other member has at least one heading pattern in the
-/// segmenter.
+/// heading claimed. [`SectionType::Other`] is a heading that names no section,
+/// kept because numbered subsections number from it (`"2. Characteristics of
+/// hypoxia"` over `"2.1."`). Every other member has at least one heading
+/// pattern in the segmenter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SectionType {
@@ -941,6 +943,9 @@ pub enum SectionType {
     AuthorContributions,
     /// A container: what precedes the first detected heading.
     FrontMatter,
+    /// A heading that names no section, kept because numbered subsections
+    /// number from it.
+    Other,
     /// A container: text no heading claimed.
     Unknown,
 }
@@ -970,6 +975,7 @@ impl SectionType {
         SectionType::DataAvailability,
         SectionType::AuthorContributions,
         SectionType::FrontMatter,
+        SectionType::Other,
         SectionType::Unknown,
     ];
 
@@ -994,6 +1000,7 @@ impl SectionType {
             SectionType::DataAvailability => "data_availability",
             SectionType::AuthorContributions => "author_contributions",
             SectionType::FrontMatter => "front_matter",
+            SectionType::Other => "other",
             SectionType::Unknown => "unknown",
         }
     }
@@ -1025,6 +1032,7 @@ impl SectionType {
             "data_availability" => Ok(SectionType::DataAvailability),
             "author_contributions" => Ok(SectionType::AuthorContributions),
             "front_matter" => Ok(SectionType::FrontMatter),
+            "other" => Ok(SectionType::Other),
             "unknown" => Ok(SectionType::Unknown),
             other => Err(format!("unknown section type {other:?}")),
         }
@@ -1179,7 +1187,7 @@ mod tests {
         ContentKind::Fulltext,
     ];
 
-    const SECTION_TYPES: [SectionType; 18] = [
+    const SECTION_TYPES: [SectionType; 19] = [
         SectionType::Title,
         SectionType::Abstract,
         SectionType::Introduction,
@@ -1197,6 +1205,7 @@ mod tests {
         SectionType::DataAvailability,
         SectionType::AuthorContributions,
         SectionType::FrontMatter,
+        SectionType::Other,
         SectionType::Unknown,
     ];
 

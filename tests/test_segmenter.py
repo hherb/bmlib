@@ -255,9 +255,15 @@ class TestPatternMatching:
 class TestSectionTypeCoverage:
     def test_every_section_type_is_produced_or_declared_reserved(self):
         # TITLE is reserved for callers, FRONT_MATTER and UNKNOWN are the
-        # containers the extraction itself produces; every other member must
-        # have a heading pattern, or get_section() lies for it forever.
-        reserved = {SectionType.TITLE, SectionType.FRONT_MATTER, SectionType.UNKNOWN}
+        # containers the extraction itself produces, and OTHER is a heading
+        # naming no section; every other member must have a heading pattern,
+        # or get_section() lies for it forever.
+        reserved = {
+            SectionType.TITLE,
+            SectionType.FRONT_MATTER,
+            SectionType.OTHER,
+            SectionType.UNKNOWN,
+        }
         assert set(SectionSegmenter.SECTION_PATTERNS) == set(SectionType) - reserved
 
 
@@ -754,3 +760,85 @@ class TestPublicExports:
         # package level alongside the segmentation types.
         assert hasattr(fulltext, "LayoutExtractor")
         assert "LayoutExtractor" in fulltext.__all__
+
+
+class TestAnUnnamedNumberedParentIsKeptForItsChildren:
+    """#628: "2 Characteristics of hypoxia" names no section, and dropping it
+    dropped every subsection numbered from it (PMC9798000 lost 19)."""
+
+    def paper(self, *headings: str) -> list[TextBlock]:
+        blocks = [block("Body text of the paper.", y=0.0)]
+        for title in ("1. Introduction", *headings):
+            blocks.append(block(title, bold=True, y=blocks[-1].y + 12.0))
+            blocks.append(block(f"Body under {title}.", y=blocks[-1].y + 12.0))
+        return blocks
+
+    def tree(self, blocks: list[TextBlock]) -> list[tuple]:
+        def walk(sections: list[Section]) -> list[tuple]:
+            return [(s.title, s.section_type, walk(s.subsections)) for s in sections]
+
+        return walk(SectionSegmenter().segment_document(blocks).sections[1:])
+
+    def test_the_parent_and_its_unnamed_children_are_other(self):
+        blocks = self.paper("2. Characteristics of hypoxia", "2.1. Low pH", "2.2. Methods")
+        assert self.tree(blocks) == [
+            ("1. Introduction", SectionType.INTRODUCTION, []),
+            (
+                "2. Characteristics of hypoxia",
+                SectionType.OTHER,
+                [
+                    ("2.1. Low pH", SectionType.OTHER, []),
+                    ("2.2. Methods", SectionType.METHODS, []),
+                ],
+            ),
+        ]
+        parent = SectionSegmenter().segment_document(blocks).sections[2]
+        assert parent.content == "Body under 2. Characteristics of hypoxia."
+        assert parent.confidence == 0.0
+
+    def test_a_parent_no_heading_numbers_from_is_text(self):
+        blocks = self.paper("2. Characteristics of hypoxia", "3. Results", "3.1. Low pH")
+        assert self.tree(blocks) == [
+            ("1. Introduction", SectionType.INTRODUCTION, []),
+            ("3. Results", SectionType.RESULTS, [("3.1. Low pH", SectionType.RESULTS, [])]),
+        ]
+
+    def test_a_marker_between_parent_and_child_lets_the_parent_go(self):
+        # "2.1." is under "Results" now, not the unnamed "2." two headings up.
+        blocks = self.paper("2. Characteristics of hypoxia", "Results", "2.1. Low pH")
+        assert self.tree(blocks)[1:] == [
+            ("Results", SectionType.RESULTS, [("2.1. Low pH", SectionType.RESULTS, [])]),
+        ]
+
+    def test_a_parent_repeating_the_open_number_is_text(self):
+        # A figure's "2θ degrees" axis label, read as "2 Theta degrees".
+        blocks = self.paper("2. Results", "2.1. Imaging", "2 Theta degrees", "2.2. Magnetism")
+        assert self.tree(blocks)[1:] == [
+            (
+                "2. Results",
+                SectionType.RESULTS,
+                [
+                    ("2.1. Imaging", SectionType.RESULTS, []),
+                    ("2.2. Magnetism", SectionType.RESULTS, []),
+                ],
+            ),
+        ]
+
+    def test_an_unnumbered_unnamed_line_is_not_held(self):
+        # An unnumbered parent contradicts no number, so held it would take
+        # every subsection after it.
+        blocks = self.paper("Characteristics of hypoxia", "1.1. Low pH")
+        assert self.tree(blocks) == [
+            (
+                "1. Introduction",
+                SectionType.INTRODUCTION,
+                [("1.1. Low pH", SectionType.INTRODUCTION, [])],
+            ),
+        ]
+
+    def test_a_top_level_heading_with_the_same_number_is_no_child(self):
+        # "2. Results" opens with "2." too, but it is the parent's peer.
+        blocks = self.paper("2 Theta degrees", "2. Results", "2.1. Imaging")
+        assert self.tree(blocks)[1:] == [
+            ("2. Results", SectionType.RESULTS, [("2.1. Imaging", SectionType.RESULTS, [])]),
+        ]

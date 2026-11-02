@@ -425,6 +425,7 @@ fn the_section_type_members_are_pythons() {
         ("DATA_AVAILABILITY", "data_availability"),
         ("AUTHOR_CONTRIBUTIONS", "author_contributions"),
         ("FRONT_MATTER", "front_matter"),
+        ("OTHER", "other"),
         ("UNKNOWN", "unknown"),
     ];
     for (member, wire) in pairs {
@@ -437,7 +438,7 @@ fn the_section_type_members_are_pythons() {
         bmlib::fulltext::models::SectionType::ALL.len(),
         "the port must not carry an extra or missing member"
     );
-    assert_eq!(pairs.len(), 18, "Python's SectionType has 18 members");
+    assert_eq!(pairs.len(), 19, "Python's SectionType has 19 members");
     // An unknown value is refused by name rather than defaulting.
     let err = bmlib::fulltext::models::SectionType::parse("not-a-section").expect_err("refused");
     assert!(err.contains("not-a-section"), "{err}");

@@ -352,7 +352,9 @@ face (Frontiers', for one) neither bold nor italic; the size floor
 finds its 8 pt bold headings. It is classified by `match_section_type`, and a
 heading may wrap over up to three lines in all. A numbered heading nests as a
 subsection at its number's depth, one naming no section taking its parent's
-type unless the parent's own number does not open its number. Text before the
+type unless the parent's own number does not open its number; a numbered
+top-level heading naming none is an `Other` section when the next heading
+found numbers from it (*unreleased*, #628). Text before the
 first heading is `FrontMatter`, and a document with no heading is one
 `Unknown` section titled `"Full Text"`. Python's manual has the rules in full. The
 title is the metadata title where page 1 prints it (`accepted_metadata_title`),
@@ -385,7 +387,7 @@ assert_eq!(types, [SectionType::Methods, SectionType::Results]);
 assert_eq!(doc.title, None);
 
 let canonical = canonical_from_segmented(&doc);
-assert_eq!(canonical.converter_version, "pdf-5");
+assert_eq!(canonical.converter_version, "pdf-6");
 ```
 
 ## Canonical text

@@ -752,7 +752,7 @@
   "fn": "is_potential_header",
   "args": {
    "block": {
-    "text": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+    "text": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
     "font_size": 20.0
    },
    "median_font_size": 12.0
@@ -935,7 +935,7 @@
   "args": {
    "blocks": [
     {
-     "text": "ééé",
+     "text": "\u00e9\u00e9\u00e9",
      "font_size": 10
     },
     {
@@ -3330,21 +3330,21 @@
   "name": "heading_depth/vulgar_fraction_is_not_a_letter",
   "fn": "heading_depth",
   "args": {
-   "text": "2. ½ dose"
+   "text": "2. \u00bd dose"
   }
  },
  {
   "name": "heading_depth/accented_letter",
   "fn": "heading_depth",
   "args": {
-   "text": "2. Étude"
+   "text": "2. \u00c9tude"
   }
  },
  {
   "name": "heading_depth/combining_mark_is_not_a_letter",
   "fn": "heading_depth",
   "args": {
-   "text": "2. ́x"
+   "text": "2. \u0301x"
   }
  },
  {
@@ -4113,7 +4113,7 @@
   "args": {
    "blocks": [
     {
-     "text": "éééééééééé",
+     "text": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
      "x": 0.0,
      "y": 0,
      "width": 300,
@@ -4140,6 +4140,618 @@
      "font_size": 10,
      "height": 12.0,
      "font_name": "Head",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnamed_numbered_parent_is_kept_for_its_children",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Low pH",
+     "y": 60,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2.1. Low pH.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.2. Methods",
+     "y": 84,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2.2. Methods.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnamed_parent_no_heading_numbers_from_is_text",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3. Results",
+     "y": 60,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 3. Results.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. Low pH",
+     "y": 84,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 3.1. Low pH.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_marker_between_unnamed_parent_and_child_lets_it_go",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Results",
+     "y": 60,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under Results.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Low pH",
+     "y": 84,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2.1. Low pH.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnamed_parent_repeating_the_open_number_is_text",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Results",
+     "y": 36,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2. Results.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Imaging",
+     "y": 60,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2.1. Imaging.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2 Theta degrees",
+     "y": 84,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2 Theta degrees.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.2. Magnetism",
+     "y": 108,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2.2. Magnetism.",
+     "y": 120,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnumbered_unnamed_line_is_not_held",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Characteristics of hypoxia",
+     "y": 36,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1.1. Low pH",
+     "y": 60,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1.1. Low pH.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_top_level_peer_with_the_same_number_is_no_child",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2 Theta degrees",
+     "y": 36,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2 Theta degrees.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Results",
+     "y": 60,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2. Results.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Imaging",
+     "y": 84,
+     "is_bold": true,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Body under 2.1. Imaging.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
      "page_num": 0
     }
    ]
