@@ -1047,9 +1047,11 @@ pub struct TextBlock {
     pub font_size: f64,
     /// The dominant span's font name.
     pub font_name: String,
-    /// Whether the dominant span is bold.
+    /// Whether the dominant span is bold, by its flag or its font's name
+    /// ([`named_bold`](crate::fulltext::pdf_text::named_bold)).
     pub is_bold: bool,
-    /// Whether the dominant span is italic.
+    /// Whether the dominant span is italic, by its flag or its font's name
+    /// ([`named_italic`](crate::fulltext::pdf_text::named_italic)).
     pub is_italic: bool,
     /// The x coordinate of the line's origin, in the page's coordinate space.
     pub x: f64,

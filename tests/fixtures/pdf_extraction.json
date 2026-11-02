@@ -1,6 +1,6 @@
 {
   "pdf": "pdf_extraction.pdf",
-  "pdf_sha256": "c0c6239f11f406d04edf3c957e72b8dbd01ebe9011bdd9069c54bc8409af22fa",
+  "pdf_sha256": "a8cb4e8b36beae2ca568779b46ff3436cfc593463f1d2b3529e0c12debb35499",
   "geometry_tolerance": 0.01,
   "metadata_title": "A soft hyphen trial",
   "blocks": [
@@ -80,12 +80,12 @@
       "text": "Cultures of Escherichia coli were grown1 overnight.",
       "page_num": 0,
       "font_size": 10.0,
-      "font_name": "Times-Italic",
+      "font_name": "AdvOTtest.I",
       "is_bold": false,
       "is_italic": true,
       "x": 72.0,
       "y": 177.25,
-      "width": 223.10995483398438,
+      "width": 221.98995971679688,
       "height": 17.740005493164062
     },
     {
@@ -187,14 +187,14 @@
     {
       "text": "Discussion",
       "page_num": 1,
-      "font_size": 12.0,
-      "font_name": "Helvetica-Bold",
+      "font_size": 10.0,
+      "font_name": "AdvOTtest.B",
       "is_bold": true,
       "is_italic": false,
       "x": 72.0,
-      "y": 119.16000366210938,
-      "width": 64.01998901367188,
-      "height": 16.524002075195312
+      "y": 121.47000122070312,
+      "width": 43.88999938964844,
+      "height": 13.339996337890625
     },
     {
       "text": "The effect held across",

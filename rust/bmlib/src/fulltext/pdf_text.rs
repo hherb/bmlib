@@ -55,6 +55,45 @@ pub const SPAN_BOLD_FLAG: i32 = 1 << 4;
 /// PyMuPDF's *italic* span-flag bit.
 pub const SPAN_ITALIC_FLAG: i32 = 1 << 1;
 
+/// Whether a font's name says **bold**, where MuPDF's flag may not (#628).
+///
+/// MuPDF flags bold from the font's own data, and leaves some faces whose names
+/// say bold unflagged: Advent 3B2's `AdvOT….B` and `.BI` (a face in 223 of 1,114
+/// corpus PDFs), `Heavy`, `Black`, `Extrabold` and `Demi`. So a name is bold if
+/// it contains `bold`, `black` or `heavy` in any case (`Semibold` and
+/// `Extrabold` too), contains `Demi` but not `DemiLight` (a weight lighter than
+/// regular, in Noto Sans CJK), or ends in `.B` or `.BI`. `Demi` is matched
+/// capitalised so a family name holding the letters in lower case
+/// (`Academic…`) cannot; `Medium` and `Semi` alone (`SemiCn` is
+/// semi-condensed) are not bold. Python's `_named_bold`, rule for rule.
+#[must_use]
+pub fn named_bold(font: &str) -> bool {
+    let low = font.to_lowercase();
+    ["bold", "black", "heavy"].iter().any(|w| low.contains(w))
+        || (font.contains("Demi") && !low.contains("demilight"))
+        || font.ends_with(".B")
+        || font.ends_with(".BI")
+}
+
+/// Whether a font's name says *italic*, where MuPDF's flag may not (#628).
+///
+/// A name containing `italic` in any case, ending in Advent 3B2's `.I` or `.BI`,
+/// or ending in `It`/`IT` only after a lower-case letter or a hyphen
+/// (`MinionProIt`, `GulliverIT`; not `ArialKIT`, an acronym, nor a bare `IT`).
+/// An `Ita` suffix is not read (#628). Python's `_named_italic`, rule for rule.
+#[must_use]
+pub fn named_italic(font: &str) -> bool {
+    if font.to_lowercase().contains("italic") || font.ends_with(".I") || font.ends_with(".BI") {
+        return true;
+    }
+    let Some(stem) = font.strip_suffix("It").or_else(|| font.strip_suffix("IT")) else {
+        return false;
+    };
+    stem.chars()
+        .next_back()
+        .is_some_and(|c| c.is_lowercase() || c == '-')
+}
+
 /// Collapse runs of whitespace so lines compare on their words alone.
 #[must_use]
 pub fn normalize_line(line: &str) -> String {
@@ -197,6 +236,8 @@ pub fn span_text_weight(span: &Value) -> usize {
 /// trailing spaces, and joining would double them. Font attributes come from the
 /// **dominant** span (most non-whitespace characters, ties to the first), so a
 /// superscript reference marker or an inline formula cannot restyle the line.
+/// Bold and italic are the span's flag **or** its font's name ([`named_bold`],
+/// [`named_italic`]).
 ///
 /// Returns `None` for a line with no non-whitespace text.
 #[must_use]
@@ -232,6 +273,11 @@ pub fn line_to_block(raw_line: &Value, page_num: i64) -> Option<TextBlock> {
             .unwrap_or(0.0)
     };
     let (x0, y0, x1, y1) = (coordinate(0), coordinate(1), coordinate(2), coordinate(3));
+    let font_name = dominant
+        .and_then(|s| s.get("font"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_default();
 
     Some(TextBlock {
         text,
@@ -240,13 +286,9 @@ pub fn line_to_block(raw_line: &Value, page_num: i64) -> Option<TextBlock> {
             .and_then(|s| s.get("size"))
             .and_then(Value::as_f64)
             .unwrap_or(12.0),
-        font_name: dominant
-            .and_then(|s| s.get("font"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_default(),
-        is_bold: flags & SPAN_BOLD_FLAG != 0,
-        is_italic: flags & SPAN_ITALIC_FLAG != 0,
+        is_bold: flags & SPAN_BOLD_FLAG != 0 || named_bold(&font_name),
+        is_italic: flags & SPAN_ITALIC_FLAG != 0 || named_italic(&font_name),
+        font_name,
         x: x0,
         y: y0,
         width: x1 - x0,

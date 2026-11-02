@@ -83,6 +83,44 @@ _SPAN_BOLD_FLAG = 1 << 4
 _SPAN_ITALIC_FLAG = 1 << 1
 
 
+def _named_bold(font: str) -> bool:
+    """Whether a font's name says bold, where MuPDF's flag may not (#628).
+
+    MuPDF flags bold from the font's own data, and leaves some faces whose
+    names say bold unflagged: Advent 3B2's ``AdvOT….B`` and ``.BI`` (a face
+    in 223 of 1,114 corpus PDFs), ``Heavy``, ``Black``, ``Extrabold`` and
+    ``Demi``. So a name is bold if it contains ``bold``, ``black`` or
+    ``heavy`` in any case (``Semibold`` and ``Extrabold`` too), contains
+    ``Demi`` but not ``DemiLight`` (a weight lighter than regular, in Noto
+    Sans CJK), or ends in ``.B`` or ``.BI``. ``Demi`` is matched capitalised
+    so a family name holding the letters in lower case (``Academic…``)
+    cannot; ``Medium`` and ``Semi`` alone (``SemiCn`` is semi-condensed) are
+    not bold. Rust's ``named_bold``, rule for rule.
+    """
+    low = font.lower()
+    return (
+        "bold" in low
+        or "black" in low
+        or "heavy" in low
+        or ("Demi" in font and "demilight" not in low)
+        or font.endswith((".B", ".BI"))
+    )
+
+
+def _named_italic(font: str) -> bool:
+    """Whether a font's name says italic, where MuPDF's flag may not (#628).
+
+    A name containing ``italic`` in any case, ending in Advent 3B2's ``.I``
+    or ``.BI``, or ending in ``It``/``IT`` only after a lower-case letter or
+    a hyphen (``MinionProIt``, ``GulliverIT``; not ``ArialKIT``, an acronym,
+    nor a bare ``IT``). An ``Ita`` suffix is not read (#628). Rust's
+    ``named_italic``, rule for rule.
+    """
+    if "italic" in font.lower() or font.endswith((".I", ".BI")):
+        return True
+    return font.endswith(("It", "IT")) and len(font) > 2 and (font[-3].islower() or font[-3] == "-")
+
+
 class PDFErrorKind(StrEnum):
     """Which side a PDF extraction failure is on (#598).
 
@@ -371,7 +409,8 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
     their own trailing spaces, and joining would double them. Font
     attributes come from the dominant span (most non-whitespace characters,
     ties to the first), so a superscript reference marker or an inline
-    formula cannot restyle the line.
+    formula cannot restyle the line. Bold and italic are the span's flag or
+    its font's name (:func:`_named_bold`, :func:`_named_italic`).
 
     Returns None for a line with no non-whitespace text.
     """
@@ -381,14 +420,15 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
         return None
     dominant = max(spans, key=_span_text_weight)
     flags = int(dominant.get("flags", 0))
+    font = str(dominant.get("font", ""))
     x0, y0, x1, y1 = raw_line.get("bbox", (0.0, 0.0, 0.0, 0.0))
     return TextBlock(
         text=text,
         page_num=page_num,
         font_size=float(dominant.get("size", 12.0)),
-        font_name=str(dominant.get("font", "")),
-        is_bold=bool(flags & _SPAN_BOLD_FLAG),
-        is_italic=bool(flags & _SPAN_ITALIC_FLAG),
+        font_name=font,
+        is_bold=bool(flags & _SPAN_BOLD_FLAG) or _named_bold(font),
+        is_italic=bool(flags & _SPAN_ITALIC_FLAG) or _named_italic(font),
         x=float(x0),
         y=float(y0),
         width=float(x1 - x0),

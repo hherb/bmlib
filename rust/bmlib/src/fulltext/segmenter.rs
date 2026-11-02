@@ -641,11 +641,11 @@ pub fn is_potential_header(
 
 /// The faces of the lines that are headings naming a section exactly (#628).
 ///
-/// MuPDF flags a line bold or italic only when its font says so, and some
-/// journals set their headings in a face of their own that says neither:
-/// Frontiers' numbered subsections at about the body size, for one. A line in
-/// one of these faces is judged as a bold one is. The body's own
-/// face, the one holding the most characters (the first seen on a tie), is
+/// A line is bold or italic only when MuPDF flags its font so or the font's
+/// name says so, and some journals set their headings in a face of their own
+/// that does neither: Frontiers' numbered subsections at about the body size,
+/// for one. A line in one of these faces is judged as a bold one is. The body's
+/// own face, the one holding the most characters (the first seen on a tie), is
 /// never one, or one body line naming a section would make every body line
 /// bold; nor is a face with no name.
 fn heading_faces(

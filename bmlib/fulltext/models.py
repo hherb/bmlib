@@ -932,7 +932,8 @@ class TextBlock:
     heading numbered in a different weight or a sentence holding an italic
     gene name would shatter into fragments no anchored heading pattern can
     match. Font attributes are those of the line's dominant span — see
-    ``_line_to_block()`` in :mod:`bmlib.fulltext.pdf_converter`.
+    ``_line_to_block()`` in :mod:`bmlib.fulltext.pdf_converter`; ``is_bold``
+    and ``is_italic`` are its flags or its font's name (#628).
     """
 
     text: str
