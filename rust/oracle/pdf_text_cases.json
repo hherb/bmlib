@@ -2281,6 +2281,98 @@
   }
  },
  {
+  "name": "line_to_block/named-face/MetaSerifOT-BookIta",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "Methods",
+      "size": 10.0,
+      "font": "MetaSerifOT-BookIta",
+      "flags": 0
+     }
+    ],
+    "bbox": [
+     72.0,
+     100.0,
+     300.0,
+     112.0
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/named-face/ITCGaramondStd-LtIta",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "Methods",
+      "size": 10.0,
+      "font": "ITCGaramondStd-LtIta",
+      "flags": 0
+     }
+    ],
+    "bbox": [
+     72.0,
+     100.0,
+     300.0,
+     112.0
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/named-face/ArialKIta",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "Methods",
+      "size": 10.0,
+      "font": "ArialKIta",
+      "flags": 0
+     }
+    ],
+    "bbox": [
+     72.0,
+     100.0,
+     300.0,
+     112.0
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/named-face/Ita",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "Methods",
+      "size": 10.0,
+      "font": "Ita",
+      "flags": 0
+     }
+    ],
+    "bbox": [
+     72.0,
+     100.0,
+     300.0,
+     112.0
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
   "name": "line_to_block/named-face/aIt",
   "fn": "line_to_block",
   "args": {
@@ -2427,7 +2519,7 @@
      {
       "text": "Methods",
       "size": 10.0,
-      "font": "SwlhbwZapfHumanist601BT-DemiIta",
+      "font": "ZapfHumanist601BT-Demi",
       "flags": 2
      }
     ],

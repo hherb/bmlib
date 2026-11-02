@@ -78,15 +78,18 @@ pub fn named_bold(font: &str) -> bool {
 /// Whether a font's name says *italic*, where MuPDF's flag may not (#628).
 ///
 /// A name containing `italic` in any case, ending in Advent 3B2's `.I` or `.BI`,
-/// or ending in `It`/`IT` only after a lower-case letter or a hyphen
-/// (`MinionProIt`, `GulliverIT`; not `ArialKIT`, an acronym, nor a bare `IT`).
-/// An `Ita` suffix is not read (#628). Python's `_named_italic`, rule for rule.
+/// or ending in `It`, `IT` or `Ita` only after a lower-case letter or a hyphen
+/// (`MinionProIt`, `GulliverIT`, `MetaSerifOT-BookIta`; not `ArialKIT`, an
+/// acronym, nor a bare `IT`). Python's `_named_italic`, rule for rule.
 #[must_use]
 pub fn named_italic(font: &str) -> bool {
     if font.to_lowercase().contains("italic") || font.ends_with(".I") || font.ends_with(".BI") {
         return true;
     }
-    let Some(stem) = font.strip_suffix("It").or_else(|| font.strip_suffix("IT")) else {
+    let Some(stem) = ["It", "IT", "Ita"]
+        .iter()
+        .find_map(|s| font.strip_suffix(s))
+    else {
         return false;
     };
     stem.chars()

@@ -2501,12 +2501,12 @@ its dominant span is flagged bold **or** its font's name contains `bold`,
 `black` or `heavy` (any case, so `Semibold` too), or `Demi` but not
 `DemiLight` (lighter than regular, in Noto Sans CJK), or ends in `.B` or
 `.BI`; italic when flagged italic or its name contains `italic` (any case),
-ends in `.I` or `.BI`, or ends in `It` or `IT` only after a lower-case letter
-or a hyphen. `Medium` and `Semi` alone (`SemiCn` is semi-condensed) are not
-bold, and an `IT` closing a run of capitals is an acronym. An `Ita` suffix is
-not read: of the `Ita` faces found in the PDFs whose fonts name one, MuPDF
-flags all but one italic, `MetaSerifOT-BookIta` in one PDF, which stays body
-text (#628). The span's
+ends in `.I` or `.BI`, or ends in `It`, `IT` or `Ita` only after a
+lower-case letter or a hyphen. `Medium` and `Semi` alone (`SemiCn` is
+semi-condensed) are not bold, and an `IT` or `Ita` closing a run of capitals
+is an acronym. Of the `Ita` faces in the 1,114 PDFs, MuPDF flags all but
+`MetaSerifOT-BookIta` italic; it sets 17 lines in one PDF, all book titles in
+the reference list, and reading it moves no paper's sections. The span's
 flags are left as MuPDF set them; only the block reads the name. Over the
 same 1,114 PDFs, 44 papers move: 320 heading lines are gained, 250 of them
 genuine headings, 29 the *Front Matter* section a paper opens once it has

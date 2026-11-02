@@ -111,14 +111,15 @@ def _named_italic(font: str) -> bool:
     """Whether a font's name says italic, where MuPDF's flag may not (#628).
 
     A name containing ``italic`` in any case, ending in Advent 3B2's ``.I``
-    or ``.BI``, or ending in ``It``/``IT`` only after a lower-case letter or
-    a hyphen (``MinionProIt``, ``GulliverIT``; not ``ArialKIT``, an acronym,
-    nor a bare ``IT``). An ``Ita`` suffix is not read (#628). Rust's
-    ``named_italic``, rule for rule.
+    or ``.BI``, or ending in ``It``, ``IT`` or ``Ita`` only after a
+    lower-case letter or a hyphen (``MinionProIt``, ``GulliverIT``,
+    ``MetaSerifOT-BookIta``; not ``ArialKIT``, an acronym, nor a bare
+    ``IT``). Rust's ``named_italic``, rule for rule.
     """
     if "italic" in font.lower() or font.endswith((".I", ".BI")):
         return True
-    return font.endswith(("It", "IT")) and len(font) > 2 and (font[-3].islower() or font[-3] == "-")
+    stem = next((font[: -len(s)] for s in ("It", "IT", "Ita") if font.endswith(s)), "")
+    return bool(stem) and (stem[-1].islower() or stem[-1] == "-")
 
 
 class PDFErrorKind(StrEnum):

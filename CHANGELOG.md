@@ -8,6 +8,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An `Ita` suffix is read as italic** (#628, part). `_named_italic` (Rust
+  `named_italic`) now reads a name ending in `Ita` after a lower-case letter
+  or a hyphen as italic, as it reads `It` and `IT`. MuPDF flags every `Ita`
+  face found in the 1,114 local PDFs italic except `MetaSerifOT-BookIta`.
+  **Measured** over the same PDFs and the same extraction, with and without
+  the clause: that face is the dominant font of 17 lines in one PDF
+  (PMC10017001), all italic book titles in its 7 pt reference list, which now
+  read as italic. **No paper segments differently**, and that PDF's canonical
+  text is unchanged, so #628's guess that the face set a heading was wrong.
+  Held by four new `pdf_text` oracle cases (`MetaSerifOT-BookIta`,
+  `ITCGaramondStd-LtIta`, and `ArialKIta` and a bare `Ita`, which stay
+  upright); the clause is mutation-killed in both languages. The
+  flag-and-name oracle case now uses `ZapfHumanist601BT-Demi`, since its old
+  face's name now gives the italic as well as the bold.
+  `PDF_CANONICAL_VERSION` stays 5 (unreleased); its digest is re-pinned.
+
 - **A face named bold or italic is read as one** (#628, part). MuPDF flags a
   span bold or italic from the font's own data, and leaves some faces
   unflagged that their names call bold or italic — Advent 3B2's
@@ -24,9 +40,7 @@ All notable changes to bmlib are documented here. The format is based on
   Each word was kept only if it adds a face the flags miss: `Bd`, `Ital` and
   `Oblique` match only faces MuPDF already flags and were left out, and
   `Medium` and `Semi` alone (`MyriadPro-SemiCn` is semi-condensed) are not
-  bold. An `Ita` suffix is not read: of the `Ita` faces found, MuPDF flags
-  all but `MetaSerifOT-BookIta` (one PDF) italic, so that one stays body
-  text (#628). Python and Rust alike (`_named_bold`/`_named_italic`, Rust's
+  bold. (An `Ita` suffix is read too since the entry above.) Python and Rust alike (`_named_bold`/`_named_italic`, Rust's
   `named_bold`/`named_italic`), held by twenty-five new `pdf_text` oracle
   cases and by the shared `pdf_extraction` fixture,
   which gains a "Discussion" heading at body size in `AdvOTtest.B` (lost

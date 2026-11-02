@@ -1,41 +1,40 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-01 (**this session's PR is #630, for #628 (part)**, on
-`fix/628-bold-from-font-name`; see *This session* below). Earlier the same day PRs #629
-(#628, heading faces), #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4),
-#621 (Rust CSV), #620 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI**
-(tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
-crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
-*Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
-crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629 and #630._
+_Last updated: 2026-11-02 (**this session's PR is #NNN, for #628 (part)**, on
+`fix/628-ita-suffix`; see *This session* below). PRs #630 (#628, faces named
+bold or italic), #629 (#628, heading faces), #627 (pdf-5), #626 (#565), #625
+(#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged.
+**0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the
+Rust crate 0.3.0 is on crates.io** from the same commit; the CHANGELOG's
+`[0.12.0]` summary and *Changed — breaking* are the release notes; see
+`HANDOVER_RUST.md` for the crate's publish. Unreleased: PRs #613-#615,
+#620-#622, #625-#627, #629, #630 and this session's._
 
-## This session: a face named bold or italic is read as one (#628, part)
+## This session: an `Ita` suffix is read as italic (#628, part)
 
-MuPDF flags bold and italic from a font's own data and leaves Advent 3B2's
-`AdvOT….B`/`.I`/`.BI` faces (a `.B`/`.BI` face in 223 of the 1,114 local PDFs, a
-`.I`/`.BI` one in 203), `Heavy`,
-`Black`, `Extrabold`, `Demi` and a run-together `…It` unflagged.
-`TextBlock.is_bold`/`is_italic` are now the dominant span's flag **or** its
-font's name (`_named_bold`/`_named_italic` in `pdf_converter.py`, Rust
-`named_bold`/`named_italic` in `pdf_text.rs`, used by `line_to_block` and
-`MupdfExtractor`); a span keeps MuPDF's flags. Each word was kept only where it
-adds a face the flags miss (`Bd`, `Ital`, `Oblique` left out; `Medium` and `Semi`
-alone are not bold, nor `DemiLight`). Held by 25 `pdf_text` oracle cases and the `pdf_extraction`
-fixture (new faces `AdvOTtest.B`, `AdvOTtest.I`; `pdf_warnings.json`'s control
-sha moved with it, its warnings did not); every clause mutation-killed in both
-languages. **Measured** over `~/europepmc_pdf/pdf` (the lines cached by #629's
-session in one extraction): 44 papers move, 320 heading lines gained (250
-genuine, 29 *Front Matter*, 39 Hindawi run-ins carrying their first words, 2
-bold table header cells), 30 lost, each a lone *Full Text* placeholder.
-`PDF_CANONICAL_VERSION` stays 5, digest re-pinned. **#628 stays open** for an
-unnamed numbered parent dropping its children (a decision), run-in headings,
-and bold back matter under 0.9 of the body. PR #630's review added the
-`DemiLight` refusal (no corpus PDF uses it) and found an `Ita` suffix unread:
-MuPDF flags every `Ita` face found italic but `MetaSerifOT-BookIta` (one PDF),
-posted on #628 as its own item, since reading it needs the 44-paper diff
-re-run.
+`_named_italic` / Rust `named_italic` read a name ending in `Ita` after a
+lower-case letter or a hyphen as italic, as for `It`/`IT`. Four new
+`pdf_text` oracle cases; the clause is mutation-killed in both languages.
+**Measured** over the 1,114 cached PDFs (`/private/tmp/claude-501/-Users-hherb-src-bmlib/4a712057-6c90-4e29-a200-2246394e60e8/scratchpad/blocks.pkl`,
+one `TextBlock` list per PDF with MuPDF's flags only, segmented with and without the clause): the one unflagged `Ita`
+face, `MetaSerifOT-BookIta`, sets 17 lines in PMC10017001, all reference-list
+book titles. **No paper segments differently**, so #628's guess that it set a
+heading was wrong. `PDF_CANONICAL_VERSION` stays 5, digest re-pinned.
 
-## Earlier today (all merged; the CHANGELOG entries are the argument)
+**#628 stays open** for three items: run-in headings; bold back matter under
+0.9 of the body; and an unnumbered numbered parent that drops its children.
+**The maintainer decided that last one this session (2026-11-02): keep such a
+parent as an `OTHER` section when numbered children follow it**, so the
+children survive (PMC9798000 loses 19). It is ready to build: measure it over
+the same 1,114 PDFs, both directions, in Python and Rust.
+
+## Earlier, 2026-11-01 (all merged; the CHANGELOG entries are the argument)
+
+- **PR #630** (#628, part): `TextBlock.is_bold`/`is_italic` are the dominant
+  span's flag **or** its font's name (`AdvOT….B`/`.I`/`.BI`, `Heavy`,
+  `Black`, `Extrabold`, `Demi` but not `DemiLight`, a run-together `…It`).
+  44 papers move, 320 heading lines gained, 30 lost (each a lone *Full Text*
+  placeholder).
 
 - **PR #629** (#628, part): a line in a paper's own heading face (learned from
   its exact-match headings, less the body's face) is judged as bold;
@@ -92,7 +91,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -232,8 +231,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,906 passing + 165 skipped** on `fix/628-bold-from-font-name`
-  (`uv run pytest tests/ -v`, 2026-11-01; Rust 1,416 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
+- **Tests: 8,910 passing + 165 skipped** on `fix/628-ita-suffix`
+  (`uv run pytest tests/ -v`, 2026-11-02; Rust 1,416 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -263,7 +262,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **123 open** (`gh issue list --state open --limit 300 --json number`,
-2026-11-01, #628 among them, #617 still open for its Ollama half; #556–#628 are not yet
+2026-11-02, #628 among them, #617 still open for its Ollama half; #556–#628 are not yet
 sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

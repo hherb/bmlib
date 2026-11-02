@@ -743,6 +743,70 @@
     }
   },
   {
+    "name": "line_to_block/named-face/MetaSerifOT-BookIta",
+    "ok": true,
+    "value": {
+      "font_name": "MetaSerifOT-BookIta",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/ITCGaramondStd-LtIta",
+    "ok": true,
+    "value": {
+      "font_name": "ITCGaramondStd-LtIta",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/ArialKIta",
+    "ok": true,
+    "value": {
+      "font_name": "ArialKIta",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
+    "name": "line_to_block/named-face/Ita",
+    "ok": true,
+    "value": {
+      "font_name": "Ita",
+      "font_size": 10.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Methods",
+      "width": 228.0,
+      "x": 72.0,
+      "y": 100.0
+    }
+  },
+  {
     "name": "line_to_block/named-face/aIt",
     "ok": true,
     "value": {
@@ -842,7 +906,7 @@
     "name": "line_to_block/named-face/flag-and-name-each-add-a-half",
     "ok": true,
     "value": {
-      "font_name": "SwlhbwZapfHumanist601BT-DemiIta",
+      "font_name": "ZapfHumanist601BT-Demi",
       "font_size": 10.0,
       "height": 12.0,
       "is_bold": true,
