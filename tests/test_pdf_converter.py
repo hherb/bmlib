@@ -598,11 +598,15 @@ class TestLineToBlock:
             ("MinionPro-It", False, True),
             ("GulliverIT", False, True),
             ("aIt", False, True),
+            ("MetaSerifOT-BookIta", False, True),
+            ("ITCGaramondStd-LtIta", False, True),
+            # A corpus face, cut to 31 characters by MuPDF: both halves by name.
+            ("SwlhbwZapfHumanist601BT-DemiIta", True, True),
             ("Univers-Bold", True, False),
             ("Helvetica-Italic", False, True),
             # Not a weight or a slant: semi-condensed, a medium weight, a weight
             # lighter than regular, a body face, a lower-case "demi" inside a
-            # word, and an "IT" closing a capital run.
+            # word, an "IT" or "Ita" closing a capital run, and the bare suffixes.
             ("MyriadPro-SemiCn", False, False),
             ("GillSansMTPro-Medium", False, False),
             ("NotoSansCJKjp-DemiLight", False, False),
@@ -610,6 +614,8 @@ class TestLineToBlock:
             ("AcademicSans", False, False),
             ("ArialKIT", False, False),
             ("IT", False, False),
+            ("ArialKIta", False, False),
+            ("Ita", False, False),
             ("", False, False),
         ],
     )
@@ -623,10 +629,8 @@ class TestLineToBlock:
         assert (result.is_bold, result.is_italic) == (True, True)
 
     def test_a_flag_and_a_name_each_add_their_own_half(self):
-        # MuPDF reports this corpus face cut to 31 characters (from
-        # ``…-DemiItalic``) and flags it italic, not bold: the name supplies the
-        # bold, the flag the italic, ``Ita`` being a suffix the rule does not read.
-        line = self._line([self._span("Methods", font="SwlhbwZapfHumanist601BT-DemiIta", flags=2)])
+        # The name supplies the bold, the flag the italic.
+        line = self._line([self._span("Methods", font="ZapfHumanist601BT-Demi", flags=2)])
         result = _line_to_block(line, page_num=0)
         assert (result.is_bold, result.is_italic) == (True, True)
 

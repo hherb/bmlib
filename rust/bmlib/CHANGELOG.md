@@ -78,7 +78,9 @@ The Python library is documented separately, in the repository's
   (`named_bold`, `named_italic`, new in `fulltext::pdf_text`), since MuPDF
   leaves Advent 3B2's `AdvOT….B`/`.I`/`.BI` faces, `Heavy`, `Black`,
   `Extrabold`, `Demi` and a run-together `…It` unflagged (`DemiLight`, a
-  weight lighter than regular, is not bold; an `Ita` suffix is not read). A
+  weight lighter than regular, is not bold; an `…Ita` suffix is read as italic
+  since a later #628 change, `MetaSerifOT-BookIta` being the one such face MuPDF
+  leaves unflagged). A
   span keeps MuPDF's flags. Held by twenty-five new `pdf_text` oracle cases and by the
   shared `pdf_extraction` fixture, which gains a heading set in
   `AdvOTtest.B` at body size and an italic run in `AdvOTtest.I`.
