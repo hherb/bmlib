@@ -18,13 +18,14 @@ lower-case letter or a hyphen as italic, as for `It`/`IT`. Four new
 **Measured** over the 1,114 PDFs in `~/europepmc_pdf/pdf`, from one
 `extract_blocks` pass with MuPDF's flags only (held in a session scratchpad,
 so gone; rebuild it from the PDFs), segmented with and without the clause, and
-re-checked in PR #631's review: the one unflagged `Ita` face, `MetaSerifOT-BookIta`, sets 17 lines in PMC10017001, all reference-list
-book titles. **No paper segments differently**, so #628's guess that it set a
+re-checked in PR #631's review: the one unflagged `Ita` face,
+`MetaSerifOT-BookIta`, sets 17 lines in PMC10017001, all reference-list book
+titles. **No paper segments differently**, so #628's guess that it set a
 heading was wrong. `PDF_CANONICAL_VERSION` stays 5, digest re-pinned.
 
 **#628 stays open** for three items: run-in headings; bold back matter under
-0.9 of the body; and an unnamed numbered parent (a numbered top-level heading naming no
-section) that drops its children.
+0.9 of the body; and an unnamed numbered parent (a numbered top-level heading
+naming no section) that drops its children.
 **The maintainer decided that last one this session (2026-11-02): keep such a
 parent as an `OTHER` section when numbered children follow it**, so the
 children survive (PMC9798000 loses 19). It is ready to build: measure it over
