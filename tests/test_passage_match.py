@@ -52,6 +52,7 @@ from bmlib.citations.passage_match import (
     normalize_with_offsets,
     occurs_once,
 )
+from tests.test_renderer_version import normalised_tokens
 
 SENTENCES = [
     "Background: Atrial fibrillation is the most common sustained arrhythmia and is "
@@ -985,23 +986,27 @@ _GUARD_DATA = (
     "_CITATION_MARKER_SEPARATORS",
     "_NEGATION_MARKS",
 )
-CONTRADICTION_RULES_PINNED = (1, "cc7e1612f18b6a3d752abab4ae981acc483108c5e03bc8299bcd8445f9f20e68")
+CONTRADICTION_RULES_PINNED = (1, "43a06b0190bace8c6083220baa0494d064256f932986111d01e46d1a17b275d0")
 
 
 def _guard_digest() -> str:
-    """SHA-256 over the guard's code (docstrings and comments aside) and data."""
-    tree = ast.parse(Path(passage_match.__file__).read_text(encoding="utf-8"))
+    """SHA-256 over the guard's code (docstrings and comments aside) and data.
+
+    Tokens, not ``ast.dump``, whose output changed in Python 3.13: the digest
+    must agree on every interpreter CI runs.
+    """
+    source = Path(passage_match.__file__).read_text(encoding="utf-8")
     functions = {
         node.name: node
-        for node in tree.body
+        for node in ast.parse(source).body
         if isinstance(node, ast.FunctionDef) and node.name in _GUARD_FUNCTIONS
     }
     assert set(functions) == set(_GUARD_FUNCTIONS)
     parts = []
     for name in _GUARD_FUNCTIONS:
-        node = functions[name]
-        body = node.body[1:] if ast.get_docstring(node) is not None else node.body
-        parts.append(ast.dump(ast.Module(body=body, type_ignores=[])))
+        segment = ast.get_source_segment(source, functions[name])
+        assert segment is not None
+        parts.append(repr(normalised_tokens(segment)))
     for name in _GUARD_DATA:
         value = getattr(passage_match, name)
         if isinstance(value, dict):
