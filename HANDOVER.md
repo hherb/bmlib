@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-04 (**this session's PR is on
-`feat/635-stream-cancel`**, for #635; see *This session* below). PRs #648
+_Last updated: 2026-11-04 (**this session's PR is #650**, on
+`feat/635-stream-cancel`, for #635; see *This session* below). PRs #648
 (#632), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed parent), #631,
 #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4), #621
 (Rust CSV), #620 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI**
