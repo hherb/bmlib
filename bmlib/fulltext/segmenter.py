@@ -349,7 +349,7 @@ class SectionSegmenter:
 
     #: Anchored heading patterns per section type. Every
     #: :class:`SectionType` member except the reserved ``TITLE``,
-    #: ``FRONT_MATTER`` and ``UNKNOWN`` must have an entry here —
+    #: ``FRONT_MATTER``, ``OTHER`` and ``UNKNOWN`` must have an entry here —
     #: ``test_every_section_type_is_produced_or_declared_reserved`` enforces
     #: it, so a member added without a producer fails the build.
     SECTION_PATTERNS: dict[SectionType, list[str]] = {
@@ -607,14 +607,19 @@ class SectionSegmenter:
         search would read a bold credit line, "Methodology. A. Smith: ...", as
         Methods. A numbered heading's depth is its number's ("2.1." is 2); an
         unnumbered one is top level. A heading that names no section is kept
-        only as a subsection under an earlier, shallower heading, whose type
-        and confidence it takes, unless that heading's own number does not
-        open this one's: at top level there is no type to give it, and under a
-        heading it does not number from, the heading it does belong to was not
-        found ("3.1." after an unnamed "3. Metformin lowers glucose" is not
-        Methods' because "2." was). A line in a face the paper's exact-match
-        headings are set in (:meth:`_heading_faces`) counts as bold for the
-        heading test alone. A bold quantity numbered like a subsection
+        as a subsection under an earlier, shallower heading, whose type and
+        confidence it takes, unless that heading's own number does not open
+        this one's: under a heading it does not number from, the heading it
+        does belong to was not found. At top level there is no type to give
+        it, so a numbered one ("3. Metformin lowers glucose") is held and kept
+        as ``OTHER`` only if the next heading found numbers from it ("3.1."),
+        which then takes ``OTHER`` too if it names no section either (#628).
+        A line that is dropped does not end the hold; a heading found, or a
+        later line held, does. An unnumbered one is dropped, and so is one
+        repeating the number of the outermost heading still open (a figure's
+        "2 Theta degrees" axis label under "2. Results"). A line in a face
+        the paper's exact-match headings are set in (:meth:`_heading_faces`)
+        counts as bold for the heading test alone. A bold quantity numbered like a subsection
         ("2.5 mg/kg" under "2.", "1.5 h" under an unnumbered "Results") still
         reads as one, and so does a line of prose opening with one in a
         heading face (#623).
@@ -622,6 +627,9 @@ class SectionSegmenter:
         markers: list[_Marker] = []
         # The headings enclosing the current one, outermost first.
         enclosing: list[_Marker] = []
+        # An unnamed numbered top-level heading, kept if the next marker
+        # numbers from it.
+        pending: _Marker | None = None
         faces = self._heading_faces(blocks, median_font_size)
         i = 0
         while i < len(blocks):
@@ -638,18 +646,29 @@ class SectionSegmenter:
             heading_sized = block.font_size >= median_font_size * self.font_size_threshold
             if not heading_sized and confidence < 1.0 and numbered is None:
                 section_type = SectionType.UNKNOWN
+            if (
+                pending is not None
+                and depth > 1
+                and _numbers_from(title, heading_number(pending.title))
+            ):
+                markers.append(pending)
+                enclosing = [pending]
             # Left as is until a marker is made: a line that is not one
             # closes nothing.
             parents = [m for m in enclosing if m.depth < depth]
             if section_type is SectionType.UNKNOWN:
                 parent_number = heading_number(parents[-1].title) if parents else None
                 if depth == 1 or not parents or not _numbers_from(title, parent_number):
+                    open_number = heading_number(enclosing[0].title) if enclosing else None
+                    if depth == 1 and numbered is not None and heading_number(title) != open_number:
+                        pending = _Marker(i, end, SectionType.OTHER, title, confidence, 1)
                     i += 1
                     continue
                 section_type, confidence = parents[-1].section_type, parents[-1].confidence
             marker = _Marker(i, end, section_type, title, confidence, depth)
             markers.append(marker)
             enclosing = [*parents, marker]
+            pending = None
             i = end
         return markers
 

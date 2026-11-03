@@ -708,14 +708,19 @@ pub struct Marker {
 /// match a pattern exactly or carry a section number: the search would read a
 /// bold credit line, `"Methodology. A. Smith: ..."`, as Methods. A numbered
 /// heading's depth is its number's; an unnumbered one is top level. A heading
-/// that names no section is kept only as a subsection under an earlier,
-/// shallower heading, whose type and confidence it takes, unless that heading's
-/// own number does not open this one's: at top level there is no type to give
-/// it, and under a heading it does not number from, the heading it does belong
-/// to was not found (`"3.1."` after an unnamed `"3. Metformin lowers glucose"`
-/// is not Methods' because `"2."` was). A line in a face the paper's
-/// exact-match headings are set in counts as bold for the heading test alone
-/// (#628). A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
+/// that names no section is kept as a subsection under an earlier, shallower
+/// heading, whose type and confidence it takes, unless that heading's own
+/// number does not open this one's: under a heading it does not number from,
+/// the heading it does belong to was not found. At top level there is no type
+/// to give it, so a numbered one (`"3. Metformin lowers glucose"`) is held and
+/// kept as [`SectionType::Other`] only if the next heading found numbers from it
+/// (`"3.1."`), which then takes `Other` too if it names no section either
+/// (#628). A line that is dropped does not end the hold; a heading found, or a
+/// later line held, does. An unnumbered one is dropped, and so is one
+/// repeating the number of the outermost heading still open (a figure's
+/// `"2 Theta degrees"` axis label under `"2. Results"`). A line in a face the
+/// paper's exact-match headings are set in counts as bold for the heading test
+/// alone (#628). A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
 /// `"2."`, `"1.5 h"` under an unnumbered `"Results"`) still reads as one, and
 /// so does a line of prose opening with one in a heading face (#623).
 #[must_use]
@@ -729,6 +734,9 @@ pub fn identify_section_markers(
     // The headings enclosing the current one, outermost first, as indices
     // into `markers`.
     let mut enclosing: Vec<usize> = Vec::new();
+    // An unnamed numbered top-level heading, kept if the next marker numbers
+    // from it.
+    let mut pending: Option<Marker> = None;
     let faces = heading_faces(blocks, median, font_size_threshold, min_heading_size);
     let mut index = 0;
     while index < blocks.len() {
@@ -760,6 +768,12 @@ pub fn identify_section_markers(
         if !heading_sized && confidence < 1.0 && numbered.is_none() {
             section_type = SectionType::Unknown;
         }
+        if let Some(held) =
+            pending.take_if(|held| depth > 1 && numbers_from(&title, heading_number(&held.title)))
+        {
+            markers.push(held);
+            enclosing = vec![markers.len() - 1];
+        }
         // Left as is until a marker is made: a line that is not one closes
         // nothing.
         let parents: Vec<usize> = enclosing
@@ -772,6 +786,19 @@ pub fn identify_section_markers(
                 .last()
                 .filter(|&&p| depth > 1 && numbers_from(&title, heading_number(&markers[p].title)))
             else {
+                let open_number = enclosing
+                    .first()
+                    .and_then(|&m| heading_number(&markers[m].title));
+                if depth == 1 && numbered.is_some() && heading_number(&title) != open_number {
+                    pending = Some(Marker {
+                        index,
+                        end,
+                        section_type: SectionType::Other,
+                        title,
+                        confidence,
+                        depth: 1,
+                    });
+                }
                 index += 1;
                 continue;
             };
@@ -788,6 +815,7 @@ pub fn identify_section_markers(
         });
         enclosing = parents;
         enclosing.push(markers.len() - 1);
+        pending = None;
         index = end;
     }
     markers
