@@ -205,7 +205,7 @@ to a value read *wrongly* without raising** — assert what the run
 **a malformed fixture reads as a measurement**. **A measured *majority* is an
 argument against a diagnostic** (#235) and **a measured-empty population is an
 argument for closing an issue, not for building it** (#204, #207, #210).
-**Run a correctness review and a claims review before the PR.**
+**Run a correctness review and a claims review before the PR.** **A retry predicate over an error a seam has flattened retries whatever the flattening hid** (#641's pre-PR review): `ChatSource::chat` returns a `String`, `chat_json` wraps every one as its `Transport`, so `LlmContextModel::complete_json` first retried a missing key and a malformed answer as an outage; carry the kind past the seam and test a non-transport failure on every path the predicate guards.
 
 *Owner rules.* **A comment naming which elements can reach a branch is a claim
 the Tag Library settles** — #231's pop said `</front>` was the only owner whose

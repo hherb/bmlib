@@ -11,6 +11,28 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`quality::LlmContextModel`** (#641): the first production `ContextModel`,
+  over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
+  run against a real model. `complete` is a plain chat whose output-ceiling
+  stop reason is an error; `complete_json` reads through `agents::chat_json`
+  (`CONTEXT_MODEL_JSON_RETRIES`, Python's default). Each call retries a
+  `ChatError::Transport` (an HTTP error status among them) up to
+  `CONTEXT_MODEL_ATTEMPTS` (3) tries from `LlmClient::retry_base_delay`,
+  doubling, never once its stop is set: the attempts and backoff of Python's
+  `LLMChunkProcessor`, which also retries what is not a `Transport` (#646). A
+  call whose tries ran out says `after 3 attempts:`.
+- **`num_ctx` and a stop for the PICO agent** (#640, #642, with the Python
+  library): `LlmChat::with_num_ctx`/`with_stop` and
+  `LlmContextModel::with_num_ctx`/`with_stop` send the window with every
+  request and refuse to send once the flag is set (`STOPPED_MESSAGE`), so
+  `chat_json`'s re-asks stop too; `PicoAgent::with_stop` turns any error while
+  the flag is set, and a condensation that finished while it was set, into the
+  new `PicoError::Stopped(Option<String>)` (`"stopped"`; the enum is
+  `#[non_exhaustive]`), carrying the message of the failure it replaces, where
+  that was more than the stop's own refusal.
+  `tests/pico_stop_contract.rs` reads the shared fixture
+  `tests/fixtures/pico_stop_num_ctx.json`.
+
 - **`PicoAgent::prepare`, `check_suitability_prepared` and `extract_prepared`**
   (#638, with the Python library): condense a long paper once and hand the
   `PicoPrepared` to both calls and to every retry, where each call condensed
@@ -73,6 +95,9 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`LlmChat` is `#[non_exhaustive]`** (#640, #642), with two new public
+  fields, `num_ctx` and `stop`: build it with `LlmChat::new` and the `with_`
+  methods, so a later field breaks no caller again. `LlmContextModel` is too.
 - **`ModelError::Http` is split** into **`ModelError::Transport(String)`** (no
   connection, a timeout, a stall, a read that failed or a body that broke off)
   and **`ModelError::Status { status, message }`** (a refused request), and

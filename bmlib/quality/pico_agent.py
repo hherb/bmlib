@@ -41,19 +41,29 @@ needs no quote.
 Nothing is truncated: text too long for one context is condensed first by the
 Cochrane assessor's map-reduce, and the quotes are still verified against the
 original text, never the digest.  Nothing is discarded for low confidence.
+
+``num_ctx`` reaches every request, the condenser's included (#640), and a
+``stop`` ends a run before its next request (#642).
 """
 
 from __future__ import annotations
 
 import logging
 import math
+import threading
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from bmlib.agents.base import BaseAgent, ChatJsonError, ChatJsonTruncatedError
+from bmlib.agents.base import (
+    BaseAgent,
+    ChatJsonError,
+    ChatJsonTruncatedError,
+    ChatStoppedError,
+)
 from bmlib.citations import find_passage
-from bmlib.context_processor import ProcessingConfig
-from bmlib.llm import LLMClient
+from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError
+from bmlib.llm import LLMClient, LLMMessage, LLMResponse
+from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_bool, as_text
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
@@ -101,6 +111,14 @@ _BUG_TYPES: tuple[type[BaseException], ...] = (
 #: (PR #615's review).  An unknown provider is refused before any request
 #: instead, by :meth:`PicoAgent._check_provider`.
 _NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ImportError)
+
+
+#: What the stop's refusal and :attr:`PicoErrorKind.STOPPED` say.
+STOPPED_MESSAGE = "stopped before the next request was sent"
+
+#: A stop: an ``Event`` or a zero-argument callable answering "stop now?",
+#: which must not raise.
+Stop = threading.Event | Callable[[], bool]
 
 
 class _UnreadableReplyError(ValueError):
@@ -496,6 +514,17 @@ class PicoAgent(BaseAgent):
         condense_config: The budget beyond which text is condensed first;
             ``max_context_chars`` defaults to the Cochrane assessor's
             :data:`~bmlib.quality.cochrane_assessor.DEFAULT_CONDENSE_THRESHOLD_CHARS`.
+        num_ctx: The window, in tokens, Ollama loads the model with, sent with
+            every request (the condenser's included); ``None`` sends none,
+            leaving Ollama's own, often much smaller, default.  Other
+            providers ignore it (#640).
+        stop: Read before every request, the condenser's included (#642).
+            Once it answers true no request is sent, and the call under way
+            raises ``PicoError`` ``STOPPED``, whatever else went wrong, except
+            what propagates unwrapped (a bmlib defect, a missing SDK; #573).  A
+            request already sent runs to its end; a call that then succeeds
+            returns its result, so a caller that must not keep it reads the
+            stop again.  A callable must not raise.
     """
 
     def __init__(
@@ -506,7 +535,17 @@ class PicoAgent(BaseAgent):
         temperature: float = 0.1,
         max_tokens: int = 4096,
         condense_config: ProcessingConfig | None = None,
+        num_ctx: int | None = None,
+        stop: Stop | None = None,
     ) -> None:
+        if num_ctx is not None and (
+            isinstance(num_ctx, bool)
+            or not isinstance(num_ctx, int)
+            or not 0 < num_ctx <= MAX_NUM_CTX
+        ):
+            raise ValueError(f"num_ctx must be an int in 1..{MAX_NUM_CTX}, got {num_ctx!r}")
+        self._num_ctx = num_ctx
+        self._stop_requested = _stop_reader(stop)
         super().__init__(
             llm=llm,
             model=model,
@@ -517,6 +556,30 @@ class PicoAgent(BaseAgent):
         self.condense_config = condense_config or ProcessingConfig(
             max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
         )
+
+    @property
+    def num_ctx(self) -> int | None:
+        """The window sent with every request; read-only, being checked once."""
+        return self._num_ctx
+
+    def stop_requested(self) -> bool:
+        """Whether the agent's stop is set."""
+        return self._stop_requested()
+
+    def chat(self, messages: list[LLMMessage], **kwargs: Any) -> LLMResponse:
+        """:meth:`BaseAgent.chat` with ``num_ctx``, refused once stopped.
+
+        Every request this agent makes passes here: its own (through
+        ``chat_json``, whose re-asks are refused too) and the condenser's.
+
+        Raises:
+            ChatStoppedError: The stop is set; nothing was sent.
+        """
+        if self.stop_requested():
+            raise ChatStoppedError(STOPPED_MESSAGE)
+        if self._num_ctx is not None:
+            kwargs["num_ctx"] = self._num_ctx
+        return super().chat(messages, **kwargs)
 
     def prepare(self, title: str | None, text: str | None) -> PicoPrepared:
         """Make a paper ready for both PICO calls, condensing it at most once (#638).
@@ -536,7 +599,7 @@ class PicoAgent(BaseAgent):
             The prepared paper.
 
         Raises:
-            PicoError: ``EMPTY_INPUT`` or ``CONDENSATION_FAILED``.
+            PicoError: ``EMPTY_INPUT``, ``CONDENSATION_FAILED`` or ``STOPPED``.
             ValueError: The model's provider is unknown.
             ImportError: The provider's SDK is not installed.
         """
@@ -662,6 +725,7 @@ class PicoAgent(BaseAgent):
         if len(text) <= self.condense_config.max_context_chars:
             return PicoPrepared(title, original)
 
+        self._raise_if_stopped()
         try:
             digest, notes, status = condense_text(
                 self,
@@ -673,12 +737,18 @@ class PicoAgent(BaseAgent):
                 query=PICO_CONDENSE_QUERY,
                 stage=stage,
             )
+        except ProcessingStoppedError as exc:
+            raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from exc
         except CondensationRefusedError as exc:
+            self._raise_if_stopped(exc)
             raise PicoError(
                 PicoErrorKind.CONDENSATION_FAILED,
                 f"a {len(text)}-character text could not be condensed to fit "
                 f"{self.condense_config.max_context_chars} characters: {exc}",
             ) from exc
+        # A run stopped part-way can finish with a partial digest, which is
+        # no digest of the paper.
+        self._raise_if_stopped()
         return PicoPrepared(title, original, digest, status.value, tuple(notes))
 
     def _sent(self, prepared: PicoPrepared) -> str:
@@ -747,16 +817,17 @@ class PicoAgent(BaseAgent):
 
         problem: _UnreadableReplyError | None = None
         for attempt in range(_READ_ATTEMPTS):
+            self._raise_if_stopped()
             try:
                 data = self.chat_json(messages, retry_context=label, require_dict=True)
-            except ChatJsonTruncatedError as exc:
-                raise PicoError(PicoErrorKind.TRUNCATED, str(exc)) from exc
-            except ChatJsonError as exc:
-                raise PicoError(PicoErrorKind.UNUSABLE_REPLY, str(exc)) from exc
+            except ChatStoppedError as exc:
+                raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from exc
             except _NOT_A_REQUEST_FAILURE:
                 raise
             except Exception as exc:
-                raise PicoError(PicoErrorKind.REQUEST_FAILED, str(exc)) from exc
+                # A stop set during the call wins over whatever it raised.
+                self._raise_if_stopped(exc)
+                raise _request_error(exc) from exc
             try:
                 return read(data)
             except _UnreadableReplyError as exc:
@@ -772,3 +843,36 @@ class PicoAgent(BaseAgent):
             PicoErrorKind.UNUSABLE_REPLY,
             f"{label}: {_READ_ATTEMPTS} replies could not be read: {problem}",
         ) from problem
+
+    def _raise_if_stopped(self, cause: BaseException | None = None) -> None:
+        """Raise ``STOPPED`` when the stop is set, chained to *cause*.
+
+        Raises:
+            PicoError: ``STOPPED``.
+        """
+        if self.stop_requested():
+            raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from cause
+
+
+def _request_error(exc: Exception) -> PicoError:
+    """The ``PicoError`` a failed ``chat_json`` call is reported as."""
+    if isinstance(exc, ChatJsonTruncatedError):
+        return PicoError(PicoErrorKind.TRUNCATED, str(exc))
+    if isinstance(exc, ChatJsonError):
+        return PicoError(PicoErrorKind.UNUSABLE_REPLY, str(exc))
+    return PicoError(PicoErrorKind.REQUEST_FAILED, str(exc))
+
+
+def _stop_reader(stop: Stop | None) -> Callable[[], bool]:
+    """A zero-argument callable answering whether *stop* is set.
+
+    Raises:
+        TypeError: *stop* is neither an ``Event`` nor callable.
+    """
+    if stop is None:
+        return lambda: False
+    if isinstance(stop, threading.Event):
+        return stop.is_set
+    if callable(stop):
+        return stop
+    raise TypeError(f"stop must be a threading.Event or a callable, got {stop!r}")

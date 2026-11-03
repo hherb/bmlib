@@ -81,7 +81,10 @@ pub mod quality_agent;
 pub mod scoring_models;
 pub mod study_classifier;
 
-pub use agent_chat::{format_template, JsonChat, LlmChat};
+pub use agent_chat::{
+    format_template, JsonChat, LlmChat, LlmContextModel, CONTEXT_MODEL_ATTEMPTS,
+    CONTEXT_MODEL_JSON_RETRIES, STOPPED_MESSAGE,
+};
 pub use cochrane_assessor::{
     parse_cochrane_assessment, render_condense_consolidation, render_condense_extraction,
     AssessOptions, CochraneAssessor, CochraneStats, Condenser, LlmCondenser, StudyInput,

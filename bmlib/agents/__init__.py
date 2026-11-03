@@ -23,6 +23,7 @@ from bmlib.agents.base import (
     ChatJsonTruncatedError,
     ChatJsonUnparseableError,
     ChatJsonWrongShapeError,
+    ChatStoppedError,
 )
 from bmlib.agents.metrics import PerformanceMetrics
 
@@ -33,5 +34,6 @@ __all__ = [
     "ChatJsonTruncatedError",
     "ChatJsonUnparseableError",
     "ChatJsonWrongShapeError",
+    "ChatStoppedError",
     "PerformanceMetrics",
 ]

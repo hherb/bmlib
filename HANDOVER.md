@@ -1,38 +1,70 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-03 (**this session's PR is #643**, on `fix/633-download-error-kinds`,
-for #633; see *This session* below). PRs #639 (#638, PICO prepare), #637 (#628,
-unnamed parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625
-(#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613
+_Last updated: 2026-11-03 (**this session's PR is #644**, on `feat/pico-num-ctx-stop`,
+for #640, #641 and #642; see *This session* below). PRs #639 (#638), #637
+(#628, unnamed parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565),
+#625 (#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613
 merged. **0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611)
 and **the Rust crate 0.3.0 is on crates.io** from the same commit; the
 CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the release notes;
 see `HANDOVER_RUST.md` for the crate's publish. Unreleased: PRs #613-#615,
 #620-#622, #625-#627, #629-#631, #637, #639 and this session's._
 
-## This session: a failed download says whether a retry may succeed (#633)
+## This session: the PICO agent sends `num_ctx` and can be stopped (#640–#642)
 
-Filed from StudyAnalyzer phase 2b: `download_model`'s 404 and a dropped
-connection were one error, so a 404 was retried with backoff. **Python**:
-`ModelStatusError` (`.status`, `.message`) and `ModelTransportError`, both a
-`ModelDownloadError(OSError)` with `.retryable` (a transport fault, or 408,
-429, 5xx); a file-system failure stays a plain `OSError`. **Rust**:
-`ModelError::Http` split into `Transport(String)` and `Status { status,
-message }`, plus `ModelError::is_retryable()` (a breaking change, in the
-crate's *Changed — breaking*). One value moves in each: a body ending short of
-its `Content-Length` was `SizeMismatchError` (Python) / `Io` (Rust) and is a
-transport fault in both now. The shared `embedding_contract.json` has a
-`download_errors` section both suites read. **For StudyAnalyzer**: retry only
-when `is_retryable()`.
+Filed and built for StudyAnalyzer's plan 2c, Task 1. **Python**:
+`PicoAgent(..., num_ctx=None, stop=None)`; the agent's own `chat()` adds
+`num_ctx` and refuses to send once the stop is set (`ChatStoppedError`, new in
+`bmlib.agents`), and every request, the condenser's included, passes there;
+the call under way becomes `PicoError` `STOPPED`. `LLMChunkProcessor` retries a
+failed request with backoff (`CONTEXT_MODEL_ATTEMPTS`, Cochrane's condensation
+too). **Rust**: `LlmChat::with_num_ctx`/`with_stop`, the new
+`quality::LlmContextModel` (the first production `ContextModel`: a transport
+failure retried with backoff, never once stopped) and `PicoAgent::with_stop`
+→ `PicoError::Stopped`. It lives in `quality/agent_chat.rs`, not
+`context_processor`, which keeps no LLM dependency. **Shared fixture**
+`tests/fixtures/pico_stop_num_ctx.json`: 16 cases over a fake Ollama HTTP
+transport (Python's ollama-python over an `httpx.MockTransport`, Rust's
+`HttpClient`) and the real map-reduce, each language counting the requests
+and each one's `num_ctx` key (they agree, four condensation requests, a batch
+lost to three failed attempts and an unretried malformed answer included), and
+both pin `CONTEXT_MODEL_ATTEMPTS` to the fixture's. Mutation: 17 mutants on
+the new guards; two Python checks were equivalent (the agent is its own chat
+and condenser) and were deleted, the rest are killed. **PR #644's review**
+(five reviewers): a stop during the map-reduce now ends it with
+`ProcessingStoppedError` (no ERROR per batch left), `BaseAgent.stop_requested()`
+skips the backoff before a refused retry in Python as Rust does, STOPPED is
+decided by the refusal's type, `num_ctx` is read-only, Rust's `Stopped`
+carries the failure it replaces, `LlmChat`/`LlmContextModel` are
+`#[non_exhaustive]`, and two false docstring claims were corrected; 14 Python
+and 3 Rust mutants on those, all killed. Retrying a permanent HTTP refusal is
+filed as **#646** (a decision; Rust's `Transport` carries the status as text).
+**For
+StudyAnalyzer plan 2c**: build `LlmChat` and `LlmContextModel` with the same
+window and flag, and `PicoAgent::with_stop` with that flag; read the flag
+again after a call that succeeded.
 
-## Earlier, 2026-11-03: a long paper is condensed once for both PICO calls (PR #639, merged)
+## Earlier, 2026-11-03: a long paper is condensed once for both PICO calls (#638, PR #639, merged)
 
-`PicoAgent.prepare(title, text)` → storable `PicoPrepared`;
-`check_suitability_prepared`/`extract_prepared` take it, one request each; one
-prepared for another budget is refused before any request. **For
-StudyAnalyzer plan 2c**: `prepare` once per paper, retry only
-`extract_prepared` on `RequestFailed`, and build the agent that uses a stored
-prepared paper with the same `condense_config`.
+Filed from StudyAnalyzer's plan 2c review (hherb/StudyAnalyzer#56):
+`check_suitability` and `extract` each condensed their own text, and a retried
+extraction condensed again. **`PicoAgent.prepare(title, text)`** returns a
+frozen, storable **`PicoPrepared`** (stripped title, the text as passed, digest
+or `None`, status, notes); **`check_suitability_prepared`** and
+**`extract_prepared`** take it, one request each, quotes still verified against
+the text. The direct calls route through the same code and send exactly what
+they sent (the 37 old oracle expectations did not move); a prepared paper's
+note names both calls. One prepared for another budget — sending more than the
+agent's own, or condensed though the agent would send its text whole — is
+refused before any request (Python `ValueError`, Rust the new
+`PicoError::PreparedOverBudget`/`PreparedUnderBudget`). Rust has the same API,
+`from_json` refusing word for word what `from_dict` refuses (an unstripped title
+and a digest of an empty text among them, after PR #639's review); the PICO
+oracle gains 23 cases (the shared fixture the issue asked for). **For StudyAnalyzer plan 2c**: call
+`prepare` once per paper (persist `to_json` if wanted), then
+`check_suitability_prepared` and `extract_prepared`, retrying only the latter
+on `RequestFailed`; build the agent that uses a stored prepared paper with the
+same `condense_config`.
 
 ## Earlier, 2026-11-02: an unnamed numbered parent keeps its subsections (PR #637, merged)
 

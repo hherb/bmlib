@@ -4724,6 +4724,11 @@ class TestTheRestatedBugTypesMatchTheOtherModules:
 
         assert set(lookup._BUG_TYPES) == set(_BUG_TYPES)
 
+    def test_the_model_call_retrys_copy_holds_the_same_types(self):
+        from bmlib.context_processor import llm_processor
+
+        assert set(llm_processor._BUG_TYPES) == set(_BUG_TYPES)
+
     def test_the_pico_agents_copy_holds_the_same_types(self):
         from bmlib.quality import pico_agent
 

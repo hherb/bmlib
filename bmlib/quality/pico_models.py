@@ -67,6 +67,11 @@ class PicoErrorKind(Enum):
     #: during the map-reduce (retrying may help), an empty digest, or one still
     #: over the budget (a larger budget, or another model).
     CONDENSATION_FAILED = "condensation_failed"
+    #: The caller's stop was set: the call ended before its next request
+    #: (#642).  A request under way that failed, or a condensation that
+    #: finished (its digest may be partial), is reported as this instead, the
+    #: failure chained as the cause; a request that succeeded returns its result.
+    STOPPED = "stopped"
 
 
 class PicoError(Exception):

@@ -30,6 +30,7 @@ from bmlib.agents.base import (
     ChatJsonTruncatedError,
     ChatJsonUnparseableError,
     ChatJsonWrongShapeError,
+    ChatStoppedError,
 )
 from bmlib.agents.metrics import PerformanceMetrics
 from bmlib.llm.data_types import BatchEmbeddingResponse, EmbeddingResponse, LLMResponse
@@ -278,6 +279,21 @@ class TestChatJson:
         assert result == {"study_design": "rct"}
         assert agent.llm.chat.call_count == 1
         mock_sleep.assert_not_called()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_stop_before_a_retry_sends_and_waits_for_nothing(self, mock_sleep):
+        # #642: an agent reading a stop is not made to wait out the backoff
+        # for a retry it would refuse.
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [_make_response("")]
+        with patch.object(agent, "stop_requested", side_effect=[True]):
+            with pytest.raises(ChatStoppedError, match="stopped before retry 2"):
+                agent.chat_json([agent.user_msg("test")])
+        assert agent.llm.chat.call_count == 1
+        mock_sleep.assert_not_called()
+
+    def test_a_plain_agent_never_stops(self):
+        assert _make_agent().stop_requested() is False
 
     @patch("bmlib.agents.base.time.sleep")
     def test_retry_after_empty_response(self, mock_sleep):

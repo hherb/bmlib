@@ -56,6 +56,7 @@ from bmlib.context_processor.data_types import (
     ProcessingConfig,
     ProcessingResult,
     ProcessingStatus,
+    ProcessingStoppedError,
     ProgressInfo,
 )
 
@@ -132,6 +133,7 @@ __all__ = [
     "ProcessingConfig",
     "ProcessingResult",
     "ProcessingStatus",
+    "ProcessingStoppedError",
     "ProgressCallback",
     "ProgressInfo",
     "ScoredChunk",

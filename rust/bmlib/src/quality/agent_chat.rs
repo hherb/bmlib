@@ -37,9 +37,40 @@
 //! `StudyClassifier`'s docstring says so outright — and `chat_json` reads them
 //! off `self`. So the tier passes them through on every call, and a tier's
 //! constructor is where they are set.
+//!
+//! # The window and the stop
+//!
+//! [`LlmChat`] and [`LlmContextModel`] (the condenser's model) carry Ollama's
+//! `num_ctx` (#640) and a stop read before every request (#642). A set stop
+//! refuses the request with [`STOPPED_MESSAGE`]; the agent turns that, and
+//! any other error while the stop is set, into its own "stopped" error, since
+//! [`ChatJsonError`] and a [`ContextModel`]'s `String` carry no stop.
 
-use crate::agents::{chat_json, ChatJsonError, ChatJsonOutcome, ChatSource};
-use crate::llm::{ChatRequest, LLMMessage, LLMResponse, LlmClient};
+use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use serde_json::Value;
+
+use crate::agents::{
+    chat_json, ChatJsonError, ChatJsonOutcome, ChatSource, TRUNCATION_STOP_REASONS,
+};
+use crate::context_processor::llm_processor::ContextModel;
+use crate::llm::{ChatError, ChatRequest, LLMMessage, LLMResponse, LlmClient};
+
+/// What a request refused by a set stop reports.
+pub const STOPPED_MESSAGE: &str = "stopped before the next request was sent";
+
+/// Tries per [`LlmContextModel`] call: one and two retries, as many as
+/// Python's Anthropic and OpenAI SDKs make by default and as Python's
+/// `LLMChunkProcessor` makes (`CONTEXT_MODEL_ATTEMPTS`). [`LlmClient::chat`]
+/// retries nothing (#561), so without this one failed request in a long
+/// map-reduce drops its batch's passages, or fails the condensation when no
+/// batch succeeds (#641).
+pub const CONTEXT_MODEL_ATTEMPTS: u32 = 3;
+
+/// `chat_json`'s attempts per structured [`LlmContextModel`] call, Python's
+/// `BaseAgent.chat_json` default, which its `_extract_structured` leaves.
+pub const CONTEXT_MODEL_JSON_RETRIES: usize = 3;
 
 /// Asking a model for a JSON answer, with the messages under the caller's control.
 ///
@@ -71,21 +102,48 @@ pub trait JsonChat {
 /// a JSON object — and hands it to
 /// [`crate::agents::chat_json`] through a [`ChatSource`], so the retry,
 /// truncation and shape rules are the library's and not a second copy.
+///
+/// `#[non_exhaustive]`: built with [`LlmChat::new`] and the `with_` methods,
+/// so a later field breaks no caller.
+#[non_exhaustive]
 pub struct LlmChat<'a> {
     /// The client the request is sent through.
     pub client: &'a LlmClient,
     /// The `"provider:model_name"` string, as the Python's agent holds it.
     pub model: String,
+    /// The window Ollama loads the model with, in tokens; `None` sends none,
+    /// leaving Ollama's own, often much smaller, default. Other providers
+    /// ignore it.
+    pub num_ctx: Option<NonZeroU32>,
+    /// Read before every request, `chat_json`'s re-asks included: once set,
+    /// nothing more is sent and the call fails with [`STOPPED_MESSAGE`].
+    pub stop: Option<&'a AtomicBool>,
 }
 
 impl<'a> LlmChat<'a> {
-    /// A chat seam over `client`, sending to `model`.
+    /// A chat seam over `client`, sending to `model`, with no window and no stop.
     #[must_use]
     pub fn new(client: &'a LlmClient, model: impl Into<String>) -> Self {
         LlmChat {
             client,
             model: model.into(),
+            num_ctx: None,
+            stop: None,
         }
+    }
+
+    /// Send `num_ctx` with every request (`None` sends none).
+    #[must_use]
+    pub fn with_num_ctx(mut self, num_ctx: Option<NonZeroU32>) -> Self {
+        self.num_ctx = num_ctx;
+        self
+    }
+
+    /// Refuse every request once `stop` is set.
+    #[must_use]
+    pub fn with_stop(mut self, stop: &'a AtomicBool) -> Self {
+        self.stop = Some(stop);
+        self
     }
 }
 
@@ -105,11 +163,14 @@ impl JsonChat for LlmChat<'_> {
             max_tokens,
             // Python's `chat_json` calls `self.chat(..., json_mode=True)`.
             json_mode: true,
+            num_ctx: self.num_ctx,
             ..ChatRequest::default()
         };
         let mut source = ClientSource {
             client: self.client,
             request,
+            stop: self.stop,
+            transport_failed: false,
         };
         chat_json(
             &mut source,
@@ -130,17 +191,205 @@ impl JsonChat for LlmChat<'_> {
 struct ClientSource<'a> {
     client: &'a LlmClient,
     request: ChatRequest,
+    stop: Option<&'a AtomicBool>,
+    /// Whether the last attempt failed with [`ChatError::Transport`]:
+    /// [`ChatSource::chat`]'s `String` loses the kind, and
+    /// [`LlmContextModel`] retries that kind alone.
+    transport_failed: bool,
 }
 
 impl ChatSource for ClientSource<'_> {
     fn chat(&mut self, _attempt: usize) -> Result<LLMResponse, String> {
-        self.client.chat(&self.request).map_err(|e| e.to_string())
+        if is_set(self.stop) {
+            return Err(STOPPED_MESSAGE.to_string());
+        }
+        let outcome = self.client.chat(&self.request);
+        self.transport_failed = matches!(outcome, Err(ChatError::Transport(_)));
+        outcome.map_err(|e| e.to_string())
     }
 
     fn backoff(&mut self, attempt: usize) {
+        // The next attempt is refused anyway; waiting for it gains nothing.
+        if is_set(self.stop) {
+            return;
+        }
         // Python's `2 ** (attempt - 1)`: 1s, 2s, 4s …
         let seconds = 1u64 << attempt.saturating_sub(1).min(63);
         std::thread::sleep(std::time::Duration::from_secs(seconds));
+    }
+}
+
+/// Whether an optional stop is set.
+fn is_set(stop: Option<&AtomicBool>) -> bool {
+    stop.is_some_and(|stop| stop.load(Ordering::SeqCst))
+}
+
+/// A [`ContextModel`] over a real [`LlmClient`]: the condenser's model (#641).
+///
+/// Python's `LLMChunkProcessor` runs over the agent itself; this is the same
+/// two calls over the client. [`complete`](ContextModel::complete) is a plain
+/// chat whose output-ceiling stop reason is an error, as the trait requires;
+/// [`complete_json`](ContextModel::complete_json) goes through
+/// [`crate::agents::chat_json`] (Python's `_extract_structured` calls
+/// `agent.chat_json`), so a non-object is an error after its re-asks.
+///
+/// Each call retries a transport failure ([`ChatError::Transport`], an HTTP
+/// error status among them, a permanent 4xx included: #646) up to [`CONTEXT_MODEL_ATTEMPTS`] tries, waiting
+/// [`LlmClient::retry_base_delay`] and doubling, and never once the stop is
+/// set; a set stop sends nothing. A call whose tries ran out says how many
+/// were made. `#[non_exhaustive]`, as [`LlmChat`] is.
+#[non_exhaustive]
+pub struct LlmContextModel<'a> {
+    /// The client the requests are sent through.
+    pub client: &'a LlmClient,
+    /// The `"provider:model_name"` string.
+    pub model: String,
+    /// As [`LlmChat::num_ctx`].
+    pub num_ctx: Option<NonZeroU32>,
+    /// As [`LlmChat::stop`].
+    pub stop: Option<&'a AtomicBool>,
+}
+
+impl<'a> LlmContextModel<'a> {
+    /// A model over `client`, sending to `model`, with no window and no stop.
+    #[must_use]
+    pub fn new(client: &'a LlmClient, model: impl Into<String>) -> Self {
+        LlmContextModel {
+            client,
+            model: model.into(),
+            num_ctx: None,
+            stop: None,
+        }
+    }
+
+    /// Send `num_ctx` with every request (`None` sends none).
+    #[must_use]
+    pub fn with_num_ctx(mut self, num_ctx: Option<NonZeroU32>) -> Self {
+        self.num_ctx = num_ctx;
+        self
+    }
+
+    /// Refuse every request once `stop` is set.
+    #[must_use]
+    pub fn with_stop(mut self, stop: &'a AtomicBool) -> Self {
+        self.stop = Some(stop);
+        self
+    }
+
+    /// The one-message request both calls send, as Python's processor sends
+    /// `[agent.user_msg(prompt)]`.
+    fn request(
+        &self,
+        prompt: &str,
+        temperature: f64,
+        max_tokens: i64,
+        json_mode: bool,
+    ) -> ChatRequest {
+        ChatRequest {
+            messages: vec![LLMMessage::user(prompt)],
+            model: Some(self.model.clone()),
+            temperature,
+            max_tokens,
+            json_mode,
+            num_ctx: self.num_ctx,
+            ..ChatRequest::default()
+        }
+    }
+
+    /// Run `call` until it succeeds, retrying what `retryable` says a retry
+    /// may cure, up to [`CONTEXT_MODEL_ATTEMPTS`] tries, never once stopped.
+    fn with_retries<T, E>(
+        &self,
+        mut call: impl FnMut() -> Result<T, E>,
+        retryable: impl Fn(&E) -> bool,
+    ) -> Result<T, String>
+    where
+        E: std::fmt::Display,
+    {
+        let mut attempt = 1;
+        loop {
+            if is_set(self.stop) {
+                return Err(STOPPED_MESSAGE.to_string());
+            }
+            match call() {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    if !retryable(&error) || is_set(self.stop) {
+                        return Err(error.to_string());
+                    }
+                    if attempt >= CONTEXT_MODEL_ATTEMPTS {
+                        return Err(format!("after {attempt} attempts: {error}"));
+                    }
+                }
+            }
+            std::thread::sleep(self.client.retry_base_delay * 2u32.pow(attempt - 1));
+            attempt += 1;
+        }
+    }
+}
+
+/// A failed structured call, and whether its request failed in transport.
+struct JsonFailure {
+    error: ChatJsonError,
+    transport: bool,
+}
+
+impl std::fmt::Display for JsonFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl ContextModel for LlmContextModel<'_> {
+    fn complete(&self, prompt: &str, temperature: f64, max_tokens: i64) -> Result<String, String> {
+        let request = self.request(prompt, temperature, max_tokens, false);
+        let response = self.with_retries(
+            || self.client.chat(&request),
+            |error| matches!(error, ChatError::Transport(_)),
+        )?;
+        match response.stop_reason.as_deref() {
+            // A completion cut at the output ceiling has lost passages.
+            Some(reason) if TRUNCATION_STOP_REASONS.contains(&reason) => Err(format!(
+                "the response was truncated (stop_reason={reason:?})"
+            )),
+            _ => Ok(response.content),
+        }
+    }
+
+    fn complete_json(
+        &self,
+        prompt: &str,
+        temperature: f64,
+        max_tokens: i64,
+    ) -> Result<Value, String> {
+        let request = self.request(prompt, temperature, max_tokens, true);
+        let outcome = self.with_retries(
+            || {
+                let mut source = ClientSource {
+                    client: self.client,
+                    request: request.clone(),
+                    stop: self.stop,
+                    transport_failed: false,
+                };
+                chat_json(
+                    &mut source,
+                    CONTEXT_MODEL_JSON_RETRIES,
+                    temperature,
+                    Some(max_tokens),
+                    max_tokens,
+                    true,
+                )
+                .map_err(|error| JsonFailure {
+                    error,
+                    transport: source.transport_failed,
+                })
+            },
+            // Only a failed request, as `complete` retries: an unknown
+            // provider, a missing key or a malformed answer would fail again,
+            // and `chat_json` has re-asked for a bad reply.
+            |failure| failure.transport && matches!(failure.error, ChatJsonError::Transport { .. }),
+        )?;
+        Ok(outcome.value)
     }
 }
 

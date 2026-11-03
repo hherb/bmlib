@@ -47,6 +47,16 @@ class OversizedItemError(ValueError):
     """
 
 
+class ProcessingStoppedError(Exception):
+    """The caller asked the run to stop; raised by ``extract_from_batch`` (#642).
+
+    :meth:`~bmlib.context_processor.IterativeContextProcessor.process` ends
+    the run on it and lets it propagate, rather than recording a failed batch
+    at ERROR for every batch left: a stop is no failure, and nothing more is
+    asked of the model.
+    """
+
+
 class ProcessingStatus(Enum):
     """Outcome of a processing run."""
 
