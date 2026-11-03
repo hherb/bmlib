@@ -11,6 +11,20 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`PicoAgent::prepare`, `check_suitability_prepared` and `extract_prepared`**
+  (#638, with the Python library): condense a long paper once and hand the
+  `PicoPrepared` to both calls and to every retry, where each call condensed
+  again. `PicoPrepared` reads through accessors (`title`, `text`, `digest`,
+  `condensation_status`, `notes`, `sent`, `condensed_from_chars`) and is
+  stored with `to_json`/`from_json`, which refuses what Python's `from_dict`
+  refuses, word for word. A prepared paper made for another budget is refused
+  before any request: one sending more than the agent's budget is the new
+  `PicoError::PreparedOverBudget { chars, budget }` (`"prepared_over_budget"`),
+  and one condensed though its text fits the agent's budget whole is
+  `PicoError::PreparedUnderBudget { chars, budget }`
+  (`"prepared_under_budget"`); the enum is `#[non_exhaustive]`, so neither
+  breaks a `match`.
+
 - **`FullTextError::Exhausted { message, faults, absences }`** (#565, with the
   Python library's `FullTextExhaustedError`): `fetch_fulltext`'s error when
   the chain retrieved nothing and has no link to fall back on, which was

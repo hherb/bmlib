@@ -198,6 +198,32 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`PicoAgent.prepare` condenses a long paper once for both PICO calls**
+  (#638, from StudyAnalyzer's plan 2c review). `check_suitability` and
+  `extract` each condensed their own text, so a paper checked and extracted
+  from one long text ran the map-reduce twice, and an `extract` retried after
+  `REQUEST_FAILED` ran it again before the one request that had failed.
+  `prepare(title, text)` returns a `PicoPrepared` (the stripped title, the
+  text as passed, the digest or `None`, its status and notes), which
+  `check_suitability_prepared` and `extract_prepared` take; quotes are still
+  verified against the text, never the digest. It is frozen (its notes a
+  tuple), checked on construction and stored with `to_dict`/`from_dict`,
+  which refuses a title that is not stripped, an empty paper, a status or
+  notes without a digest, a blank digest, a digest of an empty text and a
+  digest whose status is absent or not one a digest finishes with (any
+  `ProcessingStatus` but `"failed"`). One prepared for another budget — sending
+  more than the agent's own, or condensed though the agent would send its text
+  whole — raises `ValueError` before any request. A prepared paper's
+  note says it was *condensed before the suitability check and extraction*;
+  the direct calls, now routed through the same code, keep their own wording
+  and send what they sent. The Rust port has the same three methods and
+  `PicoPrepared` (fields behind accessors, `to_json`/`from_json` refusing
+  word for word what Python refuses) and two new `PicoError` variants,
+  `PreparedOverBudget` and `PreparedUnderBudget` (`"prepared_over_budget"`,
+  `"prepared_under_budget"`; the enum is `#[non_exhaustive]`); the PICO oracle
+  gains 23 cases, one condensing a padded text once for a check and two
+  extractions after a store and reload.
+
 - **`SectionType.OTHER`** (`"other"`, #628): a heading that names no section,
   kept because numbered subsections number from it (see *Fixed*). A bmlib
   before this release reading a stored `"other"` raises `ValueError` from

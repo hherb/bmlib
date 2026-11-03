@@ -125,7 +125,7 @@ pub use pico_agent::{
     SUITABILITY_RESPONSE_FORMAT, SUITABILITY_TASK_PROMPT,
 };
 pub use pico_models::{
-    PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoSuitability,
+    PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoPrepared, PicoSuitability,
 };
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use scoring_models::{

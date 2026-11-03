@@ -35,6 +35,7 @@ use bmlib::quality::pico_agent::{
     PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_QUERY,
     PICO_SYSTEM_PROMPT, SUITABILITY_RESPONSE_FORMAT, SUITABILITY_TASK_PROMPT,
 };
+use bmlib::quality::pico_models::PicoPrepared;
 use common::scripted_chat::{Script, ScriptedChat};
 use serde_json::{json, Value};
 
@@ -46,6 +47,7 @@ const EXPECTED: &str = include_str!("data/pico_agent_expected.json");
 struct FixedDigest {
     content: String,
     status: ProcessingStatus,
+    calls: usize,
 }
 
 impl Condenser for FixedDigest {
@@ -55,6 +57,7 @@ impl Condenser for FixedDigest {
         _label: &str,
         _config: &ProcessingConfig,
     ) -> ProcessingResult {
+        self.calls += 1;
         ProcessingResult {
             final_result: ExtractionResult::new(self.content.clone()),
             status: self.status,
@@ -107,6 +110,7 @@ fn run(case: &Value) -> Value {
     let mut condenser = FixedDigest {
         content: args["digest"].as_str().unwrap_or("").to_string(),
         status: status(args["digest_status"].as_str().unwrap_or("completed")),
+        calls: 0,
     };
     let title = args["title"].as_str().expect("title");
     let text = args["text"].as_str().expect("text");
@@ -130,9 +134,16 @@ fn run(case: &Value) -> Value {
                 )
                 .map(|r| r.to_json()),
             "suitability" => agent.check_suitability(title, text).map(|r| r.to_json()),
+            "prepared" => prepared_run(&mut agent, args),
             other => panic!("unknown fn {other}"),
         }
     };
+    let outcome = outcome.map(|mut result| {
+        if case["fn"] == "prepared" {
+            result["condensations"] = json!(condenser.calls);
+        }
+        result
+    });
 
     let mut value = match outcome {
         Ok(result) => json!({ "result": result }),
@@ -159,14 +170,40 @@ fn run(case: &Value) -> Value {
     value
 }
 
+/// Prepare once, store and reload the result, then run the check and
+/// `extractions` extractions over it (#638), as the dumper does.
+fn prepared_run(
+    agent: &mut PicoAgent<'_>,
+    args: &Value,
+) -> Result<Value, bmlib::quality::PicoError> {
+    let title = args["title"].as_str().expect("title");
+    let text = args["text"].as_str().expect("text");
+    let stored = agent.prepare(title, text)?.to_json();
+    let prepared = PicoPrepared::from_json(&stored).expect("a prepared paper reloads");
+    let suitability = agent.check_suitability_prepared(&prepared)?.to_json();
+    let similarity = args["min_similarity"].as_f64().expect("similarity");
+    let extractions = (0..args["extractions"].as_u64().expect("extractions"))
+        .map(|_| {
+            agent
+                .extract_prepared(&prepared, similarity)
+                .map(|r| r.to_json())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(json!({
+        "prepared": stored,
+        "suitability": suitability,
+        "extractions": extractions,
+    }))
+}
+
 #[test]
 fn the_rust_agent_agrees_with_the_python_one() {
     let cases: Vec<Value> = serde_json::from_str(CASES).expect("cases");
     let expected: Vec<Value> = serde_json::from_str(EXPECTED).expect("expected");
     assert_eq!(cases.len(), expected.len());
     assert!(
-        cases.len() >= 37,
-        "the corpus has shrunk below its 34 cases"
+        cases.len() >= 53,
+        "the corpus has shrunk below its 53 cases"
     );
 
     for (case, want) in cases.iter().zip(&expected) {
@@ -193,6 +230,14 @@ fn the_rust_agent_agrees_with_the_python_one() {
                 }),
                 "the prompts differ from Python's"
             );
+            continue;
+        }
+        if case["fn"] == "prepared_from_dict" {
+            let got = match PicoPrepared::from_json(&case["args"]["data"]) {
+                Ok(prepared) => json!({ "result": prepared.to_json() }),
+                Err(message) => json!({ "refused": message }),
+            };
+            assert_eq!(got, want["value"], "{}: stored paper", case["name"]);
             continue;
         }
         let got = run(case);
