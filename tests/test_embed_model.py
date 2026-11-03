@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import http.client
 import logging
 import os
 import pickle
@@ -35,7 +36,10 @@ from bmlib.embed import (
     ARCTIC_EMBED_L_V2_F16,
     ChecksumMismatchError,
     DownloadCancelled,
+    ModelDownloadError,
     ModelFile,
+    ModelStatusError,
+    ModelTransportError,
     ModelVerificationError,
     SizeMismatchError,
     download_model,
@@ -48,6 +52,7 @@ BODY = bytes(range(256)) * (3 * 1024 * 4)  # 3 MiB
 class _Server(ThreadingHTTPServer):
     body = BODY
     truncate = False
+    status = 200
     requests = 0
 
 
@@ -56,6 +61,11 @@ class _Handler(BaseHTTPRequestHandler):
         server = self.server
         assert isinstance(server, _Server)
         server.requests += 1
+        if server.status != 200:
+            self.send_response(server.status)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Content-Length", str(len(server.body)))
         self.end_headers()
@@ -134,10 +144,68 @@ def test_download_skips_verified_file(server: _Server, tmp_path: Path) -> None:
 
 
 def test_download_truncated_body_leaves_no_model(server: _Server, tmp_path: Path) -> None:
-    server.truncate = True
-    with pytest.raises(SizeMismatchError) as info:
+    server.truncate = True  # the connection closes short of Content-Length
+    with pytest.raises(ModelTransportError, match="broke off") as info:
         download_model(_model(server), tmp_path)
-    assert info.value.what == "size"
+    assert info.value.retryable
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_download_short_body_with_matching_length_is_size_mismatch(
+    server: _Server, tmp_path: Path
+) -> None:
+    server.body = BODY[: len(BODY) // 2]
+    with pytest.raises(SizeMismatchError) as info:
+        download_model(_model(server, BODY), tmp_path)
+    assert (info.value.expected, info.value.actual) == (len(BODY), len(BODY) // 2)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(("status", "retryable"), [(404, False), (503, True)])
+def test_a_refused_request_is_a_status_error(
+    server: _Server, tmp_path: Path, status: int, retryable: bool
+) -> None:
+    server.status = status
+    with pytest.raises(ModelStatusError) as info:
+        download_model(_model(server), tmp_path)
+    assert (info.value.status, info.value.retryable) == (status, retryable)
+    assert isinstance(info.value, OSError)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_no_connection_is_a_transport_error(server: _Server, tmp_path: Path) -> None:
+    model = _model(server)
+    server.shutdown()
+    server.server_close()  # nothing listens on the port now
+    with pytest.raises(ModelTransportError) as info:
+        download_model(model, tmp_path)
+    assert info.value.retryable and isinstance(info.value.__cause__, OSError)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_read_failure_mid_body_is_a_transport_error(
+    server: _Server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def reset(self: http.client.HTTPResponse, amt: int | None = None) -> bytes:
+        raise ConnectionResetError(54, "Connection reset by peer")
+
+    monkeypatch.setattr(http.client.HTTPResponse, "read", reset)
+    with pytest.raises(ModelTransportError) as info:
+        download_model(_model(server), tmp_path)
+    assert isinstance(info.value.__cause__, ConnectionResetError)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_file_system_failure_is_not_a_download_error(
+    server: _Server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def full(fd: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(model_module.os, "fsync", full)
+    with pytest.raises(OSError, match="No space") as info:
+        download_model(_model(server), tmp_path)
+    assert not isinstance(info.value, ModelDownloadError)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -181,7 +249,7 @@ def test_mismatched_file_is_gone_even_when_the_refetch_fails(
 ) -> None:
     (tmp_path / "m.gguf").write_bytes(bytes(len(BODY)))
     server.truncate = True
-    with pytest.raises(SizeMismatchError):
+    with pytest.raises(ModelTransportError):
         download_model(_model(server), tmp_path)
     assert list(tmp_path.iterdir()) == []
 
@@ -260,10 +328,12 @@ def test_both_mismatches_are_verification_errors() -> None:
     [
         SizeMismatchError(Path("m.gguf"), 3, "more than 3"),
         ChecksumMismatchError(Path("m.gguf"), "0" * 64, "1" * 64),
+        ModelStatusError(404, "Not Found"),
+        ModelTransportError("timed out"),
     ],
     ids=type,
 )
-def test_a_mismatch_survives_pickling(error: ModelVerificationError) -> None:
+def test_a_mismatch_survives_pickling(error: Exception) -> None:
     # A worker process's error reaches its pool pickled.
     back = pickle.loads(pickle.dumps(error))
     assert (type(back), back.args, vars(back)) == (type(error), error.args, vars(error))

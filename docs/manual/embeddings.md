@@ -48,9 +48,15 @@ its size and sha256 match; nothing that fails the check is kept
   Its fields are `repo`, `revision`, `file`, `size` and `sha256`; `url()` is
   the revision-pinned Hugging Face URL.
 - `download_model(model, directory, progress=None)` returns the final path
-  (`directory / model.file`), creating `directory` if missing. A network or
-  file-system failure is an `OSError` (`URLError` included). It sends
+  (`directory / model.file`), creating `directory` if missing. It sends
   `User-Agent: bmlib/<version>`.
+- A failed request is a `ModelDownloadError` *(unreleased)*: a
+  `ModelStatusError` when the server refused it (`.status`, `.message`), a
+  `ModelTransportError` when no answer came (no connection, a timeout, a read
+  that failed, a body ending short of its `Content-Length`). `.retryable` says
+  whether a retry may succeed: always for a transport fault, and for a status
+  only 408, 429 or 5xx. Both are `OSError`s; a file-system failure is a plain
+  `OSError` beside them.
 
 `verify_model(path, model)` is the check alone: the size, then the streamed
 sha256, raising `SizeMismatchError` / `ChecksumMismatchError` (or `OSError`
@@ -251,7 +257,9 @@ rules hold: one call per launch, and concurrent calls are safe. The `progress`
 hook is `&mut dyn FnMut(u64, u64) -> bool`; returning `false` cancels, removes
 the temporary file and returns `ModelError::Cancelled`. A `ModelFile` that
 cannot be pinned (`ModelFile::check`) is `ModelError::Invalid`, before any
-request.
+request. A failed request is `ModelError::Transport` or `ModelError::Status
+{ status, message }` *(unreleased)*, and `ModelError::is_retryable()` is
+Python's `.retryable`; `ModelError::Io` is a file-system failure alone.
 
 Flash attention is left to llama.cpp's AUTO policy, which turns it on for CPU
 and Metal after a probe. A backend that fails the probe falls back to the

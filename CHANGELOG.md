@@ -322,6 +322,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`download_model` says whether a failed download is worth a retry** (#633,
+  with the Rust crate). A refused request and a network fault were both a bare
+  `urllib` `OSError`, a body that broke off was a `SizeMismatchError`, and a
+  caller retrying with backoff retried a 404 like a dropped connection. They
+  are now **`ModelStatusError`** (`.status`, `.message`; the server answered
+  with a non-success status) and **`ModelTransportError`** (no connection, a
+  timeout, a read that failed, or a body ending short of its
+  `Content-Length`), both a **`ModelDownloadError`**, whose **`.retryable`**
+  is `True` for a transport fault and for a 408, 429 or 5xx. Both are still
+  `OSError`s, so an `except OSError` keeps catching them; a file-system
+  failure stays a plain `OSError`, apart from them. One thing moves: a body
+  ending short of its declared length was a `SizeMismatchError` and is now a
+  `ModelTransportError` (a short body that declared that length is still a
+  `SizeMismatchError`). The rule is held by a new `download_errors` section
+  of the shared `tests/fixtures/embedding_contract.json`, which the Rust suite
+  reads too.
+
 - **`PicoAgent` no longer reports what no retry cures as `REQUEST_FAILED`**
   (#573). Every exception the request raised that was not a `ChatJsonError`
   was `REQUEST_FAILED`, which an app retries as an outage: a bmlib
