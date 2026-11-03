@@ -62,6 +62,7 @@ from bmlib.quality.pico_models import (
     PicoExtraction,
     PicoPart,
     PicoPartState,
+    PicoPrepared,
     PicoSuitability,
 )
 from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
@@ -103,6 +104,7 @@ __all__ = [
     "PicoExtraction",
     "PicoPart",
     "PicoPartState",
+    "PicoPrepared",
     "PicoSuitability",
     "verify_quotes",
 ]

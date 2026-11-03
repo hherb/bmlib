@@ -26,6 +26,10 @@ answers two questions, as two independent calls:
 * :meth:`PicoAgent.extract` — the Population, Intervention, Comparison and
   Outcome, plus study type and sample size.
 
+:meth:`PicoAgent.prepare` condenses a long paper once for both, and for every
+retry, through :meth:`~PicoAgent.check_suitability_prepared` and
+:meth:`~PicoAgent.extract_prepared` (#638).
+
 Unlike upstream, every part carries the passages that back it.  The model
 copies quotes from the paper; each is located by
 :func:`bmlib.citations.find_passage` in the text the caller passed, and the
@@ -60,6 +64,7 @@ from bmlib.quality.pico_models import (
     PicoExtraction,
     PicoPart,
     PicoPartState,
+    PicoPrepared,
     PicoSuitability,
     mean_confidence,
 )
@@ -513,6 +518,28 @@ class PicoAgent(BaseAgent):
             max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
         )
 
+    def prepare(self, title: str | None, text: str | None) -> PicoPrepared:
+        """Make a paper ready for both PICO calls, condensing it at most once (#638).
+
+        Hand the result to :meth:`check_suitability_prepared` and
+        :meth:`extract_prepared`, and to each retry of either, so a long
+        paper's map-reduce is not run again before every call.  It can be
+        stored with :meth:`~bmlib.quality.pico_models.PicoPrepared.to_dict`.
+
+        Args:
+            title: The paper's title.
+            text: The paper's text, which quotes are later verified against.
+
+        Returns:
+            The prepared paper.
+
+        Raises:
+            PicoError: ``EMPTY_INPUT`` or ``CONDENSATION_FAILED``.
+            ValueError: The model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
+        """
+        return self._prepare(title, text, "the suitability check and extraction")
+
     def check_suitability(self, title: str | None, text: str | None) -> PicoSuitability:
         """Say whether the paper is an intervention study with a PICO.
 
@@ -531,20 +558,29 @@ class PicoAgent(BaseAgent):
             ValueError: The model's provider is unknown.
             ImportError: The provider's SDK is not installed.
         """
-        title, text, notes, condensed_from, status = self._prepare(
-            title, text, "the suitability check"
-        )
+        return self.check_suitability_prepared(self._prepare(title, text, "the suitability check"))
+
+    def check_suitability_prepared(self, prepared: PicoPrepared) -> PicoSuitability:
+        """:meth:`check_suitability` over a paper :meth:`prepare` made ready.
+
+        Raises:
+            PicoError: Naming why no answer could be made.
+            ValueError: The model's provider is unknown, or *prepared* is over
+                this agent's budget (it was prepared by another).
+            ImportError: The provider's SDK is not installed.
+        """
+        sent = self._sent(prepared)
         suitability = self._ask(
             SUITABILITY_TASK_PROMPT,
             SUITABILITY_RESPONSE_FORMAT,
-            title,
-            text,
+            prepared.title,
+            sent,
             read_suitability,
-            f"PICO suitability check of {title[:60]!r}",
+            f"PICO suitability check of {prepared.title[:60]!r}",
         )
-        suitability.condensed_from_chars = condensed_from
-        suitability.condensation_status = status
-        suitability.notes = notes
+        suitability.condensed_from_chars = prepared.condensed_from_chars
+        suitability.condensation_status = prepared.condensation_status
+        suitability.notes = list(prepared.notes)
         return suitability
 
     def extract(
@@ -570,42 +606,58 @@ class PicoAgent(BaseAgent):
             ImportError: The provider's SDK is not installed.
             PicoError: Naming why no breakdown could be made.
         """
+        # Refused before the condensation, so a caller's mistake costs no request.
         similarity = _check_similarity(min_similarity)
-        # Quotes are located in the text as passed, unstripped, so an offset
-        # indexes the string the caller will highlight.
-        original = text or ""
-        title, sent, notes, condensed_from, status = self._prepare(title, text, "extraction")
+        return self.extract_prepared(
+            self._prepare(title, text, "extraction"), min_similarity=similarity
+        )
+
+    def extract_prepared(self, prepared: PicoPrepared, *, min_similarity: float) -> PicoExtraction:
+        """:meth:`extract` over a paper :meth:`prepare` made ready.
+
+        Quotes are verified against ``prepared.text``, the paper as passed to
+        :meth:`prepare`, never the digest.
+
+        Raises:
+            ValueError: *min_similarity* is not a number in (0, 1], the
+                model's provider is unknown, or *prepared* is over this
+                agent's budget (it was prepared by another).
+            ImportError: The provider's SDK is not installed.
+            PicoError: Naming why no breakdown could be made.
+        """
+        similarity = _check_similarity(min_similarity)
+        sent = self._sent(prepared)
         extraction = self._ask(
             EXTRACTION_TASK_PROMPT,
             EXTRACTION_RESPONSE_FORMAT,
-            title,
+            prepared.title,
             sent,
             # Quotes are verified against the paper, never the digest: a quote
             # the condensation paraphrased is caught here like any other.
-            lambda data: read_extraction(data, original, similarity),
-            f"PICO extraction of {title[:60]!r}",
+            lambda data: read_extraction(data, prepared.text, similarity),
+            f"PICO extraction of {prepared.title[:60]!r}",
         )
-        extraction.condensed_from_chars = condensed_from
-        extraction.condensation_status = status
-        extraction.notes = notes
+        extraction.condensed_from_chars = prepared.condensed_from_chars
+        extraction.condensation_status = prepared.condensation_status
+        extraction.notes = list(prepared.notes)
         return extraction
 
-    def _prepare(
-        self, title: str | None, text: str | None, stage: str
-    ) -> tuple[str, str, list[str], int | None, str | None]:
+    def _prepare(self, title: str | None, text: str | None, stage: str) -> PicoPrepared:
         """Strip the input, refuse an empty one, condense an oversized one.
 
-        Returns:
-            ``(title, text_to_send, notes, condensed_from_chars,
-            condensation_status)``.
+        Args:
+            stage: Names the calls the digest is for in a degraded run's note.
         """
+        # Quotes are located in the text as passed, unstripped, so an offset
+        # indexes the string the caller will highlight.
+        original = text or ""
         title = (title or "").strip()
-        text = (text or "").strip()
+        text = original.strip()
         if not title and not text:
             raise PicoError(PicoErrorKind.EMPTY_INPUT, "both the title and the text are empty")
         self._check_provider()
         if len(text) <= self.condense_config.max_context_chars:
-            return title, text, [], None, None
+            return PicoPrepared(title, original)
 
         try:
             digest, notes, status = condense_text(
@@ -624,7 +676,24 @@ class PicoAgent(BaseAgent):
                 f"a {len(text)}-character text could not be condensed to fit "
                 f"{self.condense_config.max_context_chars} characters: {exc}",
             ) from exc
-        return title, digest, notes, len(text), status.value
+        return PicoPrepared(title, original, digest, status.value, notes)
+
+    def _sent(self, prepared: PicoPrepared) -> str:
+        """What *prepared* sends, refused if it is over this agent's budget.
+
+        Raises:
+            ValueError: The provider is unknown, or *prepared* does not fit.
+            ImportError: The provider's SDK is not installed.
+        """
+        self._check_provider()
+        sent = prepared.sent
+        if len(sent) > self.condense_config.max_context_chars:
+            raise ValueError(
+                f"the prepared text is {len(sent)} characters, over this agent's "
+                f"{self.condense_config.max_context_chars}-character budget: "
+                "prepare it with this agent"
+            )
+        return sent
 
     def _check_provider(self) -> None:
         """Resolve the model's provider before any request is made (#573).

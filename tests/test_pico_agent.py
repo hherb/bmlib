@@ -48,6 +48,7 @@ from bmlib.quality.pico_models import (
     PicoExtraction,
     PicoPart,
     PicoPartState,
+    PicoPrepared,
     PicoSuitability,
 )
 
@@ -878,3 +879,125 @@ class TestStoredResults:
     def test_a_part_cannot_be_built_verified_without_a_citation(self) -> None:
         with pytest.raises(ValueError, match="carries 0 citation"):
             PicoPart("d", PicoPartState.VERIFIED, 0.5)
+
+
+class TestAPreparedPaper:
+    """#638: a long paper is condensed once for both calls and every retry."""
+
+    LONG = "Filler sentence. " * 20 + TEXT
+    DIGEST = "Middle-aged adults were given a drug."
+
+    def _agent(self, *replies: Any) -> PicoAgent:
+        return make_agent(*replies, condense_config=ProcessingConfig(max_context_chars=100))
+
+    def _condense(self, notes: list[str] | None = None) -> Any:
+        status = ProcessingStatus.PARTIAL if notes else ProcessingStatus.COMPLETED
+        return patch(
+            "bmlib.quality.pico_agent.condense_text",
+            return_value=(self.DIGEST, notes or [], status),
+        )
+
+    def test_both_calls_and_a_retry_condense_once(self) -> None:
+        note = "Source text was condensed before the suitability check and extraction; ..."
+        agent = self._agent({"is_suitable": True}, reply(), reply())
+        with self._condense([note]) as condense:
+            prepared = agent.prepare("  A trial ", self.LONG)
+            suitability = agent.check_suitability_prepared(prepared)
+            first = agent.extract_prepared(prepared, min_similarity=SIM)
+            again = agent.extract_prepared(prepared, min_similarity=SIM)
+
+        assert condense.call_count == 1
+        assert condense.call_args.kwargs["stage"] == "the suitability check and extraction"
+        assert prepared.title == "A trial"
+        assert prepared.digest == self.DIGEST
+        for call in range(3):
+            assert self.DIGEST in sent_user_message(agent, call)
+            assert TEXT not in sent_user_message(agent, call)
+        for result in (suitability, first, again):
+            assert result.notes == [note]
+            assert result.condensation_status == "partial"
+            assert result.condensed_from_chars == len(self.LONG)
+        # Verified against the paper as passed, never the digest.
+        assert first.population.citations[0].start == self.LONG.index("Adults")
+        assert again == first
+
+    def test_a_short_paper_is_sent_whole_and_stripped(self) -> None:
+        agent = make_agent(reply())
+        with patch("bmlib.quality.pico_agent.condense_text") as condense:
+            prepared = agent.prepare("A trial", "  " + TEXT + "\n")
+            extraction = agent.extract_prepared(prepared, min_similarity=SIM)
+        condense.assert_not_called()
+        assert prepared.digest is None
+        assert prepared.sent == TEXT
+        assert prepared.condensed_from_chars is None
+        assert extraction.condensed_from_chars is None
+        assert extraction.population.citations[0].start == 2
+
+    def test_the_direct_calls_are_unchanged(self) -> None:
+        """Through the prepared path, the direct calls keep their own note wording."""
+        agent = self._agent(reply())
+        with self._condense() as condense:
+            agent.extract("A trial", self.LONG, min_similarity=SIM)
+        assert condense.call_args.kwargs["stage"] == "extraction"
+
+    def test_a_stored_paper_serves_both_calls(self) -> None:
+        agent = self._agent({"is_suitable": True}, reply())
+        with self._condense():
+            stored = json.loads(json.dumps(agent.prepare("A trial", self.LONG).to_dict()))
+        with patch("bmlib.quality.pico_agent.condense_text") as condense:
+            prepared = PicoPrepared.from_dict(stored)
+            agent.check_suitability_prepared(prepared)
+            extraction = agent.extract_prepared(prepared, min_similarity=SIM)
+        condense.assert_not_called()
+        assert extraction.population.state is PicoPartState.VERIFIED
+        assert prepared.to_dict() == stored
+
+    def test_empty_input_is_refused_before_any_request(self) -> None:
+        agent = make_agent()
+        with pytest.raises(PicoError) as caught:
+            agent.prepare(" ", None)
+        assert caught.value.kind is PicoErrorKind.EMPTY_INPUT
+        assert agent.llm.chat.call_count == 0
+
+    def test_a_paper_prepared_for_a_larger_budget_is_refused(self) -> None:
+        prepared = make_agent().prepare("A trial", self.LONG)
+        agent = self._agent()
+        for call in (
+            lambda: agent.check_suitability_prepared(prepared),
+            lambda: agent.extract_prepared(prepared, min_similarity=SIM),
+        ):
+            with pytest.raises(ValueError, match="over this agent's 100-character budget"):
+                call()
+        assert agent.llm.chat.call_count == 0
+
+    @pytest.mark.parametrize("bad", [0.0, 1.5, float("nan"), True])
+    def test_an_invalid_min_similarity_makes_no_call(self, bad: Any) -> None:
+        agent = make_agent()
+        prepared = agent.prepare("A trial", TEXT)
+        with pytest.raises(ValueError, match="min_similarity"):
+            agent.extract_prepared(prepared, min_similarity=bad)
+        assert agent.llm.chat.call_count == 0
+
+    def test_an_unknown_provider_is_refused_before_any_request(self) -> None:
+        prepared = make_agent().prepare("A trial", TEXT)
+        agent = PicoAgent(llm=LLMClient(), model="nosuchprovider:model")
+        with pytest.raises(ValueError, match="nosuchprovider"):
+            agent.check_suitability_prepared(prepared)
+
+    @pytest.mark.parametrize(
+        ("fields", "match"),
+        [
+            ({"title": "", "text": " \n"}, "both the title and the text are empty"),
+            ({"condensation_status": "completed"}, "carries no condensation status"),
+            ({"notes": ["n"]}, "carries no condensation status"),
+            ({"digest": " ", "condensation_status": "completed"}, "the digest is blank"),
+            ({"digest": "d"}, "condensation_status None is not one"),
+            ({"digest": "d", "condensation_status": "failed"}, "'failed' is not one"),
+            ({"text": None}, "'text' is a NoneType"),
+            ({"notes": [1]}, "holds a member that is not text"),
+        ],
+    )
+    def test_a_corrupt_stored_paper_is_refused(self, fields: dict[str, Any], match: str) -> None:
+        data = {**PicoPrepared("A trial", TEXT).to_dict(), **fields}
+        with pytest.raises(ValueError, match=match):
+            PicoPrepared.from_dict(data)

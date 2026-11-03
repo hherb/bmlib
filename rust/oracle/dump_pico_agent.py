@@ -38,7 +38,7 @@ from bmlib.context_processor import (
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality import pico_agent
 from bmlib.quality.pico_agent import PicoAgent
-from bmlib.quality.pico_models import PicoError
+from bmlib.quality.pico_models import PicoError, PicoPrepared
 
 
 def _client(replies: list[str], stop_reasons: list[str | None]) -> MagicMock:
@@ -75,6 +75,11 @@ PROMPTS = (
 def run(case: dict[str, Any]) -> dict[str, Any]:
     if case["fn"] == "prompts":
         return {name: getattr(pico_agent, name) for name in PROMPTS}
+    if case["fn"] == "prepared_from_dict":
+        try:
+            return {"result": PicoPrepared.from_dict(case["args"]["data"]).to_dict()}
+        except ValueError as exc:
+            return {"refused": str(exc)}
     args = case["args"]
     llm = _client(args["replies"], args.get("stop_reasons", []))
     kwargs: dict[str, Any] = {}
@@ -95,16 +100,19 @@ def run(case: dict[str, Any]) -> dict[str, Any]:
     value: dict[str, Any]
     with (
         patch("bmlib.agents.base.time.sleep"),
-        patch.object(LLMChunkProcessor, "process", return_value=digest),
+        patch.object(LLMChunkProcessor, "process", return_value=digest) as process,
     ):
         try:
-            if case["fn"] == "extract":
-                result: Any = agent.extract(
+            if case["fn"] == "prepared":
+                result = _prepared_run(agent, args)
+                value = {"result": {**result, "condensations": process.call_count}}
+            elif case["fn"] == "extract":
+                extraction = agent.extract(
                     args["title"], args["text"], min_similarity=args["min_similarity"]
                 )
+                value = {"result": extraction.to_dict()}
             else:
-                result = agent.check_suitability(args["title"], args["text"])
-            value = {"result": result.to_dict()}
+                value = {"result": agent.check_suitability(args["title"], args["text"]).to_dict()}
         except PicoError as exc:
             value = {"error": exc.kind.value}
 
@@ -113,6 +121,21 @@ def run(case: dict[str, Any]) -> dict[str, Any]:
         for call in llm.chat.call_args_list
     ]
     return value
+
+
+def _prepared_run(agent: PicoAgent, args: dict[str, Any]) -> dict[str, Any]:
+    """Prepare once, store and reload the result, then run the check and
+    ``extractions`` extractions over it (#638)."""
+    stored = json.loads(json.dumps(agent.prepare(args["title"], args["text"]).to_dict()))
+    prepared = PicoPrepared.from_dict(stored)
+    return {
+        "prepared": stored,
+        "suitability": agent.check_suitability_prepared(prepared).to_dict(),
+        "extractions": [
+            agent.extract_prepared(prepared, min_similarity=args["min_similarity"]).to_dict()
+            for _ in range(args["extractions"])
+        ],
+    }
 
 
 def main() -> int:

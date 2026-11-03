@@ -23,7 +23,7 @@ Tier 2 runs by default when Tier 1's metadata result is not confident enough (`u
 | `cochrane_assessor` | Tier 4 — `CochraneAssessor` | Yes |
 | `manager` | `QualityManager` orchestrator | Yes |
 | `pico_agent` | `PicoAgent` — the PICO breakdown, its parts backed by verified quotes *(0.12.0)* | **No — called directly** |
-| `pico_models` | `PicoExtraction`, `PicoPart`, `PicoSuitability`, `PicoError` *(0.12.0)* | **No — produced by `pico_agent`** |
+| `pico_models` | `PicoExtraction`, `PicoPart`, `PicoSuitability`, `PicoError` *(0.12.0)*, `PicoPrepared` *(unreleased)* | **No — produced by `pico_agent`** |
 | `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses, plus `collapse_risk_of_bias()` | **Yes — produced by `cochrane_assessor`, bridged onto `BiasRisk`** |
 | `cochrane_formatter` | Markdown / HTML Cochrane table renderers | **No — standalone** |
 | `extractors` | Rule-based, LLM-free extraction functions | **No — standalone** |
@@ -69,6 +69,7 @@ from bmlib.quality import (
     PicoExtraction,
     PicoPart,
     PicoPartState,
+    PicoPrepared,  # (unreleased)
     PicoSuitability,
     verify_quotes,
 )
@@ -962,6 +963,11 @@ PicoAgent(
 
 check_suitability(title: str | None, text: str | None) -> PicoSuitability
 extract(title: str | None, text: str | None, *, min_similarity: float) -> PicoExtraction
+
+# (unreleased, #638) condense once, ask both questions and retry over the result
+prepare(title: str | None, text: str | None) -> PicoPrepared
+check_suitability_prepared(prepared: PicoPrepared) -> PicoSuitability
+extract_prepared(prepared: PicoPrepared, *, min_similarity: float) -> PicoExtraction
 ```
 
 - **`min_similarity` is required and has no default.** It is `find_passage`'s threshold: how close a quote must be to a span of the text to count as found. It is set by measurement, by the caller. A value outside (0, 1], NaN or a `bool` raises `ValueError` before any request.
@@ -1006,9 +1012,20 @@ Every kind but `EMPTY_INPUT` chains the exception that caused it as `__cause__`:
 
 Nothing is truncated. Text over `condense_config.max_context_chars` is condensed first by the [Cochrane assessor's map-reduce](#condensing-oversized-text), over prompts that ask for **verbatim** passages; the extraction then runs once over the digest. A map or reduce reply cut at `max_tokens` fails its batch, so a digest that lost passages is marked `partial` (with a note) or refused, never stored as `completed`. **Quotes are always verified against the original text**, so a quote the digest paraphrased is caught and its part is `UNVERIFIED`.
 
+**Condense once** *(unreleased, #638)*. `check_suitability` and `extract` each condense their own text, so a paper checked and extracted from the same long text, or an extraction retried after `REQUEST_FAILED`, runs the map-reduce again every time — minutes on a small window. `prepare(title, text)` does it once and returns a `PicoPrepared`; `check_suitability_prepared` and `extract_prepared` take it and make one request each:
+
+```python
+prepared = agent.prepare(title, full_text)        # EMPTY_INPUT or CONDENSATION_FAILED
+suitability = agent.check_suitability_prepared(prepared)
+pico = agent.extract_prepared(prepared, min_similarity=0.9)   # retry this alone
+store(json.dumps(prepared.to_dict()))             # and PicoPrepared.from_dict later
+```
+
+`PicoPrepared` holds the stripped `title`, the `text` as passed (quotes are verified against it, so it is stored too), the `digest` (`None` when the text is sent whole), `condensation_status` and `notes`, and gives `sent` and `condensed_from_chars`; every result made from it carries its status, notes and length. Its note names both calls (*condensed before the suitability check and extraction*), where the two direct calls keep their own wording. It is frozen and checked on construction, so `from_dict()` refuses an empty paper, a status or notes without a digest, a blank digest, and a digest whose status is absent or `"failed"`. A `PicoPrepared` sending more characters than the agent's own budget — prepared by an agent with a larger one — raises `ValueError` before any request; prepare it with the agent that will use it.
+
 ### The Rust port
 
-`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` for the case Python raises as `ValueError`). Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. A `ContextModel` must return `Err` for a completion that stopped at the output ceiling, since only the implementation sees the stop reason. The Rust models have no `from_json`, so the refusals on reading a stored result are Python's. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
+`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` and *(unreleased)* `"prepared_over_budget"` for the two cases Python raises as `ValueError`). *(unreleased, #638)* `prepare(&str, &str)`, `check_suitability_prepared(&PicoPrepared)` and `extract_prepared(&PicoPrepared, min_similarity)` are Python's, `PicoPrepared`'s fields read through accessors, with `to_json`/`from_json` refusing what Python's `from_dict` refuses, word for word. Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. A `ContextModel` must return `Err` for a completion that stopped at the output ceiling, since only the implementation sees the stop reason. The Rust result models have no `from_json`, so the refusals on reading a stored result are Python's. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
 
 ## Cochrane Formatters
 

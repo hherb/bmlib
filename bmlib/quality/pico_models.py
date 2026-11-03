@@ -419,3 +419,88 @@ class PicoSuitability:
             condensation_status=_read(data, "condensation_status", str, nullable=True),
             notes=_read_text_list(data, "notes"),
         )
+
+
+#: The ``ProcessingStatus`` values a condensation that produced a digest can
+#: report: all but ``"failed"``, which produces none.
+_DIGEST_STATUSES = frozenset({"pending", "in_progress", "completed", "truncated", "partial"})
+
+
+@dataclass(frozen=True)
+class PicoPrepared:
+    """A paper made ready for the PICO calls, condensed at most once (#638).
+
+    :meth:`~bmlib.quality.pico_agent.PicoAgent.prepare` builds it, and
+    :meth:`~bmlib.quality.pico_agent.PicoAgent.check_suitability_prepared` and
+    :meth:`~bmlib.quality.pico_agent.PicoAgent.extract_prepared` take it, so a
+    long paper's map-reduce runs once for both calls and every retry.
+    :meth:`to_dict` lets it be stored; it holds the paper, since quotes are
+    verified against the paper and never the digest.
+
+    Attributes:
+        title: The title, stripped.
+        text: The text as passed, unstripped: citation offsets index it.
+        digest: What is sent in place of the text when it was condensed;
+            ``None`` when the text is sent whole.
+        condensation_status: The ``ProcessingStatus`` value the condensation
+            finished with; ``None`` when not condensed.
+        notes: Notes on the condensation (a degraded run), carried into each
+            result.
+    """
+
+    title: str
+    text: str
+    digest: str | None = None
+    condensation_status: str | None = None
+    notes: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Refuse a value :meth:`~bmlib.quality.pico_agent.PicoAgent.prepare` cannot make."""
+        if not self.title and not self.text.strip():
+            raise ValueError("both the title and the text are empty")
+        if self.digest is None:
+            if self.condensation_status is not None or self.notes:
+                raise ValueError("a text sent whole carries no condensation status or notes")
+        elif not self.digest.strip():
+            raise ValueError("the digest is blank")
+        elif self.condensation_status not in _DIGEST_STATUSES:
+            raise ValueError(
+                f"condensation_status {self.condensation_status!r} is not one a digest "
+                f"finishes with ({', '.join(sorted(_DIGEST_STATUSES))})"
+            )
+
+    @property
+    def sent(self) -> str:
+        """What the model is sent: the digest, or the stripped text."""
+        return self.text.strip() if self.digest is None else self.digest
+
+    @property
+    def condensed_from_chars(self) -> int | None:
+        """The stripped text's length when it was condensed; ``None`` when not."""
+        return None if self.digest is None else len(self.text.strip())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-ready dict."""
+        return {
+            "title": self.title,
+            "text": self.text,
+            "digest": self.digest,
+            "condensation_status": self.condensation_status,
+            "notes": list(self.notes),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PicoPrepared:
+        """Rebuild from :meth:`to_dict` output.
+
+        Raises:
+            ValueError: A field is absent or of the wrong type, naming it, or
+                the fields break the rules above.
+        """
+        return cls(
+            title=_read(data, "title", str),
+            text=_read(data, "text", str),
+            digest=_read(data, "digest", str, nullable=True),
+            condensation_status=_read(data, "condensation_status", str, nullable=True),
+            notes=_read_text_list(data, "notes"),
+        )

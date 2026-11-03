@@ -27,6 +27,8 @@
 
 use serde_json::{json, Value};
 
+use crate::pyvalue::{python_strip, repr_str};
+
 /// What the paper was found to say about one PICO part.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PicoPartState {
@@ -78,11 +80,19 @@ pub enum PicoError {
     CondensationFailed(String),
     /// `min_similarity` was not a number in (0, 1].
     InvalidSimilarity(f64),
+    /// A [`PicoPrepared`] sends more characters than this agent's budget: it
+    /// was prepared by an agent with a larger one. Python's `ValueError`.
+    PreparedOverBudget {
+        /// The characters the prepared paper sends.
+        chars: usize,
+        /// This agent's `max_context_chars`.
+        budget: usize,
+    },
 }
 
 impl PicoError {
-    /// Python's `PicoErrorKind` value; `"invalid_similarity"` for the one
-    /// Python raises as a `ValueError`.
+    /// Python's `PicoErrorKind` value; `"invalid_similarity"` and
+    /// `"prepared_over_budget"` for the two Python raises as a `ValueError`.
     #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
@@ -92,6 +102,7 @@ impl PicoError {
             PicoError::UnusableReply(_) => "unusable_reply",
             PicoError::CondensationFailed(_) => "condensation_failed",
             PicoError::InvalidSimilarity(_) => "invalid_similarity",
+            PicoError::PreparedOverBudget { .. } => "prepared_over_budget",
         }
     }
 }
@@ -107,6 +118,11 @@ impl std::fmt::Display for PicoError {
             PicoError::InvalidSimilarity(value) => {
                 write!(f, "min_similarity must be a number in (0, 1], got {value}")
             }
+            PicoError::PreparedOverBudget { chars, budget } => write!(
+                f,
+                "the prepared text is {chars} characters, over this agent's \
+                 {budget}-character budget: prepare it with this agent"
+            ),
         }
     }
 }
@@ -262,5 +278,197 @@ impl PicoSuitability {
             "condensation_status": self.condensation_status,
             "notes": self.notes,
         })
+    }
+}
+
+/// The `ProcessingStatus` values a condensation that produced a digest can
+/// report: all but `"failed"`, which produces none.
+const DIGEST_STATUSES: [&str; 5] = [
+    "pending",
+    "in_progress",
+    "completed",
+    "truncated",
+    "partial",
+];
+
+/// A paper made ready for the PICO calls, condensed at most once (#638).
+///
+/// A port of Python's `PicoPrepared`. [`PicoAgent::prepare`] builds it, and
+/// [`PicoAgent::check_suitability_prepared`] and
+/// [`PicoAgent::extract_prepared`] take it, so a long paper's map-reduce runs
+/// once for both calls and every retry. [`to_json`](Self::to_json) and
+/// [`from_json`](Self::from_json) let it be stored; it holds the paper, since
+/// quotes are verified against the paper and never the digest.
+///
+/// [`PicoAgent::prepare`]: crate::quality::pico_agent::PicoAgent::prepare
+/// [`PicoAgent::check_suitability_prepared`]: crate::quality::pico_agent::PicoAgent::check_suitability_prepared
+/// [`PicoAgent::extract_prepared`]: crate::quality::pico_agent::PicoAgent::extract_prepared
+#[derive(Debug, Clone, PartialEq)]
+pub struct PicoPrepared {
+    title: String,
+    text: String,
+    digest: Option<String>,
+    condensation_status: Option<String>,
+    notes: Vec<String>,
+}
+
+impl PicoPrepared {
+    /// Build one, refusing what `prepare` cannot make — Python's
+    /// `__post_init__`.
+    pub(crate) fn new(
+        title: String,
+        text: String,
+        digest: Option<String>,
+        condensation_status: Option<String>,
+        notes: Vec<String>,
+    ) -> Result<Self, String> {
+        if title.is_empty() && python_strip(&text).is_empty() {
+            return Err("both the title and the text are empty".to_string());
+        }
+        match &digest {
+            None => {
+                if condensation_status.is_some() || !notes.is_empty() {
+                    return Err(
+                        "a text sent whole carries no condensation status or notes".to_string()
+                    );
+                }
+            }
+            Some(digest) if python_strip(digest).is_empty() => {
+                return Err("the digest is blank".to_string());
+            }
+            Some(_) => {
+                if !condensation_status
+                    .as_deref()
+                    .is_some_and(|status| DIGEST_STATUSES.contains(&status))
+                {
+                    return Err(format!(
+                        "condensation_status {} is not one a digest finishes with \
+                         (completed, in_progress, partial, pending, truncated)",
+                        condensation_status
+                            .as_deref()
+                            .map_or_else(|| "None".to_string(), repr_str)
+                    ));
+                }
+            }
+        }
+        Ok(PicoPrepared {
+            title,
+            text,
+            digest,
+            condensation_status,
+            notes,
+        })
+    }
+
+    /// The title, stripped.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// The text as passed, unstripped: citation offsets index it.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// What is sent in place of the text when it was condensed.
+    #[must_use]
+    pub fn digest(&self) -> Option<&str> {
+        self.digest.as_deref()
+    }
+
+    /// The condensation's `ProcessingStatus` value, when condensed.
+    #[must_use]
+    pub fn condensation_status(&self) -> Option<&str> {
+        self.condensation_status.as_deref()
+    }
+
+    /// Notes on the condensation, carried into each result.
+    #[must_use]
+    pub fn notes(&self) -> &[String] {
+        &self.notes
+    }
+
+    /// What the model is sent: the digest, or the stripped text.
+    #[must_use]
+    pub fn sent(&self) -> &str {
+        self.digest
+            .as_deref()
+            .unwrap_or_else(|| python_strip(&self.text))
+    }
+
+    /// The stripped text's length in characters when it was condensed.
+    #[must_use]
+    pub fn condensed_from_chars(&self) -> Option<i64> {
+        self.digest
+            .as_ref()
+            .map(|_| python_strip(&self.text).chars().count() as i64)
+    }
+
+    /// Python's `to_dict()`.
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        json!({
+            "title": self.title,
+            "text": self.text,
+            "digest": self.digest,
+            "condensation_status": self.condensation_status,
+            "notes": self.notes,
+        })
+    }
+
+    /// Python's `from_dict()`.
+    ///
+    /// # Errors
+    ///
+    /// A field absent or of the wrong type, naming it, or fields breaking the
+    /// rules `prepare` keeps.
+    pub fn from_json(data: &Value) -> Result<Self, String> {
+        let text = |key: &str| match data.get(key) {
+            Some(Value::String(value)) => Ok(value.clone()),
+            other => Err(format!("'{key}' is a {}, not str", type_name(other))),
+        };
+        let optional = |key: &str| match data.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(value)) => Ok(Some(value.clone())),
+            other => Err(format!("'{key}' is a {}, not str", type_name(other))),
+        };
+        if !data.is_object() {
+            return Err(format!(
+                "expected an object holding 'title', got {}",
+                type_name(Some(data))
+            ));
+        }
+        // Read in Python's order, so the first bad field is the one named.
+        let title = text("title")?;
+        let body = text("text")?;
+        let digest = optional("digest")?;
+        let condensation_status = optional("condensation_status")?;
+        let notes = match data.get("notes") {
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| "'notes' holds a member that is not text".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            other => return Err(format!("'notes' is a {}, not list", type_name(other))),
+        };
+        PicoPrepared::new(title, body, digest, condensation_status, notes)
+    }
+}
+
+/// Python's `type(value).__name__` for a JSON value, for a refusal's message.
+fn type_name(value: Option<&Value>) -> &'static str {
+    match value {
+        None | Some(Value::Null) => "NoneType",
+        Some(Value::Bool(_)) => "bool",
+        Some(Value::Number(number)) if number.is_f64() => "float",
+        Some(Value::Number(_)) => "int",
+        Some(Value::String(_)) => "str",
+        Some(Value::Array(_)) => "list",
+        Some(Value::Object(_)) => "dict",
     }
 }

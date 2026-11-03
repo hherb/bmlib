@@ -20,6 +20,7 @@
 mod common;
 
 use bmlib::context_processor::llm_processor::ContextModel;
+use bmlib::context_processor::ProcessingConfig;
 use bmlib::quality::pico_agent::PicoAgent;
 use bmlib::quality::pico_models::PicoError;
 use common::scripted_chat::ScriptedChat;
@@ -52,6 +53,50 @@ fn invalid_similarity_makes_no_call() {
         );
         assert!(chat.seen.is_empty());
     }
+}
+
+#[test]
+fn a_paper_prepared_for_a_larger_budget_is_refused() {
+    let text = "Filler sentence. ".repeat(20);
+    let mut wide = ScriptedChat::answering(REPLY, Some("stop"));
+    let prepared = PicoAgent::new(&mut wide)
+        .prepare("A trial", &text)
+        .expect("sent whole under the default budget");
+
+    let mut chat = ScriptedChat::answering(REPLY, Some("stop"));
+    let mut agent = PicoAgent::new(&mut chat)
+        .with_condense_config(ProcessingConfig::default().with_max_context_chars(100));
+    let over = PicoError::PreparedOverBudget {
+        chars: prepared.sent().chars().count(),
+        budget: 100,
+    };
+    assert_eq!(
+        agent.check_suitability_prepared(&prepared),
+        Err(over.clone())
+    );
+    assert_eq!(agent.extract_prepared(&prepared, 0.9), Err(over.clone()));
+    assert_eq!(over.kind(), "prepared_over_budget");
+    assert!(over
+        .to_string()
+        .contains("over this agent's 100-character budget"));
+    drop(agent);
+    assert!(chat.seen.is_empty());
+}
+
+#[test]
+fn a_prepared_extraction_refuses_an_invalid_similarity() {
+    let mut chat = ScriptedChat::answering(REPLY, Some("stop"));
+    let mut agent = PicoAgent::new(&mut chat);
+    let prepared = agent.prepare("A trial", "Some text.").expect("prepared");
+    for bad in [0.0, 1.5, f64::NAN] {
+        let result = agent.extract_prepared(&prepared, bad);
+        assert!(
+            matches!(result, Err(PicoError::InvalidSimilarity(_))),
+            "{bad}: {result:?}"
+        );
+    }
+    drop(agent);
+    assert!(chat.seen.is_empty());
 }
 
 #[test]

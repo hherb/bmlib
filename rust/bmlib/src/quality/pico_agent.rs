@@ -33,7 +33,7 @@ use crate::quality::cochrane_assessor::{
     DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
 };
 use crate::quality::pico_models::{
-    PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoSuitability,
+    PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoPrepared, PicoSuitability,
 };
 
 /// How many times a question is asked when its reply parses but cannot be read
@@ -409,10 +409,6 @@ pub struct PicoAgent<'a> {
     condense_config: ProcessingConfig,
 }
 
-/// The input after stripping and any condensation: `(title, text_to_send,
-/// notes, condensed_from_chars, condensation_status)`.
-type Prepared = (String, String, Vec<String>, Option<i64>, Option<String>);
-
 impl<'a> PicoAgent<'a> {
     /// An agent asking through `chat`, with the Cochrane assessor's defaults.
     #[must_use]
@@ -487,6 +483,21 @@ impl<'a> PicoAgent<'a> {
         )
     }
 
+    /// Make a paper ready for both PICO calls, condensing it at most once
+    /// (#638).
+    ///
+    /// Hand the result to [`check_suitability_prepared`](Self::check_suitability_prepared)
+    /// and [`extract_prepared`](Self::extract_prepared), and to each retry of
+    /// either, so a long paper's map-reduce is not run again before every
+    /// call. It can be stored with [`PicoPrepared::to_json`].
+    ///
+    /// # Errors
+    ///
+    /// [`PicoError::EmptyInput`] or [`PicoError::CondensationFailed`].
+    pub fn prepare(&mut self, title: &str, text: &str) -> Result<PicoPrepared, PicoError> {
+        self.prepare_for(title, text, "the suitability check and extraction")
+    }
+
     /// Say whether the paper is an intervention study with a PICO.
     ///
     /// # Errors
@@ -497,20 +508,38 @@ impl<'a> PicoAgent<'a> {
         title: &str,
         text: &str,
     ) -> Result<PicoSuitability, PicoError> {
-        let (title, sent, notes, condensed_from, status) =
-            self.prepare(title, text, "the suitability check")?;
-        let label = format!("PICO suitability check of {}", repr_prefix(&title));
+        let prepared = self.prepare_for(title, text, "the suitability check")?;
+        self.check_suitability_prepared(&prepared)
+    }
+
+    /// [`check_suitability`](Self::check_suitability) over a paper
+    /// [`prepare`](Self::prepare) made ready.
+    ///
+    /// # Errors
+    ///
+    /// [`PicoError::PreparedOverBudget`] when `prepared` was made by an agent
+    /// with a larger budget, before any request; otherwise [`PicoError`]
+    /// naming why no answer could be made.
+    pub fn check_suitability_prepared(
+        &mut self,
+        prepared: &PicoPrepared,
+    ) -> Result<PicoSuitability, PicoError> {
+        let sent = self.sent(prepared)?;
+        let label = format!(
+            "PICO suitability check of {}",
+            repr_prefix(prepared.title())
+        );
         let mut suitability = self.ask(
             SUITABILITY_TASK_PROMPT,
             SUITABILITY_RESPONSE_FORMAT,
-            &title,
-            &sent,
+            prepared.title(),
+            sent,
             read_suitability,
             &label,
         )?;
-        suitability.condensed_from_chars = condensed_from;
-        suitability.condensation_status = status;
-        suitability.notes = notes;
+        suitability.condensed_from_chars = prepared.condensed_from_chars();
+        suitability.condensation_status = prepared.condensation_status().map(str::to_string);
+        suitability.notes = prepared.notes().to_vec();
         Ok(suitability)
     }
 
@@ -529,41 +558,64 @@ impl<'a> PicoAgent<'a> {
         text: &str,
         min_similarity: f64,
     ) -> Result<PicoExtraction, PicoError> {
-        // Negated so NaN is refused too.
-        if !(min_similarity > 0.0 && min_similarity <= 1.0) {
-            return Err(PicoError::InvalidSimilarity(min_similarity));
-        }
-        // Quotes are located in the text as passed, unstripped, so an offset
-        // indexes the string the caller will highlight.
-        let original = text;
-        let (title, sent, notes, condensed_from, status) =
-            self.prepare(title, text, "extraction")?;
-        let label = format!("PICO extraction of {}", repr_prefix(&title));
+        // Refused before the condensation, so a caller's mistake costs no request.
+        check_similarity(min_similarity)?;
+        let prepared = self.prepare_for(title, text, "extraction")?;
+        self.extract_prepared(&prepared, min_similarity)
+    }
+
+    /// [`extract`](Self::extract) over a paper [`prepare`](Self::prepare) made
+    /// ready. Quotes are verified against [`PicoPrepared::text`], the paper as
+    /// passed to `prepare`, never the digest.
+    ///
+    /// # Errors
+    ///
+    /// [`PicoError::InvalidSimilarity`] or [`PicoError::PreparedOverBudget`],
+    /// before any request; otherwise [`PicoError`] naming why no breakdown
+    /// could be made.
+    pub fn extract_prepared(
+        &mut self,
+        prepared: &PicoPrepared,
+        min_similarity: f64,
+    ) -> Result<PicoExtraction, PicoError> {
+        check_similarity(min_similarity)?;
+        let sent = self.sent(prepared)?;
+        let label = format!("PICO extraction of {}", repr_prefix(prepared.title()));
         // Quotes are verified against the paper, never the digest.
         let mut extraction = self.ask(
             EXTRACTION_TASK_PROMPT,
             EXTRACTION_RESPONSE_FORMAT,
-            &title,
-            &sent,
-            |data| read_extraction(data, original, min_similarity),
+            prepared.title(),
+            sent,
+            |data| read_extraction(data, prepared.text(), min_similarity),
             &label,
         )?;
-        extraction.condensed_from_chars = condensed_from;
-        extraction.condensation_status = status;
-        extraction.notes = notes;
+        extraction.condensed_from_chars = prepared.condensed_from_chars();
+        extraction.condensation_status = prepared.condensation_status().map(str::to_string);
+        extraction.notes = prepared.notes().to_vec();
         Ok(extraction)
     }
 
-    fn prepare(&mut self, title: &str, text: &str, stage: &str) -> Result<Prepared, PicoError> {
+    /// Strip the input, refuse an empty one, condense an oversized one;
+    /// `stage` names the calls the digest is for in a degraded run's note.
+    fn prepare_for(
+        &mut self,
+        title: &str,
+        text: &str,
+        stage: &str,
+    ) -> Result<PicoPrepared, PicoError> {
+        // Quotes are located in the text as passed, unstripped, so an offset
+        // indexes the string the caller will highlight.
+        let original = text.to_string();
         let title = python_strip(title).to_string();
-        let text = python_strip(text).to_string();
+        let text = python_strip(text);
         if title.is_empty() && text.is_empty() {
             return Err(PicoError::EmptyInput);
         }
         // `len(text)` is a character count, not a byte count.
         let length = text.chars().count();
         if length <= self.condense_config.max_context_chars {
-            return Ok((title, text, Vec::new(), None, None));
+            return Ok(prepared(title, original, None, None, Vec::new()));
         }
 
         let label: String = title.chars().take(60).collect();
@@ -572,26 +624,32 @@ impl<'a> PicoAgent<'a> {
                 "no condenser configured".to_string(),
             ));
         };
-        let (digest, notes, status) = condense_checked(
-            &mut **condenser,
-            &text,
-            &label,
-            &self.condense_config,
-            stage,
-        )
-        .map_err(|reason| {
-            PicoError::CondensationFailed(format!(
+        let (digest, notes, status) =
+            condense_checked(&mut **condenser, text, &label, &self.condense_config, stage)
+                .map_err(|reason| {
+                    PicoError::CondensationFailed(format!(
                 "a {length}-character text could not be condensed to fit {} characters: {reason}",
                 self.condense_config.max_context_chars
             ))
-        })?;
-        Ok((
+                })?;
+        Ok(prepared(
             title,
-            digest,
-            notes,
-            Some(length as i64),
+            original,
+            Some(digest),
             Some(status.as_str().to_string()),
+            notes,
         ))
+    }
+
+    /// What `prepared` sends, refused if it is over this agent's budget.
+    fn sent<'p>(&self, prepared: &'p PicoPrepared) -> Result<&'p str, PicoError> {
+        let sent = prepared.sent();
+        let chars = sent.chars().count();
+        let budget = self.condense_config.max_context_chars;
+        if chars > budget {
+            return Err(PicoError::PreparedOverBudget { chars, budget });
+        }
+        Ok(sent)
     }
 
     fn ask<T>(
@@ -637,6 +695,28 @@ impl<'a> PicoAgent<'a> {
             "{label}: {READ_ATTEMPTS} replies could not be read: {problem}"
         )))
     }
+}
+
+/// Refuse a `min_similarity` outside (0, 1]; negated so NaN is refused too.
+fn check_similarity(min_similarity: f64) -> Result<(), PicoError> {
+    if min_similarity > 0.0 && min_similarity <= 1.0 {
+        Ok(())
+    } else {
+        Err(PicoError::InvalidSimilarity(min_similarity))
+    }
+}
+
+/// A [`PicoPrepared`] `prepare_for` built: its rules hold by construction
+/// (`condense_checked` refuses a blank digest and a `Failed` run).
+fn prepared(
+    title: String,
+    text: String,
+    digest: Option<String>,
+    status: Option<String>,
+    notes: Vec<String>,
+) -> PicoPrepared {
+    PicoPrepared::new(title, text, digest, status, notes)
+        .expect("prepare_for keeps PicoPrepared's rules")
 }
 
 /// Python's `repr(title[:60])`, for a log label.
