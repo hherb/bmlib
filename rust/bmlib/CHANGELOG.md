@@ -11,6 +11,25 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`quality::LlmContextModel`** (#641): the first production `ContextModel`,
+  over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
+  run against a real model. `complete` is a plain chat whose output-ceiling
+  stop reason is an error; `complete_json` reads through `agents::chat_json`
+  (`CONTEXT_MODEL_JSON_RETRIES`, Python's default). Each call retries a
+  `ChatError::Transport` (an HTTP error status among them) up to
+  `CONTEXT_MODEL_ATTEMPTS` (3) tries from `LlmClient::retry_base_delay`,
+  doubling, never once its stop is set, as Python's `LLMChunkProcessor` now
+  retries.
+- **`num_ctx` and a stop for the PICO agent** (#640, #642, with the Python
+  library): `LlmChat::with_num_ctx`/`with_stop` and
+  `LlmContextModel::with_num_ctx`/`with_stop` send the window with every
+  request and refuse to send once the flag is set (`STOPPED_MESSAGE`), so
+  `chat_json`'s re-asks stop too; `PicoAgent::with_stop` turns any error while
+  the flag is set, and a condensation that finished while it was set, into the
+  new `PicoError::Stopped` (`"stopped"`; the enum is `#[non_exhaustive]`).
+  `tests/pico_stop_contract.rs` reads the shared fixture
+  `tests/fixtures/pico_stop_num_ctx.json`.
+
 - **`PicoAgent::prepare`, `check_suitability_prepared` and `extract_prepared`**
   (#638, with the Python library): condense a long paper once and hand the
   `PicoPrepared` to both calls and to every retry, where each call condensed
@@ -73,6 +92,8 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`LlmChat` has two new public fields**, `num_ctx` and `stop` (#640, #642);
+  a struct literal must name them (`None`), or build with `LlmChat::new`.
 - **`PdfExtractError::Conversion` carries the `PdfError`**, not a `String`
   (#604), so its kind reaches the result; `MupdfPdfExtractor` passes the
   extractor's error through. A third-party `PdfExtractor` builds one with

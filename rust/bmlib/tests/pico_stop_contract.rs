@@ -367,7 +367,9 @@ fn context_model_stop_sends_nothing_and_is_not_retried() {
         .stop_on_request = Some(stop.clone());
     let client = scripted_client(transport.clone());
     let model = LlmContextModel::new(&client, "ollama:qwen3").with_stop(&stop);
-    assert!(model.complete("p", 0.0, 10).is_err());
+    // The fault itself, returned at once rather than after a backoff wait.
+    let error = model.complete("p", 0.0, 10).expect_err("a fault");
+    assert!(error.contains("reset"), "{error}");
     assert_eq!(transport.requests(), 1);
 }
 
@@ -409,5 +411,18 @@ fn the_agents_stop_holds_over_any_chat() {
         agent.check_suitability("A trial", "Adults were enrolled."),
         Err(PicoError::Stopped)
     );
+    assert_eq!(transport.requests(), 0);
+
+    // Nor is a long paper condensed by a condenser model that has no stop.
+    let condenser_model = LlmContextModel::new(&client, "ollama:qwen3");
+    let mut condenser =
+        PicoAgent::pico_condenser(&condenser_model, 0.1, 4096).expect("the PICO prompts");
+    let mut chat = LlmChat::new(&client, "ollama:qwen3");
+    let mut agent = PicoAgent::new(&mut chat)
+        .with_condenser(&mut condenser)
+        .with_condense_config(ProcessingConfig::default().with_max_context_chars(1000))
+        .with_stop(&stop);
+    let long = "Adults were enrolled. ".repeat(200);
+    assert_eq!(agent.prepare("A trial", &long), Err(PicoError::Stopped));
     assert_eq!(transport.requests(), 0);
 }

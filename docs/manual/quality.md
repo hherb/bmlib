@@ -959,6 +959,8 @@ PicoAgent(
     temperature: float = 0.1,
     max_tokens: int = 4096,
     condense_config: ProcessingConfig | None = None,  # max_context_chars defaults to 48,000
+    num_ctx: int | None = None,                       # (unreleased, #640) Ollama's window
+    stop: threading.Event | Callable[[], bool] | None = None,  # (unreleased, #642)
 )
 
 check_suitability(title: str | None, text: str | None) -> PicoSuitability
@@ -973,6 +975,8 @@ extract_prepared(prepared: PicoPrepared, *, min_similarity: float) -> PicoExtrac
 - **`min_similarity` is required and has no default.** It is `find_passage`'s threshold: how close a quote must be to a span of the text to count as found. It is set by measurement, by the caller. A value outside (0, 1], NaN or a `bool` raises `ValueError` before any request.
 - **Citation offsets are code points into `text` exactly as passed**, so `text[c.start:c.end]` is the passage to highlight. Quotes are searched in `text` only, never in `title`; a caller who wants a title quote found puts the title in `text` (a `CanonicalText.text` already starts with it).
 - **The caller chooses the text.** An abstract keeps the suitability check cheap; the full text gives the extraction its evidence.
+- *(unreleased, #640)* **`num_ctx`** is sent with every request the agent makes, the condenser's included, so Ollama loads the model with that window rather than its own, often much smaller, default (and does not drop the start of a paper that would not fit). `None` sends none; other providers ignore it. A value that is not an `int` in 1..2³²−1 (a `bool` included) raises `ValueError` at construction.
+- *(unreleased, #642)* **`stop`** is read before every request, the condenser's included, through the agent's `chat()`, which raises `ChatStoppedError` (from `bmlib.agents`) in place of sending. Once it is set the call under way raises `PicoError` `STOPPED`, whatever else went wrong (a request that failed, an unusable reply, a condensation that failed or finished partial). A request already sent runs to its end, and a call that then succeeds returns its result, so a caller that must not keep it reads the stop again.
 
 ### What a part reports
 
@@ -1003,6 +1007,7 @@ A call returns its result or raises `PicoError`, whose `kind` (`PicoErrorKind`) 
 | `TRUNCATED` | The reply hit `max_tokens` | Raise `max_tokens` |
 | `UNUSABLE_REPLY` | Empty, unparseable, not a JSON object, or missing a required field after the retries | Another model |
 | `CONDENSATION_FAILED` | Too long for one context, and the map-reduce produced no digest that fits; the message says why — the run failed (a provider outage during it included), the digest was empty, or it is still over the budget | Retry for an outage; a larger budget or another model otherwise |
+| `STOPPED` *(unreleased, #642)* | The caller's `stop` was set; nothing more was sent | Nothing: the caller asked for it |
 
 Every kind but `EMPTY_INPUT` chains the exception that caused it as `__cause__`: the provider's exception, the `ChatJson*Error`, the last reply's reading problem, or the condensation's refusal. A reply missing a part, one whose `description` is not text or *(unreleased, #578)* is blank, or a suitability reply without a boolean `is_suitable` is asked for again once, as the Cochrane assessor retries an unusable parse.
 
@@ -1010,7 +1015,7 @@ Every kind but `EMPTY_INPUT` chains the exception that caused it as `__cause__`:
 
 ### Long papers
 
-Nothing is truncated. Text over `condense_config.max_context_chars` is condensed first by the [Cochrane assessor's map-reduce](#condensing-oversized-text), over prompts that ask for **verbatim** passages; the extraction then runs once over the digest. A map or reduce reply cut at `max_tokens` fails its batch, so a digest that lost passages is marked `partial` (with a note) or refused, never stored as `completed`. **Quotes are always verified against the original text**, so a quote the digest paraphrased is caught and its part is `UNVERIFIED`.
+Nothing is truncated. Text over `condense_config.max_context_chars` is condensed first by the [Cochrane assessor's map-reduce](#condensing-oversized-text), over prompts that ask for **verbatim** passages; the extraction then runs once over the digest. *(unreleased, #641)* Each map or reduce request that fails is retried with backoff by `LLMChunkProcessor` (`CONTEXT_MODEL_ATTEMPTS`, 3 tries, from `CONTEXT_MODEL_RETRY_BASE_DELAY`, 1 s, doubling); a `ValueError`, a missing SDK, a bmlib defect and a stop are not retried. A map or reduce reply cut at `max_tokens` fails its batch, so a digest that lost passages is marked `partial` (with a note) or refused, never stored as `completed`. **Quotes are always verified against the original text**, so a quote the digest paraphrased is caught and its part is `UNVERIFIED`.
 
 **Condense once** *(unreleased, #638)*. `check_suitability` and `extract` each condense their own text, so a paper checked and extracted from the same long text, or an extraction retried after `REQUEST_FAILED`, runs the map-reduce again every time — minutes on a small window. `prepare(title, text)` does it once and returns a `PicoPrepared`; `check_suitability_prepared` and `extract_prepared` take it and make one request each:
 
@@ -1025,7 +1030,7 @@ store(json.dumps(prepared.to_dict()))             # and PicoPrepared.from_dict l
 
 ### The Rust port
 
-`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` and *(unreleased)* `"prepared_over_budget"` and `"prepared_under_budget"` for the three cases Python raises as `ValueError`). *(unreleased, #638)* `prepare(&str, &str)`, `check_suitability_prepared(&PicoPrepared)` and `extract_prepared(&PicoPrepared, min_similarity)` are Python's, `PicoPrepared`'s fields read through accessors, with `to_json`/`from_json` refusing what Python's `from_dict` refuses, word for word. Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. A `ContextModel` must return `Err` for a completion that stopped at the output ceiling, since only the implementation sees the stop reason. The Rust result models have no `from_json`, so the refusals on reading a stored result are Python's. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
+`bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` and *(unreleased)* `"prepared_over_budget"` and `"prepared_under_budget"` for the three cases Python raises as `ValueError`). *(unreleased, #638)* `prepare(&str, &str)`, `check_suitability_prepared(&PicoPrepared)` and `extract_prepared(&PicoPrepared, min_similarity)` are Python's, `PicoPrepared`'s fields read through accessors, with `to_json`/`from_json` refusing what Python's `from_dict` refuses, word for word. Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. A `ContextModel` must return `Err` for a completion that stopped at the output ceiling, since only the implementation sees the stop reason. *(unreleased, #640–#642)* The production pair is `LlmChat::new(&client, model)` for the agent and `LlmContextModel::new(&client, model)` for its condenser, each `.with_num_ctx(window)` and `.with_stop(&flag)`; `LlmContextModel` retries a `ChatError::Transport` (an HTTP error status among them) up to `CONTEXT_MODEL_ATTEMPTS` tries from `LlmClient::retry_base_delay`, never once stopped, and reads a structured reply through `chat_json`. `PicoAgent::with_stop(&flag)` makes any error while the flag is set, and a condensation that finished while it was set, `PicoError::Stopped` (`"stopped"`). `tests/fixtures/pico_stop_num_ctx.json` holds both languages to the same requests, each request's `num_ctx` and the same outcome over a fake Ollama transport. The Rust result models have no `from_json`, so the refusals on reading a stored result are Python's. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
 
 ## Cochrane Formatters
 

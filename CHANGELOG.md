@@ -198,6 +198,31 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The PICO agent sends `num_ctx` and can be stopped** (#640, #642, from
+  StudyAnalyzer's plan 2c). `PicoAgent(..., num_ctx=None, stop=None)`:
+  `num_ctx` reaches every request the agent makes, the condenser's included,
+  so Ollama no longer loads the model with its own small window and drops the
+  start of a paper; a bad value raises `ValueError` at construction. `stop` (a
+  `threading.Event` or a zero-argument callable) is read before every request
+  through the agent's `chat()`, which raises the new
+  `bmlib.agents.ChatStoppedError` in place of sending; once it is set the call
+  under way raises `PicoError` with the new kind `STOPPED` (`"stopped"`),
+  whatever else failed, and a condensation that finished while it was set
+  (its digest possibly partial) is `STOPPED` too. A request already sent runs
+  to its end. The Rust port has `LlmChat::with_num_ctx`/`with_stop` and
+  `PicoAgent::with_stop`, and the shared fixture
+  `tests/fixtures/pico_stop_num_ctx.json` (13 cases over a fake Ollama
+  transport, the real map-reduce included) holds both languages to the same
+  requests, each one's `num_ctx`, and the same outcome.
+- **`LLMChunkProcessor` retries a failed model request with backoff** (#641,
+  rule 7): up to `CONTEXT_MODEL_ATTEMPTS` (3) tries, waiting
+  `CONTEXT_MODEL_RETRY_BASE_DELAY` (1 s) and doubling, so one dropped request
+  no longer fails a long paper's condensation (ollama-python retries nothing;
+  the Anthropic and OpenAI SDKs' own retries come first). A `ValueError`
+  (every `ChatJsonError` among them), a missing SDK, `NotImplementedError`, a
+  bmlib defect and `ChatStoppedError` are not retried. This reaches the
+  Cochrane assessor's condensation too. Rust's new `LlmContextModel` retries
+  the same way.
 - **`PicoAgent.prepare` condenses a long paper once for both PICO calls**
   (#638, from StudyAnalyzer's plan 2c review). `check_suitability` and
   `extract` each condensed their own text, so a paper checked and extracted

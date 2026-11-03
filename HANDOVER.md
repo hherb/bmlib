@@ -1,16 +1,38 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-03 (**this session's PR is #639**, on `feat/638-pico-prepare`,
-for #638; see *This session* below). PRs #637 (#628, unnamed parent), #631,
-#630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4), #621
-(Rust CSV), #620 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI** (tag
-`v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
-crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
-*Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
-crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
-#637 and this session's._
+_Last updated: 2026-11-03 (**this session's PR is on `feat/pico-num-ctx-stop`**,
+for #640, #641 and #642; see *This session* below). PRs #639 (#638), #637
+(#628, unnamed parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565),
+#625 (#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613
+merged. **0.12.0 is on PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611)
+and **the Rust crate 0.3.0 is on crates.io** from the same commit; the
+CHANGELOG's `[0.12.0]` summary and *Changed — breaking* are the release notes;
+see `HANDOVER_RUST.md` for the crate's publish. Unreleased: PRs #613-#615,
+#620-#622, #625-#627, #629-#631, #637, #639 and this session's._
 
-## This session: a long paper is condensed once for both PICO calls (#638)
+## This session: the PICO agent sends `num_ctx` and can be stopped (#640–#642)
+
+Filed and built for StudyAnalyzer's plan 2c, Task 1. **Python**:
+`PicoAgent(..., num_ctx=None, stop=None)`; the agent's own `chat()` adds
+`num_ctx` and refuses to send once the stop is set (`ChatStoppedError`, new in
+`bmlib.agents`), and every request, the condenser's included, passes there;
+the call under way becomes `PicoError` `STOPPED`. `LLMChunkProcessor` retries a
+failed request with backoff (`CONTEXT_MODEL_ATTEMPTS`, Cochrane's condensation
+too). **Rust**: `LlmChat::with_num_ctx`/`with_stop`, the new
+`quality::LlmContextModel` (the first production `ContextModel`: a transport
+failure retried with backoff, never once stopped) and `PicoAgent::with_stop`
+→ `PicoError::Stopped`. It lives in `quality/agent_chat.rs`, not
+`context_processor`, which keeps no LLM dependency. **Shared fixture**
+`tests/fixtures/pico_stop_num_ctx.json`: 13 cases over a fake Ollama transport
+and the real map-reduce, each language counting the requests and each one's
+`num_ctx` (they agree, four condensation requests included). Mutation: 17
+mutants on the new guards; two Python checks were equivalent (the agent is
+its own chat and condenser) and were deleted, the rest are killed. **For
+StudyAnalyzer plan 2c**: build `LlmChat` and `LlmContextModel` with the same
+window and flag, and `PicoAgent::with_stop` with that flag; read the flag
+again after a call that succeeded.
+
+## Earlier, 2026-11-03: a long paper is condensed once for both PICO calls (#638, PR #639, merged)
 
 Filed from StudyAnalyzer's plan 2c review (hherb/StudyAnalyzer#56):
 `check_suitability` and `extract` each condensed their own text, and a retried
