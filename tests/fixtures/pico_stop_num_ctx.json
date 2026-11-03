@@ -1,5 +1,5 @@
 {
-  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama transport. A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged).",
+  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama transport. A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. `fail_request` k fails request k once with a transport fault and no stop, which the condenser's model retries. `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged).",
   "stopped_kind": "stopped",
   "model": "ollama:test-model",
   "title": "A trial",
@@ -40,6 +40,11 @@
       "name": "a condensed paper: every condenser request and both calls carry num_ctx",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60,
       "expected": {"requests": 6, "error": null}
+    },
+    {
+      "name": "a condensation request that fails once is retried",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "fail_request": 1,
+      "expected": {"requests": 7, "error": null}
     },
     {
       "name": "a stop before the run sends nothing",

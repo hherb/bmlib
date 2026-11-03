@@ -1071,6 +1071,8 @@ def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
     def chat(**kwargs: Any) -> LLMResponse:
         index = len(sent)
         sent.append(kwargs.get("num_ctx"))
+        if case.get("fail_request") == index:
+            raise ConnectionError("the connection was reset")
         if case.get("stop_at_request") == index:
             stop.set()
             if case["request_at_stop"] == "fails":

@@ -363,7 +363,9 @@ class LLMChunkProcessor(IterativeContextProcessor):
         Up to :data:`CONTEXT_MODEL_ATTEMPTS` tries, waiting
         :data:`CONTEXT_MODEL_RETRY_BASE_DELAY` seconds before the first retry
         and doubling after.  What no retry cures (``_NOT_RETRIED``) is raised
-        at once.
+        at once.  This cannot see an agent's stop, so a request that fails as
+        the stop is set waits out one backoff before the retry the agent then
+        refuses (Rust's ``LlmContextModel`` skips that wait); nothing is sent.
 
         Args:
             call: The model call.

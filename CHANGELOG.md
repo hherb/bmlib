@@ -207,11 +207,11 @@ All notable changes to bmlib are documented here. The format is based on
   through the agent's `chat()`, which raises the new
   `bmlib.agents.ChatStoppedError` in place of sending; once it is set the call
   under way raises `PicoError` with the new kind `STOPPED` (`"stopped"`),
-  whatever else failed, and a condensation that finished while it was set
+  whatever else failed (a bmlib defect or a missing SDK still propagates), and a condensation that finished while it was set
   (its digest possibly partial) is `STOPPED` too. A request already sent runs
   to its end. The Rust port has `LlmChat::with_num_ctx`/`with_stop` and
   `PicoAgent::with_stop`, and the shared fixture
-  `tests/fixtures/pico_stop_num_ctx.json` (13 cases over a fake Ollama
+  `tests/fixtures/pico_stop_num_ctx.json` (14 cases over a fake Ollama
   transport, the real map-reduce included) holds both languages to the same
   requests, each one's `num_ctx`, and the same outcome.
 - **`LLMChunkProcessor` retries a failed model request with backoff** (#641,

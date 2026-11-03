@@ -519,7 +519,8 @@ class PicoAgent(BaseAgent):
             providers ignore it (#640).
         stop: Read before every request, the condenser's included (#642).
             Once it answers true no request is sent, and the call under way
-            raises ``PicoError`` ``STOPPED``, whatever else went wrong.  A
+            raises ``PicoError`` ``STOPPED``, whatever else went wrong, except
+            what propagates unwrapped (a bmlib defect, a missing SDK; #573).  A
             request already sent runs to its end; a call that then succeeds
             returns its result, so a caller that must not keep it reads the
             stop again.

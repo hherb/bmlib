@@ -23,7 +23,7 @@ too). **Rust**: `LlmChat::with_num_ctx`/`with_stop`, the new
 failure retried with backoff, never once stopped) and `PicoAgent::with_stop`
 → `PicoError::Stopped`. It lives in `quality/agent_chat.rs`, not
 `context_processor`, which keeps no LLM dependency. **Shared fixture**
-`tests/fixtures/pico_stop_num_ctx.json`: 13 cases over a fake Ollama transport
+`tests/fixtures/pico_stop_num_ctx.json`: 14 cases over a fake Ollama transport
 and the real map-reduce, each language counting the requests and each one's
 `num_ctx` (they agree, four condensation requests included). Mutation: 17
 mutants on the new guards; two Python checks were equivalent (the agent is

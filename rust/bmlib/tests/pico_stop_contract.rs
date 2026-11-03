@@ -45,6 +45,7 @@ struct FakeOllama {
     stop: Arc<AtomicBool>,
     stop_at: Option<usize>,
     fail_at_stop: bool,
+    fail_once_at: Option<usize>,
     num_ctx_sent: Mutex<Vec<Value>>,
 }
 
@@ -64,6 +65,9 @@ impl HttpClient for FakeOllama {
             sent.push(body["options"]["num_ctx"].clone());
             sent.len() - 1
         };
+        if self.fail_once_at == Some(index) {
+            return Err(FetchError::Transport("the connection was reset".into()));
+        }
         if self.stop_at == Some(index) {
             self.stop.store(true, Ordering::SeqCst);
             if self.fail_at_stop {
@@ -96,6 +100,7 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Value>, Option<&'static str>) {
         stop: stop.clone(),
         stop_at: case["stop_at_request"].as_u64().map(|k| k as usize),
         fail_at_stop: case["request_at_stop"] == json!("fails"),
+        fail_once_at: case["fail_request"].as_u64().map(|k| k as usize),
         num_ctx_sent: Mutex::new(Vec::new()),
     });
     let mut client = LlmClient::new(transport.clone());
@@ -229,6 +234,10 @@ impl HttpClient for Scripted {
         let answer = &self.answers[index.min(self.answers.len() - 1)];
         match answer {
             Err(fault) => Err(FetchError::Transport(fault.clone())),
+            // `RAW` sends `content` as the whole body.
+            Ok((status, content, done_reason)) if done_reason == "RAW" => Ok(
+                HttpResponse::from_bytes(*status, content.clone().into_bytes()),
+            ),
             Ok((status, content, done_reason)) => {
                 let body = json!({
                     "message": {"role": "assistant", "content": content},
@@ -333,6 +342,21 @@ fn context_model_retries_transport() {
     let model = LlmContextModel::new(&client, "ollama:qwen3");
     assert!(model.complete("p", 0.0, 10).is_err());
     assert_eq!(transport.requests(), CONTEXT_MODEL_ATTEMPTS as usize);
+}
+
+#[test]
+fn context_model_malformed_answer_is_not_retried() {
+    let transport = Scripted::new(vec![Ok((200, "not json", "RAW"))]);
+    let client = scripted_client(transport.clone());
+    let model = LlmContextModel::new(&client, "ollama:qwen3");
+    assert!(model.complete("p", 0.0, 10).is_err());
+    assert_eq!(transport.requests(), 1);
+    // The structured path too: `chat_json` reports it as its `Transport`.
+    let transport = Scripted::new(vec![Ok((200, "not json", "RAW"))]);
+    let client = scripted_client(transport.clone());
+    let model = LlmContextModel::new(&client, "ollama:qwen3");
+    assert!(model.complete_json("p", 0.0, 10).is_err());
+    assert_eq!(transport.requests(), 1);
 }
 
 #[test]

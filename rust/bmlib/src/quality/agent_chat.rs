@@ -165,6 +165,7 @@ impl JsonChat for LlmChat<'_> {
             client: self.client,
             request,
             stop: self.stop,
+            transport_failed: false,
         };
         chat_json(
             &mut source,
@@ -186,6 +187,10 @@ struct ClientSource<'a> {
     client: &'a LlmClient,
     request: ChatRequest,
     stop: Option<&'a AtomicBool>,
+    /// Whether the last attempt failed with [`ChatError::Transport`]:
+    /// [`ChatSource::chat`]'s `String` loses the kind, and
+    /// [`LlmContextModel`] retries that kind alone.
+    transport_failed: bool,
 }
 
 impl ChatSource for ClientSource<'_> {
@@ -193,7 +198,9 @@ impl ChatSource for ClientSource<'_> {
         if is_set(self.stop) {
             return Err(STOPPED_MESSAGE.to_string());
         }
-        self.client.chat(&self.request).map_err(|e| e.to_string())
+        let outcome = self.client.chat(&self.request);
+        self.transport_failed = matches!(outcome, Err(ChatError::Transport(_)));
+        outcome.map_err(|e| e.to_string())
     }
 
     fn backoff(&mut self, attempt: usize) {
@@ -312,6 +319,18 @@ impl<'a> LlmContextModel<'a> {
     }
 }
 
+/// A failed structured call, and whether its request failed in transport.
+struct JsonFailure {
+    error: ChatJsonError,
+    transport: bool,
+}
+
+impl std::fmt::Display for JsonFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
 impl ContextModel for LlmContextModel<'_> {
     fn complete(&self, prompt: &str, temperature: f64, max_tokens: i64) -> Result<String, String> {
         let request = self.request(prompt, temperature, max_tokens, false);
@@ -341,6 +360,7 @@ impl ContextModel for LlmContextModel<'_> {
                     client: self.client,
                     request: request.clone(),
                     stop: self.stop,
+                    transport_failed: false,
                 };
                 chat_json(
                     &mut source,
@@ -350,9 +370,15 @@ impl ContextModel for LlmContextModel<'_> {
                     max_tokens,
                     true,
                 )
+                .map_err(|error| JsonFailure {
+                    error,
+                    transport: source.transport_failed,
+                })
             },
-            // Only a failed request; `chat_json` has re-asked for the rest.
-            |error| matches!(error, ChatJsonError::Transport { .. }),
+            // Only a failed request, as `complete` retries: an unknown
+            // provider, a missing key or a malformed answer would fail again,
+            // and `chat_json` has re-asked for a bad reply.
+            |failure| failure.transport && matches!(failure.error, ChatJsonError::Transport { .. }),
         )?;
         Ok(outcome.value)
     }
