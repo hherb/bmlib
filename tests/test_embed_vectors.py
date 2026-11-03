@@ -33,6 +33,8 @@ from bmlib.embed import (
     QUERY_PREFIX,
     EmbedError,
     EmptyTextError,
+    ModelStatusError,
+    ModelTransportError,
     VectorError,
     check_texts,
     query_text,
@@ -53,6 +55,7 @@ def test_every_contract_section_is_read() -> None:
         "query_text",
         "check_texts",
         "model_files",
+        "download_errors",
     }
 
 
@@ -102,6 +105,16 @@ def test_check_texts(case: dict) -> None:
 def test_model_urls_match_contract(case: dict) -> None:
     model = {"F16": ARCTIC_EMBED_L_V2_F16, "Q8_0": ARCTIC_EMBED_L_V2_Q8_0}[case["name"]]
     assert model.url() == case["url"]
+
+
+@pytest.mark.parametrize("case", CONTRACT["download_errors"], ids=lambda c: c["name"])
+def test_download_errors_match_contract(case: dict) -> None:
+    error = (
+        ModelTransportError("refused")
+        if case["error"] == "transport"
+        else ModelStatusError(case["status"], "refused")
+    )
+    assert error.retryable is case["retryable"]
 
 
 @pytest.mark.parametrize(
