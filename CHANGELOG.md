@@ -8,6 +8,50 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`find_passage` rejects a near-verbatim match that changes a number, a
+  negation or a direction** (#632, filed by StudyAnalyzer). A one-character
+  edit scores about `1 − 1/L`, so no `min_similarity` told a benign copy from
+  a harmful one: in the issue's 222-character results sentence a hazard ratio
+  of 0.64 copied as 0.61 scored 0.9955 and a dropped "the" 0.9909 (the
+  issue's figures; the 214-character sentence the tests use gives 0.995 and
+  0.991), and at
+  bmlibrarian's 0.95 a changed number, an added "not" or "increased" for
+  "decreased" was accepted in any sentence over about 40 characters. A fuzzy
+  match whose best window reaches the threshold is now cut into words,
+  numbers and symbols (a number keeps its sign and decimal point but not a
+  comma, so `refs 3,4` and `refs 3, 4` read alike; Lancet's `0·64` reads as
+  `0.64`, `10mg` as `10 mg`), aligned with the quote's tokens
+  by `SequenceMatcher`, and **rejected** when a token left unmatched on either
+  side holds a digit, negates (`NEGATION_WORDS`, a word ending `n't`, `≠`, or
+  the other side's word behind one of `NEGATING_PREFIXES`: `ineffective` for
+  `effective`, which the fuzzy search accepted at 0.954), or states a
+  direction or comparison (`DIRECTION_WORDS`, `<`, `≥`, …). A bracketed
+  citation marker the quote leaves out whole (`[12]`, `[3, 4]`, `[5-7]`, as
+  canonical JATS text prints a body citation) is not tested; a changed one
+  still is. The new
+  **`PassageMatch.contradiction`** (`PassageContradiction`: `number`,
+  `negation`, `direction`, checked in that order) says which; the match keeps
+  the window's similarity and no span, so **a similarity at or above the
+  threshold no longer implies `matched`**; read `matched`.
+  `PassageContradiction` is exported from `bmlib.citations`. The lists are public and versioned by
+  **`CONTRADICTION_RULES_VERSION`** (1), which a test pins to a digest of
+  the guard's code and data. Only the best window is checked, and
+  an exact match never. **What moves**: a quote `PicoAgent` used to verify by
+  such a window is now `not_found`, so a part whose only quote it was becomes
+  `UNVERIFIED`, and why is not recorded (#647). Three hand-written contract
+  cases had pinned harmful accepts (`effective` for `ineffective`, `=` for `≠`
+  twice) and now expect the rejection; of the oracle's 144 fuzzy-accepted
+  cases, 56 are rejected (50 synthetic random edits and 6 hand-written: the
+  five #527 cut cases and `=` against `≠`), each touching a digit or a
+  guarded word, so a direction rather than a rate. The guard errs towards
+  rejecting (a misspelt guarded word, a tense change, `didn't` for `did not`,
+  `trial` against `atrial`) and does not see a reordering or a word outside
+  its lists; `docs/DECISIONS.md` has the choices. Rust has the same guard,
+  word for word (`bmlib::citations::PassageContradiction`), held by the shared
+  fixture, 25 new contract cases and the oracle, which now also compares the
+  tokens (40 cases) and the word lists; its crate-private `SequenceMatcher` is
+  generic over the element type for the token alignment.
+
 - **An unnamed numbered parent keeps its subsections** (#628, part; the
   maintainer's rule, 2026-11-02). A numbered top-level heading that names no
   section ("2 Characteristics of hypoxia") was dropped, and every subsection

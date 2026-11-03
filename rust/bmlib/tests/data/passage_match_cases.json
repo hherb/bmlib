@@ -3489,5 +3489,515 @@
    "text": "Grade 🅐bc def ghi.",
    "min_similarity": 0.95
   }
+ },
+ {
+  "name": "contract-contradiction-number",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-number-sign",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The mean change was 0.5 points on the scale over the whole year.",
+   "text": "Results. The mean change was -0.5 points on the scale over the whole year.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-number-before-direction",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in more patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-negation-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-negation-contraction",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome hasn't occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-negation-prefix",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The drug was effective in reducing mortality in older patients.",
+   "text": "Results. The drug was ineffective in reducing mortality in older patients.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-direction-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in more patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-contradiction-direction-symbol",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P<0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-dropped-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-doubled-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-hyphen-dropped",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention to treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-lancet-decimal-point",
+  "fn": "find_passage",
+  "args": {
+   "passage": "The hazard ratio was 0.64 in the primary analysis",
+   "text": "Methods were standard. The hazard ratio was 0·64 in the primary analysis.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-space-in-a-dose",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Patients received 10 mg of apixaban twice daily for a year.",
+   "text": "Methods. Patients received 10mg of apixaban twice daily for a year.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-dropped-citation-marker",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-dropped-citation-range",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15–17] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-dropped-citation-list",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15, 16] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-space-in-a-reference-list",
+  "fn": "find_passage",
+  "args": {
+   "passage": "As shown before (refs 3, 4) the effect held in every subgroup we examined.",
+   "text": "Results. As shown before (refs 3,4) the effect held in every subgroup we examined. End.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-changed-citation-marker",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% [16] in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-dropped-bracketed-value",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [0.5] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-negation-checked-before-direction",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in more patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "contract-number-checked-before-negation",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "contract-dropped-direction-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-dropped-number",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-inserted-direction-words",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred significantly lower in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "contract-only-the-best-window-is-checked",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare. In a sensitivity analysis: In the intention-to-treat population, primary outcome occurred in fewer patients in treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contradiction-rules",
+  "fn": "contradiction_rules",
+  "args": {}
+ },
+ {
+  "name": "tokens-00",
+  "fn": "tokens",
+  "args": {
+   "text": "hazard ratio, 0.64; 95% CI 0.44-0.92"
+  }
+ },
+ {
+  "name": "tokens-01",
+  "fn": "tokens",
+  "args": {
+   "text": "1,204 patients"
+  }
+ },
+ {
+  "name": "tokens-02",
+  "fn": "tokens",
+  "args": {
+   "text": "0·64"
+  }
+ },
+ {
+  "name": "tokens-03",
+  "fn": "tokens",
+  "args": {
+   "text": "a change of −0.5"
+  }
+ },
+ {
+  "name": "tokens-04",
+  "fn": "tokens",
+  "args": {
+   "text": "-3 at the start"
+  }
+ },
+ {
+  "name": "tokens-05",
+  "fn": "tokens",
+  "args": {
+   "text": "(+2)"
+  }
+ },
+ {
+  "name": "tokens-06",
+  "fn": "tokens",
+  "args": {
+   "text": "aged 18-65 years"
+  }
+ },
+ {
+  "name": "tokens-07",
+  "fn": "tokens",
+  "args": {
+   "text": "10mg and 10 mg"
+  }
+ },
+ {
+  "name": "tokens-08",
+  "fn": "tokens",
+  "args": {
+   "text": "didn’t reduce"
+  }
+ },
+ {
+  "name": "tokens-09",
+  "fn": "tokens",
+  "args": {
+   "text": "patients’ data"
+  }
+ },
+ {
+  "name": "tokens-10",
+  "fn": "tokens",
+  "args": {
+   "text": "x ≠ y"
+  }
+ },
+ {
+  "name": "tokens-11",
+  "fn": "tokens",
+  "args": {
+   "text": "x ≠ y"
+  }
+ },
+ {
+  "name": "tokens-12",
+  "fn": "tokens",
+  "args": {
+   "text": "p<0.05."
+  }
+ },
+ {
+  "name": "tokens-13",
+  "fn": "tokens",
+  "args": {
+   "text": "version 2."
+  }
+ },
+ {
+  "name": "tokens-14",
+  "fn": "tokens",
+  "args": {
+   "text": ""
+  }
+ },
+ {
+  "name": "tokens-15",
+  "fn": "tokens",
+  "args": {
+   "text": "   "
+  }
+ },
+ {
+  "name": "tokens-16",
+  "fn": "tokens",
+  "args": {
+   "text": "́x"
+  }
+ },
+ {
+  "name": "tokens-17",
+  "fn": "tokens",
+  "args": {
+   "text": "áb 1́ 2"
+  }
+ },
+ {
+  "name": "tokens-18",
+  "fn": "tokens",
+  "args": {
+   "text": "١٢٣ patients"
+  }
+ },
+ {
+  "name": "tokens-19",
+  "fn": "tokens",
+  "args": {
+   "text": "۱.۵ mg"
+  }
+ },
+ {
+  "name": "tokens-20",
+  "fn": "tokens",
+  "args": {
+   "text": "²³ m²"
+  }
+ },
+ {
+  "name": "tokens-21",
+  "fn": "tokens",
+  "args": {
+   "text": "½ dose"
+  }
+ },
+ {
+  "name": "tokens-22",
+  "fn": "tokens",
+  "args": {
+   "text": "IL-6 and CD4+ cells"
+  }
+ },
+ {
+  "name": "tokens-23",
+  "fn": "tokens",
+  "args": {
+   "text": "o'brien's"
+  }
+ },
+ {
+  "name": "tokens-24",
+  "fn": "tokens",
+  "args": {
+   "text": "a'1"
+  }
+ },
+ {
+  "name": "tokens-25",
+  "fn": "tokens",
+  "args": {
+   "text": "1'a"
+  }
+ },
+ {
+  "name": "tokens-26",
+  "fn": "tokens",
+  "args": {
+   "text": "..5"
+  }
+ },
+ {
+  "name": "tokens-27",
+  "fn": "tokens",
+  "args": {
+   "text": "5.."
+  }
+ },
+ {
+  "name": "tokens-28",
+  "fn": "tokens",
+  "args": {
+   "text": "+-5"
+  }
+ },
+ {
+  "name": "tokens-29",
+  "fn": "tokens",
+  "args": {
+   "text": "-+5"
+  }
+ },
+ {
+  "name": "tokens-30",
+  "fn": "tokens",
+  "args": {
+   "text": "x-5"
+  }
+ },
+ {
+  "name": "tokens-31",
+  "fn": "tokens",
+  "args": {
+   "text": "x -5"
+  }
+ },
+ {
+  "name": "tokens-32",
+  "fn": "tokens",
+  "args": {
+   "text": "≤ ≥ ≪ ↑ ↓"
+  }
+ },
+ {
+  "name": "tokens-33",
+  "fn": "tokens",
+  "args": {
+   "text": "Ⅻ trials"
+  }
+ },
+ {
+  "name": "tokens-34",
+  "fn": "tokens",
+  "args": {
+   "text": "ﬁnal 3ʳᵈ"
+  }
+ },
+ {
+  "name": "tokens-35",
+  "fn": "tokens",
+  "args": {
+   "text": "ǅ1"
+  }
+ },
+ {
+  "name": "tokens-36",
+  "fn": "tokens",
+  "args": {
+   "text": "refs 3,4"
+  }
+ },
+ {
+  "name": "tokens-37",
+  "fn": "tokens",
+  "args": {
+   "text": "refs 3, 4"
+  }
+ },
+ {
+  "name": "tokens-38",
+  "fn": "tokens",
+  "args": {
+   "text": "[15-17]"
+  }
+ },
+ {
+  "name": "tokens-39",
+  "fn": "tokens",
+  "args": {
+   "text": "[3, 4] and 1,204"
+  }
  }
 ]

@@ -37,8 +37,14 @@ import sys
 import unicodedata
 
 from bmlib.citations.passage_match import (
+    CONTRADICTION_RULES_VERSION,
+    DIRECTION_WORDS,
+    NEGATED_WORD_MIN_LENGTH,
+    NEGATING_PREFIXES,
+    NEGATION_WORDS,
     _fits_text,
     _max_edit_points,
+    _tokens,
     find_passage,
     normalize_with_offsets,
     occurs_once,
@@ -72,10 +78,21 @@ def run(case: dict):
             "end": m.end,
             "text": m.text,
             "exact": m.exact,
+            "contradiction": None if m.contradiction is None else m.contradiction.value,
         }
     if fn == "normalize_with_offsets":
         norm, offsets = normalize_with_offsets(args["text"])
         return [norm, offsets]
+    if fn == "tokens":
+        return _tokens(normalize_with_offsets(args["text"])[0])
+    if fn == "contradiction_rules":
+        return {
+            "version": CONTRADICTION_RULES_VERSION,
+            "negation_words": sorted(NEGATION_WORDS),
+            "negating_prefixes": list(NEGATING_PREFIXES),
+            "negated_word_min_length": NEGATED_WORD_MIN_LENGTH,
+            "direction_words": sorted(DIRECTION_WORDS),
+        }
     if fn == "occurs_once":
         return occurs_once(args["fragment"], args["text"])
     if fn == "fits_text":

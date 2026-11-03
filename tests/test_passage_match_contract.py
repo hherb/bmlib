@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from bmlib.citations import find_passage
+from bmlib.citations import PassageContradiction, find_passage
 
 _FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "passage_match.json").read_text(encoding="utf-8")
@@ -48,6 +48,9 @@ def test_contract_case(case: dict[str, Any]) -> None:
         assert match.similarity == expected["similarity"]
     if "min_similarity_at_least" in expected:
         assert match.similarity >= expected["min_similarity_at_least"]
+    assert match.contradiction == expected.get("contradiction")
+    if match.contradiction is not None:
+        assert isinstance(match.contradiction, PassageContradiction)
 
 
 @pytest.mark.parametrize("threshold", INVALID, ids=str)

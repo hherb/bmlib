@@ -31,6 +31,10 @@
 //!     > rust/bmlib/tests/data/passage_match_expected.json
 //! ```
 
+use bmlib::citations::passage_match::{
+    CONTRADICTION_RULES_VERSION, DIRECTION_WORDS, NEGATED_WORD_MIN_LENGTH, NEGATING_PREFIXES,
+    NEGATION_WORDS,
+};
 use bmlib::citations::{find_passage, normalize_with_offsets, occurs_once};
 use serde_json::{json, Value};
 
@@ -59,11 +63,26 @@ fn run(case: &Value) -> Value {
                 "end": end,
                 "text": span_text,
                 "exact": m.exact,
+                "contradiction": m.contradiction.map(|reason| reason.as_str()),
             })
         }
         "normalize_with_offsets" => {
             let (norm, offsets) = normalize_with_offsets(text);
             json!([norm, offsets])
+        }
+        "contradiction_rules" => {
+            let sorted = |words: &[&'static str]| {
+                let mut words = words.to_vec();
+                words.sort_unstable();
+                words
+            };
+            json!({
+                "version": CONTRADICTION_RULES_VERSION,
+                "negation_words": sorted(NEGATION_WORDS),
+                "negating_prefixes": NEGATING_PREFIXES,
+                "negated_word_min_length": NEGATED_WORD_MIN_LENGTH,
+                "direction_words": sorted(DIRECTION_WORDS),
+            })
         }
         "occurs_once" => json!(occurs_once(
             args["fragment"].as_str().unwrap_or_default(),
@@ -99,8 +118,11 @@ fn the_port_agrees_with_python_on_every_case() {
             "case {name:?} errored in Python: {}",
             want["error"]
         );
-        // The two crate-private bounds are checked by a unit test in the crate.
-        if matches!(case["fn"].as_str(), Some("fits_text" | "max_edit_points")) {
+        // The crate-private bounds and tokens are checked by a unit test in the crate.
+        if matches!(
+            case["fn"].as_str(),
+            Some("fits_text" | "max_edit_points" | "tokens")
+        ) {
             continue;
         }
         let got = run(case);

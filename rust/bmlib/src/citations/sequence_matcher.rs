@@ -16,14 +16,16 @@
 
 //! Crate-private port of Python's `difflib.SequenceMatcher`.
 //!
-//! Covers only `SequenceMatcher(None, a, b, autojunk=False)` over `char`
-//! slices: no junk predicate and no popular-element heuristic, so CPython's
+//! Covers only `SequenceMatcher(None, a, b, autojunk=False)` over slices of
+//! `char` (the passage's characters) or of any other `Copy` element that is
+//! hashed and compared for equality (`passage_match`'s token ids): no junk predicate and no popular-element heuristic, so CPython's
 //! junk and `popular` branches in `find_longest_match` (the `isbjunk` tests
 //! and the "extend by junk" loops) can never fire and are dropped. Results,
 //! including float ratios, are bit-identical to CPython's. Ties break on the
 //! earliest `a` index, then the earliest `b` index.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 
 /// A run of `size` equal elements at `a[a..]` and `b[b..]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -37,16 +39,17 @@ pub(crate) struct Block {
 }
 
 /// Matcher with a fixed `b` (the passage) and a replaceable `a` (a text window).
-pub(crate) struct SequenceMatcher {
-    b: Vec<char>,
+pub(crate) struct SequenceMatcher<T = char> {
+    b: Vec<T>,
     /// For each element of `b`, its indices in ascending order.
-    b2j: HashMap<char, Vec<usize>>,
-    a: Vec<char>,
+    b2j: HashMap<T, Vec<usize>>,
+    a: Vec<T>,
 }
 
 #[cfg(test)]
 thread_local! {
-    /// Calls to `set_a` on this thread: the windows `find_passage` scored, which
+    /// Calls to `set_a` on this thread: the windows `find_passage` scored, plus
+    /// one for the contradiction guard's token alignment when it runs, which
     /// its work-bound tests read (#533).
     pub(crate) static WINDOWS_SET: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -60,10 +63,10 @@ fn calculate_ratio(matches: usize, length: usize) -> f64 {
     }
 }
 
-impl SequenceMatcher {
+impl<T: Copy + Eq + Hash> SequenceMatcher<T> {
     /// Creates a matcher over `b` with an empty `a`.
-    pub(crate) fn new(b: &[char]) -> Self {
-        let mut b2j: HashMap<char, Vec<usize>> = HashMap::new();
+    pub(crate) fn new(b: &[T]) -> Self {
+        let mut b2j: HashMap<T, Vec<usize>> = HashMap::new();
         for (j, &c) in b.iter().enumerate() {
             b2j.entry(c).or_default().push(j);
         }
@@ -75,7 +78,7 @@ impl SequenceMatcher {
     }
 
     /// Replaces sequence `a`.
-    pub(crate) fn set_a(&mut self, a: &[char]) {
+    pub(crate) fn set_a(&mut self, a: &[T]) {
         #[cfg(test)]
         WINDOWS_SET.with(|n| n.set(n.get() + 1));
         self.a = a.to_vec();
@@ -178,7 +181,7 @@ impl SequenceMatcher {
 
     /// Upper bound on [`ratio`](Self::ratio) from the multiset intersection.
     pub(crate) fn quick_ratio(&self) -> f64 {
-        let mut avail: HashMap<char, usize> = HashMap::new();
+        let mut avail: HashMap<T, usize> = HashMap::new();
         for &c in &self.b {
             *avail.entry(c).or_insert(0) += 1;
         }
