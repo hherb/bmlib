@@ -20,11 +20,13 @@ or `None`, status, notes); **`check_suitability_prepared`** and
 **`extract_prepared`** take it, one request each, quotes still verified against
 the text. The direct calls route through the same code and send exactly what
 they sent (the 37 old oracle expectations did not move); a prepared paper's
-note names both calls. One prepared for a larger budget than the agent's own is
+note names both calls. One prepared for another budget — sending more than the
+agent's own, or condensed though the agent would send its text whole — is
 refused before any request (Python `ValueError`, Rust the new
-`PicoError::PreparedOverBudget`). Rust has the same API, `from_json` refusing
-word for word what `from_dict` refuses; the PICO oracle gains 16 cases (the
-shared fixture the issue asked for). **For StudyAnalyzer plan 2c**: call
+`PicoError::PreparedOverBudget`/`PreparedUnderBudget`). Rust has the same API,
+`from_json` refusing word for word what `from_dict` refuses (an unstripped title
+and a digest of an empty text among them, after PR #639's review); the PICO
+oracle gains 23 cases (the shared fixture the issue asked for). **For StudyAnalyzer plan 2c**: call
 `prepare` once per paper (persist `to_json` if wanted), then
 `check_suitability_prepared` and `extract_prepared`, retrying only the latter
 on `RequestFailed`; build the agent that uses a stored prepared paper with the
@@ -243,8 +245,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 8,946 passing + 165 skipped** on `feat/638-pico-prepare`
-  (`uv run pytest tests/ -v`, 2026-11-03; Rust 1,418 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
+- **Tests: 8,958 passing + 165 skipped** on `feat/638-pico-prepare`
+  (`uv run pytest tests/ -v`, 2026-11-03; Rust 1,419 with `cargo test -p bmlib --features pdf,html` on the same branch, manual doctests included; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest

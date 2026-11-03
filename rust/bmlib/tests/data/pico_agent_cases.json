@@ -462,7 +462,7 @@
     "fn": "prepared",
     "args": {
       "title": "  A trial ",
-      "text": "Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. é Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+      "text": "\n  Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. é Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured. ",
       "max_context_chars": 100,
       "digest": "Middle-aged adults received a drug.",
       "digest_status": "partial",
@@ -670,6 +670,105 @@
       "data": [
         1
       ]
+    }
+  },
+  {
+    "name": "prepared_from_dict_refuses_blank_title",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": "  ",
+        "text": "",
+        "digest": null,
+        "condensation_status": null,
+        "notes": []
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_refuses_unstripped_title",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": " A trial",
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "digest": null,
+        "condensation_status": null,
+        "notes": []
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_refuses_digest_of_empty_text",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": "A trial",
+        "text": " ",
+        "digest": "d",
+        "condensation_status": "completed",
+        "notes": []
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_pending",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": "A trial",
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "digest": "a digest",
+        "condensation_status": "pending",
+        "notes": [
+          "n"
+        ]
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_in_progress",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": "A trial",
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "digest": "a digest",
+        "condensation_status": "in_progress",
+        "notes": [
+          "n"
+        ]
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_completed",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": "A trial",
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "digest": "a digest",
+        "condensation_status": "completed",
+        "notes": [
+          "n"
+        ]
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_partial",
+    "fn": "prepared_from_dict",
+    "args": {
+      "data": {
+        "title": "A trial",
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "digest": "a digest",
+        "condensation_status": "partial",
+        "notes": [
+          "n"
+        ]
+      }
     }
   }
 ]

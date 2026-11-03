@@ -445,17 +445,21 @@ class PicoPrepared:
         condensation_status: The ``ProcessingStatus`` value the condensation
             finished with; ``None`` when not condensed.
         notes: Notes on the condensation (a degraded run), carried into each
-            result.
+            result.  A tuple, so the value stays as it was checked.
     """
 
     title: str
     text: str
     digest: str | None = None
     condensation_status: str | None = None
-    notes: list[str] = field(default_factory=list)
+    notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Refuse a value :meth:`~bmlib.quality.pico_agent.PicoAgent.prepare` cannot make."""
+        # A list passed in would stay the caller's to change after the checks.
+        object.__setattr__(self, "notes", tuple(self.notes))
+        if self.title != self.title.strip():
+            raise ValueError(f"the title {self.title!r} is not stripped")
         if not self.title and not self.text.strip():
             raise ValueError("both the title and the text are empty")
         if self.digest is None:
@@ -463,6 +467,9 @@ class PicoPrepared:
                 raise ValueError("a text sent whole carries no condensation status or notes")
         elif not self.digest.strip():
             raise ValueError("the digest is blank")
+        elif not self.text.strip():
+            # Every quote would be checked against nothing, so none verifies.
+            raise ValueError("a digest stands for an empty text")
         elif self.condensation_status not in _DIGEST_STATUSES:
             raise ValueError(
                 f"condensation_status {self.condensation_status!r} is not one a digest "
@@ -502,5 +509,5 @@ class PicoPrepared:
             text=_read(data, "text", str),
             digest=_read(data, "digest", str, nullable=True),
             condensation_status=_read(data, "condensation_status", str, nullable=True),
-            notes=_read_text_list(data, "notes"),
+            notes=tuple(_read_text_list(data, "notes")),
         )

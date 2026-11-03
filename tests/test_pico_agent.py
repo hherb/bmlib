@@ -899,16 +899,20 @@ class TestAPreparedPaper:
 
     def test_both_calls_and_a_retry_condense_once(self) -> None:
         note = "Source text was condensed before the suitability check and extraction; ..."
+        # Padded, so an offset into the stripped text would be caught.
+        padded = "\n  " + self.LONG + " "
         agent = self._agent({"is_suitable": True}, reply(), reply())
         with self._condense([note]) as condense:
-            prepared = agent.prepare("  A trial ", self.LONG)
+            prepared = agent.prepare("  A trial ", padded)
             suitability = agent.check_suitability_prepared(prepared)
             first = agent.extract_prepared(prepared, min_similarity=SIM)
             again = agent.extract_prepared(prepared, min_similarity=SIM)
 
         assert condense.call_count == 1
         assert condense.call_args.kwargs["stage"] == "the suitability check and extraction"
+        assert condense.call_args.args[1] == self.LONG
         assert prepared.title == "A trial"
+        assert prepared.text == padded
         assert prepared.digest == self.DIGEST
         for call in range(3):
             assert self.DIGEST in sent_user_message(agent, call)
@@ -918,7 +922,7 @@ class TestAPreparedPaper:
             assert result.condensation_status == "partial"
             assert result.condensed_from_chars == len(self.LONG)
         # Verified against the paper as passed, never the digest.
-        assert first.population.citations[0].start == self.LONG.index("Adults")
+        assert first.population.citations[0].start == padded.index("Adults")
         assert again == first
 
     def test_a_short_paper_is_sent_whole_and_stripped(self) -> None:
@@ -970,6 +974,29 @@ class TestAPreparedPaper:
                 call()
         assert agent.llm.chat.call_count == 0
 
+    def test_a_paper_condensed_for_a_smaller_budget_is_refused(self) -> None:
+        """A wider agent would send the text whole, so the digest is not sent in its place."""
+        with self._condense():
+            prepared = self._agent().prepare("A trial", self.LONG)
+        agent = make_agent()
+        for call in (
+            lambda: agent.check_suitability_prepared(prepared),
+            lambda: agent.extract_prepared(prepared, min_similarity=SIM),
+        ):
+            with pytest.raises(
+                ValueError, match=f"condensed from {len(self.LONG)} characters, which fit"
+            ):
+                call()
+        assert agent.llm.chat.call_count == 0
+
+    def test_a_digest_of_a_text_exactly_at_the_budget_is_refused(self) -> None:
+        """``prepare`` condenses only a text over the budget: one at it is sent whole."""
+        agent = self._agent()
+        prepared = PicoPrepared("A trial", " " + "x" * 100, "a digest", "completed")
+        with pytest.raises(ValueError, match="condensed from 100 characters, which fit"):
+            agent.check_suitability_prepared(prepared)
+        assert agent.llm.chat.call_count == 0
+
     @pytest.mark.parametrize("bad", [0.0, 1.5, float("nan"), True])
     def test_an_invalid_min_similarity_makes_no_call(self, bad: Any) -> None:
         agent = make_agent()
@@ -978,16 +1005,39 @@ class TestAPreparedPaper:
             agent.extract_prepared(prepared, min_similarity=bad)
         assert agent.llm.chat.call_count == 0
 
-    def test_an_unknown_provider_is_refused_before_any_request(self) -> None:
+    @pytest.mark.parametrize("extract", [False, True])
+    def test_an_unknown_provider_is_refused_before_any_request(self, extract: bool) -> None:
         prepared = make_agent().prepare("A trial", TEXT)
         agent = PicoAgent(llm=LLMClient(), model="nosuchprovider:model")
         with pytest.raises(ValueError, match="nosuchprovider"):
-            agent.check_suitability_prepared(prepared)
+            if extract:
+                agent.extract_prepared(prepared, min_similarity=SIM)
+            else:
+                agent.check_suitability_prepared(prepared)
+
+    @pytest.mark.parametrize(
+        "status", sorted({s.value for s in ProcessingStatus} - {ProcessingStatus.FAILED.value})
+    )
+    def test_every_status_a_digest_finishes_with_is_stored(self, status: str) -> None:
+        prepared = PicoPrepared("A trial", TEXT, "a digest", status, ("n",))
+        assert PicoPrepared.from_dict(json.loads(json.dumps(prepared.to_dict()))) == prepared
+
+    def test_the_notes_are_the_values_checked(self) -> None:
+        notes = ["n"]
+        prepared = PicoPrepared("A trial", TEXT, "a digest", "partial", notes)  # type: ignore[arg-type]
+        notes.append("m")
+        assert prepared.notes == ("n",)
 
     @pytest.mark.parametrize(
         ("fields", "match"),
         [
             ({"title": "", "text": " \n"}, "both the title and the text are empty"),
+            ({"title": "  ", "text": ""}, "the title '  ' is not stripped"),
+            ({"title": " A trial"}, "the title ' A trial' is not stripped"),
+            (
+                {"text": " ", "digest": "d", "condensation_status": "completed"},
+                "a digest stands for an empty text",
+            ),
             ({"condensation_status": "completed"}, "carries no condensation status"),
             ({"notes": ["n"]}, "carries no condensation status"),
             ({"digest": " ", "condensation_status": "completed"}, "the digest is blank"),

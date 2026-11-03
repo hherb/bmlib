@@ -88,11 +88,21 @@ pub enum PicoError {
         /// This agent's `max_context_chars`.
         budget: usize,
     },
+    /// A [`PicoPrepared`] was condensed, but its text fits this agent's budget
+    /// whole: it was prepared by an agent with a smaller one, and sending its
+    /// digest would lose what this agent can send. Python's `ValueError`.
+    PreparedUnderBudget {
+        /// The stripped text's characters.
+        chars: usize,
+        /// This agent's `max_context_chars`.
+        budget: usize,
+    },
 }
 
 impl PicoError {
-    /// Python's `PicoErrorKind` value; `"invalid_similarity"` and
-    /// `"prepared_over_budget"` for the two Python raises as a `ValueError`.
+    /// Python's `PicoErrorKind` value; `"invalid_similarity"`,
+    /// `"prepared_over_budget"` and `"prepared_under_budget"` for the three
+    /// Python raises as a `ValueError`.
     #[must_use]
     pub fn kind(&self) -> &'static str {
         match self {
@@ -103,6 +113,7 @@ impl PicoError {
             PicoError::CondensationFailed(_) => "condensation_failed",
             PicoError::InvalidSimilarity(_) => "invalid_similarity",
             PicoError::PreparedOverBudget { .. } => "prepared_over_budget",
+            PicoError::PreparedUnderBudget { .. } => "prepared_under_budget",
         }
     }
 }
@@ -122,6 +133,11 @@ impl std::fmt::Display for PicoError {
                 f,
                 "the prepared text is {chars} characters, over this agent's \
                  {budget}-character budget: prepare it with this agent"
+            ),
+            PicoError::PreparedUnderBudget { chars, budget } => write!(
+                f,
+                "the prepared text was condensed from {chars} characters, which fit \
+                 this agent's {budget}-character budget whole: prepare it with this agent"
             ),
         }
     }
@@ -322,6 +338,9 @@ impl PicoPrepared {
         condensation_status: Option<String>,
         notes: Vec<String>,
     ) -> Result<Self, String> {
+        if python_strip(&title) != title {
+            return Err(format!("the title {} is not stripped", repr_str(&title)));
+        }
         if title.is_empty() && python_strip(&text).is_empty() {
             return Err("both the title and the text are empty".to_string());
         }
@@ -335,6 +354,10 @@ impl PicoPrepared {
             }
             Some(digest) if python_strip(digest).is_empty() => {
                 return Err("the digest is blank".to_string());
+            }
+            // Every quote would be checked against nothing, so none verifies.
+            Some(_) if python_strip(&text).is_empty() => {
+                return Err("a digest stands for an empty text".to_string());
             }
             Some(_) => {
                 if !condensation_status

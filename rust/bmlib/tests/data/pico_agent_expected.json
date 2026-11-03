@@ -2294,10 +2294,10 @@
             "comparison": {
               "citations": [
                 {
-                  "end": 195,
+                  "end": 198,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 188,
+                  "start": 191,
                   "text": "placebo"
                 }
               ],
@@ -2312,10 +2312,10 @@
             "intervention": {
               "citations": [
                 {
-                  "end": 184,
+                  "end": 187,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 175,
+                  "start": 178,
                   "text": "metformin"
                 }
               ],
@@ -2331,10 +2331,10 @@
             "outcome": {
               "citations": [
                 {
-                  "end": 228,
+                  "end": 231,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 210,
+                  "start": 213,
                   "text": "HbA1c was measured"
                 }
               ],
@@ -2348,10 +2348,10 @@
             "population": {
               "citations": [
                 {
-                  "end": 155,
+                  "end": 158,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 138,
+                  "start": 141,
                   "text": "Adults aged 40-65"
                 }
               ],
@@ -2368,10 +2368,10 @@
             "comparison": {
               "citations": [
                 {
-                  "end": 195,
+                  "end": 198,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 188,
+                  "start": 191,
                   "text": "placebo"
                 }
               ],
@@ -2386,10 +2386,10 @@
             "intervention": {
               "citations": [
                 {
-                  "end": 184,
+                  "end": 187,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 175,
+                  "start": 178,
                   "text": "metformin"
                 }
               ],
@@ -2405,10 +2405,10 @@
             "outcome": {
               "citations": [
                 {
-                  "end": 228,
+                  "end": 231,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 210,
+                  "start": 213,
                   "text": "HbA1c was measured"
                 }
               ],
@@ -2422,10 +2422,10 @@
             "population": {
               "citations": [
                 {
-                  "end": 155,
+                  "end": 158,
                   "exact": true,
                   "similarity": 1.0,
-                  "start": 138,
+                  "start": 141,
                   "text": "Adults aged 40-65"
                 }
               ],
@@ -2445,7 +2445,7 @@
           "notes": [
             "Source text was condensed before the suitability check and extraction; the condensation finished with status partial, so the digest may be incomplete."
           ],
-          "text": "Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. é Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+          "text": "\n  Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. Filler sentence. é Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured. ",
           "title": "A trial"
         },
         "suitability": {
@@ -2692,6 +2692,87 @@
     "ok": true,
     "value": {
       "refused": "expected an object holding 'title', got list"
+    }
+  },
+  {
+    "name": "prepared_from_dict_refuses_blank_title",
+    "ok": true,
+    "value": {
+      "refused": "the title '  ' is not stripped"
+    }
+  },
+  {
+    "name": "prepared_from_dict_refuses_unstripped_title",
+    "ok": true,
+    "value": {
+      "refused": "the title ' A trial' is not stripped"
+    }
+  },
+  {
+    "name": "prepared_from_dict_refuses_digest_of_empty_text",
+    "ok": true,
+    "value": {
+      "refused": "a digest stands for an empty text"
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_pending",
+    "ok": true,
+    "value": {
+      "result": {
+        "condensation_status": "pending",
+        "digest": "a digest",
+        "notes": [
+          "n"
+        ],
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "title": "A trial"
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_in_progress",
+    "ok": true,
+    "value": {
+      "result": {
+        "condensation_status": "in_progress",
+        "digest": "a digest",
+        "notes": [
+          "n"
+        ],
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "title": "A trial"
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_completed",
+    "ok": true,
+    "value": {
+      "result": {
+        "condensation_status": "completed",
+        "digest": "a digest",
+        "notes": [
+          "n"
+        ],
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "title": "A trial"
+      }
+    }
+  },
+  {
+    "name": "prepared_from_dict_keeps_status_partial",
+    "ok": true,
+    "value": {
+      "result": {
+        "condensation_status": "partial",
+        "digest": "a digest",
+        "notes": [
+          "n"
+        ],
+        "text": "Adults aged 40-65 were randomised to metformin or placebo for 12 weeks; HbA1c was measured.",
+        "title": "A trial"
+      }
     }
   }
 ]

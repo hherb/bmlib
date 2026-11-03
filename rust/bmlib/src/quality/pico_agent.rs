@@ -489,7 +489,9 @@ impl<'a> PicoAgent<'a> {
     /// Hand the result to [`check_suitability_prepared`](Self::check_suitability_prepared)
     /// and [`extract_prepared`](Self::extract_prepared), and to each retry of
     /// either, so a long paper's map-reduce is not run again before every
-    /// call. It can be stored with [`PicoPrepared::to_json`].
+    /// call. It can be stored with [`PicoPrepared::to_json`], and is for an
+    /// agent with this one's `max_context_chars`: another refuses it before
+    /// any request.
     ///
     /// # Errors
     ///
@@ -517,9 +519,9 @@ impl<'a> PicoAgent<'a> {
     ///
     /// # Errors
     ///
-    /// [`PicoError::PreparedOverBudget`] when `prepared` was made by an agent
-    /// with a larger budget, before any request; otherwise [`PicoError`]
-    /// naming why no answer could be made.
+    /// [`PicoError::PreparedOverBudget`] or [`PicoError::PreparedUnderBudget`]
+    /// when `prepared` was made by an agent with another budget, before any
+    /// request; otherwise [`PicoError`] naming why no answer could be made.
     pub fn check_suitability_prepared(
         &mut self,
         prepared: &PicoPrepared,
@@ -570,9 +572,9 @@ impl<'a> PicoAgent<'a> {
     ///
     /// # Errors
     ///
-    /// [`PicoError::InvalidSimilarity`] or [`PicoError::PreparedOverBudget`],
-    /// before any request; otherwise [`PicoError`] naming why no breakdown
-    /// could be made.
+    /// [`PicoError::InvalidSimilarity`], [`PicoError::PreparedOverBudget`] or
+    /// [`PicoError::PreparedUnderBudget`], before any request; otherwise
+    /// [`PicoError`] naming why no breakdown could be made.
     pub fn extract_prepared(
         &mut self,
         prepared: &PicoPrepared,
@@ -641,13 +643,20 @@ impl<'a> PicoAgent<'a> {
         ))
     }
 
-    /// What `prepared` sends, refused if it is over this agent's budget.
+    /// What `prepared` sends, refused unless this agent would have made it:
+    /// over its budget, or condensed though it would send the text whole.
     fn sent<'p>(&self, prepared: &'p PicoPrepared) -> Result<&'p str, PicoError> {
         let sent = prepared.sent();
         let chars = sent.chars().count();
         let budget = self.condense_config.max_context_chars;
         if chars > budget {
             return Err(PicoError::PreparedOverBudget { chars, budget });
+        }
+        if prepared.digest().is_some() {
+            let chars = python_strip(prepared.text()).chars().count();
+            if chars <= budget {
+                return Err(PicoError::PreparedUnderBudget { chars, budget });
+            }
         }
         Ok(sent)
     }
@@ -697,7 +706,8 @@ impl<'a> PicoAgent<'a> {
     }
 }
 
-/// Refuse a `min_similarity` outside (0, 1]; negated so NaN is refused too.
+/// Refuse a `min_similarity` outside (0, 1]; NaN fails both comparisons, so it
+/// is refused too.
 fn check_similarity(min_similarity: f64) -> Result<(), PicoError> {
     if min_similarity > 0.0 && min_similarity <= 1.0 {
         Ok(())

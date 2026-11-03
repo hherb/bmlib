@@ -524,7 +524,9 @@ class PicoAgent(BaseAgent):
         Hand the result to :meth:`check_suitability_prepared` and
         :meth:`extract_prepared`, and to each retry of either, so a long
         paper's map-reduce is not run again before every call.  It can be
-        stored with :meth:`~bmlib.quality.pico_models.PicoPrepared.to_dict`.
+        stored with :meth:`~bmlib.quality.pico_models.PicoPrepared.to_dict`,
+        and is for an agent with this one's ``max_context_chars``: another
+        refuses it before any request.
 
         Args:
             title: The paper's title.
@@ -565,8 +567,8 @@ class PicoAgent(BaseAgent):
 
         Raises:
             PicoError: Naming why no answer could be made.
-            ValueError: The model's provider is unknown, or *prepared* is over
-                this agent's budget (it was prepared by another).
+            ValueError: The model's provider is unknown, or *prepared* was
+                made for another budget (see :meth:`extract_prepared`).
             ImportError: The provider's SDK is not installed.
         """
         sent = self._sent(prepared)
@@ -620,8 +622,9 @@ class PicoAgent(BaseAgent):
 
         Raises:
             ValueError: *min_similarity* is not a number in (0, 1], the
-                model's provider is unknown, or *prepared* is over this
-                agent's budget (it was prepared by another).
+                model's provider is unknown, or *prepared* was made for
+                another budget: it sends more than this agent's, or it was
+                condensed though this agent would send its text whole.
             ImportError: The provider's SDK is not installed.
             PicoError: Naming why no breakdown could be made.
         """
@@ -676,22 +679,33 @@ class PicoAgent(BaseAgent):
                 f"a {len(text)}-character text could not be condensed to fit "
                 f"{self.condense_config.max_context_chars} characters: {exc}",
             ) from exc
-        return PicoPrepared(title, original, digest, status.value, notes)
+        return PicoPrepared(title, original, digest, status.value, tuple(notes))
 
     def _sent(self, prepared: PicoPrepared) -> str:
-        """What *prepared* sends, refused if it is over this agent's budget.
+        """What *prepared* sends, refused unless this agent would have made it.
+
+        Both directions are refused: a paper prepared for a larger budget does
+        not fit, and one condensed for a smaller budget would send a digest
+        where this agent sends the whole text.
 
         Raises:
-            ValueError: The provider is unknown, or *prepared* does not fit.
+            ValueError: The provider is unknown, or *prepared* was made for
+                another budget.
             ImportError: The provider's SDK is not installed.
         """
         self._check_provider()
+        budget = self.condense_config.max_context_chars
         sent = prepared.sent
-        if len(sent) > self.condense_config.max_context_chars:
+        if len(sent) > budget:
             raise ValueError(
                 f"the prepared text is {len(sent)} characters, over this agent's "
-                f"{self.condense_config.max_context_chars}-character budget: "
-                "prepare it with this agent"
+                f"{budget}-character budget: prepare it with this agent"
+            )
+        whole = prepared.condensed_from_chars
+        if whole is not None and whole <= budget:
+            raise ValueError(
+                f"the prepared text was condensed from {whole} characters, which fit "
+                f"this agent's {budget}-character budget whole: prepare it with this agent"
             )
         return sent
 
