@@ -87,7 +87,7 @@ embed = ["llama-cpp-python>=0.3.36"]
 # environment that actually has the extras installed. `embed` is the
 # exception: it is outside `all`, so its `llama_cpp` import carries a
 # targeted ignore and mypy passes with or without it.
-dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.0", "types-psycopg2"]
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.1", "types-psycopg2"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`. It also
