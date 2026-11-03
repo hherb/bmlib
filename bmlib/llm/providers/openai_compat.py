@@ -61,10 +61,10 @@ from bmlib.llm.providers.base import (
 from bmlib.llm.stream import (
     CANCELLED_STOP_REASON,
     STREAM_USAGE_PROVIDERS,
+    Stop,
     StreamDelta,
-    closing_stream,
+    read_stream,
     refuse_tools,
-    run_stream,
     sdk_events,
 )
 from bmlib.llm.utils import extract_json
@@ -323,12 +323,14 @@ class OpenAICompatibleProvider(BaseProvider):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        cancel: Stop | None = None,
         **kwargs: object,
     ) -> LLMResponse:
         """Stream a chat answer from the OpenAI-compatible endpoint.
 
         Sends the request :meth:`chat` would, with ``stream=True``, and reads
-        the chunks through :func:`~bmlib.llm.stream.run_stream`. Usage is
+        the chunks through :func:`~bmlib.llm.stream.read_stream`, which
+        *cancel* stops at once (#635). Usage is
         asked for only from :data:`~bmlib.llm.stream.STREAM_USAGE_PROVIDERS`;
         elsewhere it is read if the server sends it unasked, else 0. Usage
         asked for and not sent by the end is logged at WARNING, since it is
@@ -345,10 +347,14 @@ class OpenAICompatibleProvider(BaseProvider):
         request_kwargs["stream"] = True
         if self.PROVIDER_NAME in STREAM_USAGE_PROVIDERS:
             request_kwargs["stream_options"] = {"include_usage": True}
-        with closing_stream(client.chat.completions.create(**request_kwargs)) as stream:
-            response = run_stream(
-                "openai", sdk_events(stream, lambda c: c.to_dict()), model, on_delta
-            )
+        response = read_stream(
+            "openai",
+            lambda: client.chat.completions.create(**request_kwargs),
+            lambda stream: sdk_events(stream, lambda c: c.to_dict()),
+            model,
+            on_delta,
+            cancel,
+        )
         # Every prompt costs at least one input token, so 0 is "not sent".
         if (
             "stream_options" in request_kwargs

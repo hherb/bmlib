@@ -34,6 +34,7 @@ Usage::
 
 from __future__ import annotations
 
+import inspect
 import logging
 import threading
 from collections.abc import Callable
@@ -54,7 +55,7 @@ from bmlib.llm.providers import (
     get_provider,
     list_providers,
 )
-from bmlib.llm.stream import StreamDelta, refuse_tools
+from bmlib.llm.stream import Stop, StreamDelta, refuse_tools
 from bmlib.llm.token_tracker import get_token_tracker
 
 logger = logging.getLogger(__name__)
@@ -242,7 +243,10 @@ class LLMClient:
         max_tokens: int = 4096,
         top_p: float | None = None,
         json_mode: bool = False,
-        **kwargs: object,
+        cancel: Stop | None = None,
+        # `Any`, as for `generate()`: splatted into the provider's typed
+        # signature, which now names `cancel` (#635).
+        **kwargs: Any,
     ) -> LLMResponse:
         """Send a chat request and stream the answer as the model writes it.
 
@@ -261,6 +265,18 @@ class LLMClient:
         ``"cancelled"`` (or the server's own, when its end marker came with
         the last delta). Any other return value (``None`` included) carries
         on. An exception *on_delta* raises propagates, closing the stream.
+
+        *cancel* (an ``Event``, or a callable answering "stop now?") stops
+        the call at once, even before the first event, while a local server
+        is still reading the prompt (#635): the response holds what arrived,
+        with ``stop_reason`` ``"cancelled"``, and usage is recorded as for a
+        stop from *on_delta*. One already set sends nothing. The request is
+        then sent and read on a worker thread (*on_delta* still runs on this
+        one), and a cancelled request's connection is closed only once that
+        request returns: the server answers, or the SDK's timeout ends it, so
+        a server still reading the prompt goes on reading it until then.
+        With *cancel*, a stop from *on_delta* closes the connection at the
+        next event rather than before this returns.
 
         What differs from :meth:`chat`
         -------------------------------
@@ -298,6 +314,15 @@ class LLMClient:
         provider_name, model_name = self._parse_model_string(model)
         logger.debug("Chat stream: provider=%s, model=%s", provider_name, model_name)
         provider = self._get_provider(provider_name)
+        if cancel is not None:
+            # A provider written before #635 would pass *cancel* on to its SDK
+            # in **kwargs, or drop it, and the cancel would do nothing.
+            if "cancel" not in inspect.signature(provider.chat_stream).parameters:
+                raise NotImplementedError(
+                    f"{provider_name}'s chat_stream does not take cancel; it cannot be cancelled"
+                )
+            # Only when asked, so a provider written before #635 still streams.
+            kwargs["cancel"] = cancel
         response = provider.chat_stream(
             messages,
             on_delta,

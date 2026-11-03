@@ -20,7 +20,7 @@
 //! case's events, run through `run_stream`, give exactly its deltas and its
 //! response, or an error containing its `error`.
 
-use bmlib::llm::{run_stream, ChatError, Protocol, StreamDelta};
+use bmlib::llm::{run_stream_until, ChatError, Protocol, StreamDelta};
 use serde_json::{json, Value};
 use std::ops::ControlFlow;
 
@@ -56,21 +56,33 @@ fn every_case_gives_its_deltas_and_response() {
         };
         run += 1;
         let stop_after = case.get("stop_after").and_then(Value::as_u64);
+        // A cancel set once `cancel_after` events were read: nothing after is.
+        let cancel_after = case
+            .get("cancel_after")
+            .and_then(Value::as_u64)
+            .map(|n| usize::try_from(n).expect("a small count"));
         let mut seen = Vec::new();
         let events = case["events"]
             .as_array()
             .expect("events")
             .iter()
+            .take(cancel_after.unwrap_or(usize::MAX))
             .cloned()
             .map(Ok);
-        let result = run_stream(protocol, events, "model-x", &mut |delta| {
-            seen.push(delta_json(delta));
-            if stop_after.is_some_and(|n| seen.len() as u64 >= n) {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        });
+        let result = run_stream_until(
+            protocol,
+            events,
+            "model-x",
+            &mut |delta| {
+                seen.push(delta_json(delta));
+                if stop_after.is_some_and(|n| seen.len() as u64 >= n) {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+            &|| cancel_after.is_some(),
+        );
         if Value::Array(seen.clone()) != case["deltas"] {
             failures.push(format!("{name}: deltas {seen:?}"));
         }
@@ -99,5 +111,5 @@ fn every_case_gives_its_deltas_and_response() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     // No case is skipped: every protocol in the fixture is read.
-    assert_eq!(run, 24, "cases run");
+    assert_eq!(run, 29, "cases run");
 }

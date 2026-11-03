@@ -35,16 +35,26 @@ Three protocols:
 **A stream that ends before its end marker is an error**, never a short
 answer: a dropped connection would otherwise read as a model that stopped
 early.
+
+**A stream can be cancelled while it waits** (#635): :func:`read_stream`
+given a *cancel* (a :data:`Stop`) opens and reads the stream on a worker
+thread and watches *cancel* on the caller's, so a cancel before the first
+event (a local server still reading the prompt) returns at once.
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
+import queue
+import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, TypeVar, get_args
+from typing import Any, Literal, Protocol, TypeVar, cast, get_args
 
 from bmlib.llm.data_types import LLMResponse
+
+logger = logging.getLogger(__name__)
 
 StreamProtocol = Literal["anthropic", "openai", "ollama"]
 """The stream shapes :class:`StreamState` reads."""
@@ -71,6 +81,28 @@ matters only to the Rust port, which keeps the same list.
 
 THINKING_BLOCK_SEPARATOR = "\n\n"
 """What joins two of Anthropic's reasoning blocks, as ``chat()`` joins them."""
+
+CANCEL_POLL_SECONDS = 0.05
+"""How often a cancellable stream looks at its cancel while it waits."""
+
+Stop = threading.Event | Callable[[], bool]
+"""A stop or cancel: an ``Event``, or a zero-argument callable answering
+"stop now?", which must not raise."""
+
+
+def stop_reader(stop: Stop | None) -> Callable[[], bool]:
+    """A zero-argument callable answering whether *stop* is set.
+
+    Raises:
+        TypeError: *stop* is neither an ``Event`` nor callable.
+    """
+    if stop is None:
+        return lambda: False
+    if isinstance(stop, threading.Event):
+        return stop.is_set
+    if callable(stop):
+        return stop
+    raise TypeError(f"stop must be a threading.Event or a callable, got {stop!r}")
 
 
 class StreamError(RuntimeError):
@@ -445,6 +477,7 @@ def run_stream(
     events: Iterable[Mapping[str, Any]],
     model: str,
     on_delta: Callable[[StreamDelta], object],
+    cancelled: Callable[[], bool] | None = None,
 ) -> LLMResponse:
     """Read *events* to the end, calling *on_delta* for every delta.
 
@@ -460,6 +493,9 @@ def run_stream(
         events: The stream's events as JSON objects, in order.
         model: The model name the response reports.
         on_delta: Called once per delta, in order.
+        cancelled: Asked once *events* ends: true means the events were cut
+            short by a cancel, so the response is built as for a stop rather
+            than refused for a missing end marker (#635).
 
     Raises:
         StreamError: If the server reports a failure mid-stream, an event is
@@ -472,4 +508,97 @@ def run_stream(
         for delta in state.apply(event):
             if on_delta(delta) is False:
                 return state.finish(model, cancelled=True)
-    return state.finish(model)
+    return state.finish(model, cancelled=cancelled is not None and cancelled())
+
+
+_StreamOpener = Callable[[], Any]
+"""Opens an SDK stream: a closable object, iterated by the events reader."""
+
+
+class _Failure:
+    """What the worker raised, carried to the caller's thread."""
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
+_END = object()
+"""The worker's last message: the stream ended and was closed cleanly."""
+
+
+def read_stream(
+    protocol: StreamProtocol,
+    open_stream: _StreamOpener,
+    events: Callable[[Any], Iterable[Mapping[str, Any]]],
+    model: str,
+    on_delta: Callable[[StreamDelta], object],
+    cancel: Stop | None = None,
+) -> LLMResponse:
+    """Open a stream, read it through :func:`run_stream`, and close it.
+
+    Without *cancel* everything runs here, and the stream is closed before
+    this returns. With *cancel* (#635) the request is sent and the events are
+    read on a worker thread while this thread watches *cancel*, so a cancel
+    stops the call at once, even before the first event: the response holds
+    what arrived, with ``stop_reason`` :data:`CANCELLED_STOP_REASON`. A
+    cancel already set sends nothing. The worker is then abandoned: it reads
+    nothing more and closes the stream once the request it is waiting on
+    returns (the server answers, or the SDK's timeout ends it), so a server
+    still reading the prompt keeps reading it until then. The same holds
+    when *on_delta* stops the stream or raises.
+
+    Args:
+        protocol: One of :data:`STREAM_PROTOCOLS`.
+        open_stream: Sends the request and returns the SDK's stream.
+        events: Turns that stream into its events as JSON objects.
+        model: The model name the response reports.
+        on_delta: Called once per delta, in order, on this thread.
+        cancel: A :data:`Stop`, or ``None`` for a stream that cannot be
+            cancelled except from *on_delta*.
+
+    Raises:
+        Whatever opening the stream or reading its events raises, unchanged
+        (relayed from the worker), and what :func:`run_stream` raises.
+    """
+    if cancel is None:
+        with closing_stream(open_stream()) as stream:
+            return run_stream(protocol, events(stream), model, on_delta)
+    cancelled = stop_reader(cancel)
+    if cancelled():
+        return StreamState(protocol).finish(model, cancelled=True)
+    messages: queue.SimpleQueue[object] = queue.SimpleQueue()
+    abandoned = threading.Event()
+
+    def work() -> None:
+        try:
+            with closing_stream(open_stream()) as stream:
+                for event in events(stream):
+                    if abandoned.is_set():
+                        return
+                    messages.put(event)
+        except BaseException as exc:
+            if abandoned.is_set():
+                logger.debug("an abandoned %s stream failed: %s", protocol, exc)
+            else:
+                messages.put(_Failure(exc))
+        else:
+            messages.put(_END)
+
+    def relayed() -> Iterator[Mapping[str, Any]]:
+        while not cancelled():
+            try:
+                message = messages.get(timeout=CANCEL_POLL_SECONDS)
+            except queue.Empty:
+                continue
+            if message is _END:
+                return
+            if isinstance(message, _Failure):
+                raise message.exc
+            yield cast(Mapping[str, Any], message)  # the worker puts only events
+
+    # Daemon: an abandoned worker waiting on a server must not hold up exit.
+    threading.Thread(target=work, name=f"bmlib-{protocol}-stream", daemon=True).start()
+    try:
+        return run_stream(protocol, relayed(), model, on_delta, cancelled=cancelled)
+    finally:
+        abandoned.set()

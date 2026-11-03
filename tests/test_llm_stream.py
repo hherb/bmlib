@@ -16,6 +16,8 @@ and client tests use fake SDK clients; nothing touches the network.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -39,7 +41,7 @@ from bmlib.llm.providers.gemini import GeminiProvider
 from bmlib.llm.providers.mistral import MistralProvider
 from bmlib.llm.providers.ollama import OllamaProvider
 from bmlib.llm.providers.openai_provider import OpenAIProvider
-from bmlib.llm.stream import CANCELLED_STOP_REASON, STREAM_PROTOCOLS
+from bmlib.llm.stream import CANCELLED_STOP_REASON, STREAM_PROTOCOLS, read_stream
 
 FIXTURE = Path(__file__).parent / "fixtures" / "chat_stream.json"
 CASES = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
@@ -51,13 +53,27 @@ def _drive(case: dict) -> tuple[list[StreamDelta], object]:
     """Run one fixture case; return the deltas seen and the response or error."""
     seen: list[StreamDelta] = []
     stop_after = case.get("stop_after")
+    cancel_after = case.get("cancel_after")
+    cancel = threading.Event()
 
     def on_delta(delta: StreamDelta) -> bool:
         seen.append(delta)
         return stop_after is None or len(seen) < stop_after
 
+    def events():
+        # A cancel set once `cancel_after` events were read: nothing after is.
+        for read, event in enumerate(case["events"]):
+            if read == cancel_after:
+                cancel.set()
+                return
+            yield event
+        if cancel_after == len(case["events"]):
+            cancel.set()
+
     try:
-        result: object = run_stream(case["protocol"], case["events"], "model-x", on_delta)
+        result: object = run_stream(
+            case["protocol"], events(), "model-x", on_delta, cancelled=cancel.is_set
+        )
     except StreamError as exc:
         result = exc
     return seen, result
@@ -406,6 +422,156 @@ def test_a_failure_in_bmlibs_own_dump_is_not_a_stream_error(kind):
         _over(kind, stream).chat_stream(MESSAGES, lambda _d: None)
 
 
+def _eventually(predicate, seconds: float = 2.0) -> bool:
+    """Whether *predicate* becomes true within *seconds* (a worker's close)."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
+class _GatedStream(_FakeStream):
+    """A stream whose first event waits on *gate*: a server reading the prompt."""
+
+    def __init__(self, events: list[dict], dump: str, gate: threading.Event) -> None:
+        super().__init__(events, dump=dump)
+        self.gate = gate
+        self.delivered = 0
+
+    def __iter__(self):
+        self.gate.wait(10)
+        for event in super().__iter__():
+            self.delivered += 1
+            yield event
+
+
+def _cancel_soon(cancel: threading.Event, seconds: float = 0.05) -> None:
+    threading.Timer(seconds, cancel.set).start()
+
+
+@pytest.mark.parametrize("kind", list(_PROVIDER_CASES))
+class TestACancelStopsAStreamThatIsWaiting:
+    """#635: a cancel works before the first event, not only from on_delta."""
+
+    def _stream(self, kind: str, cls=_FakeStream, **extra):
+        name, dump = _PROVIDER_CASES[kind]
+        return cls(_events(name), dump=dump, **extra)
+
+    def test_a_cancel_before_the_first_event_returns_at_once(self, kind):
+        gate, cancel = threading.Event(), threading.Event()
+        stream = self._stream(kind, _GatedStream, gate=gate)
+        seen: list[StreamDelta] = []
+        _cancel_soon(cancel)
+        started = time.monotonic()
+        try:
+            response = _over(kind, stream).chat_stream(MESSAGES, seen.append, cancel=cancel)
+            elapsed = time.monotonic() - started
+        finally:
+            gate.set()
+        assert elapsed < 2.0
+        assert (response.content, response.thinking) == ("", None)
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        assert seen == []
+        # The abandoned worker closes the stream once the server answers, and
+        # reads no further than the event it was waiting on.
+        assert _eventually(lambda: stream.closed)
+        assert stream.delivered <= 1
+
+    def test_a_cancel_already_set_sends_nothing(self, kind):
+        cancel = threading.Event()
+        cancel.set()
+        provider = _over(kind, self._stream(kind))
+        response = provider.chat_stream(MESSAGES, lambda _d: None, cancel=cancel)
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        if kind == "ollama":
+            assert provider._client.last_kwargs == {}
+        elif kind == "anthropic":
+            provider._client.messages.create.assert_not_called()
+        else:
+            provider._client.chat.completions.create.assert_not_called()
+
+    def test_a_cancel_between_events_stops_the_answer(self, kind):
+        cancel = threading.Event()
+        seen: list[StreamDelta] = []
+
+        def on_delta(delta):
+            seen.append(delta)
+            cancel.set()
+
+        response = _over(kind, self._stream(kind)).chat_stream(MESSAGES, on_delta, cancel=cancel)
+        assert len(seen) == 1
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        assert response.thinking or response.content
+
+    def test_a_whole_answer_is_what_the_direct_path_returns(self, kind):
+        stream = self._stream(kind)
+        direct = _over(kind, self._stream(kind)).chat_stream(MESSAGES, lambda _d: None)
+        response = _over(kind, stream).chat_stream(
+            MESSAGES, lambda _d: None, cancel=threading.Event()
+        )
+        assert response == direct
+        assert stream.closed
+
+    def test_a_callable_cancel_is_read(self, kind):
+        response = _over(kind, self._stream(kind)).chat_stream(
+            MESSAGES, lambda _d: None, cancel=lambda: True
+        )
+        assert response.stop_reason == CANCELLED_STOP_REASON
+
+    def test_a_cancel_that_is_neither_is_refused(self, kind):
+        with pytest.raises(TypeError, match="threading.Event or a callable"):
+            _over(kind, self._stream(kind)).chat_stream(MESSAGES, lambda _d: None, cancel=1)
+
+    def test_an_sdk_failure_mid_stream_is_relayed(self, kind):
+        stream = self._stream(kind, _BreakingStream)
+        with pytest.raises(StreamError, match="the stream failed: Overloaded") as caught:
+            _over(kind, stream).chat_stream(MESSAGES, lambda _d: None, cancel=threading.Event())
+        assert isinstance(caught.value.__cause__, _OverloadedError)
+        assert stream.closed
+
+    def test_an_exception_from_on_delta_propagates_and_the_stream_is_closed(self, kind):
+        stream = self._stream(kind)
+
+        def on_delta(_delta):
+            raise ValueError("the caller's own")
+
+        with pytest.raises(ValueError, match="the caller's own"):
+            _over(kind, stream).chat_stream(MESSAGES, on_delta, cancel=threading.Event())
+        assert _eventually(lambda: stream.closed)
+
+    def test_a_close_that_fails_after_a_whole_answer_is_reported(self, kind):
+        with pytest.raises(OSError, match="close failed"):
+            _over(kind, self._stream(kind, _CloseFails)).chat_stream(
+                MESSAGES, lambda _d: None, cancel=threading.Event()
+            )
+
+
+def test_a_request_waiting_for_its_answer_is_cancelled_too():
+    """Anthropic's and OpenAI's SDKs wait inside ``create()``, not in iteration."""
+    gate, cancel = threading.Event(), threading.Event()
+    stream = _FakeStream(_events("anthropic/text"))
+    provider = AnthropicProvider(api_key="test-key")
+    provider._client = MagicMock()
+    provider._client.messages.create.side_effect = lambda **_kw: gate.wait(10) and stream
+    _cancel_soon(cancel)
+    try:
+        response = provider.chat_stream(MESSAGES, lambda _d: None, cancel=cancel)
+    finally:
+        gate.set()
+    assert response.stop_reason == CANCELLED_STOP_REASON
+    assert _eventually(lambda: stream.closed)
+
+
+def test_read_stream_relays_an_open_failure_unchanged():
+    def refuse():
+        raise ConnectionError("failed to connect")
+
+    with pytest.raises(ConnectionError, match="failed to connect"):
+        read_stream("ollama", refuse, iter, "m", lambda _d: None, threading.Event())
+
+
 class TestOllamaOpensAsChatDoes:
     """ollama-python sends a streamed request only on the first ``next()``."""
 
@@ -427,6 +593,17 @@ class TestOllamaOpensAsChatDoes:
         with pytest.raises(ollama.ResponseError, match="not found") as caught:
             provider.chat_stream(MESSAGES, lambda _d: None)
         assert not isinstance(caught.value, StreamError)
+
+    @pytest.mark.parametrize("cancel", [None, threading.Event()], ids=["direct", "cancellable"])
+    def test_a_missing_model_raises_what_chat_raises_on_both_paths(self, cancel):
+        ollama = pytest.importorskip("ollama")
+
+        provider = OllamaProvider()
+        provider._client = _RecordingOllamaClient(
+            self._lazy(ollama.ResponseError("model 'x' not found", 404))
+        )
+        with pytest.raises(ollama.ResponseError, match="not found"):
+            provider.chat_stream(MESSAGES, lambda _d: None, cancel=cancel)
 
     def test_a_server_that_is_not_running_is_a_connection_error(self):
         httpx = pytest.importorskip("httpx")
@@ -589,6 +766,34 @@ class TestLLMClient:
                 tools=[LLMToolDefinition(name="f", description="", parameters={})],
             )
         provider._client.messages.create.assert_not_called()
+
+    def test_a_cancel_reaches_the_provider_and_usage_is_recorded(self):
+        reset_token_tracker()
+        gate, cancel = threading.Event(), threading.Event()
+        name, dump = _PROVIDER_CASES["anthropic"]
+        provider = _over("anthropic", _GatedStream(_events(name), dump=dump, gate=gate))
+        _cancel_soon(cancel)
+        try:
+            response = self._client_over(provider).chat_stream(
+                MESSAGES, lambda _d: None, model="anthropic:claude-x", cancel=cancel
+            )
+        finally:
+            gate.set()
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        assert get_token_tracker().get_summary().call_count == 1
+        reset_token_tracker()
+
+    def test_a_provider_whose_stream_takes_no_cancel_refuses_one(self):
+        class _OldStreamer(_NonStreamingProvider):
+            PROVIDER_NAME = "oldstream"
+
+            def chat_stream(self, messages, on_delta, model=None, **kwargs):
+                raise AssertionError("must not be called with a cancel it would drop")
+
+        with pytest.raises(NotImplementedError, match="cannot be cancelled"):
+            self._client_over(_OldStreamer()).chat_stream(
+                MESSAGES, lambda _d: None, model="oldstream:m", cancel=threading.Event()
+            )
 
     def test_a_provider_that_cannot_stream_says_so(self):
         with pytest.raises(NotImplementedError, match="legacy does not support streaming"):

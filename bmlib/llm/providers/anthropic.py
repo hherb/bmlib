@@ -40,10 +40,10 @@ from bmlib.llm.providers.base import (
     _sdk_import_failed,
 )
 from bmlib.llm.stream import (
+    Stop,
     StreamDelta,
-    closing_stream,
+    read_stream,
     refuse_tools,
-    run_stream,
     sdk_events,
 )
 from bmlib.llm.utils import extract_json
@@ -317,13 +317,15 @@ class AnthropicProvider(BaseProvider):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        cancel: Stop | None = None,
         **kwargs: object,
     ) -> LLMResponse:
         """Stream a chat answer from the Anthropic API.
 
         Sends the request :meth:`chat` would, with ``stream=True``, and reads
-        the events through :func:`~bmlib.llm.stream.run_stream`. The SDK
-        retries opening the stream itself.
+        the events through :func:`~bmlib.llm.stream.read_stream`, which
+        *cancel* stops at once (#635). The SDK retries opening the stream
+        itself.
 
         Raises:
             NotImplementedError: If *tools* is passed.
@@ -334,10 +336,14 @@ class AnthropicProvider(BaseProvider):
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
-        with closing_stream(client.messages.create(**request_kwargs, stream=True)) as stream:
-            return run_stream(
-                "anthropic", sdk_events(stream, lambda e: e.to_dict()), model, on_delta
-            )
+        return read_stream(
+            "anthropic",
+            lambda: client.messages.create(**request_kwargs, stream=True),
+            lambda stream: sdk_events(stream, lambda e: e.to_dict()),
+            model,
+            on_delta,
+            cancel,
+        )
 
     # --- Model listing ---
 

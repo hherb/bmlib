@@ -33,7 +33,8 @@ use crate::llm::protocol::{
     tool_choice_to_openai, tool_def_to_anthropic, tool_def_to_ollama, tool_def_to_openai, Protocol,
 };
 use crate::llm::stream::{
-    ndjson_events, run_stream, SseEvents, StreamDelta, SSE_DONE, STREAM_USAGE_PROVIDERS,
+    ndjson_events, run_stream, run_stream_until, SseEvents, StreamDelta, StreamState, SSE_DONE,
+    STREAM_USAGE_PROVIDERS,
 };
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
@@ -41,7 +42,10 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::ControlFlow;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 /// The provider a model string with no prefix is routed to.
@@ -70,6 +74,10 @@ pub const ERROR_BODY_LIMIT: u64 = 64 * 1024;
 
 /// The wait before the first retry; each later one doubles it.
 pub const DEFAULT_RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+
+/// How often [`LlmClient::chat_stream_with_cancel`] looks at its cancel flag
+/// while it waits for the stream.
+pub const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Providers whose chat path accepts OpenAI-style tool calling.
 ///
@@ -707,6 +715,174 @@ pub fn parse_response(
     }
 }
 
+/// Run `send` until it answers, retrying a transport failure or a
+/// [`RETRYABLE_STATUSES`] status up to [`STREAM_OPEN_ATTEMPTS`] tries, with
+/// a backoff from `base_delay` doubling each time. `give_up` returning true
+/// stops the retries (a cancelled stream's worker).
+///
+/// Returns the last outcome, retried or not, for the caller to judge:
+/// shared by opening a stream and by a context-window lookup.
+/// `status_of` reads the status out of a successful send.
+fn send_with_retries<T>(
+    base_delay: Duration,
+    give_up: &dyn Fn() -> bool,
+    mut send: impl FnMut() -> Result<T, FetchError>,
+    status_of: impl Fn(&T) -> u16,
+) -> Result<T, FetchError> {
+    let mut attempt = 1;
+    loop {
+        let outcome = send();
+        let retryable = match &outcome {
+            Err(FetchError::Transport(_)) => true,
+            Err(_) => false,
+            Ok(answer) => RETRYABLE_STATUSES.contains(&status_of(answer)),
+        };
+        if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
+            return outcome;
+        }
+        std::thread::sleep(base_delay * 2u32.pow(attempt - 1));
+        if give_up() {
+            return outcome;
+        }
+        attempt += 1;
+    }
+}
+
+/// Open a stream, retrying a transport failure or a retryable status.
+///
+/// The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
+/// bytes: it only explains the status.
+fn open_stream(
+    client: &dyn HttpClient,
+    base_delay: Duration,
+    give_up: &dyn Fn() -> bool,
+    url: &str,
+    body: &Value,
+    headers: &BTreeMap<String, String>,
+) -> Result<HttpStream, ChatError> {
+    let mut stream = send_with_retries(
+        base_delay,
+        give_up,
+        || client.post_json_stream(url, body, headers),
+        |stream| stream.status,
+    )
+    .map_err(|e| ChatError::Transport(e.to_string()))?;
+    if !stream.is_success() {
+        let mut bytes = Vec::new();
+        // A body that cannot be read is quoted as nothing: the
+        // status is the error, and the body only explains it.
+        let _ = (&mut stream.body)
+            .take(ERROR_BODY_LIMIT)
+            .read_to_end(&mut bytes);
+        let text = std::str::from_utf8(&bytes).unwrap_or_default();
+        return Err(http_error(url, stream.status, text));
+    }
+    Ok(stream)
+}
+
+/// A stream body's events as JSON objects: one per line for Ollama, one per
+/// server-sent event (up to `[DONE]`) otherwise.
+fn stream_events<'a>(
+    body: Box<dyn Read + Send>,
+    protocol: Protocol,
+    url: &'a str,
+) -> Box<dyn Iterator<Item = Result<Value, ChatError>> + 'a> {
+    let reader = std::io::BufReader::new(body);
+    if protocol == Protocol::Ollama {
+        return Box::new(ndjson_events(reader));
+    }
+    Box::new(
+        SseEvents::new(reader)
+            .take_while(|data| data.as_deref() != Ok(SSE_DONE))
+            .map(move |data| {
+                data.and_then(|d| {
+                    serde_json::from_str::<Value>(&d).map_err(|e| {
+                        ChatError::Stream(format!("{url} streamed an event that is not JSON: {e}"))
+                    })
+                })
+            }),
+    )
+}
+
+/// A stream's events, opened and read on a worker thread, handed over here.
+///
+/// The iterator ends once `cancel` is set, without waiting for the worker,
+/// and when the worker has nothing more to send. Dropping it abandons the
+/// worker: its retries stop, and its next send fails, which drops the body
+/// and so closes the connection.
+struct WorkerEvents<'a> {
+    events: Receiver<Result<Value, ChatError>>,
+    cancel: &'a AtomicBool,
+    abandoned: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl<'a> WorkerEvents<'a> {
+    fn spawn(
+        client: Arc<dyn HttpClient + Send + Sync>,
+        base_delay: Duration,
+        url: String,
+        body: Value,
+        headers: BTreeMap<String, String>,
+        protocol: Protocol,
+        cancel: &'a AtomicBool,
+    ) -> Self {
+        let (sender, events) = mpsc::channel();
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let gave_up = Arc::clone(&abandoned);
+        let worker = std::thread::spawn(move || {
+            let give_up = || gave_up.load(Ordering::SeqCst);
+            match open_stream(&*client, base_delay, &give_up, &url, &body, &headers) {
+                Ok(stream) => {
+                    for event in stream_events(stream.body, protocol, &url) {
+                        if sender.send(event).is_err() {
+                            return;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = sender.send(Err(e));
+                }
+            }
+        });
+        WorkerEvents {
+            events,
+            cancel,
+            abandoned,
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Iterator for WorkerEvents<'_> {
+    type Item = Result<Value, ChatError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.cancel.load(Ordering::SeqCst) {
+                return None;
+            }
+            match self.events.recv_timeout(CANCEL_POLL_INTERVAL) {
+                Ok(event) => return Some(event),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    // The worker has finished, so this does not wait.
+                    if let Some(Err(panic)) = self.worker.take().map(JoinHandle::join) {
+                        std::panic::resume_unwind(panic);
+                    }
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+impl Drop for WorkerEvents<'_> {
+    fn drop(&mut self) {
+        self.abandoned.store(true, Ordering::SeqCst);
+    }
+}
+
 /// A chat client over an [`HttpClient`].
 ///
 /// One client for every provider, because the protocol carries the differences:
@@ -887,27 +1063,15 @@ impl LlmClient {
         )?;
         let body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
         let url = chat_url(&target);
-        let stream = self.open_stream(&url, &body, &chat_headers(&target))?;
-
-        let reader = std::io::BufReader::new(stream.body);
-        let events: Box<dyn Iterator<Item = Result<Value, ChatError>>> =
-            if target.protocol == Protocol::Ollama {
-                Box::new(ndjson_events(reader))
-            } else {
-                Box::new(
-                    SseEvents::new(reader)
-                        .take_while(|data| data.as_deref() != Ok(SSE_DONE))
-                        .map(|data| {
-                            data.and_then(|d| {
-                                serde_json::from_str::<Value>(&d).map_err(|e| {
-                                    ChatError::Stream(format!(
-                                        "{url} streamed an event that is not JSON: {e}"
-                                    ))
-                                })
-                            })
-                        }),
-                )
-            };
+        let stream = open_stream(
+            &*self.client,
+            self.retry_base_delay,
+            &|| false,
+            &url,
+            &body,
+            &chat_headers(&target),
+        )?;
+        let events = stream_events(stream.body, target.protocol, &url);
         let response = run_stream(target.protocol, events, &target.model, on_delta)?;
         // Recorded for a stopped stream too, with the counts the server had
         // sent by then, which understate what it spent.
@@ -915,61 +1079,69 @@ impl LlmClient {
         Ok(response)
     }
 
-    /// Run `send` until it answers, retrying a transport failure or a
-    /// [`RETRYABLE_STATUSES`] status up to [`STREAM_OPEN_ATTEMPTS`] tries, with
-    /// a backoff from [`LlmClient::retry_base_delay`] doubling each time.
+    /// [`LlmClient::chat_stream`], which `cancel` stops at once, even before
+    /// the stream's first event (#635).
     ///
-    /// Returns the last outcome, retried or not, for the caller to judge:
-    /// shared by opening a stream and by a context-window lookup.
-    /// `status_of` reads the status out of a successful send.
-    fn send_with_retries<T>(
-        &self,
-        mut send: impl FnMut() -> Result<T, FetchError>,
-        status_of: impl Fn(&T) -> u16,
-    ) -> Result<T, FetchError> {
-        let mut attempt = 1;
-        loop {
-            let outcome = send();
-            let retryable = match &outcome {
-                Err(FetchError::Transport(_)) => true,
-                Err(_) => false,
-                Ok(answer) => RETRYABLE_STATUSES.contains(&status_of(answer)),
-            };
-            if !retryable || attempt >= STREAM_OPEN_ATTEMPTS {
-                return outcome;
-            }
-            std::thread::sleep(self.retry_base_delay * 2u32.pow(attempt - 1));
-            attempt += 1;
-        }
-    }
-
-    /// Open a stream, retrying a transport failure or a retryable status.
+    /// A local server reads the whole prompt before it sends anything, which
+    /// for a long paper on a large model takes minutes, and `on_delta` is
+    /// called only once text arrives. So here the request is opened (with its
+    /// retries) and its events read on a worker thread, while this thread
+    /// looks at `cancel` every [`CANCEL_POLL_INTERVAL`]; `on_delta` still
+    /// runs on this thread. Once `cancel` is set, nothing more is read and
+    /// the response holds what arrived, with `stop_reason`
+    /// [`CANCELLED_STOP_REASON`](crate::llm::CANCELLED_STOP_REASON) (or the
+    /// server's own, when its end marker had arrived); its usage is recorded
+    /// as for a stop from `on_delta`. A `cancel` already set sends nothing.
     ///
-    /// The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
-    /// bytes: it only explains the status.
-    fn open_stream(
+    /// The worker is abandoned rather than interrupted: it sends no further
+    /// retry, and it closes the connection when the read it is blocked in
+    /// returns (the server answers, or
+    /// [`UreqClient::stream_timeout_seconds`](crate::http::UreqClient::stream_timeout_seconds)
+    /// ends it). So a server still reading the prompt goes on reading it
+    /// until then. A stop from `on_delta` likewise closes the connection at
+    /// the next event rather than before this returns.
+    ///
+    /// # Errors
+    ///
+    /// As [`LlmClient::chat_stream`]. A panic in the transport is resumed on
+    /// this thread.
+    pub fn chat_stream_with_cancel(
         &self,
-        url: &str,
-        body: &Value,
-        headers: &BTreeMap<String, String>,
-    ) -> Result<HttpStream, ChatError> {
-        let mut stream = self
-            .send_with_retries(
-                || self.client.post_json_stream(url, body, headers),
-                |stream| stream.status,
-            )
-            .map_err(|e| ChatError::Transport(e.to_string()))?;
-        if !stream.is_success() {
-            let mut bytes = Vec::new();
-            // A body that cannot be read is quoted as nothing: the
-            // status is the error, and the body only explains it.
-            let _ = (&mut stream.body)
-                .take(ERROR_BODY_LIMIT)
-                .read_to_end(&mut bytes);
-            let text = std::str::from_utf8(&bytes).unwrap_or_default();
-            return Err(http_error(url, stream.status, text));
+        request: &ChatRequest,
+        cancel: &AtomicBool,
+        on_delta: &mut dyn FnMut(&StreamDelta) -> ControlFlow<()>,
+    ) -> Result<LLMResponse, ChatError> {
+        if request.tools.is_some() {
+            return Err(ChatError::StreamingToolsUnsupported);
         }
-        Ok(stream)
+        let target = resolve_target(
+            request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+        )?;
+        if cancel.load(Ordering::SeqCst) {
+            return StreamState::new(target.protocol)
+                .finish(&target.model, true)
+                .map_err(ChatError::Stream);
+        }
+        let body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        let url = chat_url(&target);
+        let headers = chat_headers(&target);
+        let events = WorkerEvents::spawn(
+            Arc::clone(&self.client),
+            self.retry_base_delay,
+            url,
+            body,
+            headers,
+            target.protocol,
+            cancel,
+        );
+        let response = run_stream_until(target.protocol, events, &target.model, on_delta, &|| {
+            cancel.load(Ordering::SeqCst)
+        })?;
+        record_usage(&target, &response);
+        Ok(response)
     }
 
     /// The context window of `model`, in tokens, from the provider.
@@ -1021,15 +1193,16 @@ impl LlmClient {
         .map_err(context_window_routing_error)?;
         let (url, post_body) = context_window_request(&target);
         let headers = context_window_headers(&target);
-        let response = self
-            .send_with_retries(
-                || match &post_body {
-                    Some(body) => self.client.post_json(&url, body, &headers),
-                    None => self.client.get_with_headers(&url, &headers),
-                },
-                |response| response.status,
-            )
-            .map_err(|e| ContextWindowError::Transport(e.to_string()))?;
+        let response = send_with_retries(
+            self.retry_base_delay,
+            &|| false,
+            || match &post_body {
+                Some(body) => self.client.post_json(&url, body, &headers),
+                None => self.client.get_with_headers(&url, &headers),
+            },
+            |response| response.status,
+        )
+        .map_err(|e| ContextWindowError::Transport(e.to_string()))?;
         let text = String::from_utf8_lossy(&response.body);
         if response.status == HTTP_NOT_FOUND && names_a_missing_model(&target.provider, &text) {
             return Err(ContextWindowError::NoSuchModel {
