@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-03 (**this session's PR is on `fix/633-download-error-kinds`**,
+_Last updated: 2026-11-03 (**this session's PR is #643**, on `fix/633-download-error-kinds`,
 for #633; see *This session* below). PRs #639 (#638, PICO prepare), #637 (#628,
 unnamed parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625
 (#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613
