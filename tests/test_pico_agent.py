@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import pickle
+import threading
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +31,7 @@ from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
 from bmlib.llm.data_types import LLMResponse
+from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.quality._condense import CondensationRefusedError
 from bmlib.quality.pico_agent import (
     PICO_CONDENSE_CONSOLIDATION_PROMPT,
@@ -772,6 +775,7 @@ class TestWhatAReplyGives:
             "TRUNCATED": "truncated",
             "UNUSABLE_REPLY": "unusable_reply",
             "CONDENSATION_FAILED": "condensation_failed",
+            "STOPPED": "stopped",
         }
 
 
@@ -1051,3 +1055,130 @@ class TestAPreparedPaper:
         data = {**PicoPrepared("A trial", TEXT).to_dict(), **fields}
         with pytest.raises(ValueError, match=match):
             PicoPrepared.from_dict(data)
+
+
+CONTRACT = json.loads(
+    (Path(__file__).parent / "fixtures" / "pico_stop_num_ctx.json").read_text(encoding="utf-8")
+)
+
+
+def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
+    """Run one contract case: the real agent and map-reduce over a fake
+    Ollama client; returns each request's ``num_ctx`` and the error kind."""
+    stop = threading.Event()
+    sent: list[Any] = []
+
+    def chat(**kwargs: Any) -> LLMResponse:
+        index = len(sent)
+        sent.append(kwargs.get("num_ctx"))
+        if case.get("stop_at_request") == index:
+            stop.set()
+            if case["request_at_stop"] == "fails":
+                raise ConnectionError("the server went away")
+        content = (
+            json.dumps(CONTRACT["json_reply"]) if kwargs.get("json_mode") else CONTRACT["digest"]
+        )
+        return _response(content)
+
+    llm = MagicMock()
+    llm.chat = MagicMock(side_effect=chat)
+    agent = PicoAgent(
+        llm=llm,
+        model=CONTRACT["model"],
+        condense_config=ProcessingConfig(max_context_chars=CONTRACT["max_context_chars"]),
+        num_ctx=case["num_ctx"],
+        stop=stop,
+    )
+    if case.get("stop_before"):
+        stop.set()
+    title = CONTRACT["title"]
+    text = CONTRACT["text_unit"] * case["text_repeat"]
+    similarity = CONTRACT["min_similarity"]
+    with patch("bmlib.context_processor.llm_processor.time.sleep"):
+        try:
+            if case["fn"] == "extract":
+                agent.extract(title, text, min_similarity=similarity)
+            elif case["fn"] == "suitability":
+                agent.check_suitability(title, text)
+            elif case["fn"] == "prepare":
+                agent.prepare(title, text)
+            else:
+                prepared = agent.prepare(title, text)
+                assert prepared.digest is not None
+                agent.check_suitability_prepared(prepared)
+                agent.extract_prepared(prepared, min_similarity=similarity)
+        except PicoError as exc:
+            return sent, exc.kind.value
+    return sent, None
+
+
+class TestTheStopAndNumCtxContract:
+    """The shared fixture (#640, #642): Rust's ``tests/pico_stop_contract.rs``
+    runs the same cases and must agree."""
+
+    def test_the_stopped_kind_is_the_fixtures(self) -> None:
+        assert PicoErrorKind.STOPPED.value == CONTRACT["stopped_kind"]
+
+    @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
+    def test_a_case(self, case: dict[str, Any]) -> None:
+        sent, error = _contract_run(case)
+
+        assert error == case["expected"]["error"]
+        assert len(sent) == case["expected"]["requests"]
+        assert all(num_ctx == case["num_ctx"] for num_ctx in sent)
+
+
+class TestTheStop:
+    """#642: the stop as an ``Event`` or a callable, read before each request."""
+
+    @pytest.mark.parametrize("as_callable", [False, True])
+    def test_a_set_stop_sends_nothing(self, as_callable: bool) -> None:
+        event = threading.Event()
+        event.set()
+        agent = make_agent(reply(), stop=event.is_set if as_callable else event)
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", TEXT, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.STOPPED
+        assert agent.llm.chat.call_count == 0
+
+    def test_an_unset_stop_changes_nothing(self) -> None:
+        agent = make_agent(reply(), stop=threading.Event())
+
+        assert agent.extract("A trial", TEXT, min_similarity=SIM).population.citations
+
+    def test_a_stop_during_an_unusable_reply_is_stopped(self) -> None:
+        event = threading.Event()
+        agent = make_agent("not json", stop=event)
+        agent.llm.chat.side_effect = lambda **_: (event.set(), _response("not json"))[1]
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", TEXT, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.STOPPED
+        # chat_json's own re-ask is refused before it is sent.
+        assert agent.llm.chat.call_count == 1
+
+    def test_a_stop_that_is_neither_is_refused(self) -> None:
+        with pytest.raises(TypeError, match="stop"):
+            make_agent(reply(), stop=True)
+
+
+class TestNumCtx:
+    """#640: the window reaches every request, and a bad one is refused up front."""
+
+    def test_it_reaches_the_request(self) -> None:
+        agent = make_agent(reply(), num_ctx=16384)
+        agent.extract("A trial", TEXT, min_similarity=SIM)
+
+        assert agent.llm.chat.call_args.kwargs["num_ctx"] == 16384
+
+    def test_none_sends_no_key(self) -> None:
+        agent = make_agent(reply())
+        agent.extract("A trial", TEXT, min_similarity=SIM)
+
+        assert "num_ctx" not in agent.llm.chat.call_args.kwargs
+
+    @pytest.mark.parametrize("bad", [0, -1, True, 1.5, "8192", MAX_NUM_CTX + 1])
+    def test_a_bad_value_is_refused(self, bad: Any) -> None:
+        with pytest.raises(ValueError, match="num_ctx"):
+            make_agent(reply(), num_ctx=bad)

@@ -19,17 +19,19 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import MagicMock
+from collections.abc import Iterator
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.agents.base import BaseAgent
+from bmlib.agents.base import BaseAgent, ChatStoppedError
 from bmlib.context_processor import (
     ConsolidatedItem,
     LLMChunkProcessor,
     ProcessingConfig,
     ProcessingStatus,
 )
+from bmlib.context_processor.llm_processor import CONTEXT_MODEL_ATTEMPTS
 from bmlib.llm.data_types import LLMResponse
 
 
@@ -43,6 +45,13 @@ def make_agent(*replies: str) -> BaseAgent:
     # Pad, so a run needing more calls than replies keeps the last one.
     agent.llm.chat = MagicMock(side_effect=responses + [responses[-1]] * 50)
     return agent
+
+
+@pytest.fixture(autouse=True)
+def _no_backoff() -> Iterator[MagicMock]:
+    """The model call's retry backoff, recorded rather than slept."""
+    with patch("bmlib.context_processor.llm_processor.time.sleep") as sleep:
+        yield sleep
 
 
 class TestPromptTemplates:
@@ -312,3 +321,68 @@ class TestStructuredExtraction:
         json_modes = [call.kwargs.get("json_mode") for call in agent.llm.chat.call_args_list]
         assert json_modes[0] is True
         assert json_modes[-1] is not True
+
+
+def _answer(content: str = "extracted") -> LLMResponse:
+    return LLMResponse(content=content, model="test:model", input_tokens=1, output_tokens=1)
+
+
+class TestTheModelCallIsRetried:
+    """#641: a failed request is retried with backoff (rule 7), since
+    ollama-python retries nothing; Rust's ``LlmContextModel`` does the same."""
+
+    def test_a_failure_then_an_answer_is_one_result(self, _no_backoff: MagicMock) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=[ConnectionError("down"), _answer("the digest")])
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert result.status is ProcessingStatus.COMPLETED
+        assert result.content == "the digest"
+        assert agent.llm.chat.call_count == 2
+        assert [call.args for call in _no_backoff.call_args_list] == [(1.0,)]
+
+    def test_the_structured_path_is_retried_too(self) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        answer = _answer('{"extracted_content": "the digest", "confidence": 0.8}')
+        agent.llm.chat = MagicMock(side_effect=[ConnectionError("down"), answer])
+        result = LLMChunkProcessor(agent, use_structured_output=True).process(["chunk"], query="q")
+
+        assert result.content == "the digest"
+        assert agent.llm.chat.call_count == 2
+
+    def test_failures_past_the_attempts_fail_the_batch(self, _no_backoff: MagicMock) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=ConnectionError("down"))
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert result.status is ProcessingStatus.FAILED
+        assert agent.llm.chat.call_count == CONTEXT_MODEL_ATTEMPTS
+        # Doubling from the base delay, none after the last attempt.
+        assert [call.args for call in _no_backoff.call_args_list] == [(1.0,), (2.0,)]
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            ChatStoppedError("stopped"),
+            ValueError("unknown provider"),
+            ImportError("no SDK"),
+            TypeError("a bmlib defect"),
+        ],
+    )
+    def test_what_no_retry_cures_is_not_retried(self, error: Exception) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=error)
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert result.status is ProcessingStatus.FAILED
+        assert agent.llm.chat.call_count == 1
+
+    def test_a_truncated_completion_is_not_retried(self) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        cut = LLMResponse(
+            content="half", model="m", input_tokens=1, output_tokens=1, stop_reason="length"
+        )
+        agent.llm.chat = MagicMock(return_value=cut)
+        LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert agent.llm.chat.call_count == 1

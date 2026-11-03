@@ -87,6 +87,16 @@ class ChatJsonUnparseableError(ChatJsonError):
     """The answer did not parse as JSON."""
 
 
+class ChatStoppedError(Exception):
+    """A request was not sent because the caller asked to stop (#642).
+
+    Raised by an agent that reads a stop before each request (the PICO
+    agent's ``stop``).  Not a ``ValueError`` and no :class:`ChatJsonError`:
+    nothing about the model's answer is wrong, and no retry may send the
+    request again.
+    """
+
+
 class BaseAgent:
     """Base class for LLM-powered agents.
 

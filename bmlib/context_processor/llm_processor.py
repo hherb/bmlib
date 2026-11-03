@@ -23,16 +23,19 @@ consolidated until the answer fits one context.
 
 Every model call goes through a :class:`~bmlib.agents.BaseAgent`, so token
 accounting, retries, JSON repair and provider routing are the ones the rest
-of bmlib uses.
+of bmlib uses.  A model call that fails is retried with backoff
+(:data:`CONTEXT_MODEL_ATTEMPTS`), as Rust's ``LlmContextModel`` retries it.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+import time
+from collections.abc import Callable
+from typing import Any, TypeVar
 
-from bmlib.agents import BaseAgent
+from bmlib.agents import BaseAgent, ChatStoppedError
 from bmlib.agents.base import _TRUNCATION_STOP_REASONS
 from bmlib.context_processor.base import IterativeContextProcessor, ProgressCallback
 from bmlib.context_processor.data_types import (
@@ -48,6 +51,40 @@ ScoredChunk = tuple[str, float]
 
 #: Confidence recorded when the model does not report one of its own.
 DEFAULT_EXTRACTION_CONFIDENCE = 0.9
+
+#: Tries per model call: one and two retries, as Rust's ``LlmContextModel``
+#: makes and as many as the Anthropic and OpenAI SDKs make by default
+#: (ollama-python retries nothing, #641).
+CONTEXT_MODEL_ATTEMPTS = 3
+
+#: Seconds before the first retry of a model call; each later one doubles it.
+CONTEXT_MODEL_RETRY_BASE_DELAY = 1.0
+
+#: Exceptions that can only mean bmlib is wrong — ``transparency``'s
+#: ``_BUG_TYPES``, restated rather than imported, and held to agreeing by
+#: ``tests/test_transparency.py``.
+_BUG_TYPES: tuple[type[BaseException], ...] = (
+    TypeError,
+    AttributeError,
+    NameError,
+    KeyError,
+    IndexError,
+)
+
+#: What a retry cannot cure: a stop, a ``ValueError`` (an unknown provider, a
+#: bad argument, and every :class:`~bmlib.agents.ChatJsonError`, which
+#: ``chat_json`` has already re-asked for), a missing SDK, an unsupported
+#: feature, and a bmlib defect.  Anything else a provider raises is taken for
+#: a failed request.
+_NOT_RETRIED: tuple[type[BaseException], ...] = (
+    ChatStoppedError,
+    ValueError,
+    ImportError,
+    NotImplementedError,
+    *_BUG_TYPES,
+)
+
+_T = TypeVar("_T")
 
 DEFAULT_EXTRACTION_PROMPT = """Extract the key information relevant to this query.
 
@@ -283,12 +320,17 @@ class LLMChunkProcessor(IterativeContextProcessor):
 
         try:
             if structured:
-                content, confidence, findings = self._extract_structured(prompt, label)
+                content, confidence, findings = self._with_retries(
+                    lambda: self._extract_structured(prompt, label), label
+                )
             else:
-                response = self.agent.chat(
-                    [self.agent.user_msg(prompt)],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
+                response = self._with_retries(
+                    lambda: self.agent.chat(
+                        [self.agent.user_msg(prompt)],
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                    ),
+                    label,
                 )
                 # A completion cut at the output ceiling is a lost passage, not
                 # an answer; ``chat_json`` refuses it on the structured path.
@@ -313,6 +355,46 @@ class LLMChunkProcessor(IterativeContextProcessor):
             level,
         )
         return ExtractionResult(content=content, metadata=metadata, confidence=confidence)
+
+    @staticmethod
+    def _with_retries(call: Callable[[], _T], label: str) -> _T:
+        """Run one model call, retrying a failed request with backoff (rule 7).
+
+        Up to :data:`CONTEXT_MODEL_ATTEMPTS` tries, waiting
+        :data:`CONTEXT_MODEL_RETRY_BASE_DELAY` seconds before the first retry
+        and doubling after.  What no retry cures (``_NOT_RETRIED``) is raised
+        at once.
+
+        Args:
+            call: The model call.
+            label: Names the batch in the log line.
+
+        Returns:
+            What *call* returned.
+
+        Raises:
+            Exception: The last failure, once the tries run out, or the first
+                one no retry cures.
+        """
+        for attempt in range(1, CONTEXT_MODEL_ATTEMPTS + 1):
+            try:
+                return call()
+            except _NOT_RETRIED:
+                raise
+            except Exception as exc:
+                if attempt == CONTEXT_MODEL_ATTEMPTS:
+                    raise
+                delay = CONTEXT_MODEL_RETRY_BASE_DELAY * 2 ** (attempt - 1)
+                logger.warning(
+                    "Model call for %s failed (attempt %d/%d), retrying in %.0fs: %s",
+                    label,
+                    attempt,
+                    CONTEXT_MODEL_ATTEMPTS,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+        raise AssertionError("unreachable: the last attempt returns or raises")
 
     def _extract_structured(self, prompt: str, label: str) -> tuple[str, float, list[Any]]:
         """Run a JSON-mode extraction and read the model's own confidence.

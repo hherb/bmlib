@@ -1,0 +1,97 @@
+{
+  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama transport. A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged).",
+  "stopped_kind": "stopped",
+  "model": "ollama:test-model",
+  "title": "A trial",
+  "text_unit": "Adults aged 40-65 were randomised to metformin or placebo. ",
+  "digest": "Adults aged 40-65 were randomised to metformin or placebo.",
+  "min_similarity": 0.9,
+  "max_context_chars": 1000,
+  "json_reply": {
+    "is_intervention_study": true,
+    "has_comparison": true,
+    "is_suitable": true,
+    "confidence": 0.9,
+    "rationale": "An RCT of metformin against placebo.",
+    "study_type": "randomized controlled trial",
+    "sample_size": "N=120",
+    "population": {"description": "Adults aged 40 to 65", "reported": true, "confidence": 0.9, "quotes": ["Adults aged 40-65"]},
+    "intervention": {"description": "Metformin", "reported": true, "confidence": 0.9, "quotes": ["metformin"]},
+    "comparison": {"description": "Placebo", "reported": true, "confidence": 0.9, "quotes": ["placebo"]},
+    "outcome": {"description": "Not stated", "reported": false, "confidence": 0.5, "quotes": []}
+  },
+  "cases": [
+    {
+      "name": "a whole paper's extraction carries num_ctx",
+      "fn": "extract", "num_ctx": 8192, "text_repeat": 1,
+      "expected": {"requests": 1, "error": null}
+    },
+    {
+      "name": "no num_ctx sends none",
+      "fn": "extract", "num_ctx": null, "text_repeat": 1,
+      "expected": {"requests": 1, "error": null}
+    },
+    {
+      "name": "the check carries num_ctx",
+      "fn": "suitability", "num_ctx": 4096, "text_repeat": 1,
+      "expected": {"requests": 1, "error": null}
+    },
+    {
+      "name": "a condensed paper: every condenser request and both calls carry num_ctx",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60,
+      "expected": {"requests": 6, "error": null}
+    },
+    {
+      "name": "a stop before the run sends nothing",
+      "fn": "extract", "num_ctx": 8192, "text_repeat": 1, "stop_before": true,
+      "expected": {"requests": 0, "error": "stopped"}
+    },
+    {
+      "name": "a stop before a long paper's run sends nothing",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "stop_before": true,
+      "expected": {"requests": 0, "error": "stopped"}
+    },
+    {
+      "name": "a stop during a failing extraction request is stopped, not request_failed",
+      "fn": "extract", "num_ctx": 8192, "text_repeat": 1,
+      "stop_at_request": 0, "request_at_stop": "fails",
+      "expected": {"requests": 1, "error": "stopped"}
+    },
+    {
+      "name": "a stop during an extraction request that answers returns the result",
+      "fn": "extract", "num_ctx": 8192, "text_repeat": 1,
+      "stop_at_request": 0, "request_at_stop": "answers",
+      "expected": {"requests": 1, "error": null}
+    },
+    {
+      "name": "a stop during a failing condensation request sends no other",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60,
+      "stop_at_request": 0, "request_at_stop": "fails",
+      "expected": {"requests": 1, "error": "stopped"}
+    },
+    {
+      "name": "a stop during a condensation request that answers sends no other",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60,
+      "stop_at_request": 0, "request_at_stop": "answers",
+      "expected": {"requests": 1, "error": "stopped"}
+    },
+    {
+      "name": "a stop during a condensation request that answers fails prepare, never a partial digest",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60,
+      "stop_at_request": 0, "request_at_stop": "answers",
+      "expected": {"requests": 1, "error": "stopped"}
+    },
+    {
+      "name": "a stop during the last condensation request fails prepare",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60,
+      "stop_at_request": 3, "request_at_stop": "answers",
+      "expected": {"requests": 4, "error": "stopped"}
+    },
+    {
+      "name": "a stop after the condensation stops before the check",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60,
+      "stop_at_request": 3, "request_at_stop": "answers",
+      "expected": {"requests": 4, "error": "stopped"}
+    }
+  ]
+}

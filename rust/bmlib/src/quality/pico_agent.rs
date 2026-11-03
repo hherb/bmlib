@@ -19,6 +19,8 @@
 //! A port of `bmlib/quality/pico_agent.py` (StudyAnalyzer item 7; the design
 //! is `docs/superpowers/specs/2026-10-30-pico-agent-design.md`).
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde_json::Value;
 
 use crate::agents::ChatJsonError;
@@ -400,6 +402,9 @@ pub fn read_suitability(data: &Value) -> Result<PicoSuitability, String> {
 /// configured [`Condenser`] (see [`PicoAgent::pico_condenser`]); with none
 /// configured it is refused as [`PicoError::CondensationFailed`] rather than
 /// sent whole or cut.
+///
+/// A stop ([`with_stop`](Self::with_stop)) is read before each model call and
+/// the condensation; once set, the call returns [`PicoError::Stopped`].
 pub struct PicoAgent<'a> {
     chat: &'a mut dyn JsonChat,
     condenser: Option<&'a mut dyn Condenser>,
@@ -407,6 +412,7 @@ pub struct PicoAgent<'a> {
     max_tokens: i64,
     max_retries: usize,
     condense_config: ProcessingConfig,
+    stop: Option<&'a AtomicBool>,
 }
 
 impl<'a> PicoAgent<'a> {
@@ -421,7 +427,27 @@ impl<'a> PicoAgent<'a> {
             max_retries: DEFAULT_MAX_RETRIES,
             condense_config: ProcessingConfig::default()
                 .with_max_context_chars(DEFAULT_CONDENSE_THRESHOLD_CHARS),
+            stop: None,
         }
+    }
+
+    /// End a call before its next request once `stop` is set (#642).
+    ///
+    /// Read before each model call and before and after the condensation; an
+    /// error from the chat or the condenser while it is set is
+    /// [`PicoError::Stopped`] in place of `RequestFailed`, `Truncated`,
+    /// `UnusableReply` or `CondensationFailed`, and so is a condensation that
+    /// finished while it was set (its digest may be partial). A request
+    /// already sent runs to its end, and a call that then succeeds returns its
+    /// result: a caller that must not keep it reads the stop again. Give the
+    /// chat and the condenser's model the same stop
+    /// ([`LlmChat::with_stop`](crate::quality::LlmChat::with_stop),
+    /// [`LlmContextModel::with_stop`](crate::quality::LlmContextModel::with_stop))
+    /// so a map-reduce sends nothing more once it is set.
+    #[must_use]
+    pub fn with_stop(mut self, stop: &'a AtomicBool) -> Self {
+        self.stop = Some(stop);
+        self
     }
 
     /// Condense oversized text through `condenser`.
@@ -495,7 +521,8 @@ impl<'a> PicoAgent<'a> {
     ///
     /// # Errors
     ///
-    /// [`PicoError::EmptyInput`] or [`PicoError::CondensationFailed`].
+    /// [`PicoError::EmptyInput`], [`PicoError::CondensationFailed`] or
+    /// [`PicoError::Stopped`].
     pub fn prepare(&mut self, title: &str, text: &str) -> Result<PicoPrepared, PicoError> {
         self.prepare_for(title, text, "the suitability check and extraction")
     }
@@ -620,20 +647,27 @@ impl<'a> PicoAgent<'a> {
             return Ok(prepared(title, original, None, None, Vec::new()));
         }
 
+        self.check_stop()?;
         let label: String = title.chars().take(60).collect();
+        let stop = self.stop;
         let Some(condenser) = self.condenser.as_mut() else {
             return Err(PicoError::CondensationFailed(
                 "no condenser configured".to_string(),
             ));
         };
-        let (digest, notes, status) =
-            condense_checked(&mut **condenser, text, &label, &self.condense_config, stage)
-                .map_err(|reason| {
-                    PicoError::CondensationFailed(format!(
+        let condensed =
+            condense_checked(&mut **condenser, text, &label, &self.condense_config, stage);
+        // A run stopped part-way can end in a partial digest, which is no
+        // digest of the paper, as well as in a failure.
+        if stopped(stop) {
+            return Err(PicoError::Stopped);
+        }
+        let (digest, notes, status) = condensed.map_err(|reason| {
+            PicoError::CondensationFailed(format!(
                 "a {length}-character text could not be condensed to fit {} characters: {reason}",
                 self.condense_config.max_context_chars
             ))
-                })?;
+        })?;
         Ok(prepared(
             title,
             original,
@@ -679,6 +713,7 @@ impl<'a> PicoAgent<'a> {
 
         let mut problem = String::new();
         for _attempt in 0..READ_ATTEMPTS {
+            self.check_stop()?;
             let data = match self.chat.chat_json(
                 &messages,
                 self.temperature,
@@ -687,6 +722,8 @@ impl<'a> PicoAgent<'a> {
                 true,
             ) {
                 Ok(outcome) => outcome.value,
+                // A stop set during the call wins over whatever it failed with.
+                Err(_) if stopped(self.stop) => return Err(PicoError::Stopped),
                 Err(error @ ChatJsonError::Truncated { .. }) => {
                     return Err(PicoError::Truncated(error.to_string()))
                 }
@@ -704,6 +741,22 @@ impl<'a> PicoAgent<'a> {
             "{label}: {READ_ATTEMPTS} replies could not be read: {problem}"
         )))
     }
+}
+
+impl PicoAgent<'_> {
+    /// [`PicoError::Stopped`] once the stop is set.
+    fn check_stop(&self) -> Result<(), PicoError> {
+        if stopped(self.stop) {
+            Err(PicoError::Stopped)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Whether an optional stop is set.
+fn stopped(stop: Option<&AtomicBool>) -> bool {
+    stop.is_some_and(|stop| stop.load(Ordering::SeqCst))
 }
 
 /// Refuse a `min_similarity` outside (0, 1]; NaN fails both comparisons, so it
