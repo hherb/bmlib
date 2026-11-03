@@ -48,6 +48,7 @@ def test_contract_case(case: dict[str, Any]) -> None:
         assert match.similarity == expected["similarity"]
     if "min_similarity_at_least" in expected:
         assert match.similarity >= expected["min_similarity_at_least"]
+    assert match.contradiction == expected.get("contradiction")
 
 
 @pytest.mark.parametrize("threshold", INVALID, ids=str)

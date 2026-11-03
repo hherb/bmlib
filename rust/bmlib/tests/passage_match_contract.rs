@@ -67,6 +67,11 @@ fn contract_case() {
         if let Some(floor) = expected.get("min_similarity_at_least") {
             assert!(m.similarity >= floor.as_f64().unwrap(), "{name}");
         }
+        assert_eq!(
+            m.contradiction.map(|reason| reason.as_str()),
+            expected.get("contradiction").and_then(Value::as_str),
+            "{name}"
+        );
     }
 }
 

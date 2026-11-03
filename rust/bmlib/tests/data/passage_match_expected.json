@@ -3,6 +3,7 @@
     "name": "find_passage/folding_0",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 25,
       "exact": true,
       "similarity": 1.0,
@@ -14,6 +15,7 @@
     "name": "find_passage/folding_1",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 24,
       "exact": true,
       "similarity": 1.0,
@@ -25,6 +27,7 @@
     "name": "find_passage/folding_2",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 29,
       "exact": true,
       "similarity": 1.0,
@@ -36,6 +39,7 @@
     "name": "find_passage/folding_3",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 32,
       "exact": true,
       "similarity": 1.0,
@@ -47,6 +51,7 @@
     "name": "find_passage/folding_4",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 30,
       "exact": true,
       "similarity": 1.0,
@@ -58,6 +63,7 @@
     "name": "find_passage/folding_5",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 26,
       "exact": true,
       "similarity": 1.0,
@@ -69,6 +75,7 @@
     "name": "find_passage/folding_6",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 27,
       "exact": true,
       "similarity": 1.0,
@@ -80,6 +87,7 @@
     "name": "find_passage/folding_7",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 30,
       "exact": true,
       "similarity": 1.0,
@@ -91,17 +99,19 @@
     "name": "find_passage/folding_8",
     "ok": true,
     "value": {
-      "end": 27,
+      "contradiction": "negation",
+      "end": null,
       "exact": false,
       "similarity": 0.9818181818181818,
-      "start": 0,
-      "text": "The groups differed: A ≠ B."
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/folding_9",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9047619047619048,
@@ -113,6 +123,7 @@
     "name": "find_passage/folding_10",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 26,
       "exact": true,
       "similarity": 1.0,
@@ -124,6 +135,7 @@
     "name": "find_passage/nfd_trailing_accent",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 17,
       "exact": true,
       "similarity": 1.0,
@@ -135,6 +147,7 @@
     "name": "find_passage/ligature_span",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.75,
@@ -146,6 +159,7 @@
     "name": "find_passage/typography_kept",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 70,
       "exact": true,
       "similarity": 1.0,
@@ -157,6 +171,7 @@
     "name": "find_passage/fuzzy_folded",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 44,
       "exact": false,
       "similarity": 0.9090909090909091,
@@ -168,6 +183,7 @@
     "name": "find_passage/nfd_end_of_text",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 17,
       "exact": true,
       "similarity": 1.0,
@@ -179,6 +195,7 @@
     "name": "find_passage/verbatim",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 742,
       "exact": true,
       "similarity": 1.0,
@@ -190,6 +207,7 @@
     "name": "find_passage/lowercase",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 137,
       "exact": true,
       "similarity": 1.0,
@@ -201,6 +219,7 @@
     "name": "find_passage/whitespace",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 66,
       "exact": true,
       "similarity": 1.0,
@@ -212,6 +231,7 @@
     "name": "find_passage/single_edit",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 742,
       "exact": false,
       "similarity": 0.9951456310679612,
@@ -223,6 +243,7 @@
     "name": "find_passage/late_drift",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 1025,
       "exact": false,
       "similarity": 0.9973614775725593,
@@ -234,6 +255,7 @@
     "name": "find_passage/punctuation",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 120,
       "exact": false,
       "similarity": 0.9916666666666667,
@@ -245,6 +267,7 @@
     "name": "find_passage/from_source",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 408,
       "exact": false,
       "similarity": 0.9920634920634921,
@@ -256,6 +279,7 @@
     "name": "find_passage/dropped_word",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 742,
       "exact": false,
       "similarity": 0.9827160493827161,
@@ -267,6 +291,7 @@
     "name": "find_passage/inserted_word",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 535,
       "exact": false,
       "similarity": 0.9655172413793104,
@@ -278,6 +303,7 @@
     "name": "find_passage/first_word_edit",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 137,
       "exact": false,
       "similarity": 0.9927007299270073,
@@ -289,6 +315,7 @@
     "name": "find_passage/last_word_edit",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 1025,
       "exact": false,
       "similarity": 0.9973474801061007,
@@ -300,6 +327,7 @@
     "name": "find_passage/final_punct",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 835,
       "exact": false,
       "similarity": 0.9891304347826086,
@@ -311,6 +339,7 @@
     "name": "find_passage/mid_number",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9056603773584906,
@@ -322,6 +351,7 @@
     "name": "find_passage/decoy_votes",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 444,
       "exact": false,
       "similarity": 0.9660194174757282,
@@ -333,6 +363,7 @@
     "name": "find_passage/unicode_whitespace",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 45,
       "exact": true,
       "similarity": 1.0,
@@ -344,6 +375,7 @@
     "name": "find_passage/edge_whitespace",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 61,
       "exact": false,
       "similarity": 0.9904761904761905,
@@ -355,6 +387,7 @@
     "name": "find_passage/threshold_inclusive",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 26,
       "exact": false,
       "similarity": 0.95,
@@ -366,6 +399,7 @@
     "name": "find_passage/threshold_just_above",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.95,
@@ -377,6 +411,7 @@
     "name": "find_passage/fuzzy_not_exact",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 742,
       "exact": false,
       "similarity": 0.9951456310679612,
@@ -388,6 +423,7 @@
     "name": "find_passage/long_passage",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 2073,
       "exact": false,
       "similarity": 0.9985358711566618,
@@ -399,6 +435,7 @@
     "name": "find_passage/long_nonmatching",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.447576099210823,
@@ -410,6 +447,7 @@
     "name": "find_passage/long_text",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 753,
       "exact": false,
       "similarity": 0.9951456310679612,
@@ -421,6 +459,7 @@
     "name": "find_passage/fabricated",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -432,6 +471,7 @@
     "name": "find_passage/paraphrase",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8989547038327527,
@@ -443,6 +483,7 @@
     "name": "find_passage/best_on_rejection",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9242053789731052,
@@ -454,6 +495,7 @@
     "name": "find_passage/degenerate_0",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -465,6 +507,7 @@
     "name": "find_passage/degenerate_1",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -476,6 +519,7 @@
     "name": "find_passage/degenerate_2",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -487,6 +531,7 @@
     "name": "find_passage/degenerate_3",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -498,6 +543,7 @@
     "name": "find_passage/too_long_for_text",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -509,6 +555,7 @@
     "name": "find_passage/paragraph_break",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 75,
       "exact": true,
       "similarity": 1.0,
@@ -520,6 +567,7 @@
     "name": "find_passage/first_occurrence",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 30,
       "exact": true,
       "similarity": 1.0,
@@ -531,6 +579,7 @@
     "name": "find_passage/elided",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.5957446808510638,
@@ -542,6 +591,7 @@
     "name": "find_passage/info_separator",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 16,
       "exact": true,
       "similarity": 1.0,
@@ -553,6 +603,7 @@
     "name": "find_passage/contract/exact-verbatim",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 56,
       "exact": true,
       "similarity": 1.0,
@@ -564,6 +615,7 @@
     "name": "find_passage/contract/case-and-whitespace",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 56,
       "exact": true,
       "similarity": 1.0,
@@ -575,6 +627,7 @@
     "name": "find_passage/contract/curly-quotes-and-en-dash",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 40,
       "exact": true,
       "similarity": 1.0,
@@ -586,6 +639,7 @@
     "name": "find_passage/contract/nfd-accent-at-end",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 20,
       "exact": true,
       "similarity": 1.0,
@@ -597,6 +651,7 @@
     "name": "find_passage/contract/ligature-fi",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 16,
       "exact": true,
       "similarity": 1.0,
@@ -608,6 +663,7 @@
     "name": "find_passage/contract/superscript-two",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 16,
       "exact": true,
       "similarity": 1.0,
@@ -619,6 +675,7 @@
     "name": "find_passage/contract/soft-hyphen-inside-word",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 23,
       "exact": true,
       "similarity": 1.0,
@@ -630,6 +687,7 @@
     "name": "find_passage/contract/negation-overlay-not-equal",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -641,6 +699,7 @@
     "name": "find_passage/contract/one-typo-accepted",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 85,
       "exact": false,
       "similarity": 0.9921259842519685,
@@ -652,6 +711,7 @@
     "name": "find_passage/contract/paraphrase-rejected",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.5211267605633803,
@@ -663,6 +723,7 @@
     "name": "find_passage/contract/empty-passage",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -674,6 +735,7 @@
     "name": "find_passage/contract/whitespace-only-passage",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -685,6 +747,7 @@
     "name": "find_passage/contract/empty-text",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -696,6 +759,7 @@
     "name": "find_passage/contract/passage-longer-than-text",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -707,6 +771,7 @@
     "name": "find_passage/contract/non-bmp-before-match",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 38,
       "exact": true,
       "similarity": 1.0,
@@ -718,6 +783,7 @@
     "name": "find_passage/contract/across-paragraph-break",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 51,
       "exact": true,
       "similarity": 1.0,
@@ -729,6 +795,7 @@
     "name": "find_passage/contract/repeated-quote-first-occurrence",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 34,
       "exact": true,
       "similarity": 1.0,
@@ -740,6 +807,7 @@
     "name": "find_passage/contract/elided-quote-rejected",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.6417112299465241,
@@ -751,6 +819,7 @@
     "name": "find_passage/contract/information-separator-is-space",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 14,
       "exact": true,
       "similarity": 1.0,
@@ -6384,6 +6453,7 @@
     "name": "find_passage/random_edit/00",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 559,
       "exact": false,
       "similarity": 0.9611111111111111,
@@ -6395,6 +6465,7 @@
     "name": "find_passage/random_edit/01",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 233,
       "exact": false,
       "similarity": 0.9705882352941176,
@@ -6406,6 +6477,7 @@
     "name": "find_passage/random_edit/02",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 485,
       "exact": false,
       "similarity": 0.9659090909090909,
@@ -6417,17 +6489,19 @@
     "name": "find_passage/random_edit/03",
     "ok": true,
     "value": {
-      "end": 337,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9739130434782609,
-      "start": 281,
-      "text": "in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/04",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 644,
       "exact": false,
       "similarity": 0.95,
@@ -6439,6 +6513,7 @@
     "name": "find_passage/random_edit/05",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 485,
       "exact": false,
       "similarity": 0.980544747081712,
@@ -6450,17 +6525,19 @@
     "name": "find_passage/random_edit/06",
     "ok": true,
     "value": {
-      "end": 379,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9849246231155779,
-      "start": 179,
-      "text": "mortality. Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/07",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 572,
       "exact": false,
       "similarity": 0.9696969696969697,
@@ -6472,6 +6549,7 @@
     "name": "find_passage/random_edit/08",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8896551724137931,
@@ -6483,17 +6561,19 @@
     "name": "find_passage/random_edit/09",
     "ok": true,
     "value": {
-      "end": 572,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9781021897810219,
-      "start": 505,
-      "text": "elderly patients with atrial fibrillation, apixaban was superior to"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/10",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 209,
       "exact": false,
       "similarity": 0.9768637532133676,
@@ -6505,6 +6585,7 @@
     "name": "find_passage/random_edit/11",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 190,
       "exact": false,
       "similarity": 0.9543859649122807,
@@ -6516,6 +6597,7 @@
     "name": "find_passage/random_edit/12",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 464,
       "exact": false,
       "similarity": 0.9671641791044776,
@@ -6527,6 +6609,7 @@
     "name": "find_passage/random_edit/13",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 543,
       "exact": false,
       "similarity": 0.9597701149425287,
@@ -6538,6 +6621,7 @@
     "name": "find_passage/random_edit/14",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 593,
       "exact": false,
       "similarity": 0.9852941176470589,
@@ -6549,6 +6633,7 @@
     "name": "find_passage/random_edit/15",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9393939393939394,
@@ -6560,6 +6645,7 @@
     "name": "find_passage/random_edit/16",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 364,
       "exact": false,
       "similarity": 0.9869281045751634,
@@ -6571,6 +6657,7 @@
     "name": "find_passage/random_edit/17",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.932475884244373,
@@ -6582,6 +6669,7 @@
     "name": "find_passage/random_edit/18",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9294605809128631,
@@ -6593,6 +6681,7 @@
     "name": "find_passage/random_edit/19",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.905829596412556,
@@ -6604,6 +6693,7 @@
     "name": "find_passage/random_edit/20",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8682170542635659,
@@ -6615,6 +6705,7 @@
     "name": "find_passage/random_edit/21",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9433962264150944,
@@ -6626,17 +6717,19 @@
     "name": "find_passage/random_edit/22",
     "ok": true,
     "value": {
-      "end": 250,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9928571428571429,
-      "start": 109,
-      "text": "to ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/23",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 219,
       "exact": false,
       "similarity": 0.9865771812080537,
@@ -6648,6 +6741,7 @@
     "name": "find_passage/random_edit/24",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 399,
       "exact": false,
       "similarity": 0.967741935483871,
@@ -6659,6 +6753,7 @@
     "name": "find_passage/random_edit/25",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 453,
       "exact": false,
       "similarity": 0.9969230769230769,
@@ -6670,17 +6765,19 @@
     "name": "find_passage/random_edit/26",
     "ok": true,
     "value": {
-      "end": 205,
+      "contradiction": "negation",
+      "end": null,
       "exact": false,
       "similarity": 0.9798657718120806,
-      "start": 130,
-      "text": "stroke. Conclusions: In elderly patients with atrial fibrillation, apixaban"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/27",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 142,
       "exact": false,
       "similarity": 0.9606299212598425,
@@ -6692,6 +6789,7 @@
     "name": "find_passage/random_edit/28",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 152,
       "exact": false,
       "similarity": 0.9659863945578231,
@@ -6703,6 +6801,7 @@
     "name": "find_passage/random_edit/29",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9196428571428571,
@@ -6714,6 +6813,7 @@
     "name": "find_passage/random_edit/30",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.928,
@@ -6725,6 +6825,7 @@
     "name": "find_passage/random_edit/31",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 250,
       "exact": false,
       "similarity": 0.9919571045576407,
@@ -6736,6 +6837,7 @@
     "name": "find_passage/random_edit/32",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 615,
       "exact": false,
       "similarity": 0.952,
@@ -6747,17 +6849,19 @@
     "name": "find_passage/random_edit/33",
     "ok": true,
     "value": {
-      "end": 307,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9888888888888889,
-      "start": 127,
-      "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. The primary outcome was stroke or systemic"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/34",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9478260869565217,
@@ -6769,6 +6873,7 @@
     "name": "find_passage/random_edit/35",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 164,
       "exact": false,
       "similarity": 0.989010989010989,
@@ -6780,17 +6885,19 @@
     "name": "find_passage/random_edit/36",
     "ok": true,
     "value": {
-      "end": 256,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9872340425531915,
-      "start": 138,
-      "text": "Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/37",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 368,
       "exact": false,
       "similarity": 0.9900332225913622,
@@ -6802,6 +6909,7 @@
     "name": "find_passage/random_edit/38",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9469026548672567,
@@ -6813,6 +6921,7 @@
     "name": "find_passage/random_edit/39",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 183,
       "exact": false,
       "similarity": 0.9818181818181818,
@@ -6824,6 +6933,7 @@
     "name": "find_passage/random_edit/40",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 645,
       "exact": false,
       "similarity": 0.9943820224719101,
@@ -6835,6 +6945,7 @@
     "name": "find_passage/random_edit/41",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 196,
       "exact": false,
       "similarity": 0.9647058823529412,
@@ -6846,6 +6957,7 @@
     "name": "find_passage/random_edit/42",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 531,
       "exact": false,
       "similarity": 0.959349593495935,
@@ -6857,6 +6969,7 @@
     "name": "find_passage/random_edit/43",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.945273631840796,
@@ -6868,6 +6981,7 @@
     "name": "find_passage/random_edit/44",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9459459459459459,
@@ -6879,6 +6993,7 @@
     "name": "find_passage/random_edit/45",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 397,
       "exact": false,
       "similarity": 0.9555555555555556,
@@ -6890,6 +7005,7 @@
     "name": "find_passage/random_edit/46",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 286,
       "exact": false,
       "similarity": 0.9647887323943662,
@@ -6901,6 +7017,7 @@
     "name": "find_passage/random_edit/47",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9482758620689655,
@@ -6912,6 +7029,7 @@
     "name": "find_passage/random_edit/48",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8541666666666666,
@@ -6923,17 +7041,19 @@
     "name": "find_passage/random_edit/49",
     "ok": true,
     "value": {
-      "end": 142,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9895833333333334,
-      "start": 45,
-      "text": "fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/50",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 570,
       "exact": false,
       "similarity": 0.9620253164556962,
@@ -6945,28 +7065,31 @@
     "name": "find_passage/random_edit/51",
     "ok": true,
     "value": {
-      "end": 481,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9670886075949368,
-      "start": 289,
-      "text": "patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or systemic embolism, caused less bleeding and resulted in lower mortality. Major bleeding occurred in"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/52",
     "ok": true,
     "value": {
-      "end": 345,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9872122762148338,
-      "start": 150,
-      "text": "follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/53",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9325153374233128,
@@ -6978,6 +7101,7 @@
     "name": "find_passage/random_edit/54",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 574,
       "exact": false,
       "similarity": 0.9921875,
@@ -6989,17 +7113,19 @@
     "name": "find_passage/random_edit/55",
     "ok": true,
     "value": {
-      "end": 218,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9891891891891892,
-      "start": 33,
-      "text": "of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). The primary"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_edit/56",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8947368421052632,
@@ -7011,6 +7137,7 @@
     "name": "find_passage/random_edit/57",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 443,
       "exact": false,
       "similarity": 0.9895833333333334,
@@ -7022,6 +7149,7 @@
     "name": "find_passage/random_edit/58",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 360,
       "exact": false,
       "similarity": 0.9969418960244648,
@@ -7033,6 +7161,7 @@
     "name": "find_passage/random_edit/59",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 189,
       "exact": false,
       "similarity": 0.9832775919732442,
@@ -7044,6 +7173,7 @@
     "name": "find_passage/random_085_0",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 700,
       "exact": false,
       "similarity": 0.9256756756756757,
@@ -7055,6 +7185,7 @@
     "name": "find_passage/random_085_1",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 551,
       "exact": false,
       "similarity": 0.9929577464788732,
@@ -7066,6 +7197,7 @@
     "name": "find_passage/random_085_2",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 894,
       "exact": false,
       "similarity": 0.9582309582309583,
@@ -7077,6 +7209,7 @@
     "name": "find_passage/random_085_3",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 873,
       "exact": false,
       "similarity": 0.9809523809523809,
@@ -7088,17 +7221,19 @@
     "name": "find_passage/random_085_4",
     "ok": true,
     "value": {
-      "end": 720,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9541284403669725,
-      "start": 664,
-      "text": "1.60% per year in the warfarin group (hazard ratio 0.79;"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_085_5",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 339,
       "exact": false,
       "similarity": 0.9629629629629629,
@@ -7110,6 +7245,7 @@
     "name": "find_passage/random_085_6",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 221,
       "exact": false,
       "similarity": 0.9539748953974896,
@@ -7121,6 +7257,7 @@
     "name": "find_passage/random_085_7",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 720,
       "exact": false,
       "similarity": 0.9696969696969697,
@@ -7132,6 +7269,7 @@
     "name": "find_passage/random_085_8",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 678,
       "exact": false,
       "similarity": 0.9769585253456221,
@@ -7143,6 +7281,7 @@
     "name": "find_passage/random_085_9",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 757,
       "exact": false,
       "similarity": 0.9878542510121457,
@@ -7154,6 +7293,7 @@
     "name": "find_passage/random_085_10",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 318,
       "exact": false,
       "similarity": 0.9508196721311475,
@@ -7165,6 +7305,7 @@
     "name": "find_passage/random_085_11",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8045977011494253,
@@ -7176,6 +7317,7 @@
     "name": "find_passage/random_085_12",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 644,
       "exact": false,
       "similarity": 0.9498069498069498,
@@ -7187,6 +7329,7 @@
     "name": "find_passage/random_085_13",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 393,
       "exact": false,
       "similarity": 0.9696969696969697,
@@ -7198,6 +7341,7 @@
     "name": "find_passage/random_085_14",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 400,
       "exact": false,
       "similarity": 0.946058091286307,
@@ -7209,6 +7353,7 @@
     "name": "find_passage/random_090_0",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 714,
       "exact": false,
       "similarity": 0.943089430894309,
@@ -7220,28 +7365,31 @@
     "name": "find_passage/random_090_1",
     "ok": true,
     "value": {
-      "end": 146,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9468085106382979,
-      "start": 51,
-      "text": "sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods:"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_090_2",
     "ok": true,
     "value": {
-      "end": 644,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9342105263157895,
-      "start": 569,
-      "text": "of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_090_3",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 848,
       "exact": false,
       "similarity": 0.9791666666666666,
@@ -7253,6 +7401,7 @@
     "name": "find_passage/random_090_4",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 451,
       "exact": false,
       "similarity": 0.967741935483871,
@@ -7264,28 +7413,31 @@
     "name": "find_passage/random_090_5",
     "ok": true,
     "value": {
-      "end": 221,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9703504043126685,
-      "start": 39,
-      "text": "most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_090_6",
     "ok": true,
     "value": {
-      "end": 724,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9523809523809523,
-      "start": 623,
-      "text": "1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95%"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_090_7",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 121,
       "exact": false,
       "similarity": 0.9322033898305084,
@@ -7297,6 +7449,7 @@
     "name": "find_passage/random_090_8",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 333,
       "exact": false,
       "similarity": 0.9856733524355301,
@@ -7308,6 +7461,7 @@
     "name": "find_passage/random_090_9",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 582,
       "exact": false,
       "similarity": 0.9968847352024922,
@@ -7319,6 +7473,7 @@
     "name": "find_passage/random_090_10",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 535,
       "exact": false,
       "similarity": 0.9428571428571428,
@@ -7330,6 +7485,7 @@
     "name": "find_passage/random_090_11",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 535,
       "exact": false,
       "similarity": 0.94,
@@ -7341,39 +7497,43 @@
     "name": "find_passage/random_090_12",
     "ok": true,
     "value": {
-      "end": 439,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9633251833740831,
-      "start": 238,
-      "text": "14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_090_13",
     "ok": true,
     "value": {
-      "end": 568,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.964824120603015,
-      "start": 466,
-      "text": "primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/random_090_14",
     "ok": true,
     "value": {
-      "end": 568,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9609375,
-      "start": 440,
-      "text": "or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/paper_length/exact",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 31497,
       "exact": false,
       "similarity": 0.9963149078726968,
@@ -7385,6 +7545,7 @@
     "name": "find_passage/paper_length/few_edits",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 51499,
       "exact": false,
       "similarity": 0.9966599866399466,
@@ -7396,6 +7557,7 @@
     "name": "find_passage/paper_length/paraphrase",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.3454492585053795,
@@ -7432,61 +7594,67 @@
     "name": "find_passage/low_threshold/0.3/00",
     "ok": true,
     "value": {
-      "end": 825,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8530465949820788,
-      "start": 695,
-      "text": "group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/01",
     "ok": true,
     "value": {
-      "end": 412,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.848780487804878,
-      "start": 225,
-      "text": "older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/02",
     "ok": true,
     "value": {
-      "end": 868,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8707482993197279,
-      "start": 733,
-      "text": "to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/03",
     "ok": true,
     "value": {
-      "end": 400,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.6493506493506493,
-      "start": 328,
-      "text": "daily or to warfarin with a target international normalised ratio of 2.0"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/04",
     "ok": true,
     "value": {
-      "end": 894,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.7857142857142857,
-      "start": 806,
-      "text": "3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation,"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/05",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 663,
       "exact": false,
       "similarity": 0.8223350253807107,
@@ -7498,28 +7666,31 @@
     "name": "find_passage/low_threshold/0.3/06",
     "ok": true,
     "value": {
-      "end": 159,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.8614457831325302,
-      "start": 0,
-      "text": "Background: Atrial fibrillation is the most common sustained arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We conducted"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/07",
     "ok": true,
     "value": {
-      "end": 428,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8620689655172413,
-      "start": 340,
-      "text": "warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.3/08",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 544,
       "exact": false,
       "similarity": 0.8823529411764706,
@@ -7531,17 +7702,19 @@
     "name": "find_passage/low_threshold/0.3/09",
     "ok": true,
     "value": {
-      "end": 952,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9057750759878419,
-      "start": 799,
-      "text": "versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban was superior to warfarin in preventing stroke or"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.5/00",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 465,
       "exact": false,
       "similarity": 0.8359550561797753,
@@ -7553,17 +7726,19 @@
     "name": "find_passage/low_threshold/0.5/01",
     "ok": true,
     "value": {
-      "end": 851,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8943488943488943,
-      "start": 664,
-      "text": "1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.5/02",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 266,
       "exact": false,
       "similarity": 0.9736842105263158,
@@ -7575,17 +7750,19 @@
     "name": "find_passage/low_threshold/0.5/03",
     "ok": true,
     "value": {
-      "end": 473,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8048780487804879,
-      "start": 356,
-      "text": "target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.5/04",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 894,
       "exact": false,
       "similarity": 0.9226190476190477,
@@ -7597,6 +7774,7 @@
     "name": "find_passage/low_threshold/0.5/05",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 903,
       "exact": false,
       "similarity": 0.6494252873563219,
@@ -7608,72 +7786,79 @@
     "name": "find_passage/low_threshold/0.5/06",
     "ok": true,
     "value": {
-      "end": 820,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.893491124260355,
-      "start": 664,
-      "text": "1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.5/07",
     "ok": true,
     "value": {
-      "end": 327,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.6330935251798561,
-      "start": 276,
-      "text": "2019. Patients were assigned to apixaban 5 mg twice"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.5/08",
     "ok": true,
     "value": {
-      "end": 96,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.8,
-      "start": 39,
-      "text": "most common sustained arrhythmia and is associated with a"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.5/09",
     "ok": true,
     "value": {
-      "end": 766,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8160919540229885,
-      "start": 686,
-      "text": "warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/00",
     "ok": true,
     "value": {
-      "end": 903,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8463251670378619,
-      "start": 709,
-      "text": "ratio 0.79; 95% CI 0.66 to 0.95). Major bleeding occurred in 2.13% per year with apixaban versus 3.09% per year with warfarin. Conclusions: In elderly patients with atrial fibrillation, apixaban"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/01",
     "ok": true,
     "value": {
-      "end": 859,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8407643312101911,
-      "start": 790,
-      "text": "apixaban versus 3.09% per year with warfarin. Conclusions: In elderly"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/02",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.5272727272727272,
@@ -7685,6 +7870,7 @@
     "name": "find_passage/low_threshold/0.7/03",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.5512820512820513,
@@ -7696,6 +7882,7 @@
     "name": "find_passage/low_threshold/0.7/04",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 393,
       "exact": false,
       "similarity": 0.8542713567839196,
@@ -7707,50 +7894,55 @@
     "name": "find_passage/low_threshold/0.7/05",
     "ok": true,
     "value": {
-      "end": 149,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.7012987012987013,
-      "start": 61,
-      "text": "arrhythmia and is associated with a fivefold increase in the risk of stroke. Methods: We"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/06",
     "ok": true,
     "value": {
-      "end": 748,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8987854251012146,
-      "start": 633,
-      "text": "year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI 0.66 to 0.95). Major"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/07",
     "ok": true,
     "value": {
-      "end": 266,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8070175438596491,
-      "start": 190,
-      "text": "in 1,204 patients aged 65 years or older across 14 centres in Europe between"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/08",
     "ok": true,
     "value": {
-      "end": 221,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8387096774193549,
-      "start": 127,
-      "text": "of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/low_threshold/0.7/09",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.6964285714285714,
@@ -7762,6 +7954,7 @@
     "name": "find_passage/paper_length/few_edits/0.7",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 51499,
       "exact": false,
       "similarity": 0.9966599866399466,
@@ -7773,17 +7966,19 @@
     "name": "find_passage/capped/0.2/00",
     "ok": true,
     "value": {
-      "end": 184,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8264462809917356,
-      "start": 24,
-      "text": "ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.2/01",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 206,
       "exact": false,
       "similarity": 0.9430379746835443,
@@ -7795,6 +7990,7 @@
     "name": "find_passage/capped/0.2/02",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 262,
       "exact": false,
       "similarity": 0.9047619047619048,
@@ -7806,39 +8002,43 @@
     "name": "find_passage/capped/0.2/03",
     "ok": true,
     "value": {
-      "end": 198,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8705882352941177,
-      "start": 42,
-      "text": "to apixaban 5 mg twice daily or to warfarin with a target international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism;"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.2/04",
     "ok": true,
     "value": {
-      "end": 190,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.8481012658227848,
-      "start": 51,
-      "text": "of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.2/05",
     "ok": true,
     "value": {
-      "end": 183,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8476454293628809,
-      "start": 26,
-      "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.3/00",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 163,
       "exact": false,
       "similarity": 0.865979381443299,
@@ -7850,6 +8050,7 @@
     "name": "find_passage/capped/0.3/01",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 150,
       "exact": false,
       "similarity": 0.8153310104529616,
@@ -7861,17 +8062,19 @@
     "name": "find_passage/capped/0.3/02",
     "ok": true,
     "value": {
-      "end": 184,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8844884488448845,
-      "start": 41,
-      "text": "Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019."
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.3/03",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 144,
       "exact": false,
       "similarity": 0.7615894039735099,
@@ -7883,6 +8086,7 @@
     "name": "find_passage/capped/0.3/04",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 233,
       "exact": false,
       "similarity": 0.8888888888888888,
@@ -7894,72 +8098,79 @@
     "name": "find_passage/capped/0.3/05",
     "ok": true,
     "value": {
-      "end": 194,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8811188811188811,
-      "start": 59,
-      "text": "follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.4/00",
     "ok": true,
     "value": {
-      "end": 217,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8397790055248618,
-      "start": 57,
-      "text": "in the risk of stroke. Methods: We conducted a randomised controlled trial in 1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.4/01",
     "ok": true,
     "value": {
-      "end": 254,
+      "contradiction": "direction",
+      "end": null,
       "exact": false,
       "similarity": 0.9197080291970803,
-      "start": 49,
-      "text": "international normalised ratio of 2.0 to 3.0. The primary outcome was stroke or systemic embolism; the primary safety outcome was major bleeding according to ISTH criteria. Results: Over a median follow-up"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.4/02",
     "ok": true,
     "value": {
-      "end": 184,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.7878787878787878,
-      "start": 27,
-      "text": "ISTH criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.4/03",
     "ok": true,
     "value": {
-      "end": 147,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9032258064516129,
-      "start": 1,
-      "text": "1,204 patients aged 65 years or older across 14 centres in Europe between 2015 and 2019. Patients were assigned to apixaban 5 mg twice daily or to"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.4/04",
     "ok": true,
     "value": {
-      "end": 236,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.8940092165898618,
-      "start": 35,
-      "text": "criteria. Results: Over a median follow-up of 2.1 years, stroke or systemic embolism occurred in 1.27% per year in the apixaban group and 1.60% per year in the warfarin group (hazard ratio 0.79; 95% CI"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/capped/0.4/05",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 238,
       "exact": false,
       "similarity": 0.9619047619047619,
@@ -7971,6 +8182,7 @@
     "name": "find_passage/cut/00",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.9230769230769231,
@@ -7982,61 +8194,67 @@
     "name": "find_passage/cut/01",
     "ok": true,
     "value": {
-      "end": 11,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9230769230769231,
-      "start": 4,
-      "text": "HR 0.95"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/cut/02",
     "ok": true,
     "value": {
-      "end": 47,
+      "contradiction": "negation",
+      "end": null,
       "exact": false,
       "similarity": 0.9538461538461539,
-      "start": 13,
-      "text": "ineffective in reducing mortality."
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/cut/03",
     "ok": true,
     "value": {
-      "end": 23,
+      "contradiction": "negation",
+      "end": null,
       "exact": false,
       "similarity": 0.975609756097561,
-      "start": 3,
-      "text": "the difference was ≠"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/cut/04",
     "ok": true,
     "value": {
-      "end": 24,
+      "contradiction": "negation",
+      "end": null,
       "exact": false,
       "similarity": 0.975609756097561,
-      "start": 3,
-      "text": "the difference was ≠"
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/cut/05",
     "ok": true,
     "value": {
-      "end": 19,
+      "contradiction": "number",
+      "end": null,
       "exact": false,
       "similarity": 0.9142857142857143,
-      "start": 2,
-      "text": "½ dose was given."
+      "start": null,
+      "text": null
     }
   },
   {
     "name": "find_passage/cut/06",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 3,
       "exact": false,
       "similarity": 0.75,
@@ -8048,6 +8266,7 @@
     "name": "find_passage/cut/07",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 46,
       "exact": true,
       "similarity": 1.0,
@@ -8059,6 +8278,7 @@
     "name": "find_passage/cut/08",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.0,
@@ -8070,6 +8290,7 @@
     "name": "find_passage/cut/09",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 14,
       "exact": true,
       "similarity": 1.0,
@@ -8081,6 +8302,7 @@
     "name": "find_passage/cut/10",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.875,
@@ -8092,6 +8314,7 @@
     "name": "find_passage/cut/11",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": null,
       "exact": false,
       "similarity": 0.8695652173913043,
@@ -8103,11 +8326,629 @@
     "name": "find_passage/cut/12",
     "ok": true,
     "value": {
+      "contradiction": null,
       "end": 17,
       "exact": true,
       "similarity": 1.0,
       "start": 7,
       "text": "bc def ghi"
     }
+  },
+  {
+    "name": "contract-contradiction-number",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9953271028037384,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-number-sign",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9922480620155039,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-number-before-direction",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9789227166276346,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-negation-word",
+    "ok": true,
+    "value": {
+      "contradiction": "negation",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9907407407407407,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-negation-contraction",
+    "ok": true,
+    "value": {
+      "contradiction": "negation",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9839080459770115,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-negation-prefix",
+    "ok": true,
+    "value": {
+      "contradiction": "negation",
+      "end": null,
+      "exact": false,
+      "similarity": 0.984375,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-direction-word",
+    "ok": true,
+    "value": {
+      "contradiction": "direction",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9836065573770492,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-contradiction-direction-symbol",
+    "ok": true,
+    "value": {
+      "contradiction": "direction",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9953271028037384,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-benign-dropped-word",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 237,
+      "exact": false,
+      "similarity": 0.9905660377358491,
+      "start": 23,
+      "text": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year."
+    }
+  },
+  {
+    "name": "contract-benign-doubled-word",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 237,
+      "exact": false,
+      "similarity": 0.9907407407407407,
+      "start": 23,
+      "text": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year."
+    }
+  },
+  {
+    "name": "contract-benign-hyphen-dropped",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 237,
+      "exact": false,
+      "similarity": 0.9906542056074766,
+      "start": 23,
+      "text": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year."
+    }
+  },
+  {
+    "name": "contract-benign-lancet-decimal-point",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 73,
+      "exact": false,
+      "similarity": 0.9696969696969697,
+      "start": 23,
+      "text": "The hazard ratio was 0·64 in the primary analysis."
+    }
+  },
+  {
+    "name": "contract-benign-space-in-a-dose",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 67,
+      "exact": false,
+      "similarity": 0.9914529914529915,
+      "start": 9,
+      "text": "Patients received 10mg of apixaban twice daily for a year."
+    }
+  },
+  {
+    "name": "contradiction-rules",
+    "ok": true,
+    "value": {
+      "direction_words": [
+        "<",
+        ">",
+        "above",
+        "after",
+        "before",
+        "below",
+        "beneficial",
+        "benefit",
+        "best",
+        "better",
+        "decrease",
+        "decreased",
+        "decreases",
+        "decreasing",
+        "down",
+        "downward",
+        "earlier",
+        "elevated",
+        "exceed",
+        "exceeded",
+        "exceeds",
+        "faster",
+        "fell",
+        "fewer",
+        "fewest",
+        "gain",
+        "gained",
+        "greater",
+        "greatest",
+        "harm",
+        "harmful",
+        "high",
+        "higher",
+        "highest",
+        "improve",
+        "improved",
+        "improvement",
+        "improves",
+        "increase",
+        "increased",
+        "increases",
+        "increasing",
+        "inferior",
+        "larger",
+        "largest",
+        "later",
+        "least",
+        "less",
+        "longer",
+        "loss",
+        "lost",
+        "low",
+        "lower",
+        "lowered",
+        "lowest",
+        "max",
+        "maximum",
+        "min",
+        "minimum",
+        "more",
+        "most",
+        "negative",
+        "positive",
+        "protective",
+        "raised",
+        "reduce",
+        "reduced",
+        "reduces",
+        "reducing",
+        "reduction",
+        "rise",
+        "rises",
+        "rising",
+        "rose",
+        "shorter",
+        "slower",
+        "smaller",
+        "smallest",
+        "superior",
+        "up",
+        "upward",
+        "worse",
+        "worsened",
+        "worsening",
+        "worst",
+        "↑",
+        "↓",
+        "≤",
+        "≥",
+        "≦",
+        "≧",
+        "≪",
+        "≫",
+        "⩽",
+        "⩾"
+      ],
+      "negated_word_min_length": 3,
+      "negating_prefixes": [
+        "a",
+        "an",
+        "dis",
+        "il",
+        "im",
+        "in",
+        "ir",
+        "non",
+        "un"
+      ],
+      "negation_words": [
+        "absence",
+        "absent",
+        "cannot",
+        "fail",
+        "failed",
+        "fails",
+        "lack",
+        "lacked",
+        "lacking",
+        "lacks",
+        "neither",
+        "never",
+        "no",
+        "non",
+        "none",
+        "nor",
+        "not",
+        "nothing",
+        "without"
+      ],
+      "version": 1
+    }
+  },
+  {
+    "name": "tokens-00",
+    "ok": true,
+    "value": [
+      "hazard",
+      "ratio",
+      ",",
+      "0.64",
+      ";",
+      "95",
+      "%",
+      "ci",
+      "0.44",
+      "-",
+      "0.92"
+    ]
+  },
+  {
+    "name": "tokens-01",
+    "ok": true,
+    "value": [
+      "1,204",
+      "patients"
+    ]
+  },
+  {
+    "name": "tokens-02",
+    "ok": true,
+    "value": [
+      "0.64"
+    ]
+  },
+  {
+    "name": "tokens-03",
+    "ok": true,
+    "value": [
+      "a",
+      "change",
+      "of",
+      "-0.5"
+    ]
+  },
+  {
+    "name": "tokens-04",
+    "ok": true,
+    "value": [
+      "-3",
+      "at",
+      "the",
+      "start"
+    ]
+  },
+  {
+    "name": "tokens-05",
+    "ok": true,
+    "value": [
+      "(",
+      "+2",
+      ")"
+    ]
+  },
+  {
+    "name": "tokens-06",
+    "ok": true,
+    "value": [
+      "aged",
+      "18",
+      "-",
+      "65",
+      "years"
+    ]
+  },
+  {
+    "name": "tokens-07",
+    "ok": true,
+    "value": [
+      "10",
+      "mg",
+      "and",
+      "10",
+      "mg"
+    ]
+  },
+  {
+    "name": "tokens-08",
+    "ok": true,
+    "value": [
+      "didn't",
+      "reduce"
+    ]
+  },
+  {
+    "name": "tokens-09",
+    "ok": true,
+    "value": [
+      "patients",
+      "'",
+      "data"
+    ]
+  },
+  {
+    "name": "tokens-10",
+    "ok": true,
+    "value": [
+      "x",
+      "≠",
+      "y"
+    ]
+  },
+  {
+    "name": "tokens-11",
+    "ok": true,
+    "value": [
+      "x",
+      "≠",
+      "y"
+    ]
+  },
+  {
+    "name": "tokens-12",
+    "ok": true,
+    "value": [
+      "p",
+      "<",
+      "0.05",
+      "."
+    ]
+  },
+  {
+    "name": "tokens-13",
+    "ok": true,
+    "value": [
+      "version",
+      "2",
+      "."
+    ]
+  },
+  {
+    "name": "tokens-14",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "tokens-15",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "tokens-16",
+    "ok": true,
+    "value": [
+      "x"
+    ]
+  },
+  {
+    "name": "tokens-17",
+    "ok": true,
+    "value": [
+      "ab",
+      "1",
+      "2"
+    ]
+  },
+  {
+    "name": "tokens-18",
+    "ok": true,
+    "value": [
+      "١٢٣",
+      "patients"
+    ]
+  },
+  {
+    "name": "tokens-19",
+    "ok": true,
+    "value": [
+      "۱.۵",
+      "mg"
+    ]
+  },
+  {
+    "name": "tokens-20",
+    "ok": true,
+    "value": [
+      "23",
+      "m",
+      "2"
+    ]
+  },
+  {
+    "name": "tokens-21",
+    "ok": true,
+    "value": [
+      "1",
+      "⁄",
+      "2",
+      "dose"
+    ]
+  },
+  {
+    "name": "tokens-22",
+    "ok": true,
+    "value": [
+      "il",
+      "-",
+      "6",
+      "and",
+      "cd",
+      "4",
+      "+",
+      "cells"
+    ]
+  },
+  {
+    "name": "tokens-23",
+    "ok": true,
+    "value": [
+      "o'brien's"
+    ]
+  },
+  {
+    "name": "tokens-24",
+    "ok": true,
+    "value": [
+      "a",
+      "'",
+      "1"
+    ]
+  },
+  {
+    "name": "tokens-25",
+    "ok": true,
+    "value": [
+      "1",
+      "'",
+      "a"
+    ]
+  },
+  {
+    "name": "tokens-26",
+    "ok": true,
+    "value": [
+      ".",
+      ".",
+      "5"
+    ]
+  },
+  {
+    "name": "tokens-27",
+    "ok": true,
+    "value": [
+      "5",
+      ".",
+      "."
+    ]
+  },
+  {
+    "name": "tokens-28",
+    "ok": true,
+    "value": [
+      "+",
+      "-5"
+    ]
+  },
+  {
+    "name": "tokens-29",
+    "ok": true,
+    "value": [
+      "-",
+      "+5"
+    ]
+  },
+  {
+    "name": "tokens-30",
+    "ok": true,
+    "value": [
+      "x",
+      "-",
+      "5"
+    ]
+  },
+  {
+    "name": "tokens-31",
+    "ok": true,
+    "value": [
+      "x",
+      "-5"
+    ]
+  },
+  {
+    "name": "tokens-32",
+    "ok": true,
+    "value": [
+      "≤",
+      "≥",
+      "≪",
+      "↑",
+      "↓"
+    ]
+  },
+  {
+    "name": "tokens-33",
+    "ok": true,
+    "value": [
+      "xii",
+      "trials"
+    ]
+  },
+  {
+    "name": "tokens-34",
+    "ok": true,
+    "value": [
+      "final",
+      "3",
+      "rd"
+    ]
+  },
+  {
+    "name": "tokens-35",
+    "ok": true,
+    "value": [
+      "dz",
+      "1"
+    ]
   }
 ]

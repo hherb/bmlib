@@ -27,7 +27,8 @@
 //! long-input tests, which count the windows the crate-private matcher scores.
 
 use bmlib::citations::passage_match::{
-    find_passage, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageMatch, PassageSpan,
+    find_passage, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageContradiction,
+    PassageMatch, PassageSpan,
 };
 
 // The crate's difflib port is crate-private; the exhaustive search compiles
@@ -568,14 +569,139 @@ fn a_cut_occurrence_is_not_exact() {
 }
 
 #[test]
-fn a_cut_occurrence_still_matches_fuzzily_where_close() {
+fn a_cut_occurrence_close_enough_is_a_contradiction() {
+    // One character from the source's own wording, and that character
+    // negates it: the window reaches the threshold and is rejected (#632).
     let m = find(
         "the difference was =",
         "So the difference was \u{2260} 0.",
         0.9,
     );
-    assert!(m.matched() && !m.exact);
-    assert_eq!(matched_text(&m), Some("the difference was \u{2260}"));
+    assert!(!m.matched() && !m.exact);
+    assert!(m.similarity >= 0.9);
+    assert_eq!(m.contradiction, Some(PassageContradiction::Negation));
+}
+
+#[test]
+fn a_cut_occurrence_reaching_the_threshold_contradicts() {
+    let cases = [
+        (
+            "HR 0.9",
+            "The HR 0.95 (95% CI 0.8-1.1) held.",
+            PassageContradiction::Number,
+        ),
+        (
+            "5 mg daily",
+            "Patients received 25 mg daily.",
+            PassageContradiction::Number,
+        ),
+        (
+            "effective in reducing mortality",
+            "The drug was ineffective in reducing mortality.",
+            PassageContradiction::Negation,
+        ),
+        (
+            "typical presentation",
+            "It was an atypical presentation.",
+            PassageContradiction::Negation,
+        ),
+    ];
+    for (passage, text, reason) in cases {
+        let m = find(passage, text, 0.8);
+        assert!(m.similarity >= 0.8, "{passage:?}");
+        assert_eq!(m.contradiction, Some(reason), "{passage:?}");
+    }
+}
+
+// TestContradictions (#632)
+
+/// The issue's sentence, 222 characters before the edits below.
+const RESULTS_SENTENCE: &str = "In the intention-to-treat population, the primary outcome \
+    occurred in fewer patients in the treatment group than in the control group (hazard \
+    ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.";
+
+fn results_text() -> String {
+    format!("Methods were standard. {RESULTS_SENTENCE} Adverse events were rare.")
+}
+
+#[test]
+fn a_harmful_edit_is_rejected() {
+    let cases = [
+        ("ratio, 0.64", "ratio, 0.61", PassageContradiction::Number),
+        ("0.44 to 0.92", "0.44 to 0.29", PassageContradiction::Number),
+        ("P=0.02", "P=0.2", PassageContradiction::Number),
+        ("at one year", "at 1 year", PassageContradiction::Number),
+        (
+            "occurred in fewer",
+            "occurred in more",
+            PassageContradiction::Direction,
+        ),
+        ("P=0.02", "P<0.02", PassageContradiction::Direction),
+        (
+            "outcome occurred",
+            "outcome not occurred",
+            PassageContradiction::Negation,
+        ),
+        (
+            "outcome occurred",
+            "outcome hasn't occurred",
+            PassageContradiction::Negation,
+        ),
+    ];
+    for (old, new, reason) in cases {
+        let passage = RESULTS_SENTENCE.replace(old, new);
+        assert_ne!(passage, RESULTS_SENTENCE);
+        let m = find(&passage, &results_text(), 0.95);
+        assert!(!m.matched(), "{new:?}");
+        assert!(m.similarity >= 0.95, "{new:?}");
+        assert_eq!(m.contradiction, Some(reason), "{new:?}");
+    }
+}
+
+#[test]
+fn a_benign_edit_is_accepted() {
+    let cases = [
+        ("population, the", "population, "),
+        ("in the treatment", "in the the treatment"),
+        ("intention-to-treat", "intention to treat"),
+        ("group (hazard", "group, (hazard"),
+        ("0.64", "0\u{b7}64"),
+    ];
+    for (old, new) in cases {
+        let passage = RESULTS_SENTENCE.replace(old, new);
+        assert_ne!(passage, RESULTS_SENTENCE);
+        let m = find(&passage, &results_text(), 0.95);
+        assert_eq!(matched_text(&m), Some(RESULTS_SENTENCE), "{new:?}");
+        assert_eq!(m.contradiction, None, "{new:?}");
+    }
+}
+
+#[test]
+fn a_number_is_checked_before_a_word() {
+    let passage = RESULTS_SENTENCE
+        .replace("0.64", "0.61")
+        .replace("fewer", "more");
+    let m = find(&passage, &results_text(), 0.9);
+    assert_eq!(m.contradiction, Some(PassageContradiction::Number));
+}
+
+#[test]
+fn a_below_threshold_window_carries_no_contradiction() {
+    let passage = RESULTS_SENTENCE.replace("0.64", "0.61");
+    let m = find(&passage, &results_text(), 0.999);
+    assert!(!m.matched());
+    assert_eq!(m.contradiction, None);
+}
+
+#[test]
+fn an_exact_match_is_never_checked() {
+    let m = find(
+        "did not reduce mortality",
+        "It did not reduce mortality.",
+        0.95,
+    );
+    assert!(m.exact);
+    assert_eq!(m.contradiction, None);
 }
 
 #[test]
@@ -767,7 +893,9 @@ fn matches_exhaustive_search_on_random_edits() {
         let best = exhaustive_best(&passage, &text, PROPERTY_THRESHOLD);
         let m = find(&passage, &text, PROPERTY_THRESHOLD);
 
-        assert_eq!(m.matched(), best >= PROPERTY_THRESHOLD, "{passage:?}");
+        // A window reaching the threshold is rejected when it contradicts.
+        let reached = m.matched() || m.contradiction.is_some();
+        assert_eq!(reached, best >= PROPERTY_THRESHOLD, "{passage:?}");
         if let Some(s) = &m.span {
             accepted += 1;
             assert_eq!(char_slice(&text, s.start, s.end), s.text);

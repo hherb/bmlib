@@ -34,6 +34,10 @@
 //! `difflib.SequenceMatcher.ratio()`; the Python module's docstring has the
 //! full search strategy and cost.
 //!
+//! A best window reaching the threshold is still rejected when it contradicts
+//! the passage (#632): a differing number, negation or direction word, the
+//! reason reported as [`PassageContradiction`].
+//!
 //! Rust's Unicode tables (the standard library's and `unicode-normalization`'s)
 //! are newer than Python's (15.1 in Python 3.13, older in 3.11 and 3.12), so
 //! the two agree on text whose code points both versions assign; a character
@@ -41,8 +45,11 @@
 //! characters.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use unicode_normalization::char::{canonical_combining_class, is_combining_mark};
 use unicode_normalization::UnicodeNormalization;
@@ -82,6 +89,132 @@ const INVISIBLE: &str = "\u{ad}\u{200b}\u{200c}\u{200d}\u{2060}\u{feff}";
 /// Combining overlays that negate their base character ("≠" is "=" + U+0338);
 /// kept so a negated relation never folds to its positive form.
 const NEGATION_MARKS: [char; 3] = ['\u{338}', '\u{20d2}', '\u{20e5}'];
+
+/// Bump with any change to the word lists below or to how a passage is cut
+/// into tokens, since either can turn an accepted quote into a rejected one or
+/// back. Python's `CONTRADICTION_RULES_VERSION`, held equal by the oracle.
+pub const CONTRADICTION_RULES_VERSION: u32 = 1;
+
+/// Differing tokens that negate a claim; a token ending "n't" is one too.
+pub const NEGATION_WORDS: &[&str] = &[
+    "absence", "absent", "cannot", "fail", "failed", "fails", "lack", "lacked", "lacking", "lacks",
+    "neither", "never", "no", "non", "none", "nor", "not", "nothing", "without",
+];
+
+/// A differing token that is a differing token of the other side with one of
+/// these in front negates it ("ineffective", "asymptomatic", "unlikely").
+pub const NEGATING_PREFIXES: &[&str] = &["a", "an", "dis", "il", "im", "in", "ir", "non", "un"];
+
+/// Shortest word (in `char`s) a negating prefix is looked for on, so "a" +
+/// "n" is not "an".
+pub const NEGATED_WORD_MIN_LENGTH: usize = 3;
+
+/// Differing tokens that state a direction or a comparison.
+pub const DIRECTION_WORDS: &[&str] = &[
+    "<",
+    ">",
+    "above",
+    "after",
+    "before",
+    "below",
+    "beneficial",
+    "benefit",
+    "best",
+    "better",
+    "decrease",
+    "decreased",
+    "decreases",
+    "decreasing",
+    "down",
+    "downward",
+    "earlier",
+    "elevated",
+    "exceed",
+    "exceeded",
+    "exceeds",
+    "faster",
+    "fell",
+    "fewer",
+    "fewest",
+    "gain",
+    "gained",
+    "greater",
+    "greatest",
+    "harm",
+    "harmful",
+    "high",
+    "higher",
+    "highest",
+    "improve",
+    "improved",
+    "improvement",
+    "improves",
+    "increase",
+    "increased",
+    "increases",
+    "increasing",
+    "inferior",
+    "larger",
+    "largest",
+    "later",
+    "least",
+    "less",
+    "longer",
+    "loss",
+    "lost",
+    "low",
+    "lower",
+    "lowered",
+    "lowest",
+    "max",
+    "maximum",
+    "min",
+    "minimum",
+    "more",
+    "most",
+    "negative",
+    "positive",
+    "protective",
+    "raised",
+    "reduce",
+    "reduced",
+    "reduces",
+    "reducing",
+    "reduction",
+    "rise",
+    "rises",
+    "rising",
+    "rose",
+    "shorter",
+    "slower",
+    "smaller",
+    "smallest",
+    "superior",
+    "up",
+    "upward",
+    "worse",
+    "worsened",
+    "worsening",
+    "worst",
+    "\u{2191}",
+    "\u{2193}",
+    "\u{2264}",
+    "\u{2265}",
+    "\u{2266}",
+    "\u{2267}",
+    "\u{226a}",
+    "\u{226b}",
+    "\u{2a7d}",
+    "\u{2a7e}",
+];
+
+/// Separators joined into a number between two digits, as the token spells
+/// them: Lancet's middle dot is the "." a model copies it as.
+const DECIMAL_POINTS: [(char, char); 3] = [('.', '.'), (',', ','), ('\u{b7}', '.')];
+
+/// Python's `str.isdecimal`: general category Nd.
+static DECIMAL_DIGIT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\A\p{Nd}\z").expect("the Nd regex compiles"));
 
 /// `str.isspace` as Python defines it: Unicode whitespace plus U+001C..U+001F.
 fn is_py_space(c: char) -> bool {
@@ -192,6 +325,35 @@ pub struct PassageSpan {
     pub text: String,
 }
 
+/// Why a window that reached the threshold was rejected all the same.
+///
+/// Checked in declaration order, so a window differing in a number and a word
+/// reports [`Number`](Self::Number).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PassageContradiction {
+    /// A differing token holds a digit (a value, a sign, a decimal point).
+    Number,
+    /// A differing token negates: one of [`NEGATION_WORDS`], a word ending
+    /// "n't", a negated relation such as "≠", or the other side's word with
+    /// one of [`NEGATING_PREFIXES`] ("ineffective" for "effective").
+    Negation,
+    /// A differing token is one of [`DIRECTION_WORDS`] ("increased",
+    /// "lower", "<", "≥" ...).
+    Direction,
+}
+
+impl PassageContradiction {
+    /// The name Python's `PassageContradiction` gives the value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Number => "number",
+            Self::Negation => "negation",
+            Self::Direction => "direction",
+        }
+    }
+}
+
 /// Result of [`find_passage`].
 ///
 /// Built only by [`find_passage`] (`#[non_exhaustive]`), so the invariants
@@ -210,6 +372,9 @@ pub struct PassageMatch {
     /// starting and ending on whole words and whole source characters. Only
     /// ever set with a span and a similarity of 1.0.
     pub exact: bool,
+    /// Why the best window was rejected although it reached the threshold.
+    /// Only ever set without a span.
+    pub contradiction: Option<PassageContradiction>,
 }
 
 impl PassageMatch {
@@ -223,6 +388,7 @@ impl PassageMatch {
             similarity,
             span: None,
             exact: false,
+            contradiction: None,
         }
     }
 }
@@ -247,7 +413,9 @@ impl std::error::Error for InvalidSimilarity {}
 /// the search moves on to the next occurrence and then to the fuzzy search.
 /// A fuzzy match starts and ends on word boundaries (unless no boundary lies
 /// near an estimated edge). The match is accepted when the best similarity
-/// reaches `min_similarity`; its span then holds the original source wording.
+/// reaches `min_similarity` and the best window does not contradict the
+/// passage (a number, a negation or a direction differs; then `contradiction`
+/// says which); its span then holds the original source wording.
 /// A similarity of 0.0 means no candidate location was found: no fragment of
 /// the passage occurs in the text, or every one that does occurs more than
 /// `SEED_MAX_OCCURRENCES` times.
@@ -302,17 +470,160 @@ pub fn find_passage(
         }
     }
 
-    if best_similarity >= min_similarity {
-        return Ok(accepted(
-            text,
-            &offsets,
-            best_start,
-            best_end,
-            best_similarity,
-            false,
-        ));
+    if best_similarity < min_similarity {
+        return Ok(PassageMatch::rejected(best_similarity));
     }
-    Ok(PassageMatch::rejected(best_similarity))
+    if let Some(reason) = contradiction(
+        &tokens(&norm_passage),
+        &tokens(&norm_text[best_start..best_end]),
+    ) {
+        return Ok(PassageMatch {
+            contradiction: Some(reason),
+            ..PassageMatch::rejected(best_similarity)
+        });
+    }
+    Ok(accepted(
+        text,
+        &offsets,
+        best_start,
+        best_end,
+        best_similarity,
+        false,
+    ))
+}
+
+/// What a token of the contradiction guard is made of.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TokenKind {
+    Letters,
+    Number,
+    Symbol,
+}
+
+/// Python's `str.isdecimal` for one character.
+fn is_decimal(c: char) -> bool {
+    DECIMAL_DIGIT.is_match(c.encode_utf8(&mut [0; 4]))
+}
+
+/// The spelling a decimal separator takes inside a number, if `c` is one.
+fn decimal_point(c: char) -> Option<char> {
+    DECIMAL_POINTS
+        .iter()
+        .find(|&&(from, _)| from == c)
+        .map(|&(_, to)| to)
+}
+
+/// A word character that is not a decimal digit.
+fn is_letter(c: char) -> bool {
+    is_word_char(c) && !is_decimal(c)
+}
+
+/// Cut normalised text into the words, numbers and symbols the contradiction
+/// guard compares, as Python's `_tokens` does.
+///
+/// A word is a run of letters (an apostrophe between two letters joins it). A
+/// number is a run of decimal digits, joined across a ".", "," or middle dot
+/// between two digits (the middle dot spelled "."), and opened by a "+" or
+/// "-" directly before a digit when no word character precedes it. A letter
+/// and a digit always part. Every other character is a token of its own, and
+/// a combining mark joins whichever token it follows.
+pub(crate) fn tokens(text: &[char]) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut kind: Option<TokenKind> = None;
+    for (index, &c) in text.iter().enumerate() {
+        let before = index.checked_sub(1).map(|i| text[i]);
+        let after = text.get(index + 1).copied();
+        let after_decimal = after.is_some_and(is_decimal);
+        let mut c = c;
+        let (extends, char_kind) = if !current.is_empty() && is_combining_mark(c) {
+            (true, kind)
+        } else if c == SPACE {
+            (false, None)
+        } else if is_decimal(c) {
+            (kind == Some(TokenKind::Number), Some(TokenKind::Number))
+        } else if is_word_char(c) {
+            (kind == Some(TokenKind::Letters), Some(TokenKind::Letters))
+        } else if let (Some(TokenKind::Number), true, Some(point)) =
+            (kind, after_decimal, decimal_point(c))
+        {
+            c = point;
+            (true, kind)
+        } else if kind == Some(TokenKind::Letters) && c == '\'' && after.is_some_and(is_letter) {
+            (true, kind)
+        } else if (c == '+' || c == '-') && after_decimal && !before.is_some_and(is_word_char) {
+            (false, Some(TokenKind::Number))
+        } else {
+            (false, Some(TokenKind::Symbol))
+        };
+        if extends {
+            current.push(c);
+            continue;
+        }
+        if !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+        }
+        kind = char_kind;
+        if char_kind.is_some() {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+/// Whether `word` is `other` with a negating prefix ("ineffective", "effective").
+fn negates(word: &str, other: &str) -> bool {
+    other.chars().count() >= NEGATED_WORD_MIN_LENGTH
+        && NEGATING_PREFIXES
+            .iter()
+            .any(|prefix| word.strip_prefix(prefix) == Some(other))
+}
+
+/// Whether a window's tokens contradict the passage's, as Python's
+/// `_contradiction`: the tokens are aligned (the window as `a`, the passage as
+/// `b`, through ids so the `char` matcher's port aligns them as difflib aligns
+/// lists) and every token left unmatched, on either side, is tested.
+fn contradiction<'a>(passage: &'a [String], window: &'a [String]) -> Option<PassageContradiction> {
+    let mut ids: HashMap<&str, usize> = HashMap::new();
+    let mut id_of = |token: &'a str| -> usize {
+        let next = ids.len();
+        *ids.entry(token).or_insert(next)
+    };
+    let passage_ids: Vec<usize> = passage.iter().map(|t| id_of(t)).collect();
+    let window_ids: Vec<usize> = window.iter().map(|t| id_of(t)).collect();
+    let mut matcher = SequenceMatcher::new(&passage_ids);
+    matcher.set_a(&window_ids);
+    let (mut window_only, mut passage_only): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
+    let (mut window_at, mut passage_at) = (0, 0);
+    for block in matcher.matching_blocks() {
+        window_only.extend(window[window_at..block.a].iter().map(String::as_str));
+        passage_only.extend(passage[passage_at..block.b].iter().map(String::as_str));
+        (window_at, passage_at) = (block.a + block.size, block.b + block.size);
+    }
+    let differing = || window_only.iter().chain(&passage_only).copied();
+    if differing().any(|token| token.chars().any(is_decimal)) {
+        return Some(PassageContradiction::Number);
+    }
+    let negation_word = |token: &str| {
+        NEGATION_WORDS.contains(&token)
+            || token.ends_with("n't")
+            || token.chars().any(|c| NEGATION_MARKS.contains(&c))
+    };
+    let prefixed = window_only.iter().any(|one| {
+        passage_only
+            .iter()
+            .any(|other| negates(one, other) || negates(other, one))
+    });
+    if differing().any(negation_word) || prefixed {
+        return Some(PassageContradiction::Negation);
+    }
+    if differing().any(|token| DIRECTION_WORDS.contains(&token)) {
+        return Some(PassageContradiction::Direction);
+    }
+    None
 }
 
 /// First occurrence of `passage` in `text` whose edges cut nothing (see
@@ -665,6 +976,7 @@ fn accepted(
             text: chars[original_start..original_end].iter().collect(),
         }),
         exact,
+        contradiction: None,
     }
 }
 
@@ -759,8 +1071,9 @@ mod tests {
         assert_eq!(max_edit_points(20, 32, 1e-310), 52);
     }
 
-    /// The differential oracle's cases for the two crate-private bounds; the
-    /// integration test `tests/passage_match_oracle.rs` runs the rest.
+    /// The differential oracle's cases for the two crate-private bounds and the
+    /// contradiction guard's tokens; the integration test
+    /// `tests/passage_match_oracle.rs` runs the rest.
     #[test]
     fn bounds_agree_with_python() {
         let cases: Value =
@@ -789,6 +1102,9 @@ mod tests {
                     size("passage_length"),
                     size("text_length"),
                     similarity()
+                )),
+                Some("tokens") => json!(tokens(
+                    &normalize_chars(args["text"].as_str().expect("a text")).0
                 )),
                 _ => continue,
             };
