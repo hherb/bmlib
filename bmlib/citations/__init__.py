@@ -72,6 +72,7 @@ from bmlib.citations.parser import (
     validate_citation_marker,
 )
 from bmlib.citations.passage_match import (
+    PassageContradiction,
     PassageMatch,
     find_passage,
     fold_char,
@@ -92,6 +93,7 @@ __all__ = [
     "DocumentMetadata",
     "FormattedReference",
     "HarvardFormatter",
+    "PassageContradiction",
     "PassageMatch",
     "VancouverFormatter",
     "author_surname",

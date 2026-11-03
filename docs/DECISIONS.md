@@ -6200,13 +6200,14 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   control arm when the best window says *"increased in the control arm"*.
   That is a wrong citation too, and a rejection only costs the caller an
   unverified quote. Test:
-  `tests/test_passage_match.py::TestContradictions::test_a_harmful_edit_is_rejected`.
+  `tests/test_passage_match.py::TestContradictions::test_only_the_best_window_is_checked`.
 - **Any unmatched guarded token rejects, whichever side it is on, with no
   stemming and no typo tolerance.** So a tense change (`increases` for
   `increased`), `didn't` for `did not` and a misspelt `superioer` are rejected
   as well. A model copying a quote rarely misspells. Tolerating a near
   spelling would accept `increase`/`increases`, which is right, but also
-  `increased`/`decreased`, which score 0.78 against each other. Test:
+  `increased`/`decreased`, which score 0.78 against each other. Tests:
+  `TestTokens::test_a_near_spelling_is_not_forgiven`,
   `TestTokens::test_unmatched_tokens_on_either_side_count`.
 - **`a`/`an` are negating prefixes despite `trial`/`atrial`.** They are what
   catches `symptomatic`/`asymptomatic`, `typical`/`atypical` and
@@ -6217,14 +6218,36 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   `during 12 months` are a benign swap, and the lists are a choice to reject
   where a word reverses a claim. Change a list or a cutting rule only with a
   bump of `CONTRADICTION_RULES_VERSION`, in both languages; the oracle's
-  `contradiction-rules` case holds the lists equal.
+  `contradiction-rules` case holds the lists equal, and
+  `test_the_contradiction_rules_version_moves_with_the_rules` fails on any
+  change to the guard's code or data until the version is re-pinned.
 - **The guard does not see a reordering.** `A was higher than B` copied as
   `B was higher than A` changes only `A` and `B`, which are not guarded.
 - **A number is a token of its own, signed and with its decimal point.**
   Joining it to a neighbouring letter would make `10mg` against `10 mg` a
   numeric change. A Lancet middle dot between digits reads as `.`, because a
-  model copies it that way. `1,000` against `1000` is rejected, a formatting
-  change judged not worth an exception. Test: `TestTokens::test_cuts`.
+  model copies it that way. **A comma parts a number** (PR #648's review): it
+  is a thousands separator, a European decimal or a list separator alike, and
+  joined, `refs 3,4` against `refs 3, 4` (a whitespace difference) was a
+  numeric change. Parting it costs no detection, since a changed digit still
+  leaves a differing digit token. `1,000` against `1000` is still rejected, a
+  formatting change judged not worth an exception. A sign stays joined only
+  directly before its digit, so `- 0.5` against `-0.5` is rejected too:
+  joining across the space would read `18 - 65` as a negative number. Test:
+  `TestTokens::test_cuts`.
+- **A bracketed citation marker left out whole is not tested** (PR #648's
+  review). Canonical JATS text prints a body citation as the publisher typeset
+  it, `[12]`, and a model quoting the sentence often drops it, which the
+  digit rule rejected as `number`. A run of `[`, whole numbers parted by `,`
+  or `-`, and `]`, unmatched whole on either side, is skipped. A changed
+  marker (`[15]` for `[16]`) is still a number, as is any bracket holding
+  anything else (`[0.5]`, `[2 to 5]`, `[95% CI ...]`). Not covered: a
+  parenthesised marker (`(12)` is as often a count) and a superscript one,
+  which reaches the text as plain digits (`20%12`) or, as Unicode
+  superscripts, folds to them, and cannot be told from a number. Tests:
+  `TestContradictions::test_a_dropped_citation_marker_is_accepted`,
+  `test_a_citation_marker_added_by_the_quote_is_accepted`,
+  `test_a_bracket_that_is_no_marker_is_tested`.
 
 ## quality — what a PICO request failure is, and two reply fields (#573, #578)
 

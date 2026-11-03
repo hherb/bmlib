@@ -8491,6 +8491,150 @@
     }
   },
   {
+    "name": "contract-benign-dropped-citation-marker",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 111,
+      "exact": false,
+      "similarity": 0.9740932642487047,
+      "start": 12,
+      "text": "Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up."
+    }
+  },
+  {
+    "name": "contract-benign-dropped-citation-range",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 114,
+      "exact": false,
+      "similarity": 0.9591836734693877,
+      "start": 12,
+      "text": "Statins reduced all-cause mortality by 20% [15–17] in high-risk patients over five years of follow-up."
+    }
+  },
+  {
+    "name": "contract-benign-dropped-citation-list",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 115,
+      "exact": false,
+      "similarity": 0.9543147208121827,
+      "start": 12,
+      "text": "Statins reduced all-cause mortality by 20% [15, 16] in high-risk patients over five years of follow-up."
+    }
+  },
+  {
+    "name": "contract-benign-space-in-a-reference-list",
+    "ok": true,
+    "value": {
+      "contradiction": null,
+      "end": 82,
+      "exact": false,
+      "similarity": 0.9931972789115646,
+      "start": 9,
+      "text": "As shown before (refs 3,4) the effect held in every subgroup we examined."
+    }
+  },
+  {
+    "name": "contract-changed-citation-marker",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.98989898989899,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-dropped-bracketed-value",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9690721649484536,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-negation-checked-before-direction",
+    "ok": true,
+    "value": {
+      "contradiction": "negation",
+      "end": null,
+      "exact": false,
+      "similarity": 0.974477958236659,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-number-checked-before-negation",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9861111111111112,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-dropped-direction-word",
+    "ok": true,
+    "value": {
+      "contradiction": "direction",
+      "end": null,
+      "exact": false,
+      "similarity": 0.985781990521327,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-dropped-number",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9809523809523809,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-inserted-direction-words",
+    "ok": true,
+    "value": {
+      "contradiction": "direction",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9553571428571429,
+      "start": null,
+      "text": null
+    }
+  },
+  {
+    "name": "contract-only-the-best-window-is-checked",
+    "ok": true,
+    "value": {
+      "contradiction": "number",
+      "end": null,
+      "exact": false,
+      "similarity": 0.9953271028037384,
+      "start": null,
+      "text": null
+    }
+  },
+  {
     "name": "contradiction-rules",
     "ok": true,
     "value": {
@@ -8648,7 +8792,9 @@
     "name": "tokens-01",
     "ok": true,
     "value": [
-      "1,204",
+      "1",
+      ",",
+      "204",
       "patients"
     ]
   },
@@ -8949,6 +9095,52 @@
     "value": [
       "dz",
       "1"
+    ]
+  },
+  {
+    "name": "tokens-36",
+    "ok": true,
+    "value": [
+      "refs",
+      "3",
+      ",",
+      "4"
+    ]
+  },
+  {
+    "name": "tokens-37",
+    "ok": true,
+    "value": [
+      "refs",
+      "3",
+      ",",
+      "4"
+    ]
+  },
+  {
+    "name": "tokens-38",
+    "ok": true,
+    "value": [
+      "[",
+      "15",
+      "-",
+      "17",
+      "]"
+    ]
+  },
+  {
+    "name": "tokens-39",
+    "ok": true,
+    "value": [
+      "[",
+      "3",
+      ",",
+      "4",
+      "]",
+      "and",
+      "1",
+      ",",
+      "204"
     ]
   }
 ]

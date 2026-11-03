@@ -3608,6 +3608,114 @@
   }
  },
  {
+  "name": "contract-benign-dropped-citation-marker",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-dropped-citation-range",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15–17] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-dropped-citation-list",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15, 16] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-benign-space-in-a-reference-list",
+  "fn": "find_passage",
+  "args": {
+   "passage": "As shown before (refs 3, 4) the effect held in every subgroup we examined.",
+   "text": "Results. As shown before (refs 3,4) the effect held in every subgroup we examined. End.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-changed-citation-marker",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% [16] in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-dropped-bracketed-value",
+  "fn": "find_passage",
+  "args": {
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [0.5] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-negation-checked-before-direction",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in more patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "contract-number-checked-before-negation",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "contract-dropped-direction-word",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-dropped-number",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95
+  }
+ },
+ {
+  "name": "contract-inserted-direction-words",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred significantly lower in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9
+  }
+ },
+ {
+  "name": "contract-only-the-best-window-is-checked",
+  "fn": "find_passage",
+  "args": {
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare. In a sensitivity analysis: In the intention-to-treat population, primary outcome occurred in fewer patients in treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "min_similarity": 0.95
+  }
+ },
+ {
   "name": "contradiction-rules",
   "fn": "contradiction_rules",
   "args": {}
@@ -3862,6 +3970,34 @@
   "fn": "tokens",
   "args": {
    "text": "ǅ1"
+  }
+ },
+ {
+  "name": "tokens-36",
+  "fn": "tokens",
+  "args": {
+   "text": "refs 3,4"
+  }
+ },
+ {
+  "name": "tokens-37",
+  "fn": "tokens",
+  "args": {
+   "text": "refs 3, 4"
+  }
+ },
+ {
+  "name": "tokens-38",
+  "fn": "tokens",
+  "args": {
+   "text": "[15-17]"
+  }
+ },
+ {
+  "name": "tokens-39",
+  "fn": "tokens",
+  "args": {
+   "text": "[3, 4] and 1,204"
   }
  }
 ]

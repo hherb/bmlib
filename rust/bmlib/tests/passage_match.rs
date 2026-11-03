@@ -617,7 +617,7 @@ fn a_cut_occurrence_reaching_the_threshold_contradicts() {
 
 // TestContradictions (#632)
 
-/// The issue's sentence, 222 characters before the edits below.
+/// A results sentence in #632's shape (214 characters; the issue's own was 222).
 const RESULTS_SENTENCE: &str = "In the intention-to-treat population, the primary outcome \
     occurred in fewer patients in the treatment group than in the control group (hazard \
     ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.";
@@ -676,6 +676,119 @@ fn a_benign_edit_is_accepted() {
         assert_eq!(matched_text(&m), Some(RESULTS_SENTENCE), "{new:?}");
         assert_eq!(m.contradiction, None, "{new:?}");
     }
+}
+
+#[test]
+fn a_one_sided_edit_is_rejected() {
+    let cases = [
+        // The quote drops what the window says: the token is window-only.
+        (
+            "in fewer patients",
+            "in patients",
+            PassageContradiction::Direction,
+        ),
+        ("0.44 to 0.92", "0.92", PassageContradiction::Number),
+        // The quote adds what the window does not say: passage-only.
+        (
+            "occurred in",
+            "occurred significantly lower in",
+            PassageContradiction::Direction,
+        ),
+        (
+            "(hazard ratio",
+            "(adjusted 2 hazard ratio",
+            PassageContradiction::Number,
+        ),
+    ];
+    for (old, new, reason) in cases {
+        let m = find(&RESULTS_SENTENCE.replace(old, new), &results_text(), 0.9);
+        assert!(!m.matched(), "{new:?}");
+        assert_eq!(m.contradiction, Some(reason), "{new:?}");
+    }
+}
+
+#[test]
+fn a_negation_dropped_from_the_window_is_rejected() {
+    let text = "Methods were standard. The intervention did not reduce mortality at one year.";
+    let m = find(
+        "The intervention did reduce mortality at one year.",
+        text,
+        0.9,
+    );
+    assert_eq!(m.contradiction, Some(PassageContradiction::Negation));
+}
+
+#[test]
+fn a_dropped_citation_marker_is_accepted() {
+    for marker in ["[15]", "[15, 16]", "[15\u{2013}17]", "[3,4,7]"] {
+        // Mid-sentence, so the marker is inside the window and not cut off at an edge.
+        let sentence =
+            RESULTS_SENTENCE.replace("control group", &format!("control group {marker}"));
+        let text = format!("Methods were standard. {sentence}");
+        let m = find(RESULTS_SENTENCE, &text, 0.95);
+        assert_eq!(matched_text(&m), Some(sentence.as_str()), "{marker:?}");
+    }
+}
+
+#[test]
+fn a_citation_marker_added_by_the_quote_is_accepted() {
+    let passage = RESULTS_SENTENCE.replace("control group", "control group [15]");
+    let m = find(&passage, &results_text(), 0.95);
+    assert_eq!(matched_text(&m), Some(RESULTS_SENTENCE));
+}
+
+#[test]
+fn a_bracket_that_is_no_marker_is_tested() {
+    for (source, quote) in [
+        ("[15]", "[16]"),
+        ("[0.5]", ""),
+        ("[-5]", ""),
+        ("[95 ci]", ""),
+        ("[2 to 5]", ""),
+        ("[15", ""),
+    ] {
+        let sentence =
+            RESULTS_SENTENCE.replace("control group", &format!("control group {source}"));
+        let replacement = format!("control group {quote}");
+        let passage = RESULTS_SENTENCE.replace("control group", replacement.trim_end());
+        let m = find(&passage, &format!("Methods were standard. {sentence}"), 0.9);
+        assert_eq!(
+            m.contradiction,
+            Some(PassageContradiction::Number),
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn only_the_best_window_is_checked() {
+    // A worse window agrees on the number; falling back to it would accept.
+    let passage = RESULTS_SENTENCE.replace("0.64", "0.61");
+    let worse = passage
+        .replace("population, the", "population,")
+        .replace("in the treatment", "in treatment");
+    assert!(find(&passage, &worse, 0.95).matched());
+    let m = find(&passage, &format!("{} {worse}", results_text()), 0.95);
+    assert!(!m.matched());
+    assert_eq!(m.contradiction, Some(PassageContradiction::Number));
+}
+
+#[test]
+fn negation_is_checked_before_direction() {
+    let passage = RESULTS_SENTENCE
+        .replace("outcome occurred", "outcome not occurred")
+        .replace("fewer", "more");
+    let m = find(&passage, &results_text(), 0.9);
+    assert_eq!(m.contradiction, Some(PassageContradiction::Negation));
+}
+
+#[test]
+fn a_number_is_checked_before_a_negation() {
+    let passage = RESULTS_SENTENCE
+        .replace("0.64", "0.61")
+        .replace("outcome occurred", "outcome not occurred");
+    let m = find(&passage, &results_text(), 0.9);
+    assert_eq!(m.contradiction, Some(PassageContradiction::Number));
 }
 
 #[test]

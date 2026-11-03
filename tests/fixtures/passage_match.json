@@ -609,6 +609,182 @@
     "text": "Patients received 10mg of apixaban twice daily for a year.",
     "min_similarity_at_least": 0.95
    }
+  },
+  {
+   "name": "benign-dropped-citation-marker",
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 12,
+    "end": 111,
+    "text": "Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up.",
+    "min_similarity_at_least": 0.95
+   }
+  },
+  {
+   "name": "benign-dropped-citation-range",
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15–17] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 12,
+    "end": 114,
+    "text": "Statins reduced all-cause mortality by 20% [15–17] in high-risk patients over five years of follow-up.",
+    "min_similarity_at_least": 0.95
+   }
+  },
+  {
+   "name": "benign-dropped-citation-list",
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15, 16] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 12,
+    "end": 115,
+    "text": "Statins reduced all-cause mortality by 20% [15, 16] in high-risk patients over five years of follow-up.",
+    "min_similarity_at_least": 0.95
+   }
+  },
+  {
+   "name": "benign-space-in-a-reference-list",
+   "passage": "As shown before (refs 3, 4) the effect held in every subgroup we examined.",
+   "text": "Results. As shown before (refs 3,4) the effect held in every subgroup we examined. End.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": true,
+    "exact": false,
+    "start": 9,
+    "end": 82,
+    "text": "As shown before (refs 3,4) the effect held in every subgroup we examined.",
+    "min_similarity_at_least": 0.95
+   }
+  },
+  {
+   "name": "changed-citation-marker",
+   "passage": "Statins reduced all-cause mortality by 20% [16] in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [15] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.95,
+    "contradiction": "number"
+   }
+  },
+  {
+   "name": "dropped-bracketed-value",
+   "passage": "Statins reduced all-cause mortality by 20% in high-risk patients over five years of follow-up.",
+   "text": "Background. Statins reduced all-cause mortality by 20% [0.5] in high-risk patients over five years of follow-up. Methods followed.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.95,
+    "contradiction": "number"
+   }
+  },
+  {
+   "name": "negation-checked-before-direction",
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in more patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.9,
+    "contradiction": "negation"
+   }
+  },
+  {
+   "name": "number-checked-before-negation",
+   "passage": "In the intention-to-treat population, the primary outcome not occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.9,
+    "contradiction": "number"
+   }
+  },
+  {
+   "name": "dropped-direction-word",
+   "passage": "In the intention-to-treat population, the primary outcome occurred in patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.95,
+    "contradiction": "direction"
+   }
+  },
+  {
+   "name": "dropped-number",
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.95,
+    "contradiction": "number"
+   }
+  },
+  {
+   "name": "inserted-direction-words",
+   "passage": "In the intention-to-treat population, the primary outcome occurred significantly lower in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare.",
+   "min_similarity": 0.9,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.9,
+    "contradiction": "direction"
+   }
+  },
+  {
+   "name": "only-the-best-window-is-checked",
+   "passage": "In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "text": "Methods were standard. In the intention-to-treat population, the primary outcome occurred in fewer patients in the treatment group than in the control group (hazard ratio, 0.64; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year. Adverse events were rare. In a sensitivity analysis: In the intention-to-treat population, primary outcome occurred in fewer patients in treatment group than in the control group (hazard ratio, 0.61; 95% confidence interval, 0.44 to 0.92; P=0.02) at one year.",
+   "min_similarity": 0.95,
+   "expected": {
+    "matched": false,
+    "exact": false,
+    "start": null,
+    "end": null,
+    "text": null,
+    "min_similarity_at_least": 0.95,
+    "contradiction": "number"
+   }
   }
  ],
  "invalid_thresholds": [

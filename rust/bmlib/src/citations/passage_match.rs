@@ -209,8 +209,14 @@ pub const DIRECTION_WORDS: &[&str] = &[
 ];
 
 /// Separators joined into a number between two digits, as the token spells
-/// them: Lancet's middle dot is the "." a model copies it as.
-const DECIMAL_POINTS: [(char, char); 3] = [('.', '.'), (',', ','), ('\u{b7}', '.')];
+/// them: Lancet's middle dot is the "." a model copies it as. A comma is not
+/// one: it parts a thousands group, a European decimal or a list ("refs 3,4")
+/// alike, so "3,4" and "3, 4" cut the same, and a changed digit still leaves a
+/// digit token.
+const DECIMAL_POINTS: [(char, char); 2] = [('.', '.'), ('\u{b7}', '.')];
+
+/// Separators inside a bracketed citation marker ("[3,4]", "[5-7]").
+const CITATION_MARKER_SEPARATORS: [&str; 2] = [",", "-"];
 
 /// Python's `str.isdecimal`: general category Nd.
 static DECIMAL_DIGIT: LazyLock<Regex> =
@@ -378,7 +384,8 @@ pub struct PassageMatch {
 }
 
 impl PassageMatch {
-    /// Whether a span at or above the threshold was found.
+    /// Whether a span was accepted: at or above the threshold, and not
+    /// contradicting.
     pub fn matched(&self) -> bool {
         self.span.is_some()
     }
@@ -522,8 +529,9 @@ fn is_letter(c: char) -> bool {
 /// guard compares, as Python's `_tokens` does.
 ///
 /// A word is a run of letters (an apostrophe between two letters joins it). A
-/// number is a run of decimal digits, joined across a ".", "," or middle dot
-/// between two digits (the middle dot spelled "."), and opened by a "+" or
+/// number is a run of decimal digits, joined across a "." or middle dot
+/// between two digits (the middle dot spelled "."; a comma parts it, so
+/// "1,204" is three tokens), and opened by a "+" or
 /// "-" directly before a digit when no word character precedes it. A letter
 /// and a digit always part. Every other character is a token of its own, and
 /// a combining mark joins whichever token it follows.
@@ -584,8 +592,10 @@ fn negates(word: &str, other: &str) -> bool {
 
 /// Whether a window's tokens contradict the passage's, as Python's
 /// `_contradiction`: the tokens are aligned (the window as `a`, the passage as
-/// `b`, through ids so the `char` matcher's port aligns them as difflib aligns
-/// lists) and every token left unmatched, on either side, is tested.
+/// `b`, through `usize` ids, since the matcher needs `Copy` elements and a
+/// `String` is not one) and every token left unmatched, on either side, is
+/// tested, except a bracketed citation marker left unmatched whole (a quote
+/// dropping the source's "[12]" changes no claim).
 fn contradiction<'a>(passage: &'a [String], window: &'a [String]) -> Option<PassageContradiction> {
     let mut ids: HashMap<&str, usize> = HashMap::new();
     let mut id_of = |token: &'a str| -> usize {
@@ -599,8 +609,8 @@ fn contradiction<'a>(passage: &'a [String], window: &'a [String]) -> Option<Pass
     let (mut window_only, mut passage_only): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
     let (mut window_at, mut passage_at) = (0, 0);
     for block in matcher.matching_blocks() {
-        window_only.extend(window[window_at..block.a].iter().map(String::as_str));
-        passage_only.extend(passage[passage_at..block.b].iter().map(String::as_str));
+        window_only.extend(without_citation_markers(&window[window_at..block.a]));
+        passage_only.extend(without_citation_markers(&passage[passage_at..block.b]));
         (window_at, passage_at) = (block.a + block.size, block.b + block.size);
     }
     let differing = || window_only.iter().chain(&passage_only).copied();
@@ -622,6 +632,43 @@ fn contradiction<'a>(passage: &'a [String], window: &'a [String]) -> Option<Pass
     }
     if differing().any(|token| DIRECTION_WORDS.contains(&token)) {
         return Some(PassageContradiction::Direction);
+    }
+    None
+}
+
+/// `tokens` less every bracketed citation marker in them ("[12]", "[3, 4]",
+/// "[5-7]"), as Python's `_without_citation_markers`: "[", whole numbers
+/// parted by "," or "-", then "]". "[0.5]", "[-5]" and "[95% ci ...]" are not
+/// markers.
+fn without_citation_markers(tokens: &[String]) -> Vec<&str> {
+    let mut kept = Vec::new();
+    let mut at = 0;
+    while at < tokens.len() {
+        match citation_marker_end(tokens, at) {
+            Some(end) => at = end,
+            None => {
+                kept.push(tokens[at].as_str());
+                at += 1;
+            }
+        }
+    }
+    kept
+}
+
+/// End of the bracketed citation marker starting at `tokens[at]`, if one does.
+fn citation_marker_end(tokens: &[String], mut at: usize) -> Option<usize> {
+    if tokens[at] != "[" {
+        return None;
+    }
+    at += 1;
+    while at + 1 < tokens.len() && !tokens[at].is_empty() && tokens[at].chars().all(is_decimal) {
+        if tokens[at + 1] == "]" {
+            return Some(at + 2);
+        }
+        if !CITATION_MARKER_SEPARATORS.contains(&tokens[at + 1].as_str()) {
+            return None;
+        }
+        at += 2;
     }
     None
 }
@@ -1101,12 +1148,66 @@ mod tests {
 
     #[test]
     fn unmatched_tokens_on_either_side_count() {
-        assert!(contradiction_of(&["did", "reduce"], &["did", "not", "reduce"]).is_some());
-        assert!(contradiction_of(&["did", "not", "reduce"], &["did", "reduce"]).is_some());
+        for (extra, reason) in [
+            ("not", PassageContradiction::Negation),
+            ("2", PassageContradiction::Number),
+            ("less", PassageContradiction::Direction),
+        ] {
+            let with = ["did", extra, "reduce"];
+            assert_eq!(contradiction_of(&["did", "reduce"], &with), Some(reason));
+            assert_eq!(contradiction_of(&with, &["did", "reduce"]), Some(reason));
+        }
         assert_eq!(
             contradiction_of(&["did", "reduce"], &["did", "reduce"]),
             None
         );
+    }
+
+    #[test]
+    fn negation_outranks_direction() {
+        assert_eq!(
+            contradiction_of(
+                &["did", "not", "reduce", "more"],
+                &["did", "reduce", "less"]
+            ),
+            Some(PassageContradiction::Negation)
+        );
+    }
+
+    #[test]
+    fn a_near_spelling_is_not_forgiven() {
+        // No stemming, no typo tolerance (docs/DECISIONS.md, #632).
+        for (passage, window, reason) in [
+            (
+                &["increases", "x"][..],
+                &["increased", "x"][..],
+                PassageContradiction::Direction,
+            ),
+            (
+                &["did", "not", "x"][..],
+                &["didn't", "x"][..],
+                PassageContradiction::Negation,
+            ),
+            (
+                &["superioer", "x"][..],
+                &["superior", "x"][..],
+                PassageContradiction::Direction,
+            ),
+        ] {
+            assert_eq!(contradiction_of(passage, window), Some(reason));
+        }
+    }
+
+    #[test]
+    fn a_citation_marker_is_dropped_only_whole() {
+        let owned = |tokens: &[&str]| tokens.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        let kept = |tokens: &[&str]| without_citation_markers(&owned(tokens)).join(" ");
+        assert_eq!(kept(&["a", "[", "12", "]", "b"]), "a b");
+        assert_eq!(kept(&["[", "3", ",", "4", "-", "7", "]"]), "");
+        assert_eq!(kept(&["[", "0.5", "]"]), "[ 0.5 ]");
+        assert_eq!(kept(&["[", "2", "to", "5", "]"]), "[ 2 to 5 ]");
+        assert_eq!(kept(&["[", "15"]), "[ 15");
+        assert_eq!(kept(&["[", "]"]), "[ ]");
     }
 
     /// The differential oracle's cases for the two crate-private bounds and the

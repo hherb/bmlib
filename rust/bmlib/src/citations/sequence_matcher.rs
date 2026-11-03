@@ -17,8 +17,8 @@
 //! Crate-private port of Python's `difflib.SequenceMatcher`.
 //!
 //! Covers only `SequenceMatcher(None, a, b, autojunk=False)` over slices of
-//! `char` (the passage's characters) or of any other `Copy` element compared
-//! only for equality (`passage_match`'s token ids): no junk predicate and no popular-element heuristic, so CPython's
+//! `char` (the passage's characters) or of any other `Copy` element that is
+//! hashed and compared for equality (`passage_match`'s token ids): no junk predicate and no popular-element heuristic, so CPython's
 //! junk and `popular` branches in `find_longest_match` (the `isbjunk` tests
 //! and the "extend by junk" loops) can never fire and are dropped. Results,
 //! including float ratios, are bit-identical to CPython's. Ties break on the
@@ -48,7 +48,8 @@ pub(crate) struct SequenceMatcher<T = char> {
 
 #[cfg(test)]
 thread_local! {
-    /// Calls to `set_a` on this thread: the windows `find_passage` scored, which
+    /// Calls to `set_a` on this thread: the windows `find_passage` scored, plus
+    /// one for the contradiction guard's token alignment when it runs, which
     /// its work-bound tests read (#533).
     pub(crate) static WINDOWS_SET: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }

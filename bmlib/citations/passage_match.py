@@ -58,7 +58,8 @@ Search strategy:
    cut into words, numbers and symbols, aligned by ``SequenceMatcher``, and a
    token on either side that the alignment leaves unmatched rejects the match
    if it holds a digit, is a negation or is a direction or comparison word
-   (:class:`PassageContradiction`).
+   (:class:`PassageContradiction`). A bracketed citation marker ("[12]") left
+   out of the quote whole is not tested.
 
 Cost is dominated by step 4: per candidate location, one alignment plus a
 bounded number of window scores (independent of the passage length), each a
@@ -115,7 +116,8 @@ _TYPOGRAPHIC_FOLDS = str.maketrans(
 # kept so a negated relation never folds to its positive form.
 _NEGATION_MARKS = frozenset("\u0338\u20d2\u20e5")
 # Bump with any change to the word lists below or to how _tokens cuts text,
-# since either can turn an accepted quote into a rejected one or back.
+# since either can turn an accepted quote into a rejected one or back;
+# tests/test_passage_match.py pins it to a digest of the guard's code and data.
 CONTRADICTION_RULES_VERSION = 1
 # Differing tokens that negate a claim; a token ending "n't" is one too.
 NEGATION_WORDS = frozenset(
@@ -151,8 +153,12 @@ DIRECTION_WORDS = frozenset(
     }
 )  # fmt: skip
 # Separators joined into a number between two digits, as the token spells them:
-# Lancet's middle dot is the "." a model copies it as.
-_DECIMAL_POINTS = {".": ".", ",": ",", "\u00b7": "."}
+# Lancet's middle dot is the "." a model copies it as. A comma is not one: it
+# parts a thousands group, a European decimal or a list ("refs 3,4") alike, so
+# "3,4" and "3, 4" cut the same, and a changed digit still leaves a digit token.
+_DECIMAL_POINTS = {".": ".", "\u00b7": "."}
+# Separators inside a bracketed citation marker ("[3,4]", "[5-7]").
+_CITATION_MARKER_SEPARATORS = frozenset(",-")
 # Distinct characters whose folding is cached (text is mostly a small alphabet).
 FOLD_CACHE_SIZE = 4096
 
@@ -213,13 +219,21 @@ class PassageMatch:
             ValueError: If ``similarity`` is outside [0, 1], the span fields
                 are only partly set, the span is empty or inconsistent with
                 ``text``, ``exact`` is set on a rejected match or with a
-                similarity below 1.0, or ``contradiction`` is set on an
-                accepted match.
+                similarity below 1.0, or ``contradiction`` is not a
+                :class:`PassageContradiction`, is set on an accepted match or
+                with a similarity of 0.0 (no window was found to contradict).
         """
         if not 0.0 <= self.similarity <= 1.0:
             raise ValueError(f"similarity must be in [0, 1], got {self.similarity}")
         if self.exact and self.similarity != 1.0:
             raise ValueError(f"an exact match has similarity 1.0, got {self.similarity}")
+        if self.contradiction is not None:
+            if not isinstance(self.contradiction, PassageContradiction):
+                raise ValueError(
+                    f"contradiction must be a PassageContradiction, got {self.contradiction!r}"
+                )
+            if self.similarity == 0.0:
+                raise ValueError("a contradiction needs a window, but similarity is 0.0")
         span = (self.start, self.end, self.text)
         if all(field is None for field in span):
             if self.exact:
@@ -236,7 +250,7 @@ class PassageMatch:
 
     @property
     def matched(self) -> bool:
-        """Whether a span at or above the threshold was found."""
+        """Whether a span was accepted: at or above the threshold, and not contradicting."""
         return self.text is not None
 
 
@@ -361,7 +375,9 @@ def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch
 
     Returns:
         A :class:`PassageMatch`; ``matched`` is True and ``text`` holds the
-        original source wording when the best similarity reaches the threshold.
+        original source wording when the best similarity reaches the threshold
+        and the window does not contradict the passage. A similarity at or
+        above the threshold therefore no longer implies ``matched``.
 
     Raises:
         TypeError: If ``passage`` or ``text`` is not a string.
@@ -409,12 +425,13 @@ def _tokens(text: str) -> list[str]:
 
     A word is a run of letters (an apostrophe between two letters joins it,
     so "didn't" is one token). A number is a run of decimal digits, joined
-    across a ".", "," or middle dot between two digits (the middle dot
-    spelled "."), and opened by a "+" or "-" directly before a digit when no word
-    character precedes it ("-0.5", but "18-65" is three tokens). A letter and
-    a digit always part ("10mg" is "10", "mg"), so a dropped space changes
-    nothing. Every other character is a token of its own, and a combining
-    mark joins whichever token it follows ("=" + U+0338 is "≠").
+    across a "." or middle dot between two digits (the middle dot spelled
+    "."; a comma parts it, so "1,204" is three tokens), and opened by a "+"
+    or "-" directly before a digit when no word character precedes it
+    ("-0.5", but "18-65" is three tokens). A letter and a digit always part
+    ("10mg" is "10", "mg"), so a dropped space changes nothing. Every other
+    character is a token of its own, and a combining mark joins whichever
+    token it follows ("=" + U+0338 is "≠").
 
     Args:
         text: Normalised text (single spaces, folded characters).
@@ -458,7 +475,8 @@ def _contradiction(passage: list[str], window: list[str]) -> PassageContradictio
 
     The tokens are aligned as the characters are (the window as ``a``, the
     passage as ``b``), and every token the alignment leaves unmatched, on
-    either side, is tested.
+    either side, is tested, except a bracketed citation marker left unmatched
+    whole (a quote dropping the source's "[12]" changes no claim).
 
     Args:
         passage: Tokens of the normalised passage.
@@ -473,8 +491,8 @@ def _contradiction(passage: list[str], window: list[str]) -> PassageContradictio
     passage_only: list[str] = []
     window_at = passage_at = 0
     for block in matcher.get_matching_blocks():
-        window_only += window[window_at : block.a]
-        passage_only += passage[passage_at : block.b]
+        window_only += _without_citation_markers(window[window_at : block.a])
+        passage_only += _without_citation_markers(passage[passage_at : block.b])
         window_at, passage_at = block.a + block.size, block.b + block.size
     differing = window_only + passage_only
     if any(any(char.isdecimal() for char in token) for token in differing):
@@ -493,6 +511,44 @@ def _contradiction(passage: list[str], window: list[str]) -> PassageContradictio
     if any(token in DIRECTION_WORDS for token in differing):
         return PassageContradiction.DIRECTION
     return None
+
+
+def _without_citation_markers(tokens: list[str]) -> list[str]:
+    """``tokens`` less every bracketed citation marker in them ("[12]", "[3, 4]", "[5-7]").
+
+    A marker is "[", whole numbers parted by "," or "-", then "]"; "[0.5]",
+    "[-5]" and "[95% ci ...]" are not markers.
+
+    Args:
+        tokens: A run of tokens from :func:`_tokens`.
+
+    Returns:
+        The tokens outside any marker, in order.
+    """
+    kept: list[str] = []
+    at = 0
+    while at < len(tokens):
+        end = _citation_marker_end(tokens, at)
+        if end:
+            at = end
+        else:
+            kept.append(tokens[at])
+            at += 1
+    return kept
+
+
+def _citation_marker_end(tokens: list[str], at: int) -> int:
+    """End of the bracketed citation marker starting at ``tokens[at]``, or 0 if none does."""
+    if tokens[at] != "[":
+        return 0
+    at += 1
+    while at + 1 < len(tokens) and tokens[at].isdecimal():
+        if tokens[at + 1] == "]":
+            return at + 2
+        if tokens[at + 1] not in _CITATION_MARKER_SEPARATORS:
+            return 0
+        at += 2
+    return 0
 
 
 def _exact_at(passage: str, text: str, offsets: list[int]) -> int:

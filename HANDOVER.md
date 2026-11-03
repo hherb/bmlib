@@ -23,8 +23,18 @@ says which; **`CONTRADICTION_RULES_VERSION`** (1) versions the lists. Rust has
 the same guard (`SequenceMatcher` made generic for the token alignment); the
 oracle now compares the tokens and the lists too. Three contract cases that
 pinned harmful accepts were inverted; 56 of the oracle's 144 fuzzy accepts
-(synthetic edits) are now rejected. Mutation: 22 Python and 14 Rust mutants,
-all killed once a three-letter prefix case was added. The choices (best
+(50 synthetic edits, 6 hand-written) are now rejected. Mutation: 22 Python and 14 Rust mutants,
+all killed once a three-letter prefix case was added. **PR #648's review**
+(four reviewers): a quote dropping a bracketed citation marker (`[12]`, as
+canonical JATS prints a body citation) was rejected as `number`, so whole
+markers are now skipped, and a comma no longer joins a number (`3,4` and
+`3, 4` cut alike). `PassageContradiction` is exported and type-checked in
+`__post_init__`; `CONTRADICTION_RULES_VERSION` is pinned to a digest of the
+guard; the check order, each rule on each side, the best-window-only and
+no-stemming decisions and the PICO consequence are pinned; four figures were
+corrected (the test sentence is 214 characters, 0.995 not 0.996). 13 Python
+and 5 Rust mutants on those, all killed. A parenthesised or superscript
+marker is still read as a number (`docs/DECISIONS.md`). The choices (best
 window only, no typo tolerance, `a` as a prefix, no `over`/`under`) are in
 `docs/DECISIONS.md`. Filed **#647** (PicoAgent drops the reason; a decision).
 **For StudyAnalyzer**: the threshold can go back to 0.95-0.97; show
@@ -276,8 +286,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,089 passing + 165 skipped** on `feat/632-passage-guard`
-  (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,447 with `cargo test -p bmlib --features embed` on the same branch; the embedder's live tests skip
+- **Tests: 9,135 passing + 165 skipped** on `feat/632-passage-guard`
+  (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,458 with `cargo test -p bmlib --features embed` on the same branch; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest

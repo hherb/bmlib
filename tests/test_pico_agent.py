@@ -29,6 +29,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
+from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.context_processor.llm_processor import CONTEXT_MODEL_ATTEMPTS
 from bmlib.llm import LLMClient
@@ -104,6 +105,27 @@ class TestReadingAReply:
         assert result.state is PicoPartState.UNVERIFIED
         assert result.description == "Adults aged 40 to 65"
         assert result.citations == []
+
+    def test_a_quote_changing_a_number_is_not_found(self) -> None:
+        # Close enough to clear the threshold, but find_passage's guard (#632)
+        # refuses a changed number; the part keeps no span (why: #647).
+        quote = "Adults aged 40-60 were randomised to metformin or placebo."
+        assert find_passage(quote, TEXT, SIM).similarity >= SIM
+
+        result = read_part(part(quotes=[quote]), TEXT, SIM)
+
+        assert result.state is PicoPartState.UNVERIFIED
+        assert result.quotes_not_found == [quote]
+        assert result.citations == []
+
+    def test_a_quote_dropping_a_citation_marker_is_found(self) -> None:
+        text = "Adults aged 40-65 [12] were randomised to metformin or placebo."
+        quote = "Adults aged 40-65 were randomised to metformin or placebo."
+
+        result = read_part(part(quotes=[quote]), text, SIM)
+
+        assert result.state is PicoPartState.VERIFIED
+        assert result.citations[0].text == text
 
     def test_no_quotes_given_is_unverified(self) -> None:
         assert read_part(part(quotes=[]), TEXT, SIM).state is PicoPartState.UNVERIFIED

@@ -25,6 +25,8 @@ and the performance bound that motivated the module (the old sliding-window
 matcher in CitationFinderAgent took ~30 s per citation on a 1 kB abstract).
 """
 
+import ast
+import hashlib
 import math
 import random
 import re
@@ -35,6 +37,7 @@ import pytest
 
 from bmlib.citations import passage_match
 from bmlib.citations.passage_match import (
+    CONTRADICTION_RULES_VERSION,
     EDGE_SEARCH_MARGIN,
     MAX_CANDIDATE_REGIONS,
     NEGATION_WORDS,
@@ -491,6 +494,10 @@ class TestPassageMatchInvariants:
                 "text": "abc",
                 "contradiction": PassageContradiction.NUMBER,
             },
+            # A StrEnum equals its value, so only the type check tells these apart.
+            {"similarity": 0.97, "contradiction": "number"},
+            {"similarity": 0.97, "contradiction": "bogus"},
+            {"similarity": 0.0, "contradiction": PassageContradiction.NUMBER},
         ],
     )
     def test_inconsistent_values_raise(self, kwargs: dict) -> None:
@@ -500,6 +507,8 @@ class TestPassageMatchInvariants:
     def test_consistent_values(self) -> None:
         assert PassageMatch(similarity=0.97, start=2, end=5, text="abc").matched
         assert not PassageMatch(similarity=0.3).matched
+        rejected = PassageMatch(similarity=0.97, contradiction=PassageContradiction.NEGATION)
+        assert not rejected.matched
 
 
 def _exhaustive_best(passage: str, text: str, min_similarity: float) -> float:
@@ -708,7 +717,7 @@ def test_information_separators_are_whitespace() -> None:
     assert match.exact and match.text == "hazard\x1eratio"
 
 
-# The issue's sentence (#632), 222 characters before the edits below.
+# A results sentence in #632's shape (214 characters; the issue's own was 222).
 RESULTS_SENTENCE = (
     "In the intention-to-treat population, the primary outcome occurred in fewer "
     "patients in the treatment group than in the control group (hazard ratio, 0.64; "
@@ -774,6 +783,85 @@ class TestContradictions:
         )
         assert match.contradiction is PassageContradiction.NUMBER
 
+    @pytest.mark.parametrize(
+        ("old", "new", "reason"),
+        [
+            # The quote drops what the window says: the token is window-only.
+            ("in fewer patients", "in patients", PassageContradiction.DIRECTION),
+            ("0.44 to 0.92", "0.92", PassageContradiction.NUMBER),
+            # The quote adds what the window does not say: passage-only.
+            ("occurred in", "occurred significantly lower in", PassageContradiction.DIRECTION),
+            ("(hazard ratio", "(adjusted 2 hazard ratio", PassageContradiction.NUMBER),
+        ],
+    )
+    def test_a_one_sided_edit_is_rejected(
+        self, old: str, new: str, reason: PassageContradiction
+    ) -> None:
+        match = find_passage(RESULTS_SENTENCE.replace(old, new), RESULTS_TEXT, 0.9)
+        assert not match.matched
+        assert match.contradiction is reason
+
+    def test_a_negation_dropped_from_the_window_is_rejected(self) -> None:
+        text = "Methods were standard. The intervention did not reduce mortality at one year."
+        match = find_passage("The intervention did reduce mortality at one year.", text, 0.9)
+        assert match.contradiction is PassageContradiction.NEGATION
+
+    @pytest.mark.parametrize("marker", ["[15]", "[15, 16]", "[15–17]", "[3,4,7]"])
+    def test_a_dropped_citation_marker_is_accepted(self, marker: str) -> None:
+        # Mid-sentence, so the marker is inside the window and not cut off at an edge.
+        sentence = RESULTS_SENTENCE.replace("control group", f"control group {marker}")
+        match = find_passage(RESULTS_SENTENCE, "Methods were standard. " + sentence, 0.95)
+        assert match.matched
+        assert match.text == sentence
+
+    def test_a_citation_marker_added_by_the_quote_is_accepted(self) -> None:
+        passage = RESULTS_SENTENCE.replace("control group", "control group [15]")
+        match = find_passage(passage, RESULTS_TEXT, 0.95)
+        assert match.matched
+        assert match.text == RESULTS_SENTENCE
+
+    @pytest.mark.parametrize(
+        ("source", "quote"),
+        [
+            ("[15]", "[16]"),
+            ("[0.5]", ""),
+            ("[-5]", ""),
+            ("[95 ci]", ""),
+            ("[2 to 5]", ""),
+            ("[15", ""),
+        ],
+    )
+    def test_a_bracket_that_is_no_marker_is_tested(self, source: str, quote: str) -> None:
+        sentence = RESULTS_SENTENCE.replace("control group", f"control group {source}")
+        passage = RESULTS_SENTENCE.replace("control group", f"control group {quote}".rstrip())
+        match = find_passage(passage, "Methods were standard. " + sentence, 0.9)
+        assert match.contradiction is PassageContradiction.NUMBER
+
+    def test_only_the_best_window_is_checked(self) -> None:
+        # A worse window agrees on the number; falling back to it would accept.
+        passage = RESULTS_SENTENCE.replace("0.64", "0.61")
+        worse = passage.replace("population, the", "population,").replace(
+            "in the treatment", "in treatment"
+        )
+        assert find_passage(passage, worse, 0.95).matched
+        match = find_passage(passage, RESULTS_TEXT + " " + worse, 0.95)
+        assert not match.matched
+        assert match.contradiction is PassageContradiction.NUMBER
+
+    def test_negation_is_checked_before_direction(self) -> None:
+        passage = RESULTS_SENTENCE.replace("outcome occurred", "outcome not occurred").replace(
+            "fewer", "more"
+        )
+        match = find_passage(passage, RESULTS_TEXT, min_similarity=0.9)
+        assert match.contradiction is PassageContradiction.NEGATION
+
+    def test_a_number_is_checked_before_a_negation(self) -> None:
+        passage = RESULTS_SENTENCE.replace("0.64", "0.61").replace(
+            "outcome occurred", "outcome not occurred"
+        )
+        match = find_passage(passage, RESULTS_TEXT, min_similarity=0.9)
+        assert match.contradiction is PassageContradiction.NUMBER
+
     def test_a_number_is_checked_before_a_word(self) -> None:
         passage = RESULTS_SENTENCE.replace("0.64", "0.61").replace("fewer", "more")
         match = find_passage(passage, RESULTS_TEXT, min_similarity=0.9)
@@ -797,7 +885,10 @@ class TestTokens:
         ("text", "tokens"),
         [
             ("hazard ratio, 0.64; 95% ci", ["hazard", "ratio", ",", "0.64", ";", "95", "%", "ci"]),
-            ("1,204 patients", ["1,204", "patients"]),
+            ("1,204 patients", ["1", ",", "204", "patients"]),
+            ("refs 3,4", ["refs", "3", ",", "4"]),
+            ("refs 3, 4", ["refs", "3", ",", "4"]),
+            ("[15-17]", ["[", "15", "-", "17", "]"]),
             ("0·64", ["0.64"]),
             ("a change of -0.5", ["a", "change", "of", "-0.5"]),
             ("-3 at the start", ["-3", "at", "the", "start"]),
@@ -838,7 +929,89 @@ class TestTokens:
         assert _contradiction(["at", "x"], ["t", "x"]) is None
         assert _contradiction(["inn", "x"], ["inns", "x"]) is None
 
-    def test_unmatched_tokens_on_either_side_count(self) -> None:
-        assert _contradiction(["did", "reduce"], ["did", "not", "reduce"]) is not None
-        assert _contradiction(["did", "not", "reduce"], ["did", "reduce"]) is not None
+    @pytest.mark.parametrize(
+        ("extra", "reason"),
+        [
+            ("not", PassageContradiction.NEGATION),
+            ("2", PassageContradiction.NUMBER),
+            ("less", PassageContradiction.DIRECTION),
+        ],
+    )
+    def test_unmatched_tokens_on_either_side_count(
+        self, extra: str, reason: PassageContradiction
+    ) -> None:
+        assert _contradiction(["did", "reduce"], ["did", extra, "reduce"]) is reason
+        assert _contradiction(["did", extra, "reduce"], ["did", "reduce"]) is reason
         assert _contradiction(["did", "reduce"], ["did", "reduce"]) is None
+
+    def test_negation_outranks_direction(self) -> None:
+        reason = _contradiction(["did", "not", "reduce", "more"], ["did", "reduce", "less"])
+        assert reason is PassageContradiction.NEGATION
+
+    @pytest.mark.parametrize(
+        ("passage", "window", "reason"),
+        [
+            # No stemming, no typo tolerance (docs/DECISIONS.md, #632).
+            (["increases"], ["increased"], PassageContradiction.DIRECTION),
+            (["did", "not"], ["didn't"], PassageContradiction.NEGATION),
+            (["superioer"], ["superior"], PassageContradiction.DIRECTION),
+        ],
+    )
+    def test_a_near_spelling_is_not_forgiven(
+        self, passage: list[str], window: list[str], reason: PassageContradiction
+    ) -> None:
+        assert _contradiction([*passage, "x"], [*window, "x"]) is reason
+
+
+# What CONTRADICTION_RULES_VERSION versions: the guard's functions and the data
+# they read. A rule someone has to remember to bump is pinned, as
+# RENDERER_VERSION is (tests/test_renderer_version.py).
+_GUARD_FUNCTIONS = (
+    "_tokens",
+    "_contradiction",
+    "_negates",
+    "_without_citation_markers",
+    "_citation_marker_end",
+    "_is_mark",
+    "_is_word_char",
+    "_is_letter",
+)
+_GUARD_DATA = (
+    "NEGATION_WORDS",
+    "NEGATING_PREFIXES",
+    "NEGATED_WORD_MIN_LENGTH",
+    "DIRECTION_WORDS",
+    "_DECIMAL_POINTS",
+    "_CITATION_MARKER_SEPARATORS",
+    "_NEGATION_MARKS",
+)
+CONTRADICTION_RULES_PINNED = (1, "cc7e1612f18b6a3d752abab4ae981acc483108c5e03bc8299bcd8445f9f20e68")
+
+
+def _guard_digest() -> str:
+    """SHA-256 over the guard's code (docstrings and comments aside) and data."""
+    tree = ast.parse(Path(passage_match.__file__).read_text(encoding="utf-8"))
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in _GUARD_FUNCTIONS
+    }
+    assert set(functions) == set(_GUARD_FUNCTIONS)
+    parts = []
+    for name in _GUARD_FUNCTIONS:
+        node = functions[name]
+        body = node.body[1:] if ast.get_docstring(node) is not None else node.body
+        parts.append(ast.dump(ast.Module(body=body, type_ignores=[])))
+    for name in _GUARD_DATA:
+        value = getattr(passage_match, name)
+        if isinstance(value, dict):
+            value = sorted(value.items())
+        elif isinstance(value, frozenset):
+            value = sorted(value)
+        parts.append(f"{name}={value!r}")
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def test_the_contradiction_rules_version_moves_with_the_rules() -> None:
+    """Fails on any change to the guard until the version is bumped (or not) and re-pinned."""
+    assert (CONTRADICTION_RULES_VERSION, _guard_digest()) == CONTRADICTION_RULES_PINNED

@@ -191,7 +191,8 @@ match itself. An invalid `min_similarity`, NaN included, is an
 `Err(InvalidSimilarity)`. `PassageMatch` and `PassageSpan` are
 `#[non_exhaustive]`, so only `find_passage` builds them. A window reaching
 the threshold that changes a number, a negation or a direction is rejected
-with `contradiction` set (`PassageContradiction`, `#[non_exhaustive]`;
+with `contradiction` set (a bracketed citation marker left out whole, such
+as `[12]`, excepted; `PassageContradiction`, `#[non_exhaustive]`;
 `as_str()` is Python's value); `NEGATION_WORDS`, `NEGATING_PREFIXES`,
 `DIRECTION_WORDS` and `CONTRADICTION_RULES_VERSION` are the Python lists and
 version, held equal by the oracle. `fold_char`,

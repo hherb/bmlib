@@ -20,7 +20,9 @@ The Python library is documented separately, in the repository's
   `CONTRADICTION_RULES_VERSION` are public `const`s. `PassageMatch` is
   `#[non_exhaustive]`, so the new field breaks no caller. The crate-private
   `SequenceMatcher` is generic over its element type for the token
-  alignment. The oracle compares the tokens and the lists with Python's.
+  alignment. The oracle compares the tokens and the lists with Python's. A
+  comma parts a number (`3,4` and `3, 4` cut alike), and a bracketed
+  citation marker left out whole (`[12]`, `[3, 4]`) is not tested.
 
 - **`quality::LlmContextModel`** (#641): the first production `ContextModel`,
   over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
