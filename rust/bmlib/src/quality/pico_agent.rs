@@ -29,7 +29,7 @@ use crate::context_processor::llm_processor::{ContextModel, PromptTemplates};
 use crate::context_processor::ProcessingConfig;
 use crate::llm::LLMMessage;
 use crate::pyvalue::python_strip;
-use crate::quality::agent_chat::JsonChat;
+use crate::quality::agent_chat::{JsonChat, STOPPED_MESSAGE};
 use crate::quality::cochrane_assessor::{
     clamped_confidence, condense_checked, Condenser, LlmCondenser,
     DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
@@ -435,7 +435,7 @@ impl<'a> PicoAgent<'a> {
     ///
     /// Read before each model call and before and after the condensation; an
     /// error from the chat or the condenser while it is set is
-    /// [`PicoError::Stopped`] in place of `RequestFailed`, `Truncated`,
+    /// [`PicoError::Stopped`], carrying that error's message, in place of `RequestFailed`, `Truncated`,
     /// `UnusableReply` or `CondensationFailed`, and so is a condensation that
     /// finished while it was set (its digest may be partial). A request
     /// already sent runs to its end, and a call that then succeeds returns its
@@ -660,7 +660,7 @@ impl<'a> PicoAgent<'a> {
         // A run stopped part-way can end in a partial digest, which is no
         // digest of the paper, as well as in a failure.
         if stopped(stop) {
-            return Err(PicoError::Stopped);
+            return Err(stopped_over(condensed.err()));
         }
         let (digest, notes, status) = condensed.map_err(|reason| {
             PicoError::CondensationFailed(format!(
@@ -723,7 +723,9 @@ impl<'a> PicoAgent<'a> {
             ) {
                 Ok(outcome) => outcome.value,
                 // A stop set during the call wins over whatever it failed with.
-                Err(_) if stopped(self.stop) => return Err(PicoError::Stopped),
+                Err(error) if stopped(self.stop) => {
+                    return Err(stopped_over(Some(error.to_string())))
+                }
                 Err(error @ ChatJsonError::Truncated { .. }) => {
                     return Err(PicoError::Truncated(error.to_string()))
                 }
@@ -747,11 +749,17 @@ impl PicoAgent<'_> {
     /// [`PicoError::Stopped`] once the stop is set.
     fn check_stop(&self) -> Result<(), PicoError> {
         if stopped(self.stop) {
-            Err(PicoError::Stopped)
+            Err(PicoError::Stopped(None))
         } else {
             Ok(())
         }
     }
+}
+
+/// [`PicoError::Stopped`] over `failure`, dropped where it is no more than
+/// the stop's own refusal.
+fn stopped_over(failure: Option<String>) -> PicoError {
+    PicoError::Stopped(failure.filter(|failure| !failure.contains(STOPPED_MESSAGE)))
 }
 
 /// Whether an optional stop is set.

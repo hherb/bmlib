@@ -202,27 +202,39 @@ All notable changes to bmlib are documented here. The format is based on
   StudyAnalyzer's plan 2c). `PicoAgent(..., num_ctx=None, stop=None)`:
   `num_ctx` reaches every request the agent makes, the condenser's included,
   so Ollama no longer loads the model with its own small window and drops the
-  start of a paper; a bad value raises `ValueError` at construction. `stop` (a
+  start of a paper; a bad value raises `ValueError` at construction, and
+  `agent.num_ctx` is read-only. `stop` (a
   `threading.Event` or a zero-argument callable) is read before every request
   through the agent's `chat()`, which raises the new
   `bmlib.agents.ChatStoppedError` in place of sending; once it is set the call
   under way raises `PicoError` with the new kind `STOPPED` (`"stopped"`),
   whatever else failed (a bmlib defect or a missing SDK still propagates), and a condensation that finished while it was set
   (its digest possibly partial) is `STOPPED` too. A request already sent runs
-  to its end. The Rust port has `LlmChat::with_num_ctx`/`with_stop` and
+  to its end, and a call whose request succeeded returns its result. A stop
+  during the map-reduce ends it with the new
+  `bmlib.context_processor.ProcessingStoppedError`, which `process()` lets
+  propagate, logging nothing, rather than failing each batch left at ERROR;
+  the new `BaseAgent.stop_requested()` (false unless a subclass reads a stop)
+  lets `chat_json` and the processor skip the backoff before a retry the stop
+  would refuse. The Rust port has `LlmChat::with_num_ctx`/`with_stop` and
   `PicoAgent::with_stop`, and the shared fixture
-  `tests/fixtures/pico_stop_num_ctx.json` (14 cases over a fake Ollama
-  transport, the real map-reduce included) holds both languages to the same
+  `tests/fixtures/pico_stop_num_ctx.json` (16 cases over a fake Ollama HTTP
+  transport — ollama-python over an `httpx.MockTransport` in Python — the real
+  client and map-reduce included) holds both languages to the same
   requests, each one's `num_ctx`, and the same outcome.
 - **`LLMChunkProcessor` retries a failed model request with backoff** (#641,
   rule 7): up to `CONTEXT_MODEL_ATTEMPTS` (3) tries, waiting
   `CONTEXT_MODEL_RETRY_BASE_DELAY` (1 s) and doubling, so one dropped request
-  no longer fails a long paper's condensation (ollama-python retries nothing;
+  no longer costs a long paper's condensation a batch (ollama-python retries nothing;
   the Anthropic and OpenAI SDKs' own retries come first). A `ValueError`
   (every `ChatJsonError` among them), a missing SDK, `NotImplementedError`, a
-  bmlib defect and `ChatStoppedError` are not retried. This reaches the
-  Cochrane assessor's condensation too. Rust's new `LlmContextModel` retries
-  the same way.
+  bmlib defect and `ChatStoppedError` are not retried; everything else is,
+  a permanent HTTP refusal (a 401, a 404) included (#646). Only the request is
+  retried, never the reading of its reply, and a `confidence` too large for a
+  float reads as the default rather than failing the batch. This reaches the
+  Cochrane assessor's condensation too. Rust's new `LlmContextModel` makes the
+  same attempts with the same backoff, but retries a `ChatError::Transport`
+  alone.
 - **`PicoAgent.prepare` condenses a long paper once for both PICO calls**
   (#638, from StudyAnalyzer's plan 2c review). `check_suitability` and
   `extract` each condensed their own text, so a paper checked and extracted

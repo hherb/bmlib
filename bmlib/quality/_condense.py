@@ -80,6 +80,7 @@ def condense_text(
         CondensationRefusedError: The run failed (a provider failure during the
             map-reduce included), produced nothing to judge, or produced a
             digest that still does not fit ``config.max_context_chars``.
+        ProcessingStoppedError: The agent's stop was set; the run ended there.
     """
     processor = LLMChunkProcessor(
         agent=agent,

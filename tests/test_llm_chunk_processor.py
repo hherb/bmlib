@@ -19,7 +19,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Iterator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,6 +32,7 @@ from bmlib.context_processor import (
     LLMChunkProcessor,
     ProcessingConfig,
     ProcessingStatus,
+    ProcessingStoppedError,
 )
 from bmlib.context_processor.llm_processor import CONTEXT_MODEL_ATTEMPTS
 from bmlib.llm.data_types import LLMResponse
@@ -363,9 +366,9 @@ class TestTheModelCallIsRetried:
     @pytest.mark.parametrize(
         "error",
         [
-            ChatStoppedError("stopped"),
             ValueError("unknown provider"),
             ImportError("no SDK"),
+            NotImplementedError("no such feature"),
             TypeError("a bmlib defect"),
         ],
     )
@@ -377,6 +380,19 @@ class TestTheModelCallIsRetried:
         assert result.status is ProcessingStatus.FAILED
         assert agent.llm.chat.call_count == 1
 
+    def test_the_reply_is_read_once_and_never_resent(self) -> None:
+        # ``float()`` of an integer past a double's range raises OverflowError;
+        # reading the reply is no request, so it is neither retried nor fatal.
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        huge = "1" + "0" * 400
+        answer = _answer('{"extracted_content": "the digest", "confidence": ' + huge + "}")
+        agent.llm.chat = MagicMock(return_value=answer)
+        result = LLMChunkProcessor(agent, use_structured_output=True).process(["chunk"], query="q")
+
+        assert result.status is ProcessingStatus.COMPLETED
+        assert result.content == "the digest"
+        assert agent.llm.chat.call_count == 1
+
     def test_a_truncated_completion_is_not_retried(self) -> None:
         agent = BaseAgent(llm=MagicMock(), model="test:model")
         cut = LLMResponse(
@@ -386,3 +402,52 @@ class TestTheModelCallIsRetried:
         LLMChunkProcessor(agent).process(["chunk"], query="q")
 
         assert agent.llm.chat.call_count == 1
+
+
+class _StoppingAgent(BaseAgent):
+    """An agent reading a stop, as the PICO agent does."""
+
+    def __init__(self, stop: threading.Event) -> None:
+        super().__init__(llm=MagicMock(), model="test:model")
+        self._stop = stop
+
+    def stop_requested(self) -> bool:
+        return self._stop.is_set()
+
+    def chat(self, messages: Any, **kwargs: Any) -> LLMResponse:
+        if self._stop.is_set():
+            raise ChatStoppedError("stopped")
+        return super().chat(messages, **kwargs)
+
+
+class TestAStopEndsTheRun:
+    """#642: a stop ends the map-reduce, propagated and unlogged, rather than
+    failing every batch left at ERROR."""
+
+    def test_a_refused_request_ends_the_run_unlogged(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        stop = threading.Event()
+        stop.set()
+        agent = _StoppingAgent(stop)
+        processor = LLMChunkProcessor(agent, config=ProcessingConfig(max_context_chars=200))
+
+        with caplog.at_level(logging.WARNING), pytest.raises(ProcessingStoppedError):
+            processor.process(["a chunk of text " * 4] * 6, query="q")
+        assert agent.llm.chat.call_count == 0
+        assert caplog.records == []
+
+    def test_a_failure_while_stopped_waits_for_no_retry(self, _no_backoff: MagicMock) -> None:
+        stop = threading.Event()
+        agent = _StoppingAgent(stop)
+
+        def fail(**kwargs: Any) -> LLMResponse:
+            stop.set()
+            raise ConnectionError("the server went away")
+
+        agent.llm.chat = MagicMock(side_effect=fail)
+        with pytest.raises(ProcessingStoppedError) as raised:
+            LLMChunkProcessor(agent).process(["chunk"], query="q")
+        assert isinstance(raised.value.__cause__, ConnectionError)
+        assert agent.llm.chat.call_count == 1
+        _no_backoff.assert_not_called()

@@ -98,9 +98,12 @@ pub enum PicoError {
         budget: usize,
     },
     /// The stop given to [`PicoAgent::with_stop`](crate::quality::pico_agent::PicoAgent::with_stop)
-    /// was set: the call ended before its next request, and whatever a
-    /// request under way returned or failed with is discarded (#642).
-    Stopped,
+    /// was set: the call ended before its next request (#642). A request
+    /// under way that failed, or a condensation that finished (its digest may
+    /// be partial), is reported as this instead, carrying that failure's
+    /// message where there was one; a request that succeeded returns its
+    /// result.
+    Stopped(Option<String>),
 }
 
 impl PicoError {
@@ -118,7 +121,7 @@ impl PicoError {
             PicoError::InvalidSimilarity(_) => "invalid_similarity",
             PicoError::PreparedOverBudget { .. } => "prepared_over_budget",
             PicoError::PreparedUnderBudget { .. } => "prepared_under_budget",
-            PicoError::Stopped => "stopped",
+            PicoError::Stopped(_) => "stopped",
         }
     }
 }
@@ -144,7 +147,12 @@ impl std::fmt::Display for PicoError {
                 "the prepared text was condensed from {chars} characters, which fit \
                  this agent's {budget}-character budget whole: prepare it with this agent"
             ),
-            PicoError::Stopped => write!(f, "{}", crate::quality::STOPPED_MESSAGE),
+            PicoError::Stopped(None) => write!(f, "{}", crate::quality::STOPPED_MESSAGE),
+            PicoError::Stopped(Some(failure)) => write!(
+                f,
+                "{}; the request under way failed: {failure}",
+                crate::quality::STOPPED_MESSAGE
+            ),
         }
     }
 }

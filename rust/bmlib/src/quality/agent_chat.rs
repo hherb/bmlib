@@ -64,7 +64,8 @@ pub const STOPPED_MESSAGE: &str = "stopped before the next request was sent";
 /// Python's Anthropic and OpenAI SDKs make by default and as Python's
 /// `LLMChunkProcessor` makes (`CONTEXT_MODEL_ATTEMPTS`). [`LlmClient::chat`]
 /// retries nothing (#561), so without this one failed request in a long
-/// map-reduce fails the whole condensation (#641).
+/// map-reduce drops its batch's passages, or fails the condensation when no
+/// batch succeeds (#641).
 pub const CONTEXT_MODEL_ATTEMPTS: u32 = 3;
 
 /// `chat_json`'s attempts per structured [`LlmContextModel`] call, Python's
@@ -101,6 +102,10 @@ pub trait JsonChat {
 /// a JSON object — and hands it to
 /// [`crate::agents::chat_json`] through a [`ChatSource`], so the retry,
 /// truncation and shape rules are the library's and not a second copy.
+///
+/// `#[non_exhaustive]`: built with [`LlmChat::new`] and the `with_` methods,
+/// so a later field breaks no caller.
+#[non_exhaustive]
 pub struct LlmChat<'a> {
     /// The client the request is sent through.
     pub client: &'a LlmClient,
@@ -229,9 +234,11 @@ fn is_set(stop: Option<&AtomicBool>) -> bool {
 /// `agent.chat_json`), so a non-object is an error after its re-asks.
 ///
 /// Each call retries a transport failure ([`ChatError::Transport`], an HTTP
-/// error status among them) up to [`CONTEXT_MODEL_ATTEMPTS`] tries, waiting
+/// error status among them, a permanent 4xx included: #646) up to [`CONTEXT_MODEL_ATTEMPTS`] tries, waiting
 /// [`LlmClient::retry_base_delay`] and doubling, and never once the stop is
-/// set; a set stop sends nothing.
+/// set; a set stop sends nothing. A call whose tries ran out says how many
+/// were made. `#[non_exhaustive]`, as [`LlmChat`] is.
+#[non_exhaustive]
 pub struct LlmContextModel<'a> {
     /// The client the requests are sent through.
     pub client: &'a LlmClient,
@@ -307,9 +314,11 @@ impl<'a> LlmContextModel<'a> {
             match call() {
                 Ok(value) => return Ok(value),
                 Err(error) => {
-                    if !retryable(&error) || attempt >= CONTEXT_MODEL_ATTEMPTS || is_set(self.stop)
-                    {
+                    if !retryable(&error) || is_set(self.stop) {
                         return Err(error.to_string());
+                    }
+                    if attempt >= CONTEXT_MODEL_ATTEMPTS {
+                        return Err(format!("after {attempt} attempts: {error}"));
                     }
                 }
             }

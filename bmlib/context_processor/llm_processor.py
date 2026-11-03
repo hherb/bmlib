@@ -23,8 +23,9 @@ consolidated until the answer fits one context.
 
 Every model call goes through a :class:`~bmlib.agents.BaseAgent`, so token
 accounting, retries, JSON repair and provider routing are the ones the rest
-of bmlib uses.  A model call that fails is retried with backoff
-(:data:`CONTEXT_MODEL_ATTEMPTS`), as Rust's ``LlmContextModel`` retries it.
+of bmlib uses.  A model request that fails is retried with backoff
+(:data:`CONTEXT_MODEL_ATTEMPTS`), with the attempts and backoff of Rust's
+``LlmContextModel``; which failures are retried differs (``_NOT_RETRIED``).
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from bmlib.context_processor.data_types import (
     ConsolidatedItem,
     ExtractionResult,
     ProcessingConfig,
+    ProcessingStoppedError,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,7 +77,8 @@ _BUG_TYPES: tuple[type[BaseException], ...] = (
 #: bad argument, and every :class:`~bmlib.agents.ChatJsonError`, which
 #: ``chat_json`` has already re-asked for), a missing SDK, an unsupported
 #: feature, and a bmlib defect.  Anything else a provider raises is taken for
-#: a failed request.
+#: a failed request, an HTTP refusal (a 4xx) among them (#646), where Rust's
+#: ``LlmContextModel`` retries only a ``ChatError::Transport``.
 _NOT_RETRIED: tuple[type[BaseException], ...] = (
     ChatStoppedError,
     ValueError,
@@ -311,6 +314,8 @@ class LLMChunkProcessor(IterativeContextProcessor):
             RuntimeError: If the model call fails, or a plain completion
                 stopped at the output ceiling. The base class records it
                 against the batch.
+            ProcessingStoppedError: The agent's stop is set (#642); the
+                request was not sent.  The base class ends the run.
         """
         level = batch_metadata.get("recursion_level", 0)
         structured = self.use_structured_output and level == 0
@@ -320,9 +325,7 @@ class LLMChunkProcessor(IterativeContextProcessor):
 
         try:
             if structured:
-                content, confidence, findings = self._with_retries(
-                    lambda: self._extract_structured(prompt, label), label
-                )
+                content, confidence, findings = self._extract_structured(prompt, label)
             else:
                 response = self._with_retries(
                     lambda: self.agent.chat(
@@ -341,6 +344,10 @@ class LLMChunkProcessor(IterativeContextProcessor):
                 content = response.content.strip()
                 confidence = DEFAULT_EXTRACTION_CONFIDENCE
                 findings = []
+        except ProcessingStoppedError:
+            raise
+        except ChatStoppedError as exc:
+            raise ProcessingStoppedError(str(exc)) from exc
         except Exception as exc:
             raise RuntimeError(f"LLM extraction failed: {exc}") from exc
 
@@ -356,16 +363,14 @@ class LLMChunkProcessor(IterativeContextProcessor):
         )
         return ExtractionResult(content=content, metadata=metadata, confidence=confidence)
 
-    @staticmethod
-    def _with_retries(call: Callable[[], _T], label: str) -> _T:
-        """Run one model call, retrying a failed request with backoff (rule 7).
+    def _with_retries(self, call: Callable[[], _T], label: str) -> _T:
+        """Run one model request, retrying a failed one with backoff (rule 7).
 
         Up to :data:`CONTEXT_MODEL_ATTEMPTS` tries, waiting
         :data:`CONTEXT_MODEL_RETRY_BASE_DELAY` seconds before the first retry
         and doubling after.  What no retry cures (``_NOT_RETRIED``) is raised
-        at once.  This cannot see an agent's stop, so a request that fails as
-        the stop is set waits out one backoff before the retry the agent then
-        refuses (Rust's ``LlmContextModel`` skips that wait); nothing is sent.
+        at once, and a failure while the agent's stop is set ends the run with
+        no wait, as Rust's ``LlmContextModel`` does.
 
         Args:
             call: The model call.
@@ -377,6 +382,7 @@ class LLMChunkProcessor(IterativeContextProcessor):
         Raises:
             Exception: The last failure, once the tries run out, or the first
                 one no retry cures.
+            ProcessingStoppedError: A request failed while the stop was set.
         """
         for attempt in range(1, CONTEXT_MODEL_ATTEMPTS + 1):
             try:
@@ -384,6 +390,8 @@ class LLMChunkProcessor(IterativeContextProcessor):
             except _NOT_RETRIED:
                 raise
             except Exception as exc:
+                if self.agent.stop_requested():
+                    raise ProcessingStoppedError(f"{label} failed after the stop: {exc}") from exc
                 if attempt == CONTEXT_MODEL_ATTEMPTS:
                     raise
                 delay = CONTEXT_MODEL_RETRY_BASE_DELAY * 2 ** (attempt - 1)
@@ -401,6 +409,8 @@ class LLMChunkProcessor(IterativeContextProcessor):
     def _extract_structured(self, prompt: str, label: str) -> tuple[str, float, list[Any]]:
         """Run a JSON-mode extraction and read the model's own confidence.
 
+        Only the request is retried, never the reading of its reply.
+
         Args:
             prompt: The rendered prompt.
             label: Retry context, so a failure names the batch it came from.
@@ -410,12 +420,15 @@ class LLMChunkProcessor(IterativeContextProcessor):
             that is absent or not a string is ``("", 0.0, [])``, logged at
             WARNING.
         """
-        parsed = self.agent.chat_json(
-            [self.agent.user_msg(prompt)],
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            retry_context=label,
-            require_dict=True,
+        parsed = self._with_retries(
+            lambda: self.agent.chat_json(
+                [self.agent.user_msg(prompt)],
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                retry_context=label,
+                require_dict=True,
+            ),
+            label,
         )
         raw_content = parsed.get("extracted_content")
         if not isinstance(raw_content, str):
@@ -431,7 +444,7 @@ class LLMChunkProcessor(IterativeContextProcessor):
         content = raw_content.strip()
         try:
             confidence = float(parsed.get("confidence", DEFAULT_EXTRACTION_CONFIDENCE))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):  # OverflowError: float(10**400)
             logger.warning("Model reported an unusable confidence in %s; using the default", label)
             confidence = DEFAULT_EXTRACTION_CONFIDENCE
         # A model that reports 1.4 or -0.2 must not defeat

@@ -40,6 +40,7 @@ from bmlib.context_processor import (
     Batch,
     OversizedItemStrategy,
     OversizedItemError,          # raised by the FAIL strategy
+    ProcessingStoppedError,      # (unreleased, #642) a stop; process() re-raises it
     ConsolidationStrategy,
     ProgressInfo,
     # ProcessingConfig's defaults
@@ -143,7 +144,11 @@ longer than `max_context_chars`) and a fresh `batch_metadata` dict holding
 `batch_index`, `item_count`, `total_chars`, `item_indices` and
 `recursion_level`. The harness fills in the returned result's
 `batch_index`, `recursion_level` and `source_indices` itself; anything the
-method raises is recorded against the batch (see `continue_on_error`).
+method raises is recorded against the batch (see `continue_on_error`),
+except *(unreleased, #642)* `ProcessingStoppedError`: the caller asked to
+stop, so `process()` ends the run and lets it propagate, logging nothing.
+`LLMChunkProcessor` raises it when its agent's request is refused by a stop
+(`BaseAgent.stop_requested()`).
 
 ### Running it
 

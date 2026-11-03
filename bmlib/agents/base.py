@@ -144,6 +144,15 @@ class BaseAgent:
 
     # --- LLM interaction ---
 
+    def stop_requested(self) -> bool:
+        """Whether the caller has asked this agent to stop (#642).
+
+        Never, here; an agent that reads a stop (the PICO agent's) answers
+        it, so :meth:`chat_json` and a map-reduce over this agent wait out no
+        backoff for a request that would be refused.
+        """
+        return False
+
     def chat(
         self,
         messages: list[LLMMessage],
@@ -275,6 +284,8 @@ class BaseAgent:
                 immediate raise (truncation or a wrong shape at temperature 0)
                 names its own cause; one after the retries are spent names the
                 last attempt's.
+            ChatStoppedError: :meth:`stop_requested` answered true before a
+                retry; it was not sent, nor waited for.
         """
         # Zero attempts asked nothing and still raised "unparseable" (#574);
         # Rust's ``max_retries.max(1)`` is the same clamp.
@@ -312,6 +323,8 @@ class BaseAgent:
 
         for attempt in range(max_retries):
             if attempt > 0:
+                if self.stop_requested():
+                    raise ChatStoppedError(f"stopped before retry {attempt + 1}{context}")
                 delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
                 logger.warning(
                     "Retry %d/%d%s after %.0fs (previous: %s)",

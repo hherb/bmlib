@@ -62,6 +62,7 @@ from bmlib.context_processor.data_types import (
     ProcessingConfig,
     ProcessingResult,
     ProcessingStatus,
+    ProcessingStoppedError,
     ProgressInfo,
 )
 from bmlib.llm.text_utils import TextChunker
@@ -576,6 +577,7 @@ class IterativeContextProcessor(ABC):
                 ``continue_on_error`` is false.
             OversizedItemError: From the batcher, when an item is oversized
                 and the strategy is FAIL.
+            ProcessingStoppedError: From an extraction, unrecorded.
         """
         skipped_before = len(skipped_items)
         batches = self._create_batches(items, config, skipped_items)
@@ -621,6 +623,8 @@ class IterativeContextProcessor(ABC):
                     query=query,
                     batch_metadata=metadata,
                 )
+            except ProcessingStoppedError:
+                raise
             except Exception as exc:
                 message = str(exc)
                 logger.error(
@@ -687,6 +691,10 @@ class IterativeContextProcessor(ABC):
         Returns:
             The run's report. Failures are recorded on it rather than
             raised — inspect :attr:`ProcessingResult.status`.
+
+        Raises:
+            ProcessingStoppedError: An extraction reported that the caller
+                asked to stop; the run ends there.
         """
         config = config or self.config
         intermediate: list[list[ExtractionResult]] | None = [] if store_intermediate else None
@@ -793,6 +801,8 @@ class IterativeContextProcessor(ABC):
                 stats["items_per_level"].append(len(current_items))
                 recursion_level += 1
 
+        except ProcessingStoppedError:
+            raise
         except OversizedItemError as exc:
             # The strict oversized strategy raising is the configuration
             # doing what it was asked, not a defect: no traceback.

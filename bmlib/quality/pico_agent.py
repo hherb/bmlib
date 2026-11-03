@@ -61,7 +61,7 @@ from bmlib.agents.base import (
     ChatStoppedError,
 )
 from bmlib.citations import find_passage
-from bmlib.context_processor import ProcessingConfig
+from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.quality._condense import CondensationRefusedError, condense_text
@@ -116,7 +116,8 @@ _NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ImportEr
 #: What the stop's refusal and :attr:`PicoErrorKind.STOPPED` say.
 STOPPED_MESSAGE = "stopped before the next request was sent"
 
-#: A stop: an ``Event`` or a zero-argument callable answering "stop now?".
+#: A stop: an ``Event`` or a zero-argument callable answering "stop now?",
+#: which must not raise.
 Stop = threading.Event | Callable[[], bool]
 
 
@@ -523,7 +524,7 @@ class PicoAgent(BaseAgent):
             what propagates unwrapped (a bmlib defect, a missing SDK; #573).  A
             request already sent runs to its end; a call that then succeeds
             returns its result, so a caller that must not keep it reads the
-            stop again.
+            stop again.  A callable must not raise.
     """
 
     def __init__(
@@ -543,7 +544,7 @@ class PicoAgent(BaseAgent):
             or not 0 < num_ctx <= MAX_NUM_CTX
         ):
             raise ValueError(f"num_ctx must be an int in 1..{MAX_NUM_CTX}, got {num_ctx!r}")
-        self.num_ctx = num_ctx
+        self._num_ctx = num_ctx
         self._stop_requested = _stop_reader(stop)
         super().__init__(
             llm=llm,
@@ -556,6 +557,15 @@ class PicoAgent(BaseAgent):
             max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
         )
 
+    @property
+    def num_ctx(self) -> int | None:
+        """The window sent with every request; read-only, being checked once."""
+        return self._num_ctx
+
+    def stop_requested(self) -> bool:
+        """Whether the agent's stop is set."""
+        return self._stop_requested()
+
     def chat(self, messages: list[LLMMessage], **kwargs: Any) -> LLMResponse:
         """:meth:`BaseAgent.chat` with ``num_ctx``, refused once stopped.
 
@@ -565,10 +575,10 @@ class PicoAgent(BaseAgent):
         Raises:
             ChatStoppedError: The stop is set; nothing was sent.
         """
-        if self._stop_requested():
+        if self.stop_requested():
             raise ChatStoppedError(STOPPED_MESSAGE)
-        if self.num_ctx is not None:
-            kwargs["num_ctx"] = self.num_ctx
+        if self._num_ctx is not None:
+            kwargs["num_ctx"] = self._num_ctx
         return super().chat(messages, **kwargs)
 
     def prepare(self, title: str | None, text: str | None) -> PicoPrepared:
@@ -727,6 +737,8 @@ class PicoAgent(BaseAgent):
                 query=PICO_CONDENSE_QUERY,
                 stage=stage,
             )
+        except ProcessingStoppedError as exc:
+            raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from exc
         except CondensationRefusedError as exc:
             self._raise_if_stopped(exc)
             raise PicoError(
@@ -808,6 +820,8 @@ class PicoAgent(BaseAgent):
             self._raise_if_stopped()
             try:
                 data = self.chat_json(messages, retry_context=label, require_dict=True)
+            except ChatStoppedError as exc:
+                raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from exc
             except _NOT_A_REQUEST_FAILURE:
                 raise
             except Exception as exc:
@@ -836,7 +850,7 @@ class PicoAgent(BaseAgent):
         Raises:
             PicoError: ``STOPPED``.
         """
-        if self._stop_requested():
+        if self.stop_requested():
             raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from cause
 
 

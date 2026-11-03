@@ -23,11 +23,23 @@ too). **Rust**: `LlmChat::with_num_ctx`/`with_stop`, the new
 failure retried with backoff, never once stopped) and `PicoAgent::with_stop`
 → `PicoError::Stopped`. It lives in `quality/agent_chat.rs`, not
 `context_processor`, which keeps no LLM dependency. **Shared fixture**
-`tests/fixtures/pico_stop_num_ctx.json`: 14 cases over a fake Ollama transport
-and the real map-reduce, each language counting the requests and each one's
-`num_ctx` (they agree, four condensation requests included). Mutation: 17
-mutants on the new guards; two Python checks were equivalent (the agent is
-its own chat and condenser) and were deleted, the rest are killed. **For
+`tests/fixtures/pico_stop_num_ctx.json`: 16 cases over a fake Ollama HTTP
+transport (Python's ollama-python over an `httpx.MockTransport`, Rust's
+`HttpClient`) and the real map-reduce, each language counting the requests
+and each one's `num_ctx` key (they agree, four condensation requests, a batch
+lost to three failed attempts and an unretried malformed answer included), and
+both pin `CONTEXT_MODEL_ATTEMPTS` to the fixture's. Mutation: 17 mutants on
+the new guards; two Python checks were equivalent (the agent is its own chat
+and condenser) and were deleted, the rest are killed. **PR #644's review**
+(five reviewers): a stop during the map-reduce now ends it with
+`ProcessingStoppedError` (no ERROR per batch left), `BaseAgent.stop_requested()`
+skips the backoff before a refused retry in Python as Rust does, STOPPED is
+decided by the refusal's type, `num_ctx` is read-only, Rust's `Stopped`
+carries the failure it replaces, `LlmChat`/`LlmContextModel` are
+`#[non_exhaustive]`, and two false docstring claims were corrected; 14 Python
+and 3 Rust mutants on those, all killed. Retrying a permanent HTTP refusal is
+filed as **#646** (a decision; Rust's `Transport` carries the status as text).
+**For
 StudyAnalyzer plan 2c**: build `LlmChat` and `LlmContextModel` with the same
 window and flag, and `PicoAgent::with_stop` with that flag; read the flag
 again after a call that succeeded.

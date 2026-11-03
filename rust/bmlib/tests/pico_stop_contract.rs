@@ -45,8 +45,10 @@ struct FakeOllama {
     stop: Arc<AtomicBool>,
     stop_at: Option<usize>,
     fail_at_stop: bool,
-    fail_once_at: Option<usize>,
-    num_ctx_sent: Mutex<Vec<Value>>,
+    fail_at: Vec<usize>,
+    malformed_at: Option<usize>,
+    /// Each request's `options.num_ctx`, `None` where the key is absent.
+    num_ctx_sent: Mutex<Vec<Option<Value>>>,
 }
 
 impl HttpClient for FakeOllama {
@@ -62,11 +64,14 @@ impl HttpClient for FakeOllama {
     ) -> Result<HttpResponse, FetchError> {
         let index = {
             let mut sent = self.num_ctx_sent.lock().expect("lock");
-            sent.push(body["options"]["num_ctx"].clone());
+            sent.push(body["options"].get("num_ctx").cloned());
             sent.len() - 1
         };
-        if self.fail_once_at == Some(index) {
+        if self.fail_at.contains(&index) {
             return Err(FetchError::Transport("the connection was reset".into()));
+        }
+        if self.malformed_at == Some(index) {
+            return Ok(HttpResponse::from_bytes(200, b"not json".to_vec()));
         }
         if self.stop_at == Some(index) {
             self.stop.store(true, Ordering::SeqCst);
@@ -92,7 +97,7 @@ impl HttpClient for FakeOllama {
 }
 
 /// Run one case; the `num_ctx` of each request and the error kind.
-fn run(fixture: &Value, case: &Value) -> (Vec<Value>, Option<&'static str>) {
+fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static str>) {
     let stop = Arc::new(AtomicBool::new(false));
     let transport = Arc::new(FakeOllama {
         json_reply: fixture["json_reply"].to_string(),
@@ -100,7 +105,15 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Value>, Option<&'static str>) {
         stop: stop.clone(),
         stop_at: case["stop_at_request"].as_u64().map(|k| k as usize),
         fail_at_stop: case["request_at_stop"] == json!("fails"),
-        fail_once_at: case["fail_request"].as_u64().map(|k| k as usize),
+        fail_at: case["fail_requests"]
+            .as_array()
+            .map(|ks| {
+                ks.iter()
+                    .map(|k| k.as_u64().expect("an index") as usize)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        malformed_at: case["malformed_request"].as_u64().map(|k| k as usize),
         num_ctx_sent: Mutex::new(Vec::new()),
     });
     let mut client = LlmClient::new(transport.clone());
@@ -153,8 +166,20 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Value>, Option<&'static str>) {
 fn the_stopped_kind_is_the_fixtures() {
     let fixture: Value = serde_json::from_str(FIXTURE).expect("the fixture parses");
     assert_eq!(
-        PicoError::Stopped.kind(),
+        PicoError::Stopped(None).kind(),
         fixture["stopped_kind"].as_str().expect("stopped_kind")
+    );
+}
+
+/// The retry cases' counts assume this many tries, as Python's do.
+#[test]
+fn the_attempts_are_the_fixtures() {
+    let fixture: Value = serde_json::from_str(FIXTURE).expect("the fixture parses");
+    assert_eq!(
+        u64::from(bmlib::quality::CONTEXT_MODEL_ATTEMPTS),
+        fixture["context_model_attempts"]
+            .as_u64()
+            .expect("context_model_attempts")
     );
 }
 
@@ -173,9 +198,10 @@ fn every_case_agrees_with_the_fixture() {
             expected["requests"].as_u64().expect("requests"),
             "{name}: the requests sent"
         );
-        // An absent `num_ctx` reads as `null` here, as `None` sends none.
+        // A null `num_ctx` sends no key at all.
+        let expected_num_ctx = Some(case["num_ctx"].clone()).filter(|n| !n.is_null());
         for num_ctx in &sent {
-            assert_eq!(num_ctx, &case["num_ctx"], "{name}: a request's num_ctx");
+            assert_eq!(num_ctx, &expected_num_ctx, "{name}: a request's num_ctx");
         }
     }
 }
@@ -336,11 +362,18 @@ fn context_model_retries_transport() {
     assert_eq!(model.complete_json("p", 0.0, 10), Ok(json!({})));
     assert_eq!(transport.requests(), 2);
 
-    // Failures past the attempts: an error, after every attempt.
+    // Failures past the attempts: an error after every attempt, saying so.
     let transport = Scripted::new(vec![Err("reset")]);
     let client = scripted_client(transport.clone());
     let model = LlmContextModel::new(&client, "ollama:qwen3");
-    assert!(model.complete("p", 0.0, 10).is_err());
+    let error = model
+        .complete("p", 0.0, 10)
+        .expect_err("every attempt fails");
+    assert!(
+        error.starts_with(&format!("after {CONTEXT_MODEL_ATTEMPTS} attempts: ")),
+        "{error}"
+    );
+    assert!(error.contains("reset"), "{error}");
     assert_eq!(transport.requests(), CONTEXT_MODEL_ATTEMPTS as usize);
 }
 
@@ -359,8 +392,10 @@ fn context_model_malformed_answer_is_not_retried() {
     assert_eq!(transport.requests(), 1);
 }
 
+/// Refused before anything is sent, so this pins the error, not the retry rule
+/// (`context_model_malformed_answer_is_not_retried` pins that).
 #[test]
-fn context_model_unknown_provider_is_not_retried() {
+fn context_model_unknown_provider_sends_nothing() {
     let transport = Scripted::new(vec![Ok((200, "x", "stop"))]);
     let client = scripted_client(transport.clone());
     let error = LlmContextModel::new(&client, "nosuch:model")
@@ -395,6 +430,20 @@ fn context_model_stop_sends_nothing_and_is_not_retried() {
     let error = model.complete("p", 0.0, 10).expect_err("a fault");
     assert!(error.contains("reset"), "{error}");
     assert_eq!(transport.requests(), 1);
+
+    // The structured path too, where only the stop keeps a transport fault
+    // from its retry.
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut transport = Scripted::new(vec![Err("reset")]);
+    Arc::get_mut(&mut transport)
+        .expect("unshared")
+        .stop_on_request = Some(stop.clone());
+    let client = scripted_client(transport.clone());
+    let model = LlmContextModel::new(&client, "ollama:qwen3").with_stop(&stop);
+    let error = model.complete_json("p", 0.0, 10).expect_err("a fault");
+    assert!(error.contains("reset"), "{error}");
+    assert!(!error.contains(bmlib::quality::STOPPED_MESSAGE), "{error}");
+    assert_eq!(transport.requests(), 1);
 }
 
 #[test]
@@ -412,9 +461,52 @@ fn llm_chat_stop_sends_nothing() {
 #[test]
 fn stopped_says_why() {
     assert_eq!(
-        PicoError::Stopped.to_string(),
+        PicoError::Stopped(None).to_string(),
         bmlib::quality::STOPPED_MESSAGE
     );
+    // The failure the stop is reported over is kept, not discarded.
+    assert_eq!(
+        PicoError::Stopped(Some("missing API key".into())).to_string(),
+        format!(
+            "{}; the request under way failed: missing API key",
+            bmlib::quality::STOPPED_MESSAGE
+        )
+    );
+}
+
+/// A failure the stop is reported over is kept on the error; the stop's own
+/// refusal of a re-ask is not repeated as one.
+#[test]
+fn stopped_keeps_the_failure_it_replaces() {
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut transport = Scripted::new(vec![Err("the server went away")]);
+    Arc::get_mut(&mut transport)
+        .expect("unshared")
+        .stop_on_request = Some(stop.clone());
+    let client = scripted_client(transport.clone());
+    let mut chat = LlmChat::new(&client, "ollama:qwen3").with_stop(&stop);
+    let mut agent = PicoAgent::new(&mut chat).with_stop(&stop);
+    match agent.extract("A trial", "Adults were enrolled.", 0.9) {
+        Err(PicoError::Stopped(Some(failure))) => {
+            assert!(failure.contains("the server went away"), "{failure}");
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // An unusable reply, then `chat_json`'s re-ask refused by the stop.
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut transport = Scripted::new(vec![Ok((200, "not json", "stop"))]);
+    Arc::get_mut(&mut transport)
+        .expect("unshared")
+        .stop_on_request = Some(stop.clone());
+    let client = scripted_client(transport.clone());
+    let mut chat = LlmChat::new(&client, "ollama:qwen3").with_stop(&stop);
+    let mut agent = PicoAgent::new(&mut chat).with_stop(&stop);
+    assert_eq!(
+        agent.extract("A trial", "Adults were enrolled.", 0.9),
+        Err(PicoError::Stopped(None))
+    );
+    assert_eq!(transport.requests(), 1);
 }
 
 /// The agent's own stop, over a chat that has none: no call is made.
@@ -429,11 +521,11 @@ fn the_agents_stop_holds_over_any_chat() {
 
     assert_eq!(
         agent.extract("A trial", "Adults were enrolled.", 0.9),
-        Err(PicoError::Stopped)
+        Err(PicoError::Stopped(None))
     );
     assert_eq!(
         agent.check_suitability("A trial", "Adults were enrolled."),
-        Err(PicoError::Stopped)
+        Err(PicoError::Stopped(None))
     );
     assert_eq!(transport.requests(), 0);
 
@@ -447,6 +539,9 @@ fn the_agents_stop_holds_over_any_chat() {
         .with_condense_config(ProcessingConfig::default().with_max_context_chars(1000))
         .with_stop(&stop);
     let long = "Adults were enrolled. ".repeat(200);
-    assert_eq!(agent.prepare("A trial", &long), Err(PicoError::Stopped));
+    assert_eq!(
+        agent.prepare("A trial", &long),
+        Err(PicoError::Stopped(None))
+    );
     assert_eq!(transport.requests(), 0);
 }
