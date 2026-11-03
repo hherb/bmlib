@@ -24,7 +24,9 @@
 //! (and the property test checks every span it returns). Python's non-string
 //! inputs cannot be expressed, and `TestFitsText`/`TestMaxEditPoints` are unit
 //! tests in the crate, the two bounds being crate-private; so are the three
-//! long-input tests, which count the windows the crate-private matcher scores.
+//! long-input tests, which count the windows the crate-private matcher scores,
+//! and `TestTokens`' prefix and side tests, the guard's tokens being
+//! crate-private (its cuts are compared with Python's by the oracle).
 
 use bmlib::citations::passage_match::{
     find_passage, normalize_with_offsets, occurs_once, InvalidSimilarity, PassageContradiction,

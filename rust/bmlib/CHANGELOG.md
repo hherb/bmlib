@@ -11,6 +11,17 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`find_passage`'s contradiction guard** (#632, with the Python library): a
+  fuzzy match whose best window reaches the threshold is rejected when a token
+  the alignment leaves unmatched holds a digit, negates or states a direction;
+  the new `PassageMatch::contradiction: Option<PassageContradiction>`
+  (`Number`, `Negation`, `Direction`, `#[non_exhaustive]`) says which. The
+  word lists (`NEGATION_WORDS`, `NEGATING_PREFIXES`, `DIRECTION_WORDS`) and
+  `CONTRADICTION_RULES_VERSION` are public `const`s. `PassageMatch` is
+  `#[non_exhaustive]`, so the new field breaks no caller. The crate-private
+  `SequenceMatcher` is generic over its element type for the token
+  alignment. The oracle compares the tokens and the lists with Python's.
+
 - **`quality::LlmContextModel`** (#641): the first production `ContextModel`,
   over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
   run against a real model. `complete` is a plain chat whose output-ceiling

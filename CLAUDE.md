@@ -163,7 +163,9 @@ bmlib/
   near-verbatim quote in its source and returns the source's own span,
   rejecting a paraphrase below a `difflib` similarity threshold; an exact
   match never starts or ends inside a word or one source character (#527:
-  upstream's `=` matched `≠`). The Rust port is held to it by the shared
+  upstream's `=` matched `≠`), and a fuzzy match whose best window changes a
+  number, a negation or a direction is rejected with `contradiction` set
+  (#632). The Rust port is held to it by the shared
   `tests/fixtures/passage_match.json` and an oracle, and ports
   `difflib.SequenceMatcher` crate-privately.
 - **`context_processor/`** — Hierarchical map-reduce for content that exceeds one context window: batch the items to fit, extract from each batch, feed the extractions back in as items, repeat until they fit. `IterativeContextProcessor` is the harness and has **no LLM dependency** — which is why it is a top-level package rather than living under `agents/`; only `LLMChunkProcessor` imports `BaseAgent`, and the package `__init__` resolves it through a PEP 562 `__getattr__` so that claim holds of the package and not merely of `base.py` (eager re-export pulled in `bmlib.templates` and jinja2, over half the import cost, for callers who only wanted the harness). `bmlib.llm.text_utils.process_with_map_reduce()` is the shallow case of the same idea (one map, one reduce, one string) and stays; this module uses that module's `TextChunker` when it splits an oversized item. `max_context_chars` is the guarantee the module makes — no batch handed to `extract_from_batch()` exceeds it — and the port from bmlibrarian fixed two separate ways upstream broke it (see "Measured, not assumed, in the batcher" below). `process()` holds no per-run state on the instance, so one processor can serve concurrent calls.

@@ -167,7 +167,7 @@ unchanged — the two are held to the same shared fixture — except for the
 types:
 
 ```rust
-use bmlib::citations::{find_passage, InvalidSimilarity};
+use bmlib::citations::{find_passage, InvalidSimilarity, PassageContradiction};
 
 let source = "Patients were randomised.  The \u{201c}hazard ratio\u{201d} was 0.81.";
 let found = find_passage("the \"hazard ratio\" was 0.81", source, 0.95)?;
@@ -177,6 +177,10 @@ assert_eq!(span.text, "The \u{201c}hazard ratio\u{201d} was 0.81");
 assert_eq!((span.start, span.end), (27, 54)); // char indices, not bytes
 
 assert!(!find_passage("HR 0.9", "HR 0.95", 0.95)?.matched());
+// Close enough for the threshold, but the number differs (#632).
+let changed = find_passage("HR 0.9", "HR 0.95", 0.8)?;
+assert!(!changed.matched());
+assert_eq!(changed.contradiction, Some(PassageContradiction::Number));
 assert!(find_passage("x", source, 1.5).is_err());
 # Ok::<(), InvalidSimilarity>(())
 ```
@@ -185,6 +189,11 @@ The span is `Option<PassageSpan>` (`start`, `end`, `text`), in `char` indices;
 `matched()` is `span.is_some()`. Python's `start`/`end`/`text` sit on the
 match itself. An invalid `min_similarity`, NaN included, is an
 `Err(InvalidSimilarity)`. `PassageMatch` and `PassageSpan` are
-`#[non_exhaustive]`, so only `find_passage` builds them. `fold_char`,
+`#[non_exhaustive]`, so only `find_passage` builds them. A window reaching
+the threshold that changes a number, a negation or a direction is rejected
+with `contradiction` set (`PassageContradiction`, `#[non_exhaustive]`;
+`as_str()` is Python's value); `NEGATION_WORDS`, `NEGATING_PREFIXES`,
+`DIRECTION_WORDS` and `CONTRADICTION_RULES_VERSION` are the Python lists and
+version, held equal by the oracle. `fold_char`,
 `normalize_with_offsets` and `occurs_once` are the public normalisation, as in
 Python.

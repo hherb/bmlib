@@ -1071,6 +1071,44 @@ mod tests {
         assert_eq!(max_edit_points(20, 32, 1e-310), 52);
     }
 
+    fn contradiction_of(passage: &[&str], window: &[&str]) -> Option<PassageContradiction> {
+        let owned = |tokens: &[&str]| tokens.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        contradiction(&owned(passage), &owned(window))
+    }
+
+    // TestTokens' prefix and side tests, from tests/test_passage_match.py.
+
+    #[test]
+    fn a_negating_prefix_on_either_side_negates() {
+        let negation = Some(PassageContradiction::Negation);
+        for (word, prefixed) in [
+            ("effective", "ineffective"),
+            ("asymptomatic", "symptomatic"),
+            ("likely", "unlikely"),
+            ("significant", "nonsignificant"),
+            ("fit", "unfit"),
+        ] {
+            assert_eq!(contradiction_of(&[word, "x"], &[prefixed, "x"]), negation);
+            assert_eq!(contradiction_of(&[prefixed, "x"], &[word, "x"]), negation);
+        }
+    }
+
+    #[test]
+    fn a_prefix_on_a_short_word_is_not_a_negation() {
+        assert_eq!(contradiction_of(&["at", "x"], &["t", "x"]), None);
+        assert_eq!(contradiction_of(&["inn", "x"], &["inns", "x"]), None);
+    }
+
+    #[test]
+    fn unmatched_tokens_on_either_side_count() {
+        assert!(contradiction_of(&["did", "reduce"], &["did", "not", "reduce"]).is_some());
+        assert!(contradiction_of(&["did", "not", "reduce"], &["did", "reduce"]).is_some());
+        assert_eq!(
+            contradiction_of(&["did", "reduce"], &["did", "reduce"]),
+            None
+        );
+    }
+
     /// The differential oracle's cases for the two crate-private bounds and the
     /// contradiction guard's tokens; the integration test
     /// `tests/passage_match_oracle.rs` runs the rest.

@@ -826,6 +826,7 @@ class TestTokens:
             ("asymptomatic", "symptomatic"),
             ("likely", "unlikely"),
             ("significant", "nonsignificant"),
+            ("fit", "unfit"),
         ],
     )
     def test_a_negating_prefix_on_either_side_negates(self, passage: str, window: str) -> None:

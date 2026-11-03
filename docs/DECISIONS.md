@@ -6192,6 +6192,40 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   whose seeds are all too common is rejected at 0.0 (#529). Both are open
   issues, not settled choices.
 
+## citations — `find_passage`'s contradiction guard (#632)
+
+- **Only the best window is checked; a contradicted one is not replaced by a
+  worse one.** Picking the best window that does not contradict would accept,
+  say, *"mortality decreased in the treated arm"* for a quote about the
+  control arm when the best window says *"increased in the control arm"*.
+  That is a wrong citation too, and a rejection only costs the caller an
+  unverified quote. Test:
+  `tests/test_passage_match.py::TestContradictions::test_a_harmful_edit_is_rejected`.
+- **Any unmatched guarded token rejects, whichever side it is on, with no
+  stemming and no typo tolerance.** So a tense change (`increases` for
+  `increased`), `didn't` for `did not` and a misspelt `superioer` are rejected
+  as well. A model copying a quote rarely misspells. Tolerating a near
+  spelling would accept `increase`/`increases`, which is right, but also
+  `increased`/`decreased`, which score 0.78 against each other. Test:
+  `TestTokens::test_unmatched_tokens_on_either_side_count`.
+- **`a`/`an` are negating prefixes despite `trial`/`atrial`.** They are what
+  catches `symptomatic`/`asymptomatic`, `typical`/`atypical` and
+  `septic`/`aseptic`. The prefix must sit on a word of at least
+  `NEGATED_WORD_MIN_LENGTH` (3) characters, so `t`/`at` is not a negation.
+  Test: `TestTokens::test_a_negating_prefix_on_either_side_negates`.
+- **`over` and `under` are not direction words.** `over 12 months` and
+  `during 12 months` are a benign swap, and the lists are a choice to reject
+  where a word reverses a claim. Change a list or a cutting rule only with a
+  bump of `CONTRADICTION_RULES_VERSION`, in both languages; the oracle's
+  `contradiction-rules` case holds the lists equal.
+- **The guard does not see a reordering.** `A was higher than B` copied as
+  `B was higher than A` changes only `A` and `B`, which are not guarded.
+- **A number is a token of its own, signed and with its decimal point.**
+  Joining it to a neighbouring letter would make `10mg` against `10 mg` a
+  numeric change. A Lancet middle dot between digits reads as `.`, because a
+  model copies it that way. `1,000` against `1000` is rejected, a formatting
+  change judged not worth an exception. Test: `TestTokens::test_cuts`.
+
 ## quality — what a PICO request failure is, and two reply fields (#573, #578)
 
 - **In Python, only the provider failing is `REQUEST_FAILED`; what no retry
