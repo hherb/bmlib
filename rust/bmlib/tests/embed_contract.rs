@@ -61,6 +61,7 @@ fn every_contract_section_is_read() {
         [
             "_readme",
             "check_texts",
+            "download_errors",
             "model_files",
             "query_text",
             "truncate_and_normalize"
@@ -137,6 +138,25 @@ fn model_urls_are_the_contracts() {
             other => panic!("unknown model {other}"),
         };
         assert_eq!(model.url(), case["url"].as_str().unwrap());
+    }
+}
+
+#[cfg(feature = "embed")]
+#[test]
+fn download_errors_are_the_contracts() {
+    use bmlib::embed::ModelError;
+    let c = contract();
+    for case in c["download_errors"].as_array().unwrap() {
+        let err = match case["error"].as_str().unwrap() {
+            "transport" => ModelError::Transport("refused".into()),
+            "status" => ModelError::Status {
+                status: case["status"].as_u64().unwrap() as u16,
+                message: "refused".into(),
+            },
+            other => panic!("unknown error {other}"),
+        };
+        let want = case["retryable"].as_bool().unwrap();
+        assert_eq!(err.is_retryable(), want, "{}", case["name"]);
     }
 }
 

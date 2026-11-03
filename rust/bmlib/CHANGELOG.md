@@ -73,6 +73,16 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`ModelError::Http` is split** into **`ModelError::Transport(String)`** (no
+  connection, a timeout, a stall, a read that failed or a body that broke off)
+  and **`ModelError::Status { status, message }`** (a refused request), and
+  the new **`ModelError::is_retryable`** is `true` for a transport fault and
+  for a 408, 429 or 5xx (#633, with the Python library's `ModelTransportError`
+  and `ModelStatusError`). A caller retrying a download no longer retries a
+  404. A read error on the response body, which included a body ending short
+  of its `Content-Length`, was `ModelError::Io` and is now `Transport`; `Io`
+  is the file system's alone. Held by the shared contract's new
+  `download_errors` section.
 - **`PdfExtractError::Conversion` carries the `PdfError`**, not a `String`
   (#604), so its kind reaches the result; `MupdfPdfExtractor` passes the
   extractor's error through. A third-party `PdfExtractor` builds one with

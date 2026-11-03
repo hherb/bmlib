@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import http.client
 import logging
 import os
 import re
+import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Callable
@@ -133,6 +135,52 @@ class DownloadCancelled(Exception):  # noqa: N818 - a cancel, not an error
     """The caller's ``progress`` hook returned ``False``; nothing was kept."""
 
 
+class ModelDownloadError(OSError):
+    """The network side of a download failed; nothing was kept.
+
+    Only ever raised as :class:`ModelTransportError` or
+    :class:`ModelStatusError`. An ``OSError``, as the ``urllib`` errors it
+    replaces were, so a file-system failure stays a plain ``OSError`` beside it.
+    """
+
+    @property
+    def retryable(self) -> bool:
+        """Whether the same request may succeed later (Rust: ``is_retryable``)."""
+        raise NotImplementedError
+
+
+class ModelTransportError(ModelDownloadError):
+    """No answer: no connection, a timeout, or a body that broke off.
+
+    Rust: ``ModelError::Transport``. Always worth a retry.
+    """
+
+    @property
+    def retryable(self) -> bool:
+        """Always ``True``."""
+        return True
+
+
+class ModelStatusError(ModelDownloadError):
+    """The server refused the request (Rust: ``ModelError::Status``).
+
+    Only 408, 429 and a 5xx are worth a retry.
+    """
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(f"HTTP {status}: {message}")
+        self.status = status
+        self.message = message
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the text, not the fields
+        return type(self), (self.status, self.message), self.__dict__
+
+    @property
+    def retryable(self) -> bool:
+        """``True`` for 408, 429 and 500-599."""
+        return self.status in (408, 429) or 500 <= self.status <= 599
+
+
 def _check(path: Path, model: ModelFile, size: int, sha256: str) -> None:
     if size != model.size:
         raise SizeMismatchError(path, model.size, size)
@@ -155,6 +203,26 @@ def verify_model(path: Path, model: ModelFile) -> None:
         while block := handle.read(BLOCK_SIZE):
             digest.update(block)
     _check(path, model, size, digest.hexdigest())
+
+
+def _open(request: urllib.request.Request) -> http.client.HTTPResponse:
+    try:
+        response: http.client.HTTPResponse = urllib.request.urlopen(
+            request, timeout=HTTP_TIMEOUT_SECONDS
+        )
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        raise ModelStatusError(exc.code, str(exc.reason)) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise ModelTransportError(str(exc)) from exc
+    return response
+
+
+def _read(response: http.client.HTTPResponse) -> bytes:
+    try:
+        return response.read(BLOCK_SIZE)
+    except (OSError, http.client.HTTPException) as exc:
+        raise ModelTransportError(str(exc)) from exc
 
 
 def download_model(
@@ -184,7 +252,9 @@ def download_model(
     Raises:
         ModelVerificationError: If the downloaded bytes are not the pinned ones
             (a body shorter or longer than the pinned size included).
-        OSError: On a network or file-system failure (``URLError`` included).
+        ModelTransportError: If no answer came, or the body broke off.
+        ModelStatusError: If the server answered with a non-success status.
+        OSError: On a file-system failure.
         DownloadCancelled: If ``progress`` returned ``False``.
     """
     directory.mkdir(parents=True, exist_ok=True)
@@ -202,10 +272,10 @@ def download_model(
         digest = hashlib.sha256()
         done = 0
         with (
-            urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response,
+            _open(request) as response,
             part.open("xb") as out,
         ):
-            while block := response.read(BLOCK_SIZE):
+            while block := _read(response):
                 out.write(block)
                 digest.update(block)
                 done += len(block)
@@ -213,6 +283,8 @@ def download_model(
                     raise SizeMismatchError(part, model.size, f"more than {model.size}")
                 if progress is not None and progress(done, model.size) is False:
                     raise DownloadCancelled(f"download of {model.file} cancelled")
+            if response.length:  # the connection closed before Content-Length was met
+                raise ModelTransportError(f"body broke off after {done} bytes")
             out.flush()
             os.fsync(out.fileno())
         _check(part, model, done, digest.hexdigest())

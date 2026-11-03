@@ -76,6 +76,24 @@ fn serve(payload: Vec<u8>, truncate: bool) -> Server {
     Server { url, requests }
 }
 
+/// Answer every request with `status` and an empty body.
+fn serve_status(status: u16) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/m.gguf", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            let head = format!(
+                "HTTP/1.1 {status} Refused\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(head.as_bytes());
+        }
+    });
+    url
+}
+
 fn model(expected: &[u8]) -> ModelFile {
     ModelFile {
         repo: "r",
@@ -193,10 +211,36 @@ fn download_truncated_body_leaves_no_model() {
     let server = serve(body(), true);
     let tmp = tempdir("truncated");
     let err = download(&server, &model(&body()), &tmp).unwrap_err();
-    match err {
-        ModelError::Io(e) => assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof),
-        other => panic!("{other:?}"),
+    // The connection closed short of Content-Length: the network's fault.
+    assert!(matches!(err, ModelError::Transport(_)), "{err:?}");
+    assert!(err.is_retryable());
+    assert!(dir_is_empty(&tmp));
+}
+
+#[test]
+fn a_refused_request_is_a_status_error() {
+    for (status, retryable) in [(404, false), (503, true)] {
+        let url = serve_status(status);
+        let tmp = tempdir(&format!("status-{status}"));
+        let err = download_model_from(&url, &model(&body()), &tmp, &mut |_, _| true).unwrap_err();
+        match &err {
+            ModelError::Status { status: s, .. } => assert_eq!(*s, status),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(err.is_retryable(), retryable);
+        assert!(dir_is_empty(&tmp));
     }
+}
+
+#[test]
+fn no_connection_is_a_transport_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/m.gguf", listener.local_addr().unwrap());
+    drop(listener); // nothing listens on the port now
+    let tmp = tempdir("refused");
+    let err = download_model_from(&url, &model(&body()), &tmp, &mut |_, _| true).unwrap_err();
+    assert!(matches!(err, ModelError::Transport(_)), "{err:?}");
+    assert!(err.is_retryable());
     assert!(dir_is_empty(&tmp));
 }
 

@@ -159,8 +159,17 @@ mod verified {
             /// Digest found.
             actual: String,
         },
-        /// A network failure or a non-success status.
-        Http(String),
+        /// No answer: no connection, a timeout, a stall, or a body that broke
+        /// off. Always worth a retry.
+        Transport(String),
+        /// The server refused the request; only 408, 429 and a 5xx are worth
+        /// a retry.
+        Status {
+            /// The HTTP status.
+            status: u16,
+            /// What the client said of it.
+            message: String,
+        },
         /// The caller's `progress` hook returned `false`; nothing was kept.
         Cancelled,
         /// The [`ModelFile`] cannot be pinned (see [`ModelFile::check`]).
@@ -177,9 +186,24 @@ mod verified {
                 ModelError::ChecksumMismatch { expected, actual } => {
                     write!(f, "model sha256 is {actual}, expected {expected}")
                 }
-                ModelError::Http(m) => write!(f, "model download failed: {m}"),
+                ModelError::Transport(m) => write!(f, "model download failed: {m}"),
+                ModelError::Status { status, message } => {
+                    write!(f, "model download refused: HTTP {status}: {message}")
+                }
                 ModelError::Cancelled => write!(f, "model download cancelled"),
                 ModelError::Invalid(m) => write!(f, "invalid model file: {m}"),
+            }
+        }
+    }
+
+    impl ModelError {
+        /// Whether the same download may succeed later: a transport fault, or
+        /// a 408, 429 or 5xx status (Python: `ModelDownloadError.retryable`).
+        pub fn is_retryable(&self) -> bool {
+            match self {
+                ModelError::Transport(_) => true,
+                ModelError::Status { status, .. } => matches!(status, 408 | 429 | 500..=599),
+                _ => false,
             }
         }
     }
@@ -292,7 +316,8 @@ mod download {
     /// # Errors
     ///
     /// [`ModelError`]: a mismatch (a body longer or shorter than the pinned
-    /// size included), a file-system failure, a network failure,
+    /// size included), a file-system failure ([`ModelError::Io`]), no answer
+    /// ([`ModelError::Transport`]), a refused request ([`ModelError::Status`]),
     /// [`ModelError::Cancelled`], or [`ModelError::Invalid`].
     pub fn download_model(
         model: &ModelFile,
@@ -375,10 +400,13 @@ mod download {
             .user_agent(crate::http::default_user_agent())
             .build();
         let agent = ureq::Agent::new_with_config(config);
-        let response = agent
-            .get(url)
-            .call()
-            .map_err(|e| ModelError::Http(e.to_string()))?;
+        let response = agent.get(url).call().map_err(|e| match e {
+            ureq::Error::StatusCode(status) => ModelError::Status {
+                status,
+                message: e.to_string(),
+            },
+            _ => ModelError::Transport(e.to_string()),
+        })?;
         let mut reader = response.into_body().into_reader();
         // A thread reads, so the loop can give up on a stalled block.
         // shortcut: on a stall the thread stays blocked in `read` (the socket
@@ -406,9 +434,10 @@ mod download {
         let mut done: u64 = 0;
         loop {
             let block = match rx.recv_timeout(IDLE_TIMEOUT) {
-                Ok(block) => block?,
+                // A read error here is the connection's, not the disk's.
+                Ok(block) => block.map_err(|e| ModelError::Transport(e.to_string()))?,
                 Err(RecvTimeoutError::Timeout) => {
-                    return Err(ModelError::Http("download stalled".to_string()));
+                    return Err(ModelError::Transport("download stalled".to_string()));
                 }
                 Err(RecvTimeoutError::Disconnected) => break,
             };
