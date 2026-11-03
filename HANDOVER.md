@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-03 (**this session's PR is on `feat/pico-num-ctx-stop`**,
+_Last updated: 2026-11-03 (**this session's PR is #644**, on `feat/pico-num-ctx-stop`,
 for #640, #641 and #642; see *This session* below). PRs #639 (#638), #637
 (#628, unnamed parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565),
 #625 (#603), #622 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613
