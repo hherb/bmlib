@@ -78,9 +78,11 @@ The Python library is documented separately, in the repository's
 - **An unnamed numbered parent keeps its subsections** (#628, with the Python
   library): `identify_section_markers` keeps a numbered top-level heading that
   names no section as `SectionType::Other` when the next heading found numbers
-  from it, unless it repeats the number of the top-level heading still open.
+  from it, unless it repeats the number of the outermost heading still open.
   The Python CHANGELOG has the measurement; the port agrees with Python on all
-  1,114 local papers' blocks. `PDF_CANONICAL_VERSION` is 6 (`"pdf-6"`).
+  1,114 local papers' blocks, and on thirteen new `segment_document` oracle
+  cases and a canonical-text contract case. `PDF_CANONICAL_VERSION` is 6
+  (`"pdf-6"`; the Python CHANGELOG says why, pdf-5 being unreleased).
 
 - **A face named bold or italic is read as one** (#628, with the Python
   library): `TextBlock::is_bold` and `is_italic`, from both `MupdfExtractor`

@@ -15,14 +15,26 @@ notes; see `HANDOVER_RUST.md` for the crate's publish. Unreleased: PRs
 The maintainer's rule, built: a numbered top-level heading naming no section
 is held, and kept as the **new `SectionType.OTHER`** (Rust `Other`, `"other"`)
 when the next heading found numbers from it; its unnamed subsections take
-`OTHER`. Not kept if another heading comes first, if unnumbered, or if it
-repeats the open top-level number (a "2θ degrees" axis label stole two
+`OTHER`. Not kept if another heading is found first (a line dropped as
+text does not end the hold), if unnumbered, or if it repeats the number of
+the outermost open heading (a "2θ degrees" axis label stole two
 subsections in the first cut). **Measured** over the 1,114 PDFs in
 `~/europepmc_pdf/pdf` (blocks rebuilt from the PDFs, segmented with and
 without): 49 papers, 96 parents (all read, all genuine), 326 subsections
-recovered, **none lost**, 50 moved out from under a wrong Abstract/References
-parent. **Rust agrees on all 1,114** (the segmenter oracle test run over their
-blocks by swapping the data files, then restored). `PDF_CANONICAL_VERSION` 6.
+recovered, **no heading lost**, 50 moved out from under a wrong parent
+(Abstract 33, Introduction 6, References 6, Acknowledgments 5); all 49
+canonical texts move, 2 in their heading spans alone. **Rust agrees on all 1,114** (the segmenter oracle test run over their
+blocks by swapping the data files, then restored). `PDF_CANONICAL_VERSION` 6
+although pdf-5 is unreleased, **the maintainer's choice** against #629-#631's
+precedent: a downstream pinned to an unreleased commit may hold pdf-5 texts,
+and the embedding store tells a text whose `text` did not move stale by the
+version alone. **PR #637's review** found eight mutants the PR's tests let
+through (a subsection of another number keeping the parent, `OTHER` printed
+like `UNKNOWN`, a subsection held, a named first child, a wrapped parent, two
+held in a row, a dropped line between, the guard under a kept parent); each
+has a Python test and an oracle case now, mutation-checked in Python (the
+Rust side was not mutated). The blocks it measured from are a 164 MB pickle in
+a session scratchpad, so temporary: rebuild them from the PDFs.
 Adding a Rust variant is breaking for an exhaustive `match` (in the crate's
 *Changed — breaking*). Filed **#636**: "2. Method", "3. Result",
 "5. Discussions", "2. Experimental" match no pattern, so 9 parents are

@@ -2376,7 +2376,7 @@
   }
  },
  {
-  "name": "segment_document/unnamed_subsection_not_under_its_number",
+  "name": "segment_document/an_unnamed_parent_keeps_a_subsection_methods_does_not_number",
   "fn": "segment_document",
   "args": {
    "blocks": [
@@ -4747,6 +4747,689 @@
     {
      "text": "Body under 2.1. Imaging.",
      "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_named_first_child_keeps_the_unnamed_parent",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Methods",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2.1. Methods.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_subsection_of_another_number_does_not_keep_the_unnamed_parent",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. Methods",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 3.1. Methods.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnamed_subsection_is_not_held",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Methods",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Methods.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. Orphan unnamed",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 3.1. Orphan unnamed.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1.1. Deeper unnamed",
+     "y": 84,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 3.1.1. Deeper unnamed.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_dropped_line_between_keeps_the_hold",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Low oxygen tension",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under Low oxygen tension.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Low pH",
+     "y": 84,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2.1. Low pH.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/the_later_of_two_held_headings_is_kept",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3. Something unnamed",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 3. Something unnamed.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3.1. Low pH",
+     "y": 84,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 3.1. Low pH.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_wrapped_unnamed_parent_keeps_its_whole_title",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "hypoxia in tumours",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Parent body.",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Low pH",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Child body.",
+     "y": 84,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/the_repeated_number_guard_holds_under_a_kept_parent",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Characteristics of hypoxia",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Characteristics of hypoxia.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Low pH",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2.1. Low pH.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2 Theta degrees",
+     "y": 84,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2 Theta degrees.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.2. High pH",
+     "y": 108,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2.2. High pH.",
+     "y": 120,
      "x": 0.0,
      "width": 300,
      "font_size": 10,

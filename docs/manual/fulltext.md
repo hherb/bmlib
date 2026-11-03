@@ -2526,26 +2526,28 @@ nearest earlier heading that is shallower, so `"2.1. Patients"` is a
 subsection of `"2. Materials and methods"`. A subsection that names no
 section (`"2.1. Patients"` names none) takes its parent's type and
 confidence, unless the parent's own number does not open its number: after
-an unnamed `"3. Metformin lowers glucose"`, which is not a heading, a
+an unnamed `"3. Metformin lowers glucose"` set as body text, a
 `"3.1. Fasting glucose"` is text of `"2. Materials and methods"` rather than a
 Methods subsection. **A numbered top-level heading that names none is kept
 as an `OTHER` section when the next heading found numbers from it**
 *(unreleased, `"pdf-6"`, #628)*, and its unnamed subsections take `OTHER`
-from it — so the `"3.1. Fasting glucose"` just described, set as a heading,
-makes `"3. Metformin lowers glucose"` an `OTHER` section with it as a
+from it — so where `"3. Metformin lowers glucose"` is set as a heading
+itself, it is an `OTHER` section with `"3.1. Fasting glucose"` as its
 subsection. Before, the parent was dropped and every subsection numbered from
 it with it, or filed under whatever unnumbered heading came earlier (an
 *Abstract*, a *References*), since an unnumbered parent contradicts no number:
-PMC9798000 lost 19. Such a heading is not kept if any other heading comes
-before its first subsection, nor if it is unnumbered, nor if it repeats the
-number of the top-level heading still open (a figure's `"2θ degrees"` axis
-label under `"2. Results"` is read as `"2 Theta degrees"`). Over the 1,114
+PMC9798000 lost 19. Such a heading is not kept if another heading is found
+before its first subsection (a line dropped as text does not count), nor if
+it is unnumbered, nor if it repeats the number of the outermost heading still
+open (a figure's `"2θ degrees"` axis label under `"2. Results"` is read as
+`"2 Theta degrees"`). Over the 1,114
 local journal PDFs this keeps 96 such parents in 49 papers, every one read by
 hand and a real section heading, finds 326 subsections that were lost, loses
-none, and moves 50 subsections out from under the wrong parent; 9 of the
+no heading, and moves 50 subsections out from under the wrong parent; 9 of the
 parents are a heading whose name the patterns miss (`"2. Method"`,
 `"3. Result"`, `"5. Discussions"`, `"2. Experimental"`). Its confidence is
-0.0, what `match_section_type` gives it, and its subsections take that too.
+0.0, what `match_section_type` gives it, and its unnamed subsections take
+that too; a named one keeps its own.
 A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
 `"2."`) still reads as one; `"0.5 mM"` does not. A heading may **wrap** over
 up to three lines in all, the continuation lines sharing its font, size,

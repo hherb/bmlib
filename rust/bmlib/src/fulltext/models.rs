@@ -903,8 +903,9 @@ impl ContentKind {
 /// classifications — what precedes the first detected heading, and text no
 /// heading claimed. [`SectionType::Other`] is a heading that names no section,
 /// kept because numbered subsections number from it (`"2. Characteristics of
-/// hypoxia"` over `"2.1."`). Every other member has at least one heading
-/// pattern in the segmenter.
+/// hypoxia"` over `"2.1."`), and each of those subsections that names none
+/// either. Every other member has at least one heading pattern in the
+/// segmenter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SectionType {
@@ -944,7 +945,7 @@ pub enum SectionType {
     /// A container: what precedes the first detected heading.
     FrontMatter,
     /// A heading that names no section, kept because numbered subsections
-    /// number from it.
+    /// number from it, or such a subsection that names none either.
     Other,
     /// A container: text no heading claimed.
     Unknown,
@@ -1090,8 +1091,9 @@ pub struct Section {
     pub page_end: i64,
     /// How sure the segmenter is of the classification.
     ///
-    /// `1.0` for an exact heading match, `0.7` for a partial one, and `0.5` for
-    /// the two container sections (front matter, the no-headings fallback).
+    /// `1.0` for an exact heading match, `0.7` for a partial one, `0.5` for the
+    /// two container sections (front matter, the no-headings fallback), and
+    /// `0.0` for an [`SectionType::Other`] section.
     #[serde(default = "one")]
     pub confidence: f64,
     /// Nested sections.

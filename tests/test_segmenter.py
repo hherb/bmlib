@@ -23,6 +23,7 @@ is tested in ``tests/test_pdf_converter.py``.
 
 from __future__ import annotations
 
+from bmlib.fulltext.canonical import canonical_from_segmented
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
 from bmlib.fulltext.segmenter import (
     FURNITURE_MAX_EDGE_LINES,
@@ -794,7 +795,17 @@ class TestAnUnnamedNumberedParentIsKeptForItsChildren:
         ]
         parent = SectionSegmenter().segment_document(blocks).sections[2]
         assert parent.content == "Body under 2. Characteristics of hypoxia."
-        assert parent.confidence == 0.0
+        assert (parent.confidence, parent.subsections[0].confidence) == (0.0, 0.0)
+
+    def test_a_named_first_child_keeps_the_parent(self):
+        blocks = self.paper("2. Characteristics of hypoxia", "2.1. Methods")
+        assert self.tree(blocks)[1:] == [
+            (
+                "2. Characteristics of hypoxia",
+                SectionType.OTHER,
+                [("2.1. Methods", SectionType.METHODS, [])],
+            ),
+        ]
 
     def test_a_parent_no_heading_numbers_from_is_text(self):
         blocks = self.paper("2. Characteristics of hypoxia", "3. Results", "3.1. Low pH")
@@ -802,6 +813,82 @@ class TestAnUnnamedNumberedParentIsKeptForItsChildren:
             ("1. Introduction", SectionType.INTRODUCTION, []),
             ("3. Results", SectionType.RESULTS, [("3.1. Low pH", SectionType.RESULTS, [])]),
         ]
+        # The dropped parent stays where main put it: text of the section before.
+        intro = SectionSegmenter().segment_document(blocks).sections[1]
+        assert "2. Characteristics of hypoxia" in intro.content
+
+    def test_a_subsection_of_another_number_does_not_keep_it(self):
+        blocks = self.paper("2. Characteristics of hypoxia", "3.1. Methods")
+        # A named subsection nests under any shallower heading, as on main.
+        assert self.tree(blocks) == [
+            (
+                "1. Introduction",
+                SectionType.INTRODUCTION,
+                [("3.1. Methods", SectionType.METHODS, [])],
+            ),
+        ]
+
+    def test_an_unnamed_subsection_is_not_held(self):
+        # Only a top-level heading is held: "3.1." does not become a parent.
+        blocks = self.paper("2. Methods", "3.1. Orphan unnamed", "3.1.1. Deeper unnamed")
+        assert self.tree(blocks)[1:] == [("2. Methods", SectionType.METHODS, [])]
+
+    def test_a_dropped_line_between_keeps_the_hold(self):
+        # Only a marker ends the hold; an unnamed unnumbered bold line is text.
+        blocks = self.paper("2. Characteristics of hypoxia", "Low oxygen tension", "2.1. Low pH")
+        assert self.tree(blocks)[1:] == [
+            (
+                "2. Characteristics of hypoxia",
+                SectionType.OTHER,
+                [("2.1. Low pH", SectionType.OTHER, [])],
+            ),
+        ]
+
+    def test_the_later_of_two_held_headings_is_kept(self):
+        blocks = self.paper("2. Characteristics of hypoxia", "3. Something unnamed", "3.1. Low pH")
+        assert self.tree(blocks)[1:] == [
+            ("3. Something unnamed", SectionType.OTHER, [("3.1. Low pH", SectionType.OTHER, [])]),
+        ]
+
+    def test_a_wrapped_parent_keeps_its_whole_title(self):
+        blocks = [
+            block("Body text of the paper.", y=0.0),
+            block("1. Introduction", bold=True, y=12.0),
+            block("Body under 1. Introduction.", y=24.0),
+            block("2. Characteristics of", bold=True, y=36.0),
+            block("hypoxia in tumours", bold=True, y=48.0),
+            block("Parent body.", y=60.0),
+            block("2.1. Low pH", bold=True, y=72.0),
+            block("Child body.", y=84.0),
+        ]
+        parent = SectionSegmenter().segment_document(blocks).sections[2]
+        assert (parent.title, parent.section_type, parent.content) == (
+            "2. Characteristics of hypoxia in tumours",
+            SectionType.OTHER,
+            "Parent body.",
+        )
+
+    def test_the_repeated_number_guard_holds_under_a_kept_parent(self):
+        blocks = self.paper(
+            "2. Characteristics of hypoxia", "2.1. Low pH", "2 Theta degrees", "2.2. High pH"
+        )
+        assert self.tree(blocks)[1:] == [
+            (
+                "2. Characteristics of hypoxia",
+                SectionType.OTHER,
+                [
+                    ("2.1. Low pH", SectionType.OTHER, []),
+                    ("2.2. High pH", SectionType.OTHER, []),
+                ],
+            ),
+        ]
+
+    def test_the_canonical_text_prints_other_headings(self):
+        # Why OTHER is a member of its own: UNKNOWN's heading is not printed.
+        blocks = self.paper("2. Characteristics of hypoxia", "2.1. Low pH")
+        text = canonical_from_segmented(SectionSegmenter().segment_document(blocks)).text
+        assert "\n\n2. Characteristics of hypoxia\n\nBody under 2. Characteristics" in text
+        assert "\n\n2.1. Low pH\n\nBody under 2.1. Low pH." in text
 
     def test_a_marker_between_parent_and_child_lets_the_parent_go(self):
         # "2.1." is under "Results" now, not the unnamed "2." two headings up.

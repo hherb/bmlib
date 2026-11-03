@@ -715,11 +715,12 @@ pub struct Marker {
 /// to give it, so a numbered one (`"3. Metformin lowers glucose"`) is held and
 /// kept as [`SectionType::Other`] only if the next heading found numbers from it
 /// (`"3.1."`), which then takes `Other` too if it names no section either
-/// (#628); an unnumbered one is dropped, and so is one repeating the number of
-/// the top-level heading still open (a figure's `"2 Theta degrees"` axis label
-/// under `"2. Results"`). A line in a face the paper's
-/// exact-match headings are set in counts as bold for the heading test alone
-/// (#628). A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
+/// (#628). A line that is dropped does not end the hold; a heading found, or a
+/// later line held, does. An unnumbered one is dropped, and so is one
+/// repeating the number of the outermost heading still open (a figure's
+/// `"2 Theta degrees"` axis label under `"2. Results"`). A line in a face the
+/// paper's exact-match headings are set in counts as bold for the heading test
+/// alone (#628). A bold quantity numbered like a subsection (`"2.5 mg/kg"` under
 /// `"2."`, `"1.5 h"` under an unnumbered `"Results"`) still reads as one, and
 /// so does a line of prose opening with one in a heading face (#623).
 #[must_use]

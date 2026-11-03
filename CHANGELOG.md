@@ -16,27 +16,40 @@ All notable changes to bmlib are documented here. The format is based on
   number). It is now **kept as the new `SectionType.OTHER`** when the next
   heading found numbers from it, and its unnamed subsections take `OTHER` from
   it (Rust `SectionType::Other`, wire name `"other"`). It is not kept if
-  another heading comes first, if it is unnumbered, or if it repeats the
-  number of the top-level heading still open: a figure's "2θ degrees" axis
-  label, read as "2 Theta degrees" under "2. Results", took that paper's
-  "2.4." and "2.5." in the first cut. **Measured** over the 1,114 local
-  journal PDFs (`~/europepmc_pdf/pdf`, one `extract_blocks` pass, segmented
-  with and without the change): 49 papers move, 47 canonical texts; 96
-  parents kept, every one read by hand and a real section heading; 326
-  subsections found that were lost; **none lost**; and 50 subsections move out
-  from under a wrong Abstract (33), Introduction (6), References (6) or
-  Acknowledgments (5) heading. PMC9798000's "2" and "3" now hold their 2.1-2.4
-  and 3.1-3.3.3. 9 of the parents are a name the patterns miss ("2. Method",
-  "3. Result", "5. Discussions", "2. Experimental"), filed as #636. Rust
-  agrees with Python on all 1,114 papers' blocks (the segmenter oracle test
-  run once over them). `OTHER` prints its heading in the canonical text, as
-  `FRONT_MATTER` and `UNKNOWN` do not. Its confidence is 0.0, what
-  `match_section_type` gives it. Six new segmenter oracle cases; one existing
-  case (`unnamed_subsection_not_under_its_number`, whose "3.1." is set as a
-  heading) now keeps its "3." as `OTHER`. Each clause is mutation-killed.
-  **`PDF_CANONICAL_VERSION` is 6** (unreleased); the JATS canonical and
-  renderer digests are re-pinned without a bump, an enum member moving
-  neither.
+  another heading is found first (a line dropped as text does not end the
+  hold), if it is unnumbered, or if it repeats the number of the outermost
+  heading still open: a figure's "2θ degrees" axis label, read as
+  "2 Theta degrees" under "2. Results", took that paper's "2.4." and "2.5." in
+  the first cut. **Measured** over the 1,114 local journal PDFs
+  (`~/europepmc_pdf/pdf`, one `extract_blocks` pass, segmented with and
+  without the change): 49 papers move, and so do their 49 canonical texts —
+  47 in their `text`, and 2 (PMC10289001, PMC10811000) in their sections'
+  heading spans alone, the parent's heading having been printed as a
+  paragraph of the section before; 96 parents kept, every one read by hand
+  and a real section heading, and every one judged against a top-level open
+  heading; 326 subsections found that were lost; **no heading lost**; and 50
+  subsections move out from under a wrong Abstract (33), Introduction (6),
+  References (6) or Acknowledgments (5) heading. PMC9798000's "2" and "3" now
+  hold their 2.1-2.4 and 3.1-3.3.3. 9 of the parents are a name the patterns
+  miss ("2. Method", "3. Result", "5. Discussions", "2. Experimental"), filed
+  as #636. Rust agrees with Python on all 1,114 papers' blocks (the segmenter
+  oracle test run once over them). `OTHER` prints its heading in the
+  canonical text, as `FRONT_MATTER` and `UNKNOWN` do not, which is why it is
+  a member of its own; its confidence is 0.0, what `match_section_type` gives
+  it, and an unnamed subsection's too (a named one keeps its own). Thirteen
+  new segmenter oracle cases and a canonical-text contract case hold both
+  languages to it; one existing case, renamed
+  `an_unnamed_parent_keeps_a_subsection_methods_does_not_number`, now keeps
+  its bold "3." as `OTHER` over its italic "3.1.". Each clause of the rule,
+  and each of the eight mutants PR #637's review found surviving, is
+  mutation-killed in Python; the Rust port is held to the same outputs by the
+  oracle cases, not mutated. **`PDF_CANONICAL_VERSION` is 6** although pdf-5
+  is unreleased, unlike #629-#631, by the maintainer's choice: a downstream
+  pinned to an unreleased commit since #627 may hold pdf-5 texts, and a text
+  whose `text` did not move (two papers above) is told stale only by its
+  version — `bmlib.embed.store` compares the converter version as well as the
+  text's digest. The JATS canonical and renderer digests are re-pinned
+  without a bump, an enum member moving neither.
 
 - **An `Ita` suffix is read as italic** (#628, part). `_named_italic` (Rust
   `named_italic`) now reads a name ending in `Ita` after a lower-case letter
@@ -184,6 +197,11 @@ All notable changes to bmlib are documented here. The format is based on
   wrapped numbered heading and the indent.
 
 ### Added
+
+- **`SectionType.OTHER`** (`"other"`, #628): a heading that names no section,
+  kept because numbered subsections number from it (see *Fixed*). A bmlib
+  before this release reading a stored `"other"` raises `ValueError` from
+  `SectionType(...)` and `Section.from_dict`.
 
 - **An exhausted chain raises `FullTextExhaustedError`** (#565, the raise-path
   half of #603, from hherb/StudyAnalyzer). `fetch_fulltext` with no link to

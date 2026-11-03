@@ -349,7 +349,7 @@ class SectionSegmenter:
 
     #: Anchored heading patterns per section type. Every
     #: :class:`SectionType` member except the reserved ``TITLE``,
-    #: ``FRONT_MATTER`` and ``UNKNOWN`` must have an entry here —
+    #: ``FRONT_MATTER``, ``OTHER`` and ``UNKNOWN`` must have an entry here —
     #: ``test_every_section_type_is_produced_or_declared_reserved`` enforces
     #: it, so a member added without a producer fails the build.
     SECTION_PATTERNS: dict[SectionType, list[str]] = {
@@ -613,12 +613,13 @@ class SectionSegmenter:
         does belong to was not found. At top level there is no type to give
         it, so a numbered one ("3. Metformin lowers glucose") is held and kept
         as ``OTHER`` only if the next heading found numbers from it ("3.1."),
-        which then takes ``OTHER`` too if it names no section either (#628);
-        an unnumbered one is dropped, and so is one repeating the number of
-        the top-level heading still open (a figure's "2 Theta degrees" axis
-        label under "2. Results"). A line in a face the paper's exact-match
-        headings are set in (:meth:`_heading_faces`) counts as bold for the
-        heading test alone. A bold quantity numbered like a subsection
+        which then takes ``OTHER`` too if it names no section either (#628).
+        A line that is dropped does not end the hold; a heading found, or a
+        later line held, does. An unnumbered one is dropped, and so is one
+        repeating the number of the outermost heading still open (a figure's
+        "2 Theta degrees" axis label under "2. Results"). A line in a face
+        the paper's exact-match headings are set in (:meth:`_heading_faces`)
+        counts as bold for the heading test alone. A bold quantity numbered like a subsection
         ("2.5 mg/kg" under "2.", "1.5 h" under an unnumbered "Results") still
         reads as one, and so does a line of prose opening with one in a
         heading face (#623).
