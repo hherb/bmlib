@@ -24,7 +24,9 @@ discarded, html5ever's defaults in both. Every walk over the tree is iterative,
 so nesting depth costs time, not stack. html5ever's own parse is quadratic in
 nesting depth (#563), so the page is fed to it :data:`HTML_PARSE_CHUNK` code
 points at a time, and a page still being parsed after
-:data:`HTML_PARSE_SECONDS` is refused with :class:`HtmlParseTimeoutError`. The
+:data:`HTML_PARSE_SECONDS` is refused with :class:`HtmlParseTimeoutError`;
+since one chunk's own time grows with the page's length, a page longer than
+:data:`HTML_MAX_CHARS` is refused unparsed (:class:`HtmlPageTooLargeError`). The
 leading byte-order mark is discarded here rather than by html5ever, which
 discards one at the start of every chunk it is fed. Then, by fixed rules rather
 than a score:
@@ -83,12 +85,22 @@ HTML_CANONICAL_VERSION = 1
 #: ``<div>`` nested 40,000 deep, 429 KB, takes 2.6 s; a
 #: 5 MB page nested that way about 5 minutes), while a 20 MB page shaped like
 #: an article (60 sections, 2,400 paragraphs, tables, 15 MB of ``data:`` image)
-#: converts in 0.25 s. The clock is read between chunks, so a refusal comes one
-#: chunk late, and a chunk's own time grows with the depth already open: one
-#: chunk of ``<div>`` after 1.6 million nested ``<span>`` (9.6 MB) takes 14 s,
-#: so the bound is not this many seconds on a large page (#654). Wall-clock
-#: time, so a loaded machine can refuse a page an idle one accepts.
+#: parsed in 0.25 s, though :data:`HTML_MAX_CHARS` now refuses it (#656). The clock
+#: is read between chunks, so a refusal comes one chunk late, and a chunk's own
+#: time grows with the depth already open, which :data:`HTML_MAX_CHARS` bounds.
+#: Wall-clock time, so a loaded machine can refuse a page an idle one accepts.
 HTML_PARSE_SECONDS = 30.0
+
+#: The longest page parsed, in code points; a longer one is refused unparsed
+#: (#654). One chunk's time grows with the depth open before it, and a page can
+#: open one element per three code points, so it grows with the page's length:
+#: the worst measured, ``<i>`` or an unknown ``<x>`` nested to the page's
+#: length and then a chunk of ``<hr>``, took about 8 s per million code points
+#: here (markupever; 25 s at 4 million) and about twice that in the Rust port, a
+#: loaded machine both. The cap is the slower language's: at this length a page
+#: is converted or refused within about twice :data:`HTML_PARSE_SECONDS` there
+#: (41 s and 60 s), and that chunk takes about 16 s here.
+HTML_MAX_CHARS = 2_000_000
 
 #: Code points fed to the parser between two readings of the clock. Smaller
 #: chunks made markupever slower on the same page (4,096: 4.8 s against
@@ -181,12 +193,32 @@ _CELLS = frozenset({"td", "th"})
 _CITATION_TITLE = "citation_title"
 
 
+class HtmlPageTooLargeError(ValueError):
+    """A page longer than :data:`HTML_MAX_CHARS` code points, refused unparsed.
+
+    Attributes:
+        length: the page's length in code points as passed, its leading
+            byte-order mark included.
+    """
+
+    def __init__(self, length: int) -> None:
+        super().__init__(
+            f"the page is {length} characters long, more than the {HTML_MAX_CHARS} "
+            "this converter parses"
+        )
+        self.length = length
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the field
+        return type(self), (self.length,), self.__dict__
+
+
 class HtmlParseTimeoutError(ValueError):
     """A page html5ever was still parsing after :data:`HTML_PARSE_SECONDS`.
 
     Attributes:
         parsed: the code points fed to the parser before it was stopped.
-        length: the page's length in code points.
+        length: the page's length in code points after its leading byte-order
+            mark is dropped.
     """
 
     def __init__(self, parsed: int, length: int) -> None:
@@ -207,6 +239,8 @@ def canonical_from_html(html: str) -> CanonicalText:
     Raises:
         TypeError: if *html* is not a ``str`` (decode the page's bytes first).
         ValueError: if *html* holds a lone surrogate, which no parser can read.
+        HtmlPageTooLargeError: (a ``ValueError``) if *html* is longer than
+            :data:`HTML_MAX_CHARS` code points.
         HtmlParseTimeoutError: (a ``ValueError``, so catch it first) if parsing
             the page takes longer than :data:`HTML_PARSE_SECONDS`. The clock is
             wall time, so the same page may parse on a less loaded machine.
@@ -214,6 +248,8 @@ def canonical_from_html(html: str) -> CanonicalText:
     """
     if not isinstance(html, str):
         raise TypeError(f"canonical_from_html takes text, not {type(html).__name__}")
+    if len(html) > HTML_MAX_CHARS:
+        raise HtmlPageTooLargeError(len(html))
     try:
         html.encode("utf-8")
     except UnicodeEncodeError as e:

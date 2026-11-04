@@ -37,7 +37,7 @@ pub use chunk::{
 };
 #[cfg(feature = "html")]
 pub use html::{
-    canonical_from_html, HtmlParseTimeoutError, HTML_CANONICAL_VERSION, HTML_PARSE_CHUNK,
+    canonical_from_html, HtmlError, HTML_CANONICAL_VERSION, HTML_MAX_CHARS, HTML_PARSE_CHUNK,
     HTML_PARSE_SECONDS,
 };
 pub use jats::{canonical_from_jats, strip_links, JATS_CANONICAL_VERSION};

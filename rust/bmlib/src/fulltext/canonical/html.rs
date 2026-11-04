@@ -24,7 +24,9 @@
 //! ego-tree's open and close edges, so nesting depth costs time, not stack.
 //! html5ever's own parse is quadratic in nesting depth (#563), so the page is
 //! fed to it [`HTML_PARSE_CHUNK`] code points at a time, and a page still being
-//! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlParseTimeoutError`]).
+//! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlError::TimedOut`]);
+//! since one chunk's own time grows with the page's length, a page longer than
+//! [`HTML_MAX_CHARS`] is refused unparsed ([`HtmlError::TooLarge`]).
 //! The leading byte-order mark is discarded here rather than by html5ever,
 //! which discards one at the start of every chunk it is fed. In short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
 //! are dropped; the root is the fullest `<article>` if it holds at least
@@ -56,39 +58,62 @@ pub const HTML_CANONICAL_VERSION: u32 = 1;
 /// (#563). html5ever is quadratic in nesting depth. Measured in Python only
 /// (markupever, html5ever 0.40), unmeasured here: `<div>` nested 40,000 deep,
 /// 429 KB, at 2.6 s; a 5 MB page nested that way about 5
-/// minutes; a 20 MB page shaped like an article converted in 0.25 s. The clock
+/// minutes; a 20 MB page shaped like an article parsed in 0.25 s, though
+/// [`HTML_MAX_CHARS`] now refuses it (#656). The clock
 /// is read between chunks, so a refusal comes one chunk late, and a chunk's own
-/// time grows with the depth already open (in Python, one chunk of `<div>`
-/// after 1.6 million nested `<span>` took 14 s), so the bound is not this many
-/// seconds on a large page (#654). Wall-clock time, so a loaded machine can
-/// refuse a page an idle one accepts.
+/// time grows with the depth already open, which [`HTML_MAX_CHARS`] bounds.
+/// Wall-clock time, so a loaded machine can refuse a page an idle one accepts.
 pub const HTML_PARSE_SECONDS: u64 = 30;
+
+/// The longest page parsed, in code points; a longer one is refused unparsed
+/// (#654). One chunk's time grows with the depth open before it, and a page can
+/// open one element per three code points, so it grows with the page's length:
+/// the worst measured, `<i>` or an unknown `<x>` nested to the page's length
+/// and then a chunk of `<hr>`, took about 16 s per million code points here (a
+/// release build; 95 s at 4 million, never refused) and about half that in
+/// Python, a loaded machine both. At this length a page is converted or refused
+/// within about twice [`HTML_PARSE_SECONDS`] here (41 s and 60 s measured).
+pub const HTML_MAX_CHARS: usize = 2_000_000;
 
 /// Code points fed to the parser between two readings of the clock (Python's
 /// measurement: smaller chunks made markupever slower on the same page).
 pub const HTML_PARSE_CHUNK: usize = 16_384;
 
-/// A page html5ever was still parsing after [`HTML_PARSE_SECONDS`].
+/// A page [`canonical_from_html`] refuses. Lengths are in code points.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HtmlParseTimeoutError {
-    /// The code points fed to the parser before it was stopped.
-    pub parsed: usize,
-    /// The page's length in code points.
-    pub length: usize,
+pub enum HtmlError {
+    /// The page is longer than [`HTML_MAX_CHARS`], and was not parsed.
+    TooLarge {
+        /// The page's length as passed, its leading byte-order mark included.
+        length: usize,
+    },
+    /// html5ever was still parsing the page after [`HTML_PARSE_SECONDS`].
+    TimedOut {
+        /// The code points fed to the parser before it was stopped.
+        parsed: usize,
+        /// The page's length after its leading byte-order mark is dropped.
+        length: usize,
+    },
 }
 
-impl fmt::Display for HtmlParseTimeoutError {
+impl fmt::Display for HtmlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "the page took longer than {HTML_PARSE_SECONDS} s to parse (stopped after {} of {} \
-             characters); it may be nested too deeply",
-            self.parsed, self.length
-        )
+        match self {
+            Self::TooLarge { length } => write!(
+                f,
+                "the page is {length} characters long, more than the {HTML_MAX_CHARS} this \
+                 converter parses"
+            ),
+            Self::TimedOut { parsed, length } => write!(
+                f,
+                "the page took longer than {HTML_PARSE_SECONDS} s to parse (stopped after \
+                 {parsed} of {length} characters); it may be nested too deeply"
+            ),
+        }
     }
 }
 
-impl std::error::Error for HtmlParseTimeoutError {}
+impl std::error::Error for HtmlError {}
 
 /// The least share of the body's text, in characters that are not white space,
 /// the fullest `<article>` must hold to be the root, as `(numerator,
@@ -436,18 +461,33 @@ impl Walk {
 ///
 /// # Errors
 ///
-/// [`HtmlParseTimeoutError`] if parsing the page takes longer than
+/// [`HtmlError::TooLarge`] if the page is longer than [`HTML_MAX_CHARS`];
+/// [`HtmlError::TimedOut`] if parsing it takes longer than
 /// [`HTML_PARSE_SECONDS`]. The clock is wall time, so the same page may parse
 /// on a less loaded machine.
-pub fn canonical_from_html(html: &str) -> Result<CanonicalText, HtmlParseTimeoutError> {
+pub fn canonical_from_html(html: &str) -> Result<CanonicalText, HtmlError> {
     convert_within(html, Duration::from_secs(HTML_PARSE_SECONDS))
 }
 
 /// [`canonical_from_html`] with its parse given `budget`.
-fn convert_within(html: &str, budget: Duration) -> Result<CanonicalText, HtmlParseTimeoutError> {
+fn convert_within(html: &str, budget: Duration) -> Result<CanonicalText, HtmlError> {
+    refuse_longer_than(html, HTML_MAX_CHARS)?;
     let start = Instant::now();
     let document = parse(html, HTML_PARSE_CHUNK, || start.elapsed() > budget)?;
     Ok(read(&document))
+}
+
+/// [`HtmlError::TooLarge`] if `html` is longer than `max` code points.
+fn refuse_longer_than(html: &str, max: usize) -> Result<(), HtmlError> {
+    // A page of at most `max` bytes holds at most `max` code points, uncounted.
+    if html.len() <= max {
+        return Ok(());
+    }
+    let length = html.chars().count();
+    if length > max {
+        return Err(HtmlError::TooLarge { length });
+    }
+    Ok(())
 }
 
 /// Parse `html`, fed `chunk` code points at a time; before each chunk after the
@@ -456,7 +496,7 @@ fn parse(
     html: &str,
     chunk: usize,
     mut past_deadline: impl FnMut() -> bool,
-) -> Result<Html, HtmlParseTimeoutError> {
+) -> Result<Html, HtmlError> {
     // html5ever discards a U+FEFF at the start of every chunk, so it is told to
     // keep them and the page's own leading one is dropped here, once.
     let html = html.strip_prefix('\u{feff}').unwrap_or(html);
@@ -472,7 +512,7 @@ fn parse(
     while !rest.is_empty() {
         if parsed > 0 && past_deadline() {
             let length = html.chars().count();
-            return Err(HtmlParseTimeoutError { parsed, length });
+            return Err(HtmlError::TimedOut { parsed, length });
         }
         let cut = rest
             .char_indices()
@@ -543,12 +583,30 @@ mod tests {
         let error = parse(&page, 10, || true).expect_err("past the deadline");
         assert_eq!(
             error,
-            HtmlParseTimeoutError {
+            HtmlError::TimedOut {
                 parsed: 10,
                 length: page.chars().count()
             }
         );
         assert!(error.to_string().contains("longer than 30 s"), "{error}");
+    }
+
+    #[test]
+    fn a_page_past_the_length_cap_is_refused() {
+        // Code points outside ASCII, so a count of bytes is not one of code points.
+        let page = "\u{e9}".repeat(5);
+        assert_eq!(refuse_longer_than(&page, 5), Ok(()));
+        let error = refuse_longer_than(&page, 4).expect_err("too long");
+        assert_eq!(error, HtmlError::TooLarge { length: 5 });
+        assert!(error.to_string().contains("is 5 characters"), "{error}");
+    }
+
+    #[test]
+    fn a_page_past_the_cap_is_refused_unparsed() {
+        // Unparsed, or this many `<i>` would take a minute; refused inside a zero budget.
+        let page = "<i>".repeat(HTML_MAX_CHARS / 3 + 1);
+        let error = convert_within(&page, Duration::ZERO).expect_err("too long");
+        assert_eq!(error, HtmlError::TooLarge { length: page.len() });
     }
 
     #[test]
@@ -564,7 +622,10 @@ mod tests {
         const DEPTH: usize = 40_000;
         let page = format!("{}x{}", "<div>".repeat(DEPTH), "</div>".repeat(DEPTH));
         let error = convert_within(&page, Duration::from_millis(50)).expect_err("stopped");
-        assert!(error.parsed > 0 && error.parsed < error.length, "{error:?}");
+        let HtmlError::TimedOut { parsed, length } = error else {
+            panic!("{error:?}");
+        };
+        assert!(parsed > 0 && parsed < length, "{parsed} of {length}");
     }
 
     /// The text of every block, in order.

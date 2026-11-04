@@ -122,14 +122,18 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
-- **`canonical_from_html` returns `Result<CanonicalText,
-  HtmlParseTimeoutError>`** (#563, with the Python library). html5ever's parse
+- **`canonical_from_html` returns `Result<CanonicalText, HtmlError>`** (#563,
+  #654, with the Python library). html5ever's parse
   is quadratic in nesting depth, so the page is fed to it `HTML_PARSE_CHUNK`
   (16,384) code points at a time through html5ever's incremental `driver`
   (now a direct dependency, at scraper's 0.39), and a page still being parsed
-  after `HTML_PARSE_SECONDS` (30) is refused. The deadline is read between
-  chunks, and one chunk's time grows with the depth already open, so a large
-  page can run well past it (#654; measured in Python only). The page's
+  after `HTML_PARSE_SECONDS` (30) is refused (`HtmlError::TimedOut`). The
+  deadline is read between chunks, and one chunk's time grows with the depth
+  already open, so a page longer than `HTML_MAX_CHARS` (2,000,000 code points)
+  is refused unparsed (`HtmlError::TooLarge`, #654): the worst page measured
+  at 4 million ran 95 s here and was never refused, while at 2 million it is
+  refused within about twice the budget (41 s and 60 s, a release build on a
+  loaded machine, about twice Python's time). The page's
   leading byte-order mark is dropped by bmlib, since html5ever would discard
   one at the start of every chunk. A page that parses converts exactly as
   before.
