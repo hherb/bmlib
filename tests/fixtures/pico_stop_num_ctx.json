@@ -1,5 +1,5 @@
 {
-  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama HTTP transport (Python: ollama-python over an httpx.MockTransport). A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. Each k in `fail_requests` fails request k with a transport fault and no stop, which the condenser's model retries up to `context_model_attempts` tries; `malformed_request` k answers request k with a body that is not JSON, which is not retried. `status_request` k answers request k with HTTP `status` (body `{\"error\": \"refused\"}`): a status in `retried_statuses` is retried, any other is not (#646). `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (the key absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged).",
+  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama HTTP transport (Python: ollama-python over an httpx.MockTransport). A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. Each k in `fail_requests` fails request k with a transport fault and no stop, which the condenser's model retries up to `context_model_attempts` tries; `malformed_request` k answers request k with a body that is not JSON, which is not retried. `status_request` k answers request k with HTTP `status` (body `{\"error\": \"refused\"}`): a status in `retried_statuses` is retried, any other is not (#646). `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (the key absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged). `expected.note` is null when the result carries no note, else substrings its one note contains: the status and the failed batch's cause (#658).",
   "stopped_kind": "stopped",
   "model": "ollama:test-model",
   "title": "A trial",
@@ -26,57 +26,57 @@
     {
       "name": "a whole paper's extraction carries num_ctx",
       "fn": "extract", "num_ctx": 8192, "text_repeat": 1,
-      "expected": {"requests": 1, "error": null}
+      "expected": {"requests": 1, "error": null, "note": null}
     },
     {
       "name": "no num_ctx sends none",
       "fn": "extract", "num_ctx": null, "text_repeat": 1,
-      "expected": {"requests": 1, "error": null}
+      "expected": {"requests": 1, "error": null, "note": null}
     },
     {
       "name": "the check carries num_ctx",
       "fn": "suitability", "num_ctx": 4096, "text_repeat": 1,
-      "expected": {"requests": 1, "error": null}
+      "expected": {"requests": 1, "error": null, "note": null}
     },
     {
       "name": "a condensed paper: every condenser request and both calls carry num_ctx",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60,
-      "expected": {"requests": 6, "error": null}
+      "expected": {"requests": 6, "error": null, "note": null}
     },
     {
       "name": "a condensation request that fails once is retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "fail_requests": [1],
-      "expected": {"requests": 7, "error": null}
+      "expected": {"requests": 7, "error": null, "note": null}
     },
     {
       "name": "a condensation request failing on every attempt drops its batch, not the paper",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "fail_requests": [1, 2, 3],
-      "expected": {"requests": 8, "error": null}
+      "expected": {"requests": 8, "error": null, "note": ["with status partial", "(1 batch failed: "]}
     },
     {
       "name": "a malformed condensation answer is not retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "malformed_request": 1,
-      "expected": {"requests": 6, "error": null}
+      "expected": {"requests": 6, "error": null, "note": ["with status partial", "(1 batch failed: "]}
     },
     {
       "name": "a condensation request refused with HTTP 401 is not retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 401,
-      "expected": {"requests": 6, "error": null}
+      "expected": {"requests": 6, "error": null, "note": ["with status partial", "(1 batch failed: ", "401"]}
     },
     {
       "name": "a condensation request refused with HTTP 404 is not retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 404,
-      "expected": {"requests": 6, "error": null}
+      "expected": {"requests": 6, "error": null, "note": ["with status partial", "(1 batch failed: ", "404"]}
     },
     {
       "name": "a condensation request answered HTTP 503 is retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 503,
-      "expected": {"requests": 7, "error": null}
+      "expected": {"requests": 7, "error": null, "note": null}
     },
     {
       "name": "a condensation request answered HTTP 408 is retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 408,
-      "expected": {"requests": 7, "error": null}
+      "expected": {"requests": 7, "error": null, "note": null}
     },
     {
       "name": "a stop before the run sends nothing",
@@ -98,7 +98,7 @@
       "name": "a stop during an extraction request that answers returns the result",
       "fn": "extract", "num_ctx": 8192, "text_repeat": 1,
       "stop_at_request": 0, "request_at_stop": "answers",
-      "expected": {"requests": 1, "error": null}
+      "expected": {"requests": 1, "error": null, "note": null}
     },
     {
       "name": "a stop during a failing condensation request sends no other",

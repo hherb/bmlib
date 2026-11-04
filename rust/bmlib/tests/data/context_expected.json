@@ -562,6 +562,7 @@
     "name": "process/empty-items",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 0,
       "batches_per_level": [],
       "content": "",
@@ -595,6 +596,7 @@
     "name": "process/single-batch",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 1,
       "batches_per_level": [
         1
@@ -633,6 +635,7 @@
     "name": "process/one-item-per-batch",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 18,
       "batches_per_level": [
         3,
@@ -682,6 +685,7 @@
     "name": "process/items-fit-exactly",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,
@@ -730,6 +734,7 @@
     "name": "process/separator-counts",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,
@@ -778,6 +783,7 @@
     "name": "process/decorating-measured-at-position",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 2,
       "batches_per_level": [
         2
@@ -816,6 +822,7 @@
     "name": "process/oversized-split",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,
@@ -864,6 +871,7 @@
     "name": "process/oversized-skip",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 1,
       "batches_per_level": [
         1
@@ -903,6 +911,7 @@
     "name": "process/oversized-truncate",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 1,
       "batches_per_level": [
         1
@@ -940,6 +949,7 @@
     "name": "process/oversized-fail",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 0,
       "batches_per_level": [],
       "content": "",
@@ -973,6 +983,7 @@
     "name": "process/oversized-split-with-overlap",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 10,
       "batches_per_level": [
         5,
@@ -1016,6 +1027,7 @@
     "name": "process/all-skipped-is-failed",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 0,
       "batches_per_level": [
         0
@@ -1053,6 +1065,9 @@
     "name": "process/failing-batch-continues",
     "ok": true,
     "value": {
+      "batch_errors": [
+        "boom"
+      ],
       "batches_created": 2,
       "batches_per_level": [
         2
@@ -1092,6 +1107,9 @@
     "name": "process/failing-batch-stops",
     "ok": true,
     "value": {
+      "batch_errors": [
+        "boom"
+      ],
       "batches_created": 0,
       "batches_per_level": [],
       "content": "",
@@ -1127,12 +1145,16 @@
     "name": "process/all-batches-fail",
     "ok": true,
     "value": {
+      "batch_errors": [
+        "boom",
+        "boom"
+      ],
       "batches_created": 2,
       "batches_per_level": [
         2
       ],
       "content": "",
-      "error_message": "No batch produced a result: 2 failed, 0 items skipped",
+      "error_message": "No batch produced a result: 2 failed, 0 items skipped (2 batches failed: boom)",
       "failed_batches": [
         0,
         1
@@ -1165,6 +1187,10 @@
     "name": "process/success-rate-with-failure",
     "ok": true,
     "value": {
+      "batch_errors": [
+        "boom",
+        "boom"
+      ],
       "batches_created": 5,
       "batches_per_level": [
         3,
@@ -1207,6 +1233,7 @@
     "name": "process/recurses",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,
@@ -1255,6 +1282,7 @@
     "name": "process/recursion-ceiling",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 4,
       "batches_per_level": [
         2,
@@ -1295,6 +1323,7 @@
     "name": "process/min-items-blocks-recursion",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 1,
       "batches_per_level": [
         1
@@ -1333,6 +1362,7 @@
     "name": "process/store-intermediate",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,
@@ -1389,6 +1419,7 @@
     "name": "process/consolidate-weighted",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,
@@ -1437,6 +1468,7 @@
     "name": "process/consolidate-deduplicate",
     "ok": true,
     "value": {
+      "batch_errors": [],
       "batches_created": 12,
       "batches_per_level": [
         2,

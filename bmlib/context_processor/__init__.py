@@ -58,6 +58,7 @@ from bmlib.context_processor.data_types import (
     ProcessingStatus,
     ProcessingStoppedError,
     ProgressInfo,
+    summarise_batch_errors,
 )
 
 if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
@@ -137,4 +138,5 @@ __all__ = [
     "ProgressCallback",
     "ProgressInfo",
     "ScoredChunk",
+    "summarise_batch_errors",
 ]

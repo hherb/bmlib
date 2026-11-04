@@ -38,6 +38,7 @@ from bmlib.context_processor import (
     ProcessingResult,
     ProcessingStatus,
     ProgressInfo,
+    summarise_batch_errors,
 )
 
 
@@ -768,6 +769,52 @@ class TestFailureHandling:
         result = processor.process(["aaaaaaaaaa"] * 4, query="q")
         assert result.status is ProcessingStatus.FAILED
         assert result.error_message
+
+    def test_every_failed_batch_keeps_its_cause(self) -> None:
+        # #576: the failed run's message names why, not only how many.
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={0, 1}, config=config)
+        result = processor.process(["aaaaaaaaaa"] * 4, query="q")
+        assert result.batch_errors == ["batch 0 exploded", "batch 1 exploded"]
+        assert result.error_message == (
+            "No batch produced a result: 2 failed, 0 items skipped ("
+            "1 batch failed: batch 0 exploded; 1 batch failed: batch 1 exploded)"
+        )
+
+    def test_a_partial_run_keeps_its_failed_batchs_cause(self) -> None:
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={1}, reply="ok", config=config)
+        result = processor.process(["aaaaaaaaaa"] * 4, query="q")
+        assert result.status is ProcessingStatus.PARTIAL
+        assert result.batch_errors == ["batch 1 exploded"]
+        assert result.error_message is None
+
+    def test_a_clean_run_has_no_batch_errors(self) -> None:
+        result = EchoProcessor().process(["fine"], query="q")
+        assert result.batch_errors == []
+
+    def test_only_skipped_items_add_no_cause(self) -> None:
+        config = ProcessingConfig(
+            max_context_chars=60, oversized_item_strategy=OversizedItemStrategy.SKIP
+        )
+        result = EchoProcessor(config=config).process(["x" * 500], query="q")
+        assert result.error_message == "No batch produced a result: 0 failed, 1 items skipped"
+
+    @pytest.mark.parametrize(
+        ("errors", "summary"),
+        [
+            ([], ""),
+            (["401"], "1 batch failed: 401"),
+            (
+                ["401", "timeout", "401"],
+                "2 batches failed: 401; 1 batch failed: timeout",
+            ),
+        ],
+    )
+    def test_the_summary_names_each_distinct_cause_once(
+        self, errors: list[str], summary: str
+    ) -> None:
+        assert summarise_batch_errors(errors) == summary
 
     def test_fail_fast_stops_at_the_first_error(self) -> None:
         config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=False)
