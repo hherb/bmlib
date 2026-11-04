@@ -102,9 +102,14 @@ impl HttpClient for FakeOllama {
     }
 }
 
-/// What one case ended in: each request's `num_ctx`, the error kind, and a
-/// `request_failed`'s `retryable` (#659).
-type Run = (Vec<Option<Value>>, Option<&'static str>, Option<bool>);
+/// What one case ended in: each request's `num_ctx`, the error kind, a
+/// `request_failed`'s `retryable` (#659) and the result's notes.
+type Run = (
+    Vec<Option<Value>>,
+    Option<&'static str>,
+    Option<bool>,
+    Vec<String>,
+);
 
 /// Run one case.
 fn run(fixture: &Value, case: &Value) -> Run {
@@ -160,25 +165,31 @@ fn run(fixture: &Value, case: &Value) -> Run {
         .expect("text_unit")
         .repeat(case["text_repeat"].as_u64().expect("text_repeat") as usize);
     let similarity = fixture["min_similarity"].as_f64().expect("similarity");
-    let outcome: Result<(), PicoError> = match case["fn"].as_str().expect("fn") {
-        "extract" => agent.extract(title, &text, similarity).map(drop),
-        "suitability" => agent.check_suitability(title, &text).map(drop),
-        "prepare" => agent.prepare(title, &text).map(drop),
+    let outcome: Result<Vec<String>, PicoError> = match case["fn"].as_str().expect("fn") {
+        "extract" => agent.extract(title, &text, similarity).map(|r| r.notes),
+        "suitability" => agent.check_suitability(title, &text).map(|r| r.notes),
+        "prepare" => agent.prepare(title, &text).map(|p| p.notes().to_vec()),
         "prepared" => agent.prepare(title, &text).and_then(|prepared| {
             assert!(prepared.digest().is_some(), "a prepared case condenses");
             agent.check_suitability_prepared(&prepared)?;
-            agent.extract_prepared(&prepared, similarity).map(drop)
+            agent
+                .extract_prepared(&prepared, similarity)
+                .map(|r| r.notes)
         }),
         other => panic!("unknown fn {other}"),
     };
     drop(agent);
     let sent = transport.num_ctx_sent.lock().expect("lock").clone();
-    let error = outcome.err();
-    let retryable = match &error {
-        Some(PicoError::RequestFailed { retryable, .. }) => Some(*retryable),
-        _ => None,
-    };
-    (sent, error.as_ref().map(PicoError::kind), retryable)
+    match outcome {
+        Ok(notes) => (sent, None, None, notes),
+        Err(error) => {
+            let retryable = match &error {
+                PicoError::RequestFailed { retryable, .. } => Some(*retryable),
+                _ => None,
+            };
+            (sent, Some(error.kind()), retryable, Vec::new())
+        }
+    }
 }
 
 #[test]
@@ -209,7 +220,7 @@ fn every_case_agrees_with_the_fixture() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("name");
-        let (sent, error, retryable) = run(&fixture, case);
+        let (sent, error, retryable, notes) = run(&fixture, case);
         let expected = &case["expected"];
         assert_eq!(error, expected["error"].as_str(), "{name}: the error kind");
         // Stated on every `request_failed` case, and on no other.
@@ -227,6 +238,23 @@ fn every_case_agrees_with_the_fixture() {
         let expected_num_ctx = Some(case["num_ctx"].clone()).filter(|n| !n.is_null());
         for num_ctx in &sent {
             assert_eq!(num_ctx, &expected_num_ctx, "{name}: a request's num_ctx");
+        }
+        // #658: a degraded condensation's one note names the failed batch's cause.
+        if error.is_none() {
+            match expected["note"].as_array() {
+                None => assert!(notes.is_empty(), "{name}: no note, got {notes:?}"),
+                Some(parts) => {
+                    assert_eq!(notes.len(), 1, "{name}: one note, got {notes:?}");
+                    for part in parts {
+                        let part = part.as_str().expect("a note part");
+                        assert!(
+                            notes[0].contains(part),
+                            "{name}: {part:?} in {:?}",
+                            notes[0]
+                        );
+                    }
+                }
+            }
         }
     }
 }

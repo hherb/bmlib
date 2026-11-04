@@ -47,8 +47,8 @@ pub use base::{
     Preformatted, ProcessingCore, ProgressCallback, SplitError, TextItem,
 };
 pub use data_types::{
-    ConfigError, ConsolidatedItem, ConsolidationStrategy, ExtractionResult, OversizedItemError,
-    OversizedItemStrategy, ProcessingConfig, ProcessingResult, ProcessingStatus, ProgressInfo,
-    DEFAULT_MAX_CONTEXT_CHARS, DEFAULT_MAX_RECURSION_DEPTH, DEFAULT_MIN_ITEMS_FOR_RECURSION,
-    DEFAULT_OVERLAP_CHARS, DEFAULT_SEPARATOR,
+    summarise_batch_errors, ConfigError, ConsolidatedItem, ConsolidationStrategy, ExtractionResult,
+    OversizedItemError, OversizedItemStrategy, ProcessingConfig, ProcessingResult,
+    ProcessingStatus, ProgressInfo, DEFAULT_MAX_CONTEXT_CHARS, DEFAULT_MAX_RECURSION_DEPTH,
+    DEFAULT_MIN_ITEMS_FOR_RECURSION, DEFAULT_OVERLAP_CHARS, DEFAULT_SEPARATOR,
 };

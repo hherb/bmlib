@@ -137,6 +137,13 @@ The Python library is documented separately, in the repository's
   The shared `tests/fixtures/pico_stop_num_ctx.json` gains six cases on a
   PICO request and `expected.retryable`.
 
+- **`ProcessingResult` gains `pub batch_errors: Vec<String>`** (#658, #576,
+  with the Python library), one message per entry of `failed_batches`, so a
+  struct literal needs the field. `summarise_batch_errors` names the distinct
+  causes; a `Failed` run's `error_message` and the condensation note
+  (`condense_text`, carried by `PicoAgent` and `CochraneAssessor`) now end with
+  them in parentheses.
+
 - **An HTTP error status is `ChatError::Http { status, message }`**, no
   longer a `ChatError::Transport` (#646). `chat` and `chat_stream` used to
   report every non-2xx as `Transport(String)`, the status only in the

@@ -64,6 +64,7 @@ from bmlib.context_processor.data_types import (
     ProcessingStatus,
     ProcessingStoppedError,
     ProgressInfo,
+    summarise_batch_errors,
 )
 from bmlib.llm.text_utils import TextChunker
 
@@ -563,6 +564,7 @@ class IterativeContextProcessor(ABC):
         intermediate_results: list[list[ExtractionResult]] | None,
         failed_batches: list[int],
         skipped_items: list[int],
+        batch_errors: list[str],
     ) -> tuple[list[ExtractionResult], bool, int, int]:
         """Batch and extract one level.
 
@@ -634,6 +636,7 @@ class IterativeContextProcessor(ABC):
                     message,
                 )
                 failed_batches.append(batch.batch_index)
+                batch_errors.append(message)
                 if not config.continue_on_error:
                     raise RuntimeError(
                         f"Batch {batch.batch_index} extraction failed: {message}"
@@ -700,6 +703,7 @@ class IterativeContextProcessor(ABC):
         intermediate: list[list[ExtractionResult]] | None = [] if store_intermediate else None
         failed_batches: list[int] = []
         skipped_items: list[int] = []
+        batch_errors: list[str] = []
         successful = 0
 
         # Local, not instance state: two concurrent ``process()`` calls on one
@@ -744,6 +748,7 @@ class IterativeContextProcessor(ABC):
                     intermediate_results=intermediate,
                     failed_batches=failed_batches,
                     skipped_items=skipped_items,
+                    batch_errors=batch_errors,
                 )
                 successful += level_successful
                 stats["batches_per_level"].append(batch_count)
@@ -839,6 +844,8 @@ class IterativeContextProcessor(ABC):
                     f"No batch produced a result: {len(failed_batches)} failed, "
                     f"{len(skipped_items)} items skipped"
                 )
+                if batch_errors:
+                    error_message += f" ({summarise_batch_errors(batch_errors)})"
 
         self._report_progress(
             "complete",
@@ -863,4 +870,5 @@ class IterativeContextProcessor(ABC):
             failed_batches=failed_batches,
             skipped_items=skipped_items,
             successful_batches=successful,
+            batch_errors=batch_errors,
         )

@@ -43,6 +43,7 @@ from bmlib.context_processor import (
     ProcessingStoppedError,      # (unreleased, #642) a stop; process() re-raises it
     ConsolidationStrategy,
     ProgressInfo,
+    summarise_batch_errors,      # (unreleased, #658) the distinct causes of failed batches
     # ProcessingConfig's defaults
     DEFAULT_MAX_CONTEXT_CHARS,
     DEFAULT_OVERLAP_CHARS,
@@ -281,6 +282,7 @@ result.total_items_processed  # len(items)
 result.batches_created        # batches across every level
 result.successful_batches
 result.failed_batches         # batch indices whose extraction raised
+result.batch_errors           # (unreleased, #658) why each one failed, in the same order
 result.skipped_items          # item indices dropped as oversized
 result.recursion_levels_used  # consolidation passes beyond the first
 result.intermediate_results   # per-level results, or None unless store_intermediate
@@ -290,6 +292,11 @@ result.processing_stats       # {"total_items", "batches_per_level", "items_per_
 Batch indices restart at each level, so a value in `failed_batches` can
 repeat in a run that recursed; likewise `skipped_items` above level 0
 indexes that level's consolidated items, not the caller's list.
+
+`summarise_batch_errors(result.batch_errors)` names each distinct cause
+once with its count, in first-seen order (`"2 batches failed: boom; 1 batch
+failed: timeout"`); a FAILED run's `error_message` ends with it in
+parentheses *(unreleased)*.
 
 A run with no batches has no ratio to report, so `success_rate` answers
 from what was lost: 1.0 for an empty input, which had nothing that could

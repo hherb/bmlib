@@ -1,9 +1,8 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-11-04 (**this session's PR is on
-`fix/pico-retry-refusals`**, for #659; see *This session* below). PR #657
-(#646), #655
-(#654), #653 (#563), #648
+`fix/pico-retry-refusals`**, for #659; see *This session* below). PR #660 (#658), #657
+(#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged; **0.12.0 is on
@@ -11,7 +10,7 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660 and this session's._
 
 ## This session: a PICO request failure says whether a retry may cure it (#659)
 
@@ -27,31 +26,31 @@ is gone. Breaking for a Rust pattern without `..`. `pico_stop_num_ctx.json`
 gains six PICO-request cases with `expected.retryable` (401, 404, 503, 429,
 a transport fault, a non-JSON body); one mutant per language killed.
 
+## Earlier, 2026-11-04: a failed condensation batch's cause reaches the caller (#658, #576, PR #660, merged)
+
+**The maintainer chose** (2026-11-04) to quote every distinct cause, not only
+the first. `ProcessingResult.batch_errors` holds one message per entry of
+`failed_batches`; `summarise_batch_errors` names each distinct cause once
+with its count (`"2 batches failed: boom; 1 batch failed: timeout"`). A
+FAILED run's `error_message` and `condense_text`'s PARTIAL note (which
+`PicoAgent` and `CochraneAssessor` carry) end with it in parentheses. Both
+languages; Rust's `ProcessingResult` struct literal needs the new field
+(breaking, in `rust/bmlib/CHANGELOG.md`). `context_expected.json` regenerated
+(it now carries `batch_errors`); `pico_stop_num_ctx.json`'s cases assert the
+note through both real clients, and one mutant per language was killed.
+**Not done**: Rust still logs nothing where a batch fails (the crate has no
+logging at all), and a PARTIAL run made only by skipped items still names no
+cause. **For StudyAnalyzer**: a PICO result's note now says why the digest
+may be incomplete; show it as-is.
+
 ## Earlier, 2026-11-04: the condenser does not retry an HTTP refusal (#646, PR #657, merged)
 
-**The maintainer chose** (2026-11-04) to retry only what a retry may cure.
-Python's `LLMChunkProcessor._with_retries` raises at once an exception whose
-`status_code` is outside `_RETRIED_STATUSES` (408, 429, 500, 502, 503, 504,
-529); one with no status (a connection failure, a timeout, ollama's `-1`) is
-retried as before. Rust's HTTP error status is now **`ChatError::Http {
-status, message }`** (was `Transport`; every `match` still compiles, `ChatError` being
-`#[non_exhaustive]`, but an HTTP status no longer reaches a `Transport` arm), and
-`ChatError::is_retryable()` is what `LlmContextModel` retries.
-`RETRYABLE_STATUSES` gained 408, so opening a stream and a context-window
-lookup retry it too. **Not "all 5xx"**: the shared set is the stream-open
-precedent's, so a 501 or 505 is not retried. Held by
-`pico_stop_num_ctx.json`'s `retried_statuses` and four cases (401 and 404
-not retried, 503 and 408 retried) run through real ollama-python and Rust's
-client; one mutant per language killed. The Anthropic and OpenAI SDKs still
-retry 408/429/5xx twice themselves before the condenser's three tries
-(unchanged). **For StudyAnalyzer**: on the next pin move, a `match` on
-`ChatError::Transport` that meant "the request failed" needs a
-`ChatError::Http` arm (or `is_retryable()`).
-PR #657's review: Python asks the stop before the refusal, so a refusal
-under the stop still ends the run as `ProcessingStoppedError` with nothing
-logged (#642), and a test pins that order. The rest of the review is fixed
-on the branch, except a partial condensation's note naming no cause and the
-contract never asserting the note, which predate the PR: **#658**.
+Python's `_with_retries` and Rust's `LlmContextModel` retry only a status in
+`_RETRIED_STATUSES`/`RETRYABLE_STATUSES` (408, 429, 500, 502, 503, 504, 529)
+or no status at all; Rust's HTTP error is now **`ChatError::Http { status,
+message }`** with `ChatError::is_retryable()`. **For StudyAnalyzer**: on the
+next pin move, a `match` on `ChatError::Transport` meant as "the request
+failed" needs a `ChatError::Http` arm (or `is_retryable()`).
 
 ## Earlier, 2026-11-04: an HTML page longer than 2,000,000 code points is refused unparsed (#654, PR #655, merged)
 
@@ -300,8 +299,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,212 passing + 165 skipped** on `fix/646-retry-refusals`
-  (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,442 with `cargo test -p bmlib --features html` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,227 passing + 165 skipped** on `fix/658-batch-causes`
+  (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,445 with `cargo test -p bmlib --features html` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -331,7 +330,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **129 open** (`gh issue list --state open --limit 300 --json number`,
-2026-11-04, once #646 closes; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
+2026-11-04, once #658 and #576 close; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
