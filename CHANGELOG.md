@@ -50,7 +50,12 @@ All notable changes to bmlib are documented here. The format is based on
   parentheses, and so does the note `condense_text` writes, which `PicoAgent`
   and `CochraneAssessor` carry onto their results (`"… may be incomplete (1
   batch failed: LLM extraction failed: refused (status code: 401))."`). A run
-  that only skipped oversized items keeps its old wording. Both languages;
+  that only skipped oversized items keeps its old wording. With
+  `use_structured_output`, a batch's message no longer carries `chat_json`'s
+  `for context extraction (level L, batch N)`, which made every batch's cause
+  distinct, so nothing was ever summarised once; Rust's never carried it, and
+  the batch is still named in `failed_batches` and the ERROR line (PR #660's
+  review). Both languages;
   `pico_stop_num_ctx.json`'s cases now assert the note (`expected.note`), and
   a mutant dropping the cause fails four Python cases and the Rust runner.
   Rust still writes no log line where a batch fails: the crate logs nothing
