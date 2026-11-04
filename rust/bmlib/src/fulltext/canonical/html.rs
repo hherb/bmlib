@@ -21,8 +21,12 @@
 //! markupever in Python, so both languages build html5ever's tree (0.39 here,
 //! 0.40 there; the shared fixture is what holds them together), scripting on
 //! and a leading byte-order mark discarded. Every walk is iterative, over
-//! ego-tree's open and close edges, so nesting depth costs time, not stack. In
-//! short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
+//! ego-tree's open and close edges, so nesting depth costs time, not stack.
+//! html5ever's own parse is quadratic in nesting depth (#563), so the page is
+//! fed to it [`HTML_PARSE_CHUNK`] code points at a time, and a page still being
+//! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlParseTimeoutError`]).
+//! The leading byte-order mark is discarded here rather than by html5ever,
+//! which discards one at the start of every chunk it is fed. In short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
 //! are dropped; the root is the fullest `<article>` if it holds at least
 //! [`MIN_ARTICLE_SHARE`] of the body's text, else `<main>` (or `role="main"`),
 //! else `<body>`, else the `<html>` element without its `<head>`; the title is the first `<h1>` with text the walk
@@ -30,8 +34,14 @@
 //! start sections; a [`BLOCKS`] element ends the running paragraph; a `<tr>` is
 //! a table row. Behind the `html` feature.
 
+use std::fmt;
+use std::time::{Duration, Instant};
+
 use ego_tree::iter::Edge;
-use scraper::{ElementRef, Html, Node};
+use html5ever::driver::{self, ParseOpts};
+use html5ever::tendril::{StrTendril, TendrilSink};
+use html5ever::tokenizer::TokenizerOpts;
+use scraper::{ElementRef, Html, HtmlTreeSink, Node};
 
 use crate::fulltext::canonical::model::{
     assemble, BlockDraft, CanonicalText, SectionDraft, SourceFormat, TOP_LEVEL,
@@ -41,6 +51,44 @@ use crate::fulltext::jats_text::normalize_whitespace;
 /// Bumped whenever this converter (or [`assemble`]) can lay a page out
 /// differently.
 pub const HTML_CANONICAL_VERSION: u32 = 1;
+
+/// The longest a page may take to parse, in seconds, before it is refused
+/// (#563). html5ever is quadratic in nesting depth. Measured in Python only
+/// (markupever, html5ever 0.40), unmeasured here: `<div>` nested 40,000 deep,
+/// 429 KB, at 2.6 s; a 5 MB page nested that way about 5
+/// minutes; a 20 MB page shaped like an article converted in 0.25 s. The clock
+/// is read between chunks, so a refusal comes one chunk late, and a chunk's own
+/// time grows with the depth already open (in Python, one chunk of `<div>`
+/// after 1.6 million nested `<span>` took 14 s), so the bound is not this many
+/// seconds on a large page (#654). Wall-clock time, so a loaded machine can
+/// refuse a page an idle one accepts.
+pub const HTML_PARSE_SECONDS: u64 = 30;
+
+/// Code points fed to the parser between two readings of the clock (Python's
+/// measurement: smaller chunks made markupever slower on the same page).
+pub const HTML_PARSE_CHUNK: usize = 16_384;
+
+/// A page html5ever was still parsing after [`HTML_PARSE_SECONDS`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HtmlParseTimeoutError {
+    /// The code points fed to the parser before it was stopped.
+    pub parsed: usize,
+    /// The page's length in code points.
+    pub length: usize,
+}
+
+impl fmt::Display for HtmlParseTimeoutError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "the page took longer than {HTML_PARSE_SECONDS} s to parse (stopped after {} of {} \
+             characters); it may be nested too deeply",
+            self.parsed, self.length
+        )
+    }
+}
+
+impl std::error::Error for HtmlParseTimeoutError {}
 
 /// The least share of the body's text, in characters that are not white space,
 /// the fullest `<article>` must hold to be the root, as `(numerator,
@@ -385,9 +433,60 @@ impl Walk {
 
 /// Convert an HTML page to its canonical text (the rules are in the module
 /// docs).
-#[must_use]
-pub fn canonical_from_html(html: &str) -> CanonicalText {
-    let document = Html::parse_document(html);
+///
+/// # Errors
+///
+/// [`HtmlParseTimeoutError`] if parsing the page takes longer than
+/// [`HTML_PARSE_SECONDS`]. The clock is wall time, so the same page may parse
+/// on a less loaded machine.
+pub fn canonical_from_html(html: &str) -> Result<CanonicalText, HtmlParseTimeoutError> {
+    convert_within(html, Duration::from_secs(HTML_PARSE_SECONDS))
+}
+
+/// [`canonical_from_html`] with its parse given `budget`.
+fn convert_within(html: &str, budget: Duration) -> Result<CanonicalText, HtmlParseTimeoutError> {
+    let start = Instant::now();
+    let document = parse(html, HTML_PARSE_CHUNK, || start.elapsed() > budget)?;
+    Ok(read(&document))
+}
+
+/// Parse `html`, fed `chunk` code points at a time; before each chunk after the
+/// first, `past_deadline` is asked, and `true` stops the parse.
+fn parse(
+    html: &str,
+    chunk: usize,
+    mut past_deadline: impl FnMut() -> bool,
+) -> Result<Html, HtmlParseTimeoutError> {
+    // html5ever discards a U+FEFF at the start of every chunk, so it is told to
+    // keep them and the page's own leading one is dropped here, once.
+    let html = html.strip_prefix('\u{feff}').unwrap_or(html);
+    let opts = ParseOpts {
+        tokenizer: TokenizerOpts {
+            discard_bom: false,
+            ..TokenizerOpts::default()
+        },
+        ..ParseOpts::default()
+    };
+    let mut parser = driver::parse_document(HtmlTreeSink::new(Html::new_document()), opts);
+    let (mut rest, mut parsed) = (html, 0);
+    while !rest.is_empty() {
+        if parsed > 0 && past_deadline() {
+            let length = html.chars().count();
+            return Err(HtmlParseTimeoutError { parsed, length });
+        }
+        let cut = rest
+            .char_indices()
+            .nth(chunk)
+            .map_or(rest.len(), |(at, _)| at);
+        parser.process(StrTendril::from_slice(&rest[..cut]));
+        parsed += chunk;
+        rest = &rest[cut..];
+    }
+    Ok(parser.finish())
+}
+
+/// The canonical text of a parsed page.
+fn read(document: &Html) -> CanonicalText {
     let root_element = document.root_element();
     let body = first(root_element, |e| e.value().name() == "body").unwrap_or(root_element);
     let mut walk = Walk::new();
@@ -408,9 +507,69 @@ pub fn canonical_from_html(html: &str) -> CanonicalText {
 mod tests {
     use super::*;
 
+    /// The page's canonical text, parsed within the deadline.
+    fn convert(html: &str) -> CanonicalText {
+        canonical_from_html(html).expect("parsed in time")
+    }
+
+    /// A page with a split-prone mix: CRLF, entities, a comment, a table, a
+    /// script, characters outside ASCII and the BMP, and two byte-order marks,
+    /// a leading one (dropped) and one inside a paragraph (text): html5ever
+    /// discards one at the start of every chunk it is fed.
+    const PAGE: &str =
+        "\u{feff}<html><head><title>T&amp;t</title></head><body>\r\n<h1>Caf\u{e9} \u{1f600}</h1>\
+        <p>One\u{feff}\r\ntwo &lt;three&gt;</p><!-- a comment --><table><tr><td>a</td>\
+        <td>b</td></tr></table><script>if (a < b) {}</script><p>end</p></body></html>";
+
+    #[test]
+    fn a_page_split_into_tiny_chunks_parses_as_one() {
+        let whole = convert(PAGE);
+        assert_eq!(
+            whole.text.matches('\u{feff}').count(),
+            1,
+            "{:?}",
+            whole.text
+        );
+        for chunk in [1, 2, 3, 7] {
+            let document = parse(PAGE, chunk, || false).expect("no deadline");
+            assert_eq!(read(&document), whole, "chunk {chunk}");
+        }
+    }
+
+    #[test]
+    fn a_parse_past_the_deadline_is_refused() {
+        // Leading text outside ASCII, so a count of bytes is not one of code points.
+        let page = format!("\u{e9}\u{e9}{PAGE}");
+        let error = parse(&page, 10, || true).expect_err("past the deadline");
+        assert_eq!(
+            error,
+            HtmlParseTimeoutError {
+                parsed: 10,
+                length: page.chars().count()
+            }
+        );
+        assert!(error.to_string().contains("longer than 30 s"), "{error}");
+    }
+
+    #[test]
+    fn a_page_of_one_chunk_never_asks_the_deadline() {
+        let document = parse(PAGE, PAGE.len(), || panic!("asked")).expect("one chunk");
+        assert_eq!(read(&document), convert(PAGE));
+    }
+
+    #[test]
+    fn a_deeply_nested_page_is_stopped_by_the_real_clock() {
+        // 40,000 nested <div> take seconds to parse whole; at 50 ms the parse
+        // is stopped part way, so the work happens chunk by chunk.
+        const DEPTH: usize = 40_000;
+        let page = format!("{}x{}", "<div>".repeat(DEPTH), "</div>".repeat(DEPTH));
+        let error = convert_within(&page, Duration::from_millis(50)).expect_err("stopped");
+        assert!(error.parsed > 0 && error.parsed < error.length, "{error:?}");
+    }
+
     /// The text of every block, in order.
     fn blocks(html: &str) -> Vec<String> {
-        let doc = canonical_from_html(html);
+        let doc = convert(html);
         doc.sections
             .iter()
             .flat_map(|s| &s.blocks)
@@ -420,7 +579,7 @@ mod tests {
 
     /// The title, if there is one.
     fn title(html: &str) -> Option<String> {
-        let doc = canonical_from_html(html);
+        let doc = convert(html);
         doc.title_span
             .map(|span| doc.span_text(span).expect("a span").to_string())
     }
@@ -461,7 +620,7 @@ mod tests {
 
     #[test]
     fn the_title_is_the_first_h1_else_citation_title_else_title() {
-        let doc = canonical_from_html("<h1><img src=x></h1><h1>Real</h1><p>x</p><h1>Later</h1>");
+        let doc = convert("<h1><img src=x></h1><h1>Real</h1><p>x</p><h1>Later</h1>");
         assert_eq!(doc.text, "Real\n\nx\n\nLater");
         assert_eq!(
             title("<title>Junk</title><meta name=\"Citation_Title\" content=\" Meta \"><p>x</p>"),
@@ -476,7 +635,7 @@ mod tests {
 
     #[test]
     fn a_heading_starts_a_section_at_its_level() {
-        let doc = canonical_from_html("<p>lead</p><h2>Methods</h2><p>a</p><h4>Detail</h4>");
+        let doc = convert("<p>lead</p><h2>Methods</h2><p>a</p><h4>Detail</h4>");
         let levels: Vec<_> = doc
             .sections
             .iter()
@@ -531,7 +690,7 @@ mod tests {
         );
         let text = std::thread::Builder::new()
             .stack_size(256 * 1024)
-            .spawn(move || canonical_from_html(&html).text)
+            .spawn(move || convert(&html).text)
             .expect("a thread")
             .join()
             .expect("no stack overflow");
@@ -540,7 +699,7 @@ mod tests {
 
     #[test]
     fn the_version_and_format_are_stamped() {
-        let doc = canonical_from_html("");
+        let doc = convert("");
         assert_eq!(
             (doc.source_format, doc.converter_version.as_str()),
             (SourceFormat::Html, "html-1")

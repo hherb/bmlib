@@ -23,18 +23,22 @@ The byte-exact layouts are in the shared contract
 from __future__ import annotations
 
 import builtins
+import pickle
 import sys
 from typing import Any
 
+import markupever
 import pytest
 
 from bmlib.fulltext.canonical import (
     BlockKind,
     CanonicalText,
+    HtmlParseTimeoutError,
     SourceFormat,
     canonical_from_html,
 )
-from bmlib.fulltext.canonical.html import BLOCKS, PRUNED
+from bmlib.fulltext.canonical import html as html_module
+from bmlib.fulltext.canonical.html import BLOCKS, HTML_PARSE_SECONDS, PRUNED
 
 
 def pieces(doc: CanonicalText) -> list[str]:
@@ -251,6 +255,108 @@ def test_deep_nesting_is_walked_without_recursion() -> None:
     depth = 5 * sys.getrecursionlimit()
     doc = canonical_from_html("<div>" * depth + "<h2>Deep</h2>text" + "</div>" * depth)
     assert pieces(doc) == ["Deep", "text"]
+
+
+class TestParseDeadline:
+    """The page is parsed in chunks against a deadline (#563)."""
+
+    # A leading byte-order mark, which is dropped, and one inside a paragraph,
+    # which is text: html5ever discards one at the start of every chunk it is fed.
+    PAGE = (
+        "\ufeff<html><head><title>T&amp;t</title></head><body>\r\n<h1>Caf\u00e9 \U0001f600</h1>"
+        "<p>One\ufeff\r\ntwo &lt;three&gt;</p><!-- a comment --><table><tr><td>a</td>"
+        "<td>b</td></tr></table><script>if (a < b) {}</script><p>end</p></body></html>"
+    )
+
+    def test_a_page_split_into_tiny_chunks_parses_as_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        whole = canonical_from_html(self.PAGE)
+        assert whole.text.count("\ufeff") == 1
+        for chunk in (1, 2, 3, 7):
+            monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", chunk)
+            assert canonical_from_html(self.PAGE).to_dict() == whole.to_dict(), chunk
+
+    def test_a_parse_past_the_deadline_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The clock reads 0 when the parse starts, then past the deadline.
+        readings = iter([0.0, HTML_PARSE_SECONDS + 1])
+        monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
+        monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
+        with pytest.raises(HtmlParseTimeoutError, match="longer than 30 s") as raised:
+            canonical_from_html(self.PAGE)
+        assert (raised.value.parsed, raised.value.length) == (10, len(self.PAGE) - 1)
+        assert isinstance(raised.value, ValueError)
+
+    def test_the_clock_starts_before_the_first_chunk_and_is_read_before_each_next(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Each chunk the parser is fed takes one second on a fake clock.
+        clock = [0.0]
+        real = markupever.Parser
+
+        class SlowParser:
+            def __init__(self, options: Any) -> None:
+                self._parser = real(options)
+
+            def process(self, content: str) -> None:
+                clock[0] += 1
+                self._parser.process(content)
+
+            def finish(self) -> Any:
+                return self._parser.finish()
+
+        monkeypatch.setattr(markupever, "Parser", SlowParser)
+        monkeypatch.setattr(html_module, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
+        monkeypatch.setattr(html_module, "HTML_PARSE_SECONDS", 1.5)
+        with pytest.raises(HtmlParseTimeoutError) as raised:
+            canonical_from_html(self.PAGE)
+        assert raised.value.parsed == 20
+
+    def test_a_page_fed_whole_within_the_budget_is_not_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Every reading the parse makes is inside the budget; any later one is past it.
+        page = self.PAGE.removeprefix("\ufeff")
+        checks = -(-len(page) // 10) - 1
+        readings = iter([0.0] * (1 + checks) + [HTML_PARSE_SECONDS + 1] * 10)
+        monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
+        monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
+        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
+
+    def test_the_refusal_pickles(self) -> None:
+        error = pickle.loads(pickle.dumps(HtmlParseTimeoutError(10, 99)))
+        assert (type(error), error.parsed, error.length, str(error)) == (
+            HtmlParseTimeoutError,
+            10,
+            99,
+            str(HtmlParseTimeoutError(10, 99)),
+        )
+
+    def test_the_deadline_itself_is_not_past_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        readings = iter([0.0] + [HTML_PARSE_SECONDS] * len(self.PAGE))
+        monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
+        monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
+        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
+
+    def test_a_deeply_nested_page_is_stopped_by_the_real_clock(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 40,000 nested <div> take about 2.5 s to parse whole; at 50 ms the
+        # parse is stopped part way, so the work happens chunk by chunk.
+        monkeypatch.setattr(html_module, "HTML_PARSE_SECONDS", 0.05)
+        depth = 40_000
+        page = "<div>" * depth + "x" + "</div>" * depth
+        with pytest.raises(HtmlParseTimeoutError, match="longer than 0.05 s") as raised:
+            canonical_from_html(page)
+        assert 0 < raised.value.parsed < len(page)
+
+    def test_a_page_of_one_chunk_never_reads_the_clock_again(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        readings = iter([0.0])
+        monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
+        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
 
 
 def test_the_version_and_format_are_stamped() -> None:

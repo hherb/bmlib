@@ -21,8 +21,13 @@ Rust port, so a malformed page builds the tree html5ever builds in both
 languages (html5ever 0.40 here and 0.39 there; the shared fixture is what
 holds them together). Scripting is on and a leading byte-order mark is
 discarded, html5ever's defaults in both. Every walk over the tree is iterative,
-so nesting depth costs time, not stack. Then, by fixed rules rather than a
-score:
+so nesting depth costs time, not stack. html5ever's own parse is quadratic in
+nesting depth (#563), so the page is fed to it :data:`HTML_PARSE_CHUNK` code
+points at a time, and a page still being parsed after
+:data:`HTML_PARSE_SECONDS` is refused with :class:`HtmlParseTimeoutError`. The
+leading byte-order mark is discarded here rather than by html5ever, which
+discards one at the start of every chunk it is fed. Then, by fixed rules rather
+than a score:
 
 * **Pruned**: :data:`PRUNED` elements and any element with a ``hidden``
   attribute (but ``hidden="until-found"``, collapsed content a reader can still
@@ -52,6 +57,7 @@ page's bytes is the caller's: this takes text, and refuses bytes.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 from bmlib.fulltext.canonical.model import (
@@ -71,6 +77,25 @@ if TYPE_CHECKING:
 #: Bumped whenever this converter (or :func:`assemble`) can lay a page out
 #: differently.
 HTML_CANONICAL_VERSION = 1
+
+#: The longest a page may take to parse, in seconds, before it is refused
+#: (#563). html5ever is quadratic in nesting depth (measured with markupever:
+#: ``<div>`` nested 40,000 deep, 429 KB, takes 2.6 s; a
+#: 5 MB page nested that way about 5 minutes), while a 20 MB page shaped like
+#: an article (60 sections, 2,400 paragraphs, tables, 15 MB of ``data:`` image)
+#: converts in 0.25 s. The clock is read between chunks, so a refusal comes one
+#: chunk late, and a chunk's own time grows with the depth already open: one
+#: chunk of ``<div>`` after 1.6 million nested ``<span>`` (9.6 MB) takes 14 s,
+#: so the bound is not this many seconds on a large page (#654). Wall-clock
+#: time, so a loaded machine can refuse a page an idle one accepts.
+HTML_PARSE_SECONDS = 30.0
+
+#: Code points fed to the parser between two readings of the clock. Smaller
+#: chunks made markupever slower on the same page (4,096: 4.8 s against
+#: 2.5 s at 16,384 for the 40,000-deep page, two runs that differ by load);
+#: at 16,384 chunking costs nothing measurable (1.77 s fed in chunks and 1.77 s
+#: in one piece, one later run), and the slowest chunk of that page takes 0.3 s.
+HTML_PARSE_CHUNK = 16_384
 
 #: The least share of the body's text the fullest ``<article>`` must hold to be
 #: the root, as a fraction (``numerator / denominator``) so both languages
@@ -156,12 +181,35 @@ _CELLS = frozenset({"td", "th"})
 _CITATION_TITLE = "citation_title"
 
 
+class HtmlParseTimeoutError(ValueError):
+    """A page html5ever was still parsing after :data:`HTML_PARSE_SECONDS`.
+
+    Attributes:
+        parsed: the code points fed to the parser before it was stopped.
+        length: the page's length in code points.
+    """
+
+    def __init__(self, parsed: int, length: int) -> None:
+        super().__init__(
+            f"the page took longer than {HTML_PARSE_SECONDS:g} s to parse "
+            f"(stopped after {parsed} of {length} characters); it may be nested too deeply"
+        )
+        self.parsed = parsed
+        self.length = length
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
+        return type(self), (self.parsed, self.length), self.__dict__
+
+
 def canonical_from_html(html: str) -> CanonicalText:
     """Convert an HTML page to its canonical text (see the module docstring).
 
     Raises:
         TypeError: if *html* is not a ``str`` (decode the page's bytes first).
         ValueError: if *html* holds a lone surrogate, which no parser can read.
+        HtmlParseTimeoutError: (a ``ValueError``, so catch it first) if parsing
+            the page takes longer than :data:`HTML_PARSE_SECONDS`. The clock is
+            wall time, so the same page may parse on a less loaded machine.
         ImportError: if markupever, the ``html`` extra, is not installed.
     """
     if not isinstance(html, str):
@@ -183,7 +231,16 @@ def canonical_from_html(html: str) -> CanonicalText:
 
 
 def _parse(html: str) -> Element:
-    """Parse *html* and return its ``<html>`` element."""
+    """Parse *html* and return its ``<html>`` element.
+
+    The page is fed in chunks of :data:`HTML_PARSE_CHUNK` code points, and
+    before each chunk after the first the clock is read: past
+    :data:`HTML_PARSE_SECONDS` the parse stops with :class:`HtmlParseTimeoutError`.
+
+    Raises:
+        HtmlParseTimeoutError: if the parse runs past :data:`HTML_PARSE_SECONDS`.
+        ImportError: if markupever is not installed.
+    """
     try:
         import markupever
         from markupever.dom import Element
@@ -192,8 +249,18 @@ def _parse(html: str) -> Element:
             f"markupever is required for HTML conversion ({e}). "
             "Install with: pip install bmlib[html]"
         ) from e
+    # html5ever discards a U+FEFF at the start of every chunk, so it is told to
+    # keep them and the page's own leading one is dropped here, once.
+    html = html.removeprefix("\ufeff")
+    parser = markupever.Parser(markupever.HtmlOptions(discard_bom=False))
+    start = monotonic()
+    for at in range(0, len(html), HTML_PARSE_CHUNK):
+        if at and monotonic() - start > HTML_PARSE_SECONDS:
+            raise HtmlParseTimeoutError(at, len(html))
+        parser.process(html[at : at + HTML_PARSE_CHUNK])
     # html5ever always builds an <html> element, whatever the input.
-    return next(n for n in markupever.parse(html).root().children() if isinstance(n, Element))
+    dom = parser.finish().into_dom()
+    return next(n for n in dom.root().children() if isinstance(n, Element))
 
 
 def _name(element: Element) -> str:

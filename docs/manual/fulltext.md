@@ -2830,8 +2830,15 @@ doc.converter_version                     # "jats-1"
   the same tree in both; the versions differ (0.40 and 0.39), and the shared
   fixture holds them together from the HTML source. Pass text: bytes raise
   `TypeError` (markupever would decode them lossily). Every walk is iterative,
-  so deep nesting costs no stack, but html5ever's parse is quadratic in
-  nesting depth, so cap the size of a page you accept from outside.
+  so deep nesting costs no stack. html5ever's own parse is quadratic in
+  nesting depth, which no size cap admitting an article-sized page bounds, so
+  the page is parsed in chunks of `HTML_PARSE_CHUNK` code points and one still
+  being parsed after `HTML_PARSE_SECONDS` (30) raises `HtmlParseTimeoutError`
+  (a `ValueError`, so catch it first; Rust returns it as the error). An
+  article-shaped page of 20 MB converts in 0.25 s. The clock is read between
+  chunks and is wall time: one chunk after deep cheap nesting can take far
+  longer than the budget (#654), and a loaded machine can refuse a page an
+  idle one accepts, so a refusal is worth retrying elsewhere.
   A page with neither `<article>` nor `<main>` may contribute its site name as
   the title.
 - **Is it the whole paper?** A publisher's abstract page converts as cleanly as

@@ -36,7 +36,10 @@ pub use chunk::{
     CHUNKER_VERSION, DEFAULT_MAX_CHARS, DEFAULT_OVERLAP_CHARS,
 };
 #[cfg(feature = "html")]
-pub use html::{canonical_from_html, HTML_CANONICAL_VERSION};
+pub use html::{
+    canonical_from_html, HtmlParseTimeoutError, HTML_CANONICAL_VERSION, HTML_PARSE_CHUNK,
+    HTML_PARSE_SECONDS,
+};
 pub use jats::{canonical_from_jats, strip_links, JATS_CANONICAL_VERSION};
 pub use markdown::{canonical_from_markdown, strip_inline, MARKDOWN_VERSION};
 pub use model::{

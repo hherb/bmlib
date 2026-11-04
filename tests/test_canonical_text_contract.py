@@ -22,7 +22,8 @@ against: every converter turns each case's input (for a PDF, the segmenter's
 ``CanonicalText``, spans counted in code points, and the expected value
 round-trips through ``from_dict``. Each of its ``refusals`` (a variant of its
 ``valid`` value) is refused by both languages alike, and its ``html_elements``
-lists are both languages' ``PRUNED`` and ``BLOCKS``.
+lists are both languages' ``PRUNED`` and ``BLOCKS``, and its ``html_parse``
+values their parse deadline and chunk (#563).
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from bmlib.fulltext.canonical import (
     canonical_from_plain_text,
     canonical_from_segmented,
 )
-from bmlib.fulltext.canonical.html import BLOCKS, PRUNED
+from bmlib.fulltext.canonical.html import BLOCKS, HTML_PARSE_CHUNK, HTML_PARSE_SECONDS, PRUNED
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import SegmentedDocument
 
@@ -82,6 +83,14 @@ def test_the_html_element_sets_are_the_contracts() -> None:
     # own tests iterate its own constant.
     elements = CONTRACT["html_elements"]
     assert (sorted(PRUNED), sorted(BLOCKS)) == (elements["pruned"], elements["blocks"])
+
+
+def test_the_html_parse_deadline_is_the_contracts() -> None:
+    limits = CONTRACT["html_parse"]
+    assert (HTML_PARSE_SECONDS, HTML_PARSE_CHUNK) == (
+        limits["seconds"],
+        limits["chunk_code_points"],
+    )
 
 
 def test_the_contract_covers_every_format_it_names() -> None:

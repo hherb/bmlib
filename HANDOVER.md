@@ -1,17 +1,43 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-04 (**this session's PR is #650**, on
-`feat/635-stream-cancel`, for #635; see *This session* below). PRs #648
-(#632), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed parent), #631,
-#630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4), #621
-(Rust CSV), #620 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI**
-(tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is
-on crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
-*Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
-crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
-#637, #639, #643, #644, #648 and this session's._
+_Last updated: 2026-11-04 (**this session's PR is on
+`fix/563-html-nesting-guard`**, for #563; see *This session* below). PR #648
+(#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
+parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
+(pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged; **0.12.0 is on
+PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
+0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
+summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
+for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
+#629-#631, #637, #639, #643, #644, #648, #650 and this session's._
 
-## This session: a streamed chat can be cancelled while it waits (#635)
+## This session: an HTML page is parsed against a deadline (#563)
+
+Filed by StudyAnalyzer (its phase 2d takes HTML from an untrusted hand-off
+file). html5ever is quadratic in nesting depth for any block that closes an
+open `<p>` (`div`, `section`, `blockquote`, `ul>li`, also behind a `<table>`);
+`span`, `b`, `a`, unclosed `<p>` stay linear. **The maintainer chose a time
+budget over a depth count** (2026-11-04): markupever exposes neither the
+tokenizer nor the tree mid-parse, so a depth count would be our own model of
+the tree builder, which a crafted page gets past. Both languages feed the
+parser `HTML_PARSE_CHUNK` (16,384) code points at a time and refuse a page
+still parsing after `HTML_PARSE_SECONDS` (30): Python raises
+`HtmlParseTimeoutError` (a `ValueError`), Rust's `canonical_from_html` now
+returns `Result` (breaking; html5ever is a direct dependency for its
+`driver`). The contract fixture holds both constants; tiny chunks are tested
+to parse as one. Smaller chunks slowed markupever (4,096: 4.8 s against 2.5 s).
+**The PR's review** found html5ever discarding a U+FEFF at the start of every
+chunk (a page's text moved on a boundary), so both languages now keep them and
+drop the page's leading one themselves; the error pickles; Rust's public
+deadline is tested through `convert_within`; 5 Python and 4 Rust mutants
+killed. It also found that **one chunk is not bounded**: one chunk of `<div>`
+after 1.6 million nested `<span>` (9.6 MB) takes 14 s, so a large page can run
+well past the budget. Filed **#654** (a decision: smaller chunks, a process,
+a depth rule or a size cap). **For StudyAnalyzer**: `intake.rs` handles the
+`Err` on its next pin move; until #654 is decided, keep a page-size cap beside
+the deadline.
+
+## Earlier, 2026-11-04: a streamed chat can be cancelled while it waits (#635, PR #650, merged)
 
 Filed by StudyAnalyzer (phase 2b, the Interrogator): `chat_stream` could be
 stopped only from `on_delta`, so a Stop during a local model's prefill did
@@ -208,7 +234,7 @@ send `num_ctx` for Ollama, treat `None` as retrieval mode, and show
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
-iterative, the app must cap a page's size; `assess_full_text`, unmeasured,
+iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, read between chunks (one chunk can overrun it, #654); `assess_full_text`, unmeasured,
 **#560**; **#557**, **#558** after 2026-11-04); PR #556 (4b,
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
 PRs #554 and #555 (item 3, `chunk_canonical`, contract
