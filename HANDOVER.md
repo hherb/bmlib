@@ -26,8 +26,16 @@ still parsing after `HTML_PARSE_SECONDS` (30): Python raises
 returns `Result` (breaking; html5ever is a direct dependency for its
 `driver`). The contract fixture holds both constants; tiny chunks are tested
 to parse as one. Smaller chunks slowed markupever (4,096: 4.8 s against 2.5 s).
-**For StudyAnalyzer**: `intake.rs` handles the `Err` on its next pin move.
-
+**The PR's review** found html5ever discarding a U+FEFF at the start of every
+chunk (a page's text moved on a boundary), so both languages now keep them and
+drop the page's leading one themselves; the error pickles; Rust's public
+deadline is tested through `convert_within`; 5 Python and 4 Rust mutants
+killed. It also found that **one chunk is not bounded**: one chunk of `<div>`
+after 1.6 million nested `<span>` (9.6 MB) takes 14 s, so a large page can run
+well past the budget. Filed **#654** (a decision: smaller chunks, a process,
+a depth rule or a size cap). **For StudyAnalyzer**: `intake.rs` handles the
+`Err` on its next pin move; until #654 is decided, keep a page-size cap beside
+the deadline.
 
 ## Earlier, 2026-11-04: a streamed chat can be cancelled while it waits (#635, PR #650, merged)
 
@@ -226,7 +234,7 @@ send `num_ctx` for Ollama, treat `None` as retrieval mode, and show
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
-iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, size caps never bounded it; `assess_full_text`, unmeasured,
+iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, read between chunks (one chunk can overrun it, #654); `assess_full_text`, unmeasured,
 **#560**; **#557**, **#558** after 2026-11-04); PR #556 (4b,
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
 PRs #554 and #555 (item 3, `chunk_canonical`, contract

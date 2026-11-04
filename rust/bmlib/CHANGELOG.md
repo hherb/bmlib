@@ -127,8 +127,12 @@ The Python library is documented separately, in the repository's
   is quadratic in nesting depth, so the page is fed to it `HTML_PARSE_CHUNK`
   (16,384) code points at a time through html5ever's incremental `driver`
   (now a direct dependency, at scraper's 0.39), and a page still being parsed
-  after `HTML_PARSE_SECONDS` (30) is refused. A page that parses converts
-  exactly as before.
+  after `HTML_PARSE_SECONDS` (30) is refused. The deadline is read between
+  chunks, and one chunk's time grows with the depth already open, so a large
+  page can run well past it (#654; measured in Python only). The page's
+  leading byte-order mark is dropped by bmlib, since html5ever would discard
+  one at the start of every chunk. A page that parses converts exactly as
+  before.
 - **`LlmChat` is `#[non_exhaustive]`** (#640, #642), with two new public
   fields, `num_ctx` and `stop`: build it with `LlmChat::new` and the `with_`
   methods, so a later field breaks no caller again. `LlmContextModel` is too.

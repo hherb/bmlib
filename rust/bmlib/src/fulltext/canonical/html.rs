@@ -24,8 +24,9 @@
 //! ego-tree's open and close edges, so nesting depth costs time, not stack.
 //! html5ever's own parse is quadratic in nesting depth (#563), so the page is
 //! fed to it [`HTML_PARSE_CHUNK`] code points at a time, and a page still being
-//! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlParseTimeoutError`]). In
-//! short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
+//! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlParseTimeoutError`]).
+//! The leading byte-order mark is discarded here rather than by html5ever,
+//! which discards one at the start of every chunk it is fed. In short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
 //! are dropped; the root is the fullest `<article>` if it holds at least
 //! [`MIN_ARTICLE_SHARE`] of the body's text, else `<main>` (or `role="main"`),
 //! else `<body>`, else the `<html>` element without its `<head>`; the title is the first `<h1>` with text the walk
@@ -39,6 +40,7 @@ use std::time::{Duration, Instant};
 use ego_tree::iter::Edge;
 use html5ever::driver::{self, ParseOpts};
 use html5ever::tendril::{StrTendril, TendrilSink};
+use html5ever::tokenizer::TokenizerOpts;
 use scraper::{ElementRef, Html, HtmlTreeSink, Node};
 
 use crate::fulltext::canonical::model::{
@@ -51,11 +53,15 @@ use crate::fulltext::jats_text::normalize_whitespace;
 pub const HTML_CANONICAL_VERSION: u32 = 1;
 
 /// The longest a page may take to parse, in seconds, before it is refused
-/// (#563). html5ever is quadratic in nesting depth (Python measured `<div>`
-/// nested 40,000 deep, 429 KB, at 2.6 s; a 5 MB page nested that way takes
-/// about 5 minutes), while a 20 MB page shaped like an article converts in
-/// 0.25 s. The clock is read between chunks, so a refusal comes at most one
-/// chunk late.
+/// (#563). html5ever is quadratic in nesting depth. Measured in Python only
+/// (markupever, html5ever 0.40), unmeasured here: `<div>` nested 40,000 deep,
+/// 429 KB, at 2.6 s; a 5 MB page nested that way about 5
+/// minutes; a 20 MB page shaped like an article converted in 0.25 s. The clock
+/// is read between chunks, so a refusal comes one chunk late, and a chunk's own
+/// time grows with the depth already open (in Python, one chunk of `<div>`
+/// after 1.6 million nested `<span>` took 14 s), so the bound is not this many
+/// seconds on a large page (#654). Wall-clock time, so a loaded machine can
+/// refuse a page an idle one accepts.
 pub const HTML_PARSE_SECONDS: u64 = 30;
 
 /// Code points fed to the parser between two readings of the clock (Python's
@@ -431,10 +437,15 @@ impl Walk {
 /// # Errors
 ///
 /// [`HtmlParseTimeoutError`] if parsing the page takes longer than
-/// [`HTML_PARSE_SECONDS`].
+/// [`HTML_PARSE_SECONDS`]. The clock is wall time, so the same page may parse
+/// on a less loaded machine.
 pub fn canonical_from_html(html: &str) -> Result<CanonicalText, HtmlParseTimeoutError> {
+    convert_within(html, Duration::from_secs(HTML_PARSE_SECONDS))
+}
+
+/// [`canonical_from_html`] with its parse given `budget`.
+fn convert_within(html: &str, budget: Duration) -> Result<CanonicalText, HtmlParseTimeoutError> {
     let start = Instant::now();
-    let budget = Duration::from_secs(HTML_PARSE_SECONDS);
     let document = parse(html, HTML_PARSE_CHUNK, || start.elapsed() > budget)?;
     Ok(read(&document))
 }
@@ -446,10 +457,17 @@ fn parse(
     chunk: usize,
     mut past_deadline: impl FnMut() -> bool,
 ) -> Result<Html, HtmlParseTimeoutError> {
-    let mut parser = driver::parse_document(
-        HtmlTreeSink::new(Html::new_document()),
-        ParseOpts::default(),
-    );
+    // html5ever discards a U+FEFF at the start of every chunk, so it is told to
+    // keep them and the page's own leading one is dropped here, once.
+    let html = html.strip_prefix('\u{feff}').unwrap_or(html);
+    let opts = ParseOpts {
+        tokenizer: TokenizerOpts {
+            discard_bom: false,
+            ..TokenizerOpts::default()
+        },
+        ..ParseOpts::default()
+    };
+    let mut parser = driver::parse_document(HtmlTreeSink::new(Html::new_document()), opts);
     let (mut rest, mut parsed) = (html, 0);
     while !rest.is_empty() {
         if parsed > 0 && past_deadline() {
@@ -495,15 +513,23 @@ mod tests {
     }
 
     /// A page with a split-prone mix: CRLF, entities, a comment, a table, a
-    /// script, and characters outside ASCII and the BMP.
+    /// script, characters outside ASCII and the BMP, and two byte-order marks,
+    /// a leading one (dropped) and one inside a paragraph (text): html5ever
+    /// discards one at the start of every chunk it is fed.
     const PAGE: &str =
-        "<html><head><title>T&amp;t</title></head><body>\r\n<h1>Caf\u{e9} \u{1f600}</h1>\
-        <p>One\r\ntwo &lt;three&gt;</p><!-- a comment --><table><tr><td>a</td>\
+        "\u{feff}<html><head><title>T&amp;t</title></head><body>\r\n<h1>Caf\u{e9} \u{1f600}</h1>\
+        <p>One\u{feff}\r\ntwo &lt;three&gt;</p><!-- a comment --><table><tr><td>a</td>\
         <td>b</td></tr></table><script>if (a < b) {}</script><p>end</p></body></html>";
 
     #[test]
     fn a_page_split_into_tiny_chunks_parses_as_one() {
         let whole = convert(PAGE);
+        assert_eq!(
+            whole.text.matches('\u{feff}').count(),
+            1,
+            "{:?}",
+            whole.text
+        );
         for chunk in [1, 2, 3, 7] {
             let document = parse(PAGE, chunk, || false).expect("no deadline");
             assert_eq!(read(&document), whole, "chunk {chunk}");
@@ -512,12 +538,14 @@ mod tests {
 
     #[test]
     fn a_parse_past_the_deadline_is_refused() {
-        let error = parse(PAGE, 10, || true).expect_err("past the deadline");
+        // Leading text outside ASCII, so a count of bytes is not one of code points.
+        let page = format!("\u{e9}\u{e9}{PAGE}");
+        let error = parse(&page, 10, || true).expect_err("past the deadline");
         assert_eq!(
             error,
             HtmlParseTimeoutError {
                 parsed: 10,
-                length: PAGE.chars().count()
+                length: page.chars().count()
             }
         );
         assert!(error.to_string().contains("longer than 30 s"), "{error}");
@@ -535,11 +563,7 @@ mod tests {
         // is stopped part way, so the work happens chunk by chunk.
         const DEPTH: usize = 40_000;
         let page = format!("{}x{}", "<div>".repeat(DEPTH), "</div>".repeat(DEPTH));
-        let start = Instant::now();
-        let error = parse(&page, HTML_PARSE_CHUNK, || {
-            start.elapsed() > Duration::from_millis(50)
-        })
-        .expect_err("stopped");
+        let error = convert_within(&page, Duration::from_millis(50)).expect_err("stopped");
         assert!(error.parsed > 0 && error.parsed < error.length, "{error:?}");
     }
 

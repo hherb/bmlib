@@ -38,7 +38,8 @@ All notable changes to bmlib are documented here. The format is based on
 - **`canonical_from_html` refuses a page it cannot parse in time** (#563,
   filed by StudyAnalyzer). html5ever's parse is quadratic in nesting depth
   (`<div>` nested 40,000 deep, 429 KB, took 2.6 s; a 5 MB page nested that way
-  about 5 minutes), so the size cap PR #559 asked callers for bounded nothing.
+  about 5 minutes), so no size cap that admits an article-sized page, the
+  remedy PR #559 asked callers for, bounds it.
   The page is now fed to the parser `HTML_PARSE_CHUNK` (16,384) code points at
   a time, and one still being parsed after `HTML_PARSE_SECONDS` (30) raises the
   new **`HtmlParseTimeoutError`** (a `ValueError`; `parsed` and `length` in
@@ -47,9 +48,16 @@ All notable changes to bmlib are documented here. The format is based on
   depth count, by the maintainer's decision: markupever exposes neither
   html5ever's tokenizer nor the tree while it is built, so a depth count would
   be a model of the tree builder that a page crafted against it gets past,
-  where a deadline bounds every slow path. A page that parses converts exactly
-  as before (`HTML_CANONICAL_VERSION` stays 1); the shared contract holds both
-  constants.
+  where a deadline is checked whatever makes the parse slow. **It is checked
+  between chunks, and one chunk is not bounded**: a chunk's time grows with
+  the depth already open, so one chunk of `<div>` after 1.6 million nested
+  `<span>` (9.6 MB) took 14 s, and a large page can run well past the budget
+  (#654, a decision). The clock is wall time, so a loaded machine can refuse a
+  page an idle one accepts. html5ever discards a byte-order mark at the start
+  of every chunk it is fed, so bmlib now drops the page's leading one itself
+  and keeps the rest, which a one-piece parse keeps too. A page that parses
+  converts exactly as before (`HTML_CANONICAL_VERSION` stays 1); the shared
+  contract holds both constants. `HtmlParseTimeoutError` pickles.
 - **`find_passage` rejects a near-verbatim match that changes a number, a
   negation or a direction** (#632, filed by StudyAnalyzer). A one-character
   edit scores about `1 − 1/L`, so no `min_similarity` told a benign copy from
