@@ -31,6 +31,12 @@ notes) and merged it, at the maintainer's request. **For StudyAnalyzer**: map
 `RequestFailed { status: Some(401 | 403), .. }` to "the provider refused the
 key" and `Some(404)` to "no such model", as for `ChatError::Http`.
 
+**PR #663's review**: `PicoError` now refuses `retryable` or `status` on any
+kind but `REQUEST_FAILED` (`ValueError`), as Rust's type does. **Not done**:
+a 401/404 during a long paper's condensation is still `CONDENSATION_FAILED`
+with no `status`, in both languages; posted on #616, whose fix (keep the
+cause, not a string) covers it.
+
 ## Earlier, 2026-11-04: a PICO request failure says whether a retry may cure it (#659, PR #661, merged)
 
 `PicoError.retryable` / Rust `RequestFailed { message, retryable }`, by the

@@ -660,6 +660,14 @@ class TestTheSuitabilityCheck:
         assert copy.retryable is True
         assert copy.status == 503
 
+    @pytest.mark.parametrize("fields", [{"retryable": True}, {"status": 401}])
+    def test_only_a_request_failure_carries_retryable_or_status(
+        self, fields: dict[str, Any]
+    ) -> None:
+        # Rust's PicoError holds both on RequestFailed alone.
+        with pytest.raises(ValueError, match="only a request_failed"):
+            PicoError(PicoErrorKind.UNUSABLE_REPLY, "bad reply", **fields)
+
 
 def test_the_mean_is_a_plain_left_to_right_sum() -> None:
     """``sum()`` compensates its rounding on 3.12+ and not on 3.11; the mean

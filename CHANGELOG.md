@@ -16,6 +16,8 @@ All notable changes to bmlib are documented here. The format is based on
   retry and not why it failed, so an app could not tell a refused key (401,
   403) from no such model (404) without parsing the message.
   `PicoError(kind, message, retryable=False, status=None)`; pickling keeps it.
+  A `retryable` or `status` given for any other kind raises `ValueError`,
+  as Rust's `PicoError` holds both on `RequestFailed` alone (PR #663's review).
   It is read from the SDK exception's `status_code`, the field the
   condenser's refusal rule already reads (`_http_status`, beside
   `_is_refusal`). The shared `tests/fixtures/pico_stop_num_ctx.json` states
