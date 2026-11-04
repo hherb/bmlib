@@ -705,7 +705,10 @@ mod tests {
     fn the_summary_names_each_distinct_cause_once() {
         let errors = |es: &[&str]| es.iter().map(|e| (*e).to_string()).collect::<Vec<_>>();
         assert_eq!(summarise_batch_errors(&[]), "");
-        assert_eq!(summarise_batch_errors(&errors(&["401"])), "1 batch failed: 401");
+        assert_eq!(
+            summarise_batch_errors(&errors(&["401"])),
+            "1 batch failed: 401"
+        );
         assert_eq!(
             summarise_batch_errors(&errors(&["401", "timeout", "401"])),
             "2 batches failed: 401; 1 batch failed: timeout"
