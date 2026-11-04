@@ -55,7 +55,13 @@ from bmlib.llm.providers import (
     get_provider,
     list_providers,
 )
-from bmlib.llm.stream import Stop, StreamDelta, refuse_tools
+from bmlib.llm.stream import (
+    CANCELLED_STOP_REASON,
+    Stop,
+    StreamDelta,
+    refuse_tools,
+    stop_reader,
+)
 from bmlib.llm.token_tracker import get_token_tracker
 
 logger = logging.getLogger(__name__)
@@ -270,11 +276,13 @@ class LLMClient:
         the call at once, even before the first event, while a local server
         is still reading the prompt (#635): the response holds what arrived,
         with ``stop_reason`` ``"cancelled"``, and usage is recorded as for a
-        stop from *on_delta*. One already set sends nothing. The request is
-        then sent and read on a worker thread (*on_delta* still runs on this
-        one), and a cancelled request's connection is closed only once that
-        request returns: the server answers, or the SDK's timeout ends it, so
-        a server still reading the prompt goes on reading it until then.
+        stop from *on_delta*. One already set sends nothing and records no
+        usage. The request is then sent and read on a worker thread
+        (*on_delta* still runs on this one), and a cancelled request's
+        connection is closed only at the next event or when the request
+        fails, so a server still reading the prompt goes on reading it until
+        then; the SDKs' retries may still send it again, and Ollama's client
+        has no timeout (#652).
         With *cancel*, a stop from *on_delta* closes the connection at the
         next event rather than before this returns.
 
@@ -321,6 +329,9 @@ class LLMClient:
                 raise NotImplementedError(
                     f"{provider_name}'s chat_stream does not take cancel; it cannot be cancelled"
                 )
+            # A request never sent records no usage, as in the Rust port.
+            if stop_reader(cancel)():
+                return LLMResponse(content="", model=model_name, stop_reason=CANCELLED_STOP_REASON)
             # Only when asked, so a provider written before #635 still streams.
             kwargs["cancel"] = cancel
         response = provider.chat_stream(

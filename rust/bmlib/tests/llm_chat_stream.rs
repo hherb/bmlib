@@ -520,10 +520,12 @@ fn eventually(condition: impl Fn() -> bool) -> bool {
     condition()
 }
 
-fn cancel_soon(cancel: &Arc<AtomicBool>) {
+/// Set `cancel` once `sent` holds: the request has reached the transport, so
+/// the call is waiting rather than refused as already cancelled.
+fn cancel_once(cancel: &Arc<AtomicBool>, sent: impl Fn() -> bool + Send + 'static) {
     let cancel = Arc::clone(cancel);
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(50));
+        assert!(eventually(sent), "the request never reached the transport");
         cancel.store(true, Ordering::SeqCst);
     });
 }
@@ -543,7 +545,8 @@ fn a_cancel_before_the_first_event_returns_at_once() {
     ] {
         let (server, release) = WaitingServer::new(body);
         let cancel = Arc::new(AtomicBool::new(false));
-        cancel_soon(&cancel);
+        let reached = server.clone();
+        cancel_once(&cancel, move || reached.posted.load(Ordering::SeqCst) > 0);
         let mut seen = Vec::new();
         let started = Instant::now();
         let response = llm_over(server.clone())
@@ -579,6 +582,47 @@ fn a_cancel_already_set_sends_nothing() {
         .expect("a response");
     assert_eq!(response.stop_reason.as_deref(), Some("cancelled"));
     assert!(transport.posted().is_empty());
+}
+
+#[test]
+fn a_cancel_already_set_records_no_usage() {
+    let model = "anthropic:claude-stream-cancel-already-set-test";
+    let transport = ScriptedStreams::new(vec![]);
+    client(transport)
+        .chat_stream_with_cancel(&request(model), &AtomicBool::new(true), &mut |_| {
+            ControlFlow::Continue(())
+        })
+        .expect("a response");
+    let usage = with_token_tracker(|tracker| tracker.get_summary());
+    assert!(!usage.by_model.contains_key(model));
+}
+
+#[test]
+fn a_stream_cut_off_is_an_error_on_the_cancellable_path_too() {
+    // Only a cancel excuses a missing end marker; a dropped connection is not one.
+    for (model, cut, marker) in [
+        (
+            "openai:gpt-x",
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Yes\"}}]}\n\n",
+            "ended before a finish_reason",
+        ),
+        (
+            "ollama:llama-x",
+            "{\"message\":{\"content\":\"Yes\"},\"done\":false}\n",
+            "ended before done",
+        ),
+    ] {
+        let transport = ScriptedStreams::new(vec![Answer::Status(200, cut)]);
+        let result = client(transport).chat_stream_with_cancel(
+            &request(model),
+            &AtomicBool::new(false),
+            &mut |_| ControlFlow::Continue(()),
+        );
+        assert!(
+            matches!(&result, Err(ChatError::Stream(m)) if m.contains(marker)),
+            "{model}: {result:?}"
+        );
+    }
 }
 
 #[test]
@@ -670,7 +714,8 @@ fn a_cancelled_stream_sends_no_further_retry() {
     let mut llm = client(transport.clone());
     llm.retry_base_delay = Duration::from_millis(300);
     let cancel = Arc::new(AtomicBool::new(false));
-    cancel_soon(&cancel);
+    let reached = transport.clone();
+    cancel_once(&cancel, move || !reached.posted().is_empty());
     let response = llm
         .chat_stream_with_cancel(&request("anthropic:claude-x"), &cancel, &mut |_| {
             ControlFlow::Continue(())

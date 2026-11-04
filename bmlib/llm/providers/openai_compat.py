@@ -66,6 +66,7 @@ from bmlib.llm.stream import (
     read_stream,
     refuse_tools,
     sdk_events,
+    stop_reader,
 )
 from bmlib.llm.utils import extract_json
 
@@ -355,11 +356,14 @@ class OpenAICompatibleProvider(BaseProvider):
             on_delta,
             cancel,
         )
-        # Every prompt costs at least one input token, so 0 is "not sent".
+        # Every prompt costs at least one input token, so 0 is "not sent". A
+        # cancel can land between the finish_reason chunk and the usage chunk
+        # after it, which keeps the server's reason, so it is asked too.
         if (
             "stream_options" in request_kwargs
             and response.input_tokens == 0
             and response.stop_reason != CANCELLED_STOP_REASON
+            and not stop_reader(cancel)()
         ):
             logger.warning(
                 "%s was asked for usage on a stream of %s and sent none; recorded as 0 tokens",

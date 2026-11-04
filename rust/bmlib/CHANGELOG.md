@@ -18,10 +18,10 @@ The Python library is documented separately, in the repository's
   holding a clone of the client's `Arc`, the caller's thread polling the flag
   every `CANCEL_POLL_INTERVAL` (50 ms); `on_delta` still runs on the caller's
   thread. A cancelled call returns what arrived with `stop_reason`
-  `"cancelled"`; a flag already set sends nothing. The worker is abandoned: it
+  `"cancelled"`; a flag already set sends nothing and records no usage. The worker is abandoned: it
   sends no further retry, and drops the body (closing the connection) when the
   read it is blocked in returns. A panic in the transport is resumed on the
-  caller's thread. `chat_stream` is unchanged. `run_stream_until` is
+  caller's thread, unless a cancel returned first. `chat_stream` is unchanged. `run_stream_until` is
   `run_stream` with a `cancelled` check at the end of the events; the stream
   contract test reads the fixture's five new `cancel_after` cases (29).
 

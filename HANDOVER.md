@@ -23,7 +23,9 @@ providers use; `run_stream(..., cancelled=)`. **Rust**
 `run_stream_until`; `chat_stream` is unchanged in both, with no thread. With a
 cancel, opening (with its retries) and reading run on a worker thread and the
 caller polls every 50 ms; a cancel returns what arrived as `"cancelled"`, one
-already set sends nothing, an abandoned worker sends no retry. **The request
+already set sends nothing and records no usage (both languages), and an
+abandoned Rust worker sends no retry — a Python one cannot stop the SDKs'
+retries, and Ollama's client has no timeout, filed as **#652**. **The request
 is abandoned, not interrupted**: the server keeps reading the prompt until it
 answers, then the worker closes the connection; filed as **#649** (closing
 the socket needs an interruptible transport; a decision). A third-party
@@ -249,7 +251,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,173 passing + 165 skipped** on `feat/635-stream-cancel`
+- **Tests: 9,181 passing + 165 skipped** on `feat/635-stream-cancel`
   (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,466 with `cargo test -p bmlib --features embed` on the same branch; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
@@ -279,8 +281,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**128 open** (`gh issue list --state open --limit 300 --json number`,
-2026-11-04, counting #649 and once #635 closes; #649 is #635's residual (a decision), #646 and #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
+**130 open** (`gh issue list --state open --limit 300 --json number`,
+2026-11-04, counting #649, #651 and #652 and once #635 closes; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #646 and #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

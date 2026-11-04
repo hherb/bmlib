@@ -18,10 +18,14 @@ All notable changes to bmlib are documented here. The format is based on
   Given one, the request is sent and read on a worker thread while the
   caller's thread looks at the cancel every 50 ms, so it returns at once with
   what arrived and `stop_reason` `"cancelled"`, its usage recorded as for a
-  stop; a cancel already set sends nothing. The request is **abandoned, not
-  interrupted**: the worker closes the connection once the request it waits
-  on returns, so a server still reading the prompt goes on until then (and,
-  with a cancel, a stop from `on_delta` closes it at the next event). Without
+  stop; a cancel already set sends nothing and records no usage. The request
+  is **abandoned, not interrupted**: the worker closes the connection at the
+  next event or when its request fails, so a server still reading the prompt
+  goes on until then (and, with a cancel, a stop from `on_delta` closes it at
+  the next event). In Python nothing bounds that wait (#652): the Anthropic
+  and OpenAI SDKs may still retry opening the stream after the cancel, and
+  the Ollama client has no timeout. A failure the cancel overtook is logged
+  at DEBUG. Without
   a cancel nothing changes. The built-in providers take `cancel` through the
   new `bmlib.llm.stream.read_stream`; `run_stream` takes `cancelled=`; a
   third-party provider whose `chat_stream` declares no `cancel` is refused one

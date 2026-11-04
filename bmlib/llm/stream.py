@@ -66,7 +66,7 @@ STREAM_PROTOCOLS: tuple[str, ...] = get_args(StreamProtocol)
 """Every protocol :class:`StreamState` accepts."""
 
 CANCELLED_STOP_REASON = "cancelled"
-"""The ``stop_reason`` of a stream the caller stopped from ``on_delta``."""
+"""The ``stop_reason`` of a stream the caller stopped, from ``on_delta`` or by a cancel."""
 
 STREAM_USAGE_PROVIDERS: tuple[str, ...] = ("openai", "deepseek", "ollama")
 """OpenAI-compatible providers asked to report usage on a stream.
@@ -541,11 +541,16 @@ def read_stream(
     read on a worker thread while this thread watches *cancel*, so a cancel
     stops the call at once, even before the first event: the response holds
     what arrived, with ``stop_reason`` :data:`CANCELLED_STOP_REASON`. A
-    cancel already set sends nothing. The worker is then abandoned: it reads
-    nothing more and closes the stream once the request it is waiting on
-    returns (the server answers, or the SDK's timeout ends it), so a server
-    still reading the prompt keeps reading it until then. The same holds
-    when *on_delta* stops the stream or raises.
+    cancel already set sends nothing. The worker is then abandoned: it hands
+    nothing more over, and closes the stream at the next event it receives
+    or when its request fails, so a server still reading the prompt keeps
+    reading it until then. The same holds when *on_delta* stops the stream
+    or raises. Nothing here bounds that wait (#652): the Anthropic and
+    OpenAI SDKs time a request out, but they also retry opening it, which an
+    abandoned worker cannot stop, so the prompt may be sent again; and the
+    Ollama client has no timeout, so a cancelled request to a server that
+    never answers keeps its thread and connection for the life of the
+    process. A failure the cancel overtook is logged at DEBUG, not raised.
 
     Args:
         protocol: One of :data:`STREAM_PROTOCOLS`.
@@ -568,21 +573,28 @@ def read_stream(
         return StreamState(protocol).finish(model, cancelled=True)
     messages: queue.SimpleQueue[object] = queue.SimpleQueue()
     abandoned = threading.Event()
+    # Held across the abandon and a hand-over, so a failure is either queued
+    # before the abandon (and drained below) or logged by the worker.
+    handover = threading.Lock()
+
+    def hand_over(message: object) -> bool:
+        with handover:
+            if abandoned.is_set():
+                return False
+            messages.put(message)
+            return True
 
     def work() -> None:
         try:
             with closing_stream(open_stream()) as stream:
                 for event in events(stream):
-                    if abandoned.is_set():
+                    if not hand_over(event):
                         return
-                    messages.put(event)
         except BaseException as exc:
-            if abandoned.is_set():
+            if not hand_over(_Failure(exc)):
                 logger.debug("an abandoned %s stream failed: %s", protocol, exc)
-            else:
-                messages.put(_Failure(exc))
         else:
-            messages.put(_END)
+            hand_over(_END)
 
     def relayed() -> Iterator[Mapping[str, Any]]:
         while not cancelled():
@@ -601,4 +613,14 @@ def read_stream(
     try:
         return run_stream(protocol, relayed(), model, on_delta, cancelled=cancelled)
     finally:
-        abandoned.set()
+        with handover:
+            abandoned.set()
+        # Left over only when a cancel or a stop won: the events are dropped,
+        # and a failure queued just before it is told, as a later one is.
+        while True:
+            try:
+                left = messages.get_nowait()
+            except queue.Empty:
+                break
+            if isinstance(left, _Failure):
+                logger.debug("a cancelled %s stream had failed: %s", protocol, left.exc)

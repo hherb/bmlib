@@ -36,7 +36,7 @@ use serde_json::Value;
 use std::io::BufRead;
 use std::ops::ControlFlow;
 
-/// The `stop_reason` of a stream the caller stopped from `on_delta`.
+/// The `stop_reason` of a stream the caller stopped, from `on_delta` or by a cancel.
 pub const CANCELLED_STOP_REASON: &str = "cancelled";
 
 /// OpenAI-compatible providers asked to report usage on a stream.

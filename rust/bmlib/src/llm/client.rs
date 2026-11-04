@@ -1091,7 +1091,8 @@ impl LlmClient {
     /// the response holds what arrived, with `stop_reason`
     /// [`CANCELLED_STOP_REASON`](crate::llm::CANCELLED_STOP_REASON) (or the
     /// server's own, when its end marker had arrived); its usage is recorded
-    /// as for a stop from `on_delta`. A `cancel` already set sends nothing.
+    /// as for a stop from `on_delta`. A `cancel` already set sends nothing
+    /// and records no usage.
     ///
     /// The worker is abandoned rather than interrupted: it sends no further
     /// retry, and it closes the connection when the read it is blocked in
@@ -1104,7 +1105,7 @@ impl LlmClient {
     /// # Errors
     ///
     /// As [`LlmClient::chat_stream`]. A panic in the transport is resumed on
-    /// this thread.
+    /// this thread, unless a cancel returned first.
     pub fn chat_stream_with_cancel(
         &self,
         request: &ChatRequest,

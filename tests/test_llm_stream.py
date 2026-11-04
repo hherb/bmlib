@@ -15,6 +15,7 @@ and client tests use fake SDK clients; nothing touches the network.
 
 from __future__ import annotations
 
+import copy
 import json
 import threading
 import time
@@ -27,6 +28,7 @@ import pytest
 from bmlib.llm import (
     LLMClient,
     LLMMessage,
+    LLMResponse,
     StreamDelta,
     StreamError,
     StreamState,
@@ -438,17 +440,36 @@ class _GatedStream(_FakeStream):
     def __init__(self, events: list[dict], dump: str, gate: threading.Event) -> None:
         super().__init__(events, dump=dump)
         self.gate = gate
+        self.entered = threading.Event()
         self.delivered = 0
 
     def __iter__(self):
+        self.entered.set()
         self.gate.wait(10)
         for event in super().__iter__():
             self.delivered += 1
             yield event
 
 
-def _cancel_soon(cancel: threading.Event, seconds: float = 0.05) -> None:
-    threading.Timer(seconds, cancel.set).start()
+def _cancel_once(entered: threading.Event, cancel: threading.Event) -> None:
+    """Set *cancel* once the fake server has the request, so the call is
+    waiting on it rather than refused as already cancelled."""
+    threading.Thread(target=lambda: entered.wait(10) and cancel.set(), daemon=True).start()
+
+
+def _join_stream_workers(protocol: str) -> None:
+    """Wait for every ``read_stream`` worker of *protocol* to finish."""
+    for thread in threading.enumerate():
+        if thread.name == f"bmlib-{protocol}-stream":
+            thread.join(5)
+
+
+_TRUNCATED = {
+    "anthropic": "anthropic/no-message-stop-is-an-error",
+    "openai": "openai/no-finish-reason-is-an-error",
+    "ollama": "ollama/no-done-is-an-error",
+}
+"""Each provider kind's fixture case that ends before its end marker."""
 
 
 @pytest.mark.parametrize("kind", list(_PROVIDER_CASES))
@@ -463,7 +484,7 @@ class TestACancelStopsAStreamThatIsWaiting:
         gate, cancel = threading.Event(), threading.Event()
         stream = self._stream(kind, _GatedStream, gate=gate)
         seen: list[StreamDelta] = []
-        _cancel_soon(cancel)
+        _cancel_once(stream.entered, cancel)
         started = time.monotonic()
         try:
             response = _over(kind, stream).chat_stream(MESSAGES, seen.append, cancel=cancel)
@@ -478,6 +499,13 @@ class TestACancelStopsAStreamThatIsWaiting:
         # reads no further than the event it was waiting on.
         assert _eventually(lambda: stream.closed)
         assert stream.delivered <= 1
+
+    def test_a_stream_that_breaks_off_is_still_an_error(self, kind):
+        """Only a cancel excuses a missing end marker; a dropped connection is not one."""
+        name, dump = _PROVIDER_CASES[kind]
+        stream = _FakeStream(_events(_TRUNCATED[kind]), dump=dump)
+        with pytest.raises(StreamError, match="ended before"):
+            _over(kind, stream).chat_stream(MESSAGES, lambda _d: None, cancel=threading.Event())
 
     def test_a_cancel_already_set_sends_nothing(self, kind):
         cancel = threading.Event()
@@ -550,18 +578,65 @@ class TestACancelStopsAStreamThatIsWaiting:
 
 def test_a_request_waiting_for_its_answer_is_cancelled_too():
     """Anthropic's and OpenAI's SDKs wait inside ``create()``, not in iteration."""
-    gate, cancel = threading.Event(), threading.Event()
+    gate, entered, cancel = threading.Event(), threading.Event(), threading.Event()
     stream = _FakeStream(_events("anthropic/text"))
     provider = AnthropicProvider(api_key="test-key")
     provider._client = MagicMock()
-    provider._client.messages.create.side_effect = lambda **_kw: gate.wait(10) and stream
-    _cancel_soon(cancel)
+
+    def create(**_kw):
+        entered.set()
+        return gate.wait(10) and stream
+
+    provider._client.messages.create.side_effect = create
+    _cancel_once(entered, cancel)
     try:
         response = provider.chat_stream(MESSAGES, lambda _d: None, cancel=cancel)
     finally:
         gate.set()
     assert response.stop_reason == CANCELLED_STOP_REASON
     assert _eventually(lambda: stream.closed)
+
+
+def test_a_failure_the_cancel_overtook_is_logged(caplog):
+    """A failure queued just before the cancel is read is told, not dropped."""
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:  # the already-set check: not yet
+            return False
+        _join_stream_workers("ollama")  # the refusal is queued by now
+        return True
+
+    def refuse():
+        raise ConnectionError("failed to connect")
+
+    with caplog.at_level("DEBUG", logger="bmlib.llm.stream"):
+        response = read_stream("ollama", refuse, iter, "m", lambda _d: None, cancelled)
+    assert response.stop_reason == CANCELLED_STOP_REASON
+    assert [r.getMessage() for r in caplog.records] == [
+        "a cancelled ollama stream had failed: failed to connect"
+    ]
+
+
+def test_a_failure_after_the_abandon_is_logged(caplog):
+    gate, entered, cancel = threading.Event(), threading.Event(), threading.Event()
+
+    def refuse_late():
+        entered.set()
+        gate.wait(10)
+        raise ConnectionError("reset by peer")
+
+    _cancel_once(entered, cancel)
+    with caplog.at_level("DEBUG", logger="bmlib.llm.stream"):
+        response = read_stream("ollama", refuse_late, iter, "m", lambda _d: None, cancel)
+        gate.set()
+        _join_stream_workers("ollama")
+    assert response.stop_reason == CANCELLED_STOP_REASON
+    assert [r.getMessage() for r in caplog.records] == [
+        "an abandoned ollama stream failed: reset by peer"
+    ]
 
 
 def test_read_stream_relays_an_open_failure_unchanged():
@@ -647,6 +722,24 @@ class TestUsageAskedForAndNotSent:
         provider = _over("openai", _FakeStream(_events(self._NO_USAGE)))
         with caplog.at_level("WARNING", logger=self._LOGGER):
             provider.chat_stream(MESSAGES, lambda _d: False)
+        assert caplog.records == []
+
+    def test_a_cancel_before_the_usage_chunk_is_not_warned_about(self, caplog):
+        """The finish_reason chunk keeps the server's reason; usage follows it."""
+        events = copy.deepcopy(_events("openai/text-and-a-usage-chunk"))
+        # The chunk carrying finish_reason carries a delta too, so on_delta
+        # can cancel between it and the usage chunk.
+        events[3]["choices"][0]["delta"] = {"content": "!"}
+        cancel = threading.Event()
+
+        def on_delta(delta):
+            if delta.text == "!":
+                cancel.set()
+
+        provider = _over("openai", _FakeStream(events))
+        with caplog.at_level("WARNING", logger=self._LOGGER):
+            response = provider.chat_stream(MESSAGES, on_delta, cancel=cancel)
+        assert (response.stop_reason, response.input_tokens) == ("stop", 0)
         assert caplog.records == []
 
     def test_usage_that_arrives_is_not_warned_about(self, caplog):
@@ -771,8 +864,9 @@ class TestLLMClient:
         reset_token_tracker()
         gate, cancel = threading.Event(), threading.Event()
         name, dump = _PROVIDER_CASES["anthropic"]
-        provider = _over("anthropic", _GatedStream(_events(name), dump=dump, gate=gate))
-        _cancel_soon(cancel)
+        stream = _GatedStream(_events(name), dump=dump, gate=gate)
+        provider = _over("anthropic", stream)
+        _cancel_once(stream.entered, cancel)
         try:
             response = self._client_over(provider).chat_stream(
                 MESSAGES, lambda _d: None, model="anthropic:claude-x", cancel=cancel
@@ -782,6 +876,34 @@ class TestLLMClient:
         assert response.stop_reason == CANCELLED_STOP_REASON
         assert get_token_tracker().get_summary().call_count == 1
         reset_token_tracker()
+
+    def test_a_cancel_already_set_records_no_usage(self):
+        """A request never sent is no call, as in the Rust port."""
+        reset_token_tracker()
+        cancel = threading.Event()
+        cancel.set()
+        provider = _over("anthropic", _FakeStream(_events("anthropic/text")))
+        response = self._client_over(provider).chat_stream(
+            MESSAGES, lambda _d: None, model="anthropic:claude-x", cancel=cancel
+        )
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        provider._client.messages.create.assert_not_called()
+        assert get_token_tracker().get_summary().call_count == 0
+
+    def test_a_provider_whose_stream_takes_no_cancel_still_streams_without_one(self):
+        class _OldStreamer(_NonStreamingProvider):
+            PROVIDER_NAME = "oldstream"
+
+            def chat_stream(self, messages, on_delta, model=None, **kwargs):
+                assert "cancel" not in kwargs
+                on_delta(StreamDelta("text", "ok"))
+                return LLMResponse(content="ok", model=model or "m")
+
+        seen: list[StreamDelta] = []
+        response = self._client_over(_OldStreamer()).chat_stream(
+            MESSAGES, seen.append, model="oldstream:m"
+        )
+        assert (response.content, seen) == ("ok", [StreamDelta("text", "ok")])
 
     def test_a_provider_whose_stream_takes_no_cancel_refuses_one(self):
         class _OldStreamer(_NonStreamingProvider):
