@@ -1097,7 +1097,7 @@ impl LlmClient {
     /// The worker is abandoned rather than interrupted: it sends no further
     /// retry, and it closes the connection when the read it is blocked in
     /// returns (the server answers, or
-    /// [`UreqClient::stream_timeout_seconds`](crate::http::UreqClient::stream_timeout_seconds)
+    /// `UreqClient::stream_timeout_seconds`, with the `http-ureq` feature,
     /// ends it). So a server still reading the prompt goes on reading it
     /// until then. A stop from `on_delta` likewise closes the connection at
     /// the next event rather than before this returns.
