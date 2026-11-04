@@ -4203,6 +4203,7 @@
   },
   "html_parse": {
     "seconds": 30,
-    "chunk_code_points": 16384
+    "chunk_code_points": 16384,
+    "max_code_points": 2000000
   }
 }

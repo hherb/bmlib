@@ -35,6 +35,25 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`canonical_from_html` refuses a page longer than `HTML_MAX_CHARS`
+  (2,000,000 code points) unparsed** (#654, found in PR #653's review), with
+  the new **`HtmlPageTooLargeError`** (a `ValueError`; `length` in code
+  points; it pickles); Rust's `HtmlError::TooLarge`. The deadline below is
+  read between chunks, and one chunk's time grows with the depth open before
+  it, which a page can build one element per three code points (`<i>`, or an
+  unknown `<x>`), so a large page ran far past the budget: `<i>` nested to the
+  page's length and then a chunk of `<hr>` (four characters, each closing a
+  `<p>` it looks for down the whole stack) took about 8 s per million code points in Python
+  (25 s at 4 million) and about 16 s in Rust (95 s at 4 million, never
+  refused), five times the issue's `<span>`/`<div>` figure. The cap is the
+  slower language's: at 2 million a page is converted or refused within about
+  twice `HTML_PARSE_SECONDS` in Rust (41 s and 60 s measured) and that chunk
+  takes about 16 s in Python. A size cap, by the maintainer's decision, over
+  smaller chunks, a process per page or a depth rule. **How many real pages
+  are longer is unmeasured** (no HTML page larger than 200 KB was on this
+  machine); a page saved with its images inline as `data:` URIs can be, and
+  the 20 MB article-shaped page #563 measured is now refused. The shared
+  contract holds the cap (`html_parse.max_code_points`).
 - **`canonical_from_html` refuses a page it cannot parse in time** (#563,
   filed by StudyAnalyzer). html5ever's parse is quadratic in nesting depth
   (`<div>` nested 40,000 deep, 429 KB, took 2.6 s; a 5 MB page nested that way
@@ -48,11 +67,9 @@ All notable changes to bmlib are documented here. The format is based on
   depth count, by the maintainer's decision: markupever exposes neither
   html5ever's tokenizer nor the tree while it is built, so a depth count would
   be a model of the tree builder that a page crafted against it gets past,
-  where a deadline is checked whatever makes the parse slow. **It is checked
-  between chunks, and one chunk is not bounded**: a chunk's time grows with
-  the depth already open, so one chunk of `<div>` after 1.6 million nested
-  `<span>` (9.6 MB) took 14 s, and a large page can run well past the budget
-  (#654, a decision). The clock is wall time, so a loaded machine can refuse a
+  where a deadline is checked whatever makes the parse slow. It is checked
+  between chunks, and one chunk's time is bounded by a page-length cap (#654,
+  the entry above). The clock is wall time, so a loaded machine can refuse a
   page an idle one accepts. html5ever discards a byte-order mark at the start
   of every chunk it is fed, so bmlib now drops the page's leading one itself
   and keeps the rest, which a one-piece parse keeps too. A page that parses

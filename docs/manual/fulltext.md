@@ -2834,11 +2834,17 @@ doc.converter_version                     # "jats-1"
   nesting depth, which no size cap admitting an article-sized page bounds, so
   the page is parsed in chunks of `HTML_PARSE_CHUNK` code points and one still
   being parsed after `HTML_PARSE_SECONDS` (30) raises `HtmlParseTimeoutError`
-  (a `ValueError`, so catch it first; Rust returns it as the error). An
-  article-shaped page of 20 MB converts in 0.25 s. The clock is read between
-  chunks and is wall time: one chunk after deep cheap nesting can take far
-  longer than the budget (#654), and a loaded machine can refuse a page an
-  idle one accepts, so a refusal is worth retrying elsewhere.
+  (a `ValueError`, so catch it first; Rust returns `HtmlError::TimedOut`).
+  The clock is read between chunks, and one chunk's own time grows with the
+  depth open before it, which a page can build one element per three
+  characters, so a page longer than `HTML_MAX_CHARS` (2,000,000 code points)
+  is refused unparsed with `HtmlPageTooLargeError` (also a `ValueError`; Rust
+  `HtmlError::TooLarge`) *(unreleased)*. At that length the worst page
+  measured is converted or refused within about twice the budget (#654). How
+  many real pages are longer is unmeasured; a page saved with its images
+  inline as `data:` URIs can be. The clock is wall time, so a loaded machine
+  can refuse a page an idle one accepts, and a timeout is worth retrying
+  elsewhere; a page too large is not.
   A page with neither `<article>` nor `<main>` may contribute its site name as
   the title.
 - **Is it the whole paper?** A publisher's abstract page converts as cleanly as

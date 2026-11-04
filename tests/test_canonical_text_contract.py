@@ -23,7 +23,7 @@ against: every converter turns each case's input (for a PDF, the segmenter's
 round-trips through ``from_dict``. Each of its ``refusals`` (a variant of its
 ``valid`` value) is refused by both languages alike, and its ``html_elements``
 lists are both languages' ``PRUNED`` and ``BLOCKS``, and its ``html_parse``
-values their parse deadline and chunk (#563).
+values their parse deadline and chunk (#563) and their page-length cap (#654).
 """
 
 from __future__ import annotations
@@ -42,7 +42,13 @@ from bmlib.fulltext.canonical import (
     canonical_from_plain_text,
     canonical_from_segmented,
 )
-from bmlib.fulltext.canonical.html import BLOCKS, HTML_PARSE_CHUNK, HTML_PARSE_SECONDS, PRUNED
+from bmlib.fulltext.canonical.html import (
+    BLOCKS,
+    HTML_MAX_CHARS,
+    HTML_PARSE_CHUNK,
+    HTML_PARSE_SECONDS,
+    PRUNED,
+)
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import SegmentedDocument
 
@@ -87,9 +93,10 @@ def test_the_html_element_sets_are_the_contracts() -> None:
 
 def test_the_html_parse_deadline_is_the_contracts() -> None:
     limits = CONTRACT["html_parse"]
-    assert (HTML_PARSE_SECONDS, HTML_PARSE_CHUNK) == (
+    assert (HTML_PARSE_SECONDS, HTML_PARSE_CHUNK, HTML_MAX_CHARS) == (
         limits["seconds"],
         limits["chunk_code_points"],
+        limits["max_code_points"],
     )
 
 

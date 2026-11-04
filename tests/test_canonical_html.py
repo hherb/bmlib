@@ -33,6 +33,7 @@ import pytest
 from bmlib.fulltext.canonical import (
     BlockKind,
     CanonicalText,
+    HtmlPageTooLargeError,
     HtmlParseTimeoutError,
     SourceFormat,
     canonical_from_html,
@@ -350,6 +351,33 @@ class TestParseDeadline:
         with pytest.raises(HtmlParseTimeoutError, match="longer than 0.05 s") as raised:
             canonical_from_html(page)
         assert 0 < raised.value.parsed < len(page)
+
+    def test_a_page_at_the_length_cap_is_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The cap counts the page as passed, its leading byte-order mark included.
+        monkeypatch.setattr(html_module, "HTML_MAX_CHARS", len(self.PAGE))
+        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
+
+    def test_a_page_past_the_length_cap_is_refused_unparsed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def no_parser(options: Any) -> None:
+            raise AssertionError("parsed")
+
+        monkeypatch.setattr(markupever, "Parser", no_parser)
+        monkeypatch.setattr(html_module, "HTML_MAX_CHARS", len(self.PAGE) - 1)
+        refused = f"is {len(self.PAGE)} characters"
+        with pytest.raises(HtmlPageTooLargeError, match=refused) as raised:
+            canonical_from_html(self.PAGE)
+        assert raised.value.length == len(self.PAGE)
+        assert isinstance(raised.value, ValueError)
+
+    def test_the_length_refusal_pickles(self) -> None:
+        error = pickle.loads(pickle.dumps(HtmlPageTooLargeError(99)))
+        assert (type(error), error.length, str(error)) == (
+            HtmlPageTooLargeError,
+            99,
+            str(HtmlPageTooLargeError(99)),
+        )
 
     def test_a_page_of_one_chunk_never_reads_the_clock_again(
         self, monkeypatch: pytest.MonkeyPatch

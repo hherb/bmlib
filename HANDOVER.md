@@ -1,7 +1,8 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-11-04 (**this session's PR is on
-`fix/563-html-nesting-guard`**, for #563; see *This session* below). PR #648
+`fix/654-html-size-cap`**, for #654; see *This session* below). PR #653
+(#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
 (pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged; **0.12.0 is on
@@ -9,9 +10,30 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653 and this session's._
 
-## This session: an HTML page is parsed against a deadline (#563)
+## This session: an HTML page longer than 2,000,000 code points is refused unparsed (#654)
+
+**The maintainer chose a size cap** (2026-11-04) over smaller chunks, a
+process per page or a depth rule. `HTML_MAX_CHARS` (2,000,000 code points, in
+the shared fixture as `html_parse.max_code_points`) is checked before parsing.
+Python raises **`HtmlPageTooLargeError`** (a `ValueError`, `length`, pickles).
+Rust's error is now the enum **`HtmlError { TooLarge { length }, TimedOut {
+parsed, length } }`**, replacing the unreleased `HtmlParseTimeoutError`
+struct. **The issue's figure was five times too low**: the worst page measured
+was `<i>` (or an unknown `<x>`) nested to the page's length, followed by a
+chunk of `<hr>`. It costs ~8 s per million code points in Python and ~16 s in
+Rust; a Rust page of 4 million ran 95 s and was never refused. The cap is the
+slower language's: at 2 million, Rust refused within 41 s and 60 s (load 12-22),
+so about twice the budget. **How many real pages are longer is unmeasured**:
+no HTML page over 200 KB was on this machine. A page saved with inline
+`data:` images can exceed the cap, and #563's 20 MB article-shaped page is
+now refused. `HTML_CANONICAL_VERSION` stays 1 (re-pinned). **For
+StudyAnalyzer**: match `HtmlError::TooLarge` beside `TimedOut` on the next
+pin move; a too-large page is not worth retrying, a timeout may be. Its own
+page-size cap can go, or stay below this one.
+
+## Earlier, 2026-11-04: an HTML page is parsed against a deadline (#563, PR #653, merged)
 
 Filed by StudyAnalyzer (its phase 2d takes HTML from an untrusted hand-off
 file). html5ever is quadratic in nesting depth for any block that closes an
@@ -30,12 +52,7 @@ to parse as one. Smaller chunks slowed markupever (4,096: 4.8 s against 2.5 s).
 chunk (a page's text moved on a boundary), so both languages now keep them and
 drop the page's leading one themselves; the error pickles; Rust's public
 deadline is tested through `convert_within`; 5 Python and 4 Rust mutants
-killed. It also found that **one chunk is not bounded**: one chunk of `<div>`
-after 1.6 million nested `<span>` (9.6 MB) takes 14 s, so a large page can run
-well past the budget. Filed **#654** (a decision: smaller chunks, a process,
-a depth rule or a size cap). **For StudyAnalyzer**: `intake.rs` handles the
-`Err` on its next pin move; until #654 is decided, keep a page-size cap beside
-the deadline.
+killed. It also found that one chunk is not bounded, which is #654 (above).
 
 ## Earlier, 2026-11-04: a streamed chat can be cancelled while it waits (#635, PR #650, merged)
 
@@ -61,46 +78,20 @@ provider declaring no `cancel` is refused one. Shared fixture: five
 *Stopping…* can go, since the call returns within 50 ms; an empty `content`
 with `stop_reason == "cancelled"` is "stopped before any text".
 
-## Earlier, 2026-11-04: `find_passage` rejects a contradicting near-verbatim quote (#632, PR #648, merged)
+## Earlier, 2026-11-03/04: `find_passage` and the PICO agent (PRs #648, #644, #639, merged)
 
-A fuzzy match reaching the threshold is rejected when an unmatched token holds
-a digit, negates or states a direction; `PassageMatch.contradiction` says
-which, versioned by `CONTRADICTION_RULES_VERSION`. A dropped bracketed
-citation marker is skipped; a parenthesised or superscript one still reads as a
-number (`docs/DECISIONS.md`). Filed **#647** (PicoAgent drops the reason; a
-decision). **For StudyAnalyzer**: the threshold can go back to 0.95-0.97.
-
-## Earlier, 2026-11-03: the PICO agent sends `num_ctx` and can be stopped (#640–#642, PR #644, merged)
-
-`PicoAgent(..., num_ctx=None, stop=None)` / Rust `LlmChat::with_num_ctx`/
-`with_stop`, `quality::LlmContextModel` and `PicoAgent::with_stop`; shared
-fixture `tests/fixtures/pico_stop_num_ctx.json`. Filed **#646** (retrying a
-permanent HTTP refusal; a decision). **For StudyAnalyzer plan 2c**: build
-`LlmChat` and `LlmContextModel` with the same window and flag, and
-`PicoAgent::with_stop` with that flag; read the flag again after a call that
-succeeded.
-
-## Earlier, 2026-11-03: a long paper is condensed once for both PICO calls (#638, PR #639, merged)
-
-Filed from StudyAnalyzer's plan 2c review (hherb/StudyAnalyzer#56):
-`check_suitability` and `extract` each condensed their own text, and a retried
-extraction condensed again. **`PicoAgent.prepare(title, text)`** returns a
-frozen, storable **`PicoPrepared`** (stripped title, the text as passed, digest
-or `None`, status, notes); **`check_suitability_prepared`** and
-**`extract_prepared`** take it, one request each, quotes still verified against
-the text. The direct calls route through the same code and send exactly what
-they sent (the 37 old oracle expectations did not move); a prepared paper's
-note names both calls. One prepared for another budget — sending more than the
-agent's own, or condensed though the agent would send its text whole — is
-refused before any request (Python `ValueError`, Rust the new
-`PicoError::PreparedOverBudget`/`PreparedUnderBudget`). Rust has the same API,
-`from_json` refusing word for word what `from_dict` refuses (an unstripped title
-and a digest of an empty text among them, after PR #639's review); the PICO
-oracle gains 23 cases (the shared fixture the issue asked for). **For StudyAnalyzer plan 2c**: call
-`prepare` once per paper (persist `to_json` if wanted), then
-`check_suitability_prepared` and `extract_prepared`, retrying only the latter
-on `RequestFailed`; build the agent that uses a stored prepared paper with the
-same `condense_config`.
+**#632** (PR #648): a fuzzy match whose unmatched tokens change a number, a
+negation or a direction is rejected (`PassageMatch.contradiction`,
+`CONTRADICTION_RULES_VERSION`); filed **#647**, **#651**. **#640-#642**
+(PR #644): `PicoAgent(..., num_ctx=, stop=)`, Rust `LlmChat::with_num_ctx`/
+`with_stop`, `LlmContextModel`, `PicoAgent::with_stop`; filed **#646**.
+**#638** (PR #639): `PicoAgent.prepare()` returns a storable `PicoPrepared`
+that `check_suitability_prepared`/`extract_prepared` take, condensing once;
+one prepared for another budget is refused. **For StudyAnalyzer plan 2c**: the
+`find_passage` threshold can go back to 0.95-0.97; call `prepare` once per
+paper, retry only `extract_prepared` on `RequestFailed`, and build `LlmChat`,
+`LlmContextModel` and the agent with the same window, stop flag and
+`condense_config`.
 
 ## Earlier, 2026-11-02: an unnamed numbered parent keeps its subsections (PR #637, merged)
 
@@ -234,7 +225,7 @@ send `num_ctx` for Ollama, treat `None` as retrieval mode, and show
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
-iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, read between chunks (one chunk can overrun it, #654); `assess_full_text`, unmeasured,
+iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, read between chunks, and since #654 one over `HTML_MAX_CHARS` unparsed; `assess_full_text`, unmeasured,
 **#560**; **#557**, **#558** after 2026-11-04); PR #556 (4b,
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
 PRs #554 and #555 (item 3, `chunk_canonical`, contract
@@ -277,8 +268,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,181 passing + 165 skipped** on `feat/635-stream-cancel`
-  (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,466 with `cargo test -p bmlib --features embed` on the same branch; the embedder's live tests skip
+- **Tests: 9,193 passing + 165 skipped** on `fix/654-html-size-cap`
+  (`uv run pytest tests/ -v`, 2026-11-04; Rust 1,440 with `cargo test -p bmlib --features html` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -307,8 +298,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**130 open** (`gh issue list --state open --limit 300 --json number`,
-2026-11-04, counting #649, #651 and #652 and once #635 closes; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #646 and #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
+**129 open** (`gh issue list --state open --limit 300 --json number`,
+2026-11-04, once #654 closes; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #646 and #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
