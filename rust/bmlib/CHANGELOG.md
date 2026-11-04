@@ -123,6 +123,20 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **A PICO request failure says whether a retry may cure it** (#659, with the
+  Python library, left by #646's fix): `PicoError::RequestFailed(String)` is
+  now `RequestFailed { message, retryable }`, and `ChatJsonError::Transport`
+  gains `retryable` (both are matched by name, so a pattern without `..`
+  breaks). `retryable` is `ChatError::is_retryable` of the failed call: `false`
+  for a 401, a 404, a 400, a malformed answer, a missing key and an unknown
+  provider. `LlmChat` used to drop it at `ChatSource::chat`'s `String`, so
+  every one read as an outage. `ChatSource` gains `last_failure_retryable()`,
+  which `chat_json` reads after a failed call; its default, `true`, is the old
+  reading, and the client's source answers it. `LlmContextModel`'s structured
+  call retries on the error's own field (its private `JsonFailure` is gone).
+  The shared `tests/fixtures/pico_stop_num_ctx.json` gains six cases on a
+  PICO request and `expected.retryable`.
+
 - **`ProcessingResult` gains `pub batch_errors: Vec<String>`** (#658, #576,
   with the Python library), one message per entry of `failed_batches`, so a
   struct literal needs the field. `summarise_batch_errors` names the distinct

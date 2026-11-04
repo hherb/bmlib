@@ -151,9 +151,11 @@ fn a_transport_failure_is_request_failed() {
 
     assert_eq!(
         result,
-        Err(PicoError::RequestFailed(
-            "failed after 1 attempt(s): connection refused".to_string()
-        ))
+        Err(PicoError::RequestFailed {
+            message: "failed after 1 attempt(s): connection refused".to_string(),
+            // A scripted source cannot tell, so it is taken for an outage.
+            retryable: true,
+        })
     );
 }
 

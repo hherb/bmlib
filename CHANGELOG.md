@@ -35,6 +35,20 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A PICO request failure says whether a retry may cure it** (#659, with the
+  Rust crate, left by #646's fix). `PicoError` gains `retryable`: `True` for a
+  `REQUEST_FAILED` whose cause carries no HTTP status (a connection failure, a
+  timeout) or a status a retry may cure (the condenser's `_RETRIED_STATUSES`:
+  408, 429, 500, 502, 503, 504, 529), `False` for a 401, a 404, any other
+  refusal, a `ValueError` from the request (an unreadable 200), and every
+  other kind. Until now `REQUEST_FAILED` read as "retrying may help" for a bad
+  key or a missing model too, so a caller retrying it with backoff waited out
+  a failure certain from the first request. The kind is unchanged.
+  `PicoError(kind, message, retryable=False)`; pickling keeps it. The shared
+  `tests/fixtures/pico_stop_num_ctx.json` gains six cases on a PICO request
+  (401, 404, 503, 429, a transport fault, a body that is not JSON) and
+  `expected.retryable`.
+
 - **A failed condensation batch's cause reaches the caller** (#658, found in
   PR #657's review; #576, found in PR #575's). A batch that failed (a 401, a
   404, a malformed reply, retries run out) was logged at ERROR and its error

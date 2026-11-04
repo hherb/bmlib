@@ -102,9 +102,17 @@ impl HttpClient for FakeOllama {
     }
 }
 
-/// Run one case; the `num_ctx` of each request, the error kind and the
-/// result's notes.
-fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static str>, Vec<String>) {
+/// What one case ended in: each request's `num_ctx`, the error kind, a
+/// `request_failed`'s `retryable` (#659) and the result's notes.
+type Run = (
+    Vec<Option<Value>>,
+    Option<&'static str>,
+    Option<bool>,
+    Vec<String>,
+);
+
+/// Run one case.
+fn run(fixture: &Value, case: &Value) -> Run {
     let stop = Arc::new(AtomicBool::new(false));
     let transport = Arc::new(FakeOllama {
         json_reply: fixture["json_reply"].to_string(),
@@ -173,8 +181,14 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static st
     drop(agent);
     let sent = transport.num_ctx_sent.lock().expect("lock").clone();
     match outcome {
-        Ok(notes) => (sent, None, notes),
-        Err(error) => (sent, Some(error.kind()), Vec::new()),
+        Ok(notes) => (sent, None, None, notes),
+        Err(error) => {
+            let retryable = match &error {
+                PicoError::RequestFailed { retryable, .. } => Some(*retryable),
+                _ => None,
+            };
+            (sent, Some(error.kind()), retryable, Vec::new())
+        }
     }
 }
 
@@ -206,9 +220,15 @@ fn every_case_agrees_with_the_fixture() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("name");
-        let (sent, error, notes) = run(&fixture, case);
+        let (sent, error, retryable, notes) = run(&fixture, case);
         let expected = &case["expected"];
         assert_eq!(error, expected["error"].as_str(), "{name}: the error kind");
+        // Stated on every `request_failed` case, and on no other.
+        assert_eq!(
+            retryable,
+            expected["retryable"].as_bool(),
+            "{name}: retryable"
+        );
         assert_eq!(
             sent.len() as u64,
             expected["requests"].as_u64().expect("requests"),

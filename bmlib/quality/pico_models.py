@@ -52,10 +52,11 @@ class PicoErrorKind(Enum):
 
     #: The title and text were both empty, so no model call was made.
     EMPTY_INPUT = "empty_input"
-    #: The request raised: the provider was unreachable or refused it, so
-    #: retrying may help.  A bmlib defect, an unknown provider or a missing SDK
-    #: is not this: those propagate unwrapped (#573), the first only when the
-    #: text was sent whole (#616).
+    #: The request raised: the provider was unreachable or refused it.
+    #: :attr:`PicoError.retryable` says whether retrying may help (#659).  A
+    #: bmlib defect, an unknown provider or a missing SDK is not this: those
+    #: propagate unwrapped (#573), the first only when the text was sent whole
+    #: (#616).
     REQUEST_FAILED = "request_failed"
     #: The reply hit the output ceiling; raise ``max_tokens``.
     TRUNCATED = "truncated"
@@ -79,16 +80,22 @@ class PicoError(Exception):
 
     Attributes:
         kind: Why, as a :class:`PicoErrorKind`.
+        retryable: Whether sending the request again may succeed (#659): a
+            :attr:`~PicoErrorKind.REQUEST_FAILED` whose cause was a connection
+            failure, a timeout or an HTTP status a retry may cure (408, 429,
+            500, 502, 503, 504, 529).  ``False`` for a 401, a 404, a reply
+            that could not be read, and every other kind.
     """
 
-    def __init__(self, kind: PicoErrorKind, message: str) -> None:
+    def __init__(self, kind: PicoErrorKind, message: str, retryable: bool = False) -> None:
         super().__init__(message)
         self.kind = kind
+        self.retryable = retryable
 
     def __reduce__(self) -> tuple[Any, ...]:
         # Exception's default rebuilds with ``cls(*self.args)`` — here
         # ``PicoError(message)``, which lacks ``kind`` and raises TypeError.
-        return (type(self), (self.kind, str(self)))
+        return (type(self), (self.kind, str(self), self.retryable))
 
 
 def _read(data: object, key: str, kinds: type | tuple[type, ...], *, nullable: bool = False) -> Any:

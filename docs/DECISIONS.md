@@ -6277,7 +6277,10 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   missing key included: `JsonChat` flattens the typed `ChatError` to a string
   shared with the Cochrane tiers, and Rust has no exception to propagate (its
   bmlib defect is a panic). Do not "fix" the divergence in one language alone;
-  the maintainer chose to document it.
+  the maintainer chose to document it. Since #659 Rust's `RequestFailed` says
+  `retryable: false` for those (and for a refusal), so a caller retrying it
+  no longer retries them; Python's `PicoError.retryable` follows the same
+  rule for what reaches `REQUEST_FAILED` there.
 - **An integer `sample_size` is kept as its digits; a float or a `bool` is
   unstated.** Python's `str(150.0)` is `"150.0"` where Rust's is `"150"`, so a
   float is refused in both rather than spelt two ways. An integer past 64 bits
