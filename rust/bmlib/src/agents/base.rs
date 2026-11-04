@@ -180,6 +180,12 @@ pub enum ChatJsonError {
         message: String,
         /// The attempts made.
         attempts: usize,
+        /// Whether sending the request again may succeed, as the source told
+        /// it ([`ChatSource::last_failure_retryable`]; over a real client,
+        /// [`crate::llm::ChatError::is_retryable`]). A 401, a 404 or a missing
+        /// key is `false`: a caller that retries a failed request retries only
+        /// this (#659).
+        retryable: bool,
     },
 }
 
@@ -209,7 +215,9 @@ impl std::fmt::Display for ChatJsonError {
                 f,
                 "failed after {attempts} attempt(s): unparseable response"
             ),
-            ChatJsonError::Transport { message, attempts } => {
+            ChatJsonError::Transport {
+                message, attempts, ..
+            } => {
                 write!(f, "failed after {attempts} attempt(s): {message}")
             }
         }
@@ -246,6 +254,17 @@ pub trait ChatSource {
     /// a bad *answer*, and repeating a request that never arrived is the
     /// transport's business.
     fn chat(&mut self, attempt: usize) -> Result<LLMResponse, String>;
+
+    /// Whether the failure the last [`chat`](ChatSource::chat) returned may be
+    /// cured by sending the request again; read by [`chat_json`] right after
+    /// a failed call, into [`ChatJsonError::Transport`]'s `retryable`.
+    ///
+    /// `chat`'s `String` cannot carry the kind, so a source that knows it says
+    /// so here (#659). The default, `true`, is what a source that cannot tell
+    /// says: every failure was taken for an outage before.
+    fn last_failure_retryable(&self) -> bool {
+        true
+    }
 
     /// Sleep before a retry.
     ///
@@ -291,7 +310,11 @@ pub fn chat_json(
         let response = match source.chat(attempt) {
             Ok(response) => response,
             Err(message) => {
-                return Err(ChatJsonError::Transport { message, attempts });
+                return Err(ChatJsonError::Transport {
+                    message,
+                    attempts,
+                    retryable: source.last_failure_retryable(),
+                });
             }
         };
 

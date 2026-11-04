@@ -650,12 +650,13 @@ class TestTheSuitabilityCheck:
         assert "THE TAIL SENTENCE." in sent_user_message(agent)
 
     def test_a_pico_error_survives_pickling(self) -> None:
-        error = PicoError(PicoErrorKind.TRUNCATED, "cut off")
+        error = PicoError(PicoErrorKind.REQUEST_FAILED, "server down", retryable=True)
 
         copy = pickle.loads(pickle.dumps(error))
 
-        assert copy.kind is PicoErrorKind.TRUNCATED
-        assert str(copy) == "cut off"
+        assert copy.kind is PicoErrorKind.REQUEST_FAILED
+        assert str(copy) == "server down"
+        assert copy.retryable is True
 
 
 def test_the_mean_is_a_plain_left_to_right_sum() -> None:
@@ -1090,11 +1091,11 @@ CONTRACT = json.loads(
 _ABSENT = "absent"
 
 
-def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
+def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None, bool | None]:
     """Run one contract case: the real agent, map-reduce, ``LLMClient`` and
     ollama-python over an ``httpx.MockTransport``, as Rust fakes the HTTP
-    layer; returns each request's ``num_ctx`` (``_ABSENT`` for no key) and the
-    error kind."""
+    layer; returns each request's ``num_ctx`` (``_ABSENT`` for no key), the
+    error kind, and a ``request_failed``'s ``retryable`` (#659)."""
     httpx = pytest.importorskip("httpx")
     ollama = pytest.importorskip("ollama")
     stop = threading.Event()
@@ -1160,8 +1161,9 @@ def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
                 agent.check_suitability_prepared(prepared)
                 agent.extract_prepared(prepared, min_similarity=similarity)
         except PicoError as exc:
-            return sent, exc.kind.value
-    return sent, None
+            failed = exc.kind is PicoErrorKind.REQUEST_FAILED
+            return sent, exc.kind.value, exc.retryable if failed else None
+    return sent, None, None
 
 
 class TestTheStopAndNumCtxContract:
@@ -1181,9 +1183,11 @@ class TestTheStopAndNumCtxContract:
 
     @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
     def test_a_case(self, case: dict[str, Any]) -> None:
-        sent, error = _contract_run(case)
+        sent, error, retryable = _contract_run(case)
 
         assert error == case["expected"]["error"]
+        # Stated on every ``request_failed`` case, and on no other.
+        assert retryable == case["expected"].get("retryable")
         assert len(sent) == case["expected"]["requests"]
         expected = _ABSENT if case["num_ctx"] is None else case["num_ctx"]
         assert all(num_ctx == expected for num_ctx in sent)

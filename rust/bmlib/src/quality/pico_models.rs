@@ -64,10 +64,19 @@ impl PicoPartState {
 pub enum PicoError {
     /// The title and text were both empty, so no model call was made.
     EmptyInput,
-    /// The provider was unreachable or refused the request; retrying may help.
-    /// Unlike Python, every `ChatError` lands here, an unknown provider and a
-    /// missing key included, which no retry cures (see `docs/DECISIONS.md`).
-    RequestFailed(String),
+    /// The provider was unreachable or refused the request. Unlike Python,
+    /// every `ChatError` lands here, an unknown provider and a missing key
+    /// included (see `docs/DECISIONS.md`); `retryable` says which a retry may
+    /// cure (#659).
+    RequestFailed {
+        /// What failed, in the transport's or the server's words.
+        message: String,
+        /// Whether sending the request again may succeed: a transport failure
+        /// or a [`crate::llm::RETRYABLE_STATUSES`] status
+        /// ([`crate::llm::ChatError::is_retryable`]). A 401, a 404, a missing
+        /// key or an unknown provider is `false`, and a retry is refused again.
+        retryable: bool,
+    },
     /// The reply hit the output ceiling; raise `max_tokens`.
     Truncated(String),
     /// The reply was empty, did not parse, was not a JSON object, or lacked a
@@ -114,7 +123,7 @@ impl PicoError {
     pub fn kind(&self) -> &'static str {
         match self {
             PicoError::EmptyInput => "empty_input",
-            PicoError::RequestFailed(_) => "request_failed",
+            PicoError::RequestFailed { .. } => "request_failed",
             PicoError::Truncated(_) => "truncated",
             PicoError::UnusableReply(_) => "unusable_reply",
             PicoError::CondensationFailed(_) => "condensation_failed",
@@ -130,7 +139,7 @@ impl std::fmt::Display for PicoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PicoError::EmptyInput => write!(f, "both the title and the text are empty"),
-            PicoError::RequestFailed(message)
+            PicoError::RequestFailed { message, .. }
             | PicoError::Truncated(message)
             | PicoError::UnusableReply(message)
             | PicoError::CondensationFailed(message) => write!(f, "{message}"),

@@ -228,6 +228,51 @@ fn an_unparseable_answer_is_retried_and_reported_separately() {
     );
 }
 
+/// A source that says its failure is no outage (a 401, a 404).
+struct Refused;
+
+impl ChatSource for Refused {
+    fn chat(&mut self, _attempt: usize) -> Result<LLMResponse, String> {
+        Err("HTTP 401".to_string())
+    }
+
+    fn backoff(&mut self, _attempt: usize) {}
+
+    fn last_failure_retryable(&self) -> bool {
+        false
+    }
+}
+
+/// `retryable` is what the source said of its failure (#659); a source that
+/// cannot tell is taken for an outage, as every failure was before.
+#[test]
+fn a_transport_failure_carries_the_sources_retryable() {
+    let refused = chat_json(&mut Refused, 3, 0.0, Some(100), 4096, false).expect_err("fails");
+    assert!(
+        matches!(
+            refused,
+            ChatJsonError::Transport {
+                retryable: false,
+                attempts: 1,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+    let mut source = Script::new(vec![Err("connection refused".to_string())]);
+    let unknown = chat_json(&mut source, 3, 0.0, Some(100), 4096, false).expect_err("fails");
+    assert!(
+        matches!(
+            unknown,
+            ChatJsonError::Transport {
+                retryable: true,
+                ..
+            }
+        ),
+        "{unknown:?}"
+    );
+}
+
 /// **A transport failure is its own diagnosis**, not "empty response from
 /// model": reporting a refused connection as an empty answer points the operator
 /// at the model.

@@ -102,8 +102,12 @@ impl HttpClient for FakeOllama {
     }
 }
 
-/// Run one case; the `num_ctx` of each request and the error kind.
-fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static str>) {
+/// What one case ended in: each request's `num_ctx`, the error kind, and a
+/// `request_failed`'s `retryable` (#659).
+type Run = (Vec<Option<Value>>, Option<&'static str>, Option<bool>);
+
+/// Run one case.
+fn run(fixture: &Value, case: &Value) -> Run {
     let stop = Arc::new(AtomicBool::new(false));
     let transport = Arc::new(FakeOllama {
         json_reply: fixture["json_reply"].to_string(),
@@ -169,7 +173,12 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static st
     };
     drop(agent);
     let sent = transport.num_ctx_sent.lock().expect("lock").clone();
-    (sent, outcome.err().map(|error| error.kind()))
+    let error = outcome.err();
+    let retryable = match &error {
+        Some(PicoError::RequestFailed { retryable, .. }) => Some(*retryable),
+        _ => None,
+    };
+    (sent, error.as_ref().map(PicoError::kind), retryable)
 }
 
 #[test]
@@ -200,9 +209,15 @@ fn every_case_agrees_with_the_fixture() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("name");
-        let (sent, error) = run(&fixture, case);
+        let (sent, error, retryable) = run(&fixture, case);
         let expected = &case["expected"];
         assert_eq!(error, expected["error"].as_str(), "{name}: the error kind");
+        // Stated on every `request_failed` case, and on no other.
+        assert_eq!(
+            retryable,
+            expected["retryable"].as_bool(),
+            "{name}: retryable"
+        );
         assert_eq!(
             sent.len() as u64,
             expected["requests"].as_u64().expect("requests"),

@@ -35,6 +35,20 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A PICO request failure says whether a retry may cure it** (#659, with the
+  Rust crate, left by #646's fix). `PicoError` gains `retryable`: `True` for a
+  `REQUEST_FAILED` whose cause carries no HTTP status (a connection failure, a
+  timeout) or a status a retry may cure (the condenser's `_RETRIED_STATUSES`:
+  408, 429, 500, 502, 503, 504, 529), `False` for a 401, a 404, any other
+  refusal, a `ValueError` from the request (an unreadable 200), and every
+  other kind. Until now `REQUEST_FAILED` read as "retrying may help" for a bad
+  key or a missing model too, so a caller retrying it with backoff waited out
+  a failure certain from the first request. The kind is unchanged.
+  `PicoError(kind, message, retryable=False)`; pickling keeps it. The shared
+  `tests/fixtures/pico_stop_num_ctx.json` gains six cases on a PICO request
+  (401, 404, 503, 429, a transport fault, a body that is not JSON) and
+  `expected.retryable`.
+
 - **`canonical_from_html` refuses a page longer than `HTML_MAX_CHARS`
   (2,000,000 code points) unparsed** (#654, found in PR #653's review), with
   the new **`HtmlPageTooLargeError`** (a `ValueError`; `length` in code

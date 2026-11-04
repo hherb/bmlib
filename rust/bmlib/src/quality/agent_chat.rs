@@ -194,7 +194,7 @@ struct ClientSource<'a> {
     stop: Option<&'a AtomicBool>,
     /// Whether the last attempt failed in a way a retry may cure
     /// ([`ChatError::is_retryable`]): [`ChatSource::chat`]'s `String` loses
-    /// the kind, and [`LlmContextModel`] retries that kind alone.
+    /// the kind, so [`ChatSource::last_failure_retryable`] hands it on.
     retryable_failure: bool,
 }
 
@@ -206,6 +206,10 @@ impl ChatSource for ClientSource<'_> {
         let outcome = self.client.chat(&self.request);
         self.retryable_failure = outcome.as_ref().is_err_and(ChatError::is_retryable);
         outcome.map_err(|e| e.to_string())
+    }
+
+    fn last_failure_retryable(&self) -> bool {
+        self.retryable_failure
     }
 
     fn backoff(&mut self, attempt: usize) {
@@ -329,18 +333,6 @@ impl<'a> LlmContextModel<'a> {
     }
 }
 
-/// A failed structured call, and whether a retry may cure its request's failure.
-struct JsonFailure {
-    error: ChatJsonError,
-    retryable: bool,
-}
-
-impl std::fmt::Display for JsonFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.error.fmt(f)
-    }
-}
-
 impl ContextModel for LlmContextModel<'_> {
     fn complete(&self, prompt: &str, temperature: f64, max_tokens: i64) -> Result<String, String> {
         let request = self.request(prompt, temperature, max_tokens, false);
@@ -377,16 +369,20 @@ impl ContextModel for LlmContextModel<'_> {
                     max_tokens,
                     true,
                 )
-                .map_err(|error| JsonFailure {
-                    error,
-                    retryable: source.retryable_failure,
-                })
             },
             // Only a request a retry may cure, as `complete` retries: an
             // unknown provider, a missing key, an HTTP refusal (#646) or a
             // malformed answer would fail again,
             // and `chat_json` has re-asked for a bad reply.
-            |failure| failure.retryable && matches!(failure.error, ChatJsonError::Transport { .. }),
+            |error| {
+                matches!(
+                    error,
+                    ChatJsonError::Transport {
+                        retryable: true,
+                        ..
+                    }
+                )
+            },
         )?;
         Ok(outcome.value)
     }

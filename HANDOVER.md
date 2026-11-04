@@ -1,7 +1,8 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-11-04 (**this session's PR is on
-`fix/646-retry-refusals`**, for #646; see *This session* below). PR #655
+`fix/pico-retry-refusals`**, for #659; see *This session* below). PR #657
+(#646), #655
 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -10,9 +11,23 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657 and this session's._
 
-## This session: the condenser does not retry an HTTP refusal (#646)
+## This session: a PICO request failure says whether a retry may cure it (#659)
+
+#657 fixed the condenser alone, and #646's PICO chat path stayed: a 401 was
+`REQUEST_FAILED`, which StudyAnalyzer retries with backoff. Now **Python's
+`PicoError.retryable`** is `not ValueError and not _is_refusal(exc)` (the
+condenser's rule; a `ValueError` is an unreadable 200, as Rust's
+`Malformed`), and **Rust's `RequestFailed { message, retryable }`** carries
+`ChatError::is_retryable` past `ChatSource::chat`'s `String` through the new
+`ChatSource::last_failure_retryable()` (default `true`) into
+`ChatJsonError::Transport { retryable }`; `LlmContextModel`'s `JsonFailure`
+is gone. Breaking for a Rust pattern without `..`. `pico_stop_num_ctx.json`
+gains six PICO-request cases with `expected.retryable` (401, 404, 503, 429,
+a transport fault, a non-JSON body); one mutant per language killed.
+
+## Earlier, 2026-11-04: the condenser does not retry an HTTP refusal (#646, PR #657, merged)
 
 **The maintainer chose** (2026-11-04) to retry only what a retry may cure.
 Python's `LLMChunkProcessor._with_retries` raises at once an exception whose
