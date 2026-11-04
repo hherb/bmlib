@@ -186,6 +186,12 @@ pub enum ChatJsonError {
         /// key is `false`: a caller that retries a failed request retries only
         /// this (#659).
         retryable: bool,
+        /// The HTTP status the server answered with, as the source told it
+        /// ([`ChatSource::last_failure_status`]; over a real client,
+        /// [`crate::llm::ChatError::Http`]'s): `None` where no HTTP answer
+        /// came (a connection failure, a timeout, a missing key) or the
+        /// source cannot tell (#662).
+        status: Option<u16>,
     },
 }
 
@@ -266,6 +272,14 @@ pub trait ChatSource {
         true
     }
 
+    /// The HTTP status of the failure the last [`chat`](ChatSource::chat)
+    /// returned, read beside [`last_failure_retryable`](ChatSource::last_failure_retryable)
+    /// into [`ChatJsonError::Transport`]'s `status` (#662). The default,
+    /// `None`, is what a source that cannot tell says.
+    fn last_failure_status(&self) -> Option<u16> {
+        None
+    }
+
     /// Sleep before a retry.
     ///
     /// Injected so a test does not spend the backoff: the schedule is 1s, 2s,
@@ -314,6 +328,7 @@ pub fn chat_json(
                     message,
                     attempts,
                     retryable: source.last_failure_retryable(),
+                    status: source.last_failure_status(),
                 });
             }
         };

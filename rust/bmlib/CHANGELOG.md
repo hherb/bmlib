@@ -123,6 +123,16 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **A PICO request failure carries the HTTP status** (#662, with the Python
+  library): `PicoError::RequestFailed` gains `status: Option<u16>` and
+  `ChatJsonError::Transport` gains `status`, `ChatError::Http`'s status of
+  the failed call (`None` for no HTTP answer), so an app can tell a refused
+  key (401, 403) from no such model (404) as it does for a chat failure; a
+  struct literal or a pattern without `..` breaks. `ChatSource` gains
+  `last_failure_status()` (default `None`), read beside
+  `last_failure_retryable()`; the client's source keeps the failed
+  `ChatError` and answers both from it.
+
 - **A PICO request failure says whether a retry may cure it** (#659, with the
   Python library, left by #646's fix): `PicoError::RequestFailed(String)` is
   now `RequestFailed { message, retryable }`, and `ChatJsonError::Transport`

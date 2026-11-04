@@ -228,7 +228,7 @@ fn an_unparseable_answer_is_retried_and_reported_separately() {
     );
 }
 
-/// A source that says its failure is no outage (a 401, a 404).
+/// A source that says its failure is no outage: a 401.
 struct Refused;
 
 impl ChatSource for Refused {
@@ -241,12 +241,17 @@ impl ChatSource for Refused {
     fn last_failure_retryable(&self) -> bool {
         false
     }
+
+    fn last_failure_status(&self) -> Option<u16> {
+        Some(401)
+    }
 }
 
-/// `retryable` is what the source said of its failure (#659); a source that
-/// cannot tell is taken for an outage, as every failure was before.
+/// `retryable` (#659) and `status` (#662) are what the source said of its
+/// failure; a source that cannot tell is taken for an outage with no status,
+/// as every failure was before.
 #[test]
-fn a_transport_failure_carries_the_sources_retryable() {
+fn a_transport_failure_carries_the_sources_retryable_and_status() {
     let refused = chat_json(&mut Refused, 3, 0.0, Some(100), 4096, false).expect_err("fails");
     assert!(
         matches!(
@@ -254,6 +259,7 @@ fn a_transport_failure_carries_the_sources_retryable() {
             ChatJsonError::Transport {
                 retryable: false,
                 attempts: 1,
+                status: Some(401),
                 ..
             }
         ),
@@ -266,6 +272,7 @@ fn a_transport_failure_carries_the_sources_retryable() {
             unknown,
             ChatJsonError::Transport {
                 retryable: true,
+                status: None,
                 ..
             }
         ),

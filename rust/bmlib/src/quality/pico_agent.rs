@@ -729,10 +729,15 @@ impl<'a> PicoAgent<'a> {
                 Err(error @ ChatJsonError::Truncated { .. }) => {
                     return Err(PicoError::Truncated(error.to_string()))
                 }
-                Err(error @ ChatJsonError::Transport { retryable, .. }) => {
+                Err(
+                    error @ ChatJsonError::Transport {
+                        retryable, status, ..
+                    },
+                ) => {
                     return Err(PicoError::RequestFailed {
                         message: error.to_string(),
                         retryable,
+                        status,
                     })
                 }
                 Err(error) => return Err(PicoError::UnusableReply(error.to_string())),

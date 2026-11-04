@@ -76,6 +76,10 @@ pub enum PicoError {
         /// ([`crate::llm::ChatError::is_retryable`]). A 401, a 404, a missing
         /// key or an unknown provider is `false`, and a retry is refused again.
         retryable: bool,
+        /// The HTTP status the server answered with (a 401 or 403 is a refused
+        /// key, a 404 no such model), `None` where no HTTP answer came or it
+        /// was unreadable (#662).
+        status: Option<u16>,
     },
     /// The reply hit the output ceiling; raise `max_tokens`.
     Truncated(String),

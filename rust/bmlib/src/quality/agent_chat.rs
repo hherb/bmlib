@@ -170,7 +170,7 @@ impl JsonChat for LlmChat<'_> {
             client: self.client,
             request,
             stop: self.stop,
-            retryable_failure: false,
+            failure: None,
         };
         chat_json(
             &mut source,
@@ -192,10 +192,10 @@ struct ClientSource<'a> {
     client: &'a LlmClient,
     request: ChatRequest,
     stop: Option<&'a AtomicBool>,
-    /// Whether the last attempt failed in a way a retry may cure
-    /// ([`ChatError::is_retryable`]): [`ChatSource::chat`]'s `String` loses
-    /// the kind, so [`ChatSource::last_failure_retryable`] hands it on.
-    retryable_failure: bool,
+    /// The last attempt's failure: [`ChatSource::chat`]'s `String` loses its
+    /// kind, so [`ChatSource::last_failure_retryable`] (#659) and
+    /// [`ChatSource::last_failure_status`] (#662) read it here.
+    failure: Option<ChatError>,
 }
 
 impl ChatSource for ClientSource<'_> {
@@ -203,13 +203,22 @@ impl ChatSource for ClientSource<'_> {
         if is_set(self.stop) {
             return Err(STOPPED_MESSAGE.to_string());
         }
-        let outcome = self.client.chat(&self.request);
-        self.retryable_failure = outcome.as_ref().is_err_and(ChatError::is_retryable);
-        outcome.map_err(|e| e.to_string())
+        self.client.chat(&self.request).map_err(|error| {
+            let message = error.to_string();
+            self.failure = Some(error);
+            message
+        })
     }
 
     fn last_failure_retryable(&self) -> bool {
-        self.retryable_failure
+        self.failure.as_ref().is_some_and(ChatError::is_retryable)
+    }
+
+    fn last_failure_status(&self) -> Option<u16> {
+        match self.failure {
+            Some(ChatError::Http { status, .. }) => Some(status),
+            _ => None,
+        }
     }
 
     fn backoff(&mut self, attempt: usize) {
@@ -359,7 +368,7 @@ impl ContextModel for LlmContextModel<'_> {
                     client: self.client,
                     request: request.clone(),
                     stop: self.stop,
-                    retryable_failure: false,
+                    failure: None,
                 };
                 chat_json(
                     &mut source,
