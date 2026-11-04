@@ -387,7 +387,7 @@ impl std::fmt::Display for ChatError {
 impl ChatError {
     /// Whether sending the same request again may succeed: a transport
     /// failure, or an HTTP status in [`RETRYABLE_STATUSES`]. A 401 (bad key),
-    /// a 404 (no such model) or a 400 (prompt too long) will be refused again
+    /// a 404 (no such model) or a 400 (bad request) will be refused again
     /// (#646), as will a routing failure or a malformed answer.
     #[must_use]
     pub fn is_retryable(&self) -> bool {

@@ -19,7 +19,8 @@ Python's `LLMChunkProcessor._with_retries` raises at once an exception whose
 `status_code` is outside `_RETRIED_STATUSES` (408, 429, 500, 502, 503, 504,
 529); one with no status (a connection failure, a timeout, ollama's `-1`) is
 retried as before. Rust's HTTP error status is now **`ChatError::Http {
-status, message }`** (was `Transport`, breaking for a `match`), and
+status, message }`** (was `Transport`; every `match` still compiles, `ChatError` being
+`#[non_exhaustive]`, but an HTTP status no longer reaches a `Transport` arm), and
 `ChatError::is_retryable()` is what `LlmContextModel` retries.
 `RETRYABLE_STATUSES` gained 408, so opening a stream and a context-window
 lookup retry it too. **Not "all 5xx"**: the shared set is the stream-open
@@ -31,6 +32,11 @@ retry 408/429/5xx twice themselves before the condenser's three tries
 (unchanged). **For StudyAnalyzer**: on the next pin move, a `match` on
 `ChatError::Transport` that meant "the request failed" needs a
 `ChatError::Http` arm (or `is_retryable()`).
+PR #657's review: Python asks the stop before the refusal, so a refusal
+under the stop still ends the run as `ProcessingStoppedError` with nothing
+logged (#642), and a test pins that order. The rest of the review is fixed
+on the branch, except a partial condensation's note naming no cause and the
+contract never asserting the note, which predate the PR: **#658**.
 
 ## Earlier, 2026-11-04: an HTML page longer than 2,000,000 code points is refused unparsed (#654, PR #655, merged)
 

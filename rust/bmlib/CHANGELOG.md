@@ -127,9 +127,12 @@ The Python library is documented separately, in the repository's
   longer a `ChatError::Transport` (#646). `chat` and `chat_stream` used to
   report every non-2xx as `Transport(String)`, the status only in the
   message, so nothing could tell a 401 (bad key), a 404 (no such model) or a
-  400 (prompt too long) from a connection reset, and `LlmContextModel`
-  retried each of them three times. `message` and `Display` are unchanged; a
-  `match` that read an HTTP refusal as `Transport` now needs the new arm.
+  400 (a bad request) from a connection reset, and `LlmContextModel`
+  retried each of them three times. `message` and `Display` are unchanged.
+  `ChatError` is `#[non_exhaustive]`, so every `match` still compiles, and
+  that is the hazard: an HTTP error status no longer reaches a `Transport`
+  arm and falls to the wildcard in silence, so an arm meant as "the request
+  failed" needs an `Http` arm beside it (or `is_retryable()`).
   `ChatError::is_retryable()` answers "may sending it again succeed?" (a
   transport failure, or a status in `RETRYABLE_STATUSES`), and
   `RETRYABLE_STATUSES` gains 408, which opening a stream and a context-window

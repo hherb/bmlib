@@ -93,7 +93,7 @@ _NOT_RETRIED: tuple[type[BaseException], ...] = (
 #: server failures and Anthropic's 529 "overloaded" — Rust's
 #: ``RETRYABLE_STATUSES``, held to agreeing by
 #: ``tests/fixtures/pico_stop_num_ctx.json``.  A 401 (bad key), 404 (no such
-#: model) or 400 (prompt too long) will be refused again (#646).
+#: model) or 400 (bad request) will be refused again (#646).
 _RETRIED_STATUSES = frozenset({408, 429, 500, 502, 503, 504, 529})
 
 
@@ -413,10 +413,12 @@ class LLMChunkProcessor(IterativeContextProcessor):
             except _NOT_RETRIED:
                 raise
             except Exception as exc:
-                if _is_refusal(exc):
-                    raise
+                # The stop first: a refusal under it ends the run unlogged (#642)
+                # rather than failing a batch at ERROR; neither is retried.
                 if self.agent.stop_requested():
                     raise ProcessingStoppedError(f"{label} failed after the stop: {exc}") from exc
+                if _is_refusal(exc):
+                    raise
                 if attempt == CONTEXT_MODEL_ATTEMPTS:
                     raise
                 delay = CONTEXT_MODEL_RETRY_BASE_DELAY * 2 ** (attempt - 1)

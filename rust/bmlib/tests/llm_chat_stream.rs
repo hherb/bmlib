@@ -313,6 +313,35 @@ fn opening_is_retried_on_a_retryable_status_and_a_transport_failure() {
 }
 
 #[test]
+fn opening_is_retried_on_a_request_timeout() {
+    // #646 added 408 to the shared set, so opening a stream retries it too.
+    let transport = ScriptedStreams::new(vec![
+        Answer::Status(408, "{\"error\":{\"message\":\"Request Timeout\"}}"),
+        Answer::Status(200, ANTHROPIC_SSE),
+    ]);
+    let (_, result) = stream(&client(transport.clone()), &request("anthropic:claude-x"));
+    assert_eq!(result.expect("a response").content, "Blinded, yes.");
+    assert_eq!(transport.posted().len(), 2);
+}
+
+#[test]
+fn only_a_transport_failure_or_a_retryable_status_is_retryable() {
+    let http = |status| ChatError::Http {
+        status,
+        message: String::new(),
+    };
+    assert!(ChatError::Transport(String::new()).is_retryable());
+    for &status in RETRYABLE_STATUSES {
+        assert!(http(status).is_retryable(), "{status}");
+    }
+    for status in [400, 401, 403, 404, 413, 422, 501, 505] {
+        assert!(!http(status).is_retryable(), "{status}");
+    }
+    assert!(!ChatError::Malformed(String::new()).is_retryable());
+    assert!(!ChatError::Stream(String::new()).is_retryable());
+}
+
+#[test]
 fn opening_gives_up_after_the_last_attempt_and_quotes_the_server() {
     let answers = (0..STREAM_OPEN_ATTEMPTS)
         .map(|_| Answer::Status(503, "{\"error\":{\"message\":\"try later\"}}"))
