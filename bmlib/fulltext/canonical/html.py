@@ -85,7 +85,7 @@ HTML_CANONICAL_VERSION = 1
 #: ``<div>`` nested 40,000 deep, 429 KB, takes 2.6 s; a
 #: 5 MB page nested that way about 5 minutes), while a 20 MB page shaped like
 #: an article (60 sections, 2,400 paragraphs, tables, 15 MB of ``data:`` image)
-#: parsed in 0.25 s, though :data:`HTML_MAX_CHARS` now refuses it. The clock
+#: parsed in 0.25 s, though :data:`HTML_MAX_CHARS` now refuses it (#656). The clock
 #: is read between chunks, so a refusal comes one chunk late, and a chunk's own
 #: time grows with the depth already open, which :data:`HTML_MAX_CHARS` bounds.
 #: Wall-clock time, so a loaded machine can refuse a page an idle one accepts.
@@ -197,7 +197,8 @@ class HtmlPageTooLargeError(ValueError):
     """A page longer than :data:`HTML_MAX_CHARS` code points, refused unparsed.
 
     Attributes:
-        length: the page's length in code points.
+        length: the page's length in code points as passed, its leading
+            byte-order mark included.
     """
 
     def __init__(self, length: int) -> None:
@@ -216,7 +217,8 @@ class HtmlParseTimeoutError(ValueError):
 
     Attributes:
         parsed: the code points fed to the parser before it was stopped.
-        length: the page's length in code points.
+        length: the page's length in code points after its leading byte-order
+            mark is dropped.
     """
 
     def __init__(self, parsed: int, length: int) -> None:

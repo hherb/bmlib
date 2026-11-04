@@ -52,7 +52,8 @@ All notable changes to bmlib are documented here. The format is based on
   smaller chunks, a process per page or a depth rule. **How many real pages
   are longer is unmeasured** (no HTML page larger than 200 KB was on this
   machine); a page saved with its images inline as `data:` URIs can be, and
-  the 20 MB article-shaped page #563 measured is now refused. The shared
+  the 20 MB article-shaped page #563 measured is now refused (#656 weighs
+  capping tags rather than length). The shared
   contract holds the cap (`html_parse.max_code_points`).
 - **`canonical_from_html` refuses a page it cannot parse in time** (#563,
   filed by StudyAnalyzer). html5ever's parse is quadratic in nesting depth

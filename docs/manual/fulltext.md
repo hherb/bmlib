@@ -2842,7 +2842,7 @@ doc.converter_version                     # "jats-1"
   `HtmlError::TooLarge`) *(unreleased)*. At that length the worst page
   measured is converted or refused within about twice the budget (#654). How
   many real pages are longer is unmeasured; a page saved with its images
-  inline as `data:` URIs can be. The clock is wall time, so a loaded machine
+  inline as `data:` URIs can be (#656). The clock is wall time, so a loaded machine
   can refuse a page an idle one accepts, and a timeout is worth retrying
   elsewhere; a page too large is not.
   A page with neither `<article>` nor `<main>` may contribute its site name as

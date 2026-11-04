@@ -28,7 +28,8 @@ slower language's: at 2 million, Rust refused within 41 s and 60 s (load 12-22),
 so about twice the budget. **How many real pages are longer is unmeasured**:
 no HTML page over 200 KB was on this machine. A page saved with inline
 `data:` images can exceed the cap, and #563's 20 MB article-shaped page is
-now refused. `HTML_CANONICAL_VERSION` stays 1 (re-pinned). **For
+now refused: filed **#656** (PR #655's review), capping the count of `<`
+rather than the length, unmeasured. `HTML_CANONICAL_VERSION` stays 1 (re-pinned). **For
 StudyAnalyzer**: match `HtmlError::TooLarge` beside `TimedOut` on the next
 pin move; a too-large page is not worth retrying, a timeout may be. Its own
 page-size cap can go, or stay below this one.
@@ -298,8 +299,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**129 open** (`gh issue list --state open --limit 300 --json number`,
-2026-11-04, once #654 closes; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #646 and #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
+**130 open** (`gh issue list --state open --limit 300 --json number`,
+2026-11-04, once #654 closes, counting #656; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #646 and #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

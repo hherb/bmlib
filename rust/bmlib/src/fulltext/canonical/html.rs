@@ -59,7 +59,7 @@ pub const HTML_CANONICAL_VERSION: u32 = 1;
 /// (markupever, html5ever 0.40), unmeasured here: `<div>` nested 40,000 deep,
 /// 429 KB, at 2.6 s; a 5 MB page nested that way about 5
 /// minutes; a 20 MB page shaped like an article parsed in 0.25 s, though
-/// [`HTML_MAX_CHARS`] now refuses it. The clock
+/// [`HTML_MAX_CHARS`] now refuses it (#656). The clock
 /// is read between chunks, so a refusal comes one chunk late, and a chunk's own
 /// time grows with the depth already open, which [`HTML_MAX_CHARS`] bounds.
 /// Wall-clock time, so a loaded machine can refuse a page an idle one accepts.
@@ -84,14 +84,14 @@ pub const HTML_PARSE_CHUNK: usize = 16_384;
 pub enum HtmlError {
     /// The page is longer than [`HTML_MAX_CHARS`], and was not parsed.
     TooLarge {
-        /// The page's length.
+        /// The page's length as passed, its leading byte-order mark included.
         length: usize,
     },
     /// html5ever was still parsing the page after [`HTML_PARSE_SECONDS`].
     TimedOut {
         /// The code points fed to the parser before it was stopped.
         parsed: usize,
-        /// The page's length.
+        /// The page's length after its leading byte-order mark is dropped.
         length: usize,
     },
 }
@@ -480,11 +480,10 @@ fn convert_within(html: &str, budget: Duration) -> Result<CanonicalText, HtmlErr
 /// [`HtmlError::TooLarge`] if `html` is longer than `max` code points.
 fn refuse_longer_than(html: &str, max: usize) -> Result<(), HtmlError> {
     // A page of at most `max` bytes holds at most `max` code points, uncounted.
-    let length = if html.len() > max {
-        html.chars().count()
-    } else {
-        0
-    };
+    if html.len() <= max {
+        return Ok(());
+    }
+    let length = html.chars().count();
     if length > max {
         return Err(HtmlError::TooLarge { length });
     }
