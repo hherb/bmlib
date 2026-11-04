@@ -6,6 +6,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A streamed chat can be cancelled while it waits** (#635, filed by
+  StudyAnalyzer). `chat_stream` could be stopped only from `on_delta`, which
+  runs once text arrives, and a local server reads the whole prompt first: a
+  paper on a 27–31B model takes minutes, during which a user's Stop did
+  nothing. `LLMClient.chat_stream(..., cancel=)` takes an `Event` or a
+  callable (the `Stop` type, moved to `bmlib.llm.stream` from
+  `bmlib.quality.pico_agent`, which still imports it; `stop_reader` with it).
+  Given one, the request is sent and read on a worker thread while the
+  caller's thread looks at the cancel every 50 ms, so it returns at once with
+  what arrived and `stop_reason` `"cancelled"`, its usage recorded as for a
+  stop; a cancel already set sends nothing and records no usage. The request
+  is **abandoned, not interrupted**: the worker closes the connection at the
+  next event or when its request fails, so a server still reading the prompt
+  goes on until then (and, with a cancel, a stop from `on_delta` closes it at
+  the next event). In Python nothing bounds that wait (#652): the Anthropic
+  and OpenAI SDKs may still retry opening the stream after the cancel, and
+  the Ollama client has no timeout. A failure the cancel overtook is logged
+  at DEBUG. Without
+  a cancel nothing changes. The built-in providers take `cancel` through the
+  new `bmlib.llm.stream.read_stream`; `run_stream` takes `cancelled=`; a
+  third-party provider whose `chat_stream` declares no `cancel` is refused one
+  (`NotImplementedError`) rather than passing it to its SDK. Rust has
+  `LlmClient::chat_stream_with_cancel` (see its CHANGELOG). The shared
+  `tests/fixtures/chat_stream.json` gains five `cancel_after` cases (29).
+
 ### Fixed
 
 - **`canonical_from_html` refuses a page it cannot parse in time** (#563,

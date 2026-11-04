@@ -59,10 +59,10 @@ from bmlib.llm.providers.base import (
     _sdk_import_failed,
 )
 from bmlib.llm.stream import (
+    Stop,
     StreamDelta,
-    closing_stream,
+    read_stream,
     refuse_tools,
-    run_stream,
     sdk_events,
 )
 
@@ -623,13 +623,15 @@ class OllamaProvider(BaseProvider):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        cancel: Stop | None = None,
         **kwargs: object,
     ) -> LLMResponse:
         """Stream a chat answer from the local Ollama server.
 
         Sends the request :meth:`chat` would, with ``stream=True``, and reads
         the native ``/api/chat`` chunks through
-        :func:`~bmlib.llm.stream.run_stream`. Unlike :meth:`chat`, a stream
+        :func:`~bmlib.llm.stream.read_stream`, which *cancel* stops at once,
+        even while the server is still reading the prompt (#635). Unlike :meth:`chat`, a stream
         whose last chunk carries no token counts reports 0 rather than an
         estimate; Ollama sends them on every completed stream.
 
@@ -646,12 +648,17 @@ class OllamaProvider(BaseProvider):
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
-        with closing_stream(client.chat(**request_kwargs, stream=True)) as stream:
+        return read_stream(
+            "ollama",
+            lambda: client.chat(**request_kwargs, stream=True),
             # ollama >=0.4 yields Pydantic models; older versions yield dicts.
-            events = sdk_events(
+            lambda stream: sdk_events(
                 _opened(stream), lambda c: c.model_dump() if hasattr(c, "model_dump") else c
-            )
-            return run_stream("ollama", events, model, on_delta)
+            ),
+            model,
+            on_delta,
+            cancel,
+        )
 
     def embed(
         self,
