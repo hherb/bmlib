@@ -442,7 +442,7 @@ The converters, each with its own version constant:
 | `canonical_from_markdown(text)` | a hand-written Markdown subset | headings make sections, inline markup is stripped |
 | `canonical_from_plain_text(text, title)` | plain text | blank lines separate paragraphs; one untitled section |
 | `canonical_from_segmented(&doc)` | a `SegmentedDocument` | a soft hyphen at a line end is joined; an ordinary hyphen is kept |
-| `canonical_from_html(html)` | an HTML page's main content | feature `html`; html5ever through `scraper` |
+| `canonical_from_html(html)` | an HTML page's main content | feature `html`; html5ever through `scraper`; `Err(HtmlParseTimeoutError)` past `HTML_PARSE_SECONDS` |
 
 Your own converter builds `SectionDraft`s of `BlockDraft::paragraph` /
 `BlockDraft::row` and calls `assemble(title, &sections, format, version)`.
@@ -453,7 +453,8 @@ built with `CanonicalText::from_value(json)`, which validates.
 ```rust,ignore
 use bmlib::fulltext::canonical::canonical_from_html; // feature `html`
 
-let page = canonical_from_html(&std::fs::read_to_string("article.html")?);
+// Err(HtmlParseTimeoutError) for a page still being parsed after 30 s.
+let page = canonical_from_html(&std::fs::read_to_string("article.html")?)?;
 ```
 
 ### Chunks for retrieval

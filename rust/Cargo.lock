@@ -197,6 +197,7 @@ dependencies = [
  "csv",
  "ego-tree",
  "fancy-regex",
+ "html5ever",
  "llama-cpp-2",
  "llama-cpp-sys-2",
  "mupdf",

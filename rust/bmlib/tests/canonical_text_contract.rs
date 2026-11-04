@@ -24,7 +24,8 @@
 //! variant of its `valid` value) is refused by both languages alike. The `html`
 //! cases are converted only with the `html` feature; their expected values
 //! round-trip without it. Its `html_elements` lists are both languages'
-//! `PRUNED` and `BLOCKS`.
+//! `PRUNED` and `BLOCKS`, and its `html_parse` values their parse deadline and
+//! chunk (#563).
 
 use bmlib::fulltext::canonical::{
     canonical_from_jats, canonical_from_markdown, canonical_from_plain_text,
@@ -50,7 +51,7 @@ fn cases() -> Vec<Value> {
 /// An HTML page's canonical text, or `None` in a build without the `html` feature.
 #[cfg(feature = "html")]
 fn html(input: &str) -> Option<CanonicalText> {
-    Some(bmlib::fulltext::canonical::canonical_from_html(input))
+    Some(bmlib::fulltext::canonical::canonical_from_html(input).expect("parsed in time"))
 }
 
 #[cfg(not(feature = "html"))]
@@ -115,6 +116,18 @@ fn the_html_element_sets_are_the_contracts() {
     };
     assert_eq!(sorted(&PRUNED), listed("pruned"));
     assert_eq!(sorted(&BLOCKS), listed("blocks"));
+}
+
+#[cfg(feature = "html")]
+#[test]
+fn the_html_parse_deadline_is_the_contracts() {
+    use bmlib::fulltext::canonical::html::{HTML_PARSE_CHUNK, HTML_PARSE_SECONDS};
+    let limits = &fixture()["html_parse"];
+    assert_eq!(limits["seconds"].as_u64(), Some(HTML_PARSE_SECONDS));
+    assert_eq!(
+        limits["chunk_code_points"].as_u64(),
+        Some(HTML_PARSE_CHUNK as u64)
+    );
 }
 
 #[test]

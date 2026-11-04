@@ -1,45 +1,44 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-04 (**this session's PR is #648**, on
-`feat/632-passage-guard`, for #632; see *This session* below). PRs #644
-(#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed parent), #631,
-#630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622 (pdf-4), #621
-(Rust CSV), #620 (#617), #615, #614 and #613 merged. **0.12.0 is on PyPI**
-(tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is
-on crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
-*Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
-crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
-#637, #639, #643, #644 and this session's._
+_Last updated: 2026-11-04 (**this session's PR is on
+`fix/563-html-nesting-guard`**, for #563; see *This session* below). PR #648
+(#632), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
+parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
+(pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged; **PR #650**
+(#635, a stream cancelled before its first event) is open. **0.12.0 is on
+PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
+0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
+summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
+for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
+#629-#631, #637, #639, #643, #644, #648 and this session's._
 
-## This session: `find_passage` rejects a contradicting near-verbatim quote (#632)
+## This session: an HTML page is parsed against a deadline (#563)
 
-Filed by StudyAnalyzer (phase 2b, Task 4). A fuzzy match whose best window
-reaches the threshold is cut into words, numbers and symbols, aligned with the
-quote's, and rejected when a token left unmatched holds a digit, negates
-(`NEGATION_WORDS`, `n't`, `≠`, a `NEGATING_PREFIXES` prefix: `ineffective` was
-accepted for `effective` at 0.954) or states a direction (`DIRECTION_WORDS`,
-`<`, `≥`). **`PassageMatch.contradiction`** (`number`/`negation`/`direction`)
-says which; **`CONTRADICTION_RULES_VERSION`** (1) versions the lists. Rust has
-the same guard (`SequenceMatcher` made generic for the token alignment); the
-oracle now compares the tokens and the lists too. Three contract cases that
-pinned harmful accepts were inverted; 56 of the oracle's 144 fuzzy accepts
-(50 synthetic edits, 6 hand-written) are now rejected. Mutation: 22 Python and 14 Rust mutants,
-all killed once a three-letter prefix case was added. **PR #648's review**
-(four reviewers): a quote dropping a bracketed citation marker (`[12]`, as
-canonical JATS prints a body citation) was rejected as `number`, so whole
-markers are now skipped, and a comma no longer joins a number (`3,4` and
-`3, 4` cut alike). `PassageContradiction` is exported and type-checked in
-`__post_init__`; `CONTRADICTION_RULES_VERSION` is pinned to a digest of the
-guard; the check order, each rule on each side, the best-window-only and
-no-stemming decisions and the PICO consequence are pinned; four figures were
-corrected (the test sentence is 214 characters, 0.995 not 0.996). 13 Python
-and 5 Rust mutants on those, all killed. A parenthesised or superscript
-marker is still read as a number (`docs/DECISIONS.md`). The choices (best
-window only, no typo tolerance, `a` as a prefix, no `over`/`under`) are in
-`docs/DECISIONS.md`. Filed **#647** (PicoAgent drops the reason; a decision).
-**For StudyAnalyzer**: the threshold can go back to 0.95-0.97; show
-`contradiction` where a quote was rejected for it (call `find_passage`
-directly until #647 is decided).
+Filed by StudyAnalyzer (its phase 2d takes HTML from an untrusted hand-off
+file). html5ever is quadratic in nesting depth for any block that closes an
+open `<p>` (`div`, `section`, `blockquote`, `ul>li`, also behind a `<table>`);
+`span`, `b`, `a`, unclosed `<p>` stay linear. **The maintainer chose a time
+budget over a depth count** (2026-11-04): markupever exposes neither the
+tokenizer nor the tree mid-parse, so a depth count would be our own model of
+the tree builder, which a crafted page gets past. Both languages feed the
+parser `HTML_PARSE_CHUNK` (16,384) code points at a time and refuse a page
+still parsing after `HTML_PARSE_SECONDS` (30): Python raises
+`HtmlParseTimeoutError` (a `ValueError`), Rust's `canonical_from_html` now
+returns `Result` (breaking; html5ever is a direct dependency for its
+`driver`). The contract fixture holds both constants; tiny chunks are tested
+to parse as one. Smaller chunks slowed markupever (4,096: 4.8 s against 2.5 s).
+**For StudyAnalyzer**: `intake.rs` handles the `Err` on its next pin move.
+
+## Earlier, 2026-11-04: `find_passage` rejects a contradicting near-verbatim quote (#632, PR #648, merged)
+
+A fuzzy match whose best window reaches the threshold is rejected when a
+token the alignment leaves unmatched holds a digit, negates or states a
+direction; `PassageMatch.contradiction` says which,
+`CONTRADICTION_RULES_VERSION` (1) versions the lists. Whole bracketed
+citation markers are skipped. The choices are in `docs/DECISIONS.md`, the
+argument in the CHANGELOG. Filed **#647** (PicoAgent drops the reason; a
+decision); **#651** is open (an arm swap and a spelled-out number
+pass the guard).
 
 ## Earlier, 2026-11-03: the PICO agent sends `num_ctx` and can be stopped (#640–#642, PR #644, merged)
 
@@ -243,7 +242,7 @@ send `num_ctx` for Ollama, treat `None` as retrieval mode, and show
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
-iterative, the app must cap a page's size; `assess_full_text`, unmeasured,
+iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, size caps never bounded it; `assess_full_text`, unmeasured,
 **#560**; **#557**, **#558** after 2026-11-04); PR #556 (4b,
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
 PRs #554 and #555 (item 3, `chunk_canonical`, contract

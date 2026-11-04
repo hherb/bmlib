@@ -108,6 +108,13 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`canonical_from_html` returns `Result<CanonicalText,
+  HtmlParseTimeoutError>`** (#563, with the Python library). html5ever's parse
+  is quadratic in nesting depth, so the page is fed to it `HTML_PARSE_CHUNK`
+  (16,384) code points at a time through html5ever's incremental `driver`
+  (now a direct dependency, at scraper's 0.39), and a page still being parsed
+  after `HTML_PARSE_SECONDS` (30) is refused. A page that parses converts
+  exactly as before.
 - **`LlmChat` is `#[non_exhaustive]`** (#640, #642), with two new public
   fields, `num_ctx` and `stop`: build it with `LlmChat::new` and the `with_`
   methods, so a later field breaks no caller again. `LlmContextModel` is too.

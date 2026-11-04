@@ -4200,5 +4200,9 @@
       "tr",
       "ul"
     ]
+  },
+  "html_parse": {
+    "seconds": 30,
+    "chunk_code_points": 16384
   }
 }

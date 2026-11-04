@@ -80,6 +80,9 @@ mupdf-sys = { version = "=0.8.0", optional = true, default-features = false }
 # tree, named for its `Edge`, which every walk is iterative over.
 scraper = { version = "0.27", optional = true, default-features = false }
 ego-tree = { version = "0.11", optional = true }
+# scraper's own html5ever, named for its incremental `driver`, so a page is
+# parsed in chunks against a deadline (#563). Keep it at scraper's version.
+html5ever = { version = "0.39", optional = true }
 # The PostgreSQL backend: a real driver behind the `postgres` feature, matching
 # the Python library's optional `psycopg2` extra. Optional so a caller that only
 # ever opens SQLite does not link a Postgres client and its async runtime. The
@@ -126,7 +129,7 @@ http-ureq = ["dep:ureq"]
 pdf = ["dep:mupdf", "dep:mupdf-sys"]
 # HTML to canonical text. Off by default, as Python's `html` extra is, so a build
 # that never reads a web page does not compile an HTML parser.
-html = ["dep:scraper", "dep:ego-tree"]
+html = ["dep:scraper", "dep:ego-tree", "dep:html5ever"]
 # The PostgreSQL backend. Off by default. `Dialect::Postgres`, the placeholder
 # rewriter and the PostgreSQL DDL are always present; this adds the driver that
 # can actually run a statement against a server.

@@ -8,6 +8,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`canonical_from_html` refuses a page it cannot parse in time** (#563,
+  filed by StudyAnalyzer). html5ever's parse is quadratic in nesting depth
+  (`<div>` nested 40,000 deep, 429 KB, took 2.6 s; a 5 MB page nested that way
+  about 5 minutes), so the size cap PR #559 asked callers for bounded nothing.
+  The page is now fed to the parser `HTML_PARSE_CHUNK` (16,384) code points at
+  a time, and one still being parsed after `HTML_PARSE_SECONDS` (30) raises the
+  new **`HtmlParseTimeoutError`** (a `ValueError`; `parsed` and `length` in
+  code points). A page shaped like an article converts in a fraction of that
+  (20 MB with 15 MB of `data:` image: 0.25 s). A time budget rather than a
+  depth count, by the maintainer's decision: markupever exposes neither
+  html5ever's tokenizer nor the tree while it is built, so a depth count would
+  be a model of the tree builder that a page crafted against it gets past,
+  where a deadline bounds every slow path. A page that parses converts exactly
+  as before (`HTML_CANONICAL_VERSION` stays 1); the shared contract holds both
+  constants.
 - **`find_passage` rejects a near-verbatim match that changes a number, a
   negation or a direction** (#632, filed by StudyAnalyzer). A one-character
   edit scores about `1 − 1/L`, so no `min_similarity` told a benign copy from
