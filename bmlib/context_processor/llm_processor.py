@@ -24,8 +24,9 @@ consolidated until the answer fits one context.
 Every model call goes through a :class:`~bmlib.agents.BaseAgent`, so token
 accounting, retries, JSON repair and provider routing are the ones the rest
 of bmlib uses.  A model request that fails is retried with backoff
-(:data:`CONTEXT_MODEL_ATTEMPTS`), with the attempts and backoff of Rust's
-``LlmContextModel``; which failures are retried differs (``_NOT_RETRIED``).
+(:data:`CONTEXT_MODEL_ATTEMPTS`), with the attempts, backoff and retried HTTP
+statuses of Rust's ``LlmContextModel``; which other failures are retried
+differs (``_NOT_RETRIED``).
 """
 
 from __future__ import annotations
@@ -77,8 +78,9 @@ _BUG_TYPES: tuple[type[BaseException], ...] = (
 #: bad argument, and every :class:`~bmlib.agents.ChatJsonError`, which
 #: ``chat_json`` has already re-asked for), a missing SDK, an unsupported
 #: feature, and a bmlib defect.  Anything else a provider raises is taken for
-#: a failed request, an HTTP refusal (a 4xx) among them (#646), where Rust's
-#: ``LlmContextModel`` retries only a ``ChatError::Transport``.
+#: a failed request, except an HTTP status outside :data:`_RETRIED_STATUSES`
+#: (#646), where Rust's ``LlmContextModel`` retries only
+#: ``ChatError::is_retryable``.
 _NOT_RETRIED: tuple[type[BaseException], ...] = (
     ChatStoppedError,
     ValueError,
@@ -86,6 +88,26 @@ _NOT_RETRIED: tuple[type[BaseException], ...] = (
     NotImplementedError,
     *_BUG_TYPES,
 )
+
+#: The HTTP statuses a retry may cure: a request timeout, rate limiting,
+#: server failures and Anthropic's 529 "overloaded" — Rust's
+#: ``RETRYABLE_STATUSES``, held to agreeing by
+#: ``tests/fixtures/pico_stop_num_ctx.json``.  A 401 (bad key), 404 (no such
+#: model) or 400 (bad request) will be refused again (#646).
+_RETRIED_STATUSES = frozenset({408, 429, 500, 502, 503, 504, 529})
+
+
+def _is_refusal(exc: BaseException) -> bool:
+    """Whether *exc* is an HTTP answer no retry changes (#646).
+
+    Every built-in provider's SDK exception for an HTTP answer carries its
+    ``status_code`` (``anthropic``/``openai`` ``APIStatusError``,
+    ``ollama.ResponseError``); a connection failure or timeout carries none
+    and stays retried.  ollama-python's ``-1`` (no HTTP status) is no refusal.
+    """
+    status = getattr(exc, "status_code", None)
+    return isinstance(status, int) and status >= 400 and status not in _RETRIED_STATUSES
+
 
 _T = TypeVar("_T")
 
@@ -368,9 +390,10 @@ class LLMChunkProcessor(IterativeContextProcessor):
 
         Up to :data:`CONTEXT_MODEL_ATTEMPTS` tries, waiting
         :data:`CONTEXT_MODEL_RETRY_BASE_DELAY` seconds before the first retry
-        and doubling after.  What no retry cures (``_NOT_RETRIED``) is raised
-        at once, and a failure while the agent's stop is set ends the run with
-        no wait, as Rust's ``LlmContextModel`` does.
+        and doubling after.  What no retry cures (``_NOT_RETRIED``, or an
+        HTTP status outside :data:`_RETRIED_STATUSES`) is raised at once, and
+        a failure while the agent's stop is set ends the run with no wait, as
+        Rust's ``LlmContextModel`` does.
 
         Args:
             call: The model call.
@@ -390,8 +413,12 @@ class LLMChunkProcessor(IterativeContextProcessor):
             except _NOT_RETRIED:
                 raise
             except Exception as exc:
+                # The stop first: a refusal under it ends the run unlogged (#642)
+                # rather than failing a batch at ERROR; neither is retried.
                 if self.agent.stop_requested():
                     raise ProcessingStoppedError(f"{label} failed after the stop: {exc}") from exc
+                if _is_refusal(exc):
+                    raise
                 if attempt == CONTEXT_MODEL_ATTEMPTS:
                     raise
                 delay = CONTEXT_MODEL_RETRY_BASE_DELAY * 2 ** (attempt - 1)

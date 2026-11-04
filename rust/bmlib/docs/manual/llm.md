@@ -100,9 +100,10 @@ client reads nothing and opens nothing, so keep the one you built, and two
 callers may hold clients with different keys or transports.
 
 What a call can refuse is a `ChatError`: `UnknownProvider`, `MissingApiKey {
-provider, env_var }` (before any request), `Transport` (no answer, or a
-non-2xx status, quoting the server's `error.message` when it gave one),
-`Malformed` (a body the protocol cannot read, including an `error` object at
+provider, env_var }` (before any request), `Transport` (no HTTP answer),
+`Http { status, message }` (a non-2xx status, quoting the server's
+`error.message` when it gave one; *unreleased, #646*, until then a
+`Transport`), `Malformed` (a body the protocol cannot read, including an `error` object at
 HTTP 200), `ToolsUnsupported` (tools for a provider not in
 `TOOL_CAPABLE_PROVIDERS`, which every built-in provider is today), and for
 streams `Stream` and `StreamingToolsUnsupported`. It is
@@ -209,7 +210,7 @@ assert_eq!((response.input_tokens, response.output_tokens), (9, 3));
   answer. So is a server `error` event and a tool call; tools are refused up
   front (`StreamingToolsUnsupported`).
 - Opening is tried up to `STREAM_OPEN_ATTEMPTS` (3) times on a transport
-  failure or a `RETRYABLE_STATUSES` status (429, 500, 502, 503, 504, 529), the wait doubling
+  failure or a `RETRYABLE_STATUSES` status (408, 429, 500, 502, 503, 504, 529), the wait doubling
   from `retry_base_delay`. Nothing is retried once a delta has been delivered.
 - An OpenAI-compatible server reports usage only when asked, and only the
   `STREAM_USAGE_PROVIDERS` are asked; elsewhere the counts are 0.

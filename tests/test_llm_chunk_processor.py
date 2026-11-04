@@ -330,6 +330,15 @@ def _answer(content: str = "extracted") -> LLMResponse:
     return LLMResponse(content=content, model="test:model", input_tokens=1, output_tokens=1)
 
 
+class _HTTPError(Exception):
+    """An SDK's HTTP-status exception, as ``anthropic``/``openai``'s
+    ``APIStatusError`` and ``ollama.ResponseError`` carry one."""
+
+    def __init__(self, status_code: int | None) -> None:
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+
+
 class TestTheModelCallIsRetried:
     """#641: a failed request is retried with backoff (rule 7), since
     ollama-python retries nothing; Rust's ``LlmContextModel`` does the same."""
@@ -379,6 +388,54 @@ class TestTheModelCallIsRetried:
 
         assert result.status is ProcessingStatus.FAILED
         assert agent.llm.chat.call_count == 1
+
+    @pytest.mark.parametrize("structured", [False, True])
+    @pytest.mark.parametrize("status", [400, 401, 403, 404, 422, 501])
+    def test_an_http_refusal_is_not_retried(
+        self, status: int, structured: bool, _no_backoff: MagicMock
+    ) -> None:
+        # #646: a bad key, a missing model or a bad request is refused again.
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=_HTTPError(status))
+        processor = LLMChunkProcessor(agent, use_structured_output=structured)
+        result = processor.process(["chunk"], query="q")
+
+        assert result.status is ProcessingStatus.FAILED
+        assert agent.llm.chat.call_count == 1
+        _no_backoff.assert_not_called()
+
+    # -1 is ollama-python's "no HTTP status"; True is an int that is no status.
+    @pytest.mark.parametrize("status", [408, 429, 500, 503, 529, -1, None, True])
+    def test_a_status_a_retry_may_cure_is_retried(
+        self, status: int | None, _no_backoff: MagicMock
+    ) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=[_HTTPError(status), _answer("the digest")])
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert result.content == "the digest"
+        assert agent.llm.chat.call_count == 2
+
+    def test_the_sdks_own_refusals_carry_their_status(self) -> None:
+        # The issue's own examples, built as the SDKs build them: a refusal is
+        # read off ``status_code``, so each SDK's exception must carry one.
+        anthropic = pytest.importorskip("anthropic")
+        openai = pytest.importorskip("openai")
+        import httpx
+
+        from bmlib.context_processor.llm_processor import _is_refusal
+
+        def response(status: int) -> httpx.Response:
+            return httpx.Response(status, request=httpx.Request("POST", "https://x.test"))
+
+        refusals = [
+            anthropic.AuthenticationError("bad key", response=response(401), body=None),
+            openai.NotFoundError("no such model", response=response(404), body=None),
+        ]
+        assert all(_is_refusal(exc) for exc in refusals)
+        overloaded = anthropic.InternalServerError("overloaded", response=response(529), body=None)
+        assert not _is_refusal(overloaded)
+        assert not _is_refusal(openai.APIConnectionError(request=response(200).request))
 
     def test_the_reply_is_read_once_and_never_resent(self) -> None:
         # ``float()`` of an integer past a double's range raises OverflowError;
@@ -450,4 +507,24 @@ class TestAStopEndsTheRun:
             LLMChunkProcessor(agent).process(["chunk"], query="q")
         assert isinstance(raised.value.__cause__, ConnectionError)
         assert agent.llm.chat.call_count == 1
+        _no_backoff.assert_not_called()
+
+    def test_a_refusal_while_stopped_ends_the_run_unlogged(
+        self, caplog: pytest.LogCaptureFixture, _no_backoff: MagicMock
+    ) -> None:
+        # #646 does not reorder #642: the stop is asked before the refusal,
+        # so a 401 under the stop is no batch failure logged at ERROR.
+        stop = threading.Event()
+        agent = _StoppingAgent(stop)
+
+        def refuse(**kwargs: Any) -> LLMResponse:
+            stop.set()
+            raise _HTTPError(401)
+
+        agent.llm.chat = MagicMock(side_effect=refuse)
+        with caplog.at_level(logging.WARNING), pytest.raises(ProcessingStoppedError) as raised:
+            LLMChunkProcessor(agent).process(["chunk"], query="q")
+        assert isinstance(raised.value.__cause__, _HTTPError)
+        assert agent.llm.chat.call_count == 1
+        assert caplog.records == []
         _no_backoff.assert_not_called()

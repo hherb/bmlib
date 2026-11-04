@@ -47,6 +47,8 @@ struct FakeOllama {
     fail_at_stop: bool,
     fail_at: Vec<usize>,
     malformed_at: Option<usize>,
+    /// The request answered with an HTTP error status, and that status.
+    status_at: Option<(usize, u16)>,
     /// Each request's `options.num_ctx`, `None` where the key is absent.
     num_ctx_sent: Mutex<Vec<Option<Value>>>,
 }
@@ -72,6 +74,10 @@ impl HttpClient for FakeOllama {
         }
         if self.malformed_at == Some(index) {
             return Ok(HttpResponse::from_bytes(200, b"not json".to_vec()));
+        }
+        if let Some((_, status)) = self.status_at.filter(|(at, _)| *at == index) {
+            let body = json!({"error": "refused"}).to_string();
+            return Ok(HttpResponse::from_bytes(status, body.into_bytes()));
         }
         if self.stop_at == Some(index) {
             self.stop.store(true, Ordering::SeqCst);
@@ -114,6 +120,10 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static st
             })
             .unwrap_or_default(),
         malformed_at: case["malformed_request"].as_u64().map(|k| k as usize),
+        status_at: case["status_request"].as_u64().map(|k| {
+            let status = case["status"].as_u64().expect("a status_request's status");
+            (k as usize, u16::try_from(status).expect("a u16"))
+        }),
         num_ctx_sent: Mutex::new(Vec::new()),
     });
     let mut client = LlmClient::new(transport.clone());
@@ -355,7 +365,7 @@ fn context_model_retries_transport() {
     assert_eq!(model.complete("p", 0.0, 10), Ok("the digest".into()));
     assert_eq!(transport.requests(), 2);
 
-    // An HTTP error status is a transport failure too.
+    // A retryable HTTP status is retried too.
     let transport = Scripted::new(vec![Ok((503, "busy", "stop")), Ok((200, "{}", "stop"))]);
     let client = scripted_client(transport.clone());
     let model = LlmContextModel::new(&client, "ollama:qwen3");
@@ -375,6 +385,44 @@ fn context_model_retries_transport() {
     );
     assert!(error.contains("reset"), "{error}");
     assert_eq!(transport.requests(), CONTEXT_MODEL_ATTEMPTS as usize);
+}
+
+/// #646: a refusal no retry changes is sent once, in both calls; a 408 is
+/// retried.
+#[test]
+fn context_model_does_not_retry_a_refusal() {
+    for status in [400, 401, 404] {
+        let transport = Scripted::new(vec![Ok((status, "refused", "stop"))]);
+        let client = scripted_client(transport.clone());
+        let model = LlmContextModel::new(&client, "ollama:qwen3");
+        let error = model.complete("p", 0.0, 10).expect_err("a refusal");
+        assert!(error.contains(&format!("HTTP {status}")), "{error}");
+        assert_eq!(transport.requests(), 1, "HTTP {status}: complete");
+
+        let transport = Scripted::new(vec![Ok((status, "refused", "stop"))]);
+        let client = scripted_client(transport.clone());
+        let model = LlmContextModel::new(&client, "ollama:qwen3");
+        model.complete_json("p", 0.0, 10).expect_err("a refusal");
+        assert_eq!(transport.requests(), 1, "HTTP {status}: complete_json");
+    }
+    let transport = Scripted::new(vec![Ok((408, "slow", "stop")), Ok((200, "x", "stop"))]);
+    let client = scripted_client(transport.clone());
+    let model = LlmContextModel::new(&client, "ollama:qwen3");
+    assert_eq!(model.complete("p", 0.0, 10), Ok("x".into()));
+    assert_eq!(transport.requests(), 2);
+}
+
+/// Python's `LLMChunkProcessor` retries the same statuses.
+#[test]
+fn the_retried_statuses_are_the_fixtures() {
+    let fixture: Value = serde_json::from_str(FIXTURE).expect("the fixture parses");
+    let statuses: Vec<u16> = fixture["retried_statuses"]
+        .as_array()
+        .expect("retried_statuses")
+        .iter()
+        .map(|s| u16::try_from(s.as_u64().expect("a status")).expect("a u16"))
+        .collect();
+    assert_eq!(statuses, bmlib::llm::RETRYABLE_STATUSES);
 }
 
 #[test]

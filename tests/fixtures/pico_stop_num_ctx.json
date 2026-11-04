@@ -1,5 +1,5 @@
 {
-  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama HTTP transport (Python: ollama-python over an httpx.MockTransport). A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. Each k in `fail_requests` fails request k with a transport fault and no stop, which the condenser's model retries up to `context_model_attempts` tries; `malformed_request` k answers request k with a body that is not JSON, which is not retried. `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (the key absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged).",
+  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama HTTP transport (Python: ollama-python over an httpx.MockTransport). A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. Each k in `fail_requests` fails request k with a transport fault and no stop, which the condenser's model retries up to `context_model_attempts` tries; `malformed_request` k answers request k with a body that is not JSON, which is not retried. `status_request` k answers request k with HTTP `status` (body `{\"error\": \"refused\"}`): a status in `retried_statuses` is retried, any other is not (#646). `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (the key absent when null); `expected.error` is the error kind, or null for a result. `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged).",
   "stopped_kind": "stopped",
   "model": "ollama:test-model",
   "title": "A trial",
@@ -8,6 +8,7 @@
   "min_similarity": 0.9,
   "max_context_chars": 1000,
   "context_model_attempts": 3,
+  "retried_statuses": [408, 429, 500, 502, 503, 504, 529],
   "json_reply": {
     "is_intervention_study": true,
     "has_comparison": true,
@@ -56,6 +57,26 @@
       "name": "a malformed condensation answer is not retried",
       "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "malformed_request": 1,
       "expected": {"requests": 6, "error": null}
+    },
+    {
+      "name": "a condensation request refused with HTTP 401 is not retried",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 401,
+      "expected": {"requests": 6, "error": null}
+    },
+    {
+      "name": "a condensation request refused with HTTP 404 is not retried",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 404,
+      "expected": {"requests": 6, "error": null}
+    },
+    {
+      "name": "a condensation request answered HTTP 503 is retried",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 503,
+      "expected": {"requests": 7, "error": null}
+    },
+    {
+      "name": "a condensation request answered HTTP 408 is retried",
+      "fn": "prepared", "num_ctx": 8192, "text_repeat": 60, "status_request": 1, "status": 408,
+      "expected": {"requests": 7, "error": null}
     },
     {
       "name": "a stop before the run sends nothing",
