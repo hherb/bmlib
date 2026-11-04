@@ -29,8 +29,9 @@ use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse, HttpSt
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
 use std::ops::ControlFlow;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// One scripted answer to opening a stream.
 enum Answer {
@@ -436,4 +437,341 @@ fn an_ollama_line_that_is_not_json_is_a_stream_error() {
     let transport = ScriptedStreams::new(vec![Answer::Status(200, "not json\n")]);
     let (_, result) = stream(&client(transport), &request("ollama:llama-x"));
     assert!(matches!(result, Err(ChatError::Stream(m)) if m.contains("not JSON")));
+}
+
+// --- #635: a stream the caller can cancel while it waits -------------------
+
+/// A body that records being dropped, which is the connection closing.
+struct TrackedBody {
+    bytes: std::io::Cursor<&'static [u8]>,
+    dropped: Arc<AtomicBool>,
+}
+
+impl std::io::Read for TrackedBody {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.bytes.read(buf)
+    }
+}
+
+impl Drop for TrackedBody {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+/// A transport that answers only once `release` is sent: a server still
+/// reading the prompt. Counts the requests it was sent.
+struct WaitingServer {
+    release: Mutex<mpsc::Receiver<()>>,
+    body: &'static str,
+    posted: AtomicUsize,
+    dropped: Arc<AtomicBool>,
+}
+
+impl WaitingServer {
+    fn new(body: &'static str) -> (Arc<Self>, mpsc::Sender<()>) {
+        let (release, wait) = mpsc::channel();
+        let server = Arc::new(WaitingServer {
+            release: Mutex::new(wait),
+            body,
+            posted: AtomicUsize::new(0),
+            dropped: Arc::new(AtomicBool::new(false)),
+        });
+        (server, release)
+    }
+}
+
+impl HttpClient for WaitingServer {
+    fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {
+        unreachable!("chat_stream never GETs")
+    }
+
+    fn post_json_stream(
+        &self,
+        _url: &str,
+        _body: &Value,
+        _headers: &BTreeMap<String, String>,
+    ) -> Result<HttpStream, FetchError> {
+        self.posted.fetch_add(1, Ordering::SeqCst);
+        let _ = self
+            .release
+            .lock()
+            .expect("lock")
+            .recv_timeout(Duration::from_secs(10));
+        Ok(HttpStream {
+            status: 200,
+            body: Box::new(TrackedBody {
+                bytes: std::io::Cursor::new(self.body.as_bytes()),
+                dropped: Arc::clone(&self.dropped),
+            }),
+        })
+    }
+}
+
+/// Whether `condition` holds within two seconds (an abandoned worker's work).
+fn eventually(condition: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if condition() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    condition()
+}
+
+/// Set `cancel` once `sent` holds: the request has reached the transport, so
+/// the call is waiting rather than refused as already cancelled.
+fn cancel_once(cancel: &Arc<AtomicBool>, sent: impl Fn() -> bool + Send + 'static) {
+    let cancel = Arc::clone(cancel);
+    std::thread::spawn(move || {
+        assert!(eventually(sent), "the request never reached the transport");
+        cancel.store(true, Ordering::SeqCst);
+    });
+}
+
+fn llm_over(transport: Arc<dyn HttpClient + Send + Sync>) -> LlmClient {
+    let mut client = LlmClient::new(transport);
+    client.api_key = Some("k".to_string());
+    client.retry_base_delay = Duration::ZERO;
+    client
+}
+
+#[test]
+fn a_cancel_before_the_first_event_returns_at_once() {
+    for (model, body) in [
+        ("anthropic:claude-x", ANTHROPIC_SSE),
+        ("ollama:llama3.2", OLLAMA_NDJSON),
+    ] {
+        let (server, release) = WaitingServer::new(body);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let reached = server.clone();
+        cancel_once(&cancel, move || reached.posted.load(Ordering::SeqCst) > 0);
+        let mut seen = Vec::new();
+        let started = Instant::now();
+        let response = llm_over(server.clone())
+            .chat_stream_with_cancel(&request(model), &cancel, &mut |delta| {
+                seen.push(delta.clone());
+                ControlFlow::Continue(())
+            })
+            .expect("a cancelled response");
+        assert!(started.elapsed() < Duration::from_secs(2), "{model}");
+        assert_eq!(response.content, "", "{model}");
+        assert_eq!(response.stop_reason.as_deref(), Some("cancelled"));
+        assert!(seen.is_empty());
+        // Once the server answers, the abandoned worker closes the connection.
+        assert!(!server.dropped.load(Ordering::SeqCst));
+        release.send(()).expect("the worker is waiting");
+        assert!(
+            eventually(|| server.dropped.load(Ordering::SeqCst)),
+            "{model}"
+        );
+        assert_eq!(server.posted.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn a_cancel_already_set_sends_nothing() {
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, ANTHROPIC_SSE)]);
+    let response = client(transport.clone())
+        .chat_stream_with_cancel(
+            &request("anthropic:claude-x"),
+            &AtomicBool::new(true),
+            &mut |_| ControlFlow::Continue(()),
+        )
+        .expect("a response");
+    assert_eq!(response.stop_reason.as_deref(), Some("cancelled"));
+    assert!(transport.posted().is_empty());
+}
+
+#[test]
+fn a_cancel_already_set_records_no_usage() {
+    let model = "anthropic:claude-stream-cancel-already-set-test";
+    let transport = ScriptedStreams::new(vec![]);
+    client(transport)
+        .chat_stream_with_cancel(&request(model), &AtomicBool::new(true), &mut |_| {
+            ControlFlow::Continue(())
+        })
+        .expect("a response");
+    let usage = with_token_tracker(|tracker| tracker.get_summary());
+    assert!(!usage.by_model.contains_key(model));
+}
+
+#[test]
+fn a_stream_cut_off_is_an_error_on_the_cancellable_path_too() {
+    // Only a cancel excuses a missing end marker; a dropped connection is not one.
+    for (model, cut, marker) in [
+        (
+            "openai:gpt-x",
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Yes\"}}]}\n\n",
+            "ended before a finish_reason",
+        ),
+        (
+            "ollama:llama-x",
+            "{\"message\":{\"content\":\"Yes\"},\"done\":false}\n",
+            "ended before done",
+        ),
+    ] {
+        let transport = ScriptedStreams::new(vec![Answer::Status(200, cut)]);
+        let result = client(transport).chat_stream_with_cancel(
+            &request(model),
+            &AtomicBool::new(false),
+            &mut |_| ControlFlow::Continue(()),
+        );
+        assert!(
+            matches!(&result, Err(ChatError::Stream(m)) if m.contains(marker)),
+            "{model}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn an_uncancelled_stream_is_what_chat_stream_returns() {
+    for (model, body) in [
+        ("anthropic:claude-x", ANTHROPIC_SSE),
+        ("openai:gpt-x", OPENAI_SSE),
+        ("ollama:llama3.2", OLLAMA_NDJSON),
+    ] {
+        let direct = stream(
+            &client(ScriptedStreams::new(vec![Answer::Status(200, body)])),
+            &request(model),
+        );
+        let mut seen = Vec::new();
+        let cancellable = client(ScriptedStreams::new(vec![Answer::Status(200, body)]))
+            .chat_stream_with_cancel(&request(model), &AtomicBool::new(false), &mut |delta| {
+                seen.push(delta.clone());
+                ControlFlow::Continue(())
+            });
+        assert_eq!(seen, direct.0, "{model}");
+        assert_eq!(
+            format!("{cancellable:?}"),
+            format!("{:?}", direct.1),
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn a_cancel_between_events_stops_the_answer() {
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, ANTHROPIC_SSE)]);
+    let cancel = AtomicBool::new(false);
+    let mut seen = Vec::new();
+    let response = client(transport)
+        .chat_stream_with_cancel(&request("anthropic:claude-x"), &cancel, &mut |delta| {
+            seen.push(delta.clone());
+            cancel.store(true, Ordering::SeqCst);
+            ControlFlow::Continue(())
+        })
+        .expect("a response");
+    assert_eq!(seen, [StreamDelta::Text("Blinded".to_string())]);
+    assert_eq!(response.content, "Blinded");
+    assert_eq!(response.stop_reason.as_deref(), Some("cancelled"));
+    assert_eq!((response.input_tokens, response.output_tokens), (12, 1));
+}
+
+#[test]
+fn the_cancellable_path_retries_and_refuses_as_chat_stream_does() {
+    let transport = ScriptedStreams::new(vec![
+        Answer::Status(529, "{\"error\":{\"message\":\"Overloaded\"}}"),
+        Answer::Unreachable,
+        Answer::Status(200, ANTHROPIC_SSE),
+    ]);
+    let never = AtomicBool::new(false);
+    let response = client(transport.clone())
+        .chat_stream_with_cancel(&request("anthropic:claude-x"), &never, &mut |_| {
+            ControlFlow::Continue(())
+        })
+        .expect("a response");
+    assert_eq!(response.content, "Blinded, yes.");
+    assert_eq!(transport.posted().len(), 3);
+
+    let refused = ScriptedStreams::new(vec![Answer::Status(
+        401,
+        "{\"error\":{\"message\":\"invalid x-api-key\"}}",
+    )]);
+    let result = client(refused.clone()).chat_stream_with_cancel(
+        &request("anthropic:claude-x"),
+        &never,
+        &mut |_| ControlFlow::Continue(()),
+    );
+    assert!(matches!(&result, Err(ChatError::Transport(m)) if m.contains("invalid x-api-key")));
+    assert_eq!(refused.posted().len(), 1);
+
+    let mut tools = request("anthropic:claude-x");
+    tools.tools = Some(vec![LLMToolDefinition::new("f", "", json!({}))]);
+    let result =
+        client(ScriptedStreams::new(vec![]))
+            .chat_stream_with_cancel(&tools, &never, &mut |_| ControlFlow::Continue(()));
+    assert!(matches!(result, Err(ChatError::StreamingToolsUnsupported)));
+}
+
+#[test]
+fn a_cancelled_stream_sends_no_further_retry() {
+    let answers = (0..STREAM_OPEN_ATTEMPTS)
+        .map(|_| Answer::Status(503, "{\"error\":{\"message\":\"try later\"}}"))
+        .collect();
+    let transport = ScriptedStreams::new(answers);
+    let mut llm = client(transport.clone());
+    llm.retry_base_delay = Duration::from_millis(300);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let reached = transport.clone();
+    cancel_once(&cancel, move || !reached.posted().is_empty());
+    let response = llm
+        .chat_stream_with_cancel(&request("anthropic:claude-x"), &cancel, &mut |_| {
+            ControlFlow::Continue(())
+        })
+        .expect("a cancelled response");
+    assert_eq!(response.stop_reason.as_deref(), Some("cancelled"));
+    // The worker wakes from its backoff, sees the cancel, and gives up.
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(transport.posted().len(), 1);
+}
+
+#[test]
+fn a_cancelled_stream_records_its_usage() {
+    let model = "anthropic:claude-stream-cancel-usage-test";
+    let transport = ScriptedStreams::new(vec![Answer::Status(200, ANTHROPIC_SSE)]);
+    let cancel = AtomicBool::new(false);
+    client(transport)
+        .chat_stream_with_cancel(&request(model), &cancel, &mut |_| {
+            cancel.store(true, Ordering::SeqCst);
+            ControlFlow::Continue(())
+        })
+        .expect("a response");
+    let usage = with_token_tracker(|tracker| tracker.get_summary());
+    let row = usage.by_model.get(model).expect("recorded");
+    assert_eq!((row.input_tokens, row.output_tokens), (12, 1));
+}
+
+struct PanickingTransport;
+
+impl HttpClient for PanickingTransport {
+    fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {
+        unreachable!("chat_stream never GETs")
+    }
+
+    fn post_json_stream(
+        &self,
+        _url: &str,
+        _body: &Value,
+        _headers: &BTreeMap<String, String>,
+    ) -> Result<HttpStream, FetchError> {
+        panic!("the transport's own defect");
+    }
+}
+
+#[test]
+fn a_panic_in_the_transport_is_not_a_quiet_end() {
+    let caught = std::panic::catch_unwind(|| {
+        let _ = llm_over(Arc::new(PanickingTransport)).chat_stream_with_cancel(
+            &request("anthropic:claude-x"),
+            &AtomicBool::new(false),
+            &mut |_| ControlFlow::Continue(()),
+        );
+    });
+    let panic = caught.expect_err("the panic is resumed here");
+    assert_eq!(
+        panic.downcast_ref::<&str>(),
+        Some(&"the transport's own defect")
+    );
 }

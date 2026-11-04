@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import logging
 import math
-import threading
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -64,6 +63,7 @@ from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
+from bmlib.llm.stream import Stop, stop_reader
 from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_bool, as_text
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
@@ -115,10 +115,6 @@ _NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ImportEr
 
 #: What the stop's refusal and :attr:`PicoErrorKind.STOPPED` say.
 STOPPED_MESSAGE = "stopped before the next request was sent"
-
-#: A stop: an ``Event`` or a zero-argument callable answering "stop now?",
-#: which must not raise.
-Stop = threading.Event | Callable[[], bool]
 
 
 class _UnreadableReplyError(ValueError):
@@ -545,7 +541,7 @@ class PicoAgent(BaseAgent):
         ):
             raise ValueError(f"num_ctx must be an int in 1..{MAX_NUM_CTX}, got {num_ctx!r}")
         self._num_ctx = num_ctx
-        self._stop_requested = _stop_reader(stop)
+        self._stop_requested = stop_reader(stop)
         super().__init__(
             llm=llm,
             model=model,
@@ -861,18 +857,3 @@ def _request_error(exc: Exception) -> PicoError:
     if isinstance(exc, ChatJsonError):
         return PicoError(PicoErrorKind.UNUSABLE_REPLY, str(exc))
     return PicoError(PicoErrorKind.REQUEST_FAILED, str(exc))
-
-
-def _stop_reader(stop: Stop | None) -> Callable[[], bool]:
-    """A zero-argument callable answering whether *stop* is set.
-
-    Raises:
-        TypeError: *stop* is neither an ``Event`` nor callable.
-    """
-    if stop is None:
-        return lambda: False
-    if isinstance(stop, threading.Event):
-        return stop.is_set
-    if callable(stop):
-        return stop
-    raise TypeError(f"stop must be a threading.Event or a callable, got {stop!r}")

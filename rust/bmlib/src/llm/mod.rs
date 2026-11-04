@@ -48,8 +48,8 @@ pub mod utils;
 pub use client::{
     chat_body, chat_headers, chat_stream_body, chat_url, parse_model_string, parse_response,
     provider_specs, resolve_target, supports_tools, ChatError, ChatRequest, LlmClient,
-    ProviderSpec, Target, DEFAULT_PROVIDER, DEFAULT_RETRY_BASE_DELAY, ERROR_BODY_LIMIT,
-    RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
+    ProviderSpec, Target, CANCEL_POLL_INTERVAL, DEFAULT_PROVIDER, DEFAULT_RETRY_BASE_DELAY,
+    ERROR_BODY_LIMIT, RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
 };
 pub use context_window::{
     known_context_window, read_context_window, ContextWindowError, KNOWN_CONTEXT_WINDOWS,
@@ -71,8 +71,8 @@ pub use protocol::{
     OLLAMA_CHARS_PER_TOKEN,
 };
 pub use stream::{
-    ndjson_events, run_stream, SseEvents, StreamDelta, StreamState, CANCELLED_STOP_REASON,
-    SSE_DONE, STREAM_USAGE_PROVIDERS, THINKING_BLOCK_SEPARATOR,
+    ndjson_events, run_stream, run_stream_until, SseEvents, StreamDelta, StreamState,
+    CANCELLED_STOP_REASON, SSE_DONE, STREAM_USAGE_PROVIDERS, THINKING_BLOCK_SEPARATOR,
 };
 pub use text_utils::{
     chunk_text, combine_title_and_text, get_text_with_priority, process_with_map_reduce,

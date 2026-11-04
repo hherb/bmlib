@@ -38,7 +38,7 @@ if TYPE_CHECKING:
         LLMMessage,
         LLMResponse,
     )
-    from bmlib.llm.stream import StreamDelta
+    from bmlib.llm.stream import Stop, StreamDelta
 
 
 @dataclass
@@ -145,12 +145,16 @@ class BaseProvider(ABC):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        cancel: Stop | None = None,
         **kwargs: object,
     ) -> LLMResponse:
         """Stream a chat answer, calling *on_delta* for each piece.
 
         Takes :meth:`chat`'s arguments and returns what it would, once the
-        stream ends; see :meth:`bmlib.llm.client.LLMClient.chat_stream`. Not
+        stream ends; see :meth:`bmlib.llm.client.LLMClient.chat_stream`.
+        *cancel* stops it at once, even before its first event (#635); a
+        provider that streams should read its events through
+        :func:`~bmlib.llm.stream.read_stream`, which does that. Not
         abstract, so a third-party provider written before streaming keeps
         working; the default raises :class:`NotImplementedError` rather than
         falling back to :meth:`chat`, which would make a caller's progress

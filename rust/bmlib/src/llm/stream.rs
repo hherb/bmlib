@@ -36,7 +36,7 @@ use serde_json::Value;
 use std::io::BufRead;
 use std::ops::ControlFlow;
 
-/// The `stop_reason` of a stream the caller stopped from `on_delta`.
+/// The `stop_reason` of a stream the caller stopped, from `on_delta` or by a cancel.
 pub const CANCELLED_STOP_REASON: &str = "cancelled";
 
 /// OpenAI-compatible providers asked to report usage on a stream.
@@ -397,6 +397,26 @@ pub fn run_stream<I>(
 where
     I: IntoIterator<Item = Result<Value, ChatError>>,
 {
+    run_stream_until(protocol, events, model, on_delta, &|| false)
+}
+
+/// [`run_stream`], where `cancelled` is asked once `events` ends: true means
+/// a cancel cut the events short (#635), so the response is built as for a
+/// stop rather than refused for a missing end marker.
+///
+/// # Errors
+///
+/// As [`run_stream`].
+pub fn run_stream_until<I>(
+    protocol: Protocol,
+    events: I,
+    model: &str,
+    on_delta: &mut dyn FnMut(&StreamDelta) -> ControlFlow<()>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<LLMResponse, ChatError>
+where
+    I: IntoIterator<Item = Result<Value, ChatError>>,
+{
     let mut state = StreamState::new(protocol);
     for event in events {
         for delta in state.apply(&event?).map_err(ChatError::Stream)? {
@@ -405,7 +425,7 @@ where
             }
         }
     }
-    state.finish(model, false).map_err(ChatError::Stream)
+    state.finish(model, cancelled()).map_err(ChatError::Stream)
 }
 
 /// The data of each server-sent event on a reader, in order.

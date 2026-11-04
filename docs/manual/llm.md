@@ -78,7 +78,7 @@ from bmlib.llm.providers import (
 )
 ```
 
-`TokenUsageRecord` and `TokenUsageSummary` live in `bmlib.llm.token_tracker`, and `extract_json` in `bmlib.llm.utils`. *(0.12.0)* The stream constants and a provider author's helpers (`STREAM_PROTOCOLS`, `STREAM_USAGE_PROVIDERS`, `CANCELLED_STOP_REASON`, `closing_stream`, `refuse_tools`, `sdk_events`) live in `bmlib.llm.stream`; the context-window errors and table (`ContextWindowError`, `NoSuchModelError`, `KNOWN_CONTEXT_WINDOWS`, `known_context_window`) in `bmlib.llm.context_window`.
+`TokenUsageRecord` and `TokenUsageSummary` live in `bmlib.llm.token_tracker`, and `extract_json` in `bmlib.llm.utils`. *(0.12.0)* The stream constants and a provider author's helpers (`STREAM_PROTOCOLS`, `STREAM_USAGE_PROVIDERS`, `CANCELLED_STOP_REASON`, `closing_stream`, `refuse_tools`, `sdk_events`; *(unreleased)* `read_stream`, `CANCEL_POLL_SECONDS`, `Stop` and `stop_reader`) live in `bmlib.llm.stream`; the context-window errors and table (`ContextWindowError`, `NoSuchModelError`, `KNOWN_CONTEXT_WINDOWS`, `known_context_window`) in `bmlib.llm.context_window`.
 
 ---
 
@@ -377,7 +377,8 @@ def chat_stream(
     max_tokens: int = 4096,
     top_p: float | None = None,
     json_mode: bool = False,
-    **kwargs: object,
+    cancel: Stop | None = None,
+    **kwargs: Any,
 ) -> LLMResponse
 ```
 
@@ -388,8 +389,20 @@ Send a chat request and stream the answer as the model writes it. Routes and bui
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `on_delta` | `Callable[[StreamDelta], object]` | *(required)* | Called once per delta: `kind="text"` for the answer, `kind="thinking"` for a separated reasoning trace (pass `think=` as for `chat()`). Returning exactly `False` stops the stream; any other value (`None` included) carries on. An exception it raises propagates, closing the stream. |
+| `cancel` *(unreleased)* | `threading.Event \| Callable[[], bool] \| None` | `None` | Stops the call **at once, even before the first delta** (#635) — while a local server is still reading a long prompt, which on a large model takes minutes and calls no `on_delta`. The response holds what arrived, with `stop_reason` `"cancelled"` (empty content if nothing had), and its usage is recorded as for a stop from `on_delta`. One already set sends nothing and records no usage. A callable must not raise. See *Cancelling* below. |
 
 **Returns:** `LLMResponse`. A stopped stream holds what arrived, with `stop_reason` `"cancelled"` — or the server's own, when its end marker came with the last delta — and the token counts the server had sent by then: Anthropic's input count is exact and its output count partial, while an OpenAI-compatible server (in its last chunk) and native Ollama (on its `done` chunk) have usually sent none.
+
+**Cancelling** *(unreleased)*. With `cancel`, the request is sent and its events read on a worker thread (`on_delta` still runs on yours), and your thread looks at `cancel` every `CANCEL_POLL_SECONDS` (0.05 s, in `bmlib.llm.stream`). A cancelled request is **abandoned, not interrupted**: the worker hands nothing more over and closes the connection at the next event it receives or when its request fails, so a server still reading the prompt goes on reading it until then. **Nothing bounds that wait in Python** (#652): the Anthropic and OpenAI SDKs time a request out but also retry opening it (twice, by default), which an abandoned worker cannot stop, so the prompt may be sent again after the cancel; and the Ollama client has no timeout, so a cancelled request to a server that never answers keeps its thread and connection for the life of the process. (The Rust port sends no further retry, and its `stream_timeout_seconds` bounds the wait.) A failure the cancel overtook, or one after it, is logged at DEBUG, not raised. With `cancel`, a stop from `on_delta` likewise closes the connection at the next event rather than before `chat_stream` returns. Without `cancel` nothing changes: no thread, and the connection is closed before the call returns.
+
+```python
+import threading
+
+stop = threading.Event()  # set from the UI thread's Stop button
+response = client.chat_stream(messages, show, model="ollama:qwen3:32b", cancel=stop)
+if response.stop_reason == "cancelled" and not response.content:
+    print("stopped before the model wrote anything")
+```
 
 What differs from `chat()`:
 
@@ -399,7 +412,8 @@ What differs from `chat()`:
 - On Ollama, a stream whose last chunk carries no token counts reports 0 rather than `chat()`'s estimate.
 
 **Raises:**
-- `NotImplementedError` if `tools` is passed, or the provider cannot stream (a third-party provider that does not override [`BaseProvider.chat_stream`](#baseprovider-abstract-interface)).
+- `NotImplementedError` if `tools` is passed, or the provider cannot stream (a third-party provider that does not override [`BaseProvider.chat_stream`](#baseprovider-abstract-interface)), or `cancel` is passed to a provider whose `chat_stream` declares no `cancel` parameter (it would pass it to its SDK or drop it).
+- `TypeError` if `cancel` is neither an `Event` nor callable, before anything is sent.
 - `StreamError` if the stream fails after it opens (an error event, a broken connection — the SDK's exception is the `__cause__` — or an event that is not a JSON object), carries a tool call, or ends before its end marker. The deltas already delivered are what arrived of an incomplete answer; it is never returned as a short one.
 - Whatever `chat()` would raise for a request refused before the stream opens — Ollama's lazy stream included: a missing model is `ollama.ResponseError`, a stopped server `ConnectionError`.
 
@@ -835,7 +849,7 @@ requests and untouched `content`; `thinking` is simply `None`.
 
 ## Streaming *(0.12.0)*
 
-[`LLMClient.chat_stream()`](#llmclientchat_stream-0120) hands the answer to a callback piece by piece. Underneath it is a pure reducer, `StreamState`, which reads a stream's events in order, returns the deltas each carries, and builds the final `LLMResponse`. The providers feed it the events their SDKs yield; the Rust port (`bmlib::llm::stream`) feeds it the events it parses off the wire, and both are held to the shared contract `tests/fixtures/chat_stream.json` (24 cases). Three protocols are read:
+[`LLMClient.chat_stream()`](#llmclientchat_stream-0120) hands the answer to a callback piece by piece. Underneath it is a pure reducer, `StreamState`, which reads a stream's events in order, returns the deltas each carries, and builds the final `LLMResponse`. The providers feed it the events their SDKs yield; the Rust port (`bmlib::llm::stream`) feeds it the events it parses off the wire, and both are held to the shared contract `tests/fixtures/chat_stream.json` (29 cases; the five `cancel_after` ones *(unreleased)* cut a stream short with a cancel). Three protocols are read:
 
 | Protocol | Events | End marker |
 |----------|--------|------------|
@@ -886,10 +900,11 @@ def run_stream(
     events: Iterable[Mapping[str, Any]],
     model: str,
     on_delta: Callable[[StreamDelta], object],
+    cancelled: Callable[[], bool] | None = None,
 ) -> LLMResponse
 ```
 
-Read *events* to the end through a `StreamState`, calling *on_delta* for every delta. *on_delta* returning exactly `False` (not merely falsy) stops reading: no further event is read and the response is `finish(model, cancelled=True)`. Closing the underlying connection is the caller's job. Raises as `StreamState` does.
+Read *events* to the end through a `StreamState`, calling *on_delta* for every delta. *on_delta* returning exactly `False` (not merely falsy) stops reading: no further event is read and the response is `finish(model, cancelled=True)`. *cancelled* *(unreleased)* is asked once *events* ends: true means a cancel cut them short, so the response is `finish(model, cancelled=True)` rather than an error for the missing end marker. Closing the underlying connection is the caller's job. Raises as `StreamState` does.
 
 ```python
 from bmlib.llm import StreamError, run_stream
@@ -917,24 +932,34 @@ stopped = run_stream("openai", events, "gpt-4o", lambda delta: False)
 
 ### Writing a streaming provider
 
-`BaseProvider.chat_stream()` is not abstract, so a provider written before streaming keeps working; its default raises `NotImplementedError` rather than falling back to `chat()`, which would make a caller's progress display wait for the whole answer without saying why. A provider that streams overrides it, and `bmlib.llm.stream` has the three helpers the built-ins use:
+`BaseProvider.chat_stream()` is not abstract, so a provider written before streaming keeps working; its default raises `NotImplementedError` rather than falling back to `chat()`, which would make a caller's progress display wait for the whole answer without saying why. A provider that streams overrides it, and `bmlib.llm.stream` has the helpers the built-ins use:
 
 | Helper | What it does |
 |--------|--------------|
 | `refuse_tools(kwargs)` | Raises `NotImplementedError` if `kwargs["tools"]` is set. Call it before sending. |
 | `sdk_events(stream, dump)` | Yields an SDK stream's events as dicts (`dump` converts one), and turns whatever the SDK raises while iterating into `StreamError` with the SDK's exception as its cause. An exception `dump` raises propagates unchanged. |
 | `closing_stream(stream)` | Context manager closing *stream* on the way out. If a `StreamError` or `on_delta` exception is already propagating, a `close()` that raises is suppressed so it cannot replace it; after a complete answer it raises. |
+| `read_stream(protocol, open_stream, events, model, on_delta, cancel=None)` *(unreleased)* | Calls `open_stream()` (which sends the request and returns the SDK's stream), reads `events(stream)` through `run_stream` and closes it with `closing_stream`. Given a `cancel`, does the opening and reading on a worker thread so the cancel works before the first event (#635), relaying whatever they raise unchanged. |
 
 ```python
-from bmlib.llm.stream import closing_stream, refuse_tools, run_stream, sdk_events
+from bmlib.llm.stream import read_stream, refuse_tools, sdk_events
 
-def chat_stream(self, messages, on_delta, model=None, temperature=0.7, max_tokens=4096, **kwargs):
+def chat_stream(self, messages, on_delta, model=None, temperature=0.7, max_tokens=4096,
+                cancel=None, **kwargs):
     refuse_tools(kwargs)
     model = model or self.default_model
     request = ...  # what chat() would send, with stream=True
-    with closing_stream(self._client.chat.completions.create(**request)) as stream:
-        return run_stream("openai", sdk_events(stream, lambda c: c.to_dict()), model, on_delta)
+    return read_stream(
+        "openai",
+        lambda: self._client.chat.completions.create(**request),
+        lambda stream: sdk_events(stream, lambda c: c.to_dict()),
+        model,
+        on_delta,
+        cancel,
+    )
 ```
+
+Declare `cancel` only if the provider honours it: `LLMClient.chat_stream` refuses a cancel for a provider that does not, rather than letting it reach the SDK through `**kwargs`.
 
 Every model entry of a built-in provider that streams declares `ProviderCapabilities.supports_streaming=True`.
 
@@ -1899,7 +1924,7 @@ def __init__(
 | Method / Property | Type | Default behaviour |
 |-------------------|------|-------------------|
 | `api_key_env_var` | `property -> str` | Returns `""`. |
-| `chat_stream(messages, on_delta, model=None, temperature=0.7, max_tokens=4096, **kwargs)` *(0.12.0)* | `method -> LLMResponse` | Raises `NotImplementedError` — never falls back to `chat()`. See [Writing a streaming provider](#writing-a-streaming-provider). |
+| `chat_stream(messages, on_delta, model=None, temperature=0.7, max_tokens=4096, cancel=None, **kwargs)` *(0.12.0; `cancel` unreleased)* | `method -> LLMResponse` | Raises `NotImplementedError` — never falls back to `chat()`. See [Writing a streaming provider](#writing-a-streaming-provider). |
 | `context_window(model)` *(0.12.0)* | `method -> int \| None` | `known_context_window(PROVIDER_NAME, model)`; no request. |
 | `embed(text, model=None, **kwargs)` | `method -> EmbeddingResponse` | Raises `NotImplementedError`. |
 | `embed_batch(texts, model=None, max_batch_size=None, **kwargs)` | `method -> BatchEmbeddingResponse` | Raises `NotImplementedError`. |
