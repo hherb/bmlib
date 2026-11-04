@@ -42,11 +42,12 @@ The Python library is documented separately, in the repository's
   over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
   run against a real model. `complete` is a plain chat whose output-ceiling
   stop reason is an error; `complete_json` reads through `agents::chat_json`
-  (`CONTEXT_MODEL_JSON_RETRIES`, Python's default). Each call retries a
-  `ChatError::Transport` (an HTTP error status among them) up to
+  (`CONTEXT_MODEL_JSON_RETRIES`, Python's default). Each call retries what
+  `ChatError::is_retryable` says a retry may cure (#646: a transport failure,
+  or an HTTP status in `RETRYABLE_STATUSES`; never a 401, 404 or 400) up to
   `CONTEXT_MODEL_ATTEMPTS` (3) tries from `LlmClient::retry_base_delay`,
-  doubling, never once its stop is set: the attempts and backoff of Python's
-  `LLMChunkProcessor`, which also retries what is not a `Transport` (#646). A
+  doubling, never once its stop is set: the attempts, backoff and statuses of
+  Python's `LLMChunkProcessor`, which also retries some other failures. A
   call whose tries ran out says `after 3 attempts:`.
 - **`num_ctx` and a stop for the PICO agent** (#640, #642, with the Python
   library): `LlmChat::with_num_ctx`/`with_stop` and
@@ -122,6 +123,17 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **An HTTP error status is `ChatError::Http { status, message }`**, no
+  longer a `ChatError::Transport` (#646). `chat` and `chat_stream` used to
+  report every non-2xx as `Transport(String)`, the status only in the
+  message, so nothing could tell a 401 (bad key), a 404 (no such model) or a
+  400 (prompt too long) from a connection reset, and `LlmContextModel`
+  retried each of them three times. `message` and `Display` are unchanged; a
+  `match` that read an HTTP refusal as `Transport` now needs the new arm.
+  `ChatError::is_retryable()` answers "may sending it again succeed?" (a
+  transport failure, or a status in `RETRYABLE_STATUSES`), and
+  `RETRYABLE_STATUSES` gains 408, which opening a stream and a context-window
+  lookup now retry too.
 - **`canonical_from_html` returns `Result<CanonicalText, HtmlError>`** (#563,
   #654, with the Python library). html5ever's parse
   is quadratic in nesting depth, so the page is fed to it `HTML_PARSE_CHUNK`

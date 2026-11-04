@@ -31,7 +31,7 @@ import pytest
 from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
 from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
-from bmlib.context_processor.llm_processor import CONTEXT_MODEL_ATTEMPTS
+from bmlib.context_processor.llm_processor import _RETRIED_STATUSES, CONTEXT_MODEL_ATTEMPTS
 from bmlib.llm import LLMClient
 from bmlib.llm.data_types import LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
@@ -1108,6 +1108,8 @@ def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
             raise httpx.ConnectError("the connection was reset", request=request)
         if case.get("malformed_request") == index:
             return httpx.Response(200, text="not json")
+        if case.get("status_request") == index:
+            return httpx.Response(case["status"], json={"error": "refused"})
         if case.get("stop_at_request") == index:
             stop.set()
             if case["request_at_stop"] == "fails":
@@ -1172,6 +1174,10 @@ class TestTheStopAndNumCtxContract:
     def test_the_attempts_are_the_fixtures(self) -> None:
         # The retry cases' counts assume this many tries, as Rust's do.
         assert CONTEXT_MODEL_ATTEMPTS == CONTRACT["context_model_attempts"]
+
+    def test_the_retried_statuses_are_the_fixtures(self) -> None:
+        # Rust's RETRYABLE_STATUSES is held to the same list (#646).
+        assert _RETRIED_STATUSES == frozenset(CONTRACT["retried_statuses"])
 
     @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
     def test_a_case(self, case: dict[str, Any]) -> None:

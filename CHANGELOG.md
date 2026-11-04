@@ -340,13 +340,16 @@ All notable changes to bmlib are documented here. The format is based on
   no longer costs a long paper's condensation a batch (ollama-python retries nothing;
   the Anthropic and OpenAI SDKs' own retries come first). A `ValueError`
   (every `ChatJsonError` among them), a missing SDK, `NotImplementedError`, a
-  bmlib defect and `ChatStoppedError` are not retried; everything else is,
-  a permanent HTTP refusal (a 401, a 404) included (#646). Only the request is
+  bmlib defect, `ChatStoppedError` and an HTTP refusal no retry changes are
+  not retried: an exception carrying a `status_code` outside 408, 429, 500,
+  502, 503, 504 and 529 (#646, the statuses Rust retries, held to agreeing by
+  `pico_stop_num_ctx.json`), so a bad key, a missing model or a prompt too
+  long costs one request and no backoff; everything else is. Only the request is
   retried, never the reading of its reply, and a `confidence` too large for a
   float reads as the default rather than failing the batch. This reaches the
   Cochrane assessor's condensation too. Rust's new `LlmContextModel` makes the
-  same attempts with the same backoff, but retries a `ChatError::Transport`
-  alone.
+  same attempts with the same backoff and retries the same statuses, but no
+  other failure but a transport one.
 - **`PicoAgent.prepare` condenses a long paper once for both PICO calls**
   (#638, from StudyAnalyzer's plan 2c review). `check_suitability` and
   `extract` each condensed their own text, so a paper checked and extracted

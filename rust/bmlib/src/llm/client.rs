@@ -65,9 +65,12 @@ pub const DEFAULT_PROVIDER: &str = "anthropic";
 /// that cannot be encoded) would fail the same way again, so it is not.
 pub const STREAM_OPEN_ATTEMPTS: u32 = 3;
 
-/// The statuses on which opening a stream is retried: rate limiting, server
-/// failures, and Anthropic's 529 "overloaded".
-pub const RETRYABLE_STATUSES: &[u16] = &[429, 500, 502, 503, 504, 529];
+/// The statuses a retry may cure: a request timeout, rate limiting, server
+/// failures, and Anthropic's 529 "overloaded". Opening a stream, a metadata
+/// lookup and [`ChatError::is_retryable`] all retry these and no other status
+/// (#646 added 408); Python's `LLMChunkProcessor` retries the same set, held
+/// to agreeing by `tests/fixtures/pico_stop_num_ctx.json`.
+pub const RETRYABLE_STATUSES: &[u16] = &[408, 429, 500, 502, 503, 504, 529];
 
 /// How much of a refused stream's body is read to quote in the error.
 pub const ERROR_BODY_LIMIT: u64 = 64 * 1024;
@@ -334,8 +337,16 @@ pub enum ChatError {
     /// tools were never sent*. Recorded here rather than left as a
     /// re-discovery, and the check is one condition rather than a redesign.
     ToolsUnsupported(String),
-    /// The transport failed.
+    /// The transport failed: no HTTP answer arrived.
     Transport(String),
+    /// The server answered with an HTTP error status (#646: until then this
+    /// was a [`ChatError::Transport`], the status kept only in the message).
+    Http {
+        /// The HTTP status.
+        status: u16,
+        /// The URL, the status and the server's own words, if it gave any.
+        message: String,
+    },
     /// The server's answer could not be used.
     Malformed(String),
     /// A stream failed after it opened or ended before the answer was
@@ -360,13 +371,30 @@ impl std::fmt::Display for ChatError {
             ChatError::ToolsUnsupported(provider) => {
                 write!(f, "{provider} does not support tool calling")
             }
-            ChatError::Transport(message) => write!(f, "{message}"),
+            ChatError::Transport(message) | ChatError::Http { message, .. } => {
+                write!(f, "{message}")
+            }
             ChatError::Malformed(message) => write!(f, "{message}"),
             ChatError::Stream(message) => write!(f, "{message}"),
             ChatError::StreamingToolsUnsupported => write!(
                 f,
                 "chat_stream does not carry tool calls; use chat() for a request with tools"
             ),
+        }
+    }
+}
+
+impl ChatError {
+    /// Whether sending the same request again may succeed: a transport
+    /// failure, or an HTTP status in [`RETRYABLE_STATUSES`]. A 401 (bad key),
+    /// a 404 (no such model) or a 400 (prompt too long) will be refused again
+    /// (#646), as will a routing failure or a malformed answer.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            ChatError::Transport(_) => true,
+            ChatError::Http { status, .. } => RETRYABLE_STATUSES.contains(status),
+            _ => false,
         }
     }
 }
@@ -642,7 +670,10 @@ fn http_error(url: &str, status: u16, text: &str) -> ChatError {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| text.chars().take(200).collect());
-    ChatError::Transport(format!("{url} returned HTTP {status}: {detail}"))
+    ChatError::Http {
+        status,
+        message: format!("{url} returned HTTP {status}: {detail}"),
+    }
 }
 
 /// Record a finished call's tokens and cost in the process's token tracker.

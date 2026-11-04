@@ -283,7 +283,7 @@ fn a_refused_requests_body_is_read_only_so_far() {
     let (_, result) = stream(&client(transport), &request("anthropic:claude-x"));
     // Cut short, the body is no longer JSON, so its first 200 characters are quoted.
     assert!(
-        matches!(&result, Err(ChatError::Transport(m)) if m.len() < 1_000),
+        matches!(&result, Err(ChatError::Http { status: 400, message: m }) if m.len() < 1_000),
         "{result:?}"
     );
 }
@@ -319,7 +319,9 @@ fn opening_gives_up_after_the_last_attempt_and_quotes_the_server() {
         .collect();
     let transport = ScriptedStreams::new(answers);
     let (_, result) = stream(&client(transport.clone()), &request("anthropic:claude-x"));
-    assert!(matches!(&result, Err(ChatError::Transport(m)) if m.contains("HTTP 503: try later")));
+    assert!(
+        matches!(&result, Err(ChatError::Http { status: 503, message: m }) if m.contains("HTTP 503: try later"))
+    );
     assert_eq!(transport.posted().len(), STREAM_OPEN_ATTEMPTS as usize);
 }
 
@@ -330,7 +332,9 @@ fn a_rejected_request_is_not_retried() {
         "{\"error\":{\"message\":\"invalid x-api-key\"}}",
     )]);
     let (_, result) = stream(&client(transport.clone()), &request("anthropic:claude-x"));
-    assert!(matches!(&result, Err(ChatError::Transport(m)) if m.contains("invalid x-api-key")));
+    assert!(
+        matches!(&result, Err(ChatError::Http { status: 401, message: m }) if m.contains("invalid x-api-key"))
+    );
     assert_eq!(transport.posted().len(), 1);
 }
 
@@ -694,7 +698,9 @@ fn the_cancellable_path_retries_and_refuses_as_chat_stream_does() {
         &never,
         &mut |_| ControlFlow::Continue(()),
     );
-    assert!(matches!(&result, Err(ChatError::Transport(m)) if m.contains("invalid x-api-key")));
+    assert!(
+        matches!(&result, Err(ChatError::Http { status: 401, message: m }) if m.contains("invalid x-api-key"))
+    );
     assert_eq!(refused.posted().len(), 1);
 
     let mut tools = request("anthropic:claude-x");

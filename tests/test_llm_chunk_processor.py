@@ -330,6 +330,15 @@ def _answer(content: str = "extracted") -> LLMResponse:
     return LLMResponse(content=content, model="test:model", input_tokens=1, output_tokens=1)
 
 
+class _HTTPError(Exception):
+    """An SDK's HTTP-status exception, as ``anthropic``/``openai``'s
+    ``APIStatusError`` and ``ollama.ResponseError`` carry one."""
+
+    def __init__(self, status_code: int | None) -> None:
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+
+
 class TestTheModelCallIsRetried:
     """#641: a failed request is retried with backoff (rule 7), since
     ollama-python retries nothing; Rust's ``LlmContextModel`` does the same."""
@@ -379,6 +388,29 @@ class TestTheModelCallIsRetried:
 
         assert result.status is ProcessingStatus.FAILED
         assert agent.llm.chat.call_count == 1
+
+    @pytest.mark.parametrize("status", [400, 401, 403, 404, 422, 501])
+    def test_an_http_refusal_is_not_retried(self, status: int, _no_backoff: MagicMock) -> None:
+        # #646: a bad key, a missing model or a prompt too long is refused again.
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=_HTTPError(status))
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert result.status is ProcessingStatus.FAILED
+        assert agent.llm.chat.call_count == 1
+        _no_backoff.assert_not_called()
+
+    # -1 is ollama-python's "no HTTP status"; True is an int that is no status.
+    @pytest.mark.parametrize("status", [408, 429, 500, 503, 529, -1, None, True])
+    def test_a_status_a_retry_may_cure_is_retried(
+        self, status: int | None, _no_backoff: MagicMock
+    ) -> None:
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=[_HTTPError(status), _answer("the digest")])
+        result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+
+        assert result.content == "the digest"
+        assert agent.llm.chat.call_count == 2
 
     def test_the_reply_is_read_once_and_never_resent(self) -> None:
         # ``float()`` of an integer past a double's range raises OverflowError;

@@ -170,7 +170,7 @@ impl JsonChat for LlmChat<'_> {
             client: self.client,
             request,
             stop: self.stop,
-            transport_failed: false,
+            retryable_failure: false,
         };
         chat_json(
             &mut source,
@@ -192,10 +192,10 @@ struct ClientSource<'a> {
     client: &'a LlmClient,
     request: ChatRequest,
     stop: Option<&'a AtomicBool>,
-    /// Whether the last attempt failed with [`ChatError::Transport`]:
-    /// [`ChatSource::chat`]'s `String` loses the kind, and
-    /// [`LlmContextModel`] retries that kind alone.
-    transport_failed: bool,
+    /// Whether the last attempt failed in a way a retry may cure
+    /// ([`ChatError::is_retryable`]): [`ChatSource::chat`]'s `String` loses
+    /// the kind, and [`LlmContextModel`] retries that kind alone.
+    retryable_failure: bool,
 }
 
 impl ChatSource for ClientSource<'_> {
@@ -204,7 +204,7 @@ impl ChatSource for ClientSource<'_> {
             return Err(STOPPED_MESSAGE.to_string());
         }
         let outcome = self.client.chat(&self.request);
-        self.transport_failed = matches!(outcome, Err(ChatError::Transport(_)));
+        self.retryable_failure = outcome.as_ref().is_err_and(ChatError::is_retryable);
         outcome.map_err(|e| e.to_string())
     }
 
@@ -233,8 +233,9 @@ fn is_set(stop: Option<&AtomicBool>) -> bool {
 /// [`crate::agents::chat_json`] (Python's `_extract_structured` calls
 /// `agent.chat_json`), so a non-object is an error after its re-asks.
 ///
-/// Each call retries a transport failure ([`ChatError::Transport`], an HTTP
-/// error status among them, a permanent 4xx included: #646) up to [`CONTEXT_MODEL_ATTEMPTS`] tries, waiting
+/// Each call retries what a retry may cure ([`ChatError::is_retryable`]: a
+/// transport failure or a [`crate::llm::RETRYABLE_STATUSES`] status, never a
+/// 401, 404 or 400: #646) up to [`CONTEXT_MODEL_ATTEMPTS`] tries, waiting
 /// [`LlmClient::retry_base_delay`] and doubling, and never once the stop is
 /// set; a set stop sends nothing. A call whose tries ran out says how many
 /// were made. `#[non_exhaustive]`, as [`LlmChat`] is.
@@ -328,10 +329,10 @@ impl<'a> LlmContextModel<'a> {
     }
 }
 
-/// A failed structured call, and whether its request failed in transport.
+/// A failed structured call, and whether a retry may cure its request's failure.
 struct JsonFailure {
     error: ChatJsonError,
-    transport: bool,
+    retryable: bool,
 }
 
 impl std::fmt::Display for JsonFailure {
@@ -343,10 +344,7 @@ impl std::fmt::Display for JsonFailure {
 impl ContextModel for LlmContextModel<'_> {
     fn complete(&self, prompt: &str, temperature: f64, max_tokens: i64) -> Result<String, String> {
         let request = self.request(prompt, temperature, max_tokens, false);
-        let response = self.with_retries(
-            || self.client.chat(&request),
-            |error| matches!(error, ChatError::Transport(_)),
-        )?;
+        let response = self.with_retries(|| self.client.chat(&request), ChatError::is_retryable)?;
         match response.stop_reason.as_deref() {
             // A completion cut at the output ceiling has lost passages.
             Some(reason) if TRUNCATION_STOP_REASONS.contains(&reason) => Err(format!(
@@ -369,7 +367,7 @@ impl ContextModel for LlmContextModel<'_> {
                     client: self.client,
                     request: request.clone(),
                     stop: self.stop,
-                    transport_failed: false,
+                    retryable_failure: false,
                 };
                 chat_json(
                     &mut source,
@@ -381,13 +379,14 @@ impl ContextModel for LlmContextModel<'_> {
                 )
                 .map_err(|error| JsonFailure {
                     error,
-                    transport: source.transport_failed,
+                    retryable: source.retryable_failure,
                 })
             },
-            // Only a failed request, as `complete` retries: an unknown
-            // provider, a missing key or a malformed answer would fail again,
+            // Only a request a retry may cure, as `complete` retries: an
+            // unknown provider, a missing key, an HTTP refusal (#646) or a
+            // malformed answer would fail again,
             // and `chat_json` has re-asked for a bad reply.
-            |failure| failure.transport && matches!(failure.error, ChatJsonError::Transport { .. }),
+            |failure| failure.retryable && matches!(failure.error, ChatJsonError::Transport { .. }),
         )?;
         Ok(outcome.value)
     }
