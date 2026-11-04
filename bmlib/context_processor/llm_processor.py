@@ -371,7 +371,11 @@ class LLMChunkProcessor(IterativeContextProcessor):
         except ChatStoppedError as exc:
             raise ProcessingStoppedError(str(exc)) from exc
         except Exception as exc:
-            raise RuntimeError(f"LLM extraction failed: {exc}") from exc
+            # ``chat_json`` folds the batch's label into its message; dropped so one
+            # cause reads alike in every batch and is summarised once, as in Rust
+            # (#658). ``failed_batches`` and the ERROR line still name the batch.
+            cause = str(exc).replace(f" for {label}", "")
+            raise RuntimeError(f"LLM extraction failed: {cause}") from exc
 
         metadata = dict(batch_metadata)
         if findings:

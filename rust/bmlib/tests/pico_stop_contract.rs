@@ -102,8 +102,9 @@ impl HttpClient for FakeOllama {
     }
 }
 
-/// Run one case; the `num_ctx` of each request and the error kind.
-fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static str>) {
+/// Run one case; the `num_ctx` of each request, the error kind and the
+/// result's notes.
+fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static str>, Vec<String>) {
     let stop = Arc::new(AtomicBool::new(false));
     let transport = Arc::new(FakeOllama {
         json_reply: fixture["json_reply"].to_string(),
@@ -156,20 +157,25 @@ fn run(fixture: &Value, case: &Value) -> (Vec<Option<Value>>, Option<&'static st
         .expect("text_unit")
         .repeat(case["text_repeat"].as_u64().expect("text_repeat") as usize);
     let similarity = fixture["min_similarity"].as_f64().expect("similarity");
-    let outcome: Result<(), PicoError> = match case["fn"].as_str().expect("fn") {
-        "extract" => agent.extract(title, &text, similarity).map(drop),
-        "suitability" => agent.check_suitability(title, &text).map(drop),
-        "prepare" => agent.prepare(title, &text).map(drop),
+    let outcome: Result<Vec<String>, PicoError> = match case["fn"].as_str().expect("fn") {
+        "extract" => agent.extract(title, &text, similarity).map(|r| r.notes),
+        "suitability" => agent.check_suitability(title, &text).map(|r| r.notes),
+        "prepare" => agent.prepare(title, &text).map(|p| p.notes().to_vec()),
         "prepared" => agent.prepare(title, &text).and_then(|prepared| {
             assert!(prepared.digest().is_some(), "a prepared case condenses");
             agent.check_suitability_prepared(&prepared)?;
-            agent.extract_prepared(&prepared, similarity).map(drop)
+            agent
+                .extract_prepared(&prepared, similarity)
+                .map(|r| r.notes)
         }),
         other => panic!("unknown fn {other}"),
     };
     drop(agent);
     let sent = transport.num_ctx_sent.lock().expect("lock").clone();
-    (sent, outcome.err().map(|error| error.kind()))
+    match outcome {
+        Ok(notes) => (sent, None, notes),
+        Err(error) => (sent, Some(error.kind()), Vec::new()),
+    }
 }
 
 #[test]
@@ -200,7 +206,7 @@ fn every_case_agrees_with_the_fixture() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("name");
-        let (sent, error) = run(&fixture, case);
+        let (sent, error, notes) = run(&fixture, case);
         let expected = &case["expected"];
         assert_eq!(error, expected["error"].as_str(), "{name}: the error kind");
         assert_eq!(
@@ -212,6 +218,23 @@ fn every_case_agrees_with_the_fixture() {
         let expected_num_ctx = Some(case["num_ctx"].clone()).filter(|n| !n.is_null());
         for num_ctx in &sent {
             assert_eq!(num_ctx, &expected_num_ctx, "{name}: a request's num_ctx");
+        }
+        // #658: a degraded condensation's one note names the failed batch's cause.
+        if error.is_none() {
+            match expected["note"].as_array() {
+                None => assert!(notes.is_empty(), "{name}: no note, got {notes:?}"),
+                Some(parts) => {
+                    assert_eq!(notes.len(), 1, "{name}: one note, got {notes:?}");
+                    for part in parts {
+                        let part = part.as_str().expect("a note part");
+                        assert!(
+                            notes[0].contains(part),
+                            "{name}: {part:?} in {:?}",
+                            notes[0]
+                        );
+                    }
+                }
+            }
         }
     }
 }

@@ -35,6 +35,32 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A failed condensation batch's cause reaches the caller** (#658, found in
+  PR #657's review; #576, found in PR #575's). A batch that failed (a 401, a
+  404, a malformed reply, retries run out) was logged at ERROR and its error
+  kept on the intermediate `ExtractionResult`, but a PARTIAL run's note said
+  only that the digest "may be incomplete", and a FAILED run's
+  `error_message` only `"No batch produced a result: 8 failed, 0 items
+  skipped"`, so a caller could not tell a bad key from an outage.
+  `ProcessingResult` gains **`batch_errors`**, one message per entry of
+  `failed_batches`, and the new **`summarise_batch_errors`** names each
+  distinct cause once with its count, in first-seen order (the maintainer's
+  choice over quoting only the first): `"2 batches failed: … 401; 1 batch
+  failed: … timeout"`. A FAILED run's `error_message` now ends with it in
+  parentheses, and so does the note `condense_text` writes, which `PicoAgent`
+  and `CochraneAssessor` carry onto their results (`"… may be incomplete (1
+  batch failed: LLM extraction failed: refused (status code: 401))."`). A run
+  that only skipped oversized items keeps its old wording. With
+  `use_structured_output`, a batch's message no longer carries `chat_json`'s
+  `for context extraction (level L, batch N)`, which made every batch's cause
+  distinct, so nothing was ever summarised once; Rust's never carried it, and
+  the batch is still named in `failed_batches` and the ERROR line (PR #660's
+  review). Both languages;
+  `pico_stop_num_ctx.json`'s cases now assert the note (`expected.note`), and
+  a mutant dropping the cause fails four Python cases and the Rust runner.
+  Rust still writes no log line where a batch fails: the crate logs nothing
+  anywhere.
+
 - **`canonical_from_html` refuses a page longer than `HTML_MAX_CHARS`
   (2,000,000 code points) unparsed** (#654, found in PR #653's review), with
   the new **`HtmlPageTooLargeError`** (a `ValueError`; `length` in code

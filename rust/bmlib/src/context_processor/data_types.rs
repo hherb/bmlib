@@ -540,6 +540,36 @@ pub struct ProcessingResult {
     pub skipped_items: Vec<usize>,
     /// Batches that produced a result.
     pub successful_batches: usize,
+    /// Why each failed batch failed, one message per entry of
+    /// `failed_batches` and in the same order (#576, #658);
+    /// [`summarise_batch_errors`] names the distinct causes.
+    pub batch_errors: Vec<String>,
+}
+
+/// Name each distinct cause once, with how many batches it failed.
+///
+/// In first-seen order, so `["a", "b", "a"]` reads
+/// `"2 batches failed: a; 1 batch failed: b"`: a bad key and an outage stay
+/// distinguishable when they mix. Empty for no errors.
+#[must_use]
+pub fn summarise_batch_errors(errors: &[String]) -> String {
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    for error in errors {
+        match counts.iter_mut().find(|(seen, _)| *seen == error.as_str()) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((error, 1)),
+        }
+    }
+    counts
+        .iter()
+        .map(|(error, n)| {
+            format!(
+                "{n} batch{} failed: {error}",
+                if *n == 1 { "" } else { "es" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 impl ProcessingResult {
@@ -576,6 +606,7 @@ impl ProcessingResult {
             failed_batches: Vec::new(),
             skipped_items: Vec::new(),
             successful_batches: 0,
+            batch_errors: Vec::new(),
         }
     }
 
@@ -663,5 +694,24 @@ impl ProgressInfo {
             return 0.0;
         }
         (self.current_item as f64 / self.total_items as f64) * 100.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summarise_batch_errors;
+
+    #[test]
+    fn the_summary_names_each_distinct_cause_once() {
+        let errors = |es: &[&str]| es.iter().map(|e| (*e).to_string()).collect::<Vec<_>>();
+        assert_eq!(summarise_batch_errors(&[]), "");
+        assert_eq!(
+            summarise_batch_errors(&errors(&["401"])),
+            "1 batch failed: 401"
+        );
+        assert_eq!(
+            summarise_batch_errors(&errors(&["401", "timeout", "401"])),
+            "2 batches failed: 401; 1 batch failed: timeout"
+        );
     }
 }

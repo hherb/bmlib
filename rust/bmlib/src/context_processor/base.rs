@@ -59,9 +59,9 @@
 use std::collections::BTreeMap;
 
 use crate::context_processor::data_types::{
-    Batch, ConfigError, ConsolidatedItem, ConsolidationStrategy, ExtractionResult,
-    OversizedItemError, OversizedItemStrategy, ProcessingConfig, ProcessingResult,
-    ProcessingStatus, ProgressInfo,
+    summarise_batch_errors, Batch, ConfigError, ConsolidatedItem, ConsolidationStrategy,
+    ExtractionResult, OversizedItemError, OversizedItemStrategy, ProcessingConfig,
+    ProcessingResult, ProcessingStatus, ProgressInfo,
 };
 use crate::llm::text_utils::TextChunker;
 
@@ -788,6 +788,7 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
     intermediate: &mut Option<Vec<Vec<ExtractionResult>>>,
     failed_batches: &mut Vec<usize>,
     skipped_items: &mut Vec<usize>,
+    batch_errors: &mut Vec<String>,
 ) -> Result<LevelOutcome, Box<dyn std::error::Error + Send + Sync>> {
     let skipped_before = skipped_items.len();
     let batches = ProcessingCore::create_batches(processor, items, config, skipped_items)
@@ -863,6 +864,7 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
             Err(exc) => {
                 let message = exc.to_string();
                 failed_batches.push(batch.batch_index);
+                batch_errors.push(message.clone());
                 if !config.continue_on_error {
                     return Err(Box::new(std::io::Error::other(format!(
                         "Batch {} extraction failed: {message}",
@@ -915,6 +917,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
     };
     let mut failed_batches: Vec<usize> = Vec::new();
     let mut skipped_items: Vec<usize> = Vec::new();
+    let mut batch_errors: Vec<String> = Vec::new();
     let mut successful = 0usize;
 
     // Local, not instance state: two concurrent `process()` calls on one
@@ -948,6 +951,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
             failed_batches,
             skipped_items,
             successful_batches: 0,
+            batch_errors,
         };
     }
 
@@ -974,6 +978,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
             &mut intermediate,
             &mut failed_batches,
             &mut skipped_items,
+            &mut batch_errors,
         ) {
             Ok(o) => o,
             Err(exc) => {
@@ -1048,11 +1053,15 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
             // batches failed" sends the reader looking for an extraction error
             // that never happened.
             status = ProcessingStatus::Failed;
-            error_message = Some(format!(
+            let mut message = format!(
                 "No batch produced a result: {} failed, {} items skipped",
                 failed_batches.len(),
                 skipped_items.len()
-            ));
+            );
+            if !batch_errors.is_empty() {
+                message.push_str(&format!(" ({})", summarise_batch_errors(&batch_errors)));
+            }
+            error_message = Some(message);
         }
     }
 
@@ -1076,6 +1085,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
         failed_batches,
         skipped_items,
         successful_batches: successful,
+        batch_errors,
     }
 }
 

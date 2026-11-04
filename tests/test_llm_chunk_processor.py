@@ -325,6 +325,32 @@ class TestStructuredExtraction:
         assert json_modes[0] is True
         assert json_modes[-1] is not True
 
+    @pytest.mark.parametrize(
+        ("reply", "temperature", "cause"),
+        [
+            # chat_json ends this message with the batch's label ...
+            ("[1]", 0.0, "expected a JSON object, got list"),
+            # ... and puts it mid-message once retries run out.
+            ("not json", 0.5, "Failed after 3 attempts: unparseable response"),
+        ],
+    )
+    def test_one_cause_in_every_batch_is_summarised_once(
+        self, reply: str, temperature: float, cause: str
+    ) -> None:
+        """#658: ``chat_json`` names the batch in its message, which made every
+        batch's cause distinct, so the summary listed each one, as Rust does not."""
+        agent = make_agent(reply)
+        agent.temperature = temperature
+        config = ProcessingConfig(max_context_chars=20, separator="")
+        processor = LLMChunkProcessor(agent, use_structured_output=True, config=config)
+        with patch("bmlib.agents.base.time.sleep"):
+            result = processor.process(["aaaaaaaaaa"] * 2, query="q")
+        assert result.batch_errors == [f"LLM extraction failed: {cause}"] * 2
+        assert result.error_message == (
+            "No batch produced a result: 2 failed, 0 items skipped "
+            f"(2 batches failed: LLM extraction failed: {cause})"
+        )
+
 
 def _answer(content: str = "extracted") -> LLMResponse:
     return LLMResponse(content=content, model="test:model", input_tokens=1, output_tokens=1)

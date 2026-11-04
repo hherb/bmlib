@@ -27,7 +27,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from bmlib.context_processor import LLMChunkProcessor, ProcessingConfig, ProcessingStatus
+from bmlib.context_processor import (
+    LLMChunkProcessor,
+    ProcessingConfig,
+    ProcessingStatus,
+    summarise_batch_errors,
+)
 
 if TYPE_CHECKING:
     from bmlib.agents.base import BaseAgent
@@ -124,9 +129,11 @@ def condense_text(
 
     notes: list[str] = []
     if result.status is not ProcessingStatus.COMPLETED:
+        # The cause is named (#658): a bad key and an outage call for different remedies.
+        causes = summarise_batch_errors(result.batch_errors)
         notes.append(
             f"Source text was condensed before {stage}; the condensation "
             f"finished with status {result.status.value}, so the digest may be "
-            f"incomplete."
+            f"incomplete{f' ({causes})' if causes else ''}."
         )
     return digest, notes, result.status

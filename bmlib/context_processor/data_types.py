@@ -265,6 +265,27 @@ class Batch:
         return f"Batch(items={self.size}, chars={self.total_chars}, index={self.batch_index})"
 
 
+def summarise_batch_errors(errors: list[str]) -> str:
+    """Name each distinct cause once, with how many batches it failed.
+
+    In first-seen order, so ``["a", "b", "a"]`` reads
+    ``"2 batches failed: a; 1 batch failed: b"``: a bad key and an outage stay
+    distinguishable when they mix. Empty for no errors.
+
+    Args:
+        errors: One message per failed batch (:attr:`ProcessingResult.batch_errors`).
+
+    Returns:
+        The summary, or ``""``.
+    """
+    counts: dict[str, int] = {}
+    for error in errors:
+        counts[error] = counts.get(error, 0) + 1
+    return "; ".join(
+        f"{n} batch{'es' if n != 1 else ''} failed: {error}" for error, n in counts.items()
+    )
+
+
 @dataclass
 class ProcessingResult:
     """The complete report from a processing run.
@@ -285,6 +306,9 @@ class ProcessingResult:
             0 these index that level's consolidated items rather than the
             caller's list.
         successful_batches: Batches that produced a result.
+        batch_errors: Why each failed batch failed, one message per entry of
+            ``failed_batches`` and in the same order (#576, #658);
+            :func:`summarise_batch_errors` names the distinct causes.
     """
 
     final_result: ExtractionResult
@@ -298,6 +322,7 @@ class ProcessingResult:
     failed_batches: list[int] = field(default_factory=list)
     skipped_items: list[int] = field(default_factory=list)
     successful_batches: int = 0
+    batch_errors: list[str] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:

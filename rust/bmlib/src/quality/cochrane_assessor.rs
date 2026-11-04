@@ -53,7 +53,9 @@
 //! revisited.
 
 use crate::context_processor::llm_processor::{ContextModel, LlmChunkProcessor, PromptTemplates};
-use crate::context_processor::{ProcessingConfig, ProcessingResult, ProcessingStatus};
+use crate::context_processor::{
+    summarise_batch_errors, ProcessingConfig, ProcessingResult, ProcessingStatus,
+};
 use crate::llm::LLMMessage;
 use crate::pyvalue::{python_str, python_strip, truthy};
 use crate::quality::agent_chat::{format_template, JsonChat};
@@ -926,9 +928,16 @@ pub(crate) fn condense_checked(
 
     let mut notes: Vec<String> = Vec::new();
     if result.status != ProcessingStatus::Completed {
+        // The cause is named (#658): a bad key and an outage call for different remedies.
+        let causes = summarise_batch_errors(&result.batch_errors);
+        let causes = if causes.is_empty() {
+            causes
+        } else {
+            format!(" ({causes})")
+        };
         notes.push(format!(
             "Source text was condensed before {stage}; the condensation finished with \
-             status {}, so the digest may be incomplete.",
+             status {}, so the digest may be incomplete{causes}.",
             result.status.as_str()
         ));
     }

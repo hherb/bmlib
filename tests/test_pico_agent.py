@@ -22,6 +22,7 @@ import itertools
 import json
 import pickle
 import threading
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -1090,11 +1091,13 @@ CONTRACT = json.loads(
 _ABSENT = "absent"
 
 
-def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
+def _contract_run(
+    case: dict[str, Any],
+) -> tuple[list[Any], str | None, Sequence[str]]:
     """Run one contract case: the real agent, map-reduce, ``LLMClient`` and
     ollama-python over an ``httpx.MockTransport``, as Rust fakes the HTTP
-    layer; returns each request's ``num_ctx`` (``_ABSENT`` for no key) and the
-    error kind."""
+    layer; returns each request's ``num_ctx`` (``_ABSENT`` for no key), the
+    error kind and the result's notes."""
     httpx = pytest.importorskip("httpx")
     ollama = pytest.importorskip("ollama")
     stop = threading.Event()
@@ -1148,20 +1151,21 @@ def _contract_run(case: dict[str, Any]) -> tuple[list[Any], str | None]:
     similarity = CONTRACT["min_similarity"]
     with patch("bmlib.context_processor.llm_processor.time.sleep"):
         try:
+            result: PicoExtraction | PicoSuitability | PicoPrepared
             if case["fn"] == "extract":
-                agent.extract(title, text, min_similarity=similarity)
+                result = agent.extract(title, text, min_similarity=similarity)
             elif case["fn"] == "suitability":
-                agent.check_suitability(title, text)
+                result = agent.check_suitability(title, text)
             elif case["fn"] == "prepare":
-                agent.prepare(title, text)
+                result = agent.prepare(title, text)
             else:
                 prepared = agent.prepare(title, text)
                 assert prepared.digest is not None
                 agent.check_suitability_prepared(prepared)
-                agent.extract_prepared(prepared, min_similarity=similarity)
+                result = agent.extract_prepared(prepared, min_similarity=similarity)
         except PicoError as exc:
-            return sent, exc.kind.value
-    return sent, None
+            return sent, exc.kind.value, ()
+    return sent, None, result.notes
 
 
 class TestTheStopAndNumCtxContract:
@@ -1181,12 +1185,20 @@ class TestTheStopAndNumCtxContract:
 
     @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
     def test_a_case(self, case: dict[str, Any]) -> None:
-        sent, error = _contract_run(case)
+        sent, error, notes = _contract_run(case)
 
         assert error == case["expected"]["error"]
         assert len(sent) == case["expected"]["requests"]
         expected = _ABSENT if case["num_ctx"] is None else case["num_ctx"]
         assert all(num_ctx == expected for num_ctx in sent)
+        # #658: a degraded condensation's one note names the failed batch's cause.
+        if error is None:
+            note = case["expected"]["note"]
+            if note is None:
+                assert not notes
+            else:
+                assert len(notes) == 1
+                assert all(part in notes[0] for part in note), notes[0]
 
 
 class TestTheStop:

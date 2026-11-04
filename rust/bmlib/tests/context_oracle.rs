@@ -236,6 +236,7 @@ fn processing_result_json(pr: &ProcessingResult) -> Value {
         "batches_created": pr.batches_created,
         "recursion_levels_used": pr.recursion_levels_used,
         "failed_batches": pr.failed_batches,
+        "batch_errors": pr.batch_errors,
         "skipped_items": pr.skipped_items,
         "successful_batches": pr.successful_batches,
         "success_rate": pr.success_rate(),
