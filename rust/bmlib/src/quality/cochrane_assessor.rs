@@ -56,7 +56,7 @@ use crate::context_processor::llm_processor::{
     ContextModel, LlmChunkProcessor, ModelCallError, PromptTemplates, RequestFailure,
 };
 use crate::context_processor::{
-    summarise_batch_errors, ProcessingConfig, ProcessingResult, ProcessingStatus,
+    summarise_batch_errors, ProcessingConfig, ProcessingResult, ProcessingStatus, ProgressInfo,
 };
 use crate::llm::LLMMessage;
 use crate::pyvalue::{python_str, python_strip, truthy};
@@ -69,6 +69,7 @@ use crate::quality::cochrane_models::{
 use crate::quality::json_fields;
 use crate::quality::llm_parsers::as_mapping;
 use serde_json::Value;
+use std::sync::Arc;
 
 /// Text longer than this is condensed before assessment.
 ///
@@ -392,6 +393,8 @@ pub struct LlmCondenser<'a> {
     query: &'static str,
     temperature: f64,
     max_tokens: i64,
+    /// Shared, as each condensation builds a processor of its own.
+    progress: Option<Arc<crate::context_processor::ProgressCallback>>,
 }
 
 impl<'a> LlmCondenser<'a> {
@@ -439,7 +442,21 @@ impl<'a> LlmCondenser<'a> {
             query,
             temperature,
             max_tokens,
+            progress: None,
         })
+    }
+
+    /// Hand every [`ProgressInfo`] a condensation reports to `callback`, so a
+    /// caller can show how far a long text got (#609); Python's
+    /// `condense_progress`. A callback that panics is caught and logged, and
+    /// the run goes on.
+    #[must_use]
+    pub fn with_progress(
+        mut self,
+        callback: impl Fn(&ProgressInfo) + Send + Sync + 'static,
+    ) -> Self {
+        self.progress = Some(Arc::new(Box::new(callback)));
+        self
     }
 }
 
@@ -468,7 +485,15 @@ impl Condenser for LlmCondenser<'_> {
             self.temperature,
             self.max_tokens,
         ) {
-            Ok(processor) => processor.process(text, self.query),
+            Ok(processor) => match &self.progress {
+                Some(progress) => {
+                    let progress = Arc::clone(progress);
+                    processor
+                        .with_progress(Box::new(move |info| progress(info)))
+                        .process(text, self.query)
+                }
+                None => processor.process(text, self.query),
+            },
             // Neither agent's `with_condense_config` validates, and a
             // `Condenser` is public, so a caller can hand this any
             // configuration: the refusal is a result rather than a panic.

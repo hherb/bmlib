@@ -39,6 +39,7 @@ from bmlib.context_processor.llm_processor import _BUG_TYPES, _is_refusal
 
 if TYPE_CHECKING:
     from bmlib.agents.base import BaseAgent
+    from bmlib.context_processor import ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ def condense_text(
     consolidation_prompt: str,
     query: str,
     stage: str,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[str, list[str], ProcessingStatus]:
     """Reduce oversized text to an evidence digest that fits one context.
 
@@ -125,6 +127,9 @@ def condense_text(
         stage: Names what the digest is for in the note a degraded run
             carries (e.g. ``"assessment"``, ``"extraction"``, ``"the
             suitability check"``), so an agent's stored note keeps its wording.
+        progress_callback: Handed every :class:`~bmlib.context_processor.ProgressInfo`
+            the map-reduce reports (#609); one that raises is logged and the
+            run goes on.
 
     Returns:
         ``(digest, notes, status)``.
@@ -141,6 +146,7 @@ def condense_text(
         extraction_prompt=extraction_prompt,
         consolidation_prompt=consolidation_prompt,
         config=config,
+        progress_callback=progress_callback,
     )
     result = processor.process([text], query=query)
 

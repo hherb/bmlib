@@ -786,6 +786,7 @@ class CochraneAssessor(BaseAgent):
         temperature: float = 0.1,
         max_tokens: int = 4096,
         condense_config: ProcessingConfig | None = None,
+        condense_progress: ProgressCallback | None = None,  # (unreleased, #609)
     ) -> None
 ```
 
@@ -797,6 +798,7 @@ class CochraneAssessor(BaseAgent):
 | `temperature` | `float` | `0.1` | Low by default, for consistency between runs. |
 | `max_tokens` | `int` | `4096` | Output ceiling. Larger than Tier 3's, since the reply carries nine judgements with their supporting text plus the whole characteristics table. |
 | `condense_config` | `ProcessingConfig \| None` | `None` | Governs the map-reduce pass that runs when *text* is larger than one context. See "Condensing oversized text" below. |
+| `condense_progress` | `ProgressCallback \| None` | `None` | *(unreleased, #609)* Handed every `ProgressInfo` that map-reduce reports (`starting`, `batching`, `extracting` per batch, `recursing`, `complete`), so a caller can show how far a long text got. One that raises is logged and the run goes on. |
 
 ### `CochraneAssessor.assess`
 
@@ -963,6 +965,7 @@ PicoAgent(
     condense_config: ProcessingConfig | None = None,  # max_context_chars defaults to 48,000
     num_ctx: int | None = None,                       # (unreleased, #640) Ollama's window
     stop: threading.Event | Callable[[], bool] | None = None,  # (unreleased, #642)
+    condense_progress: ProgressCallback | None = None,          # (unreleased, #609)
 )
 
 check_suitability(title: str | None, text: str | None) -> PicoSuitability
@@ -979,6 +982,7 @@ extract_prepared(prepared: PicoPrepared, *, min_similarity: float) -> PicoExtrac
 - **The caller chooses the text.** An abstract keeps the suitability check cheap; the full text gives the extraction its evidence.
 - *(unreleased, #640)* **`num_ctx`** is sent with every request the agent makes, the condenser's included, so Ollama loads the model with that window rather than its own, often much smaller, default (and does not drop the start of a paper that would not fit). `None` sends none; other providers ignore it. A value that is not an `int` in 1..2³²−1 (a `bool` included) raises `ValueError` at construction.
 - *(unreleased, #642)* **`stop`** is read before every request, the condenser's included, through the agent's `chat()`, which raises `ChatStoppedError` (from `bmlib.agents`) in place of sending. Once it is set the call under way raises `PicoError` `STOPPED`, whatever else went wrong (a request that failed, an unusable reply, a condensation that failed or finished partial); what propagates unwrapped (a bmlib defect, a missing SDK) still does. A request already sent runs to its end, and a call that then succeeds returns its result, so a caller that must not keep it reads the stop again. A callable must not raise. A stop during the map-reduce ends it there, logging nothing (`ProcessingStoppedError`, which the agent reports as `STOPPED`).
+- *(unreleased, #609)* **`condense_progress`** is handed every `ProgressInfo` the condensation of a long text reports, as `CochraneAssessor`'s is; a text that fits reports none, and a stop ends the reports with the batch it stopped. `tests/fixtures/pico_stop_num_ctx.json` pins the reports in both languages (Rust: `LlmCondenser::with_progress`).
 
 ### What a part reports
 

@@ -31,7 +31,7 @@ import pytest
 
 from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
 from bmlib.citations import find_passage
-from bmlib.context_processor import ProcessingConfig, ProcessingStatus
+from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProgressInfo
 from bmlib.context_processor.llm_processor import _RETRIED_STATUSES, CONTEXT_MODEL_ATTEMPTS
 from bmlib.llm import LLMClient
 from bmlib.llm.data_types import LLMResponse
@@ -1216,18 +1216,26 @@ CONTRACT = json.loads(
 _ABSENT = "absent"
 
 
+def _progress_line(info: ProgressInfo) -> str:
+    """One condensation progress report as the fixture writes it (#609):
+    the stage, the batch reached of this level's batches, and the level."""
+    return f"{info.stage} {info.current_batch}/{info.total_batches} level {info.recursion_level}"
+
+
 def _contract_run(
     case: dict[str, Any],
-) -> tuple[list[Any], str | None, tuple[bool, int | None] | None, Sequence[str]]:
+) -> tuple[list[Any], str | None, tuple[bool, int | None] | None, Sequence[str], list[str]]:
     """Run one contract case: the real agent, map-reduce, ``LLMClient`` and
     ollama-python over an ``httpx.MockTransport``, as Rust fakes the HTTP
     layer; returns each request's ``num_ctx`` (``_ABSENT`` for no key), the
     error kind, a ``request_failed``'s ``retryable`` (#659) and ``status``
-    (#662), and the result's notes."""
+    (#662), the result's notes, and the condensation's progress reports
+    (#609)."""
     httpx = pytest.importorskip("httpx")
     ollama = pytest.importorskip("ollama")
     stop = threading.Event()
     sent: list[Any] = []
+    progress: list[str] = []
 
     def handle(request: Any) -> Any:
         body = json.loads(request.content)
@@ -1271,6 +1279,7 @@ def _contract_run(
         condense_config=ProcessingConfig(max_context_chars=CONTRACT["max_context_chars"]),
         num_ctx=case["num_ctx"],
         stop=stop,
+        condense_progress=lambda info: progress.append(_progress_line(info)),
     )
     if case.get("stop_before"):
         stop.set()
@@ -1294,8 +1303,8 @@ def _contract_run(
         except PicoError as exc:
             failed = exc.kind is PicoErrorKind.REQUEST_FAILED
             failure = (exc.retryable, exc.status) if failed else None
-            return sent, exc.kind.value, failure, ()
-    return sent, None, None, result.notes
+            return sent, exc.kind.value, failure, (), progress
+    return sent, None, None, result.notes, progress
 
 
 class TestTheStopAndNumCtxContract:
@@ -1315,7 +1324,7 @@ class TestTheStopAndNumCtxContract:
 
     @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
     def test_a_case(self, case: dict[str, Any]) -> None:
-        sent, error, failure, notes = _contract_run(case)
+        sent, error, failure, notes, progress = _contract_run(case)
 
         assert error == case["expected"]["error"]
         # Stated on every ``request_failed`` case, and on no other.
@@ -1335,6 +1344,8 @@ class TestTheStopAndNumCtxContract:
             else:
                 assert len(notes) == 1
                 assert all(part in notes[0] for part in note), notes[0]
+        # #609: every report the condensation made, failed and stopped runs too.
+        assert progress == case["expected"]["progress"]
 
 
 class TestTheStop:
