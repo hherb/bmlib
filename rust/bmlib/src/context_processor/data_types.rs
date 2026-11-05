@@ -544,6 +544,13 @@ pub struct ProcessingResult {
     /// `failed_batches` and in the same order (#576, #658);
     /// [`summarise_batch_errors`] names the distinct causes.
     pub batch_errors: Vec<String>,
+    /// The error a `Failed` run failed on, `None` otherwise (#616): what
+    /// `extract_from_batch` returned for the failed batch (the last one, when
+    /// every batch failed), or what stopped the harness. `error_message` is
+    /// its text; the error keeps its type, so a caller can downcast it (to
+    /// [`ModelCallError`](crate::context_processor::llm_processor::ModelCallError)
+    /// for a failed request).
+    pub error: Option<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
 }
 
 /// Name each distinct cause once, with how many batches it failed.
@@ -607,6 +614,7 @@ impl ProcessingResult {
             skipped_items: Vec::new(),
             successful_batches: 0,
             batch_errors: Vec::new(),
+            error: None,
         }
     }
 

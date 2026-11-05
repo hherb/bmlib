@@ -530,8 +530,35 @@ class TestTheExtraction:
         with pytest.raises(PicoError) as caught:
             agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
 
-        assert caught.value.kind is PicoErrorKind.CONDENSATION_FAILED
+        # A request failure, as on a short paper (#616), whose message says
+        # where it happened.
+        assert caught.value.kind is PicoErrorKind.REQUEST_FAILED
+        assert (caught.value.retryable, caught.value.status) == (True, None)
         assert ": the map-reduce failed: No batch produced a result: " in str(caught.value)
+
+    def test_a_refusal_during_condensation_carries_its_status(self) -> None:
+        refused = ConnectionError("unauthorised")
+        refused.status_code = 401  # type: ignore[attr-defined]
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm.chat = MagicMock(side_effect=refused)
+
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.REQUEST_FAILED
+        assert (caught.value.retryable, caught.value.status) == (False, 401)
+
+    @pytest.mark.parametrize("defect", [TypeError, AttributeError, KeyError, ImportError])
+    def test_a_defect_during_condensation_propagates(self, defect: type[Exception]) -> None:
+        """As on a short paper (#573): no retry cures a bmlib defect or a
+        missing key (the SDK's ``TypeError``), so it is not an outage (#616)."""
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm.chat = MagicMock(side_effect=defect("the cause"))
+
+        with pytest.raises(defect, match="the cause") as caught:
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+        assert caught.value.__cause__ is None  # not chained to its own effect
 
     def test_the_text_is_sent_whole(self) -> None:
         text = "word " * 8_000
@@ -1122,7 +1149,7 @@ def _contract_run(
             raise httpx.ConnectError("the connection was reset", request=request)
         if case.get("malformed_request") == index:
             return httpx.Response(200, text="not json")
-        if case.get("status_request") == index:
+        if case.get("status_request") == index or index >= case.get("status_from_request", 1 << 30):
             return httpx.Response(case["status"], json={"error": "refused"})
         if case.get("stop_at_request") == index:
             stop.set()

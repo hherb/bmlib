@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from bmlib.context_processor import (
     LLMChunkProcessor,
+    ModelCallError,
     ProcessingConfig,
     ProcessingStatus,
     summarise_batch_errors,
@@ -44,7 +45,10 @@ class CondensationRefusedError(Exception):
     """The map-reduce produced no digest an agent may judge; the message says why.
 
     The reason is the caller's to report: a provider failure and a digest
-    that does not fit call for different remedies.
+    that does not fit call for different remedies.  When a failed model call
+    failed the run, the error is chained (``__cause__``) to what that call
+    raised (#616), so the caller can report it as it reports the same failure
+    on a short paper.
     """
 
 
@@ -83,8 +87,9 @@ def condense_text(
 
     Raises:
         CondensationRefusedError: The run failed (a provider failure during the
-            map-reduce included), produced nothing to judge, or produced a
-            digest that still does not fit ``config.max_context_chars``.
+            map-reduce included, chained to what the request raised), produced
+            nothing to judge, or produced a digest that still does not fit
+            ``config.max_context_chars``.
         ProcessingStoppedError: The agent's stop was set; the run ended there.
     """
     processor = LLMChunkProcessor(
@@ -98,7 +103,10 @@ def condense_text(
     if result.status is ProcessingStatus.FAILED:
         reason = f"the map-reduce failed: {result.error_message}"
         logger.warning("Could not condense the text of %s: %s", label, reason)
-        raise CondensationRefusedError(reason)
+        error = result.error
+        raise CondensationRefusedError(reason) from (
+            error.__cause__ if isinstance(error, ModelCallError) else None
+        )
 
     digest = result.final_result.content.strip()
     if not digest:

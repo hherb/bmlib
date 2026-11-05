@@ -50,6 +50,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A long paper's failed condensation request is the request's failure**
+  (#616, with the Rust crate). `PicoAgent` condenses a text over its budget
+  through `context_processor`, which reduced every exception a batch raised
+  to a string, so on a long paper a 401, a 404 and an outage all came out as
+  `CONDENSATION_FAILED` with no `retryable` or `status` (#659 and #662 reached
+  only the agent's own request), and a bmlib defect or a missing Anthropic
+  key (the SDK's `TypeError`) as an outage the manual says to retry, where on
+  a short paper each propagates. The harness now keeps what a FAILED run
+  failed on: `ProcessingResult.error`, the exception `extract_from_batch()`
+  raised for the failed batch (the last one, when every batch failed) or what
+  stopped the harness, `None` for any other status. `LLMChunkProcessor`
+  raises `ModelCallError` (a `RuntimeError`, exported from
+  `bmlib.context_processor`) chained to the request's exception, and a prose
+  reply cut at the output ceiling as a plain `RuntimeError` chained to none,
+  its message unchanged. `condense_text` chains a failed request to its
+  `CondensationRefusedError`, and `PicoAgent` reads it as it reads a short
+  paper's: a defect or the key error propagates, any other request failure
+  is `REQUEST_FAILED` with the request's `retryable` and `status`, the
+  message still naming the map-reduce. `CONDENSATION_FAILED` is left to a
+  failed run no request caused (a truncated pass), an empty digest and one
+  over the budget. A PARTIAL run is unchanged: its note names the causes
+  (#658). The Cochrane assessor still returns `None` for any refusal. The
+  shared `tests/fixtures/pico_stop_num_ctx.json` gains `status_from_request`
+  and four cases (every condensation request refused with 401 or 404,
+  answered 503, or failing in transport); thirteen mutants, Python and Rust,
+  each killed.
+
 - **A PICO request failure says whether a retry may cure it** (#659, with the
   Rust crate, left by #646's fix). `PicoError` gains `retryable`: `True` for a
   `REQUEST_FAILED` whose cause carries no HTTP status (a connection failure, a

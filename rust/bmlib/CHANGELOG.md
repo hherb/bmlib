@@ -123,6 +123,24 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **A long paper's failed condensation request is `RequestFailed`** (#616,
+  with the Python library). The condenser's model reported a failure as a
+  `String`, so on a long paper a 401, a 404 and an outage were all
+  `PicoError::CondensationFailed` with no `retryable` or `status`.
+  `ContextModel::last_request_failure()` (default `None`) says what the last
+  call's failure says of its request, a `RequestFailure { retryable, status }`
+  or `None` for a truncated pass, a non-object reply or a stop;
+  `LlmContextModel` keeps it per call. `LlmChunkProcessor` then returns the
+  batch's failure as `ModelCallError { message, request }`, and
+  `ProcessingResult` gains `error: Option<Arc<dyn Error + Send + Sync>>`, what
+  a `Failed` run failed on (the failed batch's own error, the last when every
+  batch failed, never the fail-fast wrapper). `PicoAgent` downcasts it: a
+  request is `RequestFailed { message, retryable, status }`, the message
+  naming the map-reduce; anything else stays `CondensationFailed`. **Breaking
+  for a `ProcessingResult` struct literal** (add `error: None`); a
+  `ContextModel` implementation needs no change, but one that does not
+  override `last_request_failure` keeps its failures `CondensationFailed`.
+
 - **A PICO request failure carries the HTTP status** (#662, with the Python
   library): `PicoError::RequestFailed` gains `status: Option<u16>` and
   `ChatJsonError::Transport` gains `status`, `ChatError::Http`'s status of

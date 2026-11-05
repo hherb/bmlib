@@ -521,7 +521,8 @@ impl<'a> PicoAgent<'a> {
     ///
     /// # Errors
     ///
-    /// [`PicoError::EmptyInput`], [`PicoError::CondensationFailed`] or
+    /// [`PicoError::EmptyInput`], [`PicoError::CondensationFailed`],
+    /// [`PicoError::RequestFailed`] (a condensation request, #616) or
     /// [`PicoError::Stopped`].
     pub fn prepare(&mut self, title: &str, text: &str) -> Result<PicoPrepared, PicoError> {
         self.prepare_for(title, text, "the suitability check and extraction")
@@ -660,13 +661,22 @@ impl<'a> PicoAgent<'a> {
         // A run stopped part-way can end in a partial digest, which is no
         // digest of the paper, as well as in a failure.
         if stopped(stop) {
-            return Err(stopped_over(condensed.err()));
+            return Err(stopped_over(condensed.err().map(|refusal| refusal.reason)));
         }
-        let (digest, notes, status) = condensed.map_err(|reason| {
-            PicoError::CondensationFailed(format!(
-                "a {length}-character text could not be condensed to fit {} characters: {reason}",
-                self.condense_config.max_context_chars
-            ))
+        let (digest, notes, status) = condensed.map_err(|refusal| {
+            let message = format!(
+                "a {length}-character text could not be condensed to fit {} characters: {}",
+                self.condense_config.max_context_chars, refusal.reason
+            );
+            // A failed request is one, as on a short paper (#616).
+            match refusal.request {
+                Some(request) => PicoError::RequestFailed {
+                    message,
+                    retryable: request.retryable,
+                    status: request.status,
+                },
+                None => PicoError::CondensationFailed(message),
+            }
         })?;
         Ok(prepared(
             title,

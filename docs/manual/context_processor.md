@@ -44,6 +44,7 @@ from bmlib.context_processor import (
     ConsolidationStrategy,
     ProgressInfo,
     summarise_batch_errors,      # (unreleased, #658) the distinct causes of failed batches
+    ModelCallError,              # (unreleased, #616) a batch whose model request failed
     # ProcessingConfig's defaults
     DEFAULT_MAX_CONTEXT_CHARS,
     DEFAULT_OVERLAP_CHARS,
@@ -274,6 +275,7 @@ result.final_result           # ExtractionResult
 result.content                # final_result.content
 result.status                 # ProcessingStatus
 result.error_message          # why, when the run failed
+result.error                  # (unreleased, #616) the exception it failed on, or None
 result.is_complete            # status is COMPLETED
 result.is_partial             # status is PARTIAL
 result.has_failures           # any failed batch or skipped item
@@ -292,6 +294,13 @@ result.processing_stats       # {"total_items", "batches_per_level", "items_per_
 Batch indices restart at each level, so a value in `failed_batches` can
 repeat in a run that recursed; likewise `skipped_items` above level 0
 indexes that level's consolidated items, not the caller's list.
+
+*(unreleased, #616)* `result.error` keeps what a FAILED run failed on, with
+its type, where `error_message` keeps the text: what `extract_from_batch()`
+raised for the failed batch (the last one, when every batch failed), or the
+`OversizedItemError` or unexpected error that stopped the harness. It is
+`None` for every other status. An agent reads it to tell a refused key or a
+bmlib defect from an outage, as on a request it sends itself.
 
 `summarise_batch_errors(result.batch_errors)` names each distinct cause
 once with its count, in first-seen order (`"2 batches failed: boom; 1 batch
@@ -359,8 +368,10 @@ Items are rendered under a one-line header — `[Chunk 1, score 0.87]` for a
 scored chunk, `[Item 1]` for a string, `[Consolidated level 0, item 1]` for
 a level above — and a scored chunk that has to be split keeps its score on
 every piece. A tuple whose score is a `bool` is not a scored chunk. A model
-call that fails is raised as `RuntimeError` and recorded against its batch,
-and so *(0.12.0)* is a prose reply cut at the output ceiling
+call that fails is raised as `RuntimeError` — *(unreleased, #616)* the
+subclass `ModelCallError`, chained (`__cause__`) to what the request raised —
+and recorded against its batch, and so *(0.12.0)* is a prose reply cut at the
+output ceiling, a plain `RuntimeError` chained to no request,
 (`stop_reason` `"max_tokens"` or `"length"`, as `chat_json` reads them),
 since a truncated extraction has lost passages; prose extraction records
 confidence 0.9.

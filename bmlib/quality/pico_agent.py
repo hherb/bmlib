@@ -491,16 +491,15 @@ class PicoAgent(BaseAgent):
     ``kind`` says why, unless what failed is no outage (below) — so an app
     can retry an outage, ask for a larger ``max_tokens`` after a truncation,
     and suggest another model when the replies are unusable.  An outage
-    during the condensation of a long text is ``CONDENSATION_FAILED``, its
-    message naming the failed map-reduce.
+    during the condensation of a long text is ``REQUEST_FAILED`` too (#616),
+    its message naming the failed map-reduce.
     What no retry or other model can cure propagates unwrapped instead (#573):
     a bmlib defect (``TypeError``, ``AttributeError``, ``NameError``,
     ``KeyError``, ``IndexError``, or a ``ValueError`` raised while reading a
     reply), an unknown provider (``ValueError``) and a provider SDK not
     installed (``ImportError``), both refused before any request, and a missing
-    Anthropic key (the SDK's ``TypeError``).  The last two kinds, raised during
-    the condensation of a long text, are ``CONDENSATION_FAILED`` instead: the
-    map-reduce reports a failed run rather than raising (#616).
+    Anthropic key (the SDK's ``TypeError``), during the condensation of a long
+    text as well (#616).
 
     Args:
         llm: The client requests go through.
@@ -596,7 +595,8 @@ class PicoAgent(BaseAgent):
             The prepared paper.
 
         Raises:
-            PicoError: ``EMPTY_INPUT``, ``CONDENSATION_FAILED`` or ``STOPPED``.
+            PicoError: ``EMPTY_INPUT``, ``CONDENSATION_FAILED``,
+                ``REQUEST_FAILED`` (a condensation request, #616) or ``STOPPED``.
             ValueError: The model's provider is unknown.
             ImportError: The provider's SDK is not installed.
         """
@@ -738,11 +738,19 @@ class PicoAgent(BaseAgent):
             raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from exc
         except CondensationRefusedError as exc:
             self._raise_if_stopped(exc)
-            raise PicoError(
-                PicoErrorKind.CONDENSATION_FAILED,
+            cause = exc.__cause__
+            # What a short paper's request would have propagated (#616);
+            # bare, since ``from exc`` would chain it to its own effect.
+            if isinstance(cause, _NOT_A_REQUEST_FAILURE):
+                raise cause
+            message = (
                 f"a {len(text)}-character text could not be condensed to fit "
-                f"{self.condense_config.max_context_chars} characters: {exc}",
-            ) from exc
+                f"{self.condense_config.max_context_chars} characters: {exc}"
+            )
+            # No request failed it: a truncated pass, or an empty or long digest.
+            if cause is None:
+                raise PicoError(PicoErrorKind.CONDENSATION_FAILED, message) from exc
+            raise _request_failed(cause, message) from exc
         # A run stopped part-way can finish with a partial digest, which is
         # no digest of the paper.
         self._raise_if_stopped()
@@ -857,7 +865,12 @@ def _request_error(exc: Exception) -> PicoError:
         return PicoError(PicoErrorKind.TRUNCATED, str(exc))
     if isinstance(exc, ChatJsonError):
         return PicoError(PicoErrorKind.UNUSABLE_REPLY, str(exc))
+    return _request_failed(exc, str(exc))
+
+
+def _request_failed(exc: BaseException, message: str) -> PicoError:
+    """``REQUEST_FAILED`` for a request that raised *exc*, saying *message*."""
     # The condenser's rule (#646, #659): a refusal or an unreadable answer
     # (``ValueError``, as Rust's ``ChatError::Malformed``) fails again.
     retryable = not isinstance(exc, ValueError) and not _is_refusal(exc)
-    return PicoError(PicoErrorKind.REQUEST_FAILED, str(exc), retryable, _http_status(exc))
+    return PicoError(PicoErrorKind.REQUEST_FAILED, message, retryable, _http_status(exc))

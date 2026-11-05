@@ -789,6 +789,7 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
     failed_batches: &mut Vec<usize>,
     skipped_items: &mut Vec<usize>,
     batch_errors: &mut Vec<String>,
+    last_batch_error: &mut Option<BatchError>,
 ) -> Result<LevelOutcome, Box<dyn std::error::Error + Send + Sync>> {
     let skipped_before = skipped_items.len();
     let batches = ProcessingCore::create_batches(processor, items, config, skipped_items)
@@ -865,8 +866,9 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
                 let message = exc.to_string();
                 failed_batches.push(batch.batch_index);
                 batch_errors.push(message.clone());
+                *last_batch_error = Some(BatchError::from(exc));
                 if !config.continue_on_error {
-                    return Err(Box::new(std::io::Error::other(format!(
+                    return Err(Box::new(BatchFailed(format!(
                         "Batch {} extraction failed: {message}",
                         batch.batch_index
                     ))));
@@ -918,6 +920,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
     let mut failed_batches: Vec<usize> = Vec::new();
     let mut skipped_items: Vec<usize> = Vec::new();
     let mut batch_errors: Vec<String> = Vec::new();
+    let mut last_batch_error: Option<BatchError> = None;
     let mut successful = 0usize;
 
     // Local, not instance state: two concurrent `process()` calls on one
@@ -952,6 +955,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
             skipped_items,
             successful_batches: 0,
             batch_errors,
+            error: None,
         };
     }
 
@@ -965,6 +969,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
     let mut total_batches = 0usize;
     let mut status = ProcessingStatus::Completed;
     let mut error_message: Option<String> = None;
+    let mut error: Option<BatchError> = None;
     let final_result: ExtractionResult;
 
     loop {
@@ -979,12 +984,20 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
             &mut failed_batches,
             &mut skipped_items,
             &mut batch_errors,
+            &mut last_batch_error,
         ) {
             Ok(o) => o,
             Err(exc) => {
                 status = ProcessingStatus::Failed;
                 error_message = Some(exc.to_string());
                 final_result = ExtractionResult::error(exc.to_string());
+                // A failed batch under `continue_on_error = false`: the batch's
+                // own error is the cause worth keeping, as Python's `__cause__`.
+                error = if exc.is::<BatchFailed>() {
+                    last_batch_error.clone()
+                } else {
+                    Some(BatchError::from(exc))
+                };
                 break;
             }
         };
@@ -1062,6 +1075,7 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
                 message.push_str(&format!(" ({})", summarise_batch_errors(&batch_errors)));
             }
             error_message = Some(message);
+            error = last_batch_error;
         }
     }
 
@@ -1086,8 +1100,25 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
         skipped_items,
         successful_batches: successful,
         batch_errors,
+        error,
     }
 }
+
+/// An error kept on [`ProcessingResult::error`].
+type BatchError = std::sync::Arc<dyn std::error::Error + Send + Sync>;
+
+/// The run-ending error of a batch that failed under `continue_on_error =
+/// false`, so the run keeps the batch's own error rather than this one.
+#[derive(Debug)]
+struct BatchFailed(String);
+
+impl std::fmt::Display for BatchFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for BatchFailed {}
 
 fn push_stat(stats: &mut BTreeMap<String, serde_json::Value>, key: &str, value: usize) {
     if let Some(serde_json::Value::Array(arr)) = stats.get_mut(key) {

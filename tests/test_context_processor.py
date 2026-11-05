@@ -792,6 +792,33 @@ class TestFailureHandling:
     def test_a_clean_run_has_no_batch_errors(self) -> None:
         result = EchoProcessor().process(["fine"], query="q")
         assert result.batch_errors == []
+        assert result.error is None
+
+    def test_a_failed_run_keeps_the_last_failed_batchs_exception(self) -> None:
+        # #616: its type survives, where error_message keeps only the text.
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={0, 1}, config=config)
+        result = processor.process(["aaaaaaaaaa"] * 4, query="q")
+        assert isinstance(result.error, RuntimeError)
+        assert str(result.error) == "batch 1 exploded"
+
+    def test_a_fail_fast_run_keeps_the_batchs_exception(self) -> None:
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=False)
+        processor = FailingProcessor(fail_on={1}, config=config)
+        result = processor.process(["aaaaaaaaaa"] * 6, query="q")
+        assert str(result.error) == "batch 1 exploded"
+
+    def test_a_partial_run_keeps_no_error(self) -> None:
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={1}, reply="ok", config=config)
+        assert processor.process(["aaaaaaaaaa"] * 4, query="q").error is None
+
+    def test_a_refused_oversized_item_is_the_runs_error(self) -> None:
+        config = ProcessingConfig(
+            max_context_chars=60, oversized_item_strategy=OversizedItemStrategy.FAIL
+        )
+        result = EchoProcessor(config=config).process(["x" * 500], query="q")
+        assert isinstance(result.error, OversizedItemError)
 
     def test_only_skipped_items_add_no_cause(self) -> None:
         config = ProcessingConfig(

@@ -976,6 +976,7 @@ fn processing_result(content: &str, status: ProcessingStatus) -> ProcessingResul
         skipped_items: Vec::new(),
         successful_batches: 1,
         batch_errors: Vec::new(),
+        error: None,
     }
 }
 

@@ -49,6 +49,8 @@ struct FakeOllama {
     malformed_at: Option<usize>,
     /// The request answered with an HTTP error status, and that status.
     status_at: Option<(usize, u16)>,
+    /// The first request answered with that status, as is every later one.
+    status_from: Option<(usize, u16)>,
     /// Each request's `options.num_ctx`, `None` where the key is absent.
     num_ctx_sent: Mutex<Vec<Option<Value>>>,
 }
@@ -75,7 +77,11 @@ impl HttpClient for FakeOllama {
         if self.malformed_at == Some(index) {
             return Ok(HttpResponse::from_bytes(200, b"not json".to_vec()));
         }
-        if let Some((_, status)) = self.status_at.filter(|(at, _)| *at == index) {
+        let status = self
+            .status_at
+            .filter(|(at, _)| *at == index)
+            .or(self.status_from.filter(|(from, _)| index >= *from));
+        if let Some((_, status)) = status {
             let body = json!({"error": "refused"}).to_string();
             return Ok(HttpResponse::from_bytes(status, body.into_bytes()));
         }
@@ -132,6 +138,12 @@ fn run(fixture: &Value, case: &Value) -> Run {
         malformed_at: case["malformed_request"].as_u64().map(|k| k as usize),
         status_at: case["status_request"].as_u64().map(|k| {
             let status = case["status"].as_u64().expect("a status_request's status");
+            (k as usize, u16::try_from(status).expect("a u16"))
+        }),
+        status_from: case["status_from_request"].as_u64().map(|k| {
+            let status = case["status"]
+                .as_u64()
+                .expect("a status_from_request's status");
             (k as usize, u16::try_from(status).expect("a u16"))
         }),
         num_ctx_sent: Mutex::new(Vec::new()),
@@ -385,6 +397,54 @@ fn context_model_ceiling_is_error() {
         .expect_err("a cut-off completion");
     assert!(error.contains("truncated"), "{error}");
     assert_eq!(transport.requests(), 1, "a truncation is not retried");
+}
+
+/// #616: each call says whether its request failed, and how.
+#[test]
+fn context_model_reports_the_last_calls_request_failure() {
+    use bmlib::context_processor::llm_processor::RequestFailure;
+    let transport = Scripted::new(vec![
+        Err("reset"),
+        Ok((200, "the digest", "stop")),
+        Ok((401, "refused", "stop")),
+        Ok((200, "half a pass", "length")),
+        Err("reset"),
+    ]);
+    let client = scripted_client(transport.clone());
+    let model = LlmContextModel::new(&client, "ollama:qwen3");
+    assert_eq!(model.last_request_failure(), None, "no call yet");
+    model
+        .complete("p", 0.0, 10)
+        .expect("an answer on the retry");
+    assert_eq!(
+        model.last_request_failure(),
+        None,
+        "a retried success clears it"
+    );
+    model.complete("p", 0.0, 10).expect_err("a refusal");
+    assert_eq!(
+        model.last_request_failure(),
+        Some(RequestFailure {
+            retryable: false,
+            status: Some(401)
+        })
+    );
+    model.complete("p", 0.0, 10).expect_err("a truncation");
+    assert_eq!(
+        model.last_request_failure(),
+        None,
+        "a truncation is no request's"
+    );
+    model
+        .complete("p", 0.0, 10)
+        .expect_err("every attempt fails");
+    assert_eq!(
+        model.last_request_failure(),
+        Some(RequestFailure {
+            retryable: true,
+            status: None
+        })
+    );
 }
 
 #[test]

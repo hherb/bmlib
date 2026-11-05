@@ -565,6 +565,7 @@ class IterativeContextProcessor(ABC):
         failed_batches: list[int],
         skipped_items: list[int],
         batch_errors: list[str],
+        batch_exceptions: list[BaseException],
     ) -> tuple[list[ExtractionResult], bool, int, int]:
         """Batch and extract one level.
 
@@ -637,6 +638,7 @@ class IterativeContextProcessor(ABC):
                 )
                 failed_batches.append(batch.batch_index)
                 batch_errors.append(message)
+                batch_exceptions.append(exc)
                 if not config.continue_on_error:
                     raise RuntimeError(
                         f"Batch {batch.batch_index} extraction failed: {message}"
@@ -704,6 +706,7 @@ class IterativeContextProcessor(ABC):
         failed_batches: list[int] = []
         skipped_items: list[int] = []
         batch_errors: list[str] = []
+        batch_exceptions: list[BaseException] = []
         successful = 0
 
         # Local, not instance state: two concurrent ``process()`` calls on one
@@ -737,6 +740,7 @@ class IterativeContextProcessor(ABC):
         total_batches = 0
         status = ProcessingStatus.COMPLETED
         error_message: str | None = None
+        error: BaseException | None = None
 
         try:
             while True:
@@ -749,6 +753,7 @@ class IterativeContextProcessor(ABC):
                     failed_batches=failed_batches,
                     skipped_items=skipped_items,
                     batch_errors=batch_errors,
+                    batch_exceptions=batch_exceptions,
                 )
                 successful += level_successful
                 stats["batches_per_level"].append(batch_count)
@@ -815,16 +820,21 @@ class IterativeContextProcessor(ABC):
             status = ProcessingStatus.FAILED
             error_message = str(exc)
             final_result = _error_result(error_message)
+            error = exc
         except RuntimeError as exc:
             logger.error("Processing failed: %s", exc)
             status = ProcessingStatus.FAILED
             error_message = str(exc)
             final_result = _error_result(error_message)
+            # A failed batch under ``continue_on_error=False`` is chained to
+            # what the batch raised, which is the cause worth keeping.
+            error = exc.__cause__ if exc.__cause__ is not None else exc
         except Exception as exc:  # reported on the result rather than raised
             logger.exception("Unexpected error during processing")
             status = ProcessingStatus.FAILED
             error_message = f"Unexpected error: {exc}"
             final_result = _error_result(error_message)
+            error = exc
 
         if status is ProcessingStatus.COMPLETED and (failed_batches or skipped_items):
             if successful > 0:
@@ -846,6 +856,7 @@ class IterativeContextProcessor(ABC):
                 )
                 if batch_errors:
                     error_message += f" ({summarise_batch_errors(batch_errors)})"
+                error = batch_exceptions[-1] if batch_exceptions else None
 
         self._report_progress(
             "complete",
@@ -871,4 +882,5 @@ class IterativeContextProcessor(ABC):
             skipped_items=skipped_items,
             successful_batches=successful,
             batch_errors=batch_errors,
+            error=error,
         )

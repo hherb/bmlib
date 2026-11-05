@@ -211,6 +211,41 @@ impl ModelAnswer {
     }
 }
 
+/// What a failed request says of itself (#616): whether a retry may cure it,
+/// and the HTTP status the server answered with, if one did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RequestFailure {
+    /// A transport failure or a status in
+    /// [`crate::llm::RETRYABLE_STATUSES`] (#646, #659).
+    pub retryable: bool,
+    /// The server's HTTP status; `None` where none came or the answer was
+    /// unreadable (#662).
+    pub status: Option<u16>,
+}
+
+/// A batch whose model request failed (#616): what
+/// [`LlmChunkProcessor`]'s `extract_from_batch` returns then, so a caller
+/// reading [`ProcessingResult::error`](crate::context_processor::ProcessingResult::error)
+/// can tell a refused key or a missing model from an outage, and both from a
+/// reply the processor refused (a truncated completion is no
+/// `ModelCallError`). Python's `ModelCallError`, chained to the request's
+/// exception.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelCallError {
+    /// The batch's message, as the harness records it.
+    pub message: String,
+    /// What the request said of its failure.
+    pub request: RequestFailure,
+}
+
+impl std::fmt::Display for ModelCallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ModelCallError {}
+
 /// How the processor reaches a model.
 ///
 /// A trait rather than a concrete client, so the extraction rules are testable
@@ -237,6 +272,16 @@ pub trait ContextModel {
         temperature: f64,
         max_tokens: i64,
     ) -> Result<Value, String>;
+
+    /// What the last call's failure says of its request (#616): `None` after
+    /// a call that succeeded, or that failed for no request's sake (a
+    /// truncated completion, a reply that is not an object, a stop). The
+    /// errors above are strings, so this is how [`LlmChunkProcessor`] learns
+    /// whether a retry may cure a failed batch, as `ChatSource` learns it
+    /// (#659). The default says nothing.
+    fn last_request_failure(&self) -> Option<RequestFailure> {
+        None
+    }
 }
 
 /// Read the model's own confidence out of a structured answer.
@@ -548,9 +593,12 @@ impl IterativeContextProcessor for LlmChunkProcessor<'_> {
         extract_from_batch(self.model, &request).map_err(|error| {
             // Python wraps the failure so the harness's record names the stage:
             // `RuntimeError(f"LLM extraction failed: {exc}")`.
-            Box::new(std::io::Error::other(format!(
-                "LLM extraction failed: {error}"
-            ))) as Box<dyn std::error::Error + Send + Sync>
+            let message = format!("LLM extraction failed: {error}");
+            match self.model.last_request_failure() {
+                Some(request) => Box::new(ModelCallError { message, request })
+                    as Box<dyn std::error::Error + Send + Sync>,
+                None => Box::new(std::io::Error::other(message)),
+            }
         })
     }
 
