@@ -1095,6 +1095,25 @@ class TestPDFTextExtraction:
 
         assert result.html is None
         assert "no extractable text" in caplog.text.lower()
+        assert "likely a scan; no warnings reported" in caplog.text
+
+    def test_no_text_the_engine_explained_is_not_called_a_scan(self, tmp_path, caplog):
+        """The cause is what MuPDF said, not bmlib's per-page notes (#619)."""
+        empty = ConversionResult(
+            success=True,
+            text="",
+            format="plaintext",
+            page_count=1,
+            converted_pages=1,
+            char_count=0,
+            warnings=["Page 1: No extractable text"],
+            engine_messages=["repairing PDF document", "too many syntax errors"],
+        )
+        with caplog.at_level("WARNING"):
+            self._fetch(tmp_path, MagicMock(return_value=self._stub_converter(empty)))
+
+        assert "the PDF engine reported 2 message(s), logged on their own line" in caplog.text
+        assert "likely a scan" not in caplog.text
 
     def test_a_partial_extraction_is_flagged(self, tmp_path, caplog):
         """Text covering half the pages must not pass for a whole article."""

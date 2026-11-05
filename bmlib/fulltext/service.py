@@ -2269,15 +2269,20 @@ class FullTextService:
             result.pdf_extraction_failure = (conversion.error_kind or PDFErrorKind.ENGINE).value
             return
         if not html:
+            # Not "likely a scan" when the engine said why: a page cut short
+            # after too many syntax errors yields nothing too (#599). The
+            # converter logs the messages themselves on their own line.
+            cause = (
+                f"the PDF engine reported {len(conversion.engine_messages)} message(s), "
+                "logged on their own line"
+                if conversion.engine_messages
+                else "likely a scan; no warnings reported"
+            )
             logger.warning(
-                # Not "likely a scan": a page cut short after too many syntax
-                # errors yields nothing too, and the converter's own line
-                # says which (#599); the list mixes both kinds (#619).
-                "PDF %s yielded no extractable text over %d page(s) — a scan, or text "
-                "the PDF engine read past (its messages are logged on their own line); %s",
+                "PDF %s yielded no extractable text over %d page(s) — %s",
                 pdf_path,
                 conversion.page_count,
-                conversion.warnings[:3] or "no warnings reported",
+                cause,
             )
             return
         if not conversion.is_complete:

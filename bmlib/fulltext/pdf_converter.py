@@ -158,19 +158,26 @@ _ENCRYPTED_MESSAGE = "the PDF is password-protected; remove the password and try
 
 
 class PDFExtractionError(ValueError):
-    """A PDF could not be extracted: its :class:`PDFErrorKind` and a message.
+    """A PDF could not be extracted: its :class:`PDFErrorKind`, a message, and what MuPDF said.
 
     A ``ValueError``, which is what :meth:`PyMuPDFConverter.extract_blocks`
     raised before it was typed. The message never carries the path read,
-    which the caller knows and the user may never have chosen. Rust's
-    ``PdfError`` is the same pair.
+    which the caller knows and the user may never have chosen.
+    ``engine_messages`` is what MuPDF reported from the start of the read to
+    the failure (#619), the path replaced by "the file": a broken xref it
+    tried to repair, say, which it reports only as a message. Empty when it
+    said nothing or the failure was not a read's. Rust's ``PdfError`` carries
+    the same three.
     """
 
-    def __init__(self, kind: PDFErrorKind, message: str) -> None:
-        """Hold the kind beside the message."""
+    def __init__(
+        self, kind: PDFErrorKind, message: str, engine_messages: Sequence[str] = ()
+    ) -> None:
+        """Hold the kind and the engine's messages beside the message."""
         super().__init__(message)
         # Converted, so a bare string is refused here rather than held as one.
         self.kind = PDFErrorKind(kind)
+        self.engine_messages = list(engine_messages)
 
     @classmethod
     def encrypted(cls) -> PDFExtractionError:
@@ -178,8 +185,8 @@ class PDFExtractionError(ValueError):
         return cls(PDFErrorKind.ENCRYPTED, _ENCRYPTED_MESSAGE)
 
     def __reduce__(self) -> tuple[Any, ...]:
-        """Pickle with both arguments, which ``BaseException`` would drop."""
-        return (type(self), (self.kind, str(self)))
+        """Pickle with every argument, which ``BaseException`` would drop."""
+        return (type(self), (self.kind, str(self), self.engine_messages))
 
 
 @dataclass(frozen=True)
@@ -248,6 +255,8 @@ class ConversionResult:
     page_count: int
     converted_pages: int
     char_count: int
+    # bmlib's own notes (a page with no text, a title that could not be read);
+    # what MuPDF said is ``engine_messages`` (#619).
     warnings: list[str] = field(default_factory=list)
     converter_name: str = ""
     converter_version: str = ""
@@ -269,6 +278,9 @@ class ConversionResult:
     # Which side a failure is on (#598); None when the conversion succeeded.
     # Declared last for the reason ``title`` is.
     error_kind: PDFErrorKind | None = None
+    # What MuPDF reported while reading, a failed read included (#599, #619),
+    # the path replaced by "the file". Declared last for the same reason.
+    engine_messages: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Refuse a successful result carrying a failure's kind.
@@ -441,12 +453,13 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
 class PDFBlocks:
     """A PDF's text blocks, and what MuPDF reported while reading them (#599).
 
-    ``warnings`` are MuPDF's own messages, as it words them: a broken xref it
+    ``engine_messages`` are MuPDF's own messages, as it words them: a broken xref it
     repaired, a content stream it stopped reading (``too many syntax errors;
     ignoring rest of page``), a font with bogus metrics. MuPDF reads past each
     without failing, so the blocks may be short of the page's text and only
-    these say so. The path read is replaced by "the file". Rust's
-    ``PdfBlocks`` is the same.
+    these say so. The path read is replaced by "the file". ``warnings`` are
+    bmlib's own notes, kept apart so a caller can tell what the engine said
+    (#619). Rust's ``PdfBlocks`` is the same.
 
     ``metadata_title`` is the PDF's own ``/Title``, verbatim and unjudged, or
     None when it has none (or it could not be read, which adds a warning).
@@ -460,6 +473,7 @@ class PDFBlocks:
     blocks: list[TextBlock]
     warnings: list[str] = field(default_factory=list)
     metadata_title: str | None = None
+    engine_messages: list[str] = field(default_factory=list)
 
 
 #: MuPDF's ``fz_store_item`` warning when two threads cache the same item at
@@ -636,7 +650,8 @@ class PyMuPDFConverter(PDFConverter):
         one — a file that cannot be read is not a paper without text. A
         ``limit`` reached before a page is a failed result too (#600).
         What MuPDF reported while reading, a page it stopped reading
-        included, ends ``warnings`` and is logged at WARNING (#599).
+        included, is ``engine_messages``, apart from bmlib's own
+        ``warnings`` (#619), and is logged at WARNING (#599).
         """
         self.validate_pdf_path(pdf_path)
 
@@ -665,7 +680,6 @@ class PyMuPDFConverter(PDFConverter):
                     # encrypted and extracts perfectly.
                     error = PDFExtractionError.encrypted()
                     logger.error("PDF conversion failed for %s: %s", pdf_path, error)
-                    warnings += _engine_messages(self._pymupdf, pdf_path)
                     return ConversionResult(
                         success=False,
                         text="",
@@ -678,6 +692,7 @@ class PyMuPDFConverter(PDFConverter):
                         converter_version=self.version,
                         error_message=str(error),
                         error_kind=error.kind,
+                        engine_messages=_engine_messages(self._pymupdf, pdf_path),
                     )
 
                 try:
@@ -748,7 +763,6 @@ class PyMuPDFConverter(PDFConverter):
                 warnings.append(f"Title corroboration failed: {e}")
                 logger.warning("Title corroboration failed for %s: %s", pdf_path, e, exc_info=True)
 
-            warnings += _engine_messages(self._pymupdf, pdf_path)
             return ConversionResult(
                 success=True,
                 text=full_text,
@@ -762,6 +776,7 @@ class PyMuPDFConverter(PDFConverter):
                 metadata=metadata,
                 page_texts=list(text_parts),
                 title=judged_title,
+                engine_messages=_engine_messages(self._pymupdf, pdf_path),
             )
 
         except Exception as e:  # noqa: BLE001 — surface any backend failure as a result
@@ -775,7 +790,6 @@ class PyMuPDFConverter(PDFConverter):
                 error,
                 exc_info=error.kind is PDFErrorKind.ENGINE,
             )
-            warnings += _engine_messages(self._pymupdf, pdf_path)
             return ConversionResult(
                 success=False,
                 text="",
@@ -788,6 +802,7 @@ class PyMuPDFConverter(PDFConverter):
                 converter_version=self.version,
                 error_message=str(error),
                 error_kind=error.kind,
+                engine_messages=_engine_messages(self._pymupdf, pdf_path),
             )
 
     def extract_blocks(self, pdf_path: Path, *, limit: PDFLimit | None = None) -> list[TextBlock]:
@@ -833,7 +848,8 @@ class PyMuPDFConverter(PDFConverter):
         A damaged PDF can read without failing and still lose text: MuPDF
         repairs a broken xref, and stops a page after too many syntax errors,
         reporting each only as a message. Those messages are returned beside
-        the blocks and logged at WARNING; on a failure they are logged only.
+        the blocks and logged at WARNING; on a failure they are logged and
+        carried by the :class:`PDFExtractionError` (#619).
 
         Raises:
             As :meth:`extract_blocks`.
@@ -871,16 +887,19 @@ class PyMuPDFConverter(PDFConverter):
                             text_block = _line_to_block(raw_line, page_num)
                             if text_block is not None:
                                 blocks.append(text_block)
-        except PDFExtractionError:
-            _engine_messages(self._pymupdf, pdf_path)
+        except PDFExtractionError as e:
+            e.engine_messages = _engine_messages(self._pymupdf, pdf_path)
             raise
         except Exception as e:  # noqa: BLE001 — any failure is classified, never lost
-            _engine_messages(self._pymupdf, pdf_path)
-            raise _classify(e, self._pymupdf, pdf_path) from e
-        warnings = _engine_messages(self._pymupdf, pdf_path)
-        if metadata_warning is not None:
-            warnings.append(metadata_warning)
-        return PDFBlocks(blocks, warnings, metadata_title)
+            error = _classify(e, self._pymupdf, pdf_path)
+            error.engine_messages = _engine_messages(self._pymupdf, pdf_path)
+            raise error from e
+        return PDFBlocks(
+            blocks,
+            [metadata_warning] if metadata_warning is not None else [],
+            metadata_title,
+            _engine_messages(self._pymupdf, pdf_path),
+        )
 
 
 _WS_RE = re.compile(r"\s+")

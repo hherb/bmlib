@@ -467,6 +467,22 @@ impl Drop for EngineMessages {
     }
 }
 
+/// Run `read` with MuPDF's messages captured, and return them beside its
+/// value, or on its error (#619). `read` drops the document before it returns,
+/// so what MuPDF says while closing it is kept too.
+fn reading<T>(
+    path: &std::path::Path,
+    read: impl FnOnce() -> Result<T, PdfError>,
+) -> Result<(T, Vec<String>), PdfError> {
+    let messages = EngineMessages::capture();
+    let result = read();
+    let engine_messages = messages.finish(path);
+    match result {
+        Ok(value) => Ok((value, engine_messages)),
+        Err(error) => Err(error.with_engine_messages(engine_messages)),
+    }
+}
+
 /// Open a PDF, refusing one that needs a password, as `extract_blocks` does.
 fn open(path: &std::path::Path) -> Result<Document, PdfError> {
     let document = Document::open(path).map_err(|e| classify(&e, "could not open it", path))?;
@@ -638,39 +654,39 @@ impl PdfTextExtractor for MupdfExtractor {
     }
 
     /// MuPDF's messages are those reported from opening the file to its last
-    /// page. On a failure they are dropped, the error saying what failed.
+    /// page, or to the failure, which then carries them (#619).
     fn extract_blocks_with_warnings(
         &self,
         path: &std::path::Path,
         limit: &PdfLimit,
     ) -> Result<PdfBlocks, PdfError> {
-        let messages = EngineMessages::capture();
-        let document = open(path)?;
-        // Best-effort, as Python's: a title that cannot be read is a warning
-        // after the engine's (Python also logs it on a line of its own).
-        let (metadata_title, metadata_warning) = match document.metadata(MetadataName::Title) {
-            Ok(title) => ((!title.is_empty()).then_some(title), None),
-            Err(e) => (None, Some(format!("Failed to extract metadata: {e}"))),
-        };
-        let mut blocks = Vec::new();
-        let mut page_index = 0;
-        each_page(&document, DICT_FLAGS, path, limit, |bounds, text_page| {
-            // `lines()` yields nothing for an image block, which is the
-            // `type != 0` skip `extract_blocks` makes.
-            for block in text_page.blocks() {
-                for line in block.lines() {
-                    blocks.extend(line_block(&line, &bounds, page_index));
+        let ((blocks, metadata_title, metadata_warning), engine_messages) = reading(path, || {
+            let document = open(path)?;
+            // Best-effort, as Python's: a title that cannot be read is a
+            // note of bmlib's (Python also logs it on a line of its own).
+            let (metadata_title, metadata_warning) = match document.metadata(MetadataName::Title) {
+                Ok(title) => ((!title.is_empty()).then_some(title), None),
+                Err(e) => (None, Some(format!("Failed to extract metadata: {e}"))),
+            };
+            let mut blocks = Vec::new();
+            let mut page_index = 0;
+            each_page(&document, DICT_FLAGS, path, limit, |bounds, text_page| {
+                // `lines()` yields nothing for an image block, which is the
+                // `type != 0` skip `extract_blocks` makes.
+                for block in text_page.blocks() {
+                    for line in block.lines() {
+                        blocks.extend(line_block(&line, &bounds, page_index));
+                    }
                 }
-            }
-            page_index += 1;
+                page_index += 1;
+            })?;
+            Ok((blocks, metadata_title, metadata_warning))
         })?;
-        drop(document);
-        let mut warnings = messages.finish(path);
-        warnings.extend(metadata_warning);
         Ok(PdfBlocks {
             blocks,
-            warnings,
+            warnings: metadata_warning.into_iter().collect(),
             metadata_title,
+            engine_messages,
         })
     }
 
@@ -696,14 +712,14 @@ impl MupdfExtractor {
         path: &std::path::Path,
         limit: &PdfLimit,
     ) -> Result<(Vec<String>, Vec<String>), PdfError> {
-        let messages = EngineMessages::capture();
-        let document = open(path)?;
-        let mut pages = Vec::new();
-        each_page(&document, TEXT_FLAGS, path, limit, |bounds, text_page| {
-            pages.push(page_text(&text_page, &bounds));
-        })?;
-        drop(document);
-        Ok((pages, messages.finish(path)))
+        reading(path, || {
+            let document = open(path)?;
+            let mut pages = Vec::new();
+            each_page(&document, TEXT_FLAGS, path, limit, |bounds, text_page| {
+                pages.push(page_text(&text_page, &bounds));
+            })?;
+            Ok(pages)
+        })
     }
 }
 
@@ -741,7 +757,7 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
         use crate::fulltext::pdf_text::render_html;
         use crate::fulltext::service::{PdfExtractError, PdfText};
 
-        let (pages, warnings) = self
+        let (pages, engine_messages) = self
             .extractor
             .page_texts_with_warnings(pdf_path, &PdfLimit::default())
             .map_err(PdfExtractError::Conversion)?;
@@ -761,7 +777,7 @@ impl crate::fulltext::service::PdfExtractor for MupdfPdfExtractor {
             page_count,
             converted_pages: page_count,
             char_count,
-            warnings,
+            engine_messages,
         })
     }
 }

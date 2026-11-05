@@ -9,6 +9,28 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed
+
+- **What MuPDF said is kept apart, and a failed read keeps it** (#619, with
+  the Python library). `MupdfExtractor::extract_blocks_with_warnings` and
+  `page_texts_with_warnings` returned early on a failure, dropping MuPDF's
+  captured messages, so a read that repaired a broken xref and then failed
+  left no trace of it. **Breaking**:
+  - `PdfError` gains `engine_messages: Vec<String>`, filled by every MuPDF
+    read that fails (a limit reached mid-read included), and
+    `PdfError::with_engine_messages`. A struct literal adds the field; the
+    constructors leave it empty. `Display` is still the message alone.
+  - `PdfBlocks` gains `engine_messages`, which now holds MuPDF's messages;
+    `warnings` holds bmlib's own note (a `/Title` that could not be read)
+    alone. `ConversionResult` gains `engine_messages` (declared last), which
+    `ConversionResult::failure` fills from the error.
+  - The service's `PdfText.warnings` is renamed `engine_messages`, and
+    `FullTextService` ends a failed extraction's line with what the engine
+    said before it.
+
+  The shared `tests/fixtures/pdf_warnings.json` gains a failed read; see
+  the root CHANGELOG.
+
 ### Added
 
 - **`LlmClient::chat_stream_with_cancel(request, &AtomicBool, on_delta)`**

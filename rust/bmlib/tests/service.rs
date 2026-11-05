@@ -1539,7 +1539,7 @@ fn the_engines_messages_reach_the_service_log() {
             .with_cache(Some(cache))
             .with_pdf_extractor(Arc::new(MessageExtractor {
                 html: html.to_string(),
-                warnings: vec![
+                engine_messages: vec![
                     "repairing PDF document".to_string(),
                     "too many syntax errors; ignoring rest of page".to_string(),
                 ],
@@ -2431,9 +2431,10 @@ fn text_extraction_is_best_effort_and_never_costs_the_pdf() {
     struct Failing;
     impl PdfExtractor for Failing {
         fn extract(&self, _path: &Path) -> Result<PdfText, PdfExtractError> {
-            Err(PdfExtractError::Conversion(PdfError::unreadable(
-                "backend exploded",
-            )))
+            Err(PdfExtractError::Conversion(
+                PdfError::unreadable("backend exploded")
+                    .with_engine_messages(vec!["trying to repair broken xref".to_string()]),
+            ))
         }
     }
 
@@ -2458,10 +2459,14 @@ fn text_extraction_is_best_effort_and_never_costs_the_pdf() {
     assert_eq!(result.pdf_url.as_deref(), Some("https://ex/a.pdf"));
     assert_eq!(result.content_kind, ContentKind::None);
     assert_eq!(result.pdf_extraction_failure.as_deref(), Some("unreadable"));
-    assert!(service
-        .warnings()
-        .iter()
-        .any(|line| line.contains("PDF text extraction failed")));
+    // What the engine said before failing ends the line (#619).
+    assert!(service.warnings().iter().any(|line| {
+        line.contains("PDF text extraction failed")
+            && line.ends_with(
+                "backend exploded (the PDF engine reported 1 message(s): \
+                 trying to repair broken xref)",
+            )
+    }));
 }
 
 /// **#604**: a failed `PdfText` names no kind, so its failure is the unplaced
@@ -2478,7 +2483,7 @@ fn an_extraction_failure_names_its_side() {
                 page_count: 1,
                 converted_pages: usize::from(self.0),
                 char_count: self.1.len(),
-                warnings: Vec::new(),
+                engine_messages: Vec::new(),
             })
         }
     }
@@ -2685,7 +2690,7 @@ struct FakeExtractor;
 /// A backend that reports what the engine said (#599).
 struct MessageExtractor {
     html: String,
-    warnings: Vec<String>,
+    engine_messages: Vec<String>,
 }
 
 impl PdfExtractor for MessageExtractor {
@@ -2697,7 +2702,7 @@ impl PdfExtractor for MessageExtractor {
             page_count: 1,
             converted_pages: 1,
             char_count: self.html.len(),
-            warnings: self.warnings.clone(),
+            engine_messages: self.engine_messages.clone(),
         })
     }
 }
@@ -2712,7 +2717,7 @@ impl PdfExtractor for FakeExtractor {
             page_count: 1,
             converted_pages: 1,
             char_count: text.len(),
-            warnings: Vec::new(),
+            engine_messages: Vec::new(),
         })
     }
 }

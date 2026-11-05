@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-05 (**this session's PR is on `fix/664-window-status`**,
-for #664; see *This session* below). PR #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
+_Last updated: 2026-11-05 (**this session's PR is on `fix/619-engine-messages`**,
+for #619; see *This session* below). PR #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -12,7 +12,26 @@ summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
 #629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666 and this session's._
 
-## This session: a failed context-window lookup carries the HTTP status (#664)
+## This session: what MuPDF said is kept apart, and a failed read keeps it (#619)
+
+The maintainer chose all three of #619's parts. One name per meaning in both
+languages: **`engine_messages`** is what MuPDF said, **`warnings`** bmlib's
+own notes. `PdfError`/`PDFExtractionError` gain `engine_messages`, filled by
+every MuPDF read that fails (Rust: the private `reading` helper wraps both
+reads and attaches the capture to the value or the error; a limit reached
+mid-read carries them too); `PdfBlocks`/`PDFBlocks` and both
+`ConversionResult`s gain it, `warnings` keeping only bmlib's notes; Rust's
+service `PdfText.warnings` is renamed `engine_messages`, and a failed
+extraction's line ends with them. Python's service "no extractable text" line
+drops its `warnings[:3]` (bmlib's per-page notes) for Rust's cause. Breaking
+against `main` since #599, unreleased. Shared fixture `pdf_warnings.json`:
+each row's two lists, and `failed` (a header with no objects: `unreadable`,
+four messages, the same from PyMuPDF's MuPDF 1.28.6 and `mupdf-sys`'s).
+`PDF_PINNED` re-pinned without a bump (the canonical PDF code reads neither
+list). **For StudyAnalyzer**: rename `PdfBlocks.warnings` reads to
+`engine_messages` and show a failed PDF read's `engine_messages`.
+
+## Earlier, 2026-11-05: a failed context-window lookup carries the HTTP status (#664, PR #668, merged)
 
 Filed from StudyAnalyzer PR #80's review: an app reads the window before its
 first chat or PICO call to a model, so a wrong key met there was an outage.
@@ -153,7 +172,7 @@ empty is "nothing failed"), #625 (#603, `FullTextResult.tier_faults`), #622
 re-pin `BmlibFFI.pin.json`), #620 (#617's OpenAI-compatible half; Ollama's
 open by decision), #615 (#578, #573, #604 — read `pdf_extraction_failure`
 `"encrypted"`/`"unreadable"` as `invalid_input`, `"engine"` as a retry), #614
-(#599, MuPDF's messages reported; left **#619**, **#605**).
+(#599, MuPDF's messages reported; left #619, done this session, and **#605**).
 
 ## What 0.12.0 costs a downstream
 
@@ -341,7 +360,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 **129 open** (`gh issue list --state open --limit 300 --json number`,
 2026-11-05, once #664 closes, with #665 and #667 filed (#667 is #664's finding); #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
-sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
+sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). #619 (done, this session), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript

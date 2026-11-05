@@ -62,6 +62,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **What MuPDF said is kept apart, and a failed read keeps it** (#619, found
+  reviewing PR #614, with the Rust crate). A read that repaired a broken xref
+  and then failed carried none of MuPDF's messages in Rust (the capture was
+  dropped unread) and only logged them in Python; and Python's
+  `ConversionResult.warnings` mixed bmlib's notes with MuPDF's, so a caller
+  could pull out what the engine said only by position. Now:
+  - `PDFExtractionError(kind, message, engine_messages=())` carries what
+    MuPDF reported before the failure, the path replaced by "the file";
+    pickling keeps it.
+  - `ConversionResult.engine_messages` (declared last) holds MuPDF's
+    messages, a failed result's included; `warnings` holds bmlib's notes
+    only (`Page N: No extractable text`, `Failed to extract metadata: …`).
+  - `PDFBlocks(blocks, warnings, metadata_title, engine_messages)`: the
+    #599 messages move from `warnings` to `engine_messages`; `warnings` is
+    the metadata note alone. **Breaking against `main` since #599** (not
+    in a release).
+  - `FullTextService`'s "no extractable text" line names the engine's
+    message count, or "likely a scan", as Rust's does, instead of the first
+    three of bmlib's per-page notes.
+
+  The shared `tests/fixtures/pdf_warnings.json` gives each row
+  `engine_messages` and `warnings` apart and gains `failed`: a header with
+  no objects (`pdf_warnings_unreadable.pdf`), `unreadable`, with the four
+  messages MuPDF gives first, the same on PyMuPDF's MuPDF 1.28.6 and
+  `mupdf-sys`'s. `PDF_PINNED` is re-pinned without a version bump: the
+  canonical PDF code reads neither list.
+
 - **A long paper's failed condensation request is the request's failure**
   (#616, with the Rust crate). `PicoAgent` condenses a text over its budget
   through `context_processor`, which reduced every exception a batch raised

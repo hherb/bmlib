@@ -18,14 +18,17 @@
 
 MuPDF reads past damage with only a message, which Python's
 ``PyMuPDFConverter.extract_blocks_with_warnings`` and Rust's
-``MupdfExtractor::extract_blocks_with_warnings`` must both return. Two
-one-page PDFs, written by hand byte for byte:
+``MupdfExtractor::extract_blocks_with_warnings`` must both return as
+``engine_messages``, apart from bmlib's own ``warnings`` (#619). Three
+PDFs, written by hand byte for byte:
 
 * ``pdf_warnings_repaired.pdf``: its ``startxref`` points at nothing, so
   MuPDF repairs the xref and reads the page whole.
 * ``pdf_warnings_cut_short.pdf``: a line, then more syntax errors than MuPDF
   reads past (its ``MAX_SYNTAX_ERRORS``, 100), then a line MuPDF never reaches
   (#605). Its messages are the only sign the page was cut short.
+* ``pdf_warnings_unreadable.pdf``: a header and no objects, so MuPDF tries to
+  repair the xref and fails; the error carries what it said first (#619).
 
 ``pdf_extraction.pdf`` (#590's contract) is the control: it reports nothing.
 The expected values are PyMuPDF's, printed on stderr to be checked by eye.
@@ -45,11 +48,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from bmlib.fulltext.pdf_converter import PyMuPDFConverter
+from bmlib.fulltext.pdf_converter import PDFExtractionError, PyMuPDFConverter
 
 JSON_NAME = "pdf_warnings.json"
 REPAIRED = "pdf_warnings_repaired.pdf"
 CUT_SHORT = "pdf_warnings_cut_short.pdf"
+UNREADABLE = "pdf_warnings_unreadable.pdf"
 #: #590's contract PDF, which MuPDF reads without a message.
 CONTROL = "pdf_extraction.pdf"
 
@@ -93,6 +97,7 @@ PDFS: dict[str, bytes] = {
     CUT_SHORT: build_pdf(
         "\n".join([_line(700, READ_LINE), *(["] ) >> Tj"] * SYNTAX_ERRORS), _line(600, LOST_LINE)])
     ),
+    UNREADABLE: b"%PDF-1.4\nnot a pdf at all\n",
 }
 
 
@@ -104,7 +109,22 @@ def _row(directory: Path, name: str) -> dict[str, Any]:
         "pdf_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "texts": [block.text for block in read.blocks],
         "warnings": read.warnings,
+        "engine_messages": read.engine_messages,
     }
+
+
+def _failed_row(directory: Path, name: str) -> dict[str, Any]:
+    path = directory / name
+    try:
+        PyMuPDFConverter().extract_blocks_with_warnings(path)
+    except PDFExtractionError as e:
+        return {
+            "pdf": name,
+            "pdf_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "kind": e.kind.value,
+            "engine_messages": e.engine_messages,
+        }
+    raise AssertionError(f"{name} was meant to fail and was read")
 
 
 def build_contract(directory: Path) -> dict[str, Any]:
@@ -112,8 +132,9 @@ def build_contract(directory: Path) -> dict[str, Any]:
     return {
         "description": (
             "What MuPDF reports while reading a damaged PDF, which Python's and Rust's "
-            "extract_blocks_with_warnings both return (#599). Written by "
-            "scripts/make_pdf_warnings_fixture.py."
+            "extract_blocks_with_warnings both return as engine_messages, apart from "
+            "bmlib's own warnings, and a failed read's error carries (#599, #619). "
+            "Written by scripts/make_pdf_warnings_fixture.py."
         ),
         "lost_line": LOST_LINE,
         # is_about_the_file: MuPDF's store race is set aside, nothing else.
@@ -130,6 +151,7 @@ def build_contract(directory: Path) -> dict[str, Any]:
             "found duplicate fz_icc\u001c in the store",
         ],
         "rows": [_row(directory, name) for name in (REPAIRED, CUT_SHORT, CONTROL)],
+        "failed": [_failed_row(directory, UNREADABLE)],
     }
 
 
@@ -138,9 +160,9 @@ def main(directory: Path) -> None:
     for name, data in PDFS.items():
         (directory / name).write_bytes(data)
     contract = build_contract(directory)
-    for row in contract["rows"]:
-        print(f"{row['pdf']}: {row['texts']!r}", file=sys.stderr)
-        for message in row["warnings"]:
+    for row in contract["rows"] + contract["failed"]:
+        print(f"{row['pdf']}: {row.get('texts', row.get('kind'))!r}", file=sys.stderr)
+        for message in row["engine_messages"]:
             print(f"    {message}", file=sys.stderr)
     text = json.dumps(contract, indent=2, ensure_ascii=False) + "\n"
     (directory / JSON_NAME).write_text(text, encoding="utf-8")

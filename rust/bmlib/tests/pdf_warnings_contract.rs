@@ -19,13 +19,15 @@
 //! The same files Python's `tests/test_pdf_warnings_contract.py` asserts
 //! against, written by `scripts/make_pdf_warnings_fixture.py`: [`MupdfExtractor`]
 //! reads each PDF as the expected lines and returns exactly the messages
-//! PyMuPDF does — a repaired xref, a page cut short after too many syntax
-//! errors (#605), and nothing for a sound PDF.
+//! PyMuPDF does as `engine_messages`, apart from bmlib's own `warnings` (#619)
+//! — a repaired xref, a page cut short after too many syntax errors (#605),
+//! and nothing for a sound PDF — and a PDF that cannot be read fails carrying
+//! what MuPDF said first (#619).
 
 #![cfg(feature = "pdf")]
 
 use bmlib::fulltext::pdf_text::{PdfLimit, PdfTextExtractor};
-use bmlib::fulltext::service::PdfExtractor;
+use bmlib::fulltext::service::{PdfExtractError, PdfExtractor};
 use bmlib::fulltext::{is_about_the_file, MupdfExtractor, MupdfPdfExtractor};
 use serde_json::Value;
 
@@ -53,17 +55,52 @@ fn each_pdf_reads_as_its_lines_with_its_messages() {
             .expect("extracts");
         let texts: Vec<String> = read.blocks.into_iter().map(|b| b.text).collect();
         assert_eq!(texts, strings(&row["texts"]), "{}", row["pdf"]);
+        assert_eq!(
+            read.engine_messages,
+            strings(&row["engine_messages"]),
+            "{}",
+            row["pdf"]
+        );
         assert_eq!(read.warnings, strings(&row["warnings"]), "{}", row["pdf"]);
+    }
+}
+
+/// Every way of reading a PDF that fails carries what MuPDF said first.
+#[test]
+fn a_failed_read_carries_what_mupdf_said() {
+    for row in contract()["failed"].as_array().expect("failed rows") {
+        let expected = strings(&row["engine_messages"]);
+        let kind = row["kind"].as_str().expect("a kind");
+        let blocks = MupdfExtractor::new()
+            .extract_blocks_with_warnings(&path(row), &PdfLimit::default())
+            .expect_err("fails");
+        let pages = MupdfExtractor::new()
+            .page_texts_with_warnings(&path(row), &PdfLimit::default())
+            .expect_err("fails");
+        let Err(PdfExtractError::Conversion(service)) =
+            MupdfPdfExtractor::new().extract(&path(row))
+        else {
+            panic!("{}: the adapter did not fail as a conversion", row["pdf"]);
+        };
+        for error in [blocks, pages, service] {
+            assert_eq!(error.kind.as_str(), kind, "{}", row["pdf"]);
+            assert_eq!(error.engine_messages, expected, "{}", row["pdf"]);
+        }
     }
 }
 
 #[test]
 fn the_page_texts_carry_the_same_messages() {
     for row in contract()["rows"].as_array().expect("rows") {
-        let (_, warnings) = MupdfExtractor::new()
+        let (_, engine_messages) = MupdfExtractor::new()
             .page_texts_with_warnings(&path(row), &PdfLimit::default())
             .expect("extracts");
-        assert_eq!(warnings, strings(&row["warnings"]), "{}", row["pdf"]);
+        assert_eq!(
+            engine_messages,
+            strings(&row["engine_messages"]),
+            "{}",
+            row["pdf"]
+        );
     }
 }
 
@@ -73,7 +110,12 @@ fn the_service_adapter_carries_them_too() {
         let text = MupdfPdfExtractor::new()
             .extract(&path(row))
             .expect("extracts");
-        assert_eq!(text.warnings, strings(&row["warnings"]), "{}", row["pdf"]);
+        assert_eq!(
+            text.engine_messages,
+            strings(&row["engine_messages"]),
+            "{}",
+            row["pdf"]
+        );
     }
 }
 
@@ -88,7 +130,7 @@ fn a_second_read_on_one_thread_reports_the_same() {
         MupdfExtractor::new()
             .extract_blocks_with_warnings(&path(row), &PdfLimit::default())
             .expect("extracts")
-            .warnings
+            .engine_messages
     };
     let first = read();
     assert!(!first.is_empty());
@@ -102,15 +144,23 @@ fn the_contract_carries_the_shapes_it_is_for() {
     let contract = contract();
     let rows = contract["rows"].as_array().expect("rows");
     let lost = contract["lost_line"].as_str().expect("the lost line");
-    let cut_short = strings(&rows[1]["warnings"]);
+    let cut_short = strings(&rows[1]["engine_messages"]);
     assert!(cut_short
         .iter()
         .any(|m| m == "too many syntax errors; ignoring rest of page"));
     assert!(!strings(&rows[1]["texts"]).iter().any(|t| t == lost));
-    assert!(strings(&rows[0]["warnings"])
+    assert!(strings(&rows[0]["engine_messages"])
         .iter()
         .any(|m| m == "repairing PDF document"));
-    assert!(rows[2]["warnings"].as_array().expect("a list").is_empty());
+    assert!(rows[2]["engine_messages"]
+        .as_array()
+        .expect("a list")
+        .is_empty());
+    let failed = contract["failed"].as_array().expect("failed rows");
+    assert_eq!(failed.len(), 1);
+    assert!(strings(&failed[0]["engine_messages"])
+        .iter()
+        .any(|m| m == "trying to repair broken xref"));
 }
 
 #[test]
