@@ -135,6 +135,32 @@ HTTP_SERVER_ERROR = 500
 # missing model.
 MISSING_MODEL_PHRASE = "not found"
 
+
+def _names_a_missing_model(exc: Any) -> bool:
+    """Whether an ``ollama.ResponseError`` 404 says the server has no such model.
+
+    Only a JSON body whose ``error`` string says "not found" does, Rust's
+    ``names_a_missing_model`` rule. ollama-python falls back to the raw text
+    for a body that is not JSON, so ``exc.error`` alone cannot tell Ollama's
+    plain-text ``404 page not found`` for an unknown route (a wrong address)
+    from a missing model (#667); the SDK raises ``from None``, which keeps the
+    ``httpx.HTTPStatusError`` and its body on ``__context__``.
+    """
+    import httpx
+
+    context = exc.__context__
+    if isinstance(context, httpx.HTTPStatusError):
+        try:
+            error = json.loads(context.response.text).get("error")
+        except (ValueError, AttributeError):  # not JSON, or not an object
+            return False
+        return isinstance(error, str) and MISSING_MODEL_PHRASE in error.lower()
+    # shortcut: with no body on __context__ (another SDK version) only the
+    # SDK's message is left, plain text included; read the body some other way
+    # if a release stops raising from the HTTPStatusError.
+    return MISSING_MODEL_PHRASE in str(exc.error).lower()
+
+
 # The largest ``num_ctx`` accepted: Rust types it as a u32, so Python refuses
 # what Rust cannot express.
 MAX_NUM_CTX = 2**32 - 1
@@ -403,8 +429,9 @@ class OllamaProvider(BaseProvider):
         """The model's trained context window, from the server's ``show``.
 
         This is the window the model supports, not the one it is loaded with
-        (that is ``num_ctx``). A 404 whose message says "not found" is
-        :class:`NoSuchModelError`; any other 404 is a wrong address and a
+        (that is ``num_ctx``). A 404 whose JSON ``error`` says "not found" is
+        :class:`NoSuchModelError`; any other 404 (a plain-text ``404 page not
+        found`` included) is a wrong address and a
         :class:`ContextWindowError`. A connection failure or 5xx is retried
         with backoff; any other refusal is not.
 
@@ -421,10 +448,7 @@ class OllamaProvider(BaseProvider):
             try:
                 return as_dict(client.show(model))
             except ollama.ResponseError as exc:
-                if (
-                    exc.status_code == HTTP_NOT_FOUND
-                    and MISSING_MODEL_PHRASE in str(exc.error).lower()
-                ):
+                if exc.status_code == HTTP_NOT_FOUND and _names_a_missing_model(exc):
                     raise NoSuchModelError(
                         f"ollama has no model {model!r}", provider=self.PROVIDER_NAME, model=model
                     ) from exc
