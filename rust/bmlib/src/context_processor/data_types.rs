@@ -600,6 +600,10 @@ impl ProcessingResult {
     /// call site, because a caller reading [`Self::has_failures`] on a `Failed`
     /// result otherwise has to guess which of the two it holds — and the two
     /// call for different actions.
+    ///
+    /// It is also what a run a stop ended returns (#609,
+    /// [`IterativeContextProcessor::stop_requested`](crate::context_processor::IterativeContextProcessor::stop_requested)):
+    /// Python raises there and returns no result, so none of its counts is kept.
     #[must_use]
     pub fn failed(message: impl Into<String>) -> Self {
         let message = message.into();

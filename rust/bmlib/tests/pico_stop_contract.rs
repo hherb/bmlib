@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bmlib::context_processor::ProcessingConfig;
+use bmlib::context_processor::{ProcessingConfig, ProgressInfo};
 use bmlib::llm::LlmClient;
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use bmlib::quality::pico_agent::PicoAgent;
@@ -112,14 +112,24 @@ impl HttpClient for FakeOllama {
 }
 
 /// What one case ended in: each request's `num_ctx`, the error kind, a
-/// `request_failed`'s `retryable` (#659) and `status` (#662), and the
-/// result's notes.
+/// `request_failed`'s `retryable` (#659) and `status` (#662), the result's
+/// notes, and the condensation's progress reports (#609).
 type Run = (
     Vec<Option<Value>>,
     Option<&'static str>,
     Option<(bool, Option<u16>)>,
     Vec<String>,
+    Vec<String>,
 );
+
+/// One condensation progress report as the fixture writes it (#609): the
+/// stage, the batch reached of this level's batches, and the level.
+fn progress_line(info: &ProgressInfo) -> String {
+    format!(
+        "{} {}/{} level {}",
+        info.stage, info.current_batch, info.total_batches, info.recursion_level
+    )
+}
 
 /// Run one case.
 fn run(fixture: &Value, case: &Value) -> Run {
@@ -165,8 +175,11 @@ fn run(fixture: &Value, case: &Value) -> Run {
     let condenser_model = LlmContextModel::new(&client, model)
         .with_num_ctx(num_ctx)
         .with_stop(&stop);
-    let mut condenser =
-        PicoAgent::pico_condenser(&condenser_model, 0.1, 4096).expect("the PICO prompts");
+    let progress = Arc::new(Mutex::new(Vec::new()));
+    let reports = progress.clone();
+    let mut condenser = PicoAgent::pico_condenser(&condenser_model, 0.1, 4096)
+        .expect("the PICO prompts")
+        .with_progress(move |info| reports.lock().expect("lock").push(progress_line(info)));
     let budget = fixture["max_context_chars"].as_u64().expect("budget") as usize;
     let mut agent = PicoAgent::new(&mut chat)
         .with_condenser(&mut condenser)
@@ -197,8 +210,9 @@ fn run(fixture: &Value, case: &Value) -> Run {
     };
     drop(agent);
     let sent = transport.num_ctx_sent.lock().expect("lock").clone();
+    let progress = progress.lock().expect("lock").clone();
     match outcome {
-        Ok(notes) => (sent, None, None, notes),
+        Ok(notes) => (sent, None, None, notes, progress),
         Err(error) => {
             let failure = match &error {
                 PicoError::RequestFailed {
@@ -206,7 +220,7 @@ fn run(fixture: &Value, case: &Value) -> Run {
                 } => Some((*retryable, *status)),
                 _ => None,
             };
-            (sent, Some(error.kind()), failure, Vec::new())
+            (sent, Some(error.kind()), failure, Vec::new(), progress)
         }
     }
 }
@@ -239,7 +253,7 @@ fn every_case_agrees_with_the_fixture() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("name");
-        let (sent, error, failure, notes) = run(&fixture, case);
+        let (sent, error, failure, notes, progress) = run(&fixture, case);
         let expected = &case["expected"];
         assert_eq!(error, expected["error"].as_str(), "{name}: the error kind");
         // Stated on every `request_failed` case, and on no other.
@@ -282,6 +296,14 @@ fn every_case_agrees_with_the_fixture() {
                 }
             }
         }
+        // #609: every report the condensation made, failed and stopped runs too.
+        let expected_progress: Vec<String> = expected["progress"]
+            .as_array()
+            .expect("progress")
+            .iter()
+            .map(|line| line.as_str().expect("a progress line").to_string())
+            .collect();
+        assert_eq!(progress, expected_progress, "{name}: the progress reports");
     }
 }
 

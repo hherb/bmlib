@@ -74,6 +74,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A long text's condensation reports its progress** (#609, filed by
+  StudyAnalyzer, with the Rust crate). The PICO and Cochrane agents' map-reduce
+  ran with no progress callback, so an app condensing a long paper could show
+  nothing for minutes. **Python**: `PicoAgent` and `CochraneAssessor` take
+  `condense_progress`, handed every `ProgressInfo`; `condense_text` passes it
+  to `LLMChunkProcessor`. **Rust**: `LlmCondenser::with_progress(callback)`
+  (both agents) and `LlmChunkProcessor::with_progress(ProgressCallback)`,
+  which `new` had built with none. A callback that panics is now logged, as
+  Python logs one that raises. The shared `tests/fixtures/pico_stop_num_ctx.json`
+  states `expected.progress` on every case: stage, batch and level, in order.
+
 - **A failed context-window lookup carries the HTTP status** (#664, filed by
   StudyAnalyzer's review, with the Rust crate). `ContextWindowError` gains
   `status`: the HTTP status the provider answered with, `None` where no HTTP
@@ -127,6 +138,15 @@ All notable changes to bmlib are documented here. The format is based on
   `tests/fixtures/chat_stream.json` gains five `cancel_after` cases (29).
 
 ### Fixed
+
+- **Rust: a stop ends the map-reduce at the batch it stopped** (#609, found
+  by pinning the progress). A batch whose call failed while
+  `LlmContextModel`'s stop was set was recorded as a failure and the harness
+  went on through every remaining batch (each refused unsent) to `complete`;
+  Python's `ProcessingStoppedError` ends the run there. `ContextModel` and
+  `IterativeContextProcessor` gain `stop_requested()` (default `false`), and
+  such a run now returns `ProcessingResult::failed` with the batch unrecorded
+  and no `complete` reported. The agents' outcome is unchanged (`Stopped`).
 
 - **What MuPDF said is kept apart, and a failed read keeps it** (#619, found
   reviewing PR #614, with the Rust crate). A read that repaired a broken xref

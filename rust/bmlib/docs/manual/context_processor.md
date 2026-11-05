@@ -146,8 +146,8 @@ at once, `Completed`, with empty content and confidence 0.
 
 A progress callback (`ProgressCallback`, a boxed `Fn(&ProgressInfo)`) sees the
 stages `starting`, `batching`, `extracting`, `recursing` and `complete`; a
-callback that panics is caught, so a broken progress bar does not lose the
-run. `ProgressInfo::progress_percent()` restarts at each level.
+callback that panics is caught and logged, so a broken progress bar does not
+lose the run. `ProgressInfo::progress_percent()` restarts at each level.
 
 ## The model-backed processor
 
@@ -217,7 +217,13 @@ assert!(LlmChunkProcessor::new(&Stub, bad, ProcessingConfig::new(), false, 0.0, 
   split chunk keeps its score on every piece. A level above renders as
   `[Consolidated level L, item N]`.
 - `process(text, query)` runs one string; `process_items` a list. Neither
-  stores intermediate results, and this processor takes no progress callback.
+  stores intermediate results. `with_progress(callback)` hands the progress
+  callback every report (#609), Python's `progress_callback` argument.
+- A batch whose call fails while the model's `stop_requested()` is true (a
+  `quality::LlmContextModel` with its stop set) ends the run there, as Python's
+  `ProcessingStoppedError` does: `Failed`, that batch unrecorded, no further
+  batch asked and no `complete` reported (#609). The harness reads
+  `IterativeContextProcessor::stop_requested`, which defaults to never.
 - A failed batch is recorded as `LLM extraction failed: …`.
   `LlmChunkProcessor::new` returns `Err(String)` for a template short a
   placeholder or an invalid configuration, where Python raises `ValueError`.

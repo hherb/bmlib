@@ -60,7 +60,7 @@ from bmlib.agents.base import (
     ChatStoppedError,
 )
 from bmlib.citations import find_passage
-from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError
+from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError, ProgressCallback
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.llm.stream import Stop, stop_reader
@@ -526,6 +526,10 @@ class PicoAgent(BaseAgent):
             request already sent runs to its end; a call that then succeeds
             returns its result, so a caller that must not keep it reads the
             stop again.  A callable must not raise.
+        condense_progress: Handed every
+            :class:`~bmlib.context_processor.ProgressInfo` the condensation of a
+            long text reports, so a caller can show how far it got (#609); one
+            that raises is logged and the run goes on.
     """
 
     def __init__(
@@ -538,6 +542,7 @@ class PicoAgent(BaseAgent):
         condense_config: ProcessingConfig | None = None,
         num_ctx: int | None = None,
         stop: Stop | None = None,
+        condense_progress: ProgressCallback | None = None,
     ) -> None:
         if num_ctx is not None and (
             isinstance(num_ctx, bool)
@@ -557,6 +562,7 @@ class PicoAgent(BaseAgent):
         self.condense_config = condense_config or ProcessingConfig(
             max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
         )
+        self.condense_progress = condense_progress
 
     @property
     def num_ctx(self) -> int | None:
@@ -739,6 +745,7 @@ class PicoAgent(BaseAgent):
                 consolidation_prompt=PICO_CONDENSE_CONSOLIDATION_PROMPT,
                 query=PICO_CONDENSE_QUERY,
                 stage=stage,
+                progress_callback=self.condense_progress,
             )
         except ProcessingStoppedError as exc:
             raise PicoError(PicoErrorKind.STOPPED, STOPPED_MESSAGE) from exc
