@@ -26,7 +26,7 @@ use bmlib::fulltext::segmenter::{
     drop_page_furniture, extract_title, heading_depth, is_potential_header, join_blocks,
     match_section_type, median_font_size, page_furniture, SectionSegmenter, DEFAULT_FONT_SIZE,
     FALLBACK_CONFIDENCE, FURNITURE_MAX_EDGE_LINES, FURNITURE_MIN_PAGES, FURNITURE_PAGE_RATIO,
-    MAX_HEADING_CHARS, PARTIAL_MATCH_CONFIDENCE, SECTION_PATTERNS,
+    MAX_HEADING_CHARS, PARTIAL_MATCH_CONFIDENCE, SECTION_PATTERNS, VARIANT_PATTERNS,
 };
 use serde_json::{json, Value};
 
@@ -247,6 +247,10 @@ fn every_pattern_compiles_and_matches_something() {
         total += patterns.len();
     }
     assert_eq!(total, 62, "the table's size is a decision, not a detail");
+    // The anchored-only variants (#636) are cases of their own too.
+    let variants: usize = VARIANT_PATTERNS.iter().map(|(_, p)| p.len()).sum();
+    assert_eq!(variants, 5, "the variant table's size is a decision too");
+    total += variants;
 
     // **Every pattern is exercised by the oracle**, which carries one case per
     // heading spelling — 96 of the 169 cases are pattern cases. This test asserts

@@ -11,6 +11,25 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A fence inside a blockquote closes, a backtick in a backtick fence's
+  info string opens none, and no unclosed opener costs quadratic time**
+  (#548, #549, with the Python library). `canonical_from_markdown` strips a
+  quoted fence's `>` markers and ends the fence at a line carrying fewer; a
+  backtick fence whose info string holds a backtick is read as inline text;
+  and `strip_inline` no longer rescans the text per unclosed emphasis
+  opener, `[`, autolink `<` or backtick run (`InlineIndex`).
+  `MARKDOWN_VERSION` is 2 (`"markdown-2"`); the Python CHANGELOG has the
+  measurement.
+
+- **"Method", "Result", "Discussions" and "Experimental" are section
+  headings** (#636, with the Python library). `segmenter::VARIANT_PATTERNS`
+  (exported) holds them, matched by `match_section_type` only as the whole
+  heading and at `PARTIAL_MATCH_CONFIDENCE`, after the anchored table and
+  before the partial search, so a numbered "2. Method" is `Methods` with its
+  subsections where it was `Other`. `PDF_CANONICAL_VERSION` is 7
+  (`"pdf-7"`); the Python CHANGELOG has the measurement and why the names
+  are not searched within a line.
+
 - **What MuPDF said is kept apart, and a failed read keeps it** (#619, with
   the Python library). `MupdfExtractor::extract_blocks_with_warnings` and
   `page_texts_with_warnings` returned early on a failure, dropping MuPDF's

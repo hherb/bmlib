@@ -27,6 +27,7 @@
 //! vowel signs, circled letters such as `Ⓐ`) and wherever the two languages'
 //! Unicode versions differ, so emphasis next to those may be read differently.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -38,7 +39,7 @@ use crate::fulltext::canonical::plain::split_lines;
 
 /// Bumped whenever this converter (or [`assemble`]) can lay a text out
 /// differently.
-pub const MARKDOWN_VERSION: u32 = 1;
+pub const MARKDOWN_VERSION: u32 = 2;
 
 /// The ASCII punctuation a backslash escapes (CommonMark's set).
 const ESCAPABLE: &str = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
@@ -108,6 +109,9 @@ pub fn strip_inline(text: &str) -> String {
 fn strip_chars(text: &[char]) -> String {
     let n = text.len();
     let mut out = String::new();
+    // Emphasis openers already known to have no closer, by delimiter and run (#549).
+    let mut unclosed: Vec<(char, usize)> = Vec::new();
+    let mut index: Option<InlineIndex> = None;
     let mut i = 0;
     while i < n {
         let ch = text[i];
@@ -118,7 +122,12 @@ fn strip_chars(text: &[char]) -> String {
         }
         if ch == '`' {
             let run = run_length(text, i);
-            match find_run(text, i + run, run) {
+            let index = index.get_or_insert_with(|| InlineIndex::new(text));
+            match index
+                .runs
+                .get(&run)
+                .and_then(|starts| first_at(starts, i + run))
+            {
                 Some(close) => {
                     out.extend(&text[i + run..close]);
                     i = close + run;
@@ -132,26 +141,30 @@ fn strip_chars(text: &[char]) -> String {
         }
         if ch == '[' || (ch == '!' && text.get(i + 1) == Some(&'[')) {
             let start = if ch == '!' { i + 1 } else { i };
-            if let Some((label, end)) = link_at(text, start) {
+            let index = index.get_or_insert_with(|| InlineIndex::new(text));
+            if let Some((label, end)) = link_at(text, start, index) {
                 out.push_str(&strip_chars(label));
                 i = end;
                 continue;
             }
         }
-        if ch == '<' {
-            if let Some(close) = find(text, '>', i + 1) {
-                let inner: String = text[i + 1..close].iter().collect();
-                if AUTOLINK_SCHEMES.iter().any(|s| inner.starts_with(s))
-                    && !inner.chars().any(char::is_whitespace)
-                {
-                    out.push_str(&inner);
+        if ch == '<'
+            && AUTOLINK_SCHEMES
+                .iter()
+                .any(|s| s.chars().eq(text[i + 1..].iter().copied().take(s.len())))
+        {
+            let index = index.get_or_insert_with(|| InlineIndex::new(text));
+            // The address runs to the next `>` and may hold no whitespace.
+            if let Some(close) = first_at(&index.angles, i + 1) {
+                if !first_at(&index.spaces, i + 1).is_some_and(|space| space < close) {
+                    out.extend(&text[i + 1..close]);
                     i = close + 1;
                     continue;
                 }
             }
         }
         if ch == '*' || ch == '_' {
-            if let Some((inner, end)) = emphasis_at(text, i) {
+            if let Some((inner, end)) = emphasis_at(text, i, &mut unclosed) {
                 out.push_str(&strip_chars(inner));
                 i = end;
                 continue;
@@ -167,92 +180,106 @@ fn strip_chars(text: &[char]) -> String {
     out
 }
 
-/// The first index of `ch` in `text` at or after `from`.
-fn find(text: &[char], ch: char, from: usize) -> Option<usize> {
-    text.get(from..)?
-        .iter()
-        .position(|&c| c == ch)
-        .map(|at| at + from)
+/// What one [`strip_inline`] call needs to find code spans, links and
+/// autolinks, read once so no scan repeats (#549).
+struct InlineIndex {
+    /// Every unescaped `]`, in order.
+    closes: Vec<usize>,
+    /// Each unescaped `(`'s balancing `)`.
+    parens: HashMap<usize, usize>,
+    /// Every whitespace index, in order.
+    spaces: Vec<usize>,
+    /// Every other index, in order.
+    solid: Vec<usize>,
+    /// Every `>`, escaped or not (an autolink ignores escapes), in order.
+    angles: Vec<usize>,
+    /// Where each whole backtick run starts, by its length, in order. A code
+    /// span's closer search starts after its opener's whole run, so it meets
+    /// only whole runs, and backslashes do not escape inside it.
+    runs: HashMap<usize, Vec<usize>>,
 }
 
-/// The first index of `ch` at or after `from` not escaped by a backslash.
-fn find_unescaped(text: &[char], ch: char, from: usize) -> Option<usize> {
-    let mut i = from;
-    while i < text.len() {
-        if text[i] == '\\' {
-            i += 2;
-            continue;
-        }
-        if text[i] == ch {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
-}
-
-/// The index of the first run of exactly `run` backticks at or after `from`.
-fn find_run(text: &[char], from: usize, run: usize) -> Option<usize> {
-    let mut i = from;
-    while i < text.len() {
-        if text[i] != '`' {
+impl InlineIndex {
+    /// The index of `text`.
+    ///
+    /// A backslash escapes the character after it. A link's scans start just
+    /// after a `[` or a `]`, and neither is a backslash, so the character a scan
+    /// starts at is never the one an escape takes: one pass from the start
+    /// reads every escape as each scan would.
+    fn new(text: &[char]) -> Self {
+        let mut closes = Vec::new();
+        let mut parens = HashMap::new();
+        let mut opens = Vec::new();
+        let mut i = 0;
+        while i < text.len() {
+            match text[i] {
+                '\\' => {
+                    i += 2;
+                    continue;
+                }
+                ']' => closes.push(i),
+                '(' => opens.push(i),
+                ')' => {
+                    if let Some(open) = opens.pop() {
+                        parens.insert(open, i);
+                    }
+                }
+                _ => {}
+            }
             i += 1;
-            continue;
         }
-        let length = run_length(text, i);
-        if length == run {
-            return Some(i);
+        let (spaces, solid) = (0..text.len()).partition(|&at| text[at].is_whitespace());
+        let angles = (0..text.len()).filter(|&at| text[at] == '>').collect();
+        let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+        for at in 0..text.len() {
+            if text[at] == '`' && (at == 0 || text[at - 1] != '`') {
+                runs.entry(run_length(text, at)).or_default().push(at);
+            }
         }
-        i += length;
+        InlineIndex {
+            closes,
+            parens,
+            spaces,
+            solid,
+            angles,
+            runs,
+        }
     }
-    None
 }
 
-/// Whether `target` reads as a link destination: no whitespace, or
+/// The first of the ordered `indices` at or after `from`.
+fn first_at(indices: &[usize], from: usize) -> Option<usize> {
+    indices
+        .get(indices.partition_point(|&at| at < from))
+        .copied()
+}
+
+/// Whether `text[start..end]` reads as a link destination: no whitespace, or
 /// `url "title"`.
-fn is_link_target(target: &[char]) -> bool {
-    let target: String = target.iter().collect();
-    let target = target.trim();
-    let Some(gap) = target.find(char::is_whitespace) else {
+fn is_link_target(index: &InlineIndex, text: &[char], start: usize, end: usize) -> bool {
+    let Some(first) = first_at(&index.solid, start).filter(|&at| at < end) else {
         return true;
     };
-    let title: Vec<char> = target[gap..].trim().chars().collect();
-    title.len() >= 2 && (title[0] == '"' || title[0] == '\'') && title.last() == Some(&title[0])
+    let last = index.solid[index.solid.partition_point(|&at| at < end) - 1];
+    let Some(gap) = first_at(&index.spaces, first).filter(|&at| at < last) else {
+        return true;
+    };
+    let title = first_at(&index.solid, gap).expect("`last` follows the gap");
+    title < last && (text[title] == '"' || text[title] == '\'') && text[last] == text[title]
 }
 
 /// The label of a `[label](target)` starting at `start`, and the index after it.
 ///
 /// The label ends at the first unescaped `]`; the target at the `)` that
 /// balances its opening one, skipping escaped parentheses, and must pass
-/// [`is_link_target`].
-fn link_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
-    let close = find_unescaped(text, ']', start + 1)?;
-    if text.get(close + 1) != Some(&'(') {
+/// [`is_link_target`]. `index` is `text`'s [`InlineIndex`].
+fn link_at<'a>(text: &'a [char], start: usize, index: &InlineIndex) -> Option<(&'a [char], usize)> {
+    let close = first_at(&index.closes, start + 1)?;
+    let end = *index.parens.get(&(close + 1))?;
+    if !is_link_target(index, text, close + 2, end) {
         return None;
     }
-    let mut depth = 0usize;
-    let mut i = close + 1;
-    while i < text.len() {
-        match text[i] {
-            '\\' => {
-                i += 2;
-                continue;
-            }
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    if !is_link_target(&text[close + 2..i]) {
-                        return None;
-                    }
-                    return Some((&text[start + 1..close], i + 1));
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
+    Some((&text[start + 1..close], end + 1))
 }
 
 /// How many copies of `text[start]` follow from `start`.
@@ -268,8 +295,14 @@ fn run_length(text: &[char], start: usize) -> usize {
 /// The opener is a run of one or two delimiters not preceded by a letter or
 /// digit and followed by a non-space; the closer is the first run of the same
 /// length after it that follows a non-space and is not followed by a letter or
-/// digit.
-fn emphasis_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
+/// digit. Whether a run closes depends on the run alone, so once an opener
+/// finds none, no later opener of its delimiter and length can: it joins
+/// `unclosed`, which the caller keeps for one left-to-right walk of `text`.
+fn emphasis_at<'a>(
+    text: &'a [char],
+    start: usize,
+    unclosed: &mut Vec<(char, usize)>,
+) -> Option<(&'a [char], usize)> {
     let delimiter = text[start];
     let run = run_length(text, start);
     let after = start + run;
@@ -277,6 +310,9 @@ fn emphasis_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
         return None;
     }
     if start > 0 && text[start - 1].is_alphanumeric() {
+        return None;
+    }
+    if unclosed.contains(&(delimiter, run)) {
         return None;
     }
     let mut i = after + 1;
@@ -295,6 +331,7 @@ fn emphasis_at(text: &[char], start: usize) -> Option<(&[char], usize)> {
         }
         i = end;
     }
+    unclosed.push((delimiter, run));
     None
 }
 
@@ -355,7 +392,8 @@ struct Converter {
     item: Option<Marker>,
     table_rows: usize,
     seen_content: bool,
-    fence: Option<String>,
+    /// The open fence's marker run and the blockquote depth it sits at.
+    fence: Option<(String, usize)>,
     fence_lines: Vec<String>,
 }
 
@@ -417,31 +455,49 @@ impl Converter {
 
     /// Read one line.
     fn line(&mut self, line: &str) {
-        if let Some(open) = &self.fence {
-            let stripped = line.trim();
-            let mark = open.chars().next().expect("a fence is never empty");
-            if !stripped.is_empty()
-                && stripped.chars().all(|c| c == mark)
-                && stripped.chars().count() >= open.chars().count()
-            {
-                self.close_fence();
-            } else {
-                self.fence_lines.push(line.to_string());
-            }
-            return;
-        }
         let mut line = line.to_string();
+        let mut quotes = 0;
+        if let Some((open, depth)) = &self.fence {
+            let depth = *depth;
+            while quotes < depth {
+                let Some(marker) = quote().find(&line) else {
+                    break;
+                };
+                line = line[marker.end()..].to_string();
+                quotes += 1;
+            }
+            if quotes == depth {
+                let stripped = line.trim();
+                let mark = open.chars().next().expect("a fence is never empty");
+                if !stripped.is_empty()
+                    && stripped.chars().all(|c| c == mark)
+                    && stripped.chars().count() >= open.chars().count()
+                {
+                    self.close_fence();
+                } else {
+                    self.fence_lines.push(line);
+                }
+                return;
+            }
+            // The blockquote holding the fence ended, and the fence with it.
+            self.close_fence();
+        }
         while let Some(marker) = quote().find(&line) {
             line = line[marker.end()..].to_string();
+            quotes += 1;
         }
         let is_table_line = line.trim().starts_with('|');
         if !is_table_line {
             self.table_rows = 0;
         }
         if let Some(open) = fence().captures(&line) {
-            self.flush();
-            self.fence = Some(open[1].to_string());
-            return;
+            // A backtick fence's info string may not hold a backtick (CommonMark).
+            let whole = open.get(0).expect("group 0 is the match");
+            if !(open[1].starts_with('`') && line[whole.end()..].contains('`')) {
+                self.flush();
+                self.fence = Some((open[1].to_string(), quotes));
+                return;
+            }
         }
         if line.chars().all(char::is_whitespace) {
             self.flush();
@@ -568,6 +624,47 @@ mod tests {
         assert_eq!(headings, [None, None]);
         let levels: Vec<_> = doc.sections.iter().map(|s| s.level).collect();
         assert_eq!(levels, [1, 2]);
-        assert_eq!(doc.converter_version, "markdown-1");
+        assert_eq!(doc.converter_version, "markdown-2");
+    }
+
+    #[test]
+    fn fences_and_quotes() {
+        // #548: a quoted fence kept its markers and never closed.
+        assert_eq!(
+            texts("> ```\n> code *x*\n> ```\n\n# Heading\n\nText"),
+            ["code *x*", "Text"]
+        );
+        assert_eq!(
+            texts("> > ```\n> > deep\n> shallow *y*"),
+            ["deep", "shallow y"]
+        );
+        assert_eq!(texts("```\n> kept\n```"), ["> kept"]);
+        assert_eq!(texts("```code``` here\n\n*Text*"), ["code here", "Text"]);
+        assert_eq!(texts("~~~ `tilde` info\nkept *z*\n~~~"), ["kept *z*"]);
+    }
+
+    #[test]
+    fn unclosed_openers_cost_linear_time() {
+        // #549: each opener rescanned the paragraph. Linear, these take
+        // milliseconds even unoptimised; quadratic, minutes.
+        let nested = "[a](".repeat(10_000) + "x" + &" ".repeat(10_000) + "y" + &")".repeat(10_000);
+        let runs = (1..400)
+            .map(|k| "`".repeat(k))
+            .collect::<Vec<_>>()
+            .join(" ");
+        for text in [
+            "(_a ".repeat(20_000),
+            "[a ".repeat(20_000),
+            "[".repeat(60_000) + "]",
+            "[a](".repeat(20_000),
+            nested,
+            "<".repeat(60_000) + ">",
+            "<http://a".repeat(9_000) + " >",
+            runs,
+        ] {
+            let started = std::time::Instant::now();
+            let _ = strip_inline(&text);
+            assert!(started.elapsed().as_secs_f64() < 5.0, "{:?}", &text[..12]);
+        }
     }
 }

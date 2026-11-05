@@ -728,6 +728,62 @@
     }
   },
   {
+    "name": "match_section_type/variant-methods-Method",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/variant-methods-2. Experimental",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/variant-methods-Experimental Section",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/variant-results-Result",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "results"
+    }
+  },
+  {
+    "name": "match_section_type/variant-discussion-Discussions",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "discussion"
+    }
+  },
+  {
+    "name": "match_section_type/variant-is-not-searched-result",
+    "ok": true,
+    "value": {
+      "confidence": 0.0,
+      "section_type": "unknown"
+    }
+  },
+  {
+    "name": "match_section_type/variant-is-not-searched-experimental",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "results"
+    }
+  },
+  {
     "name": "match_section_type/no-match",
     "ok": true,
     "value": {
@@ -2094,6 +2150,16 @@
     "value": false
   },
   {
+    "name": "is_potential_header/an_exact_name_bold_under_the_body_is_a_heading",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/a_variant_name_bold_under_the_body_is_not",
+    "ok": true,
+    "value": false
+  },
+  {
     "name": "segment_document/a_heading_with_no_width_still_wraps",
     "ok": true,
     "value": {
@@ -3045,6 +3111,90 @@
             }
           ],
           "title": "2. Characteristics of hypoxia"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/a_numbered_variant_name_types_its_section_and_children",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under 1. Introduction.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "1. Introduction"
+        },
+        {
+          "confidence": 0.7,
+          "content": "Body under 2. Method.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [
+            {
+              "confidence": 0.7,
+              "content": "Body under 2.1.",
+              "page_end": 0,
+              "page_start": 0,
+              "section_type": "methods",
+              "subsections": [],
+              "title": "2.1. Participants"
+            }
+          ],
+          "title": "2. Method"
+        },
+        {
+          "confidence": 0.7,
+          "content": "Body under 3. Result.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "results",
+          "subsections": [],
+          "title": "3. Result"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/an_unnumbered_variant_name_at_body_size_stays_text",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Body text of the paper.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "Body under Introduction.\nResult\nBody under Result.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "introduction",
+          "subsections": [],
+          "title": "Introduction"
         }
       ],
       "title": null

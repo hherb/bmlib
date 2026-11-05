@@ -457,6 +457,25 @@ class SectionSegmenter:
         ],
     }
 
+    #: Less common names for a section (#636), matched only as the whole
+    #: heading and at ``PARTIAL_MATCH_CONFIDENCE``, never searched within a
+    #: line. Searched, ``\bresult\b`` makes "can result in" a heading; at 1.0,
+    #: #628's relaxed size test makes a bold column header ("Genotyping
+    #: method", "Combined result") a heading in about one paper in a hundred.
+    VARIANT_PATTERNS: dict[SectionType, list[str]] = {
+        SectionType.METHODS: [
+            r"^method$",
+            r"^experimental$",
+            r"^experimental\s+section$",
+        ],
+        SectionType.RESULTS: [
+            r"^result$",
+        ],
+        SectionType.DISCUSSION: [
+            r"^discussions$",
+        ],
+    }
+
     def __init__(self, font_size_threshold: float = 1.2, min_heading_size: float = 10.0) -> None:
         """Initialise the segmenter.
 
@@ -474,6 +493,10 @@ class SectionSegmenter:
             section_type: [re.compile(p, re.IGNORECASE) for p in patterns]
             for section_type, patterns in self.SECTION_PATTERNS.items()
         }
+        self._variant_patterns = {
+            section_type: [re.compile(p, re.IGNORECASE) for p in patterns]
+            for section_type, patterns in self.VARIANT_PATTERNS.items()
+        }
         # The partial pass searches the same pattern, unanchored and
         # word-bounded. Upstream compared the regex *source* against the
         # heading as literal text, which made every multi-word pattern
@@ -490,8 +513,9 @@ class SectionSegmenter:
     def _match_section_type(self, text: str) -> tuple[SectionType, float]:
         """Classify a heading, returning ``(section_type, confidence)``.
 
-        Exact anchored matches win at 1.0; an unanchored word-bounded search
-        is the 0.7 fallback; ``(UNKNOWN, 0.0)`` means no pattern claimed it.
+        Exact anchored matches win at 1.0; an anchored :attr:`VARIANT_PATTERNS`
+        match, then an unanchored word-bounded search, are the 0.7 fallbacks;
+        ``(UNKNOWN, 0.0)`` means no pattern claimed it.
         """
         normalized = text.lower().strip()
         normalized = _LEADING_NUMBERING_RE.sub("", normalized)
@@ -501,6 +525,11 @@ class SectionSegmenter:
             for pattern in patterns:
                 if pattern.match(normalized):
                     return (section_type, 1.0)
+
+        for section_type, patterns in self._variant_patterns.items():
+            for pattern in patterns:
+                if pattern.match(normalized):
+                    return (section_type, PARTIAL_MATCH_CONFIDENCE)
 
         for section_type, patterns in self._partial_patterns.items():
             for pattern in patterns:
@@ -808,8 +837,9 @@ def match_section_type(text: str) -> tuple[SectionType, float]:
 
     The segmenter's own rule, for a heading that did not come from a PDF (the
     Rust port's ``segmenter::match_section_type``): an anchored match is
-    ``(type, 1.0)``, an unanchored word-bounded one ``(type,
-    PARTIAL_MATCH_CONFIDENCE)``, and ``(SectionType.UNKNOWN, 0.0)`` means no
-    pattern claimed it.
+    ``(type, 1.0)``; an anchored :attr:`SectionSegmenter.VARIANT_PATTERNS`
+    match (``"Method"``, ``"Result"``), and failing that an unanchored
+    word-bounded one, is ``(type, PARTIAL_MATCH_CONFIDENCE)``; and
+    ``(SectionType.UNKNOWN, 0.0)`` means no pattern claimed it.
     """
     return _CLASSIFIER._match_section_type(text)

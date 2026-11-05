@@ -637,6 +637,55 @@
   }
  },
  {
+  "name": "match_section_type/variant-methods-Method",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Method"
+  }
+ },
+ {
+  "name": "match_section_type/variant-methods-2. Experimental",
+  "fn": "match_section_type",
+  "args": {
+   "text": "2. Experimental"
+  }
+ },
+ {
+  "name": "match_section_type/variant-methods-Experimental Section",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Experimental Section"
+  }
+ },
+ {
+  "name": "match_section_type/variant-results-Result",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Result"
+  }
+ },
+ {
+  "name": "match_section_type/variant-discussion-Discussions",
+  "fn": "match_section_type",
+  "args": {
+   "text": "5. Discussions"
+  }
+ },
+ {
+  "name": "match_section_type/variant-is-not-searched-result",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Treatment may result in harm"
+  }
+ },
+ {
+  "name": "match_section_type/variant-is-not-searched-experimental",
+  "fn": "match_section_type",
+  "args": {
+   "text": "Experimental Results"
+  }
+ },
+ {
   "name": "match_section_type/no-match",
   "fn": "match_section_type",
   "args": {
@@ -752,7 +801,7 @@
   "fn": "is_potential_header",
   "args": {
    "block": {
-    "text": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+    "text": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
     "font_size": 20.0
    },
    "median_font_size": 12.0
@@ -935,7 +984,7 @@
   "args": {
    "blocks": [
     {
-     "text": "\u00e9\u00e9\u00e9",
+     "text": "ééé",
      "font_size": 10
     },
     {
@@ -3330,21 +3379,21 @@
   "name": "heading_depth/vulgar_fraction_is_not_a_letter",
   "fn": "heading_depth",
   "args": {
-   "text": "2. \u00bd dose"
+   "text": "2. ½ dose"
   }
  },
  {
   "name": "heading_depth/accented_letter",
   "fn": "heading_depth",
   "args": {
-   "text": "2. \u00c9tude"
+   "text": "2. Étude"
   }
  },
  {
   "name": "heading_depth/combining_mark_is_not_a_letter",
   "fn": "heading_depth",
   "args": {
-   "text": "2. \u0301x"
+   "text": "2. ́x"
   }
  },
  {
@@ -3462,6 +3511,30 @@
     "is_bold": true
    },
    "median_font_size": 10.0
+  }
+ },
+ {
+  "name": "is_potential_header/an_exact_name_bold_under_the_body_is_a_heading",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Methods",
+    "font_size": 9.5,
+    "is_bold": true
+   },
+   "median_font_size": 10.5
+  }
+ },
+ {
+  "name": "is_potential_header/a_variant_name_bold_under_the_body_is_not",
+  "fn": "is_potential_header",
+  "args": {
+   "block": {
+    "text": "Method",
+    "font_size": 9.5,
+    "is_bold": true
+   },
+   "median_font_size": 10.5
   }
  },
  {
@@ -4113,7 +4186,7 @@
   "args": {
    "blocks": [
     {
-     "text": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+     "text": "éééééééééé",
      "x": 0.0,
      "y": 0,
      "width": 300,
@@ -5430,6 +5503,168 @@
     {
      "text": "Body under 2.2. High pH.",
      "y": 120,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/a_numbered_variant_name_types_its_section_and_children",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "1. Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 1. Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2. Method",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2. Method.",
+     "y": 48,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "2.1. Participants",
+     "y": 60,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 2.1.",
+     "y": 72,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "3. Result",
+     "y": 84,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under 3. Result.",
+     "y": 96,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    }
+   ]
+  }
+ },
+ {
+  "name": "segment_document/an_unnumbered_variant_name_at_body_size_stays_text",
+  "fn": "segment_document",
+  "args": {
+   "blocks": [
+    {
+     "text": "Body text of the paper.",
+     "y": 0,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Introduction",
+     "y": 12,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under Introduction.",
+     "y": 24,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0
+    },
+    {
+     "text": "Result",
+     "y": 36,
+     "x": 0.0,
+     "width": 300,
+     "font_size": 10,
+     "height": 12.0,
+     "font_name": "Body",
+     "page_num": 0,
+     "is_bold": true
+    },
+    {
+     "text": "Body under Result.",
+     "y": 48,
      "x": 0.0,
      "width": 300,
      "font_size": 10,
