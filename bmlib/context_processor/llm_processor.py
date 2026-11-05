@@ -37,7 +37,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from bmlib.agents import BaseAgent, ChatStoppedError
+from bmlib.agents import BaseAgent, ChatJsonError, ChatStoppedError
 from bmlib.agents.base import _TRUNCATION_STOP_REASONS
 from bmlib.context_processor.base import IterativeContextProcessor, ProgressCallback
 from bmlib.context_processor.data_types import (
@@ -122,8 +122,9 @@ class ModelCallError(RuntimeError):
     What :meth:`LLMChunkProcessor.extract_from_batch` raises for a failed
     request, so a caller reading :attr:`ProcessingResult.error
     <bmlib.context_processor.ProcessingResult.error>` can tell a refused key,
-    an outage or a bmlib defect from a reply the processor itself refused
-    (a truncated completion is a plain ``RuntimeError``).
+    an outage or a bmlib defect from a reply the processor itself refused: a
+    truncated completion, or a JSON reply ``chat_json`` refused, is a plain
+    ``RuntimeError``, as Rust's processor reports neither as a request's.
     """
 
 
@@ -352,8 +353,9 @@ class LLMChunkProcessor(IterativeContextProcessor):
 
         Raises:
             ModelCallError: The model call failed, chained to what it raised.
-            RuntimeError: A plain completion stopped at the output ceiling.
-                The base class records either against the batch.
+            RuntimeError: A plain completion stopped at the output ceiling, or
+                ``chat_json`` refused a structured reply.  The base class
+                records either against the batch.
             ProcessingStoppedError: The agent's stop is set (#642); the
                 request was not sent.  The base class ends the run.
         """
@@ -385,7 +387,9 @@ class LLMChunkProcessor(IterativeContextProcessor):
             # cause reads alike in every batch and is summarised once, as in Rust
             # (#658). ``failed_batches`` and the ERROR line still name the batch.
             cause = str(exc).replace(f" for {label}", "")
-            raise ModelCallError(f"LLM extraction failed: {cause}") from exc
+            # A reply ``chat_json`` refused is no failed request (#616).
+            error = RuntimeError if isinstance(exc, ChatJsonError) else ModelCallError
+            raise error(f"LLM extraction failed: {cause}") from exc
         if response is not None:
             # A completion cut at the output ceiling is a lost passage, not an
             # answer; ``chat_json`` refuses it on the structured path.  Raised

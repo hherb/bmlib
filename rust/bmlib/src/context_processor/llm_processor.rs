@@ -276,9 +276,11 @@ pub trait ContextModel {
     /// What the last call's failure says of its request (#616): `None` after
     /// a call that succeeded, or that failed for no request's sake (a
     /// truncated completion, a reply that is not an object, a stop). The
-    /// errors above are strings, so this is how [`LlmChunkProcessor`] learns
-    /// whether a retry may cure a failed batch, as `ChatSource` learns it
-    /// (#659). The default says nothing.
+    /// errors above are strings, so this is how a model reports its failed
+    /// request, as `ChatSource` reports one to `chat_json` (#659), and
+    /// [`LlmChunkProcessor`] passes it on in a [`ModelCallError`]. The default
+    /// says nothing, so a model that does not override it has its failed
+    /// requests read as no request's.
     fn last_request_failure(&self) -> Option<RequestFailure> {
         None
     }

@@ -309,11 +309,17 @@ class ProcessingResult:
         batch_errors: Why each failed batch failed, one message per entry of
             ``failed_batches`` and in the same order (#576, #658);
             :func:`summarise_batch_errors` names the distinct causes.
-        error: The exception a FAILED run failed on, ``None`` otherwise (#616):
-            what ``extract_from_batch()`` raised for the failed batch (the
-            last one, when every batch failed), or what stopped the harness.
-            ``error_message`` is its text; the exception keeps its type, so a
-            caller can tell a bmlib defect or a refused key from an outage.
+        batch_exceptions: What each failed batch's ``extract_from_batch()``
+            raised, one per entry of ``batch_errors`` and in the same order
+            (#616), so a caller can rank causes the messages cannot: a bmlib
+            defect, a refused key and an outage read alike as text.
+        error: The exception a FAILED run failed on (#616): what stopped the
+            harness, the failed batch's own exception under
+            ``continue_on_error=False``, or, when no batch of the last level
+            produced a result, the last that level raised.  ``None`` for any
+            other status, and for a FAILED run no exception caused (every item
+            of the last level skipped as oversized).  ``error_message``
+            describes the failure and may prefix or summarise its text.
     """
 
     final_result: ExtractionResult
@@ -328,6 +334,7 @@ class ProcessingResult:
     skipped_items: list[int] = field(default_factory=list)
     successful_batches: int = 0
     batch_errors: list[str] = field(default_factory=list)
+    batch_exceptions: list[BaseException] = field(default_factory=list, compare=False)
     error: BaseException | None = field(default=None, compare=False)
 
     @property

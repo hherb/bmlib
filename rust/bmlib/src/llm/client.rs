@@ -397,6 +397,15 @@ impl ChatError {
             _ => false,
         }
     }
+
+    /// The HTTP status the server answered with, `None` where none came.
+    #[must_use]
+    pub(crate) fn http_status(&self) -> Option<u16> {
+        match self {
+            ChatError::Http { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
 }
 
 impl std::error::Error for ChatError {}

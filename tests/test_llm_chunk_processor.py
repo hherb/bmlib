@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents import ChatJsonTruncatedError
 from bmlib.agents.base import BaseAgent, ChatStoppedError
 from bmlib.context_processor import (
     ConsolidatedItem,
@@ -229,6 +230,18 @@ class TestExtraction:
             result = LLMChunkProcessor(agent).process(["chunk"], query="q")
         assert isinstance(result.error, ModelCallError)
         assert result.error.__cause__ is down
+
+    def test_a_refused_structured_reply_is_no_model_call_error(self) -> None:
+        """A JSON reply ``chat_json`` refused is no failed request (#616), as in
+        Rust, where it carries no ``RequestFailure``."""
+        refused = ChatJsonTruncatedError("the reply was truncated")
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.chat_json = MagicMock(side_effect=refused)  # type: ignore[method-assign]
+        result = LLMChunkProcessor(agent, use_structured_output=True).process(["chunk"], query="q")
+        assert result.status is ProcessingStatus.FAILED
+        assert type(result.error) is RuntimeError
+        assert result.error.__cause__ is refused
+        assert result.batch_errors == ["LLM extraction failed: the reply was truncated"]
 
     @pytest.mark.parametrize("stop_reason", ["max_tokens", "length"])
     def test_a_truncated_completion_fails_its_batch(self, stop_reason: str) -> None:

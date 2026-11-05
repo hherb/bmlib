@@ -31,24 +31,68 @@ from bmlib.context_processor import (
     LLMChunkProcessor,
     ModelCallError,
     ProcessingConfig,
+    ProcessingResult,
     ProcessingStatus,
     summarise_batch_errors,
 )
+from bmlib.context_processor.llm_processor import _BUG_TYPES, _is_refusal
 
 if TYPE_CHECKING:
     from bmlib.agents.base import BaseAgent
 
 logger = logging.getLogger(__name__)
 
+#: What a request may raise that is no failed request: a bmlib defect and a
+#: provider SDK that will not import.  The PICO agent's
+#: ``_NOT_A_REQUEST_FAILURE``, restated rather than imported (that module
+#: imports this one), and held to agreeing by ``tests/test_pico_agent.py``.
+_NOT_A_REQUEST_FAILURE: tuple[type[BaseException], ...] = (*_BUG_TYPES, ImportError)
+
+
+def is_retryable_request(exc: BaseException) -> bool:
+    """Whether a retry may cure the failed request *exc* (#646, #659).
+
+    A refusal or an unreadable answer (``ValueError``, as Rust's
+    ``ChatError::Malformed``) fails again; anything else may not.
+    """
+    return not isinstance(exc, ValueError) and not _is_refusal(exc)
+
+
+def _failure_cause(result: ProcessingResult) -> BaseException | None:
+    """What a failed run's report should name as its cause (#616), or ``None``.
+
+    Worst first, since several batches can fail differently and the last is
+    no more the cause than the first: a bmlib defect raised anywhere in the
+    run, then a request no retry cures, then one a retry may; among equals,
+    the last.  ``None`` when no request or defect failed it (a truncated
+    pass, an item too large for its strategy).
+    """
+    candidates = list(result.batch_exceptions)
+    if result.error is not None and not any(result.error is exc for exc in candidates):
+        candidates.append(result.error)
+    worst: BaseException | None = None
+    worst_rank = 3
+    for exc in candidates:
+        cause = exc.__cause__ if isinstance(exc, ModelCallError) else exc
+        if isinstance(cause, _NOT_A_REQUEST_FAILURE):
+            rank = 0
+        elif isinstance(exc, ModelCallError) and cause is not None:
+            rank = 2 if is_retryable_request(cause) else 1
+        else:
+            continue
+        if rank <= worst_rank:
+            worst, worst_rank = cause, rank
+    return worst
+
 
 class CondensationRefusedError(Exception):
     """The map-reduce produced no digest an agent may judge; the message says why.
 
     The reason is the caller's to report: a provider failure and a digest
-    that does not fit call for different remedies.  When a failed model call
-    failed the run, the error is chained (``__cause__``) to what that call
-    raised (#616), so the caller can report it as it reports the same failure
-    on a short paper.
+    that does not fit call for different remedies.  When a failed request or
+    a bmlib defect failed the run, the error is chained (``__cause__``) to
+    what was raised (#616), the worst when several were, so the caller can
+    report it as it reports the same failure on a short paper.
     """
 
 
@@ -87,7 +131,7 @@ def condense_text(
 
     Raises:
         CondensationRefusedError: The run failed (a provider failure during the
-            map-reduce included, chained to what the request raised), produced
+            map-reduce included, chained to what was raised), produced
             nothing to judge, or produced a digest that still does not fit
             ``config.max_context_chars``.
         ProcessingStoppedError: The agent's stop was set; the run ended there.
@@ -103,10 +147,7 @@ def condense_text(
     if result.status is ProcessingStatus.FAILED:
         reason = f"the map-reduce failed: {result.error_message}"
         logger.warning("Could not condense the text of %s: %s", label, reason)
-        error = result.error
-        raise CondensationRefusedError(reason) from (
-            error.__cause__ if isinstance(error, ModelCallError) else None
-        )
+        raise CondensationRefusedError(reason) from _failure_cause(result)
 
     digest = result.final_result.content.strip()
     if not digest:

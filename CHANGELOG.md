@@ -57,25 +57,38 @@ All notable changes to bmlib are documented here. The format is based on
   `CONDENSATION_FAILED` with no `retryable` or `status` (#659 and #662 reached
   only the agent's own request), and a bmlib defect or a missing Anthropic
   key (the SDK's `TypeError`) as an outage the manual says to retry, where on
-  a short paper each propagates. The harness now keeps what a FAILED run
-  failed on: `ProcessingResult.error`, the exception `extract_from_batch()`
-  raised for the failed batch (the last one, when every batch failed) or what
-  stopped the harness, `None` for any other status. `LLMChunkProcessor`
-  raises `ModelCallError` (a `RuntimeError`, exported from
-  `bmlib.context_processor`) chained to the request's exception, and a prose
-  reply cut at the output ceiling as a plain `RuntimeError` chained to none,
-  its message unchanged. `condense_text` chains a failed request to its
-  `CondensationRefusedError`, and `PicoAgent` reads it as it reads a short
-  paper's: a defect or the key error propagates, any other request failure
-  is `REQUEST_FAILED` with the request's `retryable` and `status`, the
-  message still naming the map-reduce. `CONDENSATION_FAILED` is left to a
-  failed run no request caused (a truncated pass), an empty digest and one
-  over the budget. A PARTIAL run is unchanged: its note names the causes
-  (#658). The Cochrane assessor still returns `None` for any refusal. The
-  shared `tests/fixtures/pico_stop_num_ctx.json` gains `status_from_request`
-  and four cases (every condensation request refused with 401 or 404,
-  answered 503, or failing in transport); thirteen mutants, Python and Rust,
-  each killed.
+  a short paper each propagates. The harness now keeps the exceptions:
+  `ProcessingResult.batch_exceptions`, what each failed batch's
+  `extract_from_batch()` raised, one per `batch_errors` entry; and
+  `ProcessingResult.error`, what a FAILED run failed on (what stopped the
+  harness, the failed batch's own exception under `continue_on_error=False`,
+  or the last its last level raised), `None` for any other status and for a
+  run no exception failed. `LLMChunkProcessor` raises `ModelCallError` (a
+  `RuntimeError`, exported from `bmlib.context_processor`) chained to the
+  request's exception; a prose reply cut at the output ceiling, and a
+  structured reply `chat_json` refused, fail the batch as a plain
+  `RuntimeError` instead, its message unchanged. `condense_text` chains its
+  `CondensationRefusedError` to the worst cause, never the last merely for
+  being last (PR #666's review): a bmlib defect raised anywhere in the run,
+  inside the request or out of it, then a request no retry cures, then one a
+  retry may. `PicoAgent` reads it as it reads a short paper's: a defect or the
+  key error propagates, any other request failure is `REQUEST_FAILED` with
+  the request's `retryable` and `status`, the message still naming the
+  map-reduce. `CONDENSATION_FAILED` is left to a failed run no request or
+  defect caused (a truncated pass, an item too large for its strategy, every
+  item skipped), an empty digest and one over the budget. **The last level
+  now decides a run's status**: a run whose first level succeeded and whose
+  every consolidation batch failed has no result, and is FAILED (`No batch
+  produced a result at level 1: …`) where it was PARTIAL with an empty
+  result, which hid the consolidation's cause behind "an empty digest". A
+  PARTIAL run is otherwise unchanged: its note names the causes (#658), and a
+  defect in it is #665. The Cochrane assessor still returns `None` for any
+  refusal. The shared `tests/fixtures/pico_stop_num_ctx.json` gains
+  `status_from_request`, `malformed_from_request` and six cases (every
+  condensation request refused with 401 or 404, answered 503, failing in
+  transport or answered with a body that is not JSON, and a 401 followed by
+  transport faults, which the worst cause decides); thirteen mutants,
+  Python and Rust, plus one for the re-raise, each killed.
 
 - **A PICO request failure says whether a retry may cure it** (#659, with the
   Rust crate, left by #646's fix). `PicoError` gains `retryable`: `True` for a
@@ -589,9 +602,9 @@ All notable changes to bmlib are documented here. The format is based on
   ("another model may do better"): the readers raise a private subclass, and
   only that is re-asked. **This changes the "result or `PicoError`"
   contract**: a caller catching only `PicoError` now sees those exceptions.
-  The maintainer's choice, over logging at ERROR and over a new kind. On a
-  text condensed first, a defect or the missing key raised during the
-  condensation is still `CONDENSATION_FAILED` (#616). The Rust port keeps
+  The maintainer's choice, over logging at ERROR and over a new kind. Since
+  #616 the same holds on a text condensed first, when the defect or the
+  missing key fails the condensation. The Rust port keeps
   every `ChatError` as `RequestFailed` (see `docs/DECISIONS.md`).
 
 ### Fixed

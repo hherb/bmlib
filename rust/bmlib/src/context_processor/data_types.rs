@@ -544,12 +544,24 @@ pub struct ProcessingResult {
     /// `failed_batches` and in the same order (#576, #658);
     /// [`summarise_batch_errors`] names the distinct causes.
     pub batch_errors: Vec<String>,
-    /// The error a `Failed` run failed on, `None` otherwise (#616): what
-    /// `extract_from_batch` returned for the failed batch (the last one, when
-    /// every batch failed), or what stopped the harness. `error_message` is
-    /// its text; the error keeps its type, so a caller can downcast it (to
+    /// What each failed batch's `extract_from_batch` returned, one per entry
+    /// of `batch_errors` and in the same order (#616), so a caller can rank
+    /// causes the messages cannot.
+    pub batch_exceptions: Vec<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
+    /// The error a `Failed` run failed on (#616): what stopped the harness,
+    /// the failed batch's own error under `continue_on_error = false`, or,
+    /// when no batch of the last level produced a result, the last that level
+    /// returned. `None` for any other status, and for a `Failed` run no error
+    /// caused (every item of the last level skipped as oversized).
+    /// `error_message` describes the failure. The error keeps its type, so a
+    /// caller can downcast it: to
     /// [`ModelCallError`](crate::context_processor::llm_processor::ModelCallError)
-    /// for a failed request).
+    /// for a failed request, which [`LlmChunkProcessor`](crate::context_processor::llm_processor::LlmChunkProcessor)
+    /// returns only when its model's
+    /// [`last_request_failure`](crate::context_processor::llm_processor::ContextModel::last_request_failure)
+    /// names one. That trait method defaults to `None`, and
+    /// `LlmContextModel` keeps one slot per model, so a model shared by
+    /// concurrent runs can report another run's request.
     pub error: Option<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
 }
 
@@ -614,6 +626,7 @@ impl ProcessingResult {
             skipped_items: Vec::new(),
             successful_batches: 0,
             batch_errors: Vec::new(),
+            batch_exceptions: Vec::new(),
             error: None,
         }
     }

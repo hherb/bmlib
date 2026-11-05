@@ -899,11 +899,7 @@ pub(crate) fn condense_checked(
                 result.error_message.as_deref().unwrap_or("None")
             ),
             // Python's `__cause__` (#616): a failed request failed the run.
-            request: result
-                .error
-                .as_deref()
-                .and_then(|error| error.downcast_ref::<ModelCallError>())
-                .map(|error| error.request),
+            request: worst_request(&result),
         });
     }
 
@@ -953,6 +949,25 @@ pub(crate) fn condense_checked(
         ));
     }
     Ok((digest, notes, result.status))
+}
+
+/// The failed request a failed run's refusal names (#616), worst first: one
+/// no retry cures, then one a retry may; among equals, the last. Python's
+/// `_failure_cause`, which ranks a bmlib defect above both; Rust has none.
+fn worst_request(result: &ProcessingResult) -> Option<RequestFailure> {
+    let mut worst: Option<RequestFailure> = None;
+    let requests = result
+        .batch_exceptions
+        .iter()
+        .chain(result.error.iter())
+        .filter_map(|error| error.downcast_ref::<ModelCallError>())
+        .map(|error| error.request);
+    for request in requests {
+        if !request.retryable || worst.is_none_or(|w| w.retryable) {
+            worst = Some(request);
+        }
+    }
+    worst
 }
 
 /// Why [`condense_checked`] refused a digest: Python's

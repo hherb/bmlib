@@ -71,6 +71,7 @@ impl Condenser for FixedDigest {
             skipped_items: Vec::new(),
             successful_batches: 1,
             batch_errors: Vec::new(),
+            batch_exceptions: Vec::new(),
             error: None,
         }
     }

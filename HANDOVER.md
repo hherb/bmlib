@@ -29,6 +29,16 @@ request failure to `REQUEST_FAILED` with `retryable`/`status`.
 `ProcessingResult::error` (`Arc<dyn Error>`, breaking for a struct literal),
 downcast in `condense_checked`. `pico_stop_num_ctx.json` gains
 `status_from_request` and four all-batches-fail cases; 13 mutants killed.
+**PR #666's review** found the last failed batch deciding (a defect hidden
+behind a later 503, a 401 behind a later 503 or truncation), a defect raised
+outside the request still `CONDENSATION_FAILED`, a consolidation level that
+failed everywhere reported PARTIAL with an empty digest, a refused JSON reply
+wrapped as a `ModelCallError` in Python only, and the "bare" re-raise still
+carrying its effect as `__context__`. Fixed: `ProcessingResult.batch_exceptions`
+(both languages) and a worst-first `_failure_cause` / `worst_request`; a run
+whose last level produced nothing is FAILED; two fixture cases (401, then
+transport faults; every answer not JSON). Every new test was run against the PR's first cut and
+fails there.
 **For StudyAnalyzer**: a long paper's 401/404 is now `RequestFailed { status
 }` like a short one's; nothing else to change. **Filed #665**: a PARTIAL run
 whose one batch hit a defect still only notes it (a decision; it touches the

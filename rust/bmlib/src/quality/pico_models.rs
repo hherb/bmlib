@@ -90,8 +90,9 @@ pub enum PicoError {
     /// The text was too long for one context and the map-reduce condensing it
     /// produced no digest that fits (or no condenser was configured), though no
     /// request failed it (that is `RequestFailed`, #616). The message says why:
-    /// a failed run (a truncated pass, or a condenser that names no request),
-    /// an empty digest, or one still over the budget.
+    /// a failed run (a truncated pass, an item too large for the oversized
+    /// strategy, every item skipped, or a condenser that names no request), an
+    /// empty digest, or one still over the budget.
     CondensationFailed(String),
     /// `min_similarity` was not a number in (0, 1].
     InvalidSimilarity(f64),

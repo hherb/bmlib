@@ -216,10 +216,7 @@ impl ChatSource for ClientSource<'_> {
     }
 
     fn last_failure_status(&self) -> Option<u16> {
-        match self.failure {
-            Some(ChatError::Http { status, .. }) => Some(status),
-            _ => None,
-        }
+        self.failure.as_ref().and_then(ChatError::http_status)
     }
 
     fn backoff(&mut self, attempt: usize) {
@@ -265,8 +262,8 @@ pub struct LlmContextModel<'a> {
     pub stop: Option<&'a AtomicBool>,
     /// The last call's request failure, for
     /// [`ContextModel::last_request_failure`] (#616). shortcut: one slot, so a
-    /// model shared by two threads reports whichever call ended last; give
-    /// each concurrent condensation its own model.
+    /// model shared by two threads reports whichever call ended last; upgrade
+    /// to a failure returned with each call once a model must be shared.
     last_failure: Mutex<Option<RequestFailure>>,
 }
 
@@ -378,10 +375,7 @@ impl ContextModel for LlmContextModel<'_> {
             |error: &ChatError| {
                 Some(RequestFailure {
                     retryable: error.is_retryable(),
-                    status: match error {
-                        ChatError::Http { status, .. } => Some(*status),
-                        _ => None,
-                    },
+                    status: error.http_status(),
                 })
             },
         )?;

@@ -91,6 +91,14 @@ def _error_result(message: str) -> ExtractionResult:
     )
 
 
+class _BatchFailedError(RuntimeError):
+    """A failed batch ending the run under ``continue_on_error=False``.
+
+    Chained to what the batch raised, which the run keeps as its
+    :attr:`ProcessingResult.error` rather than this wrapper (#616).
+    """
+
+
 @dataclass
 class _Preformatted:
     """An item that is already rendered and must not be decorated again.
@@ -640,7 +648,7 @@ class IterativeContextProcessor(ABC):
                 batch_errors.append(message)
                 batch_exceptions.append(exc)
                 if not config.continue_on_error:
-                    raise RuntimeError(
+                    raise _BatchFailedError(
                         f"Batch {batch.batch_index} extraction failed: {message}"
                     ) from exc
                 results.append(
@@ -741,9 +749,16 @@ class IterativeContextProcessor(ABC):
         status = ProcessingStatus.COMPLETED
         error_message: str | None = None
         error: BaseException | None = None
+        # Where the last level's failures and skips begin in the run's lists:
+        # a run is judged by whether that level produced anything (#616).
+        level_failed_from = 0
+        level_skipped_from = 0
+        level_successful = 0
 
         try:
             while True:
+                level_failed_from = len(failed_batches)
+                level_skipped_from = len(skipped_items)
                 results, needs_recursion, level_successful, batch_count = self._process_level(
                     items=current_items,
                     query=query,
@@ -828,7 +843,7 @@ class IterativeContextProcessor(ABC):
             final_result = _error_result(error_message)
             # A failed batch under ``continue_on_error=False`` is chained to
             # what the batch raised, which is the cause worth keeping.
-            error = exc.__cause__ if exc.__cause__ is not None else exc
+            error = exc.__cause__ if isinstance(exc, _BatchFailedError) else exc
         except Exception as exc:  # reported on the result rather than raised
             logger.exception("Unexpected error during processing")
             status = ProcessingStatus.FAILED
@@ -837,7 +852,9 @@ class IterativeContextProcessor(ABC):
             error = exc
 
         if status is ProcessingStatus.COMPLETED and (failed_batches or skipped_items):
-            if successful > 0:
+            # The last level's results are the run's: a level that produced
+            # none leaves nothing, however well the levels below it went.
+            if level_successful > 0:
                 status = ProcessingStatus.PARTIAL
                 logger.info(
                     "Completed with partial results: %d failed batches, %d skipped items",
@@ -850,13 +867,16 @@ class IterativeContextProcessor(ABC):
                 # reporting that as "all batches failed" sends the reader
                 # looking for an extraction error that never happened.
                 status = ProcessingStatus.FAILED
+                level_errors = batch_errors[level_failed_from:]
+                where = f" at level {recursion_level}" if recursion_level else ""
                 error_message = (
-                    f"No batch produced a result: {len(failed_batches)} failed, "
-                    f"{len(skipped_items)} items skipped"
+                    f"No batch produced a result{where}: {len(level_errors)} failed, "
+                    f"{len(skipped_items) - level_skipped_from} items skipped"
                 )
-                if batch_errors:
-                    error_message += f" ({summarise_batch_errors(batch_errors)})"
-                error = batch_exceptions[-1] if batch_exceptions else None
+                if level_errors:
+                    error_message += f" ({summarise_batch_errors(level_errors)})"
+                level_exceptions = batch_exceptions[level_failed_from:]
+                error = level_exceptions[-1] if level_exceptions else None
 
         self._report_progress(
             "complete",
@@ -882,5 +902,6 @@ class IterativeContextProcessor(ABC):
             skipped_items=skipped_items,
             successful_batches=successful,
             batch_errors=batch_errors,
+            batch_exceptions=batch_exceptions,
             error=error,
         )

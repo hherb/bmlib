@@ -558,7 +558,95 @@ class TestTheExtraction:
         with pytest.raises(defect, match="the cause") as caught:
             agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
 
-        assert caught.value.__cause__ is None  # not chained to its own effect
+        # Neither chained to its own effect nor carrying it as its context.
+        assert caught.value.__cause__ is None
+        assert caught.value.__context__ is None
+
+    @staticmethod
+    def _failing_in_turn(first: BaseException, rest: BaseException) -> MagicMock:
+        """A client whose first request raises *first* and every later one *rest*."""
+        calls = itertools.count()
+
+        def chat(*args: Any, **kwargs: Any) -> LLMResponse:
+            raise first if next(calls) == 0 else rest
+
+        return MagicMock(side_effect=chat)
+
+    @staticmethod
+    def _status_error(status: int) -> ConnectionError:
+        exc = ConnectionError(f"HTTP {status}")
+        exc.status_code = status  # type: ignore[attr-defined]
+        return exc
+
+    def test_a_defect_in_one_batch_is_not_hidden_by_a_later_outage(self) -> None:
+        """The worst cause decides, not the last batch's (#616)."""
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm.chat = self._failing_in_turn(
+            AttributeError("the defect"), self._status_error(503)
+        )
+
+        with (
+            patch("bmlib.context_processor.llm_processor.time.sleep"),
+            pytest.raises(AttributeError, match="the defect"),
+        ):
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+    @pytest.mark.parametrize("later", ["503", "truncated"])
+    def test_a_refusal_is_not_hidden_by_a_later_failure(self, later: str) -> None:
+        """A refused key outranks an outage a retry may cure, and a truncated
+        pass no request failed (#616)."""
+        rest: Any = (
+            self._status_error(503)
+            if later == "503"
+            else _response("cut", stop_reason="max_tokens")
+        )
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        if later == "503":
+            agent.llm.chat = self._failing_in_turn(self._status_error(401), rest)
+        else:
+            agent.llm.chat = MagicMock(side_effect=[self._status_error(401)] + [rest] * 30)
+
+        with (
+            patch("bmlib.context_processor.llm_processor.time.sleep"),
+            pytest.raises(PicoError) as caught,
+        ):
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.REQUEST_FAILED
+        assert (caught.value.retryable, caught.value.status) == (False, 401)
+
+    def test_a_defect_reading_a_condensation_reply_propagates(self) -> None:
+        """Raised outside the request, it is still no outage (#616)."""
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm.chat = MagicMock(return_value=_response(None))  # type: ignore[arg-type]
+
+        with pytest.raises(AttributeError):
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+    def test_a_refused_consolidation_is_a_failed_request(self) -> None:
+        """Every first-level digest arrived and every consolidation request
+        was refused: no digest, and the refusal says why (#616)."""
+        refused = self._status_error(401)
+
+        def chat(*args: Any, **kwargs: Any) -> LLMResponse:
+            if "[Consolidated level" in kwargs["messages"][-1].content:
+                raise refused
+            return _response("a digest of sixty characters, more or less, of this batch")
+
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        agent.llm.chat = MagicMock(side_effect=chat)
+
+        with pytest.raises(PicoError) as caught:
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+        assert caught.value.kind is PicoErrorKind.REQUEST_FAILED
+        assert (caught.value.retryable, caught.value.status) == (False, 401)
+        assert "No batch produced a result at level 1: " in str(caught.value)
+
+    def test_the_condenser_restates_the_agents_defects(self) -> None:
+        from bmlib.quality import _condense, pico_agent
+
+        assert set(_condense._NOT_A_REQUEST_FAILURE) == set(pico_agent._NOT_A_REQUEST_FAILURE)
 
     def test_the_text_is_sent_whole(self) -> None:
         text = "word " * 8_000
@@ -1147,7 +1235,9 @@ def _contract_run(
         sent.append((body.get("options") or {}).get("num_ctx", _ABSENT))
         if index in case.get("fail_requests", []):
             raise httpx.ConnectError("the connection was reset", request=request)
-        if case.get("malformed_request") == index:
+        if case.get("malformed_request") == index or index >= case.get(
+            "malformed_from_request", 1 << 30
+        ):
             return httpx.Response(200, text="not json")
         if case.get("status_request") == index or index >= case.get("status_from_request", 1 << 30):
             return httpx.Response(case["status"], json={"error": "refused"})

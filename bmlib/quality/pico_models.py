@@ -67,7 +67,8 @@ class PicoErrorKind(Enum):
     #: The text was too long for one context and the map-reduce condensing it
     #: produced no digest that fits, though no request failed it (that is
     #: ``REQUEST_FAILED``, #616).  The message says why: a truncated pass, an
-    #: empty digest, or one still over the budget (a larger budget or
+    #: item too large for the oversized strategy, every item skipped, an empty
+    #: digest, or one still over the budget (a larger budget or
     #: ``max_tokens``, or another model).
     CONDENSATION_FAILED = "condensation_failed"
     #: The caller's stop was set: the call ended before its next request

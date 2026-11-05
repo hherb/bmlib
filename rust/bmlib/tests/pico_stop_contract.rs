@@ -47,6 +47,9 @@ struct FakeOllama {
     fail_at_stop: bool,
     fail_at: Vec<usize>,
     malformed_at: Option<usize>,
+    /// The first request answered with a body that is not JSON, as is every
+    /// later one.
+    malformed_from: Option<usize>,
     /// The request answered with an HTTP error status, and that status.
     status_at: Option<(usize, u16)>,
     /// The first request answered with that status, as is every later one.
@@ -74,7 +77,7 @@ impl HttpClient for FakeOllama {
         if self.fail_at.contains(&index) {
             return Err(FetchError::Transport("the connection was reset".into()));
         }
-        if self.malformed_at == Some(index) {
+        if self.malformed_at == Some(index) || self.malformed_from.is_some_and(|k| index >= k) {
             return Ok(HttpResponse::from_bytes(200, b"not json".to_vec()));
         }
         let status = self
@@ -136,6 +139,7 @@ fn run(fixture: &Value, case: &Value) -> Run {
             })
             .unwrap_or_default(),
         malformed_at: case["malformed_request"].as_u64().map(|k| k as usize),
+        malformed_from: case["malformed_from_request"].as_u64().map(|k| k as usize),
         status_at: case["status_request"].as_u64().map(|k| {
             let status = case["status"].as_u64().expect("a status_request's status");
             (k as usize, u16::try_from(status).expect("a u16"))

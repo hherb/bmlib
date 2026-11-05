@@ -6261,10 +6261,13 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   whatever the text's length. A `ValueError` the request itself raises is not
   re-raised: an SDK reading a 200 body that is not JSON raises one, which is
   the remote's (PR #615's review; the first cut re-raised every `ValueError`).
-  Since #616 the same holds on a text condensed first: the harness keeps the
-  exception a failed run failed on (`ProcessingResult.error`), so a defect or
-  the key error raised during the condensation propagates, and a request
-  failure there is `REQUEST_FAILED`. A missing
+  Since #616 the same holds on a text condensed first, when the condensation
+  fails: the harness keeps what each failed batch raised
+  (`ProcessingResult.batch_exceptions`), and the worst decides — a defect or
+  the key error raised anywhere in the run propagates, then a request no retry
+  cures and then one a retry may are `REQUEST_FAILED`, never the last batch's
+  merely for being last (PR #666's review). A defect in a condensation that
+  still produced a digest is only noted (#665). A missing
   Anthropic key raises `TypeError` from the SDK and so propagates too: a
   configuration error, not a bmlib defect, but no retry cures it either. The
   readers raise a private `_UnreadableReplyError`, and only that is re-asked,

@@ -203,6 +203,68 @@ fn skipping_an_oversized_item_records_its_index() {
     assert_eq!(result.skipped_items, vec![0]);
     assert!(result.has_failures());
     assert_eq!(result.status, ProcessingStatus::Partial);
+    // Only a failed run carries an error (#616).
+    assert!(result.error.is_none());
+}
+
+/// A processor whose extraction succeeds at level 0 and fails above it.
+struct ConsolidationFails {
+    core: ProcessingCore,
+}
+
+impl IterativeContextProcessor for ConsolidationFails {
+    fn config(&self) -> &ProcessingConfig {
+        &self.core.config
+    }
+    fn format_item(&self, item: &dyn Item, index: usize) -> String {
+        item.render(index)
+    }
+    fn extract_from_batch(
+        &self,
+        _batch_content: &str,
+        _query: &str,
+        meta: &BTreeMap<String, Value>,
+    ) -> Result<ExtractionResult, Box<dyn std::error::Error + Send + Sync>> {
+        if meta.get("recursion_level").and_then(Value::as_u64) == Some(0) {
+            Ok(ExtractionResult::new("x".repeat(20)))
+        } else {
+            Err(Box::new(std::io::Error::other("down at the consolidation")))
+        }
+    }
+}
+
+/// Level 0 succeeding does not make a run whose consolidation failed
+/// everywhere `Partial`: it has no result (#616). Each failed batch's error is
+/// kept, one per `batch_errors` entry.
+#[test]
+fn a_run_whose_last_level_produced_nothing_failed() {
+    let config = ProcessingConfig::default().with_max_context_chars(60);
+    let p = ConsolidationFails {
+        core: ProcessingCore::new(config, None).expect("valid"),
+    };
+    let long = "a".repeat(40);
+    let refs = items(&[long.as_str(), long.as_str(), long.as_str()]);
+    let result = run_all(&p, &p.core, &refs, "q", &p.core.config, false);
+    assert_eq!(result.status, ProcessingStatus::Failed, "{result:?}");
+    assert!(result.successful_batches > 0);
+    let failed = result.batch_errors.len();
+    assert!(failed > 0);
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some(
+            format!(
+                "No batch produced a result at level 1: {failed} failed, 0 items skipped \
+                 ({failed} batch{} failed: down at the consolidation)",
+                if failed == 1 { "" } else { "es" }
+            )
+            .as_str()
+        )
+    );
+    assert_eq!(result.batch_exceptions.len(), failed);
+    assert_eq!(
+        result.error.as_ref().map(ToString::to_string).as_deref(),
+        Some("down at the consolidation")
+    );
 }
 
 /// `Fail` is the configuration doing what it was asked, not a defect: it is
