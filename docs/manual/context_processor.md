@@ -440,7 +440,9 @@ level**, so it restarts at each `recursing` step — `recursion_level` says
 which level a given update belongs to. An item dropped by the oversized
 strategy counts as accounted for the moment the batcher drops it: no
 extraction will ever reach it, and a bar waiting for one would never
-fill.
+fill. An item split into pieces counts once, when the batch holding its
+last piece is done, so `current_item` never exceeds `total_items` (#673;
+before, each piece counted, and a text split four ways read 3 of 1).
 
 ## Notes for maintainers
 

@@ -73,6 +73,16 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A split item's progress counts once** (#673, found while pinning #609's
+  progress, with the Rust crate). `ProgressInfo.current_item` added a batch's
+  *pieces* while `total_items` counts the level's *items*, so one oversized
+  text split into four batches read 0, 1, 2, 3 of 1 (`progress_percent` 300%)
+  before `complete` read 1 of 1; an item one of whose pieces was dropped
+  while packing counted twice. An item now counts once, when the batch
+  holding its last piece is done; one no piece of which reached a batch, at
+  once. The shared `tests/fixtures/pico_stop_num_ctx.json`'s progress lines
+  gain `items <current_item>/<total_items>`.
+
 - **Rust: a stop ends the map-reduce at the batch it stopped** (#609, found
   by pinning the progress). A batch whose call failed while
   `LlmContextModel`'s stop was set was recorded as a failure and the harness

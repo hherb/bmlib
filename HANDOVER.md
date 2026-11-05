@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-05 (**this session's PR is on `fix/609-condense-progress`**,
-for #609; see *This session* below). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
+_Last updated: 2026-11-06 (**this session's PR is on `fix/673-progress-items`**, stacked on PR #674 (`fix/609-condense-progress`),
+for #673; see *This session* below). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -12,7 +12,24 @@ summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
 #629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#671 and this session's._
 
-## This session: a long text's condensation reports its progress (#609)
+## This session: a split item's progress counts once (#673, stacked on #609's PR #674)
+
+Branch `fix/673-progress-items`, based on `fix/609-condense-progress`, so it
+merges after PR #674. `current_item` added a batch's pieces against
+`total_items`' items (a text split four ways read 3 of 1, and an item with a
+piece dropped while packing counted twice). Both languages now count an item
+once, when the batch holding its last piece is done
+(`_items_finished_by_batch` / `items_finished_by_batch`, private, beside
+`_process_level`); one no piece of which reached a batch counts at once.
+`pico_stop_num_ctx.json`'s progress lines gain `items <done>/<total>` (18
+cases fail without the fix); twin unit tests,
+`test_a_split_item_counts_once_when_its_last_piece_is_done` and
+`a_split_item_counts_once_when_its_last_piece_is_done`, cover a level of
+three items with the middle one split. Not changed: `skipped_items` can list
+one item twice when several of its pieces are dropped (the count no longer
+reads it).
+
+## Earlier, 2026-11-05: a long text's condensation reports its progress (#609, PR #674, open)
 
 Filed by StudyAnalyzer, whose PICO tab showed nothing while a long paper was
 condensed. **Python**: `PicoAgent` and `CochraneAssessor` take
@@ -27,9 +44,8 @@ Rust's harness walked every remaining batch after a stop (each refused unsent)
 to `complete`, where Python's `ProcessingStoppedError` ends it;
 `ContextModel::stop_requested` and `IterativeContextProcessor::stop_requested`
 (default `false`) now end it there, the batch unrecorded,
-`ProcessingResult::failed`. **Not pinned**: `current_item`/`total_items`,
-because both languages count a split item's pieces against the original
-items (a paper split four ways reads 3 of 1; #673). No
+`ProcessingResult::failed`. `current_item`/`total_items` are pinned since
+#673 (below). No
 fixture case recurses (the fixture's digest always fits merged). The issue's
 aside on `agents::metrics::Monotonic::now()` (a wall clock, unused in the
 crate, its rustdoc already says so) is left. **For StudyAnalyzer**: pass a

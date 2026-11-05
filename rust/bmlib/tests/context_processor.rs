@@ -824,3 +824,50 @@ fn without_a_stop_every_batch_is_asked() {
         Some("complete")
     );
 }
+
+// ---------------------------------------------------------------------------
+// A split item counts once (#673)
+// ---------------------------------------------------------------------------
+
+/// Each piece of a split item sits in a batch under the item's own index, and
+/// counting pieces read 3 of 1 for a text split four ways. The item counts
+/// once, after the batch holding its last piece; Python's
+/// `test_a_split_item_counts_once_when_its_last_piece_is_done` is the twin.
+#[test]
+fn a_split_item_counts_once_when_its_last_piece_is_done() {
+    let reports = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = reports.clone();
+    let callback: bmlib::context_processor::ProgressCallback = Box::new(move |info| {
+        sink.lock().expect("lock").push((
+            info.stage.clone(),
+            info.recursion_level,
+            info.current_item,
+            info.total_items,
+        ))
+    });
+    let config = ProcessingConfig::default().with_max_context_chars(100);
+    let processor = Recorder {
+        core: ProcessingCore::new(config, Some(callback)).expect("valid config"),
+        seen: std::sync::Mutex::new(Vec::new()),
+        echo: false,
+    };
+    processor.run(&items(&["short", &"x".repeat(350), "tail"]), "q");
+
+    let reports = reports.lock().expect("lock").clone();
+    let level_zero: Vec<(usize, usize)> = reports
+        .iter()
+        .filter(|(stage, level, _, _)| stage == "extracting" && *level == 0)
+        .map(|(_, _, done, total)| (*done, *total))
+        .collect();
+    assert!(
+        level_zero.len() > 3,
+        "the long item was not split across batches"
+    );
+    // Batch 1 holds "short" alone; the long item's pieces follow, and only
+    // the batch with its last piece (shared with "tail") ends both.
+    let mut expected = vec![(0, 3)];
+    expected.resize(level_zero.len(), (1, 3));
+    assert_eq!(level_zero, expected);
+    assert!(reports.iter().all(|(_, _, done, total)| done <= total));
+    assert_eq!(reports.last(), Some(&("complete".to_string(), 0, 3, 3)));
+}
