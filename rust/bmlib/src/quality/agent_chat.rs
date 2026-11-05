@@ -435,6 +435,10 @@ impl ContextModel for LlmContextModel<'_> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
+
+    fn stop_requested(&self) -> bool {
+        is_set(self.stop)
+    }
 }
 
 /// Python's `str.format`, for the subset the quality prompts use.

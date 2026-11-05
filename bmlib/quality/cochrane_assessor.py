@@ -41,7 +41,7 @@ from collections.abc import Callable
 from typing import Any
 
 from bmlib.agents.base import BaseAgent
-from bmlib.context_processor import ProcessingConfig, ProcessingStatus
+from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProgressCallback
 from bmlib.llm import LLMClient
 from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text
@@ -286,6 +286,10 @@ class CochraneAssessor(BaseAgent):
         condense_config: Governs the map-reduce pass that runs when the text
             is larger than ``max_context_chars``.  Defaults to
             :data:`DEFAULT_CONDENSE_THRESHOLD_CHARS`.
+        condense_progress: Handed every
+            :class:`~bmlib.context_processor.ProgressInfo` the condensation of a
+            long text reports, so a caller can show how far it got (#609); one
+            that raises is logged and the run goes on.
     """
 
     def __init__(
@@ -296,6 +300,7 @@ class CochraneAssessor(BaseAgent):
         temperature: float = 0.1,
         max_tokens: int = 4096,
         condense_config: ProcessingConfig | None = None,
+        condense_progress: ProgressCallback | None = None,
     ) -> None:
         super().__init__(
             llm=llm,
@@ -307,6 +312,7 @@ class CochraneAssessor(BaseAgent):
         self.condense_config = condense_config or ProcessingConfig(
             max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
         )
+        self.condense_progress = condense_progress
         # ``total`` counts every ``assess()`` call, so
         # ``successful + failed == total`` holds.  Upstream incremented the
         # total only on the success path, after every failure had already
@@ -590,6 +596,7 @@ class CochraneAssessor(BaseAgent):
                 consolidation_prompt=CONDENSE_CONSOLIDATION_PROMPT,
                 query=CONDENSE_QUERY,
                 stage="assessment",
+                progress_callback=self.condense_progress,
             )
         except CondensationRefusedError:
             # ``condense_text`` has logged the reason; this agent's contract

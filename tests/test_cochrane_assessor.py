@@ -321,6 +321,21 @@ class TestCondensingOversizedText:
         assert assessment.condensed_from_chars == len(text.strip())
         assert assessment.condensation_status == "completed"
 
+    def test_the_condensation_reports_its_progress(self) -> None:
+        """#609: ``condense_progress`` hears every batch, as PICO's does in
+        the shared fixture."""
+        stages: list[str] = []
+        assessor = make_assessor(
+            "short evidence",
+            condense_config=self._tiny_config(),
+            condense_progress=lambda info: stages.append(info.stage),
+        )
+
+        assert assessor._condense("x " * 400, "a study") is not None
+        extractions = assessor.llm.chat.call_count
+        assert extractions > 1
+        assert stages == ["starting", "batching"] + ["extracting"] * extractions + ["complete"]
+
     def test_condensation_reduces_every_chunk_of_the_paper(self) -> None:
         """The real harness run, against a reply short enough that the
         extractions fit one context and no recursion is needed."""

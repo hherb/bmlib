@@ -284,6 +284,14 @@ pub trait ContextModel {
     fn last_request_failure(&self) -> Option<RequestFailure> {
         None
     }
+
+    /// Whether the caller has asked the run to end (#642, #609): a batch
+    /// whose call fails while this is true ends the map-reduce there, as
+    /// Python's `ProcessingStoppedError` does, rather than failing the batch
+    /// and going on to the next. The default never stops.
+    fn stop_requested(&self) -> bool {
+        false
+    }
 }
 
 /// Read the model's own confidence out of a structured answer.
@@ -539,6 +547,16 @@ impl<'a> LlmChunkProcessor<'a> {
         })
     }
 
+    /// Hand every [`ProgressInfo`](crate::context_processor::ProgressInfo)
+    /// the harness reports to `callback` (#609), Python's `progress_callback`
+    /// argument. A callback that panics is caught and logged, and the run goes
+    /// on.
+    #[must_use]
+    pub fn with_progress(mut self, callback: ProgressCallback) -> Self {
+        self.core.progress_callback = Some(callback);
+        self
+    }
+
     /// The prompts in force.
     #[must_use]
     pub fn templates(&self) -> &PromptTemplates {
@@ -606,5 +624,9 @@ impl IterativeContextProcessor for LlmChunkProcessor<'_> {
 
     fn progress_callback(&self) -> Option<&ProgressCallback> {
         self.core.progress_callback.as_ref()
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.model.stop_requested()
     }
 }

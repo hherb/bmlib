@@ -247,10 +247,13 @@ is none of the five.
 characters; set another with `with_condense_config`) is condensed first by a
 `Condenser`, and refused when none is configured (Python always has one).
 `LlmCondenser::new(model, temperature, max_tokens)` is the production
-map-reduce over a `context_processor::llm_processor::ContextModel`, which you
-implement over your client — the crate ships no `ContextModel`, and an
-implementation must return `Err` for a completion cut off at the output
-ceiling. The result records `condensed_from_chars` and `condensation_status`.
+map-reduce over a `context_processor::llm_processor::ContextModel`:
+`quality::LlmContextModel` is the one over `LlmClient` (#641), and an
+implementation of your own must return `Err` for a completion cut off at the
+output ceiling. The result records `condensed_from_chars` and
+`condensation_status`. *(unreleased, #609)* `.with_progress(|info| …)` hands
+the condensation's every `ProgressInfo` to a callback, Python's
+`condense_progress`, for both agents.
 
 ```rust,ignore
 let mut condenser = LlmCondenser::new(&my_context_model, 0.1, 4096)?;

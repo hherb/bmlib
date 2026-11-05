@@ -335,6 +335,16 @@ pub trait IterativeContextProcessor {
     fn progress_callback(&self) -> Option<&ProgressCallback> {
         None
     }
+
+    /// Whether the caller has asked the run to end (#642, #609).
+    ///
+    /// Read when a batch's extraction fails: while it is true the run ends
+    /// there, the batch unrecorded and no `complete` progress reported, as
+    /// Python's `ProcessingStoppedError` ends it. The result is `Failed` with
+    /// the extraction's error as its message. The default never stops.
+    fn stop_requested(&self) -> bool {
+        false
+    }
 }
 
 /// The concrete machinery: batching, recursion, consolidation, accounting.
@@ -371,7 +381,18 @@ impl ProcessingCore {
     /// broken progress bar must not lose the work.
     fn report_progress(&self, info: ProgressInfo) {
         if let Some(cb) = &self.progress_callback {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(&info)));
+            if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(&info)))
+            {
+                // Python's `logger.warning("Progress callback failed: %s", exc)`.
+                let reason = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| (*s).to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "a panic that is not text".to_string());
+                eprintln!(
+                    "bmlib.context_processor.base WARNING: Progress callback failed: {reason}"
+                );
+            }
         }
     }
 
@@ -862,6 +883,10 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
                 results.push(result);
                 successful += 1;
             }
+            // A stop ends the run unrecorded, as Python's `ProcessingStoppedError`.
+            Err(exc) if processor.stop_requested() => {
+                return Err(Box::new(Stopped(exc.to_string())));
+            }
             Err(exc) => {
                 let message = exc.to_string();
                 failed_batches.push(batch.batch_index);
@@ -995,6 +1020,8 @@ pub fn run_all<P: IterativeContextProcessor + ?Sized>(
             &mut batch_exceptions,
         ) {
             Ok(o) => o,
+            // No `complete` report: Python's stop raises out of `process`.
+            Err(exc) if exc.is::<Stopped>() => return ProcessingResult::failed(exc.to_string()),
             Err(exc) => {
                 status = ProcessingStatus::Failed;
                 error_message = Some(exc.to_string());
@@ -1137,6 +1164,19 @@ impl std::fmt::Display for BatchFailed {
 }
 
 impl std::error::Error for BatchFailed {}
+
+/// The run-ending error of a batch whose extraction failed while
+/// [`IterativeContextProcessor::stop_requested`] was true.
+#[derive(Debug)]
+struct Stopped(String);
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Stopped {}
 
 fn push_stat(stats: &mut BTreeMap<String, serde_json::Value>, key: &str, value: usize) {
     if let Some(serde_json::Value::Array(arr)) = stats.get_mut(key) {

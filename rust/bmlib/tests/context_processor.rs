@@ -703,3 +703,124 @@ fn a_decoration_wider_than_the_budget_skips_the_item() {
         "the message names what happened: {message:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A stop ends the run (#642, #609)
+// ---------------------------------------------------------------------------
+
+/// A processor whose every extraction fails, with a stop set as batch
+/// `stop_at` is extracted (`None`: never set), recording the stages reported.
+struct Stopping {
+    core: ProcessingCore,
+    stop_at: Option<usize>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl Stopping {
+    fn new(stop_at: Option<usize>, stages: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+        let config = ProcessingConfig::default().with_max_context_chars(100);
+        let callback: bmlib::context_processor::ProgressCallback =
+            Box::new(move |info| stages.lock().expect("lock").push(info.stage.clone()));
+        Stopping {
+            core: ProcessingCore::new(config, Some(callback)).expect("valid config"),
+            stop_at,
+            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
+impl IterativeContextProcessor for Stopping {
+    fn config(&self) -> &ProcessingConfig {
+        &self.core.config
+    }
+
+    fn format_item(&self, item: &dyn Item, index: usize) -> String {
+        item.render(index)
+    }
+
+    fn extract_from_batch(
+        &self,
+        _batch_content: &str,
+        _query: &str,
+        _meta: &BTreeMap<String, Value>,
+    ) -> Result<ExtractionResult, Box<dyn std::error::Error + Send + Sync>> {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.stop_at == Some(call) {
+            self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        Err("the server went away".into())
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.stop.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Four batches of one item each.
+fn four_batches() -> Vec<ItemRef> {
+    items(&[
+        "a".repeat(80).as_str(),
+        &"b".repeat(80),
+        &"c".repeat(80),
+        &"d".repeat(80),
+    ])
+}
+
+/// A batch failing while the stop is set ends the run there: unrecorded, no
+/// further batch asked, no `complete` reported, as Python's
+/// `ProcessingStoppedError` raises out of `process`.
+#[test]
+fn a_stop_ends_the_run_at_the_failing_batch() {
+    let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let processor = Stopping::new(Some(1), stages.clone());
+    let result = run_all(
+        &processor,
+        &processor.core,
+        &four_batches(),
+        "q",
+        &processor.core.config,
+        false,
+    );
+
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some("the server went away")
+    );
+    // Batch 0 failed before the stop and was recorded; batch 1 ended the run.
+    assert_eq!(processor.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(
+        result.failed_batches.is_empty(),
+        "a stopped run is no batch's failure"
+    );
+    assert_eq!(
+        *stages.lock().expect("lock"),
+        ["starting", "batching", "extracting", "extracting"]
+    );
+}
+
+/// The control: with no stop the same failures walk every batch and report
+/// `complete`.
+#[test]
+fn without_a_stop_every_batch_is_asked() {
+    let stages = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let processor = Stopping::new(None, stages.clone());
+    let result = run_all(
+        &processor,
+        &processor.core,
+        &four_batches(),
+        "q",
+        &processor.core.config,
+        false,
+    );
+
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    assert_eq!(processor.calls.load(std::sync::atomic::Ordering::SeqCst), 4);
+    assert_eq!(result.failed_batches, [0, 1, 2, 3]);
+    assert_eq!(
+        stages.lock().expect("lock").last().map(String::as_str),
+        Some("complete")
+    );
+}
