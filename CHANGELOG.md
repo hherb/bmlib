@@ -8,6 +8,42 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A fence inside a blockquote closes, a backtick in a backtick fence's
+  info string opens none, and no unclosed opener costs quadratic time**
+  (#548, #549, with the Rust crate). `canonical_from_markdown` stripped `>`
+  only outside a fence, so a fence opened inside a quote never closed and
+  swallowed the rest of the document (a heading after it lost as structure,
+  its text kept). A fence opened under *n* quote markers now has up to *n*
+  stripped from each line, and ends at a line carrying fewer, which is then
+  read as an ordinary line, as in CommonMark. And a backtick fence's info
+  string may not hold a backtick, so a line such as ```` ```code``` here ````
+  is read as inline text (here a code span, `code here`) rather than opening
+  a fence that swallows everything after it; a tilde fence's still may.
+  `strip_inline` rescanned the rest of the text for every emphasis opener
+  without a closer, every `[` without a link, every `<` opening a scheme,
+  and every backtick run of a new length, so in Python `"(_a " * 20000`
+  (80 kB, one paragraph) took about 61 s, `"[" * 15000 + "]"` 5.8 s,
+  `"<http://a" * 9000 + " >"` (81 kB) 10.6 s, and backtick runs of every
+  length from 1 to 1,399 (981 kB) 44 s. Whether a run closes emphasis depends
+  on the run alone, so an opener that finds no closer now marks its delimiter
+  and run length as unclosed for the rest of the walk; and a text's
+  brackets, balanced parentheses, whitespace, `>` characters and backtick
+  runs are indexed once per `strip_inline` call (`_InlineIndex`), so finding
+  a link, an autolink's end or a code span's closer costs a few bisects. The
+  shapes above take 0.02-0.04 s in Python at 80 kB (0.3 s at 981 kB), and
+  milliseconds in Rust; a wall-clock test with a wide margin pins eight of
+  them in each language. **The inline rewrite is exact**: 0 differences from
+  `main`'s `strip_inline` over 300,000 random strings of markup tokens; and
+  of 100,000 random documents built from fence, quote, heading, list, table
+  and link lines, every one of the 44,643 that read differently holds a
+  quoted fence or a backtick fence with a backtick in its info string
+  (scratch fuzzers, not committed).
+  `MARKDOWN_VERSION` is 2 (`"markdown-2"`), so a stored Markdown chunk set is
+  stale; only those two kinds of document read differently. Not measured
+  over a corpus (there is no local Markdown one). Eight new cases in
+  `tests/fixtures/canonical_text.json` hold both languages to the rules,
+  among them the inputs a mutation sweep found unpinned.
+
 - **"Method", "Result", "Discussions" and "Experimental" are section
   headings** (#636, with the Rust crate). The PDF segmenter's pattern table
   named only "Methods", "Results", "Discussion" and "Experimental

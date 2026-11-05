@@ -1,7 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-05 (**this session's PR is on `fix/609-condense-progress`**,
-for #609; see *This session* below). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
+_Last updated: 2026-11-06 (**this session's PR is on `fix/548-549-markdown-fences`**,
+for #548 and #549; see *This session* below; **PR #674 (#609, condensation
+progress) was open beside it from a concurrent session**, so whichever merges
+second resolves this file). PR #672 (#636), #671 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -10,82 +12,35 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#671 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668, #670-#672 and this session's._
 
-## This session: a long text's condensation reports its progress (#609)
+## This session: a quoted fence closes, no unclosed opener costs quadratic time (#548, #549)
 
-Filed by StudyAnalyzer, whose PICO tab showed nothing while a long paper was
-condensed. **Python**: `PicoAgent` and `CochraneAssessor` take
-`condense_progress` (a `ProgressCallback`), which `condense_text` hands to
-`LLMChunkProcessor`. **Rust**: `LlmCondenser::with_progress(impl Fn(&ProgressInfo))`
-(shared by both agents through an `Arc`, since each condensation builds its
-own processor) and `LlmChunkProcessor::with_progress(ProgressCallback)`; a
-panicking callback is now logged (Python logs a raise). Shared fixture:
-`pico_stop_num_ctx.json` states `expected.progress` on all 32 cases, written
-`"<stage> <batch>/<batches> level <level>"`. **Found by that pin and fixed**:
-Rust's harness walked every remaining batch after a stop (each refused unsent)
-to `complete`, where Python's `ProcessingStoppedError` ends it;
-`ContextModel::stop_requested` and `IterativeContextProcessor::stop_requested`
-(default `false`) now end it there, the batch unrecorded,
-`ProcessingResult::failed`. **Not pinned**: `current_item`/`total_items`,
-because both languages count a split item's pieces against the original
-items (a paper split four ways reads 3 of 1; #673). No
-fixture case recurses (the fixture's digest always fits merged). The issue's
-aside on `agents::metrics::Monotonic::now()` (a wall clock, unused in the
-crate, its rustdoc already says so) is left. **For StudyAnalyzer**: pass a
-progress callback to `pico_condenser(…).with_progress` and show the batches.
+Both from PR #547's review, both languages, no decision needed.
+`canonical_from_markdown` now strips up to a quoted fence's depth of `>`
+markers per line and ends the fence at a line carrying fewer, and a line
+opening a backtick fence whose info string holds a backtick is inline text
+(#548). `strip_inline` rescanned the text per unclosed emphasis opener, per
+`[`, per autolink `<` and per backtick run of a new length (80 kB of `(_a `:
+~61 s; 81 kB of `<http://a`: 10.6 s; 981 kB of backtick runs: 44 s); an
+opener finding no closer now marks its delimiter and run unclosed for the
+walk, and one `_InlineIndex` per call holds brackets, parentheses,
+whitespace, `>` and backtick runs (#549). **PR #675's review** found the
+autolink and code-span scans still quadratic, and seven inline mutants and
+one fence mutant unpinned; all fixed, with eight contract cases and eight
+wall-clock shapes per language. The inline rewrite is **exact**: 0
+differences from `main` over 300,000 fuzzed strings, and every fuzzed
+document that reads differently holds a quoted fence or a backtick-info
+fence (scratch fuzzers, not committed). `MARKDOWN_VERSION` 2
+(`"markdown-2"`). **For StudyAnalyzer**: stored Markdown
+chunk sets are stale (`"markdown-2"`), re-index on `StoreError::Stale`.
 
-## Earlier, 2026-11-05: Ollama's plain-text 404 is a wrong address (#667, PRs #669 and #671, merged)
+## Earlier, 2026-11-05: "Method", "Result", "Discussions", "Experimental" are headings (#636, PR #672, merged)
 
-Python's `OllamaProvider.context_window` read Ollama's unknown-route body
-`404 page not found` as `NoSuchModelError` (ollama-python keeps the raw text
-when the body is not JSON). `_names_a_missing_model` now applies Rust's rule
-(a JSON `error` saying "not found"), reading the body off the
-`httpx.HTTPStatusError` the SDK raises `from None` (still `__context__`);
-with no such context it falls back to the old phrase test (a `shortcut:`
-comment). `context_window.json`'s Ollama 404 uses the real body and a
-missing-model 404 case is added; Rust passes both unchanged. PR #669's
-review added two JSON 404s that are not a missing model (an `error` not
-saying "not found", and a non-string one), each killing a mutant that
-survived; the `AttributeError` guard is reached by no current SDK, whose own
-`ResponseError` raises first on a non-object JSON body (#617's Ollama half).
-
-## Earlier, 2026-11-05: what MuPDF said is kept apart, and a failed read keeps it (#619, PR #670, merged)
-
-The maintainer chose all three of #619's parts. One name per meaning in both
-languages: **`engine_messages`** is what MuPDF said, **`warnings`** bmlib's
-own notes. `PdfError`/`PDFExtractionError` gain `engine_messages`, filled by
-every MuPDF read that fails (Rust: the private `reading` helper wraps both
-reads and attaches the capture to the value or the error; a limit reached
-mid-read carries them too); `PdfBlocks`/`PDFBlocks` and both
-`ConversionResult`s gain it, `warnings` keeping only bmlib's notes; Rust's
-service `PdfText.warnings` is renamed `engine_messages`, and a failed
-extraction's line ends with them. Python's service "no extractable text" line
-drops its `warnings[:3]` (bmlib's per-page notes) for Rust's cause. Breaking
-against `main` since #599, unreleased. Shared fixture `pdf_warnings.json`:
-each row's two lists, and `failed` (a header with no objects: `unreadable`,
-four messages, the same from PyMuPDF's MuPDF 1.28.6 and `mupdf-sys`'s).
-`PDF_PINNED` re-pinned without a bump (the canonical PDF code reads neither
-list). **For StudyAnalyzer**: rename `PdfBlocks.warnings` reads to
-`engine_messages` and show a failed PDF read's `engine_messages`.
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668, #670, #671 and this session's._
-
-## This session: "Method", "Result", "Discussions", "Experimental" are headings (#636)
-
-The maintainer chose, from three measured rules, **whole-heading only at
-0.7**: `SectionSegmenter.VARIANT_PATTERNS` / Rust `VARIANT_PATTERNS`
-(`method`, `experimental`, `experimental section`, `result`, `discussions`),
-tried after the anchored table and before the partial search, never searched
-within a line, and given no #628 relaxed size test. Over the 1,114 local PDFs
-(`~/europepmc_pdf`; blocks pickled once, segmented with and without by a
-scratch comparator): 18 papers move, 8 headings found, 0 lost, #636's nine
-parents typed with their subsections, 1 false heading (PMC9713001's bold
-"Method" column header). Derived partials moved 88 papers (body lines became
-headings); at 1.0, ~11 papers gained a table column header. Cost: a
-body-sized bold "Method"/"Result" stays text. `PDF_CANONICAL_VERSION` 7
-(`"pdf-7"`, 8 canonical texts move); eleven oracle cases; Rust agrees on the
-36 papers carrying a variant name. **For StudyAnalyzer**: stored PDF chunk
-sets are stale (`"pdf-7"`), re-index on `StoreError::Stale`.
+`VARIANT_PATTERNS` (both languages), whole heading only at 0.7, the
+maintainer's choice: 18 of 1,114 local PDFs move, 8 headings found, 0 lost,
+1 false heading; `"pdf-7"`. **For StudyAnalyzer**: stored PDF chunk sets are
+stale, re-index on `StoreError::Stale`.
 
 ## Earlier, 2026-11-05: what MuPDF said is kept apart (#619, PR #670) and Ollama's plain-text 404 (#667, PR #671), merged
 
@@ -290,7 +245,7 @@ iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
 PRs #554 and #555 (item 3, `chunk_canonical`, contract
 `canonical_chunks.json` from its committed generator); PR #547 (4a, the model,
-JATS, Markdown, plain text; its reviews left **#548**, **#549**, **#552**,
+JATS, Markdown, plain text; its reviews left #548 and #549 (done), **#552**,
 **#553**); PR #545 (item 9, `FullTextResult.jats_xml`, the cache's `jats/`).
 
 **PRs #538-#543**: a non-ISO `RetractionEvidence.date` raises (#507; the
@@ -328,8 +283,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,292 passing + 165 skipped** on `fix/636-section-patterns`
-  (`uv run pytest tests/ -v`, 2026-11-05; Rust 1,575 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,320 passing + 165 skipped** on `fix/548-549-markdown-fences`
+  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,577 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -358,8 +313,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open once #636 closes** (`gh issue list --state open --limit 300 --json number`,
-2026-11-05; #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
+**125 open once #548 and #549 close** (`gh issue list --state open --limit 300 --json number`,
+2026-11-06; **#673** is PR #674's (progress counts a split item's pieces against the original items; a contract choice, after #674 merges); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

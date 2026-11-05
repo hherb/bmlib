@@ -11,6 +11,16 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A fence inside a blockquote closes, a backtick in a backtick fence's
+  info string opens none, and no unclosed opener costs quadratic time**
+  (#548, #549, with the Python library). `canonical_from_markdown` strips a
+  quoted fence's `>` markers and ends the fence at a line carrying fewer; a
+  backtick fence whose info string holds a backtick is read as inline text;
+  and `strip_inline` no longer rescans the text per unclosed emphasis
+  opener, `[`, autolink `<` or backtick run (`InlineIndex`).
+  `MARKDOWN_VERSION` is 2 (`"markdown-2"`); the Python CHANGELOG has the
+  measurement.
+
 - **"Method", "Result", "Discussions" and "Experimental" are section
   headings** (#636, with the Python library). `segmenter::VARIANT_PATTERNS`
   (exported) holds them, matched by `match_section_type` only as the whole
