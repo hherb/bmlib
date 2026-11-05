@@ -270,6 +270,21 @@
     "ok": false
   },
   {
+    "error": "FullTextError: Not a usable PMC ID: '٣٤٥'",
+    "name": "normalise_pmc_id/arabic_indic_digits",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC٣٤٥'",
+    "name": "normalise_pmc_id/prefixed_arabic_indic_digits",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC12３'",
+    "name": "normalise_pmc_id/fullwidth_digit",
+    "ok": false
+  },
+  {
     "name": "plural/one_attempt",
     "ok": true,
     "value": "1 attempt"

@@ -39,10 +39,10 @@ use bmlib::transparency::analyzer::{
     json_object, json_text, merge_pubmed_signals, note_full_text_provenance, parse_pubmed_signals,
     pmid_from_epmc, score_data_availability, strip_nested_articles, user_agent, Analysis,
     PubMedSignals, StripNestedArticlesError, TransparencyAnalyzer, DATA_PATTERNS,
-    INDICATOR_COI_IN_PUBMED, INDICATOR_COI_UNKNOWN, INDICATOR_FUNDERS_NOT_READABLE,
-    INDICATOR_NO_COI_IN_FULLTEXT, INDICATOR_NO_FUNDER_INFO, INDICATOR_NO_POSTED_RESULTS,
-    INDICATOR_RESULTS_NOT_CHECKABLE, MAX_TRANSPARENCY_SCORE, SCORE_FUNDER_INFO, SCORE_OPEN_ACCESS,
-    SCORE_RESULTS_POSTED, SCORE_TRIAL_REGISTERED,
+    EUROPEPMC_ACCESSION_RE, INDICATOR_COI_IN_PUBMED, INDICATOR_COI_UNKNOWN,
+    INDICATOR_FUNDERS_NOT_READABLE, INDICATOR_NO_COI_IN_FULLTEXT, INDICATOR_NO_FUNDER_INFO,
+    INDICATOR_NO_POSTED_RESULTS, INDICATOR_RESULTS_NOT_CHECKABLE, MAX_TRANSPARENCY_SCORE,
+    SCORE_FUNDER_INFO, SCORE_OPEN_ACCESS, SCORE_RESULTS_POSTED, SCORE_TRIAL_REGISTERED,
 };
 use bmlib::transparency::models::{
     FullTextStatus, TransparencyRisk, TransparencySettings, TransparencyUnknownReason,
@@ -882,6 +882,19 @@ fn a_lowercase_accession_is_fetched() {
         client.urls()
     );
     assert_eq!(result.full_text_status, Some(FullTextStatus::Analyzed));
+}
+
+/// The accession becomes a URL path, so its digits are ASCII, as Python's
+/// `re.ASCII` pattern requires (#564, #471): the `regex` crate's `\d` is every
+/// Unicode decimal digit. No draw has seen one, so this pins a direction.
+#[test]
+fn the_full_text_accession_refuses_non_ascii_digits() {
+    for accession in ["PMC١٢٣", "PPR١٢٣", "PMC12３"] {
+        assert!(!EUROPEPMC_ACCESSION_RE.is_match(accession), "{accession}");
+    }
+    // Narrowing `\d` leaves the case folding its job.
+    assert!(EUROPEPMC_ACCESSION_RE.is_match("pmc4154587"));
+    assert!(EUROPEPMC_ACCESSION_RE.is_match("PPR1301373"));
 }
 
 // ---------------------------------------------------------------------------

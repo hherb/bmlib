@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-06 (**this session's PR is on `fix/673-progress-items`**, stacked on PR #674 (`fix/609-condense-progress`),
-for #673; see *This session* below). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
+_Last updated: 2026-11-06 (**this session's PR is on `fix/564-ascii-pmc-digits`**, for #564; PRs #674 (#609), #675 (#548, #549),
+#676 (#673) and #672 (#636) merged). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -10,12 +10,27 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#671 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#676 and this session's._
 
-## This session: a split item's progress counts once (#673, stacked on #609's PR #674)
+## This session: a Rust PMC ID or accession in non-ASCII digits is refused (#564)
 
-Branch `fix/673-progress-items`, based on `fix/609-condense-progress`, so it
-merges after PR #674. `current_item` added a batch's pieces against
+Branch `fix/564-ascii-pmc-digits` (the start-of-session docs refresh rides
+on it). The `regex` crate's `\d` is Unicode, so Rust's `normalise_pmc_id`
+and `EUROPEPMC_ACCESSION_RE` let `PMC٣٤٥` into a URL path where Python's
+`re.ASCII` patterns refuse it; both read `[0-9]` now. Three
+`normalise_pmc_id` cases in `service_cases.json` (Python's expectation
+regenerated) and `the_full_text_accession_refuses_non_ascii_digits` in
+`tests/analyzer.rs`. **The sweep**: of the Rust crate's 22 `\d` uses, only
+these two port a Python `re.ASCII` pattern; the rest (NCT ids, extractors,
+segmenter numbering) are Unicode in both languages, and the citation
+scanner is hand-written and ASCII-only (documented in the Rust manual).
+**#471 keeps its other half**: Rust matches an NCT id in any script's digits
+but does not send it in ASCII as Python's `_nct_id` does, and the PMID
+shape guard.
+
+## Earlier, 2026-11-06: a split item's progress counts once (#673, PR #676, merged)
+
+`current_item` added a batch's pieces against
 `total_items`' items (a text split four ways read 3 of 1, and an item with a
 piece dropped while packing counted twice). Both languages now count an item
 once, when the batch holding its last piece is done
@@ -29,7 +44,7 @@ three items with the middle one split. Not changed: `skipped_items` can list
 one item twice when several of its pieces are dropped (the count no longer
 reads it).
 
-## Earlier, 2026-11-05: a long text's condensation reports its progress (#609, PR #674, open)
+## Earlier, 2026-11-05: a long text's condensation reports its progress (#609, PR #674, merged)
 
 Filed by StudyAnalyzer, whose PICO tab showed nothing while a long paper was
 condensed. **Python**: `PicoAgent` and `CochraneAssessor` take
@@ -315,8 +330,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,320 passing + 165 skipped** on `fix/548-549-markdown-fences`
-  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,577 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,322 passing + 165 skipped** on `fix/564-ascii-pmc-digits`
+  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,581 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -345,8 +360,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**125 open once #548 and #549 close** (`gh issue list --state open --limit 300 --json number`,
-2026-11-06; **#673** is PR #674's (progress counts a split item's pieces against the original items; a contract choice, after #674 merges); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
+**122 open once #564 closes** (`gh issue list --state open --limit 300 --json number`,
+2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

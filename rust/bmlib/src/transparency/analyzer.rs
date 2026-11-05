@@ -370,8 +370,11 @@ pub const EUROPEPMC_REST_BASE: &str = "https://www.ebi.ac.uk/europepmc/webservic
 /// **A shape test, not a `source` allow-list.** The two agree on every
 /// population drawn and differ where an accession-shaped id arrives under an
 /// unenumerated source, where the allow-list refuses a fetch that works.
+///
+/// **ASCII digits** (`[0-9]`, Python's `re.ASCII`, #470/#564): the `regex`
+/// crate's `\d` is every Unicode decimal digit, so `PMC١٢٣` passed and was sent.
 pub static EUROPEPMC_ACCESSION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\A(?:PMC|PPR)\d+\z").expect("accession regex"));
+    LazyLock::new(|| Regex::new(r"(?i)\A(?:PMC|PPR)[0-9]+\z").expect("accession regex"));
 
 /// The other three endpoints.
 ///
