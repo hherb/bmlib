@@ -464,6 +464,21 @@ pub const SECTION_PATTERNS: &[(SectionType, &[&str])] = &[
     ),
 ];
 
+/// Less common names for a section (#636), matched only as the whole heading
+/// and at [`PARTIAL_MATCH_CONFIDENCE`], never searched within a line.
+///
+/// Searched, `\bresult\b` makes "can result in" a heading; at `1.0`, #628's
+/// relaxed size test makes a bold column header ("Genotyping method",
+/// "Combined result") a heading in about one paper in a hundred.
+pub const VARIANT_PATTERNS: &[(SectionType, &[&str])] = &[
+    (
+        SectionType::Methods,
+        &["^method$", "^experimental$", "^experimental\\s+section$"],
+    ),
+    (SectionType::Results, &["^result$"]),
+    (SectionType::Discussion, &["^discussions$"]),
+];
+
 /// The leading numbering a heading may carry: `"1.2  Introduction"`.
 static LEADING_NUMBERING: OnceLock<Regex> = OnceLock::new();
 /// A section number opening a heading: `"2."`, `"2.1."` or `"2.1.3"` and then a
@@ -474,8 +489,10 @@ static LEADING_NUMBERING: OnceLock<Regex> = OnceLock::new();
 static HEADING_NUMBER: OnceLock<Regex> = OnceLock::new();
 /// The punctuation a heading may trail: `"Discussion:"`.
 static TRAILING_PUNCTUATION: OnceLock<Regex> = OnceLock::new();
-/// The compiled tables: anchored patterns, then the partial-search ones.
+/// The compiled tables: anchored patterns, anchored variants, then the
+/// partial-search ones.
 type CompiledTables = (
+    Vec<(SectionType, Vec<Regex>)>,
     Vec<(SectionType, Vec<Regex>)>,
     Vec<(SectionType, Vec<Regex>)>,
 );
@@ -564,25 +581,42 @@ fn compiled() -> &'static CompiledTables {
             exact.push((*section_type, exact_set));
             partial.push((*section_type, partial_set));
         }
-        (exact, partial)
+        let variants = VARIANT_PATTERNS
+            .iter()
+            .map(|(section_type, patterns)| {
+                let set = patterns
+                    .iter()
+                    .map(|p| Regex::new(&format!("(?i){p}")).expect("a fixed pattern"))
+                    .collect();
+                (*section_type, set)
+            })
+            .collect();
+        (exact, variants, partial)
     })
 }
 
 /// Classify a heading, returning `(section type, confidence)`.
 ///
-/// Anchored matches win at `1.0`; an unanchored word-bounded search is the `0.7`
-/// fallback; `(SectionType::Unknown, 0.0)` means no pattern claimed it.
+/// Anchored matches win at `1.0`; an anchored [`VARIANT_PATTERNS`] match, and
+/// failing that an unanchored word-bounded search, are the `0.7` fallbacks; `(SectionType::Unknown, 0.0)` means no pattern claimed it.
 #[must_use]
 pub fn match_section_type(text: &str) -> (SectionType, f64) {
     let normalized = text.trim().to_lowercase();
     let normalized = leading_numbering().replace(&normalized, "");
     let normalized = trailing_punctuation().replace(&normalized, "");
 
-    let (exact, partial) = compiled();
+    let (exact, variants, partial) = compiled();
     for (section_type, patterns) in exact {
         for pattern in patterns {
             if pattern.is_match(&normalized) {
                 return (*section_type, 1.0);
+            }
+        }
+    }
+    for (section_type, patterns) in variants {
+        for pattern in patterns {
+            if pattern.is_match(&normalized) {
+                return (*section_type, PARTIAL_MATCH_CONFIDENCE);
             }
         }
     }
