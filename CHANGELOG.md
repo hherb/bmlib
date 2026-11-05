@@ -8,6 +8,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A failed context-window lookup carries the HTTP status** (#664, filed by
+  StudyAnalyzer's review, with the Rust crate). `ContextWindowError` gains
+  `status`: the HTTP status the provider answered with, `None` where no HTTP
+  answer came. An app reads the window before its first call to a model, so
+  a wrong key met there looked like an outage. It is read from the SDK
+  exception's `status_code` (from an `httpx.HTTPStatusError`'s response for
+  Gemini's retried statuses); Gemini's and Ollama's own refusals pass theirs.
+  The helper that reads it moves from the condenser to
+  `bmlib.llm.utils.http_status` (the condenser and the PICO agent import it
+  there). The shared `tests/fixtures/context_window.json` gains `refusals`:
+  each provider's own SDK client over an `httpx.MockTransport`.
+
 - **A PICO request failure carries the HTTP status** (#662, filed by
   StudyAnalyzer's review, with the Rust crate). `PicoError` gains `status`:
   the HTTP status the server answered a `REQUEST_FAILED` request with, `None`

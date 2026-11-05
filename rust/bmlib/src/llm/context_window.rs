@@ -81,7 +81,13 @@ pub enum ContextWindowError {
         model: String,
     },
     /// The request failed (network, status, timeout).
-    Transport(String),
+    Transport {
+        /// What went wrong, for the user.
+        message: String,
+        /// The HTTP status the provider answered with (a 401 or 403 is a
+        /// refused key), or `None` where no HTTP answer came (#664).
+        status: Option<u16>,
+    },
     /// The response could not be understood.
     Malformed(String),
 }
@@ -102,7 +108,7 @@ impl std::fmt::Display for ContextWindowError {
             Self::NoSuchModel { provider, model } => {
                 write!(f, "{provider} has no model {model:?}")
             }
-            Self::Transport(message) | Self::Malformed(message) => write!(f, "{message}"),
+            Self::Transport { message, .. } | Self::Malformed(message) => write!(f, "{message}"),
         }
     }
 }

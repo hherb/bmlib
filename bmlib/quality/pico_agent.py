@@ -61,10 +61,11 @@ from bmlib.agents.base import (
 )
 from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError
-from bmlib.context_processor.llm_processor import _http_status, _is_refusal
+from bmlib.context_processor.llm_processor import _is_refusal
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.llm.stream import Stop, stop_reader
+from bmlib.llm.utils import http_status
 from bmlib.quality._condense import CondensationRefusedError, condense_text
 from bmlib.quality._json_fields import as_bool, as_text
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
@@ -860,4 +861,4 @@ def _request_error(exc: Exception) -> PicoError:
     # The condenser's rule (#646, #659): a refusal or an unreadable answer
     # (``ValueError``, as Rust's ``ChatError::Malformed``) fails again.
     retryable = not isinstance(exc, ValueError) and not _is_refusal(exc)
-    return PicoError(PicoErrorKind.REQUEST_FAILED, str(exc), retryable, _http_status(exc))
+    return PicoError(PicoErrorKind.REQUEST_FAILED, str(exc), retryable, http_status(exc))

@@ -990,5 +990,174 @@
         "unknown": true
       }
     }
-  ]
+  ],
+  "refusals": {
+    "description": "A failed lookup's error and HTTP status, Python and Rust alike (#664). Each case runs the real lookup (Python: the provider's own SDK client over an httpx.MockTransport, Gemini's httpx.get patched; Rust: LlmClient::context_window over a scripted HttpClient) and answers every request with HTTP `status` and `body`, or, where `status` is null, fails it with no answer (a refused connection). Retries run without waiting. `expect.error` is `transport` (Python's ContextWindowError that is not a NoSuchModelError; Rust's ContextWindowError::Transport) or `no_such_model`; a `transport` states `expect.status`, the HTTP status of the last answer, or null where none came, so a refused key (401, 403) can be told from an outage.",
+    "cases": [
+      {
+        "name": "anthropic 401 is a transport error carrying 401",
+        "provider": "anthropic",
+        "model": "claude-x",
+        "status": 401,
+        "body": "{\"error\": {\"message\": \"invalid key\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 401
+        }
+      },
+      {
+        "name": "anthropic 403 is a transport error carrying 403",
+        "provider": "anthropic",
+        "model": "claude-x",
+        "status": 403,
+        "body": "{\"error\": {\"message\": \"invalid key\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 403
+        }
+      },
+      {
+        "name": "anthropic 503, once retries are spent, carries 503",
+        "provider": "anthropic",
+        "model": "claude-x",
+        "status": 503,
+        "body": "{\"error\": {\"message\": \"overloaded\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 503
+        }
+      },
+      {
+        "name": "anthropic with no answer carries no status",
+        "provider": "anthropic",
+        "model": "claude-x",
+        "status": null,
+        "body": "",
+        "expect": {
+          "error": "transport",
+          "status": null
+        }
+      },
+      {
+        "name": "anthropic 404 is no such model",
+        "provider": "anthropic",
+        "model": "claude-x",
+        "status": 404,
+        "body": "{\"error\": {\"message\": \"not found\"}}",
+        "expect": {
+          "error": "no_such_model"
+        }
+      },
+      {
+        "name": "mistral 401 is a transport error carrying 401",
+        "provider": "mistral",
+        "model": "m-1",
+        "status": 401,
+        "body": "{\"error\": {\"message\": \"invalid key\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 401
+        }
+      },
+      {
+        "name": "deepseek 401 is a transport error carrying 401",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "status": 401,
+        "body": "{\"error\": {\"message\": \"invalid key\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 401
+        }
+      },
+      {
+        "name": "deepseek 404 is a transport error carrying 404",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "status": 404,
+        "body": "{\"error\": {\"message\": \"not found\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 404
+        }
+      },
+      {
+        "name": "gemini 400 is a transport error carrying 400",
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "status": 400,
+        "body": "{\"error\": {\"message\": \"API key not valid\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 400
+        }
+      },
+      {
+        "name": "gemini 403 is a transport error carrying 403",
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "status": 403,
+        "body": "{\"error\": {\"message\": \"invalid key\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 403
+        }
+      },
+      {
+        "name": "gemini 503, once retries are spent, carries 503",
+        "provider": "gemini",
+        "model": "gemini-2.0-flash",
+        "status": 503,
+        "body": "{\"error\": {\"message\": \"unavailable\"}}",
+        "expect": {
+          "error": "transport",
+          "status": 503
+        }
+      },
+      {
+        "name": "ollama 401 is a transport error carrying 401",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": 401,
+        "body": "{\"error\": \"unauthorized\"}",
+        "expect": {
+          "error": "transport",
+          "status": 401
+        }
+      },
+      {
+        "name": "ollama 404 not naming a missing model carries 404",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": 404,
+        "body": "<html>404 page</html>",
+        "expect": {
+          "error": "transport",
+          "status": 404
+        }
+      },
+      {
+        "name": "ollama 503, once retries are spent, carries 503",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": 503,
+        "body": "{\"error\": \"busy\"}",
+        "expect": {
+          "error": "transport",
+          "status": 503
+        }
+      },
+      {
+        "name": "ollama with no answer carries no status",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": null,
+        "body": "",
+        "expect": {
+          "error": "transport",
+          "status": null
+        }
+      }
+    ]
+  }
 }

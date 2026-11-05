@@ -22,6 +22,21 @@ import json
 import re
 from collections.abc import Callable, Iterator
 
+
+def http_status(exc: object) -> int | None:
+    """The HTTP status *exc* reports the server answered with, or ``None``.
+
+    Every built-in provider's SDK exception for an HTTP answer carries its
+    ``status_code`` (``anthropic``/``openai`` ``APIStatusError``,
+    ``ollama.ResponseError``), as does an ``httpx.Response``; a connection
+    failure or timeout carries none. ollama-python's ``-1`` means no HTTP
+    status. The condenser's refusal rule (#646), a PICO failure (#662) and a
+    failed context-window lookup (#664) read it.
+    """
+    status = getattr(exc, "status_code", None)
+    return status if isinstance(status, int) and status >= 100 else None
+
+
 # Fence opener, optional language tag, optional trailing newline, then the
 # body up to the closing fence.  ``(.*?)`` is non-greedy so consecutive
 # fences do not merge into one block.

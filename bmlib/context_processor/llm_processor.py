@@ -46,6 +46,7 @@ from bmlib.context_processor.data_types import (
     ProcessingConfig,
     ProcessingStoppedError,
 )
+from bmlib.llm.utils import http_status
 
 logger = logging.getLogger(__name__)
 
@@ -97,22 +98,10 @@ _NOT_RETRIED: tuple[type[BaseException], ...] = (
 _RETRIED_STATUSES = frozenset({408, 429, 500, 502, 503, 504, 529})
 
 
-def _http_status(exc: BaseException) -> int | None:
-    """The HTTP status *exc* reports the server answered with, or ``None``.
-
-    Every built-in provider's SDK exception for an HTTP answer carries its
-    ``status_code`` (``anthropic``/``openai`` ``APIStatusError``,
-    ``ollama.ResponseError``); a connection failure or timeout carries none.
-    ollama-python's ``-1`` means no HTTP status.
-    """
-    status = getattr(exc, "status_code", None)
-    return status if isinstance(status, int) and status >= 100 else None
-
-
 def _is_refusal(exc: BaseException) -> bool:
     """Whether *exc* is an HTTP answer no retry changes (#646); no status is
     no refusal, so a connection failure or timeout stays retried."""
-    status = _http_status(exc)
+    status = http_status(exc)
     return status is not None and status >= 400 and status not in _RETRIED_STATUSES
 
 

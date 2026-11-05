@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-05 (**this session's PR is on `fix/662-pico-status`**,
-for #662; see *This session* below). PR #661 (#659), #660 (#658), #657
+_Last updated: 2026-11-05 (**this session's PR is on `fix/664-window-status`**,
+for #664; see *This session* below). PR #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -10,40 +10,39 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663 and this session's._
 
-## This session: a PICO request failure carries the HTTP status (#662)
+## This session: a failed context-window lookup carries the HTTP status (#664)
 
-Filed from StudyAnalyzer#79's review: after #659 an app could tell whether
-to retry a PICO failure but not why it failed. **Python** `PicoError.status`
-(`PicoError(kind, message, retryable=False, status=None)`, pickled) comes
-from the SDK exception's `status_code` through the new `_http_status`, which
-`_is_refusal` now reads too. **Rust** `PicoError::RequestFailed { message,
-retryable, status }` and `ChatJsonError::Transport { .., status }`, from the
-new `ChatSource::last_failure_status()` (default `None`); `ClientSource` keeps
-the failed `ChatError` itself, so one stored value answers both
-`last_failure_*` methods. Breaking for a Rust pattern without `..`.
-`pico_stop_num_ctx.json` states `expected.status` on every `request_failed`
-case (401, 404, 503, 429, null for a transport fault and a non-JSON body);
-one mutant per language killed. The session also resolved #661's conflicts
-with #660 (the contract runners now return `retryable`/`status` *and* the
-notes) and merged it, at the maintainer's request. **For StudyAnalyzer**: map
-`RequestFailed { status: Some(401 | 403), .. }` to "the provider refused the
-key" and `Some(404)` to "no such model", as for `ChatError::Http`.
+Filed from StudyAnalyzer PR #80's review: an app reads the window before its
+first chat or PICO call to a model, so a wrong key met there was an outage.
+**Rust** `ContextWindowError::Transport(String)` is now `Transport { message,
+status: Option<u16> }` (the answer's status; `None` for no answer, a routing
+failure); breaking for a `Transport(_)` pattern. **Python**
+`ContextWindowError.status` (`None` by default, so `NoSuchModelError` and
+every raise site that has no status keep working), read in
+`fetch_context_window` from the SDK exception, or an `httpx.HTTPStatusError`'s
+response (Gemini's retried statuses); Gemini's and Ollama's own refusals pass
+theirs. `_http_status` moved from the condenser to
+`bmlib.llm.utils.http_status` (a lower layer; the condenser and the PICO agent
+import it there). Shared fixture: `context_window.json` gains `refusals` (15
+cases: 401/403/400/404/503 and no answer, every networked provider), run in
+Python over each provider's own SDK client on an `httpx.MockTransport`
+(anthropic ≥ 2 needs `httpx2`'s) and in Rust over the scripted transport; one
+mutant per language killed. **Found**: #667 (Ollama's plain-text `404 page
+not found` is `NoSuchModelError` in Python, a wrong address in Rust; the
+fixture case uses a body both read alike). **For StudyAnalyzer**: map
+`Transport { status: Some(401 | 403), .. }` to `needs_api_key`, as for
+`ChatError::Http` and `PicoError::RequestFailed`.
 
-**PR #663's review**: `PicoError` now refuses `retryable` or `status` on any
-kind but `REQUEST_FAILED` (`ValueError`), as Rust's type does. **Not done**:
-a 401/404 during a long paper's condensation is still `CONDENSATION_FAILED`
-with no `status`, in both languages; posted on #616, whose fix (keep the
-cause, not a string) covers it.
+## Earlier, 2026-11-04/05: why a PICO request failed (#659 PR #661, #662 PR #663, merged)
 
-## Earlier, 2026-11-04: a PICO request failure says whether a retry may cure it (#659, PR #661, merged)
-
-`PicoError.retryable` / Rust `RequestFailed { message, retryable }`, by the
-condenser's rule (a transport failure or a status in `_RETRIED_STATUSES`);
-Rust carries it past `ChatSource::chat`'s `String` through
-`last_failure_retryable()`. **For StudyAnalyzer**: `pico.rs` retries
-`RequestFailed { retryable: true, .. }` only.
+`PicoError.retryable` and `.status` / Rust `RequestFailed { message,
+retryable, status }` and `ChatJsonError::Transport { .., retryable, status }`
+(through `ChatSource::last_failure_retryable()`/`_status()`), by the
+condenser's rule; `PicoError` refuses either on any other kind. A 401/404
+during a long paper's condensation is still `CONDENSATION_FAILED` with no
+`status` (#616, PR #666).
 
 ## Earlier, 2026-11-04: a failed condensation batch's cause reaches the caller (#658, #576, PR #660, merged)
 
@@ -313,8 +312,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**128 open** (`gh issue list --state open --limit 300 --json number`,
-2026-11-05, once #662 closes; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
+**130 open** (`gh issue list --state open --limit 300 --json number`,
+2026-11-05, once #664 closes; #667 is #664's finding; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634, #635 and #636 StudyAnalyzer's and the PDF path's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed #616** (condensation turns a bmlib defect into `CONDENSATION_FAILED`; a design choice about the harness), **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#619** (MuPDF's messages lost on a failed Rust read and mixed with bmlib's notes in Python; API changes in both), **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

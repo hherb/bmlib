@@ -1188,7 +1188,9 @@ impl LlmClient {
     /// opening a stream; a 404 is [`ContextWindowError::NoSuchModel`] at once,
     /// except from DeepSeek (its list names no model) and from Ollama unless
     /// its `error` says "not found": those are
-    /// [`ContextWindowError::Transport`].
+    /// [`ContextWindowError::Transport`]. A `Transport` carries the status of
+    /// any HTTP answer, so a refused key (401, 403) can be told from an
+    /// outage (#664).
     ///
     /// Routing differs from Python's `LLMClient.context_window(model,
     /// provider=None)`: here a bare provider name (or `""`) asks that
@@ -1234,7 +1236,13 @@ impl LlmClient {
             },
             |response| response.status,
         )
-        .map_err(|e| ContextWindowError::Transport(e.to_string()))?;
+        .map_err(|e| ContextWindowError::Transport {
+            status: match &e {
+                FetchError::HttpStatus { status, .. } => Some(*status),
+                _ => None,
+            },
+            message: e.to_string(),
+        })?;
         let text = String::from_utf8_lossy(&response.body);
         if response.status == HTTP_NOT_FOUND && names_a_missing_model(&target.provider, &text) {
             return Err(ContextWindowError::NoSuchModel {
@@ -1243,9 +1251,10 @@ impl LlmClient {
             });
         }
         if !(200..300).contains(&response.status) {
-            return Err(ContextWindowError::Transport(
-                http_error(&url, response.status, &text).to_string(),
-            ));
+            return Err(ContextWindowError::Transport {
+                message: http_error(&url, response.status, &text).to_string(),
+                status: Some(response.status),
+            });
         }
         let body: Value = serde_json::from_str(&text).map_err(|e| {
             ContextWindowError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
@@ -1268,7 +1277,10 @@ fn context_window_routing_error(error: ChatError) -> ContextWindowError {
             ContextWindowError::MissingApiKey { provider, env_var }
         }
         ChatError::UnknownProvider(name) => ContextWindowError::UnknownProvider(name),
-        other => ContextWindowError::Transport(other.to_string()),
+        other => ContextWindowError::Transport {
+            message: other.to_string(),
+            status: None,
+        },
     }
 }
 

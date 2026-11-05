@@ -123,6 +123,16 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **A failed context-window lookup carries the HTTP status** (#664, with the
+  Python library, filed by StudyAnalyzer's review):
+  `ContextWindowError::Transport(String)` is now `Transport { message,
+  status: Option<u16> }`, the status of the provider's answer (`None` where
+  no HTTP answer came), so an app can tell a refused key (401, 403) from an
+  outage before its first chat or PICO call to a model, as #662 let it for
+  PICO. A pattern `Transport(_)` breaks. The shared
+  `tests/fixtures/context_window.json` gains `refusals`, run over the
+  scripted transport.
+
 - **A PICO request failure carries the HTTP status** (#662, with the Python
   library): `PicoError::RequestFailed` gains `status: Option<u16>` and
   `ChatJsonError::Transport` gains `status`, `ChatError::Http`'s status of

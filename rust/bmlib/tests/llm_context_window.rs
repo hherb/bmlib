@@ -328,7 +328,7 @@ fn a_deepseek_404_is_a_transport_error() {
     let t = Scripted::new(vec![Ok((404, "{}".into()))]);
     assert!(matches!(
         client(t.clone()).context_window("deepseek:gone"),
-        Err(ContextWindowError::Transport(_))
+        Err(ContextWindowError::Transport { .. })
     ));
     assert_eq!(t.calls(), 1);
 }
@@ -353,7 +353,7 @@ fn an_ollama_404_with_an_html_body_is_a_transport_error() {
     let t = Scripted::new(vec![Ok((404, "<html>404 page not found</html>".into()))]);
     assert!(matches!(
         client(t).context_window("ollama:x"),
-        Err(ContextWindowError::Transport(_))
+        Err(ContextWindowError::Transport { .. })
     ));
 }
 
@@ -375,7 +375,9 @@ fn a_retryable_status_is_retried_then_succeeds() {
 fn transport_failure_is_retried_then_reported() {
     let t = Scripted::new(vec![Err("no route".into())]);
     let got = client(t.clone()).context_window("anthropic:c");
-    assert!(matches!(got, Err(ContextWindowError::Transport(m)) if m.contains("no route")));
+    assert!(
+        matches!(got, Err(ContextWindowError::Transport { message, status: None }) if message.contains("no route"))
+    );
     assert_eq!(t.calls(), STREAM_OPEN_ATTEMPTS as usize);
 }
 
@@ -387,7 +389,7 @@ fn another_status_quotes_the_server() {
     ))]);
     let got = client(t.clone()).context_window("anthropic:c");
     assert!(
-        matches!(got, Err(ContextWindowError::Transport(m)) if m.contains("401") && m.contains("bad key"))
+        matches!(got, Err(ContextWindowError::Transport { message, status: Some(401) }) if message.contains("401") && message.contains("bad key"))
     );
     assert_eq!(t.calls(), 1);
 }
@@ -422,4 +424,40 @@ fn a_client_without_get_with_headers_refuses_by_name() {
         .get_with_headers("http://x", &BTreeMap::new())
         .unwrap_err();
     assert!(matches!(&err, FetchError::Config(m) if m.contains("get_with_headers")));
+}
+
+/// The fixture's `refusals`: a failed lookup's error and the HTTP status it
+/// carries, as Python's provider lookups report them (#664).
+#[test]
+fn refusals_agree_with_the_fixture() {
+    let fx = fixture();
+    let cases = fx["refusals"]["cases"].as_array().expect("cases");
+    assert!(!cases.is_empty());
+    for case in cases {
+        let name = case["name"].as_str().expect("name");
+        let answer = match case["status"].as_u64() {
+            Some(status) => Ok((
+                u16::try_from(status).expect("a u16"),
+                case["body"].as_str().expect("body").to_string(),
+            )),
+            None => Err("connection refused".to_string()),
+        };
+        let model = format!(
+            "{}:{}",
+            case["provider"].as_str().expect("provider"),
+            case["model"].as_str().expect("model")
+        );
+        let got = client(Scripted::new(vec![answer])).context_window(&model);
+        let expect = &case["expect"];
+        match (expect["error"].as_str().expect("error"), got) {
+            ("transport", Err(ContextWindowError::Transport { status, .. })) => {
+                let want = expect["status"]
+                    .as_u64()
+                    .map(|n| u16::try_from(n).expect("a u16"));
+                assert_eq!(status, want, "{name}: status");
+            }
+            ("no_such_model", Err(ContextWindowError::NoSuchModel { .. })) => {}
+            (error, got) => panic!("{name}: expected {error}, got {got:?}"),
+        }
+    }
 }
