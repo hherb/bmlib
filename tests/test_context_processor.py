@@ -792,6 +792,79 @@ class TestFailureHandling:
     def test_a_clean_run_has_no_batch_errors(self) -> None:
         result = EchoProcessor().process(["fine"], query="q")
         assert result.batch_errors == []
+        assert result.error is None
+
+    def test_a_failed_run_keeps_the_last_failed_batchs_exception(self) -> None:
+        # #616: its type survives, where error_message keeps only the text.
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={0, 1}, config=config)
+        result = processor.process(["aaaaaaaaaa"] * 4, query="q")
+        assert isinstance(result.error, RuntimeError)
+        assert str(result.error) == "batch 1 exploded"
+
+    def test_a_fail_fast_run_keeps_the_batchs_exception(self) -> None:
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=False)
+        processor = FailingProcessor(fail_on={1}, config=config)
+        result = processor.process(["aaaaaaaaaa"] * 6, query="q")
+        assert str(result.error) == "batch 1 exploded"
+
+    def test_a_partial_run_keeps_no_error(self) -> None:
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={1}, reply="ok", config=config)
+        assert processor.process(["aaaaaaaaaa"] * 4, query="q").error is None
+
+    def test_a_refused_oversized_item_is_the_runs_error(self) -> None:
+        config = ProcessingConfig(
+            max_context_chars=60, oversized_item_strategy=OversizedItemStrategy.FAIL
+        )
+        result = EchoProcessor(config=config).process(["x" * 500], query="q")
+        assert isinstance(result.error, OversizedItemError)
+
+    def test_every_failed_batchs_exception_is_kept_in_order(self) -> None:
+        # #616: one per batch_errors entry, so a caller can rank them.
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        processor = FailingProcessor(fail_on={0, 2}, config=config)
+        result = processor.process(["aaaaaaaaaa"] * 6, query="q")
+        assert [str(exc) for exc in result.batch_exceptions] == result.batch_errors
+        assert result.batch_errors == ["batch 0 exploded", "batch 2 exploded"]
+
+    def test_a_run_whose_last_level_produced_nothing_failed(self) -> None:
+        """Level 0 succeeding does not make a run whose consolidation failed
+        everywhere PARTIAL: it has no result (#616)."""
+
+        class ConsolidationFails(EchoProcessor):
+            def extract_from_batch(
+                self, batch_content: str, query: str, batch_metadata: dict[str, Any]
+            ) -> ExtractionResult:
+                if batch_metadata["recursion_level"] >= 1:
+                    raise ConnectionError("down at the consolidation")
+                return ExtractionResult(content="x" * 15)
+
+        config = ProcessingConfig(max_context_chars=20, separator="", continue_on_error=True)
+        result = ConsolidationFails(config=config).process(["aaaaaaaaaa"] * 4, query="q")
+
+        assert result.status is ProcessingStatus.FAILED
+        assert result.successful_batches == 2
+        assert result.error_message == (
+            "No batch produced a result at level 1: 2 failed, 0 items skipped "
+            "(2 batches failed: down at the consolidation)"
+        )
+        assert isinstance(result.error, ConnectionError)
+
+    def test_a_chained_runtime_error_outside_a_batch_is_kept_as_raised(self) -> None:
+        """Only the harness's own fail-fast wrapper is unwrapped (#616)."""
+
+        class FormatFails(EchoProcessor):
+            def format_item(self, item: Any, index: int) -> str:
+                try:
+                    raise KeyError(index)
+                except KeyError as exc:
+                    raise RuntimeError("could not format") from exc
+
+        result = FormatFails().process(["a"], query="q")
+        assert result.status is ProcessingStatus.FAILED
+        assert isinstance(result.error, RuntimeError)
+        assert str(result.error) == "could not format"
 
     def test_only_skipped_items_add_no_cause(self) -> None:
         config = ProcessingConfig(

@@ -67,7 +67,8 @@ pub enum PicoError {
     /// The provider was unreachable or refused the request. Unlike Python,
     /// every `ChatError` lands here, an unknown provider and a missing key
     /// included (see `docs/DECISIONS.md`); `retryable` says which a retry may
-    /// cure (#659).
+    /// cure (#659). A request the condensation of a long text sent is this too
+    /// when it failed the map-reduce (#616), the message saying so.
     RequestFailed {
         /// What failed, in the transport's or the server's words.
         message: String,
@@ -87,9 +88,11 @@ pub enum PicoError {
     /// required field; another model may do better.
     UnusableReply(String),
     /// The text was too long for one context and the map-reduce condensing it
-    /// produced no digest that fits (or no condenser was configured). The
-    /// message says why: a failed run (a provider outage during it included,
-    /// so retrying may help), an empty digest, or one still over the budget.
+    /// produced no digest that fits (or no condenser was configured), though no
+    /// request failed it (that is `RequestFailed`, #616). The message says why:
+    /// a failed run (a truncated pass, an item too large for the oversized
+    /// strategy, every item skipped, or a condenser that names no request), an
+    /// empty digest, or one still over the budget.
     CondensationFailed(String),
     /// `min_similarity` was not a number in (0, 1].
     InvalidSimilarity(f64),

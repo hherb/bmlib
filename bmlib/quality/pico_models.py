@@ -54,9 +54,10 @@ class PicoErrorKind(Enum):
     EMPTY_INPUT = "empty_input"
     #: The request raised: the provider was unreachable or refused it.
     #: :attr:`PicoError.retryable` says whether retrying may help (#659).  A
-    #: bmlib defect, an unknown provider or a missing SDK is not this: those
-    #: propagate unwrapped (#573), the first only when the text was sent whole
-    #: (#616).
+    #: request the condensation of a long text sent is this too when it failed
+    #: the map-reduce (#616), the message saying so.  A bmlib defect, an
+    #: unknown provider or a missing SDK is not this: those propagate
+    #: unwrapped (#573).
     REQUEST_FAILED = "request_failed"
     #: The reply hit the output ceiling; raise ``max_tokens``.
     TRUNCATED = "truncated"
@@ -64,9 +65,11 @@ class PicoErrorKind(Enum):
     #: required field; another model may do better.
     UNUSABLE_REPLY = "unusable_reply"
     #: The text was too long for one context and the map-reduce condensing it
-    #: produced no digest that fits.  The message says why: a provider failure
-    #: during the map-reduce (retrying may help), an empty digest, or one still
-    #: over the budget (a larger budget, or another model).
+    #: produced no digest that fits, though no request failed it (that is
+    #: ``REQUEST_FAILED``, #616).  The message says why: a truncated pass, an
+    #: item too large for the oversized strategy, every item skipped, an empty
+    #: digest, or one still over the budget (a larger budget or
+    #: ``max_tokens``, or another model).
     CONDENSATION_FAILED = "condensation_failed"
     #: The caller's stop was set: the call ended before its next request
     #: (#642).  A request under way that failed, or a condensation that

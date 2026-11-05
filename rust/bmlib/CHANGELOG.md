@@ -132,6 +132,27 @@ The Python library is documented separately, in the repository's
   PICO. A pattern `Transport(_)` breaks. The shared
   `tests/fixtures/context_window.json` gains `refusals`, run over the
   scripted transport.
+- **A long paper's failed condensation request is `RequestFailed`** (#616,
+  with the Python library). The condenser's model reported a failure as a
+  `String`, so on a long paper a 401, a 404 and an outage were all
+  `PicoError::CondensationFailed` with no `retryable` or `status`.
+  `ContextModel::last_request_failure()` (default `None`) says what the last
+  call's failure says of its request, a `RequestFailure { retryable, status }`
+  or `None` for a truncated pass, a non-object reply or a stop;
+  `LlmContextModel` keeps it per call. `LlmChunkProcessor` then returns the
+  batch's failure as `ModelCallError { message, request }`, and
+  `ProcessingResult` gains `batch_exceptions`, what each failed batch
+  returned, and `error: Option<Arc<dyn Error + Send + Sync>>`, what a `Failed`
+  run failed on (the failed batch's own error, never the fail-fast wrapper, or
+  the last its last level returned). `PicoAgent` reads the worst request
+  among them, one no retry cures over one a retry may (PR #666's review): it
+  is `RequestFailed { message, retryable, status }`, the message naming the
+  map-reduce; with none it stays `CondensationFailed`. As in Python, a run
+  whose every consolidation batch failed is now `Failed`, not `Partial` with
+  an empty result. **Breaking for a `ProcessingResult` struct literal** (add
+  `batch_exceptions: Vec::new()` and `error: None`); a `ContextModel`
+  implementation needs no change, but one that does not override
+  `last_request_failure` keeps its failures `CondensationFailed`.
 
 - **A PICO request failure carries the HTTP status** (#662, with the Python
   library): `PicoError::RequestFailed` gains `status: Option<u16>` and

@@ -1,5 +1,5 @@
 {
-  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama HTTP transport (Python: ollama-python over an httpx.MockTransport). A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. Each k in `fail_requests` fails request k with a transport fault and no stop, which the condenser's model retries up to `context_model_attempts` tries; `malformed_request` k answers request k with a body that is not JSON, which is not retried. `status_request` k answers request k with HTTP `status` (body `{\"error\": \"refused\"}`): a status in `retried_statuses` is retried, any other is not (#646). `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (the key absent when null); `expected.error` is the error kind, or null for a result; a `request_failed` states `expected.retryable`, whether a retry may cure it (#659: a transport fault or a status in `retried_statuses`), and no other case does; it states `expected.status` too, the HTTP status the server answered with, or null where none came or the answer was unreadable (#662). `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged). `expected.note` is null when the result carries no note, else substrings its one note contains: the status and the failed batch's cause (#658).",
+  "description": "The PICO agent's num_ctx and stop, Python and Rust alike (#640, #641, #642). Each case runs the real agent, the real map-reduce and a real client over a fake Ollama HTTP transport (Python: ollama-python over an httpx.MockTransport). A JSON-mode request is answered with `json_reply` (it reads as both a suitability check and an extraction), a plain one with `digest`. `text` is `text_unit` repeated `text_repeat` times. With `stop_at_request` k (0-based) the stop is set as request k arrives, and that request then fails (`request_at_stop: fails`, a transport fault) or answers. `stop_before` sets it before the run. Each k in `fail_requests` fails request k with a transport fault and no stop, which the condenser's model retries up to `context_model_attempts` tries; `malformed_request` k answers request k with a body that is not JSON, which is not retried, and `malformed_from_request` k answers request k and every later one so. `status_request` k answers request k with HTTP `status` (body `{\"error\": \"refused\"}`), and `status_from_request` k answers request k and every later one so: a status in `retried_statuses` is retried, any other is not (#646). `expected.requests` is how many requests reached the transport, every one carrying the case's `num_ctx` (the key absent when null); `expected.error` is the error kind, or null for a result; a `request_failed` states `expected.retryable`, whether a retry may cure it (#659: a transport fault or a status in `retried_statuses`), and no other case does; it states `expected.status` too, the HTTP status the server answered with, or null where none came or the answer was unreadable (#662). `fn: prepare` is `prepare` alone; `fn: prepared` is `prepare`, then `check_suitability_prepared` and `extract_prepared`; at this budget a 60-unit text takes four condensation requests (four batches whose digests fit merged). `expected.note` is null when the result carries no note, else substrings its one note contains: the status and the failed batch's cause (#658). A long paper whose every condensation batch fails is `request_failed` as a short paper's failed request is, with the `retryable` and `status` of its worst failed request: one no retry cures over one a retry may, and among equals the last (#616).",
   "stopped_kind": "stopped",
   "model": "ollama:test-model",
   "title": "A trial",
@@ -107,6 +107,36 @@
       "name": "an extraction request failing in transport is request_failed, which a retry may cure",
       "fn": "extract", "num_ctx": 8192, "text_repeat": 1, "fail_requests": [0],
       "expected": {"requests": 1, "error": "request_failed", "retryable": true, "status": null}
+    },
+    {
+      "name": "a long paper whose every condensation request is refused with HTTP 401 is request_failed, which no retry cures",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60, "status_from_request": 0, "status": 401,
+      "expected": {"requests": 4, "error": "request_failed", "retryable": false, "status": 401}
+    },
+    {
+      "name": "a long paper whose every condensation request is refused with HTTP 404 is request_failed, which no retry cures",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60, "status_from_request": 0, "status": 404,
+      "expected": {"requests": 4, "error": "request_failed", "retryable": false, "status": 404}
+    },
+    {
+      "name": "a long paper whose every condensation request is answered HTTP 503 is request_failed, which a retry may cure",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60, "status_from_request": 0, "status": 503,
+      "expected": {"requests": 12, "error": "request_failed", "retryable": true, "status": 503}
+    },
+    {
+      "name": "a long paper whose every condensation request fails in transport is request_failed, which a retry may cure",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60, "fail_requests": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      "expected": {"requests": 12, "error": "request_failed", "retryable": true, "status": null}
+    },
+    {
+      "name": "a long paper whose every condensation answer is not JSON is request_failed, which no retry cures, with no status",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60, "malformed_from_request": 0,
+      "expected": {"requests": 4, "error": "request_failed", "retryable": false, "status": null}
+    },
+    {
+      "name": "a long paper whose condensation is refused with HTTP 401 once and then fails in transport is request_failed by the refusal, the worst cause and not the last",
+      "fn": "prepare", "num_ctx": 8192, "text_repeat": 60, "status_request": 0, "status": 401, "fail_requests": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "expected": {"requests": 10, "error": "request_failed", "retryable": false, "status": 401}
     },
     {
       "name": "a stop before the run sends nothing",

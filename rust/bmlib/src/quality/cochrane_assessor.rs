@@ -52,7 +52,9 @@
 //! prompts were ported; [`LlmCondenser`] arrived later and the paragraph was not
 //! revisited.
 
-use crate::context_processor::llm_processor::{ContextModel, LlmChunkProcessor, PromptTemplates};
+use crate::context_processor::llm_processor::{
+    ContextModel, LlmChunkProcessor, ModelCallError, PromptTemplates, RequestFailure,
+};
 use crate::context_processor::{
     summarise_batch_errors, ProcessingConfig, ProcessingResult, ProcessingStatus,
 };
@@ -878,23 +880,27 @@ impl<'a> CochraneAssessor<'a> {
 ///
 /// # Errors
 ///
-/// The reason the digest was refused.
+/// Why the digest was refused.
 pub(crate) fn condense_checked(
     condenser: &mut dyn Condenser,
     text: &str,
     label: &str,
     config: &ProcessingConfig,
     stage: &str,
-) -> Result<(String, Vec<String>, ProcessingStatus), String> {
+) -> Result<(String, Vec<String>, ProcessingStatus), CondenseRefusal> {
     let result = condenser.condense(text, label, config);
 
     if result.status == ProcessingStatus::Failed {
         // Python interpolates the `Optional[str]`, so an absent message reads
         // `None` there too.
-        return Err(format!(
-            "the map-reduce failed: {}",
-            result.error_message.as_deref().unwrap_or("None")
-        ));
+        return Err(CondenseRefusal {
+            reason: format!(
+                "the map-reduce failed: {}",
+                result.error_message.as_deref().unwrap_or("None")
+            ),
+            // Python's `__cause__` (#616): a failed request failed the run.
+            request: worst_request(&result),
+        });
     }
 
     // Python's `str.strip()`, which also strips U+001C-U+001F; `str::trim`
@@ -903,7 +909,7 @@ pub(crate) fn condense_checked(
     if digest.is_empty() {
         // A prompt over an empty string returns a confident judgement of no
         // paper at all.
-        return Err("the map-reduce produced an empty digest".to_string());
+        return Err("the map-reduce produced an empty digest".into());
     }
 
     // `result.status` says how the harness's own run ended — `truncated`
@@ -923,7 +929,8 @@ pub(crate) fn condense_checked(
              (status: {})",
             config.max_context_chars,
             result.status.as_str()
-        ));
+        )
+        .into());
     }
 
     let mut notes: Vec<String> = Vec::new();
@@ -942,6 +949,50 @@ pub(crate) fn condense_checked(
         ));
     }
     Ok((digest, notes, result.status))
+}
+
+/// The failed request a failed run's refusal names (#616), worst first: one
+/// no retry cures, then one a retry may; among equals, the last. Python's
+/// `_failure_cause`, which ranks a bmlib defect above both; Rust has none.
+fn worst_request(result: &ProcessingResult) -> Option<RequestFailure> {
+    let mut worst: Option<RequestFailure> = None;
+    let requests = result
+        .batch_exceptions
+        .iter()
+        .chain(result.error.iter())
+        .filter_map(|error| error.downcast_ref::<ModelCallError>())
+        .map(|error| error.request);
+    for request in requests {
+        if !request.retryable || worst.is_none_or(|w| w.retryable) {
+            worst = Some(request);
+        }
+    }
+    worst
+}
+
+/// Why [`condense_checked`] refused a digest: Python's
+/// `CondensationRefusedError`.
+#[derive(Debug)]
+pub(crate) struct CondenseRefusal {
+    /// The refusal's message.
+    pub(crate) reason: String,
+    /// The request that failed the run, when one did (#616).
+    pub(crate) request: Option<RequestFailure>,
+}
+
+impl From<String> for CondenseRefusal {
+    fn from(reason: String) -> Self {
+        CondenseRefusal {
+            reason,
+            request: None,
+        }
+    }
+}
+
+impl From<&str> for CondenseRefusal {
+    fn from(reason: &str) -> Self {
+        reason.to_string().into()
+    }
 }
 
 /// Pick the Cochrane study label, without guessing a surname.

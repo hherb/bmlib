@@ -44,6 +44,7 @@ from bmlib.context_processor import (
     ConsolidationStrategy,
     ProgressInfo,
     summarise_batch_errors,      # (unreleased, #658) the distinct causes of failed batches
+    ModelCallError,              # (unreleased, #616) a batch whose model request failed
     # ProcessingConfig's defaults
     DEFAULT_MAX_CONTEXT_CHARS,
     DEFAULT_OVERLAP_CHARS,
@@ -274,6 +275,8 @@ result.final_result           # ExtractionResult
 result.content                # final_result.content
 result.status                 # ProcessingStatus
 result.error_message          # why, when the run failed
+result.error                  # (unreleased, #616) the exception it failed on, or None
+result.batch_exceptions       # (unreleased, #616) what each failed batch raised
 result.is_complete            # status is COMPLETED
 result.is_partial             # status is PARTIAL
 result.has_failures           # any failed batch or skipped item
@@ -293,6 +296,19 @@ Batch indices restart at each level, so a value in `failed_batches` can
 repeat in a run that recursed; likewise `skipped_items` above level 0
 indexes that level's consolidated items, not the caller's list.
 
+*(unreleased, #616)* `result.error` keeps what a FAILED run failed on, with
+its type, where `error_message` describes the failure: the
+`OversizedItemError` or unexpected error that stopped the harness, the
+failed batch's own exception under `continue_on_error=False` (not the
+harness's wrapper), or, when no batch of the last level produced a result,
+the last exception that level raised. It is `None` for every other status,
+and for a FAILED run no exception caused (every item of the last level
+skipped as oversized). `result.batch_exceptions` keeps what each failed
+batch raised, one per `batch_errors` entry and in the same order, since
+several batches can fail differently and the last is no more the cause than
+the first: an agent ranks them to tell a refused key or a bmlib defect from
+an outage, as on a request it sends itself.
+
 `summarise_batch_errors(result.batch_errors)` names each distinct cause
 once with its count, in first-seen order (`"2 batches failed: boom; 1 batch
 failed: timeout"`); a FAILED run's `error_message` ends with it in
@@ -308,13 +324,18 @@ could be built.
 | Status | Meaning |
 |--------|---------|
 | `COMPLETED` | Everything processed and consolidated |
-| `PARTIAL` | Some batches failed or items were skipped, but at least one batch succeeded |
+| `PARTIAL` | Some batches failed or items were skipped, but at least one batch of the last level succeeded |
 | `TRUNCATED` | The recursion ceiling was reached; the result is what fitted |
-| `FAILED` | Every batch failed, or `continue_on_error=False` and one did |
+| `FAILED` | No batch of the last level produced a result, or `continue_on_error=False` and a batch failed |
 
 `ProcessingStatus` also has `PENDING` and `IN_PROGRESS`; `process()` never
 returns either. A `TRUNCATED` run stays `TRUNCATED` even when batches also
 failed.
+
+*(unreleased, #616)* The last level decides: a run whose first level
+succeeded and whose every consolidation batch failed has no result, so it is
+`FAILED`, its `error_message` naming the level (`No batch produced a result
+at level 1: …`). It used to be `PARTIAL` with an empty result.
 
 Failures are reported on the result, not raised — including an unexpected
 error inside `format_item()`. Check the status; do not assume success.
@@ -359,8 +380,10 @@ Items are rendered under a one-line header — `[Chunk 1, score 0.87]` for a
 scored chunk, `[Item 1]` for a string, `[Consolidated level 0, item 1]` for
 a level above — and a scored chunk that has to be split keeps its score on
 every piece. A tuple whose score is a `bool` is not a scored chunk. A model
-call that fails is raised as `RuntimeError` and recorded against its batch,
-and so *(0.12.0)* is a prose reply cut at the output ceiling
+call that fails is raised as `RuntimeError` — *(unreleased, #616)* the
+subclass `ModelCallError`, chained (`__cause__`) to what the request raised —
+and recorded against its batch, and so *(0.12.0)* is a prose reply cut at the
+output ceiling, a plain `RuntimeError` chained to no request
 (`stop_reason` `"max_tokens"` or `"length"`, as `chat_json` reads them),
 since a truncated extraction has lost passages; prose extraction records
 confidence 0.9.
@@ -386,7 +409,10 @@ is no content, at confidence 0.0 and with no findings, logged at WARNING; a
 `null` used to be stored as the text `"None"` (#570). Empty content is
 dropped before consolidation. A non-empty `key_findings` list is kept on the result's metadata
 under `key_findings`. The call is `chat_json(require_dict=True)`, so a
-top-level array is retried, not accepted. Consolidation levels always use
+top-level array is retried, not accepted. *(unreleased, #616)* A reply
+`chat_json` refuses (truncated, or unusable after its re-asks) fails the
+batch as a plain `RuntimeError` chained to that `ChatJsonError`, not as a
+`ModelCallError`: no request failed, as in Rust. Consolidation levels always use
 prose: asking for JSON there would demand the model re-wrap a summary it was
 told to write as text.
 
