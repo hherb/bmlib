@@ -1,5 +1,5 @@
 {
-  "description": "What MuPDF reports while reading a damaged PDF, which Python's and Rust's extract_blocks_with_warnings both return (#599). Written by scripts/make_pdf_warnings_fixture.py.",
+  "description": "What MuPDF reports while reading a damaged PDF, which Python's and Rust's extract_blocks_with_warnings both return as engine_messages, apart from bmlib's own warnings, and a failed read's error carries (#599, #619). Written by scripts/make_pdf_warnings_fixture.py.",
   "lost_line": "Never reached.",
   "set_aside": [
     "found duplicate fz_icc_link in the store",
@@ -20,7 +20,8 @@
       "texts": [
         "Read before the damage."
       ],
-      "warnings": [
+      "warnings": [],
+      "engine_messages": [
         "format error: cannot recognize xref format",
         "trying to repair broken xref",
         "repairing PDF document"
@@ -32,7 +33,8 @@
       "texts": [
         "Read before the damage."
       ],
-      "warnings": [
+      "warnings": [],
+      "engine_messages": [
         "syntax error: syntax error in content stream",
         "syntax error: syntax error in content stream",
         "syntax error: syntax error in content stream",
@@ -165,7 +167,21 @@
         "here and ends.",
         "3"
       ],
-      "warnings": []
+      "warnings": [],
+      "engine_messages": []
+    }
+  ],
+  "failed": [
+    {
+      "pdf": "pdf_warnings_unreadable.pdf",
+      "pdf_sha256": "7995c48a40435ce6c7c6fd0ad614b9b1d3cdd68bec4dc836201936d134d45c05",
+      "kind": "unreadable",
+      "engine_messages": [
+        "syntax error: expected object number",
+        "format error: cannot find startxref",
+        "trying to repair broken xref",
+        "repairing PDF document"
+      ]
     }
   ]
 }

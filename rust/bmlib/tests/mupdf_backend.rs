@@ -175,6 +175,11 @@ fn a_pdf_with_no_title_has_none_beside_its_blocks() {
         .expect("extracts");
     assert_eq!(read.metadata_title, None);
     assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+    assert!(
+        read.engine_messages.is_empty(),
+        "{:?}",
+        read.engine_messages
+    );
     assert_eq!(read.blocks.len(), 1);
 }
 
@@ -441,7 +446,14 @@ fn a_deadline_stops_a_page_mid_run() {
     let error = MupdfExtractor::new()
         .page_texts_within(&path, &limit)
         .expect_err("stops");
-    assert_eq!(error, PdfError::timed_out());
+    // What MuPDF said before the stop rides along (#619); the stop is the same.
+    assert_eq!(
+        PdfError {
+            engine_messages: Vec::new(),
+            ..error
+        },
+        PdfError::timed_out()
+    );
     assert!(
         started.elapsed() < Duration::from_secs(1),
         "{:?}",
@@ -468,7 +480,14 @@ fn a_cancel_from_another_thread_stops_a_page_mid_run() {
         .extract_blocks_within(&path, &limit)
         .expect_err("stops");
     canceller.join().expect("joins");
-    assert_eq!(error, PdfError::cancelled());
+    // What MuPDF said before the stop rides along (#619); the stop is the same.
+    assert_eq!(
+        PdfError {
+            engine_messages: Vec::new(),
+            ..error
+        },
+        PdfError::cancelled()
+    );
     assert!(
         started.elapsed() < Duration::from_secs(1),
         "{:?}",

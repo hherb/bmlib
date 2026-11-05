@@ -401,6 +401,31 @@ fn a_failure_result_names_its_cause() {
     let text = failure.to_string();
     assert!(text.contains("FAILED"), "{text}");
     assert!(text.contains("incomplete"), "{text}");
+    assert!(failure.engine_messages.is_empty());
+}
+
+/// An error carries what the engine said before it, and a failure result
+/// built from it keeps the messages apart from bmlib's warnings (#619).
+#[test]
+fn a_failure_keeps_what_the_engine_said() {
+    let said = vec!["trying to repair broken xref".to_string()];
+    let error = PdfError::unreadable("no objects found").with_engine_messages(said.clone());
+    assert_eq!(error.kind, PdfErrorKind::Unreadable);
+    assert_eq!(error.message, "the PDF could not be read: no objects found");
+    assert_eq!(error.engine_messages, said);
+    // `Display` is the message alone, fit to show a user as before.
+    assert_eq!(error.to_string(), error.message);
+    let failure = ConversionResult::failure(error);
+    assert_eq!(failure.engine_messages, said);
+    assert!(failure.warnings.is_empty());
+    for fresh in [
+        PdfError::encrypted(),
+        PdfError::engine("x"),
+        PdfError::cancelled(),
+        PdfError::timed_out(),
+    ] {
+        assert!(fresh.engine_messages.is_empty(), "{fresh:?}");
+    }
 }
 
 /// A cancel outranks a passed deadline, and a limit with neither never stops

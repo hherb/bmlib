@@ -695,6 +695,19 @@ pub fn quote(value: &str, safe: &str) -> String {
 /// so nothing called the invented names out; they are `ValueError` now, which is
 /// what the fetcher layer measures for the same errors and what the corpus's
 /// `fetch/http-error` case pins for a malformed body.
+/// What the PDF engine said before a read failed, as a clause to end the
+/// failure's log line with (#619); empty when it said nothing.
+fn engine_said(engine_messages: &[String]) -> String {
+    if engine_messages.is_empty() {
+        return String::new();
+    }
+    format!(
+        " (the PDF engine reported {} message(s): {})",
+        engine_messages.len(),
+        engine_messages.join("; ")
+    )
+}
+
 fn fetch_error_name(error: &FetchError) -> &'static str {
     match error {
         FetchError::Transport(_) => "TransportError",
@@ -1166,7 +1179,7 @@ pub struct PdfText {
     pub char_count: usize,
     /// What the backend's engine reported while reading (#599): MuPDF's
     /// messages, the path replaced by "the file", for `MupdfPdfExtractor`.
-    pub warnings: Vec<String>,
+    pub engine_messages: Vec<String>,
 }
 
 impl PdfText {
@@ -2431,9 +2444,10 @@ impl FullTextService {
             }
             Err(PdfExtractError::Conversion(error)) => {
                 self.warn(format!(
-                    "PDF text extraction failed for {}: {}",
+                    "PDF text extraction failed for {}: {}{}",
                     pdf_path.display(),
-                    error.message
+                    error.message,
+                    engine_said(&error.engine_messages)
                 ));
                 result.pdf_extraction_failure = Some(error.kind.as_str().to_string());
             }
@@ -2452,13 +2466,13 @@ impl FullTextService {
                     // Not "likely a scan" when the engine said why: a page cut
                     // short after too many syntax errors also yields nothing,
                     // and its last message is the one that says so (#599).
-                    let cause = if conversion.warnings.is_empty() {
+                    let cause = if conversion.engine_messages.is_empty() {
                         "likely a scan; no warnings reported".to_string()
                     } else {
                         format!(
                             "the PDF engine reported {} message(s): {}",
-                            conversion.warnings.len(),
-                            conversion.warnings.join("; ")
+                            conversion.engine_messages.len(),
+                            conversion.engine_messages.join("; ")
                         )
                     };
                     self.warn(format!(
@@ -2477,12 +2491,12 @@ impl FullTextService {
                     ));
                 }
                 // Python's converter logs each of these itself (#599).
-                if !conversion.warnings.is_empty() {
+                if !conversion.engine_messages.is_empty() {
                     self.warn(format!(
                         "PDF {} read with {} message(s) from the PDF engine, so text may be missing: {}",
                         pdf_path.display(),
-                        conversion.warnings.len(),
-                        conversion.warnings.join("; ")
+                        conversion.engine_messages.len(),
+                        conversion.engine_messages.join("; ")
                     ));
                 }
                 result.html = Some(conversion.html);

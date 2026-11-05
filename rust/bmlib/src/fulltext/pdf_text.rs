@@ -477,14 +477,20 @@ impl PdfErrorKind {
 /// show a user.
 ///
 /// The message **never carries the path read**, which the caller knows and the
-/// user may never have chosen (a scratch copy, say); Python's
-/// `PDFExtractionError` is the same pair.
+/// user may never have chosen (a scratch copy, say). `engine_messages` is
+/// what the engine said before it failed (#619): MuPDF reports a broken xref
+/// it tried to repair, say, only as a message. Python's `PDFExtractionError`
+/// carries the same three.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PdfError {
     /// Which side the failure is on.
     pub kind: PdfErrorKind,
     /// What happened.
     pub message: String,
+    /// The engine's messages from the start of the read to the failure, in
+    /// order, the path replaced by "the file"; empty when it said nothing or
+    /// the failure was not a read's.
+    pub engine_messages: Vec<String>,
 }
 
 impl PdfError {
@@ -494,6 +500,7 @@ impl PdfError {
         PdfError {
             kind: PdfErrorKind::Encrypted,
             message: "the PDF is password-protected; remove the password and try again".to_string(),
+            engine_messages: Vec::new(),
         }
     }
 
@@ -503,6 +510,7 @@ impl PdfError {
         PdfError {
             kind: PdfErrorKind::Unreadable,
             message: format!("the PDF could not be read: {detail}"),
+            engine_messages: Vec::new(),
         }
     }
 
@@ -512,17 +520,28 @@ impl PdfError {
         PdfError {
             kind: PdfErrorKind::Engine,
             message: format!("the PDF engine failed: {detail}"),
+            engine_messages: Vec::new(),
         }
     }
 }
 
 impl PdfError {
+    /// This error, carrying what the engine said before it (#619).
+    #[must_use]
+    pub fn with_engine_messages(self, engine_messages: Vec<String>) -> Self {
+        PdfError {
+            engine_messages,
+            ..self
+        }
+    }
+
     /// The caller cancelled the extraction.
     #[must_use]
     pub fn cancelled() -> Self {
         PdfError {
             kind: PdfErrorKind::Cancelled,
             message: "the PDF extraction was cancelled".to_string(),
+            engine_messages: Vec::new(),
         }
     }
 
@@ -532,6 +551,7 @@ impl PdfError {
         PdfError {
             kind: PdfErrorKind::TimedOut,
             message: "the PDF extraction ran past its deadline".to_string(),
+            engine_messages: Vec::new(),
         }
     }
 }
@@ -638,8 +658,7 @@ pub trait PdfTextExtractor {
     ) -> Result<PdfBlocks, PdfError> {
         Ok(PdfBlocks {
             blocks: self.extract_blocks_within(path, limit)?,
-            warnings: Vec::new(),
-            metadata_title: None,
+            ..PdfBlocks::default()
         })
     }
 
@@ -670,20 +689,20 @@ pub trait PdfTextExtractor {
 
 /// A PDF's text blocks, and what the engine reported while reading them (#599).
 ///
-/// For MuPDF, `warnings` are its own messages, as it words them: a broken xref it
+/// For MuPDF, `engine_messages` are its own messages, as it words them: a broken xref it
 /// repaired, a content stream it stopped reading (`too many syntax errors;
 /// ignoring rest of page`), a font with bogus metrics. MuPDF reads past each
 /// without failing, so the blocks may be short of the page's text and only
-/// these say so. The path read is replaced by "the file". Python's
-/// `PDFBlocks` is the same pair. A backend that does not report keeps the
-/// trait's default, an empty list, which reads as nothing reported.
+/// these say so. The path read is replaced by "the file". `warnings` are
+/// bmlib's own notes, kept apart so a caller can tell what the engine said
+/// (#619). Python's `PDFBlocks` is the same. A backend that does not report
+/// keeps the trait's default, empty lists, which read as nothing reported.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PdfBlocks {
     /// One block per visual line, in the content stream's order (usually
     /// reading order, as Python's `extract_blocks` says).
     pub blocks: Vec<TextBlock>,
-    /// The engine's messages, in the order it reported them, then a `/Title`
-    /// that could not be read, if any.
+    /// bmlib's own notes: a `/Title` that could not be read, if any.
     pub warnings: Vec<String>,
     /// The PDF's own `/Title`, verbatim and unjudged; `None` when it has none
     /// (or it could not be read, which adds a warning). Pass it to
@@ -694,6 +713,8 @@ pub struct PdfBlocks {
     ///
     /// [`SectionSegmenter::segment_document`]: crate::fulltext::segmenter::SectionSegmenter::segment_document
     pub metadata_title: Option<String>,
+    /// The engine's messages, in the order it reported them.
+    pub engine_messages: Vec<String>,
 }
 
 /// What a conversion produced.
@@ -701,6 +722,7 @@ pub struct PdfBlocks {
 /// The fields are the Python dataclass's, in its order, and each added field is
 /// declared **after** the rest there (`title`, then `error_kind`) so positional
 /// construction stays stable through a change — kept here for the same reason.
+/// `warnings` are bmlib's notes, `engine_messages` the engine's (#619).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConversionResult {
     /// Whether the conversion ran at all.
@@ -715,7 +737,7 @@ pub struct ConversionResult {
     pub converted_pages: usize,
     /// How many characters the text holds.
     pub char_count: usize,
-    /// Anything the backend wanted to report without failing.
+    /// What bmlib noted without failing (a page with no text, say).
     pub warnings: Vec<String>,
     /// The backend's name.
     pub converter_name: String,
@@ -732,6 +754,8 @@ pub struct ConversionResult {
     pub title: Option<String>,
     /// Which side a failure is on; `None` when the conversion succeeded.
     pub error_kind: Option<PdfErrorKind>,
+    /// What the engine reported while reading, a failed read included.
+    pub engine_messages: Vec<String>,
 }
 
 impl Default for ConversionResult {
@@ -751,17 +775,20 @@ impl Default for ConversionResult {
             page_texts: Vec::new(),
             title: None,
             error_kind: None,
+            engine_messages: Vec::new(),
         }
     }
 }
 
 impl ConversionResult {
-    /// A failed conversion naming its cause and which side it is on.
+    /// A failed conversion naming its cause, which side it is on and what the
+    /// engine said before it.
     #[must_use]
     pub fn failure(error: PdfError) -> Self {
         ConversionResult {
             error_message: Some(error.message),
             error_kind: Some(error.kind),
+            engine_messages: error.engine_messages,
             ..ConversionResult::default()
         }
     }
