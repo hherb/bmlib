@@ -103,11 +103,12 @@ impl HttpClient for FakeOllama {
 }
 
 /// What one case ended in: each request's `num_ctx`, the error kind, a
-/// `request_failed`'s `retryable` (#659) and the result's notes.
+/// `request_failed`'s `retryable` (#659) and `status` (#662), and the
+/// result's notes.
 type Run = (
     Vec<Option<Value>>,
     Option<&'static str>,
-    Option<bool>,
+    Option<(bool, Option<u16>)>,
     Vec<String>,
 );
 
@@ -183,11 +184,13 @@ fn run(fixture: &Value, case: &Value) -> Run {
     match outcome {
         Ok(notes) => (sent, None, None, notes),
         Err(error) => {
-            let retryable = match &error {
-                PicoError::RequestFailed { retryable, .. } => Some(*retryable),
+            let failure = match &error {
+                PicoError::RequestFailed {
+                    retryable, status, ..
+                } => Some((*retryable, *status)),
                 _ => None,
             };
-            (sent, Some(error.kind()), retryable, Vec::new())
+            (sent, Some(error.kind()), failure, Vec::new())
         }
     }
 }
@@ -220,14 +223,21 @@ fn every_case_agrees_with_the_fixture() {
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("name");
-        let (sent, error, retryable, notes) = run(&fixture, case);
+        let (sent, error, failure, notes) = run(&fixture, case);
         let expected = &case["expected"];
         assert_eq!(error, expected["error"].as_str(), "{name}: the error kind");
         // Stated on every `request_failed` case, and on no other.
         assert_eq!(
-            retryable,
+            failure.map(|(retryable, _)| retryable),
             expected["retryable"].as_bool(),
             "{name}: retryable"
+        );
+        assert_eq!(
+            failure.map(|(_, status)| status),
+            expected
+                .get("status")
+                .map(|status| status.as_u64().map(|n| u16::try_from(n).expect("a u16"))),
+            "{name}: status"
         );
         assert_eq!(
             sent.len() as u64,

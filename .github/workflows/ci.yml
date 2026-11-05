@@ -305,6 +305,11 @@ jobs:
     name: Rust test (embed)
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      # A cold build links every test binary against llama.cpp; with full
+      # debug info that filled the runner's disk (ld: Bus error) and made the
+      # cache big enough to be evicted. Bump the cache key if this changes.
+      CARGO_PROFILE_DEV_DEBUG: "0"
     defaults:
       run:
         working-directory: rust
@@ -320,9 +325,9 @@ jobs:
             rust/target
           # llama-cpp-sys-2 compiles llama.cpp from source (cmake and a C++
           # compiler, both on the runner image), so this cache is most of the job.
-          key: ${{ runner.os }}-rust-embed-${{ hashFiles('rust/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-embed-nodebug-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-rust-embed-
+            ${{ runner.os }}-rust-embed-nodebug-
       - name: clippy (embed feature)
         # The default feature set does not compile `embed/embedder.rs` at all.
         run: cargo clippy --all-targets --features embed -- -D warnings

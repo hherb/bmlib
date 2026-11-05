@@ -85,17 +85,36 @@ class PicoError(Exception):
             failure, a timeout or an HTTP status a retry may cure (408, 429,
             500, 502, 503, 504, 529).  ``False`` for a 401, a 404, a reply
             that could not be read, and every other kind.
+        status: The HTTP status the server answered a ``REQUEST_FAILED``
+            request with (a 401 or 403 is a refused key, a 404 no such model),
+            ``None`` where no HTTP answer came, and for every other kind
+            (#662).
+
+    Raises:
+        ValueError: ``retryable`` or ``status`` given for a kind other than
+            ``REQUEST_FAILED``, which Rust's ``PicoError`` cannot express.
     """
 
-    def __init__(self, kind: PicoErrorKind, message: str, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        kind: PicoErrorKind,
+        message: str,
+        retryable: bool = False,
+        status: int | None = None,
+    ) -> None:
+        if kind is not PicoErrorKind.REQUEST_FAILED and (retryable or status is not None):
+            raise ValueError(
+                f"only a request_failed PicoError carries retryable or status, not {kind.value}"
+            )
         super().__init__(message)
         self.kind = kind
         self.retryable = retryable
+        self.status = status
 
     def __reduce__(self) -> tuple[Any, ...]:
         # Exception's default rebuilds with ``cls(*self.args)`` — here
         # ``PicoError(message)``, which lacks ``kind`` and raises TypeError.
-        return (type(self), (self.kind, str(self), self.retryable))
+        return (type(self), (self.kind, str(self), self.retryable, self.status))
 
 
 def _read(data: object, key: str, kinds: type | tuple[type, ...], *, nullable: bool = False) -> Any:

@@ -8,6 +8,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A PICO request failure carries the HTTP status** (#662, filed by
+  StudyAnalyzer's review, with the Rust crate). `PicoError` gains `status`:
+  the HTTP status the server answered a `REQUEST_FAILED` request with, `None`
+  where no HTTP answer came (a connection failure, a timeout), the answer was
+  unreadable, and for every other kind. #659's `retryable` said whether to
+  retry and not why it failed, so an app could not tell a refused key (401,
+  403) from no such model (404) without parsing the message.
+  `PicoError(kind, message, retryable=False, status=None)`; pickling keeps it.
+  A `retryable` or `status` given for any other kind raises `ValueError`,
+  as Rust's `PicoError` holds both on `RequestFailed` alone (PR #663's review).
+  It is read from the SDK exception's `status_code`, the field the
+  condenser's refusal rule already reads (`_http_status`, beside
+  `_is_refusal`). The shared `tests/fixtures/pico_stop_num_ctx.json` states
+  `expected.status` on every `request_failed` case.
+
 - **A streamed chat can be cancelled while it waits** (#635, filed by
   StudyAnalyzer). `chat_stream` could be stopped only from `on_delta`, which
   runs once text arrives, and a local server reads the whole prompt first: a

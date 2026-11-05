@@ -651,13 +651,22 @@ class TestTheSuitabilityCheck:
         assert "THE TAIL SENTENCE." in sent_user_message(agent)
 
     def test_a_pico_error_survives_pickling(self) -> None:
-        error = PicoError(PicoErrorKind.REQUEST_FAILED, "server down", retryable=True)
+        error = PicoError(PicoErrorKind.REQUEST_FAILED, "server down", retryable=True, status=503)
 
         copy = pickle.loads(pickle.dumps(error))
 
         assert copy.kind is PicoErrorKind.REQUEST_FAILED
         assert str(copy) == "server down"
         assert copy.retryable is True
+        assert copy.status == 503
+
+    @pytest.mark.parametrize("fields", [{"retryable": True}, {"status": 401}])
+    def test_only_a_request_failure_carries_retryable_or_status(
+        self, fields: dict[str, Any]
+    ) -> None:
+        # Rust's PicoError holds both on RequestFailed alone.
+        with pytest.raises(ValueError, match="only a request_failed"):
+            PicoError(PicoErrorKind.UNUSABLE_REPLY, "bad reply", **fields)
 
 
 def test_the_mean_is_a_plain_left_to_right_sum() -> None:
@@ -1094,12 +1103,12 @@ _ABSENT = "absent"
 
 def _contract_run(
     case: dict[str, Any],
-) -> tuple[list[Any], str | None, bool | None, Sequence[str]]:
+) -> tuple[list[Any], str | None, tuple[bool, int | None] | None, Sequence[str]]:
     """Run one contract case: the real agent, map-reduce, ``LLMClient`` and
     ollama-python over an ``httpx.MockTransport``, as Rust fakes the HTTP
     layer; returns each request's ``num_ctx`` (``_ABSENT`` for no key), the
-    error kind, a ``request_failed``'s ``retryable`` (#659) and the result's
-    notes."""
+    error kind, a ``request_failed``'s ``retryable`` (#659) and ``status``
+    (#662), and the result's notes."""
     httpx = pytest.importorskip("httpx")
     ollama = pytest.importorskip("ollama")
     stop = threading.Event()
@@ -1167,7 +1176,8 @@ def _contract_run(
                 result = agent.extract_prepared(prepared, min_similarity=similarity)
         except PicoError as exc:
             failed = exc.kind is PicoErrorKind.REQUEST_FAILED
-            return sent, exc.kind.value, exc.retryable if failed else None, ()
+            failure = (exc.retryable, exc.status) if failed else None
+            return sent, exc.kind.value, failure, ()
     return sent, None, None, result.notes
 
 
@@ -1188,11 +1198,15 @@ class TestTheStopAndNumCtxContract:
 
     @pytest.mark.parametrize("case", CONTRACT["cases"], ids=lambda case: case["name"])
     def test_a_case(self, case: dict[str, Any]) -> None:
-        sent, error, retryable, notes = _contract_run(case)
+        sent, error, failure, notes = _contract_run(case)
 
         assert error == case["expected"]["error"]
         # Stated on every ``request_failed`` case, and on no other.
-        assert retryable == case["expected"].get("retryable")
+        if failure is None:
+            assert "retryable" not in case["expected"]
+            assert "status" not in case["expected"]
+        else:
+            assert failure == (case["expected"]["retryable"], case["expected"]["status"])
         assert len(sent) == case["expected"]["requests"]
         expected = _ABSENT if case["num_ctx"] is None else case["num_ctx"]
         assert all(num_ctx == expected for num_ctx in sent)

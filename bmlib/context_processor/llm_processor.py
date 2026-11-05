@@ -97,16 +97,23 @@ _NOT_RETRIED: tuple[type[BaseException], ...] = (
 _RETRIED_STATUSES = frozenset({408, 429, 500, 502, 503, 504, 529})
 
 
-def _is_refusal(exc: BaseException) -> bool:
-    """Whether *exc* is an HTTP answer no retry changes (#646).
+def _http_status(exc: BaseException) -> int | None:
+    """The HTTP status *exc* reports the server answered with, or ``None``.
 
     Every built-in provider's SDK exception for an HTTP answer carries its
     ``status_code`` (``anthropic``/``openai`` ``APIStatusError``,
-    ``ollama.ResponseError``); a connection failure or timeout carries none
-    and stays retried.  ollama-python's ``-1`` (no HTTP status) is no refusal.
+    ``ollama.ResponseError``); a connection failure or timeout carries none.
+    ollama-python's ``-1`` means no HTTP status.
     """
     status = getattr(exc, "status_code", None)
-    return isinstance(status, int) and status >= 400 and status not in _RETRIED_STATUSES
+    return status if isinstance(status, int) and status >= 100 else None
+
+
+def _is_refusal(exc: BaseException) -> bool:
+    """Whether *exc* is an HTTP answer no retry changes (#646); no status is
+    no refusal, so a connection failure or timeout stays retried."""
+    status = _http_status(exc)
+    return status is not None and status >= 400 and status not in _RETRIED_STATUSES
 
 
 _T = TypeVar("_T")
