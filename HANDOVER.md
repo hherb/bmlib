@@ -25,7 +25,7 @@ parents typed with their subsections, 1 false heading (PMC9713001's bold
 "Method" column header). Derived partials moved 88 papers (body lines became
 headings); at 1.0, ~11 papers gained a table column header. Cost: a
 body-sized bold "Method"/"Result" stays text. `PDF_CANONICAL_VERSION` 7
-(`"pdf-7"`, 8 canonical texts move); nine oracle cases; Rust agrees on the
+(`"pdf-7"`, 8 canonical texts move); eleven oracle cases; Rust agrees on the
 36 papers carrying a variant name. **For StudyAnalyzer**: stored PDF chunk
 sets are stale (`"pdf-7"`), re-index on `StoreError::Stale`.
 

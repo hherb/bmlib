@@ -33,7 +33,7 @@ All notable changes to bmlib are documented here. The format is based on
   found, a body-sized "Result" or "Method" set apart only by bold or italic,
   which stays text. 8 canonical texts move, so `PDF_CANONICAL_VERSION` is 7
   (`"pdf-7"`). Rust agrees with Python on the 36 papers carrying a variant
-  name (the segmenter oracle run once over their blocks); nine oracle cases
+  name (the segmenter oracle run once over their blocks); eleven oracle cases
   hold both languages to the table.
 
 ### Added
