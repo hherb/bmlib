@@ -993,7 +993,7 @@ response = client.chat(
 | `ollama` | `/api/show`'s `model_info` (or `modelinfo`), the key `<general.architecture>.context_length` — the trained window, not `num_ctx` | connection errors and 5xx, with backoff |
 | `openai` | no request: `KNOWN_CONTEXT_WINDOWS` | — |
 
-A value that is not a positive integer up to `2**64 - 1` (a `bool`, a float, a string, zero) is unknown, logged at WARNING; an absent field is unknown at INFO. A 404 is `NoSuchModelError` — except from Ollama, where only a 404 whose error says "not found" is; any other (a base URL ending `/v1`, say) is a wrong address and a `ContextWindowError`. For DeepSeek it is a list with no entry for the model. Retries are up to three attempts in all, one second before the first retry and doubling; any other refusal is not retried, since it will not change on a second ask. A third-party provider inherits the default, which asks the table and makes no request.
+A value that is not a positive integer up to `2**64 - 1` (a `bool`, a float, a string, zero) is unknown, logged at WARNING; an absent field is unknown at INFO. A 404 is `NoSuchModelError` — except from Ollama, where only a 404 whose JSON `error` says "not found" is; any other (a base URL ending `/v1`, say, which Ollama answers with the plain-text `404 page not found`) is a wrong address and a `ContextWindowError`. For DeepSeek it is a list with no entry for the model. Retries are up to three attempts in all, one second before the first retry and doubling; any other refusal is not retried, since it will not change on a second ask. A third-party provider inherits the default, which asks the table and makes no request.
 
 ### `KNOWN_CONTEXT_WINDOWS` / `known_context_window`
 

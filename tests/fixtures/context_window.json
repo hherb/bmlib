@@ -1126,11 +1126,21 @@
         }
       },
       {
+        "name": "ollama 404 naming a missing model is no such model",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": 404,
+        "body": "{\"error\": \"model \\\"llama3.2\\\" not found, try pulling it first\"}",
+        "expect": {
+          "error": "no_such_model"
+        }
+      },
+      {
         "name": "ollama 404 not naming a missing model carries 404",
         "provider": "ollama",
         "model": "llama3.2",
         "status": 404,
-        "body": "<html>404 page</html>",
+        "body": "404 page not found",
         "expect": {
           "error": "transport",
           "status": 404

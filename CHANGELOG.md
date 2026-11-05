@@ -88,6 +88,17 @@ All notable changes to bmlib are documented here. The format is based on
   messages MuPDF gives first, the same on PyMuPDF's MuPDF 1.28.6 and
   `mupdf-sys`'s. `PDF_PINNED` is re-pinned without a version bump: the
   canonical PDF code reads neither list.
+- **Ollama's plain-text `404 page not found` is a wrong address, not a
+  missing model** (#667, found writing #664's fixture). Ollama answers an
+  unknown route (a base URL ending `/v1`, say) with that body, and
+  ollama-python falls back to the raw text for a body that is not JSON, so
+  `OllamaProvider.context_window` read its "not found" as
+  `NoSuchModelError`, telling the user to pull a model when the address was
+  wrong. Only a JSON body whose `error` says "not found" is a missing model
+  now, Rust's rule; the raw body is read off the `httpx.HTTPStatusError` the
+  SDK raises from. The shared `context_window.json` uses the real body and
+  gains a missing-model 404 for Ollama; Rust's code, which already read
+  both alike, is unchanged.
 
 - **A long paper's failed condensation request is the request's failure**
   (#616, with the Rust crate). `PicoAgent` condenses a text over its budget
