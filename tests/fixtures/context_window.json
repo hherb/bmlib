@@ -1147,6 +1147,28 @@
         }
       },
       {
+        "name": "ollama JSON 404 whose error does not say not found carries 404",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": 404,
+        "body": "{\"error\": \"no such route\"}",
+        "expect": {
+          "error": "transport",
+          "status": 404
+        }
+      },
+      {
+        "name": "ollama JSON 404 whose error is not a string carries 404",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "status": 404,
+        "body": "{\"error\": 5}",
+        "expect": {
+          "error": "transport",
+          "status": 404
+        }
+      },
+      {
         "name": "ollama 503, once retries are spent, carries 503",
         "provider": "ollama",
         "model": "llama3.2",

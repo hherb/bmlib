@@ -152,7 +152,9 @@ def _names_a_missing_model(exc: Any) -> bool:
     if isinstance(context, httpx.HTTPStatusError):
         try:
             error = json.loads(context.response.text).get("error")
-        except (ValueError, AttributeError):  # not JSON, or not an object
+        # Not JSON; or not an object, which today's SDK refuses first, its own
+        # ``.get`` raising AttributeError (#617's Ollama half).
+        except (ValueError, AttributeError):
             return False
         return isinstance(error, str) and MISSING_MODEL_PHRASE in error.lower()
     # shortcut: with no body on __context__ (another SDK version) only the
