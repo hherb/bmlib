@@ -123,6 +123,15 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **A failed context-window lookup carries the HTTP status** (#664, with the
+  Python library, filed by StudyAnalyzer's review):
+  `ContextWindowError::Transport(String)` is now `Transport { message,
+  status: Option<u16> }`, the status of the provider's answer (`None` where
+  no HTTP answer came), so an app can tell a refused key (401, 403) from an
+  outage before its first chat or PICO call to a model, as #662 let it for
+  PICO. A pattern `Transport(_)` breaks. The shared
+  `tests/fixtures/context_window.json` gains `refusals`, run over the
+  scripted transport.
 - **A long paper's failed condensation request is `RequestFailed`** (#616,
   with the Python library). The condenser's model reported a failure as a
   `String`, so on a long paper a 401, a 404 and an outage were all

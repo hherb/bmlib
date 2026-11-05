@@ -246,7 +246,10 @@ assert_eq!(known_context_window("openai", "gpt-4o-mini-2024-07-18"), None);
 
 `Ok(None)` means the provider answered and stated no usable window.
 `ContextWindowError::NoSuchModel` is a 404 that names the model (not from
-DeepSeek, and from Ollama only when its `error` says "not found"). Unlike
+DeepSeek, and from Ollama only when its `error` says "not found"). Any other
+failed request is `Transport { message, status }`, where `status` is the HTTP
+status of the answer (a 401 or 403 is a refused key), or `None` where none
+came (*unreleased, #664*). Unlike
 Python's `context_window(model, provider=None)`, a bare provider name asks
 about that provider's default model.
 

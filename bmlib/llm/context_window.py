@@ -32,6 +32,8 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
+from bmlib.llm.utils import http_status
+
 logger = logging.getLogger(__name__)
 
 KNOWN_CONTEXT_WINDOWS: Mapping[tuple[str, str], int] = {
@@ -85,13 +87,18 @@ class ContextWindowError(RuntimeError):
     """A context window could not be fetched or read.
 
     Carries the ``provider`` and ``model`` so a caller can report which lookup
-    failed without parsing the message.
+    failed without parsing the message, and ``status``: the HTTP status the
+    provider answered with (a 401 or 403 is a refused key), or ``None`` where
+    no HTTP answer came (#664; Rust's ``ContextWindowError::Transport``).
     """
 
-    def __init__(self, message: str, *, provider: str, model: str) -> None:
+    def __init__(
+        self, message: str, *, provider: str, model: str, status: int | None = None
+    ) -> None:
         super().__init__(message)
         self.provider = provider
         self.model = model
+        self.status = status
 
 
 class NoSuchModelError(ContextWindowError):
@@ -232,8 +239,9 @@ def fetch_context_window(
     ``fetch`` returns the body ``read_context_window`` takes. It is retried
     (see :func:`with_backoff`) only on ``retry_on``. A ``not_found`` exception
     becomes :class:`NoSuchModelError`; any other failure, once retries are
-    spent, becomes :class:`ContextWindowError` naming the provider and model.
-    Both are chained to the original. A :class:`ContextWindowError` raised by
+    spent, becomes :class:`ContextWindowError` naming the provider and model,
+    with the HTTP status of the answer, if one came. Both are chained to the
+    original. A :class:`ContextWindowError` raised by
     ``fetch`` itself passes through.
     """
     try:
@@ -245,9 +253,13 @@ def fetch_context_window(
             f"{provider} has no model {model!r}", provider=provider, model=model
         ) from exc
     except Exception as exc:
+        # An SDK error carries its status; httpx's HTTPStatusError (Gemini's
+        # retried statuses) carries it on its response.
+        status = http_status(exc) or http_status(getattr(exc, "response", None))
         raise ContextWindowError(
             f"could not fetch {provider}'s context window for {model!r}: {exc}",
             provider=provider,
             model=model,
+            status=status,
         ) from exc
     return read_context_window(provider, model, body)

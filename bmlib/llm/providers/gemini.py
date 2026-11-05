@@ -132,6 +132,7 @@ class GeminiProvider(OpenAICompatibleProvider):
                     f"gemini refused the lookup for {model!r}: HTTP {status}",
                     provider=self.PROVIDER_NAME,
                     model=model,
+                    status=status,
                 )
             return resp.json()
 

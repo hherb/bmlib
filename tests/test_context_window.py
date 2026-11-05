@@ -375,3 +375,63 @@ class TestOllamaLookup:
         with pytest.raises(ContextWindowError):
             q.context_window("m")
         assert q._client.calls == 1
+
+
+def _answering(case, lib=httpx):
+    """An httpx handler answering every request as a ``refusals`` case says:
+    HTTP ``status`` with ``body``, or, for a null status, no answer. ``lib`` is
+    the httpx the SDK uses (``httpx2`` for recent ``anthropic``)."""
+
+    def handle(request):
+        if case["status"] is None:
+            raise lib.ConnectError("connection refused", request=request)
+        return lib.Response(case["status"], content=case["body"].encode(), request=request)
+
+    return handle
+
+
+def _provider_over(case, monkeypatch):
+    """The case's provider with its own SDK client over a mock transport (the
+    SDK's own retries off), or, for Gemini, ``httpx.get`` sent through one."""
+    import anthropic
+    import ollama
+    import openai
+
+    http = httpx.Client(transport=httpx.MockTransport(_answering(case)))
+    name = case["provider"]
+    if name == "gemini":
+        monkeypatch.setattr(httpx, "get", lambda url, **kw: http.get(url, headers=kw["headers"]))
+        return GeminiProvider(api_key="k")
+    if name == "ollama":
+        provider = OllamaProvider()
+        provider._client = ollama.Client(
+            host="http://ollama.test", transport=httpx.MockTransport(_answering(case))
+        )
+        return provider
+    if name == "anthropic":
+        try:
+            import httpx2 as lib  # anthropic >= 2 refuses an httpx client
+        except ImportError:
+            lib = httpx
+        own = lib.Client(transport=lib.MockTransport(_answering(case, lib)))
+        provider = AnthropicProvider(api_key="k")
+        provider._client = anthropic.Anthropic(api_key="k", http_client=own, max_retries=0)
+        return provider
+    provider = {"mistral": MistralProvider, "deepseek": DeepSeekProvider}[name](api_key="k")
+    provider._client = openai.OpenAI(
+        api_key="k", base_url="http://provider.test/v1", http_client=http, max_retries=0
+    )
+    return provider
+
+
+@pytest.mark.parametrize("case", FIXTURE["refusals"]["cases"], ids=lambda c: c["name"])
+def test_refusal_cases(case, monkeypatch, _no_sleep):
+    """A failed lookup's error and HTTP status, as Rust reports them (#664)."""
+    provider = _provider_over(case, monkeypatch)
+    with pytest.raises(ContextWindowError) as ei:
+        provider.context_window(case["model"])
+    if case["expect"]["error"] == "no_such_model":
+        assert isinstance(ei.value, NoSuchModelError)
+    else:
+        assert not isinstance(ei.value, NoSuchModelError)
+        assert ei.value.status == case["expect"]["status"]

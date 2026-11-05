@@ -65,6 +65,7 @@ from bmlib.llm.stream import (
     refuse_tools,
     sdk_events,
 )
+from bmlib.llm.utils import http_status
 
 logger = logging.getLogger(__name__)
 
@@ -433,6 +434,7 @@ class OllamaProvider(BaseProvider):
                         f"ollama refused the lookup for {model!r}: {exc}",
                         provider=self.PROVIDER_NAME,
                         model=model,
+                        status=http_status(exc),
                     ) from exc
                 raise
 

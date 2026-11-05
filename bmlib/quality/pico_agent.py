@@ -61,10 +61,10 @@ from bmlib.agents.base import (
 )
 from bmlib.citations import find_passage
 from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError
-from bmlib.context_processor.llm_processor import _http_status
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.llm.stream import Stop, stop_reader
+from bmlib.llm.utils import http_status
 from bmlib.quality._condense import (
     CondensationRefusedError,
     condense_text,
@@ -882,5 +882,5 @@ def _request_error(exc: Exception) -> PicoError:
 def _request_failed(exc: BaseException, message: str) -> PicoError:
     """``REQUEST_FAILED`` for a request that raised *exc*, saying *message*."""
     return PicoError(
-        PicoErrorKind.REQUEST_FAILED, message, is_retryable_request(exc), _http_status(exc)
+        PicoErrorKind.REQUEST_FAILED, message, is_retryable_request(exc), http_status(exc)
     )
