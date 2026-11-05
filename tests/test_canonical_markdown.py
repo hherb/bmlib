@@ -101,12 +101,26 @@ def test_a_backtick_in_a_backtick_info_string_is_no_fence() -> None:
         "[" * 60_000 + "]",
         "[a](" * 20_000,
         "[a](" * 10_000 + "x" + " " * 10_000 + "y" + ")" * 10_000,
+        "<" * 60_000 + ">",
+        "<http://a" * 9_000 + " >",
+        " ".join("`" * k for k in range(1, 400)),
     ],
-    ids=["emphasis", "bracket", "brackets-one-close", "link-targets", "nested-targets"],
+    ids=[
+        "emphasis",
+        "bracket",
+        "brackets-one-close",
+        "link-targets",
+        "nested-targets",
+        "angles",
+        "autolinks",
+        "code-span-runs",
+    ],
 )
 def test_unclosed_openers_cost_linear_time(text: str) -> None:
     # #549: each opener rescanned the paragraph; the emphasis shape took ~61 s
     # at this size and takes ~0.03 s, so the ceiling is a wide margin both ways.
+    # The autolink shape took ~15 s, and each backtick run of a new length
+    # rescanned to the end.
     started = time.perf_counter()
     strip_inline(text)
     assert time.perf_counter() - started < 2.0

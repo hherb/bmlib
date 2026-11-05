@@ -33,10 +33,10 @@ the two cannot drift apart through two different parsers. Line by line:
   backticks or tildes) is one block whose inline markup is not stripped; its
   lines and indentation collapse to single spaces like any paragraph's. A
   backtick fence's info string may not hold a backtick, so a line opening with
-  three backticks and holding another backtick is text (a code span). A fence
-  opened inside a blockquote has its lines' ``>`` stripped and ends where the
-  blockquote does, at a line without them, as in CommonMark. A thematic break
-  (``---``, ``***``, ``___``) is dropped.
+  three or more backticks and holding another is read as inline text. A fence
+  opened under *n* blockquote markers has up to *n* stripped from each line and
+  ends at a line carrying fewer, which is then read as an ordinary line, as in
+  CommonMark. A thematic break (``---``, ``***``, ``___``) is dropped.
 * A line starting with ``|`` is a table row; the delimiter row
   (``|---|:--:|``) right after a table's first row is dropped, and ``\\|``
   is a pipe inside a cell.
@@ -52,9 +52,10 @@ the two cannot drift apart through two different parsers. Line by line:
   ``markdown.rs``). A link's target may hold balanced parentheses
   (``doi.org/…(20)…``) and its text escaped brackets; a target holding
   whitespace is a link only as ``url "title"``, so a parenthetical after a
-  bracket stays text. Anything else, HTML included, is text. A paragraph is
-  read for link brackets once, and for an emphasis closer once per delimiter
-  and run length that finds none, so unclosed openers cost linear time (#549).
+  bracket stays text. Anything else, HTML included, is text. Each text
+  :func:`strip_inline` reads is indexed once for code spans, links and
+  autolinks, and scanned for an emphasis closer once per delimiter and run
+  length that finds none, so no unclosed opener costs quadratic time (#549).
 * Whitespace is Unicode ``White_Space`` (:func:`is_white_space`), never
   ``str.isspace()``, so U+001C to U+001F stay characters as in the Rust port.
 * Content before the first heading is an untitled level-1 section.
@@ -127,7 +128,7 @@ def strip_inline(text: str) -> str:
     out: list[str] = []
     # Emphasis openers already known to have no closer, by delimiter and run (#549).
     unclosed: set[tuple[str, int]] = set()
-    links: _LinkIndex | None = None
+    index: _InlineIndex | None = None
     i, n = 0, len(text)
     while i < n:
         ch = text[i]
@@ -137,23 +138,25 @@ def strip_inline(text: str) -> str:
             continue
         if ch == "`":
             run = _run_length(text, i)
-            close = _find_run(text, i + run, run)
+            index = index or _inline_index(text)
+            close = _first_at(index.runs.get(run, []), i + run)
             out.append(text[i + run : close] if close >= 0 else text[i : i + run])
             i = close + run if close >= 0 else i + run
             continue
         if ch == "[" or (ch == "!" and text.startswith("[", i + 1)):
-            if links is None:
-                links = _link_index(text)
-            link = _link_at(text, i + 1 if ch == "!" else i, links)
+            index = index or _inline_index(text)
+            link = _link_at(text, i + 1 if ch == "!" else i, index)
             if link is not None:
                 label, i = link
                 out.append(strip_inline(label))
                 continue
-        if ch == "<":
-            close = text.find(">", i + 1)
-            inner = text[i + 1 : close] if close > 0 else ""
-            if inner.startswith(_AUTOLINK_SCHEMES) and not any(map(is_white_space, inner)):
-                out.append(inner)
+        if ch == "<" and text.startswith(_AUTOLINK_SCHEMES, i + 1):
+            index = index or _inline_index(text)
+            # The address runs to the next ``>`` and may hold no whitespace.
+            close = _first_at(index.angles, i + 1)
+            space = _first_at(index.spaces, i + 1)
+            if close >= 0 and not 0 <= space < close:
+                out.append(text[i + 1 : close])
                 i = close + 1
                 continue
         if ch in _EMPHASIS:
@@ -171,38 +174,32 @@ def strip_inline(text: str) -> str:
     return "".join(out)
 
 
-def _find_run(text: str, start: int, run: int) -> int:
-    """The index of the first run of exactly *run* backticks at or after *start*, or -1."""
-    i = start
-    while i < len(text):
-        if text[i] != "`":
-            i += 1
-            continue
-        length = _run_length(text, i)
-        if length == run:
-            return i
-        i += length
-    return -1
-
-
-class _LinkIndex(NamedTuple):
-    """What finding a link in one text needs, read once so no scan repeats (#549)."""
+class _InlineIndex(NamedTuple):
+    """What one :func:`strip_inline` call needs, read once so no scan repeats (#549)."""
 
     #: Every unescaped ``]``, in order.
     closes: list[int]
     #: Each unescaped ``(``'s balancing ``)``.
     parens: dict[int, int]
-    #: Every :func:`is_white_space` index, and every other index, in order.
+    #: Every :func:`is_white_space` index, in order.
     spaces: list[int]
+    #: Every other index, in order.
     solid: list[int]
+    #: Every ``>``, escaped or not (an autolink ignores escapes), in order.
+    angles: list[int]
+    #: Where each whole backtick run starts, by its length, in order. A code
+    #: span's closer search starts after its opener's whole run, so it meets
+    #: only whole runs, and backslashes do not escape inside it.
+    runs: dict[int, list[int]]
 
 
-def _link_index(text: str) -> _LinkIndex:
-    """The :class:`_LinkIndex` of *text*.
+def _inline_index(text: str) -> _InlineIndex:
+    """The :class:`_InlineIndex` of *text*.
 
     A backslash escapes the character after it. A link's scans start just
-    after a ``[`` or a ``]``, never inside an escape, so one pass from the
-    start reads every escape as they would.
+    after a ``[`` or a ``]``, and neither is a backslash, so the character a
+    scan starts at is never the one an escape takes: one pass from the start
+    reads every escape as each scan would.
     """
     closes: list[int] = []
     parens: dict[int, int] = {}
@@ -222,9 +219,15 @@ def _link_index(text: str) -> _LinkIndex:
         i += 1
     spaces: list[int] = []
     solid: list[int] = []
+    angles: list[int] = []
+    runs: dict[int, list[int]] = {}
     for i, ch in enumerate(text):
         (spaces if is_white_space(ch) else solid).append(i)
-    return _LinkIndex(closes, parens, spaces, solid)
+        if ch == ">":
+            angles.append(i)
+        elif ch == "`" and (i == 0 or text[i - 1] != "`"):
+            runs.setdefault(_run_length(text, i), []).append(i)
+    return _InlineIndex(closes, parens, spaces, solid, angles, runs)
 
 
 def _first_at(indices: list[int], start: int) -> int:
@@ -233,7 +236,7 @@ def _first_at(indices: list[int], start: int) -> int:
     return indices[at] if at < len(indices) else -1
 
 
-def _is_link_target(index: _LinkIndex, text: str, start: int, end: int) -> bool:
+def _is_link_target(index: _InlineIndex, text: str, start: int, end: int) -> bool:
     """Whether ``text[start:end]`` is a link destination: no whitespace, or ``url "title"``."""
     first = _first_at(index.solid, start)
     if first < 0 or first >= end:
@@ -246,12 +249,12 @@ def _is_link_target(index: _LinkIndex, text: str, start: int, end: int) -> bool:
     return title < last and text[title] in "\"'" and text[last] == text[title]
 
 
-def _link_at(text: str, start: int, index: _LinkIndex) -> tuple[str, int] | None:
+def _link_at(text: str, start: int, index: _InlineIndex) -> tuple[str, int] | None:
     """The label of a ``[label](target)`` starting at *start*, and the index after it.
 
     The label ends at the first unescaped ``]``; the target at the ``)`` that
     balances its opening one, skipping escaped parentheses, and must pass
-    :func:`_is_link_target`. *index* is *text*'s :func:`_link_index`.
+    :func:`_is_link_target`. *index* is *text*'s :func:`_inline_index`.
     """
     close = _first_at(index.closes, start + 1)
     end = index.parens.get(close + 1) if close >= 0 else None
@@ -350,8 +353,8 @@ class _Converter:
         self.item: str | None = None  # the open list item's marker: "bullet" or "number"
         self.table_rows = 0
         self.seen_content = False
-        self.fence: str | None = None
-        self.fence_quotes = 0  # the blockquote depth the open fence sits at
+        # The open fence's marker run and the blockquote depth it sits at.
+        self.fence: tuple[str, int] | None = None
         self.fence_lines: list[str] = []
 
     def block(self, draft: BlockDraft) -> None:
@@ -385,16 +388,13 @@ class _Converter:
         """Read one line."""
         quotes = 0
         if self.fence is not None:
-            while quotes < self.fence_quotes and _QUOTE.match(line):
+            marks, depth = self.fence
+            while quotes < depth and _QUOTE.match(line):
                 line = _QUOTE.sub("", line, count=1)
                 quotes += 1
-            if quotes == self.fence_quotes:
+            if quotes == depth:
                 stripped = _strip(line)
-                if (
-                    stripped
-                    and stripped == self.fence[0] * len(stripped)
-                    and len(stripped) >= len(self.fence)
-                ):
+                if stripped == marks[0] * len(stripped) and len(stripped) >= len(marks):
                     self.close_fence()
                 else:
                     self.fence_lines.append(line)
@@ -410,7 +410,7 @@ class _Converter:
         # A backtick fence's info string may not hold a backtick (CommonMark).
         if fence and not (fence.group(1)[0] == "`" and "`" in line[fence.end() :]):
             self.flush()
-            self.fence, self.fence_quotes = fence.group(1), quotes
+            self.fence = (fence.group(1), quotes)
             return
         if not normalise_whitespace(line):
             self.flush()

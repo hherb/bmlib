@@ -1925,7 +1925,7 @@
       }
     },
     {
-      "name": "markdown/unclosed-openers",
+      "name": "markdown/openers-some-unclosed",
       "format": "markdown",
       "input": "(_a (_a *b **c [d [e](f g) [h](i) (_j_)",
       "expected": {
@@ -1941,6 +1941,194 @@
                 "span": {
                   "start": 0,
                   "end": 32
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-2"
+      }
+    },
+    {
+      "name": "markdown/emphasis-memo-keys",
+      "format": "markdown",
+      "input": "*a **b**\n\n*a _b_\n\nx *a **b** c",
+      "expected": {
+        "text": "*a b\n\n*a b\n\nx *a b c",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 4
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 6,
+                  "end": 10
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 12,
+                  "end": 20
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-2"
+      }
+    },
+    {
+      "name": "markdown/link-target-edges",
+      "format": "markdown",
+      "input": "[a](x \")\n\n[a](x \"t')\n\n[a](x  \"t\")\n\n![](img.png) z\n\n[](x) y",
+      "expected": {
+        "text": "[a](x \")\n\n[a](x \"t')\n\na\n\nz\n\ny",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 8
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 10,
+                  "end": 20
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 22,
+                  "end": 23
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 25,
+                  "end": 26
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 28,
+                  "end": 29
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-2"
+      }
+    },
+    {
+      "name": "markdown/autolinks-and-code-spans",
+      "format": "markdown",
+      "input": "<http://a b> <https://x.org/y> <mailto:a@b> <ftp://c>\n\n<http://a<http://b> <http://c\n\n<http://a > <http://d\\>e> f\n\n`` a ` b `` c ``` d ` e",
+      "expected": {
+        "text": "<http://a b> https://x.org/y mailto:a@b <ftp://c>\n\nhttp://a<http://b <http://c\n\n<http://a > http://d\\e> f\n\na ` b c ``` d ` e",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 49
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 51,
+                  "end": 78
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 80,
+                  "end": 105
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 107,
+                  "end": 124
+                }
+              }
+            ]
+          }
+        ],
+        "source_format": "markdown",
+        "converter_version": "markdown-2"
+      }
+    },
+    {
+      "name": "markdown/fence-reopened-where-a-deeper-one-ends",
+      "format": "markdown",
+      "input": "> > ```\n> > a\n> ```\n> b\nc\n\n> ```\n> > x\n> ```",
+      "expected": {
+        "text": "a\n\nb\n\nc\n\n> x",
+        "title_span": null,
+        "sections": [
+          {
+            "level": 1,
+            "heading_span": null,
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 0,
+                  "end": 1
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 3,
+                  "end": 4
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 6,
+                  "end": 7
+                }
+              },
+              {
+                "kind": "paragraph",
+                "span": {
+                  "start": 9,
+                  "end": 12
                 }
               }
             ]

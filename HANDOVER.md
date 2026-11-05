@@ -14,20 +14,25 @@ summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
 #629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668, #670-#672 and this session's._
 
-## This session: a quoted fence closes, unclosed openers cost linear time (#548, #549)
+## This session: a quoted fence closes, no unclosed opener costs quadratic time (#548, #549)
 
 Both from PR #547's review, both languages, no decision needed.
-`canonical_from_markdown` now strips a quoted fence's `>` markers and ends
-the fence with its quote, and a backtick fence whose info string holds a
-backtick is a code span (#548). `strip_inline` rescanned the paragraph per
-unclosed emphasis opener and per `[` (80 kB of `(_a `: ~61 s; `[` × 15,000:
-5.8 s); an opener finding no closer now marks its delimiter and run unclosed
-for the walk, and a text's brackets, parentheses and whitespace are indexed
-once, so every shape tried is linear (#549). The inline rewrite is **exact**:
-0 differences from `main` over 300,000 fuzzed strings and 100,000 fuzzed
-documents without fences or quotes (scratch fuzzer, not committed).
-`MARKDOWN_VERSION` 2 (`"markdown-2"`); four new contract cases; a wall-clock
-test with a wide margin per language. **For StudyAnalyzer**: stored Markdown
+`canonical_from_markdown` now strips up to a quoted fence's depth of `>`
+markers per line and ends the fence at a line carrying fewer, and a line
+opening a backtick fence whose info string holds a backtick is inline text
+(#548). `strip_inline` rescanned the text per unclosed emphasis opener, per
+`[`, per autolink `<` and per backtick run of a new length (80 kB of `(_a `:
+~61 s; 81 kB of `<http://a`: 10.6 s; 981 kB of backtick runs: 44 s); an
+opener finding no closer now marks its delimiter and run unclosed for the
+walk, and one `_InlineIndex` per call holds brackets, parentheses,
+whitespace, `>` and backtick runs (#549). **PR #675's review** found the
+autolink and code-span scans still quadratic, and seven inline mutants and
+one fence mutant unpinned; all fixed, with eight contract cases and eight
+wall-clock shapes per language. The inline rewrite is **exact**: 0
+differences from `main` over 300,000 fuzzed strings, and every fuzzed
+document that reads differently holds a quoted fence or a backtick-info
+fence (scratch fuzzers, not committed). `MARKDOWN_VERSION` 2
+(`"markdown-2"`). **For StudyAnalyzer**: stored Markdown
 chunk sets are stale (`"markdown-2"`), re-index on `StoreError::Stale`.
 
 ## Earlier, 2026-11-05: "Method", "Result", "Discussions", "Experimental" are headings (#636, PR #672, merged)
@@ -278,7 +283,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,309 passing + 165 skipped** on `fix/548-549-markdown-fences`
+- **Tests: 9,320 passing + 165 skipped** on `fix/548-549-markdown-fences`
   (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,577 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
