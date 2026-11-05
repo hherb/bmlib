@@ -21,7 +21,11 @@ when the body is not JSON). `_names_a_missing_model` now applies Rust's rule
 `httpx.HTTPStatusError` the SDK raises `from None` (still `__context__`);
 with no such context it falls back to the old phrase test (a `shortcut:`
 comment). `context_window.json`'s Ollama 404 uses the real body and a
-missing-model 404 case is added; Rust passes both unchanged.
+missing-model 404 case is added; Rust passes both unchanged. PR #669's
+review added two JSON 404s that are not a missing model (an `error` not
+saying "not found", and a non-string one), each killing a mutant that
+survived; the `AttributeError` guard is reached by no current SDK, whose own
+`ResponseError` raises first on a non-object JSON body (#617's Ollama half).
 
 ## Earlier, 2026-11-05: a failed context-window lookup carries the HTTP status (#664, PR #668, merged)
 
