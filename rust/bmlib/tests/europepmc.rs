@@ -60,13 +60,13 @@ fn every_field_of_the_measured_record() {
     assert_eq!(record.license.as_deref(), Some("cc by"));
     assert_eq!(record.extras.get("ppr_id"), Some(&json!("PPR1325930")));
     assert_eq!(
-        record.fulltext_sources,
-        [json!({
+        serde_json::to_value(&record.fulltext_sources).expect("serialises"),
+        json!([{
             "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PPR1325930/fullTextXML",
             "format": "xml",
             "source": "europepmc",
             "open_access": true,
-        })]
+        }])
     );
     assert!(record
         .abstract_text
@@ -85,7 +85,7 @@ fn a_pmcid_is_the_address_when_there_is_one() {
     let record = normalize(&with("pmcid", json!("PMC7745181"))).expect("an object");
     assert_eq!(record.pmc_id.as_deref(), Some("PMC7745181"));
     assert_eq!(
-        record.fulltext_sources[0]["url"],
+        record.fulltext_sources[0].url,
         "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7745181/fullTextXML"
     );
 }

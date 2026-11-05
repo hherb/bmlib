@@ -21,6 +21,26 @@ The Python library is documented separately, in the repository's
   `MARKDOWN_VERSION` is 2 (`"markdown-2"`); the Python CHANGELOG has the
   measurement.
 
+- **A fetched record's full-text sources are typed** (#624, found wiring
+  StudyAnalyzer's lookup). `FetchedRecord.fulltext_sources` held
+  `serde_json::Value`s under the name `publications::FullTextSourceEntry`,
+  while `FullTextRequest.fulltext_sources` takes `fulltext`'s struct, so a
+  caller handing `lookup_record`'s record to `fetch_fulltext` had to
+  deserialise each entry and decide what to do with one that did not read.
+  Python's fetchers already build `bmlib.fulltext.models.FullTextSourceEntry`.
+  **Breaking**: `publications::FullTextSourceEntry` is now a re-export of
+  `fulltext::FullTextSourceEntry`; the PubMed, bioRxiv, Europe PMC and OpenAlex
+  fetchers build it, and `lookup_record`'s merge and `record_to_fulltext_sources`
+  read its fields. Code indexing an entry as JSON (`entry["url"]`) reads the
+  field. The struct leaves `version` out of its JSON when unset or empty, as
+  Python's `to_dict` does, so a record serialises as before. `record_to_fulltext_sources`
+  skips an entry whose `url` is empty, as Python's does (a missing `url` was
+  skipped before; an empty one was stored). Shared fixture:
+  `tests/fixtures/fulltext_source_entry.json` (an entry read and written back,
+  and one without `url`, `format` or `source` refused), run by
+  `tests/fulltext_source_entry_contract.rs` and Python's
+  `tests/test_fulltext_source_entry_contract.py`.
+
 - **"Method", "Result", "Discussions" and "Experimental" are section
   headings** (#636, with the Python library). `segmenter::VARIANT_PATTERNS`
   (exported) holds them, matched by `match_section_type` only as the whole

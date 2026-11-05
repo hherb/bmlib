@@ -44,6 +44,13 @@ All notable changes to bmlib are documented here. The format is based on
   `tests/fixtures/canonical_text.json` hold both languages to the rules,
   among them the inputs a mutation sweep found unpinned.
 
+- **`FullTextSourceEntry`'s JSON is a shared contract** (#624, with the Rust
+  crate, whose fetched records now hold the typed entry Python's fetchers
+  already build). `tests/fixtures/fulltext_source_entry.json` pins
+  `from_dict`/`to_dict`: `version` left out when unset or empty, `open_access`
+  true by default, an entry without `url`, `format` or `source` refused
+  (`KeyError`). No change to the Python library.
+
 - **"Method", "Result", "Discussions" and "Experimental" are section
   headings** (#636, with the Rust crate). The PDF segmenter's pattern table
   named only "Methods", "Results", "Discussion" and "Experimental

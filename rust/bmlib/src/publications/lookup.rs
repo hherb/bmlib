@@ -532,7 +532,7 @@ fn assemble(
     let mut seen: Vec<String> = record
         .fulltext_sources
         .iter()
-        .filter_map(|e| e.get("url").and_then(Value::as_str).map(str::to_string))
+        .map(|e| e.url.clone())
         .collect();
     for other in others {
         let mut other = other.clone();
@@ -544,9 +544,8 @@ fn assemble(
             }
         }
         for entry in &other.fulltext_sources {
-            let url = entry.get("url").and_then(Value::as_str).unwrap_or_default();
-            if !seen.iter().any(|s| s == url) {
-                seen.push(url.to_string());
+            if !seen.contains(&entry.url) {
+                seen.push(entry.url.clone());
                 record.fulltext_sources.push(entry.clone());
             }
         }
@@ -647,7 +646,7 @@ pub fn lookup_record(
             preprint.pmc_id = None;
             preprint
                 .fulltext_sources
-                .retain(|e| e.get("version").and_then(Value::as_str) == Some("preprint"));
+                .retain(|e| e.version.as_deref() == Some("preprint"));
             epmc.clone().into_iter().chain([preprint]).collect()
         }
         _ => {

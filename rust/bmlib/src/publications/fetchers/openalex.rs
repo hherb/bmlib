@@ -55,7 +55,7 @@ use crate::publications::fetchers::reconcile::reconcile_delivery;
 use crate::publications::fetchers::registry::{
     CountingSink, FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, HttpClient, Progress,
 };
-use crate::publications::models::FetchedRecord;
+use crate::publications::models::{FetchedRecord, FullTextSourceEntry};
 use crate::pyvalue::json_type_name;
 
 /// The OpenAlex works endpoint.
@@ -217,7 +217,7 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
     let publication_types: Vec<String> = text(raw, "type").into_iter().collect();
 
     // Full-text sources, one or two per location.
-    let mut fulltext_sources: Vec<Value> = Vec::new();
+    let mut fulltext_sources: Vec<FullTextSourceEntry> = Vec::new();
     if let Some(locations) = raw.get("locations").and_then(Value::as_array) {
         for location in locations {
             let loc_source = nested(location, "source")
@@ -235,18 +235,13 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
                 .unwrap_or(false);
 
             let mut entry = |url: String, format: &str| {
-                let mut source = serde_json::json!({
-                    "url": url,
-                    "format": format,
-                    "source": loc_source,
-                    "open_access": loc_is_oa,
+                fulltext_sources.push(FullTextSourceEntry {
+                    url,
+                    format: format.to_string(),
+                    source: loc_source.clone(),
+                    open_access: loc_is_oa,
+                    version: version.clone(),
                 });
-                // Python's `FullTextSourceEntry.to_dict` omits `version` when it
-                // is unset, so an absent version is an absent key.
-                if let Some(version) = version.as_ref() {
-                    source["version"] = serde_json::json!(version);
-                }
-                fulltext_sources.push(source);
             };
 
             if let Some(landing) = text(location, "landing_page_url") {
