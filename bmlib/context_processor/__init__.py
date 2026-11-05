@@ -67,6 +67,7 @@ if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
         DEFAULT_EXTRACTION_PROMPT,
         STRUCTURED_EXTRACTION_PROMPT,
         LLMChunkProcessor,
+        ModelCallError,
         ScoredChunk,
     )
 
@@ -77,6 +78,7 @@ _LAZY_EXPORTS = frozenset(
         "DEFAULT_EXTRACTION_PROMPT",
         "STRUCTURED_EXTRACTION_PROMPT",
         "LLMChunkProcessor",
+        "ModelCallError",
         "ScoredChunk",
     }
 )
@@ -129,6 +131,7 @@ __all__ = [
     "ExtractionResult",
     "IterativeContextProcessor",
     "LLMChunkProcessor",
+    "ModelCallError",
     "OversizedItemError",
     "OversizedItemStrategy",
     "ProcessingConfig",

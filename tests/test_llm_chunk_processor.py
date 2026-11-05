@@ -26,10 +26,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents import ChatJsonTruncatedError
 from bmlib.agents.base import BaseAgent, ChatStoppedError
 from bmlib.context_processor import (
     ConsolidatedItem,
     LLMChunkProcessor,
+    ModelCallError,
     ProcessingConfig,
     ProcessingStatus,
     ProcessingStoppedError,
@@ -219,6 +221,28 @@ class TestExtraction:
         assert result.status is ProcessingStatus.FAILED
         assert result.failed_batches == [0]
 
+    def test_a_failed_request_is_a_model_call_error_chained_to_it(self) -> None:
+        # #616: the request's own exception survives the harness's record.
+        down = ConnectionError("the server is down")
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.llm.chat = MagicMock(side_effect=down)
+        with patch("bmlib.context_processor.llm_processor.time.sleep"):
+            result = LLMChunkProcessor(agent).process(["chunk"], query="q")
+        assert isinstance(result.error, ModelCallError)
+        assert result.error.__cause__ is down
+
+    def test_a_refused_structured_reply_is_no_model_call_error(self) -> None:
+        """A JSON reply ``chat_json`` refused is no failed request (#616), as in
+        Rust, where it carries no ``RequestFailure``."""
+        refused = ChatJsonTruncatedError("the reply was truncated")
+        agent = BaseAgent(llm=MagicMock(), model="test:model")
+        agent.chat_json = MagicMock(side_effect=refused)  # type: ignore[method-assign]
+        result = LLMChunkProcessor(agent, use_structured_output=True).process(["chunk"], query="q")
+        assert result.status is ProcessingStatus.FAILED
+        assert type(result.error) is RuntimeError
+        assert result.error.__cause__ is refused
+        assert result.batch_errors == ["LLM extraction failed: the reply was truncated"]
+
     @pytest.mark.parametrize("stop_reason", ["max_tokens", "length"])
     def test_a_truncated_completion_fails_its_batch(self, stop_reason: str) -> None:
         """A completion cut at the output ceiling has lost passages, so it is
@@ -237,6 +261,12 @@ class TestExtraction:
         assert result.status is ProcessingStatus.FAILED
         assert result.failed_batches == [0]
         assert result.content == ""
+        # No request failed (#616): the processor refused the reply.
+        assert not isinstance(result.error, ModelCallError)
+        assert result.error is not None and result.error.__cause__ is None
+        assert result.batch_errors == [
+            f"LLM extraction failed: the response was truncated (stop_reason={stop_reason!r})"
+        ]
 
     def test_extraction_is_counted_by_the_agent_metrics(self) -> None:
         agent = make_agent("ok")

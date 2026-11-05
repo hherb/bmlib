@@ -37,7 +37,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from bmlib.agents import BaseAgent, ChatStoppedError
+from bmlib.agents import BaseAgent, ChatJsonError, ChatStoppedError
 from bmlib.agents.base import _TRUNCATION_STOP_REASONS
 from bmlib.context_processor.base import IterativeContextProcessor, ProgressCallback
 from bmlib.context_processor.data_types import (
@@ -114,6 +114,18 @@ def _is_refusal(exc: BaseException) -> bool:
     no refusal, so a connection failure or timeout stays retried."""
     status = _http_status(exc)
     return status is not None and status >= 400 and status not in _RETRIED_STATUSES
+
+
+class ModelCallError(RuntimeError):
+    """A batch's model call raised; ``__cause__`` is what it raised (#616).
+
+    What :meth:`LLMChunkProcessor.extract_from_batch` raises for a failed
+    request, so a caller reading :attr:`ProcessingResult.error
+    <bmlib.context_processor.ProcessingResult.error>` can tell a refused key,
+    an outage or a bmlib defect from a reply the processor itself refused: a
+    truncated completion, or a JSON reply ``chat_json`` refused, is a plain
+    ``RuntimeError``, as Rust's processor reports neither as a request's.
+    """
 
 
 _T = TypeVar("_T")
@@ -340,9 +352,10 @@ class LLMChunkProcessor(IterativeContextProcessor):
             The model's answer, with its confidence when it reported one.
 
         Raises:
-            RuntimeError: If the model call fails, or a plain completion
-                stopped at the output ceiling. The base class records it
-                against the batch.
+            ModelCallError: The model call failed, chained to what it raised.
+            RuntimeError: A plain completion stopped at the output ceiling, or
+                ``chat_json`` refused a structured reply.  The base class
+                records either against the batch.
             ProcessingStoppedError: The agent's stop is set (#642); the
                 request was not sent.  The base class ends the run.
         """
@@ -352,6 +365,7 @@ class LLMChunkProcessor(IterativeContextProcessor):
         prompt = self._render(template, query, batch_content)
         label = f"context extraction (level {level}, batch {batch_metadata.get('batch_index', 0)})"
 
+        response = None
         try:
             if structured:
                 content, confidence, findings = self._extract_structured(prompt, label)
@@ -364,15 +378,6 @@ class LLMChunkProcessor(IterativeContextProcessor):
                     ),
                     label,
                 )
-                # A completion cut at the output ceiling is a lost passage, not
-                # an answer; ``chat_json`` refuses it on the structured path.
-                if response.stop_reason in _TRUNCATION_STOP_REASONS:
-                    raise RuntimeError(
-                        f"the response was truncated (stop_reason={response.stop_reason!r})"
-                    )
-                content = response.content.strip()
-                confidence = DEFAULT_EXTRACTION_CONFIDENCE
-                findings = []
         except ProcessingStoppedError:
             raise
         except ChatStoppedError as exc:
@@ -382,7 +387,21 @@ class LLMChunkProcessor(IterativeContextProcessor):
             # cause reads alike in every batch and is summarised once, as in Rust
             # (#658). ``failed_batches`` and the ERROR line still name the batch.
             cause = str(exc).replace(f" for {label}", "")
-            raise RuntimeError(f"LLM extraction failed: {cause}") from exc
+            # A reply ``chat_json`` refused is no failed request (#616).
+            error = RuntimeError if isinstance(exc, ChatJsonError) else ModelCallError
+            raise error(f"LLM extraction failed: {cause}") from exc
+        if response is not None:
+            # A completion cut at the output ceiling is a lost passage, not an
+            # answer; ``chat_json`` refuses it on the structured path.  Raised
+            # outside the ``try``, so it is chained to no request (#616).
+            if response.stop_reason in _TRUNCATION_STOP_REASONS:
+                raise RuntimeError(
+                    "LLM extraction failed: the response was truncated "
+                    f"(stop_reason={response.stop_reason!r})"
+                )
+            content = response.content.strip()
+            confidence = DEFAULT_EXTRACTION_CONFIDENCE
+            findings = []
 
         metadata = dict(batch_metadata)
         if findings:

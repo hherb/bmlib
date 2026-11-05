@@ -24,7 +24,8 @@ use bmlib::context_processor::data_types::ConsolidatedItem;
 use bmlib::context_processor::llm_processor::{
     extract_from_batch, format_consolidated_item, format_item, is_scored_chunk, read_confidence,
     read_findings, render_template, validate_template, BatchRequest, ChunkItem, ContextModel,
-    LlmChunkProcessor, PromptTemplates, DEFAULT_EXTRACTION_CONFIDENCE,
+    LlmChunkProcessor, ModelCallError, PromptTemplates, RequestFailure,
+    DEFAULT_EXTRACTION_CONFIDENCE,
 };
 use bmlib::context_processor::{
     Item, IterativeContextProcessor, ProcessingConfig, ProcessingStatus,
@@ -629,6 +630,60 @@ fn a_model_failure_is_recorded_against_its_batch() {
     let result = processor.process("some text", "Q");
     assert_eq!(result.status, ProcessingStatus::Failed);
     assert_eq!(result.failed_batches, vec![0]);
+    // The model said nothing of a request (#616), so none is claimed.
+    let error = result.error.as_deref().expect("a failed run's error");
+    assert!(!error.is::<ModelCallError>(), "{error}");
+}
+
+/// A model whose every call is refused with HTTP 401 and says so.
+struct Refused;
+
+const REFUSAL: RequestFailure = RequestFailure {
+    retryable: false,
+    status: Some(401),
+};
+
+impl ContextModel for Refused {
+    fn complete(&self, _prompt: &str, _t: f64, _m: i64) -> Result<String, String> {
+        Err("HTTP 401: refused".to_string())
+    }
+
+    fn complete_json(&self, _prompt: &str, _t: f64, _m: i64) -> Result<Value, String> {
+        Err("HTTP 401: refused".to_string())
+    }
+
+    fn last_request_failure(&self) -> Option<RequestFailure> {
+        Some(REFUSAL)
+    }
+}
+
+/// #616: a failed request's own account survives the harness's record, so a
+/// caller can tell a refused key from an outage; and under fail-fast the
+/// batch's error is kept, not the harness's wrapper.
+#[test]
+fn a_failed_request_is_kept_as_a_model_call_error() {
+    for continue_on_error in [true, false] {
+        let processor = LlmChunkProcessor::new(
+            &Refused,
+            templates(),
+            ProcessingConfig::default()
+                .with_max_context_chars(40)
+                .with_continue_on_error(continue_on_error),
+            false,
+            0.2,
+            100,
+        )
+        .expect("a valid processor");
+        let result = processor.process("some text", "Q");
+        assert_eq!(result.status, ProcessingStatus::Failed);
+        let error = result
+            .error
+            .as_deref()
+            .and_then(|error| error.downcast_ref::<ModelCallError>())
+            .unwrap_or_else(|| panic!("continue_on_error {continue_on_error}: {:?}", result.error));
+        assert_eq!(error.request, REFUSAL);
+        assert_eq!(error.message, "LLM extraction failed: HTTP 401: refused");
+    }
 }
 
 /// A template edited to lose a placeholder is refused at construction, naming

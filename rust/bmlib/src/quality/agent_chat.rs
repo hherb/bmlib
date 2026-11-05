@@ -48,13 +48,14 @@
 
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use serde_json::Value;
 
 use crate::agents::{
     chat_json, ChatJsonError, ChatJsonOutcome, ChatSource, TRUNCATION_STOP_REASONS,
 };
-use crate::context_processor::llm_processor::ContextModel;
+use crate::context_processor::llm_processor::{ContextModel, RequestFailure};
 use crate::llm::{ChatError, ChatRequest, LLMMessage, LLMResponse, LlmClient};
 
 /// What a request refused by a set stop reports.
@@ -215,10 +216,7 @@ impl ChatSource for ClientSource<'_> {
     }
 
     fn last_failure_status(&self) -> Option<u16> {
-        match self.failure {
-            Some(ChatError::Http { status, .. }) => Some(status),
-            _ => None,
-        }
+        self.failure.as_ref().and_then(ChatError::http_status)
     }
 
     fn backoff(&mut self, attempt: usize) {
@@ -262,6 +260,11 @@ pub struct LlmContextModel<'a> {
     pub num_ctx: Option<NonZeroU32>,
     /// As [`LlmChat::stop`].
     pub stop: Option<&'a AtomicBool>,
+    /// The last call's request failure, for
+    /// [`ContextModel::last_request_failure`] (#616). shortcut: one slot, so a
+    /// model shared by two threads reports whichever call ended last; upgrade
+    /// to a failure returned with each call once a model must be shared.
+    last_failure: Mutex<Option<RequestFailure>>,
 }
 
 impl<'a> LlmContextModel<'a> {
@@ -273,6 +276,7 @@ impl<'a> LlmContextModel<'a> {
             model: model.into(),
             num_ctx: None,
             stop: None,
+            last_failure: Mutex::new(None),
         }
     }
 
@@ -310,25 +314,35 @@ impl<'a> LlmContextModel<'a> {
         }
     }
 
-    /// Run `call` until it succeeds, retrying what `retryable` says a retry
-    /// may cure, up to [`CONTEXT_MODEL_ATTEMPTS`] tries, never once stopped.
+    /// Run `call` until it succeeds, retrying what `request` says a retry may
+    /// cure, up to [`CONTEXT_MODEL_ATTEMPTS`] tries, never once stopped.
+    /// `request` reads a failure as its request's (`None` when it is no
+    /// request's), and the last one is kept for
+    /// [`ContextModel::last_request_failure`].
     fn with_retries<T, E>(
         &self,
         mut call: impl FnMut() -> Result<T, E>,
-        retryable: impl Fn(&E) -> bool,
+        request: impl Fn(&E) -> Option<RequestFailure>,
     ) -> Result<T, String>
     where
         E: std::fmt::Display,
     {
+        self.record(None);
         let mut attempt = 1;
         loop {
             if is_set(self.stop) {
+                self.record(None);
                 return Err(STOPPED_MESSAGE.to_string());
             }
             match call() {
-                Ok(value) => return Ok(value),
+                Ok(value) => {
+                    self.record(None);
+                    return Ok(value);
+                }
                 Err(error) => {
-                    if !retryable(&error) || is_set(self.stop) {
+                    let failure = request(&error);
+                    self.record(failure);
+                    if !failure.is_some_and(|f| f.retryable) || is_set(self.stop) {
                         return Err(error.to_string());
                     }
                     if attempt >= CONTEXT_MODEL_ATTEMPTS {
@@ -342,10 +356,29 @@ impl<'a> LlmContextModel<'a> {
     }
 }
 
+impl LlmContextModel<'_> {
+    /// Keep `failure` as the last call's.
+    fn record(&self, failure: Option<RequestFailure>) {
+        *self
+            .last_failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = failure;
+    }
+}
+
 impl ContextModel for LlmContextModel<'_> {
     fn complete(&self, prompt: &str, temperature: f64, max_tokens: i64) -> Result<String, String> {
         let request = self.request(prompt, temperature, max_tokens, false);
-        let response = self.with_retries(|| self.client.chat(&request), ChatError::is_retryable)?;
+        // Every `ChatError` is the request's, a malformed answer included.
+        let response = self.with_retries(
+            || self.client.chat(&request),
+            |error: &ChatError| {
+                Some(RequestFailure {
+                    retryable: error.is_retryable(),
+                    status: error.http_status(),
+                })
+            },
+        )?;
         match response.stop_reason.as_deref() {
             // A completion cut at the output ceiling has lost passages.
             Some(reason) if TRUNCATION_STOP_REASONS.contains(&reason) => Err(format!(
@@ -383,17 +416,24 @@ impl ContextModel for LlmContextModel<'_> {
             // unknown provider, a missing key, an HTTP refusal (#646) or a
             // malformed answer would fail again,
             // and `chat_json` has re-asked for a bad reply.
-            |error| {
-                matches!(
-                    error,
-                    ChatJsonError::Transport {
-                        retryable: true,
-                        ..
-                    }
-                )
+            |error| match error {
+                ChatJsonError::Transport {
+                    retryable, status, ..
+                } => Some(RequestFailure {
+                    retryable: *retryable,
+                    status: *status,
+                }),
+                _ => None,
             },
         )?;
         Ok(outcome.value)
+    }
+
+    fn last_request_failure(&self) -> Option<RequestFailure> {
+        *self
+            .last_failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
