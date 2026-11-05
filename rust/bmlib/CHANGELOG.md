@@ -11,6 +11,15 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **"Method", "Result", "Discussions" and "Experimental" are section
+  headings** (#636, with the Python library). `segmenter::VARIANT_PATTERNS`
+  (exported) holds them, matched by `match_section_type` only as the whole
+  heading and at `PARTIAL_MATCH_CONFIDENCE`, after the anchored table and
+  before the partial search, so a numbered "2. Method" is `Methods` with its
+  subsections where it was `Other`. `PDF_CANONICAL_VERSION` is 7
+  (`"pdf-7"`); the Python CHANGELOG has the measurement and why the names
+  are not searched within a line.
+
 - **What MuPDF said is kept apart, and a failed read keeps it** (#619, with
   the Python library). `MupdfExtractor::extract_blocks_with_warnings` and
   `page_texts_with_warnings` returned early on a failure, dropping MuPDF's

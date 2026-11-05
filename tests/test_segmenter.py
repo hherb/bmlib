@@ -23,15 +23,19 @@ is tested in ``tests/test_pdf_converter.py``.
 
 from __future__ import annotations
 
+import pytest
+
 from bmlib.fulltext.canonical import canonical_from_segmented
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
 from bmlib.fulltext.segmenter import (
     FURNITURE_MAX_EDGE_LINES,
     FURNITURE_MIN_PAGES,
     FURNITURE_PAGE_RATIO,
+    PARTIAL_MATCH_CONFIDENCE,
     SectionSegmenter,
     _median_font_size,
     drop_page_furniture,
+    match_section_type,
     page_furniture,
 )
 
@@ -251,6 +255,40 @@ class TestPatternMatching:
             SectionType.CONFLICTS,
             1.0,
         )
+
+
+class TestAVariantNameMatchesOnlyAWholeHeading:
+    """#636: "Method", "Result", "Discussions" and "Experimental" are sections.
+
+    They are matched as the whole heading at 0.7 and never searched within a
+    line, so neither a body line using the word nor a bold column header
+    under the body's size becomes a heading.
+    """
+
+    @pytest.mark.parametrize(
+        ("heading", "section_type"),
+        [
+            ("2. Method", SectionType.METHODS),
+            ("Experimental", SectionType.METHODS),
+            ("2. Experimental Section", SectionType.METHODS),
+            ("3. Result", SectionType.RESULTS),
+            ("5. Discussions", SectionType.DISCUSSION),
+        ],
+    )
+    def test_a_variant_heading_classifies_at_partial_confidence(self, heading, section_type):
+        assert match_section_type(heading) == (section_type, PARTIAL_MATCH_CONFIDENCE)
+
+    def test_a_variant_is_not_searched_for_within_a_line(self):
+        assert match_section_type("Treatment may result in harm") == (SectionType.UNKNOWN, 0.0)
+        # Searched, "experimental" would claim it for METHODS ahead of RESULTS.
+        assert match_section_type("Experimental Results") == (SectionType.RESULTS, 0.7)
+
+    def test_a_variant_gets_no_relaxed_size_test(self):
+        segmenter = SectionSegmenter()
+        exact = block("Methods", size=9.5, bold=True)
+        variant = block("Method", size=9.5, bold=True)
+        assert segmenter._is_potential_header(exact, 10.5)
+        assert not segmenter._is_potential_header(variant, 10.5)
 
 
 class TestSectionTypeCoverage:

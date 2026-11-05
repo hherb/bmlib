@@ -349,7 +349,9 @@ the paper's exact-match headings are set in, other than the body's own or an
 unnamed one, counts as bold (*unreleased*, #628), since MuPDF flags such a
 face (Frontiers', for one) neither bold nor italic; the size floor
 `min_heading_size` is capped at the body median, so a journal set in 8 pt
-finds its 8 pt bold headings. It is classified by `match_section_type`, and a
+finds its 8 pt bold headings. It is classified by `match_section_type`
+("Method", "Result", "Discussions" and "Experimental" matched only as the
+whole heading, at `0.7`, from `VARIANT_PATTERNS`: *unreleased*, #636), and a
 heading may wrap over up to three lines in all. A numbered heading nests as a
 subsection at its number's depth, one naming no section taking its parent's
 type unless the parent's own number does not open its number; a numbered
@@ -387,7 +389,7 @@ assert_eq!(types, [SectionType::Methods, SectionType::Results]);
 assert_eq!(doc.title, None);
 
 let canonical = canonical_from_segmented(&doc);
-assert_eq!(canonical.converter_version, "pdf-6");
+assert_eq!(canonical.converter_version, "pdf-7");
 ```
 
 ## Canonical text

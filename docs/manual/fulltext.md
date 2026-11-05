@@ -2457,7 +2457,17 @@ characters. A partial match keeps both, since that is how a body line naming a
 section became a heading. Candidate headings are classified against an
 anchored, case-insensitive pattern table (`"3.  Results"` matches: leading
 numbering and trailing punctuation are stripped first). A heading no
-anchored pattern claims gets a second, word-bounded partial pass at 0.7
+anchored pattern claims is tried against a few less common names, as the
+whole heading only and at 0.7 *(unreleased, `"pdf-7"`, #636)*: "Method",
+"Result", "Discussions", "Experimental" and "Experimental Section"
+(`SectionSegmenter.VARIANT_PATTERNS`). They are never searched within a line,
+since `"result"` is a common word, and they get no relaxed size test, since
+a bold "Method" or "Result" table column header is common: over the 1,114
+local PDFs 18 papers move, 8 headings found and none lost, the 9 numbered
+parents #628 kept as `OTHER` now `METHODS`, `RESULTS` or `DISCUSSION` with
+their subsections, and one bold column header ("Method", PMC9713001) a
+false heading. A body-sized "Result" set apart only by bold stays text.
+Then comes a second, word-bounded partial pass at 0.7
 confidence (`"Supplementary materials online"` → `SUPPLEMENTARY`), but only
 when it is heading-sized or numbered: a body-sized line set apart only by
 bold or italic must match exactly or carry a section number, since the
@@ -2567,8 +2577,8 @@ its parent's type takes its confidence too. Duplicate
 section types are possible; `get_section()` returns the first.
 `match_section_type(text)` *(0.12.0; it was a private method)* is that
 classification for a heading that did not come from a PDF: `(type, 1.0)` for
-an anchored match, `(type, 0.7)` for a partial one, `(SectionType.UNKNOWN,
-0.0)` for none.
+an anchored match, `(type, 0.7)` for a variant or a partial one,
+`(SectionType.UNKNOWN, 0.0)` for none.
 
 Sections are the text between consecutive headings. Four rules:
 
@@ -2873,7 +2883,8 @@ doc.converter_version                     # "jats-1"
   breaks paragraphs at first-line indents, *unreleased*; `"pdf-5"` measures
   the body size by characters, not lines, *unreleased*; `"pdf-6"` keeps an
   unnamed numbered top-level heading its subsections number from, as
-  `OTHER`, *unreleased*) and
+  `OTHER`, *unreleased*; `"pdf-7"` names "Method", "Result", "Discussions"
+  and "Experimental" headings, *unreleased*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.
