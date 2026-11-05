@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from bmlib.fulltext.canonical import canonical_from_markdown, strip_inline
@@ -67,5 +69,48 @@ def test_an_empty_heading_starts_an_untitled_section() -> None:
     assert [s.level for s in doc.sections] == [1, 2]
 
 
-def test_the_converter_version_is_markdown_1() -> None:
-    assert canonical_from_markdown("x").converter_version == "markdown-1"
+def test_a_quoted_fence_keeps_its_lines_without_the_markers() -> None:
+    # #548: the markers were kept inside the fence, so it never closed and
+    # swallowed the heading after it.
+    source = "> ```\n> code *x*\n> ```\n\n# Heading\n\nText"
+    doc = canonical_from_markdown(source)
+    assert [doc.span_text(s.heading_span) for s in doc.sections if s.heading_span] == ["Heading"]
+    assert texts(source) == ["code *x*", "Text"]
+
+
+def test_a_quoted_fence_ends_with_its_quote() -> None:
+    assert texts("> ```\n> code\nafter *y*") == ["code", "after y"]
+    assert texts("> > ```\n> > deep\n> shallow *y*") == ["deep", "shallow y"]
+
+
+def test_a_fence_outside_a_quote_keeps_a_quote_marker() -> None:
+    assert texts("```\n> kept\n```") == ["> kept"]
+
+
+def test_a_backtick_in_a_backtick_info_string_is_no_fence() -> None:
+    # #548: it opened a fence that swallowed the rest of the document.
+    assert texts("```code``` here\n\n*Text*") == ["code here", "Text"]
+    assert texts("~~~ `tilde` info\nkept *z*\n~~~") == ["kept *z*"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "(_a " * 20_000,
+        "[a " * 20_000,
+        "[" * 60_000 + "]",
+        "[a](" * 20_000,
+        "[a](" * 10_000 + "x" + " " * 10_000 + "y" + ")" * 10_000,
+    ],
+    ids=["emphasis", "bracket", "brackets-one-close", "link-targets", "nested-targets"],
+)
+def test_unclosed_openers_cost_linear_time(text: str) -> None:
+    # #549: each opener rescanned the paragraph; the emphasis shape took ~61 s
+    # at this size and takes ~0.03 s, so the ceiling is a wide margin both ways.
+    started = time.perf_counter()
+    strip_inline(text)
+    assert time.perf_counter() - started < 2.0
+
+
+def test_the_converter_version_is_markdown_2() -> None:
+    assert canonical_from_markdown("x").converter_version == "markdown-2"

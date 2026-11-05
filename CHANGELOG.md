@@ -8,6 +8,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A fence inside a blockquote closes, a backtick in a backtick fence's
+  info string opens none, and unclosed openers cost linear time** (#548,
+  #549, with the Rust crate). `canonical_from_markdown` stripped `>` only
+  outside a fence, so a fence opened inside a quote never closed and
+  swallowed the rest of the document (a heading after it lost as structure, its text kept); a
+  fence opened inside a quote now has its lines' markers stripped and ends
+  where the quote does, at a line without them, as in CommonMark. And a
+  backtick fence's info string may not hold a backtick, so
+  ```` ```code``` here ```` is a code span (`code here`) rather than a fence
+  swallowing everything after it; a tilde fence's still may. `strip_inline`
+  rescanned the paragraph for every emphasis opener without a closer and every
+  `[` without a link, so `"(_a " * 20000` (80 kB, one paragraph) took about
+  61 s, and `"[" * 15000 + "]"` 5.8 s; whether a run closes emphasis depends on
+  the run alone, so an opener that finds no closer now marks its delimiter and
+  run length as unclosed for the rest of the walk, and a text's brackets,
+  balanced parentheses and whitespace are indexed once (`_LinkIndex`), so a
+  link target costs a few bisects. Every shape tried is linear (80 kB in
+  ~0.02 s in Python, milliseconds in Rust); a wall-clock test with a wide
+  margin pins five of them in each language. **The inline rewrite is exact**:
+  0 differences from `main`'s `strip_inline` over 300,000 random strings of
+  the markup characters, and 0 over 100,000 random documents carrying no
+  fence or quote. `MARKDOWN_VERSION` is 2 (`"markdown-2"`), so a stored
+  Markdown chunk set is stale; only a document holding a quoted fence or a
+  backtick fence with a backtick in its info string reads differently. Not
+  measured over a corpus (there is no local Markdown one). Four new cases in
+  `tests/fixtures/canonical_text.json` hold both languages to the rules.
+
 - **"Method", "Result", "Discussions" and "Experimental" are section
   headings** (#636, with the Rust crate). The PDF segmenter's pattern table
   named only "Methods", "Results", "Discussion" and "Experimental

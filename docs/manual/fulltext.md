@@ -2783,7 +2783,10 @@ doc.converter_version                     # "jats-1"
   and a numbered line interrupts a paragraph or a bulleted item only when it
   starts at 1, so a wrapped `2019.` stays in its sentence; an underline under
   a list item is a break, not a heading), `>` quotes, fenced code (inline
-  markup not stripped; its lines collapse to one paragraph like any other),
+  markup not stripped; its lines collapse to one paragraph like any other;
+  inside a quote its `>` markers are stripped and it ends with the quote, and
+  a backtick fence whose info string holds a backtick is a code span instead,
+  as in CommonMark — *(unreleased)*, `"markdown-2"`, #548),
   pipe tables (rows; the delimiter row after a table's first row is dropped)
   and thematic breaks (dropped). A link's target may hold balanced
   parentheses, as a Lancet DOI's `(20)` does, but whitespace only as
@@ -2795,7 +2798,9 @@ doc.converter_version                     # "jats-1"
   digit, so `snake_case`, `IL_6` and `2*3*4` stay as written (Python's
   `str.isalnum` and Rust's `char::is_alphanumeric` differ for a few marks and
   symbols such as `Ⓐ`, so emphasis next to one may be read differently).
-  HTML is kept as text.
+  HTML is kept as text. A paragraph of unclosed openers (`(_a ` or `[a `
+  repeated) costs linear time *(unreleased, #549)*; 80 kB of one took about a
+  minute before.
 - **Plain text**: one untitled section, paragraphs separated by blank lines
   (`split_paragraphs`); the title, if known, is passed in.
 - **PDF**: `canonical_from_segmented(SectionSegmenter().segment_document(blocks,

@@ -32,7 +32,11 @@ the two cannot drift apart through two different parsers. Line by line:
   break, not a heading. ``>`` is stripped. A fenced code block (three or more
   backticks or tildes) is one block whose inline markup is not stripped; its
   lines and indentation collapse to single spaces like any paragraph's. A
-  thematic break (``---``, ``***``, ``___``) is dropped.
+  backtick fence's info string may not hold a backtick, so a line opening with
+  three backticks and holding another backtick is text (a code span). A fence
+  opened inside a blockquote has its lines' ``>`` stripped and ends where the
+  blockquote does, at a line without them, as in CommonMark. A thematic break
+  (``---``, ``***``, ``___``) is dropped.
 * A line starting with ``|`` is a table row; the delimiter row
   (``|---|:--:|``) right after a table's first row is dropped, and ``\\|``
   is a pipe inside a cell.
@@ -48,7 +52,9 @@ the two cannot drift apart through two different parsers. Line by line:
   ``markdown.rs``). A link's target may hold balanced parentheses
   (``doi.org/…(20)…``) and its text escaped brackets; a target holding
   whitespace is a link only as ``url "title"``, so a parenthetical after a
-  bracket stays text. Anything else, HTML included, is text.
+  bracket stays text. Anything else, HTML included, is text. A paragraph is
+  read for link brackets once, and for an emphasis closer once per delimiter
+  and run length that finds none, so unclosed openers cost linear time (#549).
 * Whitespace is Unicode ``White_Space`` (:func:`is_white_space`), never
   ``str.isspace()``, so U+001C to U+001F stay characters as in the Rust port.
 * Content before the first heading is an untitled level-1 section.
@@ -57,6 +63,8 @@ the two cannot drift apart through two different parsers. Line by line:
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
+from typing import NamedTuple
 
 from bmlib.fulltext.canonical.model import (
     TOP_LEVEL,
@@ -72,7 +80,7 @@ from bmlib.fulltext.canonical.plain import split_lines
 
 #: Bumped whenever this converter (or :func:`assemble`) can lay a text out
 #: differently.
-MARKDOWN_VERSION = 1
+MARKDOWN_VERSION = 2
 
 #: An ATX heading: up to three spaces, one to six ``#``, then a space or the end.
 _ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t](.*))?$")
@@ -114,22 +122,12 @@ def _strip(text: str) -> str:
     return text[start:end]
 
 
-def _find_unescaped(text: str, ch: str, start: int) -> int:
-    """The index of the first *ch* at or after *start* not escaped by a backslash, or -1."""
-    i = start
-    while i < len(text):
-        if text[i] == "\\":
-            i += 2
-            continue
-        if text[i] == ch:
-            return i
-        i += 1
-    return -1
-
-
 def strip_inline(text: str) -> str:
     """*text* with its inline Markdown markup removed (see the module docstring)."""
     out: list[str] = []
+    # Emphasis openers already known to have no closer, by delimiter and run (#549).
+    unclosed: set[tuple[str, int]] = set()
+    links: _LinkIndex | None = None
     i, n = 0, len(text)
     while i < n:
         ch = text[i]
@@ -144,7 +142,9 @@ def strip_inline(text: str) -> str:
             i = close + run if close >= 0 else i + run
             continue
         if ch == "[" or (ch == "!" and text.startswith("[", i + 1)):
-            link = _link_at(text, i + 1 if ch == "!" else i)
+            if links is None:
+                links = _link_index(text)
+            link = _link_at(text, i + 1 if ch == "!" else i, links)
             if link is not None:
                 label, i = link
                 out.append(strip_inline(label))
@@ -157,7 +157,7 @@ def strip_inline(text: str) -> str:
                 i = close + 1
                 continue
         if ch in _EMPHASIS:
-            emphasis = _emphasis_at(text, i)
+            emphasis = _emphasis_at(text, i, unclosed)
             if emphasis is not None:
                 inner, i = emphasis
                 out.append(strip_inline(inner))
@@ -185,42 +185,79 @@ def _find_run(text: str, start: int, run: int) -> int:
     return -1
 
 
-def _is_link_target(target: str) -> bool:
-    """Whether *target* reads as a link destination: no whitespace, or ``url "title"``."""
-    target = _strip(target)
-    gap = next((i for i, ch in enumerate(target) if is_white_space(ch)), None)
-    if gap is None:
+class _LinkIndex(NamedTuple):
+    """What finding a link in one text needs, read once so no scan repeats (#549)."""
+
+    #: Every unescaped ``]``, in order.
+    closes: list[int]
+    #: Each unescaped ``(``'s balancing ``)``.
+    parens: dict[int, int]
+    #: Every :func:`is_white_space` index, and every other index, in order.
+    spaces: list[int]
+    solid: list[int]
+
+
+def _link_index(text: str) -> _LinkIndex:
+    """The :class:`_LinkIndex` of *text*.
+
+    A backslash escapes the character after it. A link's scans start just
+    after a ``[`` or a ``]``, never inside an escape, so one pass from the
+    start reads every escape as they would.
+    """
+    closes: list[int] = []
+    parens: dict[int, int] = {}
+    opens: list[int] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "]":
+            closes.append(i)
+        elif ch == "(":
+            opens.append(i)
+        elif ch == ")" and opens:
+            parens[opens.pop()] = i
+        i += 1
+    spaces: list[int] = []
+    solid: list[int] = []
+    for i, ch in enumerate(text):
+        (spaces if is_white_space(ch) else solid).append(i)
+    return _LinkIndex(closes, parens, spaces, solid)
+
+
+def _first_at(indices: list[int], start: int) -> int:
+    """The first of the ordered *indices* at or after *start*, or -1."""
+    at = bisect_left(indices, start)
+    return indices[at] if at < len(indices) else -1
+
+
+def _is_link_target(index: _LinkIndex, text: str, start: int, end: int) -> bool:
+    """Whether ``text[start:end]`` is a link destination: no whitespace, or ``url "title"``."""
+    first = _first_at(index.solid, start)
+    if first < 0 or first >= end:
         return True
-    title = _strip(target[gap:])
-    return len(title) >= 2 and title[0] in "\"'" and title[-1] == title[0]
+    last = index.solid[bisect_left(index.solid, end) - 1]
+    gap = _first_at(index.spaces, first)
+    if gap < 0 or gap > last:
+        return True
+    title = _first_at(index.solid, gap)
+    return title < last and text[title] in "\"'" and text[last] == text[title]
 
 
-def _link_at(text: str, start: int) -> tuple[str, int] | None:
+def _link_at(text: str, start: int, index: _LinkIndex) -> tuple[str, int] | None:
     """The label of a ``[label](target)`` starting at *start*, and the index after it.
 
     The label ends at the first unescaped ``]``; the target at the ``)`` that
     balances its opening one, skipping escaped parentheses, and must pass
-    :func:`_is_link_target`.
+    :func:`_is_link_target`. *index* is *text*'s :func:`_link_index`.
     """
-    close = _find_unescaped(text, "]", start + 1)
-    if close < 0 or not text.startswith("(", close + 1):
+    close = _first_at(index.closes, start + 1)
+    end = index.parens.get(close + 1) if close >= 0 else None
+    if end is None or not _is_link_target(index, text, close + 2, end):
         return None
-    depth = 0
-    i = close + 1
-    while i < len(text):
-        if text[i] == "\\":
-            i += 2
-            continue
-        if text[i] == "(":
-            depth += 1
-        elif text[i] == ")":
-            depth -= 1
-            if depth == 0:
-                if not _is_link_target(text[close + 2 : i]):
-                    return None
-                return text[start + 1 : close], i + 1
-        i += 1
-    return None
+    return text[start + 1 : close], end + 1
 
 
 def _run_length(text: str, start: int) -> int:
@@ -231,13 +268,15 @@ def _run_length(text: str, start: int) -> int:
     return end - start
 
 
-def _emphasis_at(text: str, start: int) -> tuple[str, int] | None:
+def _emphasis_at(text: str, start: int, unclosed: set[tuple[str, int]]) -> tuple[str, int] | None:
     """The content of an emphasis opening at *start*, and the index after it.
 
     The opener is a run of one or two delimiters not preceded by a letter or
     digit and followed by a non-space; the closer is the first run of the same
     length after it that follows a non-space and is not followed by a letter
-    or digit.
+    or digit. Whether a run closes depends on the run alone, so once an opener
+    finds none, no later opener of its delimiter and length can: it joins
+    *unclosed*, which the caller keeps for one left-to-right walk of *text*.
     """
     delimiter = text[start]
     run = _run_length(text, start)
@@ -245,6 +284,8 @@ def _emphasis_at(text: str, start: int) -> tuple[str, int] | None:
     if run > _MAX_EMPHASIS_RUN or after >= len(text) or is_white_space(text[after]):
         return None
     if start > 0 and text[start - 1].isalnum():
+        return None
+    if (delimiter, run) in unclosed:
         return None
     i = after + 1
     while i < len(text):
@@ -260,6 +301,7 @@ def _emphasis_at(text: str, start: int) -> tuple[str, int] | None:
         ):
             return text[after:i], end
         i = end
+    unclosed.add((delimiter, run))
     return None
 
 
@@ -309,6 +351,7 @@ class _Converter:
         self.table_rows = 0
         self.seen_content = False
         self.fence: str | None = None
+        self.fence_quotes = 0  # the blockquote depth the open fence sits at
         self.fence_lines: list[str] = []
 
     def block(self, draft: BlockDraft) -> None:
@@ -340,25 +383,34 @@ class _Converter:
 
     def line(self, line: str) -> None:
         """Read one line."""
+        quotes = 0
         if self.fence is not None:
-            stripped = _strip(line)
-            if (
-                stripped
-                and stripped == self.fence[0] * len(stripped)
-                and len(stripped) >= len(self.fence)
-            ):
-                self.close_fence()
-            else:
-                self.fence_lines.append(line)
-            return
+            while quotes < self.fence_quotes and _QUOTE.match(line):
+                line = _QUOTE.sub("", line, count=1)
+                quotes += 1
+            if quotes == self.fence_quotes:
+                stripped = _strip(line)
+                if (
+                    stripped
+                    and stripped == self.fence[0] * len(stripped)
+                    and len(stripped) >= len(self.fence)
+                ):
+                    self.close_fence()
+                else:
+                    self.fence_lines.append(line)
+                return
+            self.close_fence()  # the blockquote holding the fence ended, and the fence with it
         while _QUOTE.match(line):
             line = _QUOTE.sub("", line, count=1)
+            quotes += 1
         is_table_line = _strip(line).startswith("|")
         if not is_table_line:
             self.table_rows = 0
-        if fence := _FENCE.match(line):
+        fence = _FENCE.match(line)
+        # A backtick fence's info string may not hold a backtick (CommonMark).
+        if fence and not (fence.group(1)[0] == "`" and "`" in line[fence.end() :]):
             self.flush()
-            self.fence = fence.group(1)
+            self.fence, self.fence_quotes = fence.group(1), quotes
             return
         if not normalise_whitespace(line):
             self.flush()
