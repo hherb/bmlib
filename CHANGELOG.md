@@ -6,6 +6,36 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Method", "Result", "Discussions" and "Experimental" are section
+  headings** (#636, with the Rust crate). The PDF segmenter's pattern table
+  named only "Methods", "Results", "Discussion" and "Experimental
+  procedures"/"methods", so "2. Method", "3. Result", "5. Discussions",
+  "2. Experimental" and "2. Experimental Section" classified as nothing (since
+  #628 a numbered one was kept as `OTHER`), and `get_section(METHODS)` and
+  `assess_full_text`'s required-section test missed them. They are now
+  `SectionSegmenter.VARIANT_PATTERNS`, matched only as the whole heading and
+  at 0.7, never searched within a line, by the maintainer's choice over
+  measured alternatives. **Measured** over the 1,114 local journal PDFs
+  (`~/europepmc_pdf/pdf`, blocks extracted once, segmented with and without):
+  added to the main table, the new names' derived partial search moved 88
+  papers, making body lines ("… can result in phagocytosis …") and titles
+  ("Experimental Results and Discussions", a symposium name) headings; as
+  whole headings at 1.0, 36 papers moved and 27 headings were found, none
+  lost, but about 11 papers gained a bold table column header ("Genotyping
+  method", "Combined result") as a heading, since #628 relaxed the size test
+  for an exact name; at 0.7 a heading must pass the full test, and **18
+  papers move, 8 headings are found, none is lost**, the 9 parents #636
+  names are `METHODS`/`RESULTS`/`DISCUSSION` with their subsections, and one
+  column header (PMC9713001's bold "Method") is a false heading that files
+  its "3.1.1" under Methods. The cost is about 8 real headings the 1.0 rule
+  found, a body-sized "Result" or "Method" set apart only by bold or italic,
+  which stays text. 8 canonical texts move, so `PDF_CANONICAL_VERSION` is 7
+  (`"pdf-7"`). Rust agrees with Python on the 36 papers carrying a variant
+  name (the segmenter oracle run once over their blocks); nine oracle cases
+  hold both languages to the table.
+
 ### Added
 
 - **A failed context-window lookup carries the HTTP status** (#664, filed by

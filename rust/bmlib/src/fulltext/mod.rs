@@ -75,6 +75,7 @@ pub use segmenter::{
     match_section_type, median_font_size, Marker, SectionSegmenter, DEFAULT_FONT_SIZE,
     EXACT_HEADING_FLOOR_RATIO, FALLBACK_CONFIDENCE, FONT_SIZE_TOLERANCE, MAX_HEADING_CHARS,
     PARAGRAPH_GAP_RATIO, PARTIAL_MATCH_CONFIDENCE, SECTION_PATTERNS, TITLE_SIZE_RATIO,
+    VARIANT_PATTERNS,
 };
 pub use service::{
     default_cache, entry_is_free, extract_free_pdf_url, html_escape, normalise_pmc_id,
