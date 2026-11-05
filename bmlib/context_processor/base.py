@@ -91,6 +91,35 @@ def _error_result(message: str) -> ExtractionResult:
     )
 
 
+def _items_finished_by_batch(batches: list[Batch], item_count: int) -> tuple[int, list[int]]:
+    """Say when each of a level's items is accounted for, for progress (#673).
+
+    An oversized item split into pieces lands in several batches, each piece
+    under the item's own index, so counting a batch's pieces would credit one
+    item several times (a text split four ways read 3 of 1). An item is
+    therefore done once the batch holding its *last* piece is done, and an item
+    none of whose pieces reached a batch (dropped while packing) is done from
+    the start.
+
+    Args:
+        batches: The level's batches, in the order they are extracted.
+        item_count: How many items the level was given.
+
+    Returns:
+        ``(unplaced, finished)``: how many items reached no batch, and for
+        each batch position how many items its completion finishes. The two
+        always add up to *item_count*.
+    """
+    last_batch: dict[int, int] = {}
+    for position, batch in enumerate(batches):
+        for index in batch.item_indices:
+            last_batch[index] = position
+    finished = [0] * len(batches)
+    for position in last_batch.values():
+        finished[position] += 1
+    return item_count - len(last_batch), finished
+
+
 class _BatchFailedError(RuntimeError):
     """A failed batch ending the run under ``continue_on_error=False``.
 
@@ -590,12 +619,12 @@ class IterativeContextProcessor(ABC):
                 and the strategy is FAIL.
             ProcessingStoppedError: From an extraction, unrecorded.
         """
-        skipped_before = len(skipped_items)
         batches = self._create_batches(items, config, skipped_items)
         # An item dropped during packing will never reach an extraction, so a
         # progress count that waited for it would never reach the end.  It is
-        # accounted for the moment the batcher drops it.
-        items_done = len(skipped_items) - skipped_before
+        # accounted for the moment the batcher drops it; a split one, once its
+        # last piece's batch is done.
+        items_done, finished_by = _items_finished_by_batch(batches, len(items))
 
         self._report_progress(
             "batching",
@@ -609,7 +638,7 @@ class IterativeContextProcessor(ABC):
         results: list[ExtractionResult] = []
         successful = 0
 
-        for batch in batches:
+        for position, batch in enumerate(batches):
             self._report_progress(
                 "extracting",
                 current_item=items_done,
@@ -673,7 +702,7 @@ class IterativeContextProcessor(ABC):
                 results.append(result)
                 successful += 1
 
-            items_done += batch.size
+            items_done += finished_by[position]
 
         if intermediate_results is not None:
             intermediate_results.append(results)

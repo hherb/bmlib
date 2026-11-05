@@ -123,11 +123,17 @@ type Run = (
 );
 
 /// One condensation progress report as the fixture writes it (#609): the
-/// stage, the batch reached of this level's batches, and the level.
+/// stage, the batch reached of this level's batches, the level, and the items
+/// accounted for of this level's items (#673).
 fn progress_line(info: &ProgressInfo) -> String {
     format!(
-        "{} {}/{} level {}",
-        info.stage, info.current_batch, info.total_batches, info.recursion_level
+        "{} {}/{} level {} items {}/{}",
+        info.stage,
+        info.current_batch,
+        info.total_batches,
+        info.recursion_level,
+        info.current_item,
+        info.total_items
     )
 }
 

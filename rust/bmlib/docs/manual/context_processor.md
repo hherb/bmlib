@@ -148,6 +148,9 @@ A progress callback (`ProgressCallback`, a boxed `Fn(&ProgressInfo)`) sees the
 stages `starting`, `batching`, `extracting`, `recursing` and `complete`; a
 callback that panics is caught and logged, so a broken progress bar does not
 lose the run. `ProgressInfo::progress_percent()` restarts at each level.
+`current_item` counts an item split into pieces once, when the batch holding
+its last piece is done, and one dropped while packing at once, so it never
+exceeds `total_items` (#673), as in Python.
 
 ## The model-backed processor
 

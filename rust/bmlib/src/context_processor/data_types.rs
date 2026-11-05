@@ -683,7 +683,9 @@ pub struct ProgressInfo {
     /// Items of this level accounted for so far — extracted, or dropped by
     /// the oversized strategy. An item dropped during packing counts
     /// immediately, since no extraction will ever reach it and a bar waiting
-    /// for one would never fill.
+    /// for one would never fill. An item split into pieces counts once, when
+    /// the batch holding its last piece is done, so this never exceeds
+    /// `total_items` (#673).
     pub current_item: usize,
     /// Items at this level.
     pub total_items: usize,

@@ -789,6 +789,32 @@ fn split_to_fit<P: IterativeContextProcessor + ?Sized>(
     Ok(Vec::new())
 }
 
+/// When each of a level's items is accounted for, for progress (#673).
+///
+/// An oversized item split into pieces lands in several batches, each piece
+/// under the item's own index, so counting a batch's pieces would credit one
+/// item several times (a text split four ways read 3 of 1). An item is
+/// therefore done once the batch holding its *last* piece is done, and an
+/// item none of whose pieces reached a batch (dropped while packing) is done
+/// from the start.
+///
+/// Returns `(unplaced, finished)`: how many of the `item_count` items reached
+/// no batch, and for each batch position how many items its completion
+/// finishes. The two always add up to `item_count`.
+fn items_finished_by_batch(batches: &[Batch], item_count: usize) -> (usize, Vec<usize>) {
+    let mut last_batch: BTreeMap<usize, usize> = BTreeMap::new();
+    for (position, batch) in batches.iter().enumerate() {
+        for (index, _) in &batch.items {
+            last_batch.insert(*index, position);
+        }
+    }
+    let mut finished = vec![0usize; batches.len()];
+    for position in last_batch.values() {
+        finished[*position] += 1;
+    }
+    (item_count - last_batch.len(), finished)
+}
+
 /// One level's outcome.
 struct LevelOutcome {
     results: Vec<ExtractionResult>,
@@ -812,12 +838,12 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
     batch_errors: &mut Vec<String>,
     batch_exceptions: &mut Vec<BatchError>,
 ) -> Result<LevelOutcome, Box<dyn std::error::Error + Send + Sync>> {
-    let skipped_before = skipped_items.len();
     let batches = ProcessingCore::create_batches(processor, items, config, skipped_items)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
     // An item dropped during packing will never reach an extraction, so a
-    // progress count that waited for it would never reach the end.
-    let mut items_done = skipped_items.len() - skipped_before;
+    // progress count that waited for it would never reach the end; a split
+    // one counts once its last piece's batch is done.
+    let (mut items_done, finished_by) = items_finished_by_batch(&batches, items.len());
 
     let mut info = ProgressInfo::new("batching");
     info.current_item = items_done;
@@ -834,7 +860,7 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
     let mut results: Vec<ExtractionResult> = Vec::new();
     let mut successful = 0usize;
 
-    for batch in &batches {
+    for (position, batch) in batches.iter().enumerate() {
         let mut info = ProgressInfo::new("extracting");
         info.current_item = items_done;
         info.total_items = items.len();
@@ -905,7 +931,7 @@ fn process_level<P: IterativeContextProcessor + ?Sized>(
                 results.push(result);
             }
         }
-        items_done += batch.size();
+        items_done += finished_by[position];
     }
 
     if let Some(intermediate) = intermediate {

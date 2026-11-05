@@ -396,7 +396,9 @@ class ProgressInfo:
         current_item: Items of this level accounted for so far — extracted,
             or dropped by the oversized strategy. An item dropped during
             packing counts immediately, since no extraction will ever
-            reach it and a bar waiting for one would never fill.
+            reach it and a bar waiting for one would never fill. An item
+            split into pieces counts once, when the batch holding its last
+            piece is done, so this never exceeds ``total_items`` (#673).
         total_items: Items at this level.
         current_batch: Batch index reached (1-based, for display).
         total_batches: Batches at this level.

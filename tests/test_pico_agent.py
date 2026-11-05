@@ -1218,8 +1218,12 @@ _ABSENT = "absent"
 
 def _progress_line(info: ProgressInfo) -> str:
     """One condensation progress report as the fixture writes it (#609):
-    the stage, the batch reached of this level's batches, and the level."""
-    return f"{info.stage} {info.current_batch}/{info.total_batches} level {info.recursion_level}"
+    the stage, the batch reached of this level's batches, the level, and the
+    items accounted for of this level's items (#673)."""
+    return (
+        f"{info.stage} {info.current_batch}/{info.total_batches} "
+        f"level {info.recursion_level} items {info.current_item}/{info.total_items}"
+    )
 
 
 def _contract_run(

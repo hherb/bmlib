@@ -1195,3 +1195,23 @@ class TestProgressReporting:
         batching = next(info for info in seen if info.stage == "batching")
         assert batching.current_item == 1
         assert batching.total_items == 2
+
+    def test_a_split_item_counts_once_when_its_last_piece_is_done(self) -> None:
+        """#673: each piece of a split item sits in a batch under the item's
+        own index, and counting pieces read 3 of 1 for a text split four
+        ways. The item counts once, after the batch with its last piece."""
+        seen: list[ProgressInfo] = []
+        config = ProcessingConfig(max_context_chars=100)
+        processor = EchoProcessor(config=config, progress_callback=seen.append)
+        processor.process(["short", "x" * 350, "tail"], query="q")
+
+        level_zero = [
+            info for info in seen if info.stage == "extracting" and info.recursion_level == 0
+        ]
+        assert len(level_zero) > 3, "the long item was not split across batches"
+        assert all(info.total_items == 3 for info in level_zero)
+        # Batch 1 holds "short" alone; the long item's pieces follow, and
+        # only the batch with its last piece (shared with "tail") ends both.
+        assert [info.current_item for info in level_zero] == [0] + [1] * (len(level_zero) - 1)
+        assert all(info.current_item <= info.total_items for info in seen)
+        assert (seen[-1].stage, seen[-1].current_item, seen[-1].total_items) == ("complete", 3, 3)
