@@ -63,7 +63,8 @@ def _reconstruct_abstract(inverted_index: dict[str, Any] | None) -> str | None:
     """Reconstruct an abstract from OpenAlex's inverted-index representation.
 
     OpenAlex stores abstracts as ``{"word": [pos, ...], ...}``.  We flatten
-    this into a list of ``(position, word)`` pairs, sort by position, and join.
+    this into a list of ``(position, word)`` pairs, sort by position (two
+    words at one position by the word), and join.
 
     Returns ``None`` when *inverted_index* is ``None`` or empty.
     """
@@ -82,7 +83,9 @@ def _reconstruct_abstract(inverted_index: dict[str, Any] | None) -> str | None:
     if not pairs:
         return None
 
-    pairs.sort(key=lambda p: p[0])
+    # By position, then word (#583): Rust's index is a BTreeMap, so key order
+    # cannot break a tie there, and must not here.
+    pairs.sort()
     return " ".join(word for _, word in pairs)
 
 

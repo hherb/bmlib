@@ -40,6 +40,11 @@
     "value": null
   },
   {
+    "name": "abstract/tie-at-one-position",
+    "ok": true,
+    "value": "alpha zeta"
+  },
+  {
     "name": "normalize/full",
     "ok": true,
     "value": {

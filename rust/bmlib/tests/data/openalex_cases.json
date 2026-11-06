@@ -93,6 +93,20 @@
  },
  {
   "args": {
+   "index": {
+    "zeta": [
+     0
+    ],
+    "alpha": [
+     0
+    ]
+   }
+  },
+  "fn": "abstract",
+  "name": "abstract/tie-at-one-position"
+ },
+ {
+  "args": {
    "raw": {
     "abstract_inverted_index": {
      "hello": [

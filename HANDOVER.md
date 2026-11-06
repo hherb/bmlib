@@ -219,6 +219,83 @@ re-pin `BmlibFFI.pin.json`), #620 (#617's OpenAI-compatible half; Ollama's
 open by decision), #615 (#578, #573, #604 — read `pdf_extraction_failure`
 `"encrypted"`/`"unreadable"` as `invalid_input`, `"engine"` as a retry), #614
 (#599, MuPDF's messages reported; left #619, done this session, and **#605**).
+_Last updated: 2026-11-06 (**this session's PR is on `fix/583-openalex-abstract-tie`**, for #583;
+PRs #678 (#564) and #677 (#624) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
+crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
+*Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
+crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
+#637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
+#668-#672, #674-#678 and this session's._
+
+## This session: an OpenAlex abstract's tie is ordered alike in both languages (#583)
+
+Branch `fix/583-openalex-abstract-tie` (the start-of-session docs refresh
+rides on it). Python's `_reconstruct_abstract` sorted by position alone, so
+two words at one position kept the index's key order; Rust reads the index
+as serde_json's `BTreeMap` (no key order) and sorted by position then word.
+Python now sorts the `(position, word)` tuples. Oracle case
+`abstract/tie-at-one-position` in both `openalex_cases.json` copies,
+expectation regenerated, and a Python unit test. A well-formed index has no
+tie, so no record should move (argued, not measured: no OpenAlex corpus is
+committed).
+
+## Earlier, 2026-11-06 (all merged; the CHANGELOG entries are the argument)
+
+- **#564** (PR #678): Rust's `normalise_pmc_id` and `EUROPEPMC_ACCESSION_RE`
+  read `[0-9]`, not Unicode `\d`. Of the crate's 22 `\d` uses only these two
+  port a Python `re.ASCII` pattern. **#471 keeps its other half** (Rust does
+  not send an NCT id in ASCII as `_nct_id` does, and the PMID shape guard).
+- **#624** (PR #677): Rust's `FetchedRecord.fulltext_sources` holds
+  `fulltext::FullTextSourceEntry` (breaking for JSON indexing); shared
+  fixture `fulltext_source_entry.json`. StudyAnalyzer drops its
+  `retrieval::source_entries` shortcut.
+- **#673** (PR #676): a split item's progress counts once, when the batch
+  holding its last piece is done. `skipped_items` can still list one item
+  twice (the count no longer reads it).
+
+## Earlier, 2026-11-01 to 2026-11-05 (all merged): what StudyAnalyzer owes
+
+- **#609** (PR #674): `PicoAgent`/`CochraneAssessor(condense_progress=)`;
+  Rust `LlmCondenser::with_progress`. Rust's harness now stops at a stop
+  (`stop_requested`). → pass a progress callback and show the batches.
+- **#667** (PRs #669, #671): Ollama's plain-text `404 page not found` is a
+  wrong address, not `NoSuchModelError` (Rust's rule, in Python).
+- **#619** (PR #670): `engine_messages` (what MuPDF said) apart from
+  `warnings` (bmlib's notes), also on a failed read. → rename
+  `PdfBlocks.warnings` reads and show a failed read's `engine_messages`.
+- **#664** (PR #668): `ContextWindowError` carries the HTTP status (Rust
+  `Transport { message, status }`, breaking). → map `Some(401 | 403)` to
+  `needs_api_key`.
+- **#616** (PR #666): `ProcessingResult.error`/`.batch_exceptions`;
+  `ModelCallError` chained; a long paper's 401/404 is `RequestFailed {
+  status }`. Filed **#665** (a decision).
+- **#659, #658, #646** (PRs #661, #660, #657): `PicoError.retryable`;
+  `batch_errors` and `summarise_batch_errors`; the condenser retries only a
+  transport failure or 408/429/500/502/503/504/529. → retry `RequestFailed {
+  retryable: true }` only.
+- **#654, #563** (PRs #655, #653): `canonical_from_html` refuses a page over
+  `HTML_MAX_CHARS` unparsed and one past `HTML_PARSE_SECONDS`; Rust
+  `HtmlError { TooLarge, TimedOut }`. Filed **#656**. → a too-large page is
+  not worth retrying, a timeout may be.
+- **#635** (PR #650): `chat_stream(..., cancel=)`, Rust
+  `chat_stream_with_cancel`; abandoned, not interrupted (**#649**, **#652**).
+  → an empty `content` with `stop_reason == "cancelled"` is "stopped before
+  any text".
+- **#632, #640-#642, #638** (PRs #648, #644, #639): `find_passage` rejects a
+  contradicting fuzzy match (filed **#647**, **#651**); `PicoAgent(num_ctx=,
+  stop=)`; `prepare()` → `PicoPrepared`. → threshold back to 0.95-0.97, call
+  `prepare` once per paper, retry only `extract_prepared`.
+- **PDF segmenter** (PRs #637, #636's, #631/#630/#629, #627, #622): an
+  unnamed numbered parent kept as `SectionType.OTHER` (`PDF_CANONICAL_VERSION`
+  6); heading faces; pdf-5's character median (the title corpus's
+  `median_font_size` rows are line medians, so the next top-up bumps
+  `ROW_DEFINITIONS_VERSION`); residuals **#623**, **#628** (run-in headings).
+- **Full-text faults** (PRs #626, #625, #615, #614, #620, #621):
+  `FullTextExhaustedError.faults`, `FullTextResult.tier_faults`, read
+  `pdf_extraction_failure` `"encrypted"`/`"unreadable"` as `invalid_input`,
+  `"engine"` as a retry; bmlibrarian_lite must re-pin `BmlibFFI.pin.json`
+  (#621); **#605** open.
 
 ## What 0.12.0 costs a downstream
 
@@ -234,7 +311,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -346,7 +423,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,322 passing + 165 skipped** on `fix/564-ascii-pmc-digits`
+- **Tests: 9,331 passing + 165 skipped** on `fix/583-openalex-abstract-tie`
   (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,581 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
@@ -376,7 +453,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**122 open once #564 closes** (`gh issue list --state open --limit 300 --json number`,
+**120 open once #583 closes** (`gh issue list --state open --limit 300 --json number`,
 2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
