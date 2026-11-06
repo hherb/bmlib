@@ -51,7 +51,9 @@ use crate::publications::fetchers::registry::{
     FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, HttpClient, PartDisposition,
     Progress,
 };
-use crate::publications::models::{AuthorAffiliation, FetchedRecord, Grant, PartCheckpoint};
+use crate::publications::models::{
+    AuthorAffiliation, FetchedRecord, FullTextSourceEntry, Grant, PartCheckpoint,
+};
 
 /// The ESearch endpoint.
 pub const ESEARCH_URL: &str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi";
@@ -638,22 +640,24 @@ pub fn parse_article(article_el: Node<'_, '_>) -> FetchedRecord {
     }
 
     // Full-text sources.
-    let mut fulltext_sources: Vec<serde_json::Value> = Vec::new();
+    let mut fulltext_sources: Vec<FullTextSourceEntry> = Vec::new();
     if let Some(pmc_id) = pmc_id.as_deref() {
-        fulltext_sources.push(serde_json::json!({
-            "url": format!("{PMC_BASE_URL}{pmc_id}/"),
-            "source": "pmc",
-            "format": "html",
-            "open_access": true,
-        }));
+        fulltext_sources.push(FullTextSourceEntry {
+            url: format!("{PMC_BASE_URL}{pmc_id}/"),
+            format: "html".to_string(),
+            source: "pmc".to_string(),
+            open_access: true,
+            version: None,
+        });
     }
     if let Some(doi) = doi.as_deref() {
-        fulltext_sources.push(serde_json::json!({
-            "url": format!("{DOI_BASE_URL}{doi}"),
-            "source": "publisher",
-            "format": "html",
-            "open_access": false,
-        }));
+        fulltext_sources.push(FullTextSourceEntry {
+            url: format!("{DOI_BASE_URL}{doi}"),
+            format: "html".to_string(),
+            source: "publisher".to_string(),
+            open_access: false,
+            version: None,
+        });
     }
 
     let mut record = FetchedRecord::new(title, "pubmed");

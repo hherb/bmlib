@@ -431,7 +431,10 @@ fn an_unknown_location_version_is_passed_through() {
         "locations": [{"version": "novelVersion", "landing_page_url": "u"}],
     }))
     .expect("a work object");
-    assert_eq!(record.fulltext_sources[0]["version"], "novelVersion");
+    assert_eq!(
+        record.fulltext_sources[0].version.as_deref(),
+        Some("novelVersion")
+    );
 
     // A mapped version is translated.
     let record = bmlib::publications::fetchers::openalex::normalize(&json!({
@@ -439,19 +442,21 @@ fn an_unknown_location_version_is_passed_through() {
         "locations": [{"version": "publishedVersion", "landing_page_url": "u"}],
     }))
     .expect("a work object");
-    assert_eq!(record.fulltext_sources[0]["version"], "published");
+    assert_eq!(
+        record.fulltext_sources[0].version.as_deref(),
+        Some("published")
+    );
 
-    // An absent version is an absent key, not a null one.
+    // An absent version is an absent key in the JSON, not a null one, as
+    // Python's `to_dict` writes it.
     let record = bmlib::publications::fetchers::openalex::normalize(&json!({
         "title": "T",
         "locations": [{"landing_page_url": "u"}],
     }))
     .expect("a work object");
-    assert!(
-        record.fulltext_sources[0].get("version").is_none(),
-        "{}",
-        record.fulltext_sources[0]
-    );
+    assert_eq!(record.fulltext_sources[0].version, None);
+    let serialised = serde_json::to_value(&record.fulltext_sources[0]).expect("serialises");
+    assert!(serialised.get("version").is_none(), "{serialised}");
 }
 
 /// Each location contributes up to two sources — a landing page and a PDF —
@@ -469,12 +474,12 @@ fn each_location_contributes_its_own_sources_and_flag() {
     }))
     .expect("a work object");
     assert_eq!(record.fulltext_sources.len(), 3);
-    assert_eq!(record.fulltext_sources[0]["format"], "html");
-    assert_eq!(record.fulltext_sources[0]["open_access"], false);
-    assert_eq!(record.fulltext_sources[1]["format"], "pdf");
-    assert_eq!(record.fulltext_sources[1]["open_access"], false);
-    assert_eq!(record.fulltext_sources[2]["source"], "Other");
-    assert_eq!(record.fulltext_sources[2]["open_access"], true);
+    assert_eq!(record.fulltext_sources[0].format, "html");
+    assert!(!record.fulltext_sources[0].open_access);
+    assert_eq!(record.fulltext_sources[1].format, "pdf");
+    assert!(!record.fulltext_sources[1].open_access);
+    assert_eq!(record.fulltext_sources[2].source, "Other");
+    assert!(record.fulltext_sources[2].open_access);
     assert!(record.is_open_access, "the work's own flag is separate");
 }
 
@@ -487,7 +492,7 @@ fn a_location_without_a_source_names_it_unknown() {
         "locations": [{"landing_page_url": "u"}],
     }))
     .expect("a work object");
-    assert_eq!(record.fulltext_sources[0]["source"], "unknown");
+    assert_eq!(record.fulltext_sources[0].source, "unknown");
 }
 
 // ---------------------------------------------------------------------------

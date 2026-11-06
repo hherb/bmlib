@@ -29,7 +29,7 @@ use regex::{Captures, Regex};
 use serde_json::{json, Value};
 
 use crate::publications::fetchers::pubmed::escape_markdown;
-use crate::publications::models::FetchedRecord;
+use crate::publications::models::{FetchedRecord, FullTextSourceEntry};
 
 /// Restated, as `transparency` and `fulltext` each keep their own literal.
 pub const EUROPEPMC_REST_BASE: &str = "https://www.ebi.ac.uk/europepmc/webservices/rest";
@@ -135,12 +135,13 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
     let mut record = FetchedRecord::new(text(raw, "title").unwrap_or_default(), "europepmc");
     if let Some(address) = pmc_id.as_ref().or(ppr_id.as_ref()) {
         if text(raw, "inEPMC").as_deref() == Some("Y") {
-            record.fulltext_sources.push(json!({
-                "url": format!("{EUROPEPMC_REST_BASE}/{address}/fullTextXML"),
-                "format": "xml",
-                "source": "europepmc",
-                "open_access": is_open_access,
-            }));
+            record.fulltext_sources.push(FullTextSourceEntry {
+                url: format!("{EUROPEPMC_REST_BASE}/{address}/fullTextXML"),
+                format: "xml".to_string(),
+                source: "europepmc".to_string(),
+                open_access: is_open_access,
+                version: None,
+            });
         }
     }
     record.authors = list(object(raw, "authorList"), "author")

@@ -1208,12 +1208,10 @@ impl FetchedRecord {
     }
 }
 
-/// A full-text location a fetcher found, as the fetcher contract carries it.
-///
-/// The port keeps this as the JSON shape `fulltext.models.FullTextSourceEntry`
-/// serialises to, rather than importing that module: `publications` does not
-/// depend on `fulltext` in Python either, and the field is pass-through data.
-pub type FullTextSourceEntry = Value;
+/// A full-text location a fetcher found: `fulltext`'s entry, which
+/// `FullTextRequest.fulltext_sources` takes as it is (#624). Python's fetchers
+/// build `bmlib.fulltext.models.FullTextSourceEntry` too.
+pub use crate::fulltext::models::FullTextSourceEntry;
 
 /// Describes one configurable parameter for a source fetcher.
 #[derive(Debug, Clone, PartialEq, Eq)]
