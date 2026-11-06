@@ -1,5 +1,224 @@
 # HANDOVER — bmlib development
 
+_Last updated: 2026-11-06 (**this session's PR is on `feat/rust-list-models`**, for #680; PRs #678 (#564), #677 (#624), #674 (#609), #675 (#548, #549),
+#676 (#673) and #672 (#636) merged). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
+(#646), #655 (#654), #653 (#563), #648
+(#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
+parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
+(pdf-4), #621 (Rust CSV), #620 (#617), #615, #614 and #613 merged; **0.12.0 is on
+PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
+0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
+summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
+for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#678 and this session's._
+
+## This session: Rust lists a provider's models (#680)
+
+Branch `feat/rust-list-models`, filed by StudyAnalyzer (its Settings offer the
+provider's models to pick from, or a typed name). `LlmClient::list_models(provider)`
+in `client.rs` beside `context_window`; the pure `read_model_listing` in the
+new `llm/model_listing.rs` and in Python's `bmlib/llm/model_listing.py`, held
+together by `tests/fixtures/model_listing.json` (23 cases; the Ollama body a
+real `/api/tags` reply, the cloud ones from each provider's API reference, not
+live: no cloud key in the session). Ids only, sorted, every page read
+(Anthropic's), nothing filtered; every failure an error (Python's
+`LLMClient.list_models` answers `[]`, unchanged). Python's providers keep their
+own listing (SDKs; Ollama's raw `/api/tags`); the reader is only the contract
+there. **Filed, not
+fixed: #681** — Rust posts Gemini chats to `…/v1beta/openai/v1/chat/completions`
+where Google documents no `/v1`; one live chat decides it.
+
+## Earlier, 2026-11-06: a Rust PMC ID or accession in non-ASCII digits is refused (#564, PR #678, merged)
+
+Branch `fix/564-ascii-pmc-digits` (the start-of-session docs refresh rides
+on it). The `regex` crate's `\d` is Unicode, so Rust's `normalise_pmc_id`
+and `EUROPEPMC_ACCESSION_RE` let `PMC٣٤٥` into a URL path where Python's
+`re.ASCII` patterns refuse it; both read `[0-9]` now. Three
+`normalise_pmc_id` cases in `service_cases.json` (Python's expectation
+regenerated) and `the_full_text_accession_refuses_non_ascii_digits` in
+`tests/analyzer.rs`. **The sweep**: of the Rust crate's 22 `\d` uses, only
+these two port a Python `re.ASCII` pattern; the rest (NCT ids, extractors,
+segmenter numbering) are Unicode in both languages, and the citation
+scanner is hand-written and ASCII-only (documented in the Rust manual).
+**#471 keeps its other half**: Rust matches an NCT id in any script's digits
+but does not send it in ASCII as Python's `_nct_id` does, and the PMID
+shape guard.
+
+## Earlier, 2026-11-06: a split item's progress counts once (#673, PR #676, merged)
+
+`current_item` added a batch's pieces against
+`total_items`' items (a text split four ways read 3 of 1, and an item with a
+piece dropped while packing counted twice). Both languages now count an item
+once, when the batch holding its last piece is done
+(`_items_finished_by_batch` / `items_finished_by_batch`, private, beside
+`_process_level`); one no piece of which reached a batch counts at once.
+`pico_stop_num_ctx.json`'s progress lines gain `items <done>/<total>` (18
+cases fail without the fix); twin unit tests,
+`test_a_split_item_counts_once_when_its_last_piece_is_done` and
+`a_split_item_counts_once_when_its_last_piece_is_done`, cover a level of
+three items with the middle one split. Not changed: `skipped_items` can list
+one item twice when several of its pieces are dropped (the count no longer
+reads it).
+
+## Earlier, 2026-11-05: a long text's condensation reports its progress (#609, PR #674, merged)
+
+Filed by StudyAnalyzer, whose PICO tab showed nothing while a long paper was
+condensed. **Python**: `PicoAgent` and `CochraneAssessor` take
+`condense_progress` (a `ProgressCallback`), which `condense_text` hands to
+`LLMChunkProcessor`. **Rust**: `LlmCondenser::with_progress(impl Fn(&ProgressInfo))`
+(shared by both agents through an `Arc`, since each condensation builds its
+own processor) and `LlmChunkProcessor::with_progress(ProgressCallback)`; a
+panicking callback is now logged (Python logs a raise). Shared fixture:
+`pico_stop_num_ctx.json` states `expected.progress` on all 32 cases, written
+`"<stage> <batch>/<batches> level <level>"`. **Found by that pin and fixed**:
+Rust's harness walked every remaining batch after a stop (each refused unsent)
+to `complete`, where Python's `ProcessingStoppedError` ends it;
+`ContextModel::stop_requested` and `IterativeContextProcessor::stop_requested`
+(default `false`) now end it there, the batch unrecorded,
+`ProcessingResult::failed`. `current_item`/`total_items` are pinned since
+#673 (below). No
+fixture case recurses (the fixture's digest always fits merged). The issue's
+aside on `agents::metrics::Monotonic::now()` (a wall clock, unused in the
+crate, its rustdoc already says so) is left. **For StudyAnalyzer**: pass a
+progress callback to `pico_condenser(…).with_progress` and show the batches.
+
+## Earlier, 2026-11-05: Ollama's plain-text 404 is a wrong address (#667, PRs #669 and #671, merged)
+
+Python's `OllamaProvider.context_window` read Ollama's unknown-route body
+`404 page not found` as `NoSuchModelError` (ollama-python keeps the raw text
+when the body is not JSON). `_names_a_missing_model` now applies Rust's rule
+(a JSON `error` saying "not found"), reading the body off the
+`httpx.HTTPStatusError` the SDK raises `from None` (still `__context__`);
+with no such context it falls back to the old phrase test (a `shortcut:`
+comment). `context_window.json`'s Ollama 404 uses the real body and a
+missing-model 404 case is added; Rust passes both unchanged. PR #669's
+review added two JSON 404s that are not a missing model (an `error` not
+saying "not found", and a non-string one), each killing a mutant that
+survived; the `AttributeError` guard is reached by no current SDK, whose own
+`ResponseError` raises first on a non-object JSON body (#617's Ollama half).
+
+## Earlier, 2026-11-05: what MuPDF said is kept apart, and a failed read keeps it (#619, PR #670, merged)
+
+The maintainer chose all three of #619's parts. One name per meaning in both
+languages: **`engine_messages`** is what MuPDF said, **`warnings`** bmlib's
+own notes. `PdfError`/`PDFExtractionError` gain `engine_messages`, filled by
+every MuPDF read that fails (Rust: the private `reading` helper wraps both
+reads and attaches the capture to the value or the error; a limit reached
+mid-read carries them too); `PdfBlocks`/`PDFBlocks` and both
+`ConversionResult`s gain it, `warnings` keeping only bmlib's notes; Rust's
+service `PdfText.warnings` is renamed `engine_messages`, and a failed
+extraction's line ends with them. Python's service "no extractable text" line
+drops its `warnings[:3]` (bmlib's per-page notes) for Rust's cause. Breaking
+against `main` since #599, unreleased. Shared fixture `pdf_warnings.json`:
+each row's two lists, and `failed` (a header with no objects: `unreadable`,
+four messages, the same from PyMuPDF's MuPDF 1.28.6 and `mupdf-sys`'s).
+`PDF_PINNED` re-pinned without a bump (the canonical PDF code reads neither
+list). **For StudyAnalyzer**: rename `PdfBlocks.warnings` reads to
+`engine_messages` and show a failed PDF read's `engine_messages`.
+
+## Earlier, 2026-11-05: a failed context-window lookup carries the HTTP status (#664, PR #668, merged)
+
+Filed from StudyAnalyzer PR #80's review: an app reads the window before its
+first chat or PICO call to a model, so a wrong key met there was an outage.
+**Rust** `ContextWindowError::Transport(String)` is now `Transport { message,
+status: Option<u16> }` (the answer's status; `None` for no answer, a routing
+failure); breaking for a `Transport(_)` pattern. **Python**
+`ContextWindowError.status` (`None` by default, so `NoSuchModelError` and
+every raise site that has no status keep working), read in
+`fetch_context_window` from the SDK exception, or an `httpx.HTTPStatusError`'s
+response (Gemini's retried statuses); Gemini's and Ollama's own refusals pass
+theirs. `_http_status` moved from the condenser to
+`bmlib.llm.utils.http_status` (a lower layer; the condenser and the PICO agent
+import it there). Shared fixture: `context_window.json` gains `refusals` (15
+cases: 401/403/400/404/503 and no answer, every networked provider), run in
+Python over each provider's own SDK client on an `httpx.MockTransport`
+(anthropic ≥ 2 needs `httpx2`'s) and in Rust over the scripted transport; one
+mutant per language killed. **Found**: #667 (done this session). **For StudyAnalyzer**: map
+`Transport { status: Some(401 | 403), .. }` to `needs_api_key`, as for
+`ChatError::Http` and `PicoError::RequestFailed`.
+
+## Earlier, 2026-11-05: a long paper's failed condensation request is the request's failure (#616, PR #666, merged)
+
+The maintainer chose to keep the exception. `ProcessingResult.error` and
+`.batch_exceptions` (both languages) keep what a run failed on, the worst
+cause deciding; `LLMChunkProcessor` raises `ModelCallError` chained to the
+request's exception; `PicoAgent` re-raises a defect or `ImportError` and maps
+a request failure to `REQUEST_FAILED` with `retryable`/`status`; a run whose
+last level produced nothing is FAILED. Rust: `ContextModel::last_request_failure()`,
+`ModelCallError { message, request }`, `ProcessingResult::error` (breaking for
+a struct literal). **For StudyAnalyzer**: a long paper's 401/404 is now
+`RequestFailed { status }` like a short one's. **Filed #665**: a PARTIAL run
+whose one batch hit a defect still only notes it (a decision).
+
+## Earlier, 2026-11-04: PICO and condenser failures (#659, #658, #646; PRs #661, #660, #657, merged)
+
+`PicoError.retryable` / Rust `RequestFailed { retryable, .. }` by the
+condenser's rule (#659); `ProcessingResult.batch_errors` and
+`summarise_batch_errors`, a FAILED run's message and a PARTIAL note ending
+with the causes (#658; Rust logs nothing where a batch fails); the condenser
+retries only a transport failure or a status in 408, 429, 500, 502, 503, 504,
+529, Rust's HTTP error being `ChatError::Http { status, message }` with
+`is_retryable()` (#646). **For StudyAnalyzer**: retry `RequestFailed {
+retryable: true, .. }` only, show a PICO note as-is, and on the next pin move
+add a `ChatError::Http` arm where a `Transport` arm meant "the request failed".
+
+## Earlier, 2026-11-04: an HTML page longer than 2,000,000 code points is refused unparsed (#654, PR #655, merged)
+
+**The maintainer chose a size cap**: `HTML_MAX_CHARS` (in the shared fixture
+as `html_parse.max_code_points`) is checked before parsing; Python raises
+`HtmlPageTooLargeError`, Rust's error is the enum `HtmlError { TooLarge,
+TimedOut }`. The worst page (`<i>` nested to the page's length) costs ~8 s per
+million code points in Python and ~16 s in Rust; the cap is Rust's. How many
+real pages are longer is unmeasured; a page with inline `data:` images can
+exceed it, filed **#656** (cap the count of `<` instead). **For
+StudyAnalyzer**: match `HtmlError::TooLarge` beside `TimedOut`; a too-large
+page is not worth retrying, a timeout may be.
+
+## Earlier, 2026-11-04: a streamed chat can be cancelled while it waits (#635, PR #650, merged)
+
+Python `chat_stream(..., cancel=)` (an `Event` or a callable; `Stop` and
+`stop_reader` in `bmlib.llm.stream`), Rust `chat_stream_with_cancel(request,
+&AtomicBool, on_delta)`: the request is read on a worker thread the caller
+polls every 50 ms, and **abandoned, not interrupted** (#649; Python's worker
+cannot stop SDK retries, #652). **For StudyAnalyzer**: pass the Stop flag;
+an empty `content` with `stop_reason == "cancelled"` is "stopped before any
+text".
+
+## Earlier, 2026-11-03/04: `find_passage` and the PICO agent (PRs #648, #644, #639, merged)
+
+**#632** (PR #648): a fuzzy match whose unmatched tokens change a number, a
+negation or a direction is rejected (`PassageMatch.contradiction`,
+`CONTRADICTION_RULES_VERSION`); filed **#647**, **#651**. **#640-#642**
+(PR #644): `PicoAgent(..., num_ctx=, stop=)`, Rust `LlmChat::with_num_ctx`/
+`with_stop`, `LlmContextModel`, `PicoAgent::with_stop`; filed **#646** (done above).
+**#638** (PR #639): `PicoAgent.prepare()` returns a storable `PicoPrepared`
+that `check_suitability_prepared`/`extract_prepared` take, condensing once;
+one prepared for another budget is refused. **For StudyAnalyzer plan 2c**: the
+`find_passage` threshold can go back to 0.95-0.97; call `prepare` once per
+paper, retry only `extract_prepared` on `RequestFailed`, and build `LlmChat`,
+`LlmContextModel` and the agent with the same window, stop flag and
+`condense_config`.
+
+## Earlier, 2026-11-02: an unnamed numbered parent keeps its subsections (PR #637, merged)
+
+A numbered top-level heading naming no section is kept as the new
+`SectionType.OTHER` when the next heading numbers from it; 49 of 1,114 local
+PDFs move, 326 subsections recovered, none lost; `PDF_CANONICAL_VERSION` 6.
+Filed **#636** (the "2. Method"/"3. Result" pattern gap). **#628 stays open**
+for run-in headings and bold back matter under 0.9 of the body.
+
+## Earlier, 2026-11-01/02 (all merged; the CHANGELOG entries are the argument)
+
+PRs #631/#630/#629 (#628: italic `Ita`, bold or italic from the font name, a
+paper's own heading face), #627 (pdf-5, character median; the title corpus's
+`median_font_size` rows are line medians, so the next top-up bumps
+`ROW_DEFINITIONS_VERSION`), #626 (#565, `FullTextExhaustedError.faults`:
+empty is "nothing failed"), #625 (#603, `FullTextResult.tier_faults`), #622
+(pdf-4; residuals **#623**), #621 (Rust CSV line count; bmlibrarian_lite must
+re-pin `BmlibFFI.pin.json`), #620 (#617's OpenAI-compatible half; Ollama's
+open by decision), #615 (#578, #573, #604 — read `pdf_extraction_failure`
+`"encrypted"`/`"unreadable"` as `invalid_input`, `"engine"` as a retry), #614
+(#599, MuPDF's messages reported; left #619, done this session, and **#605**).
 _Last updated: 2026-11-06 (**this session's PR is on `fix/583-openalex-abstract-tie`**, for #583;
 PRs #678 (#564) and #677 (#624) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on

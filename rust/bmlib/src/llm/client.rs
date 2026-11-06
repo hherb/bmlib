@@ -27,6 +27,9 @@
 
 use crate::llm::context_window::{known_context_window, read_context_window, ContextWindowError};
 use crate::llm::data_types::{LLMMessage, LLMResponse, LLMToolDefinition};
+use crate::llm::model_listing::{
+    read_model_listing, ListModelsError, ANTHROPIC_LISTING_PAGE_SIZE, MAX_LISTING_PAGES,
+};
 use crate::llm::protocol::{
     messages_to_anthropic, messages_to_ollama, messages_to_openai, parse_anthropic_response,
     parse_ollama_response, parse_openai_response, think_to_ollama, tool_choice_to_anthropic,
@@ -1269,6 +1272,115 @@ impl LlmClient {
             ContextWindowError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
         })?;
         read_context_window(&target.provider, &target.model, &body)
+    }
+
+    /// The models `provider` offers, sorted and without duplicates (#680).
+    ///
+    /// Reads the provider's own listing, every page of it, and filters
+    /// nothing: an embedding or speech model is listed too. A provider whose
+    /// listing needs a key needs one here, OpenAI included (unlike
+    /// [`Self::context_window`], which answers OpenAI from a table). Each
+    /// request is retried as a chat call is.
+    ///
+    /// Python's `LLMClient.list_models(provider)` answers `[]` for every
+    /// failure; here each failure is an error, since an empty list reads as
+    /// "this provider has no models".
+    ///
+    /// # Errors
+    ///
+    /// An unknown provider or a missing key (before any request), a transport
+    /// failure or a refused status ([`ListModelsError::Transport`], carrying the
+    /// status), or a body that is not a listing and paging past
+    /// [`MAX_LISTING_PAGES`] ([`ListModelsError::Malformed`]).
+    pub fn list_models(&self, provider: &str) -> Result<Vec<String>, ListModelsError> {
+        let name = provider.trim().to_lowercase();
+        // Checked first: resolve_target reads an unknown name as a model of
+        // the default provider.
+        if !provider_specs().contains_key(name.as_str()) {
+            return Err(ListModelsError::UnknownProvider(provider.to_string()));
+        }
+        let request = ChatRequest::new(Vec::new()).with_model(name.as_str());
+        let target = resolve_target(
+            &request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+        )
+        .map_err(|error| match error {
+            ChatError::MissingApiKey { provider, env_var } => {
+                ListModelsError::MissingApiKey { provider, env_var }
+            }
+            ChatError::UnknownProvider(name) => ListModelsError::UnknownProvider(name),
+            other => ListModelsError::Transport {
+                message: other.to_string(),
+                status: None,
+            },
+        })?;
+        let headers = chat_headers(&target);
+        let mut ids = Vec::new();
+        let mut after: Option<String> = None;
+        for _ in 0..MAX_LISTING_PAGES {
+            let url = model_listing_url(&target, after.as_deref());
+            let response = send_with_retries(
+                self.retry_base_delay,
+                &|| false,
+                || self.client.get_with_headers(&url, &headers),
+                |response| response.status,
+            )
+            .map_err(|e| ListModelsError::Transport {
+                status: match &e {
+                    FetchError::HttpStatus { status, .. } => Some(*status),
+                    _ => None,
+                },
+                message: e.to_string(),
+            })?;
+            let text = String::from_utf8_lossy(&response.body);
+            if !(200..300).contains(&response.status) {
+                return Err(ListModelsError::Transport {
+                    message: http_error(&url, response.status, &text).to_string(),
+                    status: Some(response.status),
+                });
+            }
+            let body: Value = serde_json::from_str(&text).map_err(|e| {
+                ListModelsError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
+            })?;
+            let page = read_model_listing(&target.provider, &body)?;
+            ids.extend(page.ids);
+            match page.next_after {
+                Some(next) => after = Some(next),
+                None => {
+                    ids.sort();
+                    ids.dedup();
+                    return Ok(ids);
+                }
+            }
+        }
+        Err(ListModelsError::Malformed(format!(
+            "{}'s model listing went on past {MAX_LISTING_PAGES} pages",
+            target.provider
+        )))
+    }
+}
+
+/// The URL of one page of `target.provider`'s model listing; `after` is the
+/// cursor of the page wanted (Anthropic's alone pages). DeepSeek and Gemini
+/// list beside their chat base rather than under `/v1`.
+fn model_listing_url(target: &Target, after: Option<&str>) -> String {
+    let base = &target.base_url;
+    match target.provider.as_str() {
+        "deepseek" | "gemini" => format!("{base}/models"),
+        "anthropic" => {
+            let mut url = format!(
+                "{base}{}?limit={ANTHROPIC_LISTING_PAGE_SIZE}",
+                target.protocol.models_path()
+            );
+            if let Some(id) = after {
+                url.push_str("&after_id=");
+                url.push_str(&percent_encode_segment(id));
+            }
+            url
+        }
+        _ => format!("{base}{}", target.protocol.models_path()),
     }
 }
 

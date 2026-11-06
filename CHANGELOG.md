@@ -92,6 +92,24 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Rust lists a provider's models** (#680, filed by StudyAnalyzer, whose
+  Settings offer the models to pick from). `LlmClient::list_models(provider)`
+  answers the provider's model ids, sorted and without duplicates, reading
+  every page (Anthropic's at `limit=1000`, followed by `last_id` while
+  `has_more`, at most `MAX_LISTING_PAGES`) and filtering nothing. Unlike
+  Python's `LLMClient.list_models`, which answers `[]` for any failure, every
+  failure is a `ListModelsError`: `UnknownProvider` and `MissingApiKey` before
+  any request, `Transport { message, status }` (a 401 or 403 is a refused
+  key), `Malformed`. Each page is read by the pure
+  `read_model_listing(provider, body)`, in **both languages**
+  (`bmlib.llm.model_listing.read_model_listing` in Python, raising
+  `ModelListingError`), held together by `tests/fixtures/model_listing.json`
+  (23 cases): Ollama's `models[].model`, every other provider's `data[].id`,
+  a leading `models/` dropped from a Gemini id. Python's providers keep
+  their own listing (the SDKs', Ollama's raw `/api/tags`) and do not call the
+  reader. Rust's port had no `list_models` (HANDOVER_RUST.md §1 lists it
+  among the deliberately absent calls) until a Rust caller needed it.
+
 - **A long text's condensation reports its progress** (#609, filed by
   StudyAnalyzer, with the Rust crate). The PICO and Cochrane agents' map-reduce
   ran with no progress callback, so an app condensing a long paper could show

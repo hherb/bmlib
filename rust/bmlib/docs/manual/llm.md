@@ -258,6 +258,47 @@ The number is for input and output together. To use it with Ollama, send it:
 which Ollama loads the model with its own, often much smaller, window and
 silently drops the start of a long prompt. The other protocols ignore it.
 
+## Listing models
+
+`client.list_models("ollama")` answers the provider's model ids, sorted and
+without duplicates, every page read (Anthropic's listing pages) and nothing
+filtered out, so an embedding or speech model is listed too
+(*unreleased, #680*). Each page is read by `read_model_listing`, which Python
+shares through `tests/fixtures/model_listing.json`.
+
+```rust
+use std::sync::Arc;
+use bmlib::llm::LlmClient;
+use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
+
+struct Tags;
+impl HttpClient for Tags {
+    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
+        assert_eq!(url, "http://localhost:11434/api/tags");
+        let body = r#"{"models": [{"model": "qwen3:8b"}, {"model": "gemma3:4b"}]}"#;
+        Ok(HttpResponse::from_bytes(200, body.as_bytes().to_vec()))
+    }
+    fn get_with_headers(
+        &self,
+        url: &str,
+        _headers: &std::collections::BTreeMap<String, String>,
+    ) -> Result<HttpResponse, FetchError> {
+        self.get(url)
+    }
+}
+
+let client = LlmClient::new(Arc::new(Tags));
+assert_eq!(client.list_models("ollama")?, ["gemma3:4b", "qwen3:8b"]);
+# Ok::<(), bmlib::llm::ListModelsError>(())
+```
+
+Every failure is an error, never an empty list as Python's
+`LLMClient.list_models` answers: `UnknownProvider` and `MissingApiKey` before
+any request (OpenAI's listing needs a key, unlike its context window),
+`Transport { message, status }` (a 401 or 403 is a refused key), and
+`Malformed` for a body that is not a listing or paging past
+`MAX_LISTING_PAGES`.
+
 ## What a call cost
 
 Every successful `chat` and `chat_stream` is recorded in the process-wide
