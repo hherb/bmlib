@@ -14,20 +14,23 @@ for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
 
 ## This session: API keys in the OS keychain, both languages (#634)
 
-Branch `feat/634-secret-store`, moved from StudyAnalyzer (its phase 2b
+Branch `feat/634-secret-store`, PR #687, moved from StudyAnalyzer (its phase 2b
 built it; its follow-up PR deletes its copy and pins this). `bmlib/secrets.py`
 and `rust/bmlib/src/secrets.rs`: `SecretStore` over a `Vault`, `KeyBundle`
 (one item `{provider: key}`, read once, cached), `KeyringVault` (Python's
 `keyring` package, extra `secrets`, in `all`; Rust's `keyring` crate v1,
 feature `keyring`, off by default, its own CI clippy and doc steps),
 `MemorySecrets`, `read_key_list` / `write_key_list`. Shared fixture
-`tests/fixtures/secret_key_list.json`: 23 reads (lone surrogate, BOM, a
-200-deep value — serde refuses past 128, Python reads then refuses the
-type), 8 exact writes, 7 `KeyBundle` scenarios. No test touches a real
-keychain. **Unverified live**: macOS (generic password, service + account)
-and Linux (Secret Service, `service` + `username`) address one item from
-both languages by reading both libraries' source; **Windows does not**
-(the crate's target `account.service`, Python's `service`), **#686**. iOS: the v1 stores need the crate's `protected` store, not
+`tests/fixtures/secret_key_list.json`: 26 reads (lone surrogates in a key
+and a value, BOM, a duplicate provider hiding a non-string: Python's
+`object_pairs_hook` refuses it as serde does), 8 exact writes, 8 `KeyBundle`
+scenarios (a failed read is not cached); a 100,000-deep value is a unit test
+in each language (Python's `RecursionError`). No test touches a real
+keychain. **Unverified live**, from both libraries' source: macOS (generic
+password, service + account) is one item from both languages; **Linux** is
+only while Python writes first (its `application` attribute makes a second
+item beside Rust's, then Rust's lookup is `Ambiguous`); **Windows is not**
+(the crate's target `account.service`, Python's `service`); both **#686**. iOS: the v1 stores need the crate's `protected` store, not
 configured (StudyAnalyzer #74).
 
 ## Earlier, 2026-11-06: Rust lists a provider's models (#680, PR #682, merged)

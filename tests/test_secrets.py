@@ -65,15 +65,18 @@ def test_write_agrees_with_the_fixture(case: dict[str, Any]) -> None:
 
 
 class FakeVault:
-    """An in-memory vault that counts reads and fails a write when told to."""
+    """An in-memory vault that counts reads and fails a read or a write when told to."""
 
     def __init__(self, item: str | None) -> None:
         self.item = item
         self.reads = 0
+        self.fail_read = False
         self.fail_write = False
 
     def read(self) -> str | None:
         self.reads += 1
+        if self.fail_read:
+            raise SecretError("locked")
         return self.item
 
     def write(self, text: str) -> None:
@@ -88,6 +91,7 @@ def test_bundle_agrees_with_the_fixture(case: dict[str, Any]) -> None:
     store = KeyBundle(vault)
     for i, step in enumerate(case["steps"]):
         vault.fail_write = step.get("fail_write", False)
+        vault.fail_read = step.get("fail_read", False)
         got: object
         try:
             if step["op"] == "get":
@@ -102,9 +106,17 @@ def test_bundle_agrees_with_the_fixture(case: dict[str, Any]) -> None:
         except SecretError:
             got = "error"
         vault.fail_write = False
+        vault.fail_read = False
         assert got == step["expect"], f"step {i}"
     assert vault.item == case["item_after"]
     assert vault.reads == case["reads"]
+
+
+def test_nesting_past_the_recursion_limit_is_unreadable() -> None:
+    # Too deep for any Python's json recursion limit; generated, not in the fixture.
+    deep = '{"openai":' + "[" * 100_000 + "]" * 100_000 + "}"
+    with pytest.raises(SecretError):
+        read_key_list(deep)
 
 
 def test_memory_secrets_set_get_delete() -> None:

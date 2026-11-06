@@ -53,8 +53,11 @@ With the feature, `KeyBundle::keyring("com.example.myapp")` is the item
 | `read_key_list` / `write_key_list` | The item's text ↔ `KeyList` (`BTreeMap<String, String>`): an object of strings or a `SecretError` that does not quote the text; compact, sorted, non-ASCII as is |
 | `SecretError(String)` | The platform's message or bmlib's own; never a key |
 
-**Platforms.** macOS and Linux address the same item as Python. Windows does
-not yet: the `keyring` crate names the credential `account.service`, Python's
-`keyring` `service` (#686). iOS needs the crate's `protected` store, which the v1
+**Platforms** (#686). macOS addresses the same item as Python. Linux does
+only while Python writes first: Python's `keyring` adds an `application`
+attribute, so its write beside an item this crate created makes a second
+item, and this crate's lookup then fails as ambiguous. Windows does not yet:
+the `keyring` crate names the credential `account.service`, Python's
+`keyring` `service`. iOS needs the crate's `protected` store, which the v1
 stores this feature uses do not configure; a mobile app brings its own
 `Vault`.

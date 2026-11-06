@@ -72,17 +72,21 @@ fn writes_agree_with_the_fixture() {
     }
 }
 
-/// An in-memory vault that counts reads and fails a write when told to.
+/// An in-memory vault that counts reads and fails a read or a write when told to.
 #[derive(Default)]
 struct FakeVault {
     item: Mutex<Option<String>>,
     reads: AtomicU32,
+    fail_read: AtomicBool,
     fail_write: AtomicBool,
 }
 
 impl Vault for FakeVault {
     fn read(&self) -> Result<Option<String>, SecretError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
+        if self.fail_read.load(Ordering::SeqCst) {
+            return Err(SecretError("locked".into()));
+        }
         Ok(self.item.lock().unwrap().clone())
     }
     fn write(&self, text: &str) -> Result<(), SecretError> {
@@ -108,6 +112,8 @@ fn bundles_agree_with_the_fixture() {
             let provider = step["provider"].as_str().expect("provider");
             let fail = step["fail_write"].as_bool().unwrap_or(false);
             store.vault().fail_write.store(fail, Ordering::SeqCst);
+            let fail_read = step["fail_read"].as_bool().unwrap_or(false);
+            store.vault().fail_read.store(fail_read, Ordering::SeqCst);
             let got: Result<Value, SecretError> = match step["op"].as_str().expect("op") {
                 "get" => store
                     .get(provider)
@@ -119,6 +125,7 @@ fn bundles_agree_with_the_fixture() {
                 op => panic!("{name}: unknown op {op}"),
             };
             store.vault().fail_write.store(false, Ordering::SeqCst);
+            store.vault().fail_read.store(false, Ordering::SeqCst);
             let got = got.unwrap_or_else(|_| Value::from("error"));
             assert_eq!(got, step["expect"], "{name}: step {i}");
         }

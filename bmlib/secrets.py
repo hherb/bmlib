@@ -26,10 +26,12 @@ A :class:`SecretError` never holds a key: its text is the platform's message
 or bmlib's own, and an unreadable item is reported without quoting it.
 
 The OS keychain itself is :class:`KeyringVault`, over the ``keyring`` package
-(extra ``secrets``), imported only when it is used. On macOS and Linux it
-addresses the same item as Rust's ``KeyringVault``; on Windows it does not
-yet (Rust's ``keyring`` crate names the credential ``account.service``,
-this package ``service``; #686).
+(extra ``secrets``), imported only when it is used. On macOS it addresses
+the same item as Rust's ``KeyringVault``. On Linux only while Python writes
+first: this package adds an ``application`` attribute, so its write beside an
+item Rust created makes a second one, which Rust then reads as ambiguous. On
+Windows not yet (Rust's ``keyring`` crate names the credential
+``account.service``, this package ``service``). Both are #686.
 
 The shared contract is ``tests/fixtures/secret_key_list.json``.
 """
@@ -120,11 +122,11 @@ def read_key_list(text: str) -> dict[str, str]:
     a :class:`SecretError` that does not quote the text. A provider named
     twice keeps its later key."""
     try:
-        keys = json.loads(text)
+        keys = json.loads(text, object_pairs_hook=_string_pairs)
     except (ValueError, RecursionError):
         # The parse error is dropped: it could quote the item's text.
         raise SecretError(_UNREADABLE) from None
-    if not isinstance(keys, dict) or not all(isinstance(v, str) for v in keys.values()):
+    if not isinstance(keys, dict):
         raise SecretError(_UNREADABLE)
     try:
         # A lone surrogate decodes in Python but not in Rust, and no keychain can store it.
@@ -133,6 +135,19 @@ def read_key_list(text: str) -> dict[str, str]:
             v.encode("utf-8")
     except UnicodeEncodeError:
         raise SecretError(_UNREADABLE) from None
+    return keys
+
+
+def _string_pairs(pairs: list[tuple[str, object]]) -> dict[str, str]:
+    """A JSON object as a key list, refusing any value that is not a string as
+    it is read (a ``ValueError``), as serde does: checked after ``json.loads``,
+    a non-string under a provider named twice would be hidden by the later
+    value. Any nested object therefore refuses too."""
+    keys: dict[str, str] = {}
+    for k, v in pairs:
+        if not isinstance(v, str):
+            raise ValueError("not a key list")
+        keys[k] = v
     return keys
 
 

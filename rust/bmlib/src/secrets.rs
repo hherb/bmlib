@@ -31,9 +31,11 @@
 //! the `keyring` crate's v1 stores). Everything else is always compiled, so a
 //! build without it (the mobile apps) can bring its own [`Vault`].
 //!
-//! On macOS and Linux, Rust and Python address the same item. On Windows
-//! they do not yet: the `keyring` crate names the credential
-//! `account.service` and Python's `keyring` names it `service` (#686).
+//! On macOS, Rust and Python address the same item. On Linux only while
+//! Python writes first: Python's `keyring` adds an `application` attribute,
+//! so its write beside an item Rust created makes a second one, and Rust then
+//! finds two (`Ambiguous`). On Windows not yet: the `keyring` crate names the
+//! credential `account.service`, Python's `keyring` `service`. Both are #686.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -71,9 +73,18 @@ pub trait SecretStore: Send + Sync {
 }
 
 /// An in-memory [`SecretStore`], for tests and for a session that keeps no
-/// key past its end.
-#[derive(Debug, Default)]
+/// key past its end. Its `Debug` shows how many keys it holds, never a key.
+#[derive(Default)]
 pub struct MemorySecrets(Mutex<HashMap<String, String>>);
+
+impl fmt::Debug for MemorySecrets {
+    /// `MemorySecrets { keys: <count> }`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemorySecrets")
+            .field("keys", &self.keys().len())
+            .finish()
+    }
+}
 
 impl MemorySecrets {
     /// The map, even if another thread panicked while holding it (a map of
@@ -296,6 +307,18 @@ mod tests {
         assert!(!e.to_string().contains("sk-leaky"));
     }
 
+    /// Nesting past any parser's depth limit is unreadable (Python's twin
+    /// `test_nesting_past_the_recursion_limit_is_unreadable`).
+    #[test]
+    fn deep_nesting_is_unreadable() {
+        let deep = format!(
+            "{{\"openai\":{}{}}}",
+            "[".repeat(100_000),
+            "]".repeat(100_000)
+        );
+        assert!(read_key_list(&deep).is_err());
+    }
+
     /// A vault's own error reaches the caller as it is.
     #[test]
     fn a_vault_error_passes_through() {
@@ -314,6 +337,14 @@ mod tests {
         s.delete("openai").unwrap();
         s.delete("openai").unwrap();
         assert_eq!(s.get("openai").unwrap(), None);
+    }
+
+    /// `Debug` counts the keys and shows none.
+    #[test]
+    fn memory_secrets_debug_hides_keys() {
+        let s = MemorySecrets::default();
+        s.set("openai", "sk-leaky").unwrap();
+        assert_eq!(format!("{s:?}"), "MemorySecrets { keys: 1 }");
     }
 
     /// The display form says where the error came from.

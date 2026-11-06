@@ -107,10 +107,12 @@ All notable changes to bmlib are documented here. The format is based on
   feature `keyring`, off by default, so a mobile build brings its own
   `Vault`). The item's text is read and written by `read_key_list` /
   `write_key_list`, held together with `KeyBundle`'s behaviour by
-  `tests/fixtures/secret_key_list.json` (23 reads, 8 writes, 7 store
-  scenarios). macOS and Linux address one item from both languages; Windows
-  does not yet (the crate names the credential `account.service`, the
-  package `service`; #686).
+  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 8 store
+  scenarios). macOS addresses one item from both languages; Linux only
+  while Python writes first (its `application` attribute makes a second
+  item beside Rust's, which Rust then reads as ambiguous); Windows not yet
+  (the crate names the credential `account.service`, the package
+  `service`). Both #686.
 
 - **Rust lists a provider's models** (#680, filed by StudyAnalyzer, whose
   Settings offer the models to pick from). `LlmClient::list_models(provider)`

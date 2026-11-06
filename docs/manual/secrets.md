@@ -32,7 +32,10 @@ except SecretError as e:
 | `read_key_list(text)` / `write_key_list(keys)` | The item's text ↔ `dict[str, str]`. Reading refuses anything but an object of strings (and a lone surrogate, a byte-order mark) with a `SecretError` that does not quote the text; writing is compact, sorted by provider, non-ASCII as is |
 | `API_KEYS_ACCOUNT` | `"api-keys"`, the item's account |
 
-**Platforms.** On macOS (the login keychain's generic password, service and
-account) and Linux (Secret Service, attributes `service` and `username`) both
-languages address one item. On Windows they do not yet: Rust's `keyring`
-crate names the credential `account.service`, this package `service` (#686).
+**Platforms** (#686). On macOS (the login keychain's generic password,
+service and account) both languages address one item. On Linux (Secret
+Service) only while Python writes first: `keyring` adds an `application`
+attribute, so a write beside an item Rust created makes a second item, and
+Rust's lookup (`service` and `username`) then fails as ambiguous. On Windows
+they do not yet: Rust's `keyring` crate names the credential
+`account.service`, this package `service`.
