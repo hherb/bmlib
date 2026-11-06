@@ -17,7 +17,11 @@ The Python library is documented separately, in the repository's
   every `get` and caches it (macOS asks the user on every read), and reads it
   again before a `set` or `delete` rewrites it, so another writer's key is
   kept. `set` replaces an item that is not a key list (or not UTF-8); a
-  `SecretError` (`new`, `message`) never holds a key. The OS keychain is
+  `SecretError` (`new`, `with_kind`, `kind`, `message`) never holds a key,
+  and its `SecretErrorKind` (#689) says whether saving a key will help:
+  `UnreadableItem` (it replaces the item), `AmbiguousItem` (the keyring
+  crate's `Ambiguous`, on a read or a write; `set` does not replace it) or
+  `Store` (locked, denied, no keychain). The OS keychain is
   `KeyringVault`, behind the new `keyring` feature (the `keyring` crate's v1
   stores), off by default so a mobile build brings its own `Vault`. Held to
   Python by `tests/fixtures/secret_key_list.json`; Linux and Windows address

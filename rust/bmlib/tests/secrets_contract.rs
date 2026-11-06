@@ -19,10 +19,11 @@
 //! keychain item reads and is written, and what a `KeyBundle` does over it.
 
 use bmlib::secrets::{
-    read_key_list, write_key_list, KeyBundle, KeyList, SecretError, SecretStore, Vault,
+    read_key_list, write_key_list, KeyBundle, KeyList, SecretError, SecretErrorKind, SecretStore,
+    Vault,
 };
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/secret_key_list.json");
@@ -50,8 +51,9 @@ fn reads_agree_with_the_fixture() {
         let name = case["name"].as_str().expect("name");
         let got = read_key_list(case["text"].as_str().expect("text"));
         let expect = &case["expect"];
-        if expect["error"] == "unreadable" {
+        if expect["error"] == "unreadable-item" {
             let e = got.expect_err(name);
+            assert_eq!(e.kind(), SecretErrorKind::UnreadableItem, "{name}");
             assert_eq!(
                 e.message(),
                 "the keychain item is not a valid key list",
@@ -77,26 +79,42 @@ fn writes_agree_with_the_fixture() {
     }
 }
 
-/// An in-memory vault that counts reads and fails a read or a write when told to.
+/// Every error kind by its fixture name, so a kind added later must be named here.
+const KINDS: [SecretErrorKind; 3] = [
+    SecretErrorKind::UnreadableItem,
+    SecretErrorKind::AmbiguousItem,
+    SecretErrorKind::Store,
+];
+
+/// The kind a fixture names.
+fn kind(name: &str) -> SecretErrorKind {
+    *KINDS
+        .iter()
+        .find(|k| k.as_str() == name)
+        .unwrap_or_else(|| panic!("unknown kind {name}"))
+}
+
+/// An in-memory vault that counts reads and fails a read or a write, with a
+/// given kind, when told to.
 #[derive(Default)]
 struct FakeVault {
     item: Mutex<Option<String>>,
     reads: AtomicU32,
-    fail_read: AtomicBool,
-    fail_write: AtomicBool,
+    fail_read: Mutex<Option<SecretErrorKind>>,
+    fail_write: Mutex<Option<SecretErrorKind>>,
 }
 
 impl Vault for FakeVault {
     fn read(&self) -> Result<Option<String>, SecretError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        if self.fail_read.load(Ordering::SeqCst) {
-            return Err(SecretError::new("locked"));
+        if let Some(k) = *self.fail_read.lock().unwrap() {
+            return Err(SecretError::with_kind(k, "locked"));
         }
         Ok(self.item.lock().unwrap().clone())
     }
     fn write(&self, text: &str) -> Result<(), SecretError> {
-        if self.fail_write.load(Ordering::SeqCst) {
-            return Err(SecretError::new("denied"));
+        if let Some(k) = *self.fail_write.lock().unwrap() {
+            return Err(SecretError::with_kind(k, "denied"));
         }
         *self.item.lock().unwrap() = Some(text.to_string());
         Ok(())
@@ -135,10 +153,8 @@ fn bundles_agree_with_the_fixture() {
                 *store.vault().item.lock().unwrap() = Some(text.to_string());
             }
             let provider = step["provider"].as_str().expect("provider");
-            let fail = step["fail_write"].as_bool().unwrap_or(false);
-            store.vault().fail_write.store(fail, Ordering::SeqCst);
-            let fail_read = step["fail_read"].as_bool().unwrap_or(false);
-            store.vault().fail_read.store(fail_read, Ordering::SeqCst);
+            *store.vault().fail_write.lock().unwrap() = step["fail_write"].as_str().map(kind);
+            *store.vault().fail_read.lock().unwrap() = step["fail_read"].as_str().map(kind);
             let got: Result<Value, SecretError> = match step["op"].as_str().expect("op") {
                 "get" => store
                     .get(provider)
@@ -149,9 +165,9 @@ fn bundles_agree_with_the_fixture() {
                 "delete" => store.delete(provider).map(|()| Value::from("ok")),
                 op => panic!("{name}: unknown op {op}"),
             };
-            store.vault().fail_write.store(false, Ordering::SeqCst);
-            store.vault().fail_read.store(false, Ordering::SeqCst);
-            let got = got.unwrap_or_else(|_| Value::from("error"));
+            *store.vault().fail_write.lock().unwrap() = None;
+            *store.vault().fail_read.lock().unwrap() = None;
+            let got = got.unwrap_or_else(|e| serde_json::json!({ "error": e.kind().as_str() }));
             assert_eq!(got, step["expect"], "{name}: step {i}");
         }
         let vault = store.vault();

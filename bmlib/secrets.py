@@ -26,7 +26,8 @@ another writer saved in the meantime is kept. The item is named by a service
 
 A :class:`SecretError` never holds a key: its text is the platform's message
 or bmlib's own, an unreadable item is reported without quoting it, and it is
-raised with no exception chained to it (one could hold the item's text).
+raised with no exception chained to it (one could hold the item's text). Its
+:attr:`~SecretError.kind` says whether saving a key will help (#689).
 
 The OS keychain itself is :class:`KeyringVault`, over the ``keyring`` package
 (extra ``secrets``), imported only when it is used. On macOS it addresses
@@ -44,6 +45,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from enum import StrEnum
 from types import ModuleType
 from typing import Protocol
 
@@ -66,9 +68,36 @@ _NOT_TEXT = "a provider or key that is not valid text"
 keychain can store and :func:`read_key_list` would refuse to read back."""
 
 
+class SecretErrorKind(StrEnum):
+    """What kind of failure a :class:`SecretError` is, so an app can say what
+    will help (#689). The same three as Rust's ``SecretErrorKind``."""
+
+    UNREADABLE_ITEM = "unreadable-item"
+    """The item is there but is not a key list (not JSON of strings, or not
+    even text): saving a key replaces it with one holding just that key."""
+
+    AMBIGUOUS_ITEM = "ambiguous-item"
+    """More than one keychain item matches. Saving a key does not help; the
+    user has to remove one in the keychain. :class:`KeyringVault` never
+    reports it (Python's ``keyring`` reads whichever item comes first, #686);
+    a :class:`Vault` of an app's own may."""
+
+    STORE = "store"
+    """The store failed or refused: locked, access denied, no keychain at all,
+    or a provider or key no keychain can hold."""
+
+
 class SecretError(Exception):
     """A secret store failed. The text is the platform's message or bmlib's
-    own, and never holds a key."""
+    own, and never holds a key; :attr:`kind` says which failure it is."""
+
+    def __init__(self, message: str, kind: SecretErrorKind = SecretErrorKind.STORE) -> None:
+        super().__init__(message)
+        self.kind = kind
+
+    def __reduce__(self) -> tuple[type[SecretError], tuple[str, SecretErrorKind]]:
+        """Pickle with the kind, which ``Exception``'s own pickling drops."""
+        return (type(self), (str(self), self.kind))
 
 
 class SecretStore(Protocol):
@@ -138,7 +167,7 @@ def read_key_list(text: str) -> dict[str, str]:
         keys = None
     # A lone surrogate decodes in Python but not in Rust, and no keychain can store it.
     if not isinstance(keys, dict) or not all(_is_text(k) and _is_text(v) for k, v in keys.items()):
-        raise SecretError(_UNREADABLE)
+        raise SecretError(_UNREADABLE, SecretErrorKind.UNREADABLE_ITEM)
     return keys
 
 
