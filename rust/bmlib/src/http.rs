@@ -47,7 +47,7 @@ pub struct UreqClient {
     ///
     /// Several of the endpoints this library reads **ask a caller to identify
     /// itself**; naming bmlib and a contact address is the polite form those
-    /// services document. ClinicalTrials.gov refused every shape but one
+    /// services document. ClinicalTrials.gov refused every shape not
     /// carrying `python-httpx` with a 403 on 2026-09-06 and served the default
     /// on 2026-11-07 (issue #606); `tests/live_network.rs` checks it.
     pub user_agent: String,

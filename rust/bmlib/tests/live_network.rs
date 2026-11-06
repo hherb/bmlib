@@ -422,10 +422,11 @@ fn a_rejected_pubmed_search_is_an_error_not_a_quiet_day() {
 /// analyzer header. The rule can come back without notice and no offline test
 /// can see it: this is what does.
 ///
-/// Two halves. The bare request names the header as the cause if it fails;
-/// the whole `analyze()` holds the claim a caller makes, that the check was
-/// *answered* — `NotRegistered` would mean the accession was not found, a
-/// different failure, and is refused too.
+/// Two halves. The bare request names the header as the likely cause only for
+/// a 403, the refusal's own status; the whole `analyze()` holds the claim a
+/// caller makes, that the check was *answered* — `NotRegistered` would mean no
+/// accession was detected for the paper, a different failure, and is refused
+/// too.
 #[test]
 fn clinicaltrials_gov_answers_a_default_client() {
     use bmlib::transparency::analyzer::{TransparencyAnalyzer, CLINICALTRIALS_STUDY_URL};
@@ -446,8 +447,14 @@ fn clinicaltrials_gov_answers_a_default_client() {
     assert_eq!(
         response.status,
         200,
-        "ClinicalTrials.gov refuses the default user agent {:?} again (#606): {:.200}",
+        "ClinicalTrials.gov answered {} to the default user agent {:?}, not 200{}: {:.200}",
+        response.status,
         client.user_agent,
+        if response.status == 403 {
+            " (a 403 is #194's header rule returning, #606)"
+        } else {
+            ""
+        },
         String::from_utf8_lossy(&response.body)
     );
 

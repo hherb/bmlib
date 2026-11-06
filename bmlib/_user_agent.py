@@ -36,15 +36,15 @@ from bmlib import __version__
 def user_agent(email: str, httpx_version: str) -> str:
     """Return bmlib's ``User-Agent`` header value.
 
-    **The trailing ``python-httpx`` token is load-bearing and is not
-    decoration** (issue #194). ClinicalTrials.gov's edge refuses bmlib's
-    identification with a bare 134-byte ``403 Forbidden`` page. Measured
+    **The trailing ``python-httpx`` token was load-bearing** (issue #194).
+    ClinicalTrials.gov's edge refused bmlib's identification with a bare
+    134-byte ``403 Forbidden`` page. Measured
     2026-09-06 against ``/api/v2/studies/{nct}?fields=hasResults``: of
     thirteen header shapes, the five carrying ``python-httpx`` — including the
     token appended *after* bmlib's own identification — served 200, while
     ``curl``, ``python-requests``, ``Python-urllib``, ``Go-http-client``,
-    ``PostmanRuntime`` and a browser string were all refused. So it is an
-    allow-list on that one token, and its position does not matter.
+    ``PostmanRuntime`` and a browser string were all refused. So it was an
+    allow-list on that one token, and its position did not matter.
 
     **Re-measured 2026-11-07 (issue #606), the refusal is gone**: bare
     ``bmlib/{version}``, ``curl``, ``python-requests`` and a browser string

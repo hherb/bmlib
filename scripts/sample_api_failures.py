@@ -3662,7 +3662,8 @@ def main() -> int:
     args = _build_arg_parser().parse_args()
 
     # **bmlib's own header, not a sampler one.** A remote that judges the
-    # caller by it — ClinicalTrials.gov does, issue #194 — answers a sampler
+    # caller by it — ClinicalTrials.gov did, #194; not on 2026-11-07, #606 —
+    # answers a sampler
     # string and the analyzer's string differently, and the table would then
     # be of an identity bmlib never presents. The URL half of that lesson is
     # in the module docstring; this is the header half, and it is the half
