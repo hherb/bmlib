@@ -16,8 +16,13 @@ Branch `fix/608-rust-500-not-served`, Rust only. Python since #457 stores
 non-404. `fetch_europepmc_fulltext` now takes the flag (read only to
 interpret a 500, never to gate the request). Pinned by
 `a_500_is_not_served_only_for_a_closed_access_record` in `tests/analyzer.rs`
-(N/Y/absent/non-string flag, a 503, a served `N` record); both mutants
-(branch removed, flag test removed) killed. No oracle change: the
+(N/Y/absent/non-string flag, `n`/` N`/`No`, an error-page body, a 503, a
+served `N` record; the request URL and the stored provenance line asserted);
+six mutants killed (branch removed, any 500, trim, case-fold, prefix, a body
+test). PR #683's review also corrected the function's rustdoc, the
+`NotServed`/`RequestFailed` docs and the manual's differences list, which
+gains the missing coercion tally (#209) as a stated gap. **Filed: #685** — no Rust
+test can assert a log line's level (`log_line` is a bare `eprintln!`). No oracle change: the
 transparency oracle covers the model rules only.
 
 ## Earlier, 2026-11-06 (merged): Rust lists a provider's models (#680, PR #682); an OpenAlex abstract's tie (#583, PR #679)
@@ -65,7 +70,8 @@ word)` tuples, as Rust does; oracle case `abstract/tie-at-one-position`.
 - **#659, #658, #646** (PRs #661, #660, #657): `PicoError.retryable`;
   `batch_errors` and `summarise_batch_errors`; the condenser retries only a
   transport failure or 408/429/500/502/503/504/529. → retry `RequestFailed {
-  retryable: true }` only.
+  retryable: true }` only, and on the next pin move add a `ChatError::Http`
+  arm where a `Transport` arm meant "the request failed".
 - **#654, #563** (PRs #655, #653): `canonical_from_html` refuses a page over
   `HTML_MAX_CHARS` unparsed and one past `HTML_PARSE_SECONDS`; Rust
   `HtmlError { TooLarge, TimedOut }`. Filed **#656**. → a too-large page is
@@ -77,7 +83,9 @@ word)` tuples, as Rust does; oracle case `abstract/tie-at-one-position`.
 - **#632, #640-#642, #638** (PRs #648, #644, #639): `find_passage` rejects a
   contradicting fuzzy match (filed **#647**, **#651**); `PicoAgent(num_ctx=,
   stop=)`; `prepare()` → `PicoPrepared`. → threshold back to 0.95-0.97, call
-  `prepare` once per paper, retry only `extract_prepared`.
+  `prepare` once per paper, retry only `extract_prepared`, and build `LlmChat`,
+  `LlmContextModel` and the agent with the same window, stop flag and
+  `condense_config`.
 - **PDF segmenter** (PRs #637, #636's, #631/#630/#629, #627, #622): an
   unnamed numbered parent kept as `SectionType.OTHER` (`PDF_CANONICAL_VERSION`
   6); heading faces; pdf-5's character median (the title corpus's
@@ -245,7 +253,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**120 open once #608 closes** (`gh issue list --state open --limit 300 --json number`,
+**121 open once #608 closes** (#685 filed) (`gh issue list --state open --limit 300 --json number`,
 2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

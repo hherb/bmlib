@@ -150,7 +150,7 @@ pub enum FullTextStatus {
     /// **Requested and not served: the 404, or a 500 for a closed-access record.**
     ///
     /// Three other outcomes used to reach it, putting a claim in the remote's
-    /// mouth that only the 404 makes: a bmlib defect on the request line, a
+    /// mouth that only Europe PMC's *not served* makes: a bmlib defect on the request line, a
     /// 429/503/403, and an empty HTTP 200 body. All three are
     /// [`FullTextStatus::RequestFailed`] now.
     ///
@@ -158,7 +158,9 @@ pub enum FullTextStatus {
     /// `isOpenAccess: N` is read as not served too: Europe PMC answers 500
     /// where it answered 404, and no such record has been seen to serve.
     NotServed,
-    /// Nobody answered: a non-404 status, or a request this end could not make.
+    /// Nobody answered: any status but Europe PMC's *not served* (a 404, or a
+    /// 500 for a record listed `isOpenAccess: N`), an empty or non-UTF-8 200
+    /// body, or a request this end could not make.
     RequestFailed,
     /// Served, segmented, and scanned as the article's own text.
     Analyzed,

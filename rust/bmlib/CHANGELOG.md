@@ -14,11 +14,14 @@ The Python library is documented separately, in the repository's
 - **A full-text 500 for a closed-access record is not served** (#608,
   following Python's #457). Europe PMC's `fullTextXML` answers HTTP 500 where
   it answered 404 for an article it holds and does not serve, so every Rust
-  analysis of a closed-access paper WARNed and stored `RequestFailed`. A 500
+  analysis that requested a closed-access paper's full text WARNed and stored
+  `RequestFailed`. A 500
   for a record whose `isOpenAccess` is exactly `"N"` now stores `NotServed`
   at DEBUG, as Python does; any other 500 stays `RequestFailed` at WARNING.
-  The flag interprets the answer and gates no request. No score moves; the
-  stored `full_text_status` does, for those analyses.
+  The flag interprets the answer and gates no request. No score moves; for
+  those analyses the stored `full_text_status` does, and so does its
+  provenance line in `risk_indicators` (*"the request to EuropePMC produced no
+  answer"* becomes *"EuropePMC served none for this article"*).
 
 - **A PMC ID or a full-text accession in non-ASCII digits is refused**
   (#564, the accession half of #471). The `regex` crate's `\d` is every
