@@ -787,6 +787,124 @@ fn the_full_text_statuses_are_distinct() {
     }
 }
 
+/// Issue #608, following Python's #457: a 500 is Europe PMC's *not served* only
+/// for a record it lists as exactly `isOpenAccess: N`; for any other flag — `Y`,
+/// absent, not a string, or a near miss such as `n` or ` N` — it is nobody
+/// answering. The body does not decide (Europe PMC's real 500 is an error page),
+/// and the flag never gates the request: a closed-access record that serves is
+/// still scanned.
+#[test]
+fn a_500_is_not_served_only_for_a_closed_access_record() {
+    const ERROR_PAGE: &str = "<html><body><h1>Whitelabel Error Page</h1><div>There was an \
+         unexpected error (type=Internal Server Error, status=500).</div></body></html>";
+    const ARTICLE: &str = "<article><body>x</body></article>";
+    let not_served = Some("Full text not scanned (EuropePMC served none for this article)");
+    let no_answer = Some("Full text not scanned (the request to EuropePMC produced no answer)");
+    let cases: Vec<(&str, Option<Value>, u16, &str, FullTextStatus)> = vec![
+        (
+            "N-500",
+            Some(json!("N")),
+            500,
+            ERROR_PAGE,
+            FullTextStatus::NotServed,
+        ),
+        (
+            "N-500-empty",
+            Some(json!("N")),
+            500,
+            "",
+            FullTextStatus::NotServed,
+        ),
+        (
+            "Y-500",
+            Some(json!("Y")),
+            500,
+            ERROR_PAGE,
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "absent-500",
+            None,
+            500,
+            ERROR_PAGE,
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "bool-500",
+            Some(json!(false)),
+            500,
+            ERROR_PAGE,
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "lower-n-500",
+            Some(json!("n")),
+            500,
+            ERROR_PAGE,
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "padded-N-500",
+            Some(json!(" N")),
+            500,
+            ERROR_PAGE,
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "No-500",
+            Some(json!("No")),
+            500,
+            ERROR_PAGE,
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "N-503",
+            Some(json!("N")),
+            503,
+            "",
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "N-200",
+            Some(json!("N")),
+            200,
+            ARTICLE,
+            FullTextStatus::Analyzed,
+        ),
+    ];
+    for (name, flag, status, body, want) in cases {
+        let mut record = epmc_record(Some("PMC123"), "123", "Y", "");
+        if let Some(flag) = flag {
+            record["isOpenAccess"] = flag;
+        }
+        let (analyzer, client) = harness(default_settings());
+        let client = client
+            .route(&search_url("EXT_ID:123"), 200, &search_body(vec![record]))
+            .route(&fulltext_url("PMC123"), status, body);
+        let result = analyzer.analyze(&client, "doc-1", Some("123"), None);
+        assert_eq!(result.full_text_status, Some(want), "{name}");
+        // The scripted client answers 404 (also `NotServed`) to an unrouted URL,
+        // so the request itself is asserted, not only the status.
+        assert!(
+            client.urls().contains(&fulltext_url("PMC123")),
+            "{name}: the full text was requested"
+        );
+        let has = |line: Option<&str>| {
+            result
+                .risk_indicators
+                .iter()
+                .any(|stored| Some(stored.as_str()) == line)
+        };
+        assert_eq!(has(not_served), want == FullTextStatus::NotServed, "{name}");
+        assert_eq!(
+            has(no_answer),
+            want == FullTextStatus::RequestFailed,
+            "{name}"
+        );
+        assert_eq!(result.validate(), Ok(()), "{name}");
+    }
+}
+
 /// A served, whole, article-shaped body is scanned: `full_text_analyzed` is set
 /// and a missing disclosure becomes an explicit `Some(false)`.
 #[test]
