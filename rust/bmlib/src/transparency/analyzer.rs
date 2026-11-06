@@ -429,7 +429,7 @@ pub const BMLIB_VERSION: &str = "0.12.0";
 /// a fiction — this module *is* httpx on the Python side.
 ///
 /// **Re-measured 2026-11-07 (issue #606), the refusal is gone**: a default
-/// [`crate::http::UreqClient`] (`bmlib/{version}`) was served 200 six times of
+/// `UreqClient` (`bmlib/{version}`) was served 200 six times of
 /// six, as were `curl`, `python-requests` and a browser string, so a caller
 /// need not set this header. It is kept, since it costs nothing and the rule
 /// may return.
