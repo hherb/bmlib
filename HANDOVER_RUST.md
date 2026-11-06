@@ -1777,8 +1777,10 @@ closed.
   because the Ollama SDK's Pydantic model dropped two fields).
 - **Streaming tool-call assembly** — the plan calls it *"the fiddly part"* and
   expects less than the Python does.
-- **`list_models`, `test_connection`, `count_tokens`, `embed`/`embed_batch`,
-  `get_model_metadata`, `get_provider_info`** are absent. `chat` is complete
+- **`test_connection`, `count_tokens`, `embed`/`embed_batch`,
+  `get_model_metadata`, `get_provider_info`** are absent. (`list_models`
+  was too, until StudyAnalyzer's model picker needed it: #680, ids only, no
+  metadata, every failure an error.) `chat` is complete
   including `tools`, `tool_choice`, `think` and `json_mode`. `count_tokens`'s
   accuracy was never established downstream, which is why it was not ported as-is.
 - **No process-wide `get_llm_client()` singleton**, with the reasoning on

@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-06 (**this session's PR is on `fix/564-ascii-pmc-digits`**, for #564; PRs #674 (#609), #675 (#548, #549),
+_Last updated: 2026-11-06 (**this session's PR is on `feat/rust-list-models`**, for #680; PRs #678 (#564), #677 (#624), #674 (#609), #675 (#548, #549),
 #676 (#673) and #672 (#636) merged). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
@@ -10,9 +10,24 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#676 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#678 and this session's._
 
-## This session: a Rust PMC ID or accession in non-ASCII digits is refused (#564)
+## This session: Rust lists a provider's models (#680)
+
+Branch `feat/rust-list-models`, filed by StudyAnalyzer (its Settings offer the
+provider's models to pick from, or a typed name). `LlmClient::list_models(provider)`
+in `client.rs` beside `context_window`; the pure `read_model_listing` in the
+new `llm/model_listing.rs` and in Python's `bmlib/llm/model_listing.py`, held
+together by `tests/fixtures/model_listing.json` (21 cases; the Ollama body a
+real `/api/tags` reply, the cloud ones from each provider's API reference, not
+live: no cloud key in the session). Ids only, sorted, every page read
+(Anthropic's), nothing filtered; every failure an error (Python's
+`LLMClient.list_models` answers `[]`, unchanged). Python's providers still list
+through their SDKs; the reader is only the contract there. **Filed, not
+fixed: #681** — Rust posts Gemini chats to `…/v1beta/openai/v1/chat/completions`
+where Google documents no `/v1`; one live chat decides it.
+
+## Earlier, 2026-11-06: a Rust PMC ID or accession in non-ASCII digits is refused (#564, PR #678, merged)
 
 Branch `fix/564-ascii-pmc-digits` (the start-of-session docs refresh rides
 on it). The `regex` crate's `\d` is Unicode, so Rust's `normalise_pmc_id`

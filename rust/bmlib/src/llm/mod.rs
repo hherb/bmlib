@@ -38,6 +38,7 @@ pub mod client;
 pub mod context_window;
 pub mod data_types;
 pub mod json_repair;
+pub mod model_listing;
 pub mod pricing;
 pub mod protocol;
 pub mod stream;
@@ -62,6 +63,10 @@ pub use json_repair::{
     apply_repairs, extract_and_repair_json, repair_json, repair_json_default, safe_json_loads,
     salvage_json_fields, JsonRepairError, RepairError, MAX_JSON_LENGTH, MAX_REPAIR_ATTEMPTS,
     MAX_SALVAGE_MATCHES,
+};
+pub use model_listing::{
+    read_model_listing, ListModelsError, ModelListingPage, ANTHROPIC_LISTING_PAGE_SIZE,
+    GEMINI_MODEL_PREFIX, MAX_LISTING_PAGES,
 };
 pub use protocol::{
     json_dumps_python, messages_to_anthropic, messages_to_ollama, messages_to_openai,
