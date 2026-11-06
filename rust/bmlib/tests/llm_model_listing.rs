@@ -164,10 +164,16 @@ fn each_provider_lists_at_its_own_url() {
             "https://generativelanguage.googleapis.com/v1beta/openai/models",
         ),
     ] {
-        let t = Scripted::ok(&[json!({"data": [{"id": "m"}]})]);
+        // Each provider's own reading: only Gemini's drops the prefix.
+        let t = Scripted::ok(&[json!({"data": [{"id": "models/m"}]})]);
+        let want = if provider == "gemini" {
+            "m"
+        } else {
+            "models/m"
+        };
         assert_eq!(
             client(t.clone(), Some("k")).list_models(provider),
-            Ok(vec!["m".into()])
+            Ok(vec![want.to_string()])
         );
         assert_eq!(t.urls(), [url], "{provider}");
         assert_eq!(t.headers()["Authorization"], "Bearer k", "{provider}");
@@ -178,6 +184,25 @@ fn each_provider_lists_at_its_own_url() {
 fn a_provider_name_is_read_trimmed_and_in_any_case() {
     let t = Scripted::ok(&[json!({"models": []})]);
     assert_eq!(client(t, None).list_models(" Ollama "), Ok(vec![]));
+}
+
+#[test]
+fn a_base_url_override_is_listed_under() {
+    let t = Scripted::ok(&[json!({"data": []})]);
+    let mut c = client(t.clone(), Some("k"));
+    c.base_url = Some("http://h:8080/".into());
+    assert_eq!(c.list_models("openai"), Ok(vec![]));
+    assert_eq!(t.urls(), ["http://h:8080/v1/models"]);
+}
+
+#[test]
+fn an_empty_provider_name_is_unknown() {
+    let t = Scripted::ok(&[json!({"models": []})]);
+    assert_eq!(
+        client(t.clone(), None).list_models(" "),
+        Err(ListModelsError::UnknownProvider(" ".into()))
+    );
+    assert!(t.urls().is_empty());
 }
 
 #[test]

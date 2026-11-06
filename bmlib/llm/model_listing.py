@@ -19,9 +19,10 @@
 :func:`read_model_listing` is pure and shared with the Rust port
 (``bmlib::llm::read_model_listing``) through
 ``tests/fixtures/model_listing.json``. Rust's ``LlmClient::list_models``
-fetches the pages and reads each with it; Python's providers list through
-their SDKs (:meth:`bmlib.llm.client.LLMClient.list_models`), so here the
-reader is the contract alone.
+fetches the pages and reads each with it; Python's providers keep their own
+listing (their SDKs', and Ollama's raw ``/api/tags``, behind
+:meth:`bmlib.llm.client.LLMClient.list_models`), so here the reader is the
+contract alone.
 """
 
 from __future__ import annotations

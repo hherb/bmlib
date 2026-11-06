@@ -93,10 +93,11 @@ All notable changes to bmlib are documented here. The format is based on
   `read_model_listing(provider, body)`, in **both languages**
   (`bmlib.llm.model_listing.read_model_listing` in Python, raising
   `ModelListingError`), held together by `tests/fixtures/model_listing.json`
-  (21 cases): Ollama's `models[].model`, every other provider's `data[].id`,
+  (23 cases): Ollama's `models[].model`, every other provider's `data[].id`,
   a leading `models/` dropped from a Gemini id. Python's providers keep
-  listing through their SDKs. Rust's `list_models` was left out of the port
-  on purpose until a Rust caller needed it.
+  their own listing (the SDKs', Ollama's raw `/api/tags`) and do not call the
+  reader. Rust's port had no `list_models` (HANDOVER_RUST.md §1 lists it
+  among the deliberately absent calls) until a Rust caller needed it.
 
 - **A long text's condensation reports its progress** (#609, filed by
   StudyAnalyzer, with the Rust crate). The PICO and Cochrane agents' map-reduce

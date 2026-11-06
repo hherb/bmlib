@@ -18,12 +18,13 @@ Branch `feat/rust-list-models`, filed by StudyAnalyzer (its Settings offer the
 provider's models to pick from, or a typed name). `LlmClient::list_models(provider)`
 in `client.rs` beside `context_window`; the pure `read_model_listing` in the
 new `llm/model_listing.rs` and in Python's `bmlib/llm/model_listing.py`, held
-together by `tests/fixtures/model_listing.json` (21 cases; the Ollama body a
+together by `tests/fixtures/model_listing.json` (23 cases; the Ollama body a
 real `/api/tags` reply, the cloud ones from each provider's API reference, not
 live: no cloud key in the session). Ids only, sorted, every page read
 (Anthropic's), nothing filtered; every failure an error (Python's
-`LLMClient.list_models` answers `[]`, unchanged). Python's providers still list
-through their SDKs; the reader is only the contract there. **Filed, not
+`LLMClient.list_models` answers `[]`, unchanged). Python's providers keep their
+own listing (SDKs; Ollama's raw `/api/tags`); the reader is only the contract
+there. **Filed, not
 fixed: #681** — Rust posts Gemini chats to `…/v1beta/openai/v1/chat/completions`
 where Google documents no `/v1`; one live chat decides it.
 

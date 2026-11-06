@@ -405,6 +405,33 @@
       "expect": {
         "error": "malformed"
       }
+    },
+    {
+      "name": "a bool id is not an id",
+      "provider": "openai",
+      "body": {
+        "data": [
+          {
+            "id": true
+          }
+        ]
+      },
+      "expect": {
+        "error": "malformed"
+      }
+    },
+    {
+      "name": "a has_more that is not true does not page",
+      "provider": "anthropic",
+      "body": {
+        "data": [],
+        "has_more": 1,
+        "last_id": "a"
+      },
+      "expect": {
+        "ids": [],
+        "next_after": null
+      }
     }
   ]
 }

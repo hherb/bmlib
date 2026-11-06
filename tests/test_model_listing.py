@@ -42,15 +42,3 @@ def test_listing_agrees_with_the_fixture(case: dict) -> None:
         return
     got = read_model_listing(case["provider"], case["body"])
     assert got == ModelListingPage(ids=expect["ids"], next_after=expect["next_after"])
-
-
-def test_a_bool_id_is_not_an_id() -> None:
-    # ``True`` is an ``int`` in Python; neither is a string id.
-    with pytest.raises(ModelListingError):
-        read_model_listing("openai", {"data": [{"id": True}]})
-
-
-def test_a_truthy_has_more_that_is_not_true_does_not_page() -> None:
-    # Rust reads ``has_more`` with ``as_bool``; ``1`` is no bool there.
-    got = read_model_listing("anthropic", {"data": [], "has_more": 1, "last_id": "a"})
-    assert got.next_after is None
