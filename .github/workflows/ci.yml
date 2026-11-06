@@ -185,6 +185,10 @@ jobs:
         # Off by default too, so `fulltext/mupdf_backend.rs` — the one module
         # here reading a C struct through `unsafe` — is compiled only here.
         run: cargo clippy --all-targets --features pdf -- -D warnings
+      - name: clippy (keyring feature)
+        # Off by default too, so `secrets::KeyringVault` is compiled only here,
+        # and so is the `keyring` crate's Linux Secret Service store.
+        run: cargo clippy --all-targets --features keyring -- -D warnings
       - name: clippy (bmlib without default features)
         # What the mobile apps link. A workspace-wide build cannot see it:
         # resolver 2 unifies bmlib's default features back in for every member,
@@ -207,6 +211,7 @@ jobs:
           cargo doc --no-deps
           cargo doc --no-deps --features html
           cargo doc --no-deps --features pdf
+          cargo doc --no-deps --features keyring
           cargo doc -p bmlib --no-deps --no-default-features
         env:
           RUSTDOCFLAGS: -D warnings

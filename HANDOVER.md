@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-06 (**this session's PR is on `feat/rust-list-models`**, for #680; PRs #678 (#564), #677 (#624), #674 (#609), #675 (#548, #549),
+_Last updated: 2026-11-06 (**this session's PR is on `feat/634-secret-store`**, for #634; PRs #682 (#680), #679 (#583), #678 (#564), #677 (#624), #674 (#609), #675 (#548, #549),
 #676 (#673) and #672 (#636) merged). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
@@ -10,9 +10,27 @@ PyPI** (tag `v0.12.0` on `d2ee803`, the merge of #611) and **the Rust crate
 0.3.0 is on crates.io** from the same commit; the CHANGELOG's `[0.12.0]`
 summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
-#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#678 and this session's._
+#629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#679, #682 and this session's._
 
-## This session: Rust lists a provider's models (#680)
+## This session: API keys in the OS keychain, both languages (#634)
+
+Branch `feat/634-secret-store`, moved from StudyAnalyzer (its phase 2b
+built it; its follow-up PR deletes its copy and pins this). `bmlib/secrets.py`
+and `rust/bmlib/src/secrets.rs`: `SecretStore` over a `Vault`, `KeyBundle`
+(one item `{provider: key}`, read once, cached), `KeyringVault` (Python's
+`keyring` package, extra `secrets`, in `all`; Rust's `keyring` crate v1,
+feature `keyring`, off by default, its own CI clippy and doc steps),
+`MemorySecrets`, `read_key_list` / `write_key_list`. Shared fixture
+`tests/fixtures/secret_key_list.json`: 23 reads (lone surrogate, BOM, a
+200-deep value — serde refuses past 128, Python reads then refuses the
+type), 8 exact writes, 7 `KeyBundle` scenarios. No test touches a real
+keychain. **Unverified live**: macOS (generic password, service + account)
+and Linux (Secret Service, `service` + `username`) address one item from
+both languages by reading both libraries' source; **Windows does not**
+(the crate's target `account.service`, Python's `service`), **#686**. iOS: the v1 stores need the crate's `protected` store, not
+configured (StudyAnalyzer #74).
+
+## Earlier, 2026-11-06: Rust lists a provider's models (#680, PR #682, merged)
 
 Branch `feat/rust-list-models`, filed by StudyAnalyzer (its Settings offer the
 provider's models to pick from, or a typed name). `LlmClient::list_models(provider)`
@@ -454,7 +472,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **120 open once #583 closes** (`gh issue list --state open --limit 300 --json number`,
-2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
+2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
