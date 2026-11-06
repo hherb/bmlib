@@ -1,16 +1,45 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-06 (**this session's PR is on `fix/608-rust-500-not-served`**, for #608; PRs #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-06 (**this session's PR is on `feat/634-secret-store`**, for #634; PRs #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682 and this session's._
+#668-#672, #674-#679, #682-#684 and this session's._
 
-## This session: Rust reads a closed-access record's full-text 500 as not served (#608)
+## This session: API keys in the OS keychain, both languages (#634)
 
-Branch `fix/608-rust-500-not-served`, Rust only. Python since #457 stores
+Branch `feat/634-secret-store`, PR #687, moved from StudyAnalyzer (its phase 2b
+built it; its follow-up PR deletes its copy and pins this). `bmlib/secrets.py`
+and `rust/bmlib/src/secrets.rs`: `SecretStore` over a `Vault`, `KeyBundle`
+(one item `{provider: key}`, read once for `get`s and cached, read again
+before a `set`/`delete` rewrites it), `KeyringVault` (Python's
+`keyring` package, extra `secrets`, in `all`; Rust's `keyring` crate v1,
+feature `keyring`, off by default, its own CI clippy and doc steps, tested in
+the `pdf` test job),
+`MemorySecrets`, `read_key_list` / `write_key_list`. Shared fixture
+`tests/fixtures/secret_key_list.json`: 26 reads (lone surrogates in a key
+and a value, BOM, a duplicate provider hiding a non-string: Python's
+`object_pairs_hook` refuses it as serde does), 8 exact writes, 12 `KeyBundle`
+scenarios (a failed read is not cached; a write keeps another writer's key); a 100,000-deep value is a unit test
+in each language (Python's `RecursionError`). No test touches a real
+keychain. **Unverified live**, from both libraries' source: macOS (generic
+password, service + account) is one item from both languages; **Linux** is
+only while Python writes first (its `application` attribute makes a second
+item beside Rust's, then Rust's lookup is `Ambiguous`); **Windows is not**
+(the crate's target `account.service`, Python's `service`); both **#686**. iOS needs the crate's `protected` store, which the v1 stores do not
+configure (v1 refuses iOS; StudyAnalyzer #74). **PR #687's review** made a
+write re-read the item (a stale cache lost another writer's key), a non-UTF-8
+item replaceable, Python's `SecretError` chain-free (a chained parse or
+Unicode error held the item), Python's import failure say what was raised,
+and Rust's `SecretError` field private (`new`, `message`). Left as is: the
+`secret store: ` prefix on Rust's `Display` only; on Linux Python's `keyring`
+reads whichever of two items Secret Service lists first (noted on #686).
+
+## Earlier, 2026-11-06: Rust reads a closed-access record's full-text 500 as not served (#608, PR #683, merged)
+
+Rust only. Python since #457 stores
 `NOT_SERVED` (DEBUG) for a `fullTextXML` 500 when the record's
 `isOpenAccess` is exactly `"N"`; Rust stored `RequestFailed` for every
 non-404. `fetch_europepmc_fulltext` now takes the flag (read only to
@@ -253,7 +282,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open once #608 closes** (#685 filed) (`gh issue list --state open --limit 300 --json number`,
+**123 open once #634 closes** (#685, #686 filed) (`gh issue list --state open --limit 300 --json number`,
 2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

@@ -58,7 +58,7 @@ which `allowed-tools` does not match.
        `cargo clippy -p bmlib-ffi --all-targets -- -D warnings` and with `--features http-sketch,bindgen`;
        `env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps` (plus `--features html`, `--features pdf`, and
        `-p bmlib --no-default-features`)
-     - `Rust test (<label>)` → `cargo test`, `cargo test --features pdf,html`,
+     - `Rust test (<label>)` → `cargo test`, `cargo test --features pdf,html,keyring`,
        `cargo test -p bmlib --no-default-features`, or `cargo test -p bmlib-ffi --features http-sketch`
      - `Rust PostgreSQL (live server)` → `env BMLIB_PG_TESTS=1 BMLIB_PG_HOST=localhost BMLIB_PG_PORT=5532
        BMLIB_PG_USER=postgres cargo test --features postgres`

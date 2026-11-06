@@ -107,6 +107,7 @@ llama-cpp-sys-2 = { version = "=0.1.159", optional = true }
 # Its own crate: a wrong digest would fail *silently* by accepting a corrupt
 # multi-gigabyte file. Not optional: the store needs it without `embed`.
 sha2 = "0.10"
+keyring = { version = "4.2", optional = true }
 
 [features]
 # `sqlite` and `http-ureq` are on by default, so a consumer depending on bmlib
@@ -143,6 +144,10 @@ embed = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
 # already uses Metal (llama.cpp's default); a CPU-only build needs
 # `GGML_METAL=OFF` in the environment.
 embed-metal = ["embed", "llama-cpp-2/metal"]
+# The OS keychain behind `bmlib::secrets::KeyringVault` (macOS Keychain,
+# Windows Credential Manager, Linux Secret Service). Off by default: the rest
+# of `secrets` is always present, and a mobile build brings its own `Vault`.
+keyring = ["dep:keyring"]
 
 [lints]
 workspace = true

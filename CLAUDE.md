@@ -35,6 +35,7 @@ uv pip install -e ".[all,dev]"
 | pdf            | pymupdf>=1.28.2       | PDF → text conversion in `fulltext/`   |
 | html           | markupever>=0.4.0     | `canonical_from_html` (html5ever, the parser the Rust port's scraper uses) |
 | embed          | llama-cpp-python>=0.3.36 | `bmlib.embed.Embedder` (arctic-embed-l-v2.0 GGUF, in process); compiles llama.cpp, so not in `all` |
+| secrets        | keyring>=25           | `bmlib.secrets.KeyringVault`, API keys in the OS keychain |
 | dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2 | Development and testing tools  |
 | all            | All runtime extras but `embed` | Everything except `dev` and `embed` (ask for `.[all,embed]`) |
 
@@ -137,6 +138,7 @@ bmlib/
 │   ├── pico_agent.py        # PicoAgent — suitability check and PICO extraction, quotes verified by find_passage
 │   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
 │   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models
+├── secrets.py               # API keys by provider in one OS keychain item (KeyBundle, KeyringVault — keyring, extra `secrets`); Rust's twin by tests/fixtures/secret_key_list.json
 ├── templates/engine.py      # Jinja2 TemplateEngine with user/default dir fallback
 └── transparency/            # Multi-API transparency analysis
     ├── analyzer.py          # TransparencyAnalyzer (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov)
@@ -839,6 +841,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `scripts/convert_embedding_model.py` | `test_convert_embedding_model.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_pico_agent.py`, `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
+| `secrets.py`         | `test_secrets.py` (the shared `secret_key_list.json`)       |
 | `templates/`         | `test_templates.py`                                        |
 | `_atomic.py`         | `test_atomic.py` — only what belongs to the helper itself (the 38-char temp-name overhead `fulltext.cache`'s filename cap is arithmetic over, and the exception the caller gets back). The five load-bearing details are pinned at the call sites, where the behaviour is delivered: `test_templates.py::TestInstallingDefaultsIsAtomic` and `test_fulltext_cache.py::TestWritesAreAtomic` |
 | `_user_agent.py`     | Pinned at its two call sites, where the header is delivered: `test_transparency.py::test_analyze_sends_it` and `test_sync.py::test_the_client_carries_the_shared_user_agent` |

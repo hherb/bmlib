@@ -65,6 +65,7 @@ pub mod http;
 pub mod llm;
 pub mod publications;
 pub mod quality;
+pub mod secrets;
 pub mod templates;
 pub mod transparency;
 
@@ -102,6 +103,8 @@ mod manual {
     struct Publications;
     #[doc = include_str!("../docs/manual/quality.md")]
     struct Quality;
+    #[doc = include_str!("../docs/manual/secrets.md")]
+    struct Secrets;
     #[doc = include_str!("../docs/manual/templates.md")]
     struct Templates;
     #[doc = include_str!("../docs/manual/transparency.md")]

@@ -30,12 +30,13 @@ pip install -e ".[all,dev]"
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
 | `html`           | `pip install bmlib[html]`          | `canonical_from_html()` — an HTML page's main content as canonical text (markupever, html5ever) *(0.12.0)* |
 | `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`) *(0.12.0)* |
+| `secrets`        | `pip install bmlib[secrets]`       | `bmlib.secrets.KeyringVault`, API keys in the OS keychain (keyring) *(unreleased)* |
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all`            | `pip install bmlib[all]`           | Every runtime extra above but `embed` (**not** `dev`)  |
 
 ## Module Overview
 
-bmlib is organised into eleven modules, each with a focused responsibility:
+bmlib is organised into twelve modules, each with a focused responsibility:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
@@ -50,6 +51,7 @@ bmlib is organised into eleven modules, each with a focused responsibility:
 | [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching; `bmlib.fulltext.canonical` — one canonical text per paper from JATS, Markdown, plain text, a segmented PDF or HTML, with retrieval chunks *(0.12.0)* | [fulltext.md](fulltext.md) |
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building, locating an LLM's quoted passage *(0.12.0)* (pure stdlib) | [citations.md](citations.md) |
 | [`bmlib.embed`](embeddings.md) | *(0.12.0)* In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download, a paper's chunks stored and searched | [embeddings.md](embeddings.md) |
+| [`bmlib.secrets`](secrets.md) | *(unreleased)* API keys by provider in one OS keychain item, read once for `get`s and cached; on macOS the same item as Rust's (#686) | [secrets.md](secrets.md) |
 
 ## Architecture Principles
 
