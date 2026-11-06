@@ -8,6 +8,14 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **ClinicalTrials.gov no longer refuses a `User-Agent` without
+  `python-httpx`, and the docs say so** (#606). Re-measured 2026-11-07: bare
+  `bmlib/{version}`, `curl`, `python-requests` and a browser string all served
+  200 through httpx, curl and the Rust port's client, where on 2026-09-06
+  (#194) everything but the token's shape was a 403. The header is unchanged;
+  the token is kept as harmless. `_user_agent.py`, the transparency manual
+  and `CLAUDE.md` give both dates; the Rust half is in its CHANGELOG.
+
 - **Two words at one position of an OpenAlex abstract are ordered by the
   word, in both languages** (#583). `_reconstruct_abstract` sorted by
   position alone, so a tie kept the index's key order, where Rust (reading

@@ -407,8 +407,8 @@ pub const BMLIB_VERSION: &str = "0.12.0";
 
 /// The `User-Agent` every request from this module carries.
 ///
-/// **The trailing `python-httpx` token is load-bearing and is not decoration.**
-/// ClinicalTrials.gov's edge refuses an unaccompanied bmlib identification with
+/// **The trailing `python-httpx` token was load-bearing.** On 2026-09-06
+/// ClinicalTrials.gov's edge refused an unaccompanied bmlib identification with
 /// a bare 134-byte `403 Forbidden` page, so every posted-results check ever
 /// made was declined — returning `False`, which in a `bool` was
 /// indistinguishable from "this trial posted no results" (issue #194).
@@ -428,8 +428,15 @@ pub const BMLIB_VERSION: &str = "0.12.0";
 /// `python-httpx` alone would trade one API's policy for two others'. It is not
 /// a fiction — this module *is* httpx on the Python side.
 ///
-/// This is a live-only property that **no test can hold**; the Python sampler
-/// is the guard there and no equivalent exists here.
+/// **Re-measured 2026-11-07 (issue #606), the refusal is gone**: a default
+/// [`crate::http::UreqClient`] (`bmlib/{version}`) was served 200 six times of
+/// six, as were `curl`, `python-requests` and a browser string, so a caller
+/// need not set this header. It is kept, since it costs nothing and the rule
+/// may return.
+///
+/// This is a live-only property that **no offline test can hold**: the Python
+/// sampler is the guard there, and `clinicaltrials_gov_answers_a_default_client`
+/// in `tests/live_network.rs` (gated on `BMLIB_LIVE_TESTS`) here.
 #[must_use]
 pub fn user_agent(email: &str, version: &str) -> String {
     format!("bmlib/{BMLIB_VERSION} (mailto:{email}) python-httpx/{version}")

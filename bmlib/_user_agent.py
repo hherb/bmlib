@@ -46,6 +46,12 @@ def user_agent(email: str, httpx_version: str) -> str:
     ``PostmanRuntime`` and a browser string were all refused. So it is an
     allow-list on that one token, and its position does not matter.
 
+    **Re-measured 2026-11-07 (issue #606), the refusal is gone**: bare
+    ``bmlib/{version}``, ``curl``, ``python-requests`` and a browser string
+    all served 200, through httpx, curl and the Rust port's client alike. The
+    token is kept because it costs nothing and the edge's rule may come back,
+    not because a remote needs it today.
+
     The token is **appended to** bmlib's identification rather than replacing
     it: CrossRef, OpenAlex and NCBI all ask a caller to say who it is and
     where to write, and answering ``python-httpx`` alone would trade one API's
