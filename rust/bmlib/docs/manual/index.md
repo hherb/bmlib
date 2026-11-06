@@ -56,7 +56,7 @@ canonical-text model, the JSON repair, the citation formatter) need no feature.
 | `llm` | `LlmClient` over the OpenAI-compatible, Anthropic and Ollama wire protocols; streaming; context windows; JSON repair; chunking; token tracking | [llm.md](../../../../docs/manual/llm.md) | [llm.md](llm.md) |
 | `agents` | `chat_json`'s retry/truncation loop and per-agent metrics (no `BaseAgent` type) | [agents.md](../../../../docs/manual/agents.md) | [agents.md](agents.md) |
 | `embed` | arctic-embed-l-v2.0 GGUF in process, pinned and verified model files, vector rules, a paper's chunks stored and searched | [embeddings.md](../../../../docs/manual/embeddings.md) | [embed.md](embed.md) |
-| `secrets` | API keys by provider in one OS keychain item, read once and cached; the same item as Python's | [secrets.md](../../../../docs/manual/secrets.md) | [secrets.md](secrets.md) |
+| `secrets` | API keys by provider in one OS keychain item, read once for `get`s and cached; on macOS the same item as Python's (#686) | [secrets.md](../../../../docs/manual/secrets.md) | [secrets.md](secrets.md) |
 | `templates` | `{{ variable }}` prompt templates with a user/default directory lookup | [templates.md](../../../../docs/manual/templates.md) | [templates.md](templates.md) |
 | `http` | `UreqClient`, the one implementation of `HttpClient` that goes out | — | [http.md](http.md) |
 | `atomic` | `atomic_write`: publish a file so no partial version is visible | — | [atomic.md](atomic.md) |

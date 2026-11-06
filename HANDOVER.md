@@ -13,21 +13,29 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 Branch `feat/634-secret-store`, PR #687, moved from StudyAnalyzer (its phase 2b
 built it; its follow-up PR deletes its copy and pins this). `bmlib/secrets.py`
 and `rust/bmlib/src/secrets.rs`: `SecretStore` over a `Vault`, `KeyBundle`
-(one item `{provider: key}`, read once, cached), `KeyringVault` (Python's
+(one item `{provider: key}`, read once for `get`s and cached, read again
+before a `set`/`delete` rewrites it), `KeyringVault` (Python's
 `keyring` package, extra `secrets`, in `all`; Rust's `keyring` crate v1,
-feature `keyring`, off by default, its own CI clippy and doc steps),
+feature `keyring`, off by default, its own CI clippy and doc steps, tested in
+the `pdf` test job),
 `MemorySecrets`, `read_key_list` / `write_key_list`. Shared fixture
 `tests/fixtures/secret_key_list.json`: 26 reads (lone surrogates in a key
 and a value, BOM, a duplicate provider hiding a non-string: Python's
-`object_pairs_hook` refuses it as serde does), 8 exact writes, 8 `KeyBundle`
-scenarios (a failed read is not cached); a 100,000-deep value is a unit test
+`object_pairs_hook` refuses it as serde does), 8 exact writes, 12 `KeyBundle`
+scenarios (a failed read is not cached; a write keeps another writer's key); a 100,000-deep value is a unit test
 in each language (Python's `RecursionError`). No test touches a real
 keychain. **Unverified live**, from both libraries' source: macOS (generic
 password, service + account) is one item from both languages; **Linux** is
 only while Python writes first (its `application` attribute makes a second
 item beside Rust's, then Rust's lookup is `Ambiguous`); **Windows is not**
-(the crate's target `account.service`, Python's `service`); both **#686**. iOS: the v1 stores need the crate's `protected` store, not
-configured (StudyAnalyzer #74).
+(the crate's target `account.service`, Python's `service`); both **#686**. iOS needs the crate's `protected` store, which the v1 stores do not
+configure (v1 refuses iOS; StudyAnalyzer #74). **PR #687's review** made a
+write re-read the item (a stale cache lost another writer's key), a non-UTF-8
+item replaceable, Python's `SecretError` chain-free (a chained parse or
+Unicode error held the item), Python's import failure say what was raised,
+and Rust's `SecretError` field private (`new`, `message`). Left as is: the
+`secret store: ` prefix on Rust's `Display` only; on Linux Python's `keyring`
+reads whichever of two items Secret Service lists first (noted on #686).
 
 ## Earlier, 2026-11-06: Rust reads a closed-access record's full-text 500 as not served (#608, PR #683, merged)
 

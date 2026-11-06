@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import builtins
 import json
+import logging
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,11 @@ from bmlib.secrets import (
     write_key_list,
 )
 
+UNREADABLE = "the keychain item is not a valid key list"
+
+STEP_FIELDS = {"op", "provider", "key", "expect", "fail_write", "fail_read", "another_writer"}
+"""Every field a bundle step may carry; a misspelt one would read as absent."""
+
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "secret_key_list.json").read_text())
 
 
@@ -52,7 +59,9 @@ def test_read_agrees_with_the_fixture(case: dict[str, Any]) -> None:
     if case["expect"].get("error") == "unreadable":
         with pytest.raises(SecretError) as caught:
             read_key_list(case["text"])
-        assert "sk-" not in str(caught.value)
+        assert str(caught.value) == UNREADABLE
+        # No parse error rides along: one can quote the item (JSONDecodeError.doc).
+        assert caught.value.__context__ is None and caught.value.__cause__ is None
         return
     assert read_key_list(case["text"]) == case["expect"]["keys"]
 
@@ -90,6 +99,9 @@ def test_bundle_agrees_with_the_fixture(case: dict[str, Any]) -> None:
     vault = FakeVault(case["item"])
     store = KeyBundle(vault)
     for i, step in enumerate(case["steps"]):
+        assert set(step) <= STEP_FIELDS, f"step {i}"
+        if "another_writer" in step:
+            vault.item = step["another_writer"]
         vault.fail_write = step.get("fail_write", False)
         vault.fail_read = step.get("fail_read", False)
         got: object
@@ -138,10 +150,14 @@ class DictKeyring(KeyringBackend):
         super().__init__()
         self.items: dict[tuple[str, str], str] = {}
         self.fail = fail
+        self.not_utf8 = False
 
     def get_password(self, service: str, username: str) -> str | None:
         if self.fail:
             raise RuntimeError("the keychain is locked")
+        if self.not_utf8:
+            # What the macOS and Secret Service backends raise: it holds the item's bytes.
+            raise UnicodeDecodeError("utf-8", b'\xff{"openai":"sk-leaky"}', 0, 1, "bad")
         return self.items.get((service, username))
 
     def set_password(self, service: str, username: str, password: str) -> None:
@@ -177,10 +193,21 @@ def test_keyring_bundle_keeps_every_key_in_one_item(backend: DictKeyring) -> Non
 def test_a_backend_failure_is_a_secret_error(backend: DictKeyring) -> None:
     backend.fail = True
     vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
-    with pytest.raises(SecretError, match="RuntimeError: the keychain is locked"):
-        vault.read()
-    with pytest.raises(SecretError, match="RuntimeError: the keychain is locked"):
-        vault.write("{}")
+    for call in (vault.read, lambda: vault.write("{}")):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert str(caught.value) == "RuntimeError: the keychain is locked"
+        assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+def test_an_item_that_is_not_utf8_is_unreadable_and_replaced(backend: DictKeyring) -> None:
+    backend.not_utf8 = True
+    store = KeyBundle.keyring("com.example.app")
+    with pytest.raises(SecretError) as caught:
+        store.get("openai")
+    assert str(caught.value) == UNREADABLE and caught.value.__context__ is None
+    store.set("openai", "k1")
+    assert backend.items == {("com.example.app", API_KEYS_ACCOUNT): '{"openai":"k1"}'}
 
 
 def test_a_missing_keyring_package_is_a_secret_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,12 +215,74 @@ def test_a_missing_keyring_package_is_a_secret_error(monkeypatch: pytest.MonkeyP
 
     def no_keyring(name: str, *args: Any, **kwargs: Any) -> Any:
         if name == "keyring":
-            raise ImportError(name)
+            raise ModuleNotFoundError("No module named 'jeepney'")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", no_keyring)
     vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
-    with pytest.raises(SecretError, match="extra `secrets`"):
-        vault.read()
-    with pytest.raises(SecretError, match="extra `secrets`"):
-        vault.write("{}")
+    # What the import raised is said, since a present keyring can fail on its own dependency.
+    said = (
+        "the keyring package could not be imported (extra `secrets`): "
+        "ModuleNotFoundError: No module named 'jeepney'"
+    )
+    for call in (vault.read, lambda: vault.write("{}")):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert str(caught.value) == said
+
+
+def test_set_refuses_a_lone_surrogate_and_writes_nothing() -> None:
+    # Stored, it would make the whole item unreadable, and the next set would replace it.
+    vault = FakeVault('{"anthropic":"k0"}')
+    store = KeyBundle(vault)
+    for provider, key in (("openai", "\ud800"), ("\udfff", "k1")):
+        with pytest.raises(SecretError) as caught:
+            store.set(provider, key)
+        assert caught.value.__context__ is None
+    assert vault.item == '{"anthropic":"k0"}'
+    assert store.get("anthropic") == "k0"
+
+
+def test_saving_over_an_unreadable_item_says_so_once(caplog: pytest.LogCaptureFixture) -> None:
+    store = KeyBundle(FakeVault("not json sk-leaky"))
+    with caplog.at_level(logging.WARNING, logger="bmlib.secrets"):
+        store.set("openai", "k1")
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (logging.WARNING, f"{UNREADABLE}; replacing it with the key being saved")
+    ]
+
+
+class BlockingVault(FakeVault):
+    """A vault whose first write waits until released, to hold one ``set`` inside it."""
+
+    def __init__(self) -> None:
+        super().__init__(None)
+        self.inside = threading.Event()
+        self.release = threading.Event()
+
+    def write(self, text: str) -> None:
+        if not self.inside.is_set():
+            self.inside.set()
+            assert self.release.wait(5)
+        super().write(text)
+
+
+def test_concurrent_sets_keep_both_keys() -> None:
+    vault = BlockingVault()
+    store = KeyBundle(vault)
+    first = threading.Thread(target=store.set, args=("a", "1"))
+    first.start()
+    assert vault.inside.wait(5)
+    second = threading.Thread(target=store.set, args=("b", "2"))
+    second.start()
+    second.join(0.2)  # without the lock it would read the empty item and finish here
+    vault.release.set()
+    first.join(5)
+    second.join(5)
+    assert vault.item == '{"a":"1","b":"2"}'
+
+
+def test_the_vault_is_read_only() -> None:
+    store = KeyBundle(FakeVault(None))
+    with pytest.raises(AttributeError):
+        store.vault = FakeVault(None)  # type: ignore[misc]  # the assignment under test

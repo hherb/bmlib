@@ -96,18 +96,20 @@ All notable changes to bmlib are documented here. The format is based on
   StudyAnalyzer, where phase 2b built it). `bmlib.secrets` and Rust's
   `bmlib::secrets` keep an app's keys, by provider, in **one** keychain item
   (service: the app's bundle id; account `API_KEYS_ACCOUNT`, `"api-keys"`)
-  holding a JSON object `{provider: key}`, read once and cached by
-  `KeyBundle`, since macOS asks the user on every item read. A `SecretStore`
+  holding a JSON object `{provider: key}`, read once for every `get` and
+  cached by `KeyBundle`, since macOS asks the user on every item read; a
+  `set` or `delete` reads it again first, so another writer's key is kept. A `SecretStore`
   (`get`, `set`, `delete`) over a `Vault` (`read`, `write`, the only part
   that touches the OS); `MemorySecrets` for tests. `set` over an item that is
-  not a key list replaces it (logged), `get` and `delete` report it; a failed
-  write leaves the cache; a `SecretError` never holds a key. The OS keychain
+  not a key list (or not UTF-8) replaces it (logged), `get` and `delete`
+  report it; a failed write leaves the cache; a `SecretError` never holds a
+  key, nor, in Python, chains an exception that could. The OS keychain
   is `KeyringVault`: Python's over the `keyring` package (new extra
   `secrets`, in `all`), Rust's over the `keyring` crate's v1 stores (new
   feature `keyring`, off by default, so a mobile build brings its own
   `Vault`). The item's text is read and written by `read_key_list` /
   `write_key_list`, held together with `KeyBundle`'s behaviour by
-  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 8 store
+  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 12 store
   scenarios). macOS addresses one item from both languages; Linux only
   while Python writes first (its `application` attribute makes a second
   item beside Rust's, which Rust then reads as ambiguous); Windows not yet

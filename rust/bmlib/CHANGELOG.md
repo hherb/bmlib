@@ -9,6 +9,20 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added
+
+- **API keys in the OS keychain** (`secrets`, #634, with Python's
+  `bmlib.secrets`). A `SecretStore` (`get`, `set`, `delete`) over one
+  keychain item holding `{provider: key}`: `KeyBundle` reads it once for
+  every `get` and caches it (macOS asks the user on every read), and reads it
+  again before a `set` or `delete` rewrites it, so another writer's key is
+  kept. `set` replaces an item that is not a key list (or not UTF-8); a
+  `SecretError` (`new`, `message`) never holds a key. The OS keychain is
+  `KeyringVault`, behind the new `keyring` feature (the `keyring` crate's v1
+  stores), off by default so a mobile build brings its own `Vault`. Held to
+  Python by `tests/fixtures/secret_key_list.json`; Linux and Windows address
+  a different item from Python's in some cases (#686).
+
 ### Fixed
 
 - **A full-text 500 for a closed-access record is not served** (#608,

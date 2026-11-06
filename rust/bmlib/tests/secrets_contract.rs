@@ -51,7 +51,12 @@ fn reads_agree_with_the_fixture() {
         let got = read_key_list(case["text"].as_str().expect("text"));
         let expect = &case["expect"];
         if expect["error"] == "unreadable" {
-            assert!(got.is_err(), "{name}: expected unreadable, got {got:?}");
+            let e = got.expect_err(name);
+            assert_eq!(
+                e.message(),
+                "the keychain item is not a valid key list",
+                "{name}"
+            );
         } else {
             assert_eq!(got, Ok(key_list(&expect["keys"])), "{name}");
         }
@@ -85,18 +90,29 @@ impl Vault for FakeVault {
     fn read(&self) -> Result<Option<String>, SecretError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
         if self.fail_read.load(Ordering::SeqCst) {
-            return Err(SecretError("locked".into()));
+            return Err(SecretError::new("locked"));
         }
         Ok(self.item.lock().unwrap().clone())
     }
     fn write(&self, text: &str) -> Result<(), SecretError> {
         if self.fail_write.load(Ordering::SeqCst) {
-            return Err(SecretError("denied".into()));
+            return Err(SecretError::new("denied"));
         }
         *self.item.lock().unwrap() = Some(text.to_string());
         Ok(())
     }
 }
+
+/// Every field a bundle step may carry; a misspelt one would read as absent.
+const STEP_FIELDS: [&str; 7] = [
+    "op",
+    "provider",
+    "key",
+    "expect",
+    "fail_write",
+    "fail_read",
+    "another_writer",
+];
 
 #[test]
 fn bundles_agree_with_the_fixture() {
@@ -109,6 +125,15 @@ fn bundles_agree_with_the_fixture() {
         *vault.item.lock().unwrap() = case["item"].as_str().map(str::to_string);
         let store = KeyBundle::new(vault);
         for (i, step) in case["steps"].as_array().expect("steps").iter().enumerate() {
+            for field in step.as_object().expect("a step").keys() {
+                assert!(
+                    STEP_FIELDS.contains(&field.as_str()),
+                    "{name}: step {i}: {field}"
+                );
+            }
+            if let Some(text) = step["another_writer"].as_str() {
+                *store.vault().item.lock().unwrap() = Some(text.to_string());
+            }
             let provider = step["provider"].as_str().expect("provider");
             let fail = step["fail_write"].as_bool().unwrap_or(false);
             store.vault().fail_write.store(fail, Ordering::SeqCst);

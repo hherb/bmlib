@@ -18,15 +18,17 @@
 //! same layout as Python's `bmlib.secrets`.
 //!
 //! Every provider's key lives in **one** keychain item, a JSON object
-//! `{provider: key}` ([`read_key_list`], [`write_key_list`]), read once and
-//! then cached ([`KeyBundle`]): macOS asks the user on every item read, so
-//! one item means one prompt, not one per provider. The item is named by a
+//! `{provider: key}` ([`read_key_list`], [`write_key_list`]), read once for
+//! every `get` and then cached ([`KeyBundle`]): macOS asks the user on every
+//! item read, so one item means one prompt, not one per provider. A `set` or
+//! `delete` reads the item again before rewriting it, so a key another writer
+//! saved in the meantime is kept. The item is named by a
 //! service (the app's bundle id) and an account, [`API_KEYS_ACCOUNT`].
 //!
 //! A [`SecretError`] never holds a key: its text is the platform's message
 //! or bmlib's own, and an unreadable item is reported without quoting it.
 //!
-//! The OS keychain itself is [`KeyringVault`], behind the `keyring` feature
+//! The OS keychain itself is `KeyringVault`, behind the `keyring` feature
 //! (macOS Keychain, Windows Credential Manager, Linux Secret Service, through
 //! the `keyring` crate's v1 stores). Everything else is always compiled, so a
 //! build without it (the mobile apps) can bring its own [`Vault`].
@@ -51,7 +53,19 @@ const UNREADABLE: &str = "the keychain item is not a valid key list";
 /// A secret store failed. The text is the platform's message or bmlib's own,
 /// and never holds a key.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SecretError(pub String);
+pub struct SecretError(String);
+
+impl SecretError {
+    /// An error saying `message`, which must not hold a key.
+    pub fn new(message: impl Into<String>) -> Self {
+        SecretError(message.into())
+    }
+
+    /// The message, without the `secret store:` prefix `Display` adds.
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
 
 impl fmt::Display for SecretError {
     /// `secret store: <message>`.
@@ -138,12 +152,25 @@ pub fn write_key_list(keys: &KeyList) -> String {
     serde_json::to_string(keys).expect("a map of strings always encodes")
 }
 
-/// A [`SecretStore`] over one [`Vault`] item, read once and then cached for
-/// the store's life. A failed read is not cached, so the next call reads again.
+/// A [`SecretStore`] over one [`Vault`] item. A `get` reads it once and then
+/// answers from the cache; a `set` or `delete` reads it again before
+/// rewriting it, so another writer's key is not lost. A failed read is not
+/// cached, so the next call reads again. Its `Debug` shows whether the item
+/// is loaded, never a key.
 pub struct KeyBundle<V: Vault> {
     vault: V,
     /// `None` until the first successful read.
     cache: Mutex<Option<KeyList>>,
+}
+
+impl<V: Vault> fmt::Debug for KeyBundle<V> {
+    /// `KeyBundle { loaded: <bool> }`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let loaded = self.lock().is_some();
+        f.debug_struct("KeyBundle")
+            .field("loaded", &loaded)
+            .finish()
+    }
 }
 
 impl<V: Vault> KeyBundle<V> {
@@ -160,17 +187,25 @@ impl<V: Vault> KeyBundle<V> {
         &self.vault
     }
 
-    /// The cache, loaded from the vault if this is the first use, and the keys
-    /// in it. A poisoned lock only means another thread panicked; the map is
-    /// still valid. An item that is not a key list is an error, unless
-    /// `replace_unreadable` (a key is about to be saved): then, logged, the
-    /// keys start empty and the cache stays unloaded until they are written.
+    /// The cache. A poisoned lock only means another thread panicked; the
+    /// cache is only ever replaced whole, so it is still valid.
+    fn lock(&self) -> MutexGuard<'_, Option<KeyList>> {
+        self.cache.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// The cache, and the keys in it: read from the vault into the cache if
+    /// nothing is cached yet or `fresh` (a write is about to follow, and must
+    /// start from the item as it is now). An item that is not a key list is an
+    /// error, unless `replace_unreadable` (a key is about to be saved): then,
+    /// logged, the keys start empty and the cache is left as it was until they
+    /// are written.
     fn loaded(
         &self,
+        fresh: bool,
         replace_unreadable: bool,
     ) -> Result<(MutexGuard<'_, Option<KeyList>>, KeyList), SecretError> {
-        let mut guard = self.cache.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(keys) = guard.as_ref() {
+        let mut guard = self.lock();
+        if let (false, Some(keys)) = (fresh, guard.as_ref()) {
             let keys = keys.clone();
             return Ok((guard, keys));
         }
@@ -206,22 +241,22 @@ impl<V: Vault> KeyBundle<V> {
 impl<V: Vault> SecretStore for KeyBundle<V> {
     /// The provider's key from the cache.
     fn get(&self, provider: &str) -> Result<Option<String>, SecretError> {
-        Ok(self.loaded(false)?.1.get(provider).cloned())
+        Ok(self.loaded(false, false)?.1.get(provider).cloned())
     }
 
-    /// Rewrites the item with the key added, then the cache. An item that is
-    /// not a key list is replaced by one holding just this key, so saving a
-    /// key is the way out of a damaged item.
+    /// Reads the item again, rewrites it with the key added, then the cache.
+    /// An item that is not a key list is replaced by one holding just this
+    /// key, so saving a key is the way out of a damaged item.
     fn set(&self, provider: &str, key: &str) -> Result<(), SecretError> {
-        let (mut guard, mut keys) = self.loaded(true)?;
+        let (mut guard, mut keys) = self.loaded(true, true)?;
         keys.insert(provider.to_string(), key.to_string());
         self.store(&mut guard, keys)
     }
 
-    /// Rewrites the item without the key, then the cache. An absent key
-    /// writes nothing.
+    /// Reads the item again, rewrites it without the key, then the cache. An
+    /// absent key writes nothing.
     fn delete(&self, provider: &str) -> Result<(), SecretError> {
-        let (mut guard, mut keys) = self.loaded(false)?;
+        let (mut guard, mut keys) = self.loaded(true, false)?;
         if keys.remove(provider).is_none() {
             return Ok(());
         }
@@ -247,27 +282,49 @@ impl KeyringVault {
         }
     }
 
-    /// The keychain entry for the item.
+    /// The keychain entry for the item. When the platform store could not be
+    /// set up, the error says why, not only that there is no store.
     fn entry(&self) -> Result<keyring::v1::Entry, SecretError> {
-        keyring::v1::Entry::new(&self.service, &self.account).map_err(keyring_error)
+        keyring::v1::Entry::new(&self.service, &self.account).map_err(|e| {
+            match (&e, keyring::v1::Entry::store_status()) {
+                (keyring::v1::Error::NoDefaultStore, Err(why)) => {
+                    SecretError(format!("{e}: {why}"))
+                }
+                _ => keyring_error(e),
+            }
+        })
     }
 }
 
-/// A keyring failure as a [`SecretError`]: the platform's message, which holds no key.
+/// A keyring failure as a [`SecretError`]: the platform's message, which holds
+/// no key (keyring-core's `Display` prints no item bytes).
 #[cfg(feature = "keyring")]
 fn keyring_error(e: keyring::v1::Error) -> SecretError {
     SecretError(e.to_string())
 }
 
+/// What a read of the item came to: its text, `None` when there is no item,
+/// and an item the store holds but cannot give back as text (not UTF-8, or
+/// not in the store's own format) as text that is not a key list, so a
+/// `KeyBundle` reports it as unreadable and a `set` replaces it.
+#[cfg(feature = "keyring")]
+fn read_result(r: keyring::v1::Result<String>) -> Result<Option<String>, SecretError> {
+    match r {
+        Ok(text) => Ok(Some(text)),
+        Err(keyring::v1::Error::NoEntry) => Ok(None),
+        Err(keyring::v1::Error::BadEncoding(_) | keyring::v1::Error::BadDataFormat(..)) => {
+            Ok(Some(String::new()))
+        }
+        Err(e) => Err(keyring_error(e)),
+    }
+}
+
 #[cfg(feature = "keyring")]
 impl Vault for KeyringVault {
-    /// Reads the item (an absent one is `None`).
+    /// Reads the item (an absent one is `None`; one that is not text reads as
+    /// unreadable, see `read_result`).
     fn read(&self) -> Result<Option<String>, SecretError> {
-        match self.entry()?.get_password() {
-            Ok(text) => Ok(Some(text)),
-            Err(keyring::v1::Error::NoEntry) => Ok(None),
-            Err(e) => Err(keyring_error(e)),
-        }
+        read_result(self.entry()?.get_password())
     }
     /// Writes the item.
     fn write(&self, text: &str) -> Result<(), SecretError> {
@@ -295,7 +352,7 @@ mod tests {
             Ok(None)
         }
         fn write(&self, _: &str) -> Result<(), SecretError> {
-            Err(SecretError("denied".into()))
+            Err(SecretError::new("denied"))
         }
     }
 
@@ -303,7 +360,7 @@ mod tests {
     #[test]
     fn an_unreadable_item_is_not_quoted() {
         let e = read_key_list("not json sk-leaky").unwrap_err();
-        assert_eq!(e.0, UNREADABLE);
+        assert_eq!(e.message(), UNREADABLE);
         assert!(!e.to_string().contains("sk-leaky"));
     }
 
@@ -323,7 +380,7 @@ mod tests {
     #[test]
     fn a_vault_error_passes_through() {
         let s = KeyBundle::new(Locked);
-        assert_eq!(s.set("openai", "k1"), Err(SecretError("denied".into())));
+        assert_eq!(s.set("openai", "k1"), Err(SecretError::new("denied")));
         assert_eq!(s.get("openai"), Ok(None));
     }
 
@@ -350,6 +407,41 @@ mod tests {
     /// The display form says where the error came from.
     #[test]
     fn display_names_the_store() {
-        assert_eq!(SecretError("x".into()).to_string(), "secret store: x");
+        assert_eq!(SecretError::new("x").to_string(), "secret store: x");
+    }
+
+    /// `Debug` says whether the item is loaded and shows no key.
+    #[test]
+    fn key_bundle_debug_hides_keys() {
+        struct One;
+        impl Vault for One {
+            fn read(&self) -> Result<Option<String>, SecretError> {
+                Ok(Some("{\"openai\":\"sk-leaky\"}".into()))
+            }
+            fn write(&self, _: &str) -> Result<(), SecretError> {
+                Ok(())
+            }
+        }
+        let s = KeyBundle::new(One);
+        assert_eq!(format!("{s:?}"), "KeyBundle { loaded: false }");
+        s.get("openai").unwrap();
+        assert_eq!(format!("{s:?}"), "KeyBundle { loaded: true }");
+    }
+
+    /// A keychain read: no item is `None`, an item that is not text reads as
+    /// unreadable (so `set` can replace it), any other failure is an error.
+    #[cfg(feature = "keyring")]
+    #[test]
+    fn a_keychain_read_maps_each_outcome() {
+        use keyring::v1::Error as E;
+        assert_eq!(read_result(Ok("{}".into())), Ok(Some("{}".into())));
+        assert_eq!(read_result(Err(E::NoEntry)), Ok(None));
+        let not_text = read_result(Err(E::BadEncoding(b"\xff sk-leaky".to_vec()))).unwrap();
+        assert_eq!(
+            not_text.as_deref().map(read_key_list),
+            Some(Err(SecretError::new(UNREADABLE)))
+        );
+        let other = read_result(Err(E::Invalid("service".into(), "empty".into()))).unwrap_err();
+        assert!(!other.message().is_empty());
     }
 }

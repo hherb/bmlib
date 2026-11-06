@@ -1,10 +1,12 @@
 # secrets — API keys in the OS keychain
 
 *(unreleased, #634)* An app's API keys, by provider name, in **one** OS
-keychain item: a JSON object `{provider: key}`, read once and cached, because
-macOS asks the user on every item read. Python's `bmlib.secrets` reads and
-writes the same item ([secrets.md](../../../../docs/manual/secrets.md)), held
-together by `tests/fixtures/secret_key_list.json`.
+keychain item: a JSON object `{provider: key}`, read once for every `get` and
+cached, because macOS asks the user on every item read; a `set` or `delete`
+reads it again before rewriting it, so a key another process saved meanwhile
+is kept. Python's `bmlib.secrets` uses the same layout
+([secrets.md](../../../../docs/manual/secrets.md); on macOS the same item, see
+*Platforms*), held together by `tests/fixtures/secret_key_list.json`.
 
 The OS keychain is `KeyringVault`, behind the `keyring` feature (the
 `keyring` crate's v1 stores: macOS Keychain, Windows Credential Manager,
@@ -46,12 +48,12 @@ With the feature, `KeyBundle::keyring("com.example.myapp")` is the item
 | Item | What it is |
 |---|---|
 | `SecretStore` | `get(provider) -> Option<String>`, `set(provider, key)`, `delete(provider)` (absent is fine); `Send + Sync` |
-| `KeyBundle<V: Vault>` | A `SecretStore` over one item, read once and cached; a failed read is not cached. `set` over an item that is not a key list replaces it with one holding just the new key (logged to stderr); `get` and `delete` report it. A failed write leaves the cache as it was |
+| `KeyBundle<V: Vault>` | A `SecretStore` over one item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it; a failed read is not cached. `set` over an item that is not a key list replaces it with one holding just the new key, dropping whatever it held (logged to stderr); `get` and `delete` report it. A failed write leaves the cache as it was. Its `Debug` shows `loaded`, never a key |
 | `Vault` | `read() -> Option<String>`, `write(text)`: the one item, the only part that touches the OS |
-| `KeyringVault::new(service, account)` | *(feature `keyring`)* The OS keychain item; a missing item reads as `None` |
+| `KeyringVault::new(service, account)` | *(feature `keyring`)* The OS keychain item; a missing item reads as `None`, one that is not UTF-8 (or not in the store's format) as unreadable, so `set` replaces it. A store that could not be set up says why |
 | `MemorySecrets` | An in-memory `SecretStore` |
 | `read_key_list` / `write_key_list` | The item's text ↔ `KeyList` (`BTreeMap<String, String>`): an object of strings or a `SecretError` that does not quote the text; compact, sorted, non-ASCII as is |
-| `SecretError(String)` | The platform's message or bmlib's own; never a key |
+| `SecretError` | `SecretError::new(message)`, `message()`: the platform's message or bmlib's own; never a key. `Display` adds `secret store: `, which Python's `str()` does not |
 
 **Platforms** (#686). macOS addresses the same item as Python. Linux does
 only while Python writes first: Python's `keyring` adds an `application`

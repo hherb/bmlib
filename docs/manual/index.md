@@ -51,7 +51,7 @@ bmlib is organised into twelve modules, each with a focused responsibility:
 | [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching; `bmlib.fulltext.canonical` — one canonical text per paper from JATS, Markdown, plain text, a segmented PDF or HTML, with retrieval chunks *(0.12.0)* | [fulltext.md](fulltext.md) |
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building, locating an LLM's quoted passage *(0.12.0)* (pure stdlib) | [citations.md](citations.md) |
 | [`bmlib.embed`](embeddings.md) | *(0.12.0)* In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download, a paper's chunks stored and searched | [embeddings.md](embeddings.md) |
-| [`bmlib.secrets`](secrets.md) | *(unreleased)* API keys by provider in one OS keychain item, read once and cached; the same item as Rust's | [secrets.md](secrets.md) |
+| [`bmlib.secrets`](secrets.md) | *(unreleased)* API keys by provider in one OS keychain item, read once for `get`s and cached; on macOS the same item as Rust's (#686) | [secrets.md](secrets.md) |
 
 ## Architecture Principles
 

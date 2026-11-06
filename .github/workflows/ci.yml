@@ -186,8 +186,9 @@ jobs:
         # here reading a C struct through `unsafe` — is compiled only here.
         run: cargo clippy --all-targets --features pdf -- -D warnings
       - name: clippy (keyring feature)
-        # Off by default too, so `secrets::KeyringVault` is compiled only here,
-        # and so is the `keyring` crate's Linux Secret Service store.
+        # Off by default too, so `secrets::KeyringVault` is linted only here
+        # (and documented in the doc step, tested in the `pdf` test job), and
+        # so is the `keyring` crate's Linux Secret Service store.
         run: cargo clippy --all-targets --features keyring -- -D warnings
       - name: clippy (bmlib without default features)
         # What the mobile apps link. A workspace-wide build cannot see it:
@@ -229,9 +230,10 @@ jobs:
           # `html` rides with `pdf`: both are optional readers of a paper, and
           # the canonical-text contract runs its HTML cases only with it. `pdf`
           # compiles MuPDF from source (bindgen reads its headers through the
-          # runner's libclang), which the cache below then holds.
+          # runner's libclang), which the cache below then holds. `keyring`
+          # rides too, so `secrets::KeyringVault`'s read mapping is tested.
           - label: pdf
-            args: "--features pdf,html"
+            args: "--features pdf,html,keyring"
           # The configuration the mobile apps link (see rust-lint): bmlib
           # without its default features, and bmlib-ffi resolved on its own
           # (bmlib's defaults off), with the HTTP sketch so its tests run too.
