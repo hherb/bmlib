@@ -79,12 +79,19 @@ fn writes_agree_with_the_fixture() {
     }
 }
 
-/// Every error kind by its fixture name, so a kind added later must be named here.
+/// Every error kind, in the fixture's `kinds` order (`every_kind_is_listed`
+/// in the crate fails to compile on a kind added later).
 const KINDS: [SecretErrorKind; 3] = [
     SecretErrorKind::UnreadableItem,
     SecretErrorKind::AmbiguousItem,
     SecretErrorKind::Store,
 ];
+
+#[test]
+fn the_kinds_are_the_fixtures() {
+    let names: Vec<Value> = KINDS.iter().map(|k| Value::from(k.as_str())).collect();
+    assert_eq!(Value::from(names), fixture()["kinds"]);
+}
 
 /// The kind a fixture names.
 fn kind(name: &str) -> SecretErrorKind {
@@ -153,8 +160,10 @@ fn bundles_agree_with_the_fixture() {
                 *store.vault().item.lock().unwrap() = Some(text.to_string());
             }
             let provider = step["provider"].as_str().expect("provider");
-            *store.vault().fail_write.lock().unwrap() = step["fail_write"].as_str().map(kind);
-            *store.vault().fail_read.lock().unwrap() = step["fail_read"].as_str().map(kind);
+            // A field that is there but not a kind's name panics rather than disarming.
+            let fail = |field: &str| step.get(field).map(|v| kind(v.as_str().expect(field)));
+            *store.vault().fail_write.lock().unwrap() = fail("fail_write");
+            *store.vault().fail_read.lock().unwrap() = fail("fail_read");
             let got: Result<Value, SecretError> = match step["op"].as_str().expect("op") {
                 "get" => store
                     .get(provider)

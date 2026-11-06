@@ -137,13 +137,24 @@ def test_nesting_past_the_recursion_limit_is_unreadable() -> None:
 
 
 def test_the_kinds_are_rusts() -> None:
-    assert [k.value for k in SecretErrorKind] == ["unreadable-item", "ambiguous-item", "store"]
+    # Rust's contract test holds its kinds to the same list.
+    assert [k.value for k in SecretErrorKind] == FIXTURE["kinds"]
 
 
 def test_a_secret_error_pickles_with_its_kind() -> None:
     e = SecretError("two items", SecretErrorKind.AMBIGUOUS_ITEM)
     back = pickle.loads(pickle.dumps(e))
     assert (type(back), str(back), back.kind) == (SecretError, "two items", e.kind)
+
+
+def test_a_kind_given_by_name_is_the_member() -> None:
+    e = SecretError("bad bytes", "unreadable-item")  # type: ignore[arg-type]  # an untyped Vault's call
+    assert e.kind is SecretErrorKind.UNREADABLE_ITEM
+
+
+def test_an_unknown_kind_is_refused() -> None:
+    with pytest.raises(ValueError):
+        SecretError("x", "bogus")  # type: ignore[arg-type]  # the misspelling under test
 
 
 def test_memory_secrets_set_get_delete() -> None:

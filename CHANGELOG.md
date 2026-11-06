@@ -106,7 +106,7 @@ All notable changes to bmlib are documented here. The format is based on
   key, nor, in Python, chains an exception that could. Its `kind`
   (`SecretErrorKind`, #689) says whether saving a key will help:
   `unreadable-item` (it replaces the item), `ambiguous-item` (two keychain
-  items match, Rust's `keyring` only; `set` refuses rather than writing over
+  items match; bmlib's own `KeyringVault` reports it in Rust only; `set` refuses rather than writing over
   one it cannot see) or `store` (locked, denied, no keychain), so an app
   offers "save a key to replace the damaged item" only when it is true. The OS keychain
   is `KeyringVault`: Python's over the `keyring` package (new extra
@@ -114,7 +114,7 @@ All notable changes to bmlib are documented here. The format is based on
   feature `keyring`, off by default, so a mobile build brings its own
   `Vault`). The item's text is read and written by `read_key_list` /
   `write_key_list`, held together with `KeyBundle`'s behaviour by
-  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 13 store
+  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 14 store
   scenarios, each failure by kind). macOS addresses one item from both languages; Linux only
   while Python writes first (its `application` attribute makes a second
   item beside Rust's, which Rust then reads as ambiguous); Windows not yet

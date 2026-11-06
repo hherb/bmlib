@@ -240,8 +240,8 @@ impl<V: Vault> KeyBundle<V> {
 
     /// The cache, and the keys in it: read from the vault into the cache if
     /// nothing is cached yet or `fresh` (a write is about to follow, and must
-    /// start from the item as it is now). An item that is not a key list is an
-    /// error, unless `replace_unreadable` (a key is about to be saved): then,
+    /// start from the item as it is now). An item that is not a key list (or
+    /// that the vault reports as unreadable) is an error, unless `replace_unreadable` (a key is about to be saved): then,
     /// logged, the keys start empty and the cache is left as it was until they
     /// are written.
     fn loaded(
@@ -254,18 +254,21 @@ impl<V: Vault> KeyBundle<V> {
             let keys = keys.clone();
             return Ok((guard, keys));
         }
-        let keys = match self.vault.read()? {
-            None => KeyList::new(),
-            Some(text) => match read_key_list(&text) {
-                Ok(keys) => keys,
-                Err(_) if replace_unreadable => {
-                    eprintln!(
-                        "bmlib.secrets WARNING: {UNREADABLE}; replacing it with the key being saved"
-                    );
-                    return Ok((guard, KeyList::new()));
-                }
-                Err(e) => return Err(e),
-            },
+        // The vault may report an unreadable item itself; a set replaces it either way.
+        let read = self.vault.read().and_then(|text| match text {
+            None => Ok(KeyList::new()),
+            Some(text) => read_key_list(&text),
+        });
+        let keys = match read {
+            Ok(keys) => keys,
+            Err(e) if replace_unreadable && e.kind() == SecretErrorKind::UnreadableItem => {
+                eprintln!(
+                    "bmlib.secrets WARNING: {}; replacing it with the key being saved",
+                    e.message()
+                );
+                return Ok((guard, KeyList::new()));
+            }
+            Err(e) => return Err(e),
         };
         *guard = Some(keys.clone());
         Ok((guard, keys))
@@ -370,6 +373,12 @@ fn read_result(r: keyring::v1::Result<String>) -> Result<Option<String>, SecretE
     }
 }
 
+/// What a write of the item came to (see [`keyring_error`]).
+#[cfg(feature = "keyring")]
+fn write_result(r: keyring::v1::Result<()>) -> Result<(), SecretError> {
+    r.map_err(keyring_error)
+}
+
 #[cfg(feature = "keyring")]
 impl Vault for KeyringVault {
     /// Reads the item (an absent one is `None`; one that is not text reads as
@@ -379,7 +388,7 @@ impl Vault for KeyringVault {
     }
     /// Writes the item.
     fn write(&self, text: &str) -> Result<(), SecretError> {
-        self.entry()?.set_password(text).map_err(keyring_error)
+        write_result(self.entry()?.set_password(text))
     }
 }
 
@@ -515,6 +524,28 @@ mod tests {
         assert_eq!(
             keyring_error(E::NoStorageAccess("locked".into())).kind(),
             SecretErrorKind::Store
+        );
+        assert_eq!(
+            write_result(Err(E::Ambiguous(vec![]))).unwrap_err().kind(),
+            SecretErrorKind::AmbiguousItem
+        );
+    }
+
+    /// Every kind by name, matched without a wildcard so a kind added later
+    /// fails to compile here until it is named (the contract test holds the
+    /// same names to the fixture's `kinds`).
+    #[test]
+    fn every_kind_is_listed() {
+        use SecretErrorKind::{AmbiguousItem, Store, UnreadableItem};
+        let kinds = [UnreadableItem, AmbiguousItem, Store];
+        for k in kinds {
+            match k {
+                UnreadableItem | AmbiguousItem | Store => {}
+            }
+        }
+        assert_eq!(
+            kinds.map(SecretErrorKind::as_str),
+            ["unreadable-item", "ambiguous-item", "store"]
         );
     }
 }

@@ -10,8 +10,8 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 
 ## This session: a `SecretError` says whether saving a key helps (#689)
 
-Branch `fix/689-secret-unreadable-item`, filed by StudyAnalyzer PR #92's
-review. **Half 1 was already fixed** by PR #687's review commit `cb7c35cf`
+Branch `fix/689-secret-unreadable-item`, filed by StudyAnalyzer PR
+hherb/StudyAnalyzer#92's review. **Half 1 was already fixed** by PR #687's review commit `cb7c35cf`
 (the issue was filed against `26f69db9`, before it): a non-UTF-8 item reads
 as unreadable and `set` replaces it. **Half 2**: `SecretError.kind` /
 `SecretError::kind()`, a `SecretErrorKind` the same in both languages —
@@ -22,7 +22,10 @@ see), `store` (everything else, Python's lone-surrogate refusal included).
 Rust adds `SecretError::with_kind` (`new` stays, kind `Store`); Python's
 `SecretError(message, kind=STORE)` pickles with its kind. The fixture's
 `fail_read`/`fail_write` now name a kind and an error expectation names the
-kind expected; a 13th scenario pins the ambiguous item. **For StudyAnalyzer**:
+kind expected; a 13th scenario pins the ambiguous item. Review fixes: a
+`Vault` that raises `unreadable-item` itself is replaced by `set` too (a 14th
+scenario), Python's `kind` is coerced to the member (an unknown name raises),
+and the fixture's `kinds` list holds both languages' names to it. **For StudyAnalyzer**:
 show "saving a key replaces the damaged item" only for `UnreadableItem`;
 `AmbiguousItem` asks the user to remove one item in the keychain.
 
@@ -270,8 +273,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,415 passing + 165 skipped** on `fix/689-secret-unreadable-item`
-  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,418 passing + 165 skipped** on `fix/689-secret-unreadable-item`
+  (`uv run pytest tests/ -v`, 2026-11-07; 9,569 + 14 with the PostgreSQL DSN; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest

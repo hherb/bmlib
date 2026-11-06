@@ -54,7 +54,7 @@ With the feature, `KeyBundle::keyring("com.example.myapp")` is the item
 | `MemorySecrets` | An in-memory `SecretStore` |
 | `read_key_list` / `write_key_list` | The item's text ↔ `KeyList` (`BTreeMap<String, String>`): an object of strings or a `SecretError` that does not quote the text; compact, sorted, non-ASCII as is |
 | `SecretError` | `SecretError::new(message)` (kind `Store`), `with_kind(kind, message)`, `kind()`, `message()`: the platform's message or bmlib's own; never a key. `Display` adds `secret store: `, which Python's `str()` does not |
-| `SecretErrorKind` | *(non-exhaustive, #689)* What will help: `UnreadableItem` (not a key list, or not UTF-8; saving a key replaces it), `AmbiguousItem` (two items match; the user removes one in the keychain), `Store` (locked, denied, no keychain). `as_str()` is Python's name (`"unreadable-item"`, `"ambiguous-item"`, `"store"`) |
+| `SecretErrorKind` | *(non-exhaustive, #689)* What will help: `UnreadableItem` (not a key list, or not UTF-8; saving a key replaces it, also when a `Vault` of an app's own returns it from `read`), `AmbiguousItem` (two items match; the user removes one in the keychain), `Store` (locked, denied, no keychain). `as_str()` is Python's name (`"unreadable-item"`, `"ambiguous-item"`, `"store"`) |
 
 **Platforms** (#686). macOS addresses the same item as Python. Linux does
 only while Python writes first: Python's `keyring` adds an `application`

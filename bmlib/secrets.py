@@ -93,11 +93,8 @@ class SecretError(Exception):
 
     def __init__(self, message: str, kind: SecretErrorKind = SecretErrorKind.STORE) -> None:
         super().__init__(message)
-        self.kind = kind
-
-    def __reduce__(self) -> tuple[type[SecretError], tuple[str, SecretErrorKind]]:
-        """Pickle with the kind, which ``Exception``'s own pickling drops."""
-        return (type(self), (str(self), self.kind))
+        # A kind's name becomes the member, so `kind is ...` holds; an unknown one raises.
+        self.kind = SecretErrorKind(kind)
 
 
 class SecretStore(Protocol):
@@ -224,22 +221,21 @@ class KeyBundle:
         """A copy of the keys, read from the vault into the cache if nothing
         is cached yet or ``fresh`` (a write is about to follow, and must start
         from the item as it is now). Call with the lock held. An item that is
-        not a key list raises, unless ``replace_unreadable`` (a key is about to
-        be saved): then, logged, the keys start empty and the cache is left as
+        not a key list (or that the vault reports as unreadable) raises, unless
+        ``replace_unreadable`` (a key is about to be saved): then, logged, the
+        keys start empty and the cache is left as
         it was until they are written."""
         if self._cache is not None and not fresh:
             return dict(self._cache)
-        text = self._vault.read()
-        if text is None:
-            keys: dict[str, str] = {}
-        else:
-            try:
-                keys = read_key_list(text)
-            except SecretError:
-                if not replace_unreadable:
-                    raise
-                logger.warning("%s; replacing it with the key being saved", _UNREADABLE)
-                return {}
+        try:
+            text = self._vault.read()
+            keys = {} if text is None else read_key_list(text)
+        except SecretError as e:
+            # The vault may report an unreadable item itself; a set replaces it either way.
+            if not (replace_unreadable and e.kind is SecretErrorKind.UNREADABLE_ITEM):
+                raise
+            logger.warning("%s; replacing it with the key being saved", e)
+            return {}
         self._cache = dict(keys)
         return keys
 
