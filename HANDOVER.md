@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-06 (**this session's PR is on `fix/624-typed-fulltext-sources`**,
-for #624; see *This session* below). PR #676 (#673), #675 (#548, #549), #674 (#609), #672 (#636), #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
+_Last updated: 2026-11-06 (**this session's PR is on `fix/564-ascii-pmc-digits`**, for #564; PRs #674 (#609), #675 (#548, #549),
+#676 (#673) and #672 (#636) merged). PR #671 and #669 (#667), #670 (#619), #668 (#664), #666 (#616), #663 (#662), #661 (#659), #660 (#658), #657
 (#646), #655 (#654), #653 (#563), #648
 (#632), #650 (#635), #644 (#640-#642), #643 (#633), #639 (#638), #637 (#628, unnamed
 parent), #631, #630, #629 (#628), #627 (pdf-5), #626 (#565), #625 (#603), #622
@@ -12,20 +12,21 @@ summary and *Changed — breaking* are the release notes; see `HANDOVER_RUST.md`
 for the crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627,
 #629-#631, #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666, #668-#672, #674-#676 and this session's._
 
-## This session: a fetched record's full-text sources are typed (#624)
+## This session: a Rust PMC ID or accession in non-ASCII digits is refused (#564)
 
-Rust's `FetchedRecord.fulltext_sources` held JSON values, where Python's
-fetchers build `FullTextSourceEntry` and `FullTextRequest` takes the struct.
-Now `publications::FullTextSourceEntry` re-exports `fulltext`'s struct (the
-issue's first suggestion; `publications` already used `fulltext`), the four
-fetchers build it, and `lookup_record`'s merge and
-`record_to_fulltext_sources` read fields (the latter now skips an empty
-`url`, as Python's `if not url`). The struct leaves `version` out of its JSON
-when unset or empty, as `to_dict` does, so the oracle comparisons hold
-unchanged. Shared fixture `tests/fixtures/fulltext_source_entry.json` (five
-round trips, three refusals), both languages. **For StudyAnalyzer**: drop
-`retrieval::source_entries`' `shortcut:` and pass `record.fulltext_sources`
-as it is (StudyAnalyzer's PR does, pinned at this branch's head).
+Branch `fix/564-ascii-pmc-digits` (the start-of-session docs refresh rides
+on it). The `regex` crate's `\d` is Unicode, so Rust's `normalise_pmc_id`
+and `EUROPEPMC_ACCESSION_RE` let `PMC٣٤٥` into a URL path where Python's
+`re.ASCII` patterns refuse it; both read `[0-9]` now. Three
+`normalise_pmc_id` cases in `service_cases.json` (Python's expectation
+regenerated) and `the_full_text_accession_refuses_non_ascii_digits` in
+`tests/analyzer.rs`. **The sweep**: of the Rust crate's 22 `\d` uses, only
+these two port a Python `re.ASCII` pattern; the rest (NCT ids, extractors,
+segmenter numbering) are Unicode in both languages, and the citation
+scanner is hand-written and ASCII-only (documented in the Rust manual).
+**#471 keeps its other half**: Rust matches an NCT id in any script's digits
+but does not send it in ASCII as Python's `_nct_id` does, and the PMID
+shape guard.
 
 ## Earlier, 2026-11-06: a split item's progress counts once (#673, PR #676, merged)
 
@@ -329,8 +330,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,320 passing + 165 skipped** on `fix/548-549-markdown-fences`
-  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,577 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,322 passing + 165 skipped** on `fix/564-ascii-pmc-digits`
+  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,581 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -359,8 +360,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**122 open once #624 closes** (`gh issue list --state open --limit 300 --json number`,
-2026-11-06; #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
+**122 open once #564 closes** (`gh issue list --state open --limit 300 --json number`,
+2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

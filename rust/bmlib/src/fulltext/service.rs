@@ -440,10 +440,11 @@ impl<'a> TierFailures<'a> {
 ///
 /// `\z` and not `$`: `$` also matches before a trailing newline, so an anchored
 /// match would accept `"PMC123\n"` — the same reason Python's `fullmatch` is
-/// used there rather than `match`.
+/// used there rather than `match`. `[0-9]` and not `\d`, which the `regex` crate
+/// makes every Unicode decimal digit where Python's pattern is `re.ASCII` (#564).
 fn pmc_id_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"^PMC\d+\z").expect("a fixed pattern"))
+    PATTERN.get_or_init(|| Regex::new(r"^PMC[0-9]+\z").expect("a fixed pattern"))
 }
 
 /// Whether an entry is one `fullTextUrl` entry bmlib may download.
@@ -626,7 +627,7 @@ fn first_url(location: &Map<String, Value>) -> Option<String> {
 ///
 /// # Errors
 ///
-/// [`FullTextError::Other`] if the value is not `PMC` followed by digits.
+/// [`FullTextError::Other`] if the value is not `PMC` followed by ASCII digits.
 pub fn normalise_pmc_id(pmc_id: &str) -> Result<String, FullTextError> {
     let normalized = if pmc_id.starts_with("PMC") {
         pmc_id.to_string()

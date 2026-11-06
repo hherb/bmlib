@@ -733,6 +733,27 @@
   }
  },
  {
+  "name": "normalise_pmc_id/arabic_indic_digits",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "٣٤٥"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/prefixed_arabic_indic_digits",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC٣٤٥"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/fullwidth_digit",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC12３"
+  }
+ },
+ {
   "name": "plural/one_attempt",
   "fn": "plural",
   "args": {

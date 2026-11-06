@@ -11,6 +11,14 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A PMC ID or a full-text accession in non-ASCII digits is refused**
+  (#564, the accession half of #471). The `regex` crate's `\d` is every
+  Unicode decimal digit, so `normalise_pmc_id("٣٤٥")` returned
+  `Ok("PMC٣٤٥")` and `EUROPEPMC_ACCESSION_RE` passed `PMC١٢٣`, each then built
+  into a URL path, where Python's two patterns are `re.ASCII`. Both now read
+  `[0-9]`. Three `normalise_pmc_id` oracle cases (Arabic-Indic and fullwidth
+  digits); no draw has seen such an identifier, so this pins a direction.
+
 - **A fence inside a blockquote closes, a backtick in a backtick fence's
   info string opens none, and no unclosed opener costs quadratic time**
   (#548, #549, with the Python library). `canonical_from_markdown` strips a
