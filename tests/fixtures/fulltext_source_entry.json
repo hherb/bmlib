@@ -1,0 +1,35 @@
+{
+  "description": "A FullTextSourceEntry read from JSON and written back, in both languages: Python's FullTextSourceEntry.from_dict / to_dict and Rust's serde. A fetcher's record carries these entries (FetchedRecord.fulltext_sources) and FullTextRequest takes them as they are (#624). `version` is left out when unset or empty; `open_access` defaults to true; an entry without url, format or source is refused.",
+  "cases": [
+    {
+      "name": "every field",
+      "input": {"url": "https://x.org/a.pdf", "format": "pdf", "source": "publisher", "open_access": false, "version": "preprint"},
+      "output": {"url": "https://x.org/a.pdf", "format": "pdf", "source": "publisher", "open_access": false, "version": "preprint"}
+    },
+    {
+      "name": "no version is no key",
+      "input": {"url": "https://x.org/a", "format": "html", "source": "pmc", "open_access": true},
+      "output": {"url": "https://x.org/a", "format": "html", "source": "pmc", "open_access": true}
+    },
+    {
+      "name": "a null version is no key",
+      "input": {"url": "https://x.org/a", "format": "html", "source": "pmc", "open_access": true, "version": null},
+      "output": {"url": "https://x.org/a", "format": "html", "source": "pmc", "open_access": true}
+    },
+    {
+      "name": "an empty version is no key",
+      "input": {"url": "https://x.org/a", "format": "html", "source": "pmc", "open_access": true, "version": ""},
+      "output": {"url": "https://x.org/a", "format": "html", "source": "pmc", "open_access": true}
+    },
+    {
+      "name": "open_access defaults to true",
+      "input": {"url": "https://x.org/a.xml", "format": "xml", "source": "europepmc"},
+      "output": {"url": "https://x.org/a.xml", "format": "xml", "source": "europepmc", "open_access": true}
+    }
+  ],
+  "refused": [
+    {"name": "no url", "input": {"format": "pdf", "source": "publisher"}},
+    {"name": "no format", "input": {"url": "https://x.org/a.pdf", "source": "publisher"}},
+    {"name": "no source", "input": {"url": "https://x.org/a.pdf", "format": "pdf"}}
+  ]
+}

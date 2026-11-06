@@ -842,11 +842,11 @@ fn both_fulltext_locations_are_marked_open_access() {
         "biorxiv",
     );
     assert_eq!(record.fulltext_sources.len(), 2);
-    assert_eq!(record.fulltext_sources[0]["format"], "pdf");
-    assert_eq!(record.fulltext_sources[1]["format"], "xml");
+    assert_eq!(record.fulltext_sources[0].format, "pdf");
+    assert_eq!(record.fulltext_sources[1].format, "xml");
     for entry in &record.fulltext_sources {
-        assert_eq!(entry["open_access"], true);
-        assert_eq!(entry["source"], "biorxiv");
+        assert!(entry.open_access);
+        assert_eq!(entry.source, "biorxiv");
     }
     assert!(record.is_open_access, "a preprint is open access");
 }

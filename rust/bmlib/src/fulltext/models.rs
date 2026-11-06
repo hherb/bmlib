@@ -757,7 +757,10 @@ pub struct FullTextSourceEntry {
     pub open_access: bool,
     /// The version the source describes, e.g. `"preprint"`, `"accepted"`,
     /// `"published"`; `None` where it says nothing.
-    #[serde(default)]
+    ///
+    /// Left out of the JSON when unset or empty, as Python's `to_dict` leaves
+    /// it out, so a record serialises to the same object in both languages.
+    #[serde(default, skip_serializing_if = "no_version")]
     pub version: Option<String>,
 }
 
@@ -1147,6 +1150,12 @@ impl Default for SegmentedDocument {
 /// The default for [`FullTextSourceEntry::open_access`].
 fn yes() -> bool {
     true
+}
+
+/// Whether [`FullTextSourceEntry::version`] is left out of the JSON: unset or
+/// empty, Python's `if self.version` in `to_dict`.
+fn no_version(version: &Option<String>) -> bool {
+    version.as_deref().is_none_or(str::is_empty)
 }
 
 /// The default for [`Section::confidence`].

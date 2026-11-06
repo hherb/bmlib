@@ -51,7 +51,7 @@ use crate::publications::fetchers::registry::{
     CountingSink, FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, HttpClient,
     PartDisposition, Progress,
 };
-use crate::publications::models::FetchedRecord;
+use crate::publications::models::{FetchedRecord, FullTextSourceEntry};
 use crate::pyvalue::truthy;
 use crate::pyvalue::{json_type_name, python_repr};
 
@@ -222,22 +222,24 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
         })
         .unwrap_or_default();
 
-    let mut fulltext_sources: Vec<serde_json::Value> = Vec::new();
+    let mut fulltext_sources: Vec<FullTextSourceEntry> = Vec::new();
     if let Some(doi) = doi.as_deref() {
-        fulltext_sources.push(serde_json::json!({
-            "url": pdf_url(server, doi, raw.get("version")),
-            "format": "pdf",
-            "source": server,
-            "open_access": true,
-        }));
+        fulltext_sources.push(FullTextSourceEntry {
+            url: pdf_url(server, doi, raw.get("version")),
+            format: "pdf".to_string(),
+            source: server.to_string(),
+            open_access: true,
+            version: None,
+        });
     }
     if let Some(jatsxml) = text(raw, "jatsxml") {
-        fulltext_sources.push(serde_json::json!({
-            "url": jatsxml,
-            "format": "xml",
-            "source": server,
-            "open_access": true,
-        }));
+        fulltext_sources.push(FullTextSourceEntry {
+            url: jatsxml,
+            format: "xml".to_string(),
+            source: server.to_string(),
+            open_access: true,
+            version: None,
+        });
     }
 
     let mut record = FetchedRecord::new(

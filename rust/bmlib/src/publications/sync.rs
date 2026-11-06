@@ -926,26 +926,17 @@ pub fn record_to_fulltext_sources(record: &FetchedRecord) -> Option<Vec<FullText
     }
     let mut result = Vec::new();
     for fts in &record.fulltext_sources {
-        let url = fts.get("url").and_then(serde_json::Value::as_str);
-        let source = fts
-            .get("source")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("unknown");
-        let format = fts
-            .get("format")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("html");
-        let version = fts.get("version").and_then(serde_json::Value::as_str);
-        let Some(url) = url else {
+        if fts.url.is_empty() {
             continue;
-        };
-        result.push(FullTextSource::new(
-            0, // set by store_publication
-            source, url, format,
-        ));
-        if let Some(last) = result.last_mut() {
-            last.version = version.map(str::to_string);
         }
+        let mut row = FullTextSource::new(
+            0, // set by store_publication
+            &fts.source,
+            &fts.url,
+            &fts.format,
+        );
+        row.version.clone_from(&fts.version);
+        result.push(row);
     }
     if result.is_empty() {
         None
@@ -1746,5 +1737,37 @@ mod tests {
         );
         assert_eq!((state.added, state.merged, state.failed), (2, 0, 0));
         assert!(state.flush_error.is_none());
+    }
+
+    /// A record's entries become rows with their fields and version; an
+    /// entry with an empty URL is skipped, as Python's `if not url`, and a
+    /// record with none gives `None`, so stored rows stay untouched.
+    #[test]
+    fn record_entries_become_rows_and_an_empty_url_is_skipped() {
+        let entry = |url: &str, version: Option<&str>| crate::fulltext::FullTextSourceEntry {
+            url: url.to_string(),
+            format: "pdf".to_string(),
+            source: "publisher".to_string(),
+            open_access: true,
+            version: version.map(str::to_string),
+        };
+        let mut record = FetchedRecord::new("T", "openalex");
+        assert!(record_to_fulltext_sources(&record).is_none());
+
+        record.fulltext_sources = vec![entry("", None)];
+        assert!(record_to_fulltext_sources(&record).is_none());
+
+        record.fulltext_sources = vec![entry("https://x/a.pdf", Some("preprint")), entry("", None)];
+        let rows = record_to_fulltext_sources(&record).expect("one row");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (
+                rows[0].url.as_str(),
+                rows[0].format.as_str(),
+                rows[0].source.as_str()
+            ),
+            ("https://x/a.pdf", "pdf", "publisher")
+        );
+        assert_eq!(rows[0].version.as_deref(), Some("preprint"));
     }
 }
