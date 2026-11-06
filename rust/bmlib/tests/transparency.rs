@@ -256,8 +256,9 @@ fn the_partitions_are_complete_and_disjoint() {
     assert_eq!(refused, want);
 }
 
-/// **`NOT_SERVED` is the 404 and nothing else.** Three other outcomes used to
-/// reach it, putting a claim in the remote's mouth that only the 404 makes: a
+/// **`NOT_SERVED` is Europe PMC's *not served* and nothing else** — the 404, or
+/// since #457/#608 a 500 for a closed-access record. Three other outcomes used to
+/// reach it, putting a claim in the remote's mouth that only that answer makes: a
 /// bmlib defect on the request line, a 429/503/403, and an empty HTTP 200 body.
 /// They are `REQUEST_FAILED` now, and **`is_refusal` is false for it** — nothing
 /// was served, so there is nothing to have refused.

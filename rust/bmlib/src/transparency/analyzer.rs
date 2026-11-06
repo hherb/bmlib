@@ -3205,7 +3205,13 @@ impl TransparencyAnalyzer {
                         .map(json_text)
                         .filter(|value| !value.is_empty())
                 });
-            let fetch = self.fetch_europepmc_fulltext(client, source, ext_id, document_id);
+            // Read only to interpret a 500 (issue #457), never to gate the request.
+            let open_access = record
+                .get("isOpenAccess")
+                .map(json_text)
+                .filter(|value| !value.is_empty());
+            let fetch =
+                self.fetch_europepmc_fulltext(client, source, ext_id, document_id, open_access);
             analysis.full_text_status = fetch.status;
             if let Some(text) = fetch.text {
                 if !text.is_empty() {
@@ -3303,14 +3309,22 @@ impl TransparencyAnalyzer {
     ///
     /// Every refusal WARNs, naming which it was, the `document_id` that joins the
     /// line to a stored result, and how much was served in bytes. **Exactly one
-    /// outcome is quiet, and it is the only one measured to be ordinary:** a
-    /// **404** logs the URL at DEBUG. Europe PMC answered, and its answer is that
-    /// it serves no open-access full text here — the majority outcome of the
-    /// `inEPMC` gate this module uses, where 88 of 150 stratified records 404'd
-    /// and 0 of 53 `isOpenAccess: N` records served. Every other way of getting
-    /// no document WARNs and stores [`FullTextStatus::RequestFailed`] rather than
-    /// `NotServed`, because none of them is Europe PMC saying anything about this
-    /// article (issues #187, #190, #191).
+    /// answer is quiet, and it is the only one measured to be ordinary:** Europe
+    /// PMC saying it serves no open-access full text here — the majority outcome
+    /// of the `inEPMC` gate this module uses, where 88 of 150 stratified records
+    /// 404'd and 0 of 53 `isOpenAccess: N` records served. It said so with a
+    /// **404** on 2026-09-09 and with a **500** since at least 2026-10-12, and a
+    /// 500 is also what an outage looks like, so a 500 is read as that answer
+    /// only for a record whose `open_access` is exactly `"N"` (issues #457,
+    /// #608). Both log the URL at DEBUG and store [`FullTextStatus::NotServed`].
+    /// Every other way of getting no document — a 500 for any other record
+    /// included — WARNs and stores [`FullTextStatus::RequestFailed`], because none
+    /// of them is Europe PMC saying anything about this article (issues #187,
+    /// #190, #191).
+    ///
+    /// `open_access` is the record's `isOpenAccess`, `None` where it carries none
+    /// or one that is empty or not a string. It decides only how a 500 is read,
+    /// never whether to ask.
     ///
     /// The identifier is what a record must carry for a request to leave at all.
     /// A record with no accession, or with one that is not a
@@ -3324,6 +3338,7 @@ impl TransparencyAnalyzer {
         source: Option<&str>,
         ext_id: Option<&str>,
         document_id: &str,
+        open_access: Option<&str>,
     ) -> FullTextFetch {
         let source = source.filter(|value| !value.is_empty());
         let ext_id = ext_id.filter(|value| !value.is_empty());
@@ -3462,6 +3477,10 @@ impl TransparencyAnalyzer {
             // release inside this silence: every request 404'd and nothing said
             // so at any level. The URL is what names the defect, so the URL is
             // what the line carries.
+            //
+            // **Since at least 2026-10-12 Europe PMC answers a 500 here instead**
+            // (issue #457, the branch below), so this branch may now take nothing
+            // live; it is kept for the answer it was measured on.
             log_line(
                 Level::Debug,
                 &format!(
@@ -3475,16 +3494,50 @@ impl TransparencyAnalyzer {
             };
         }
 
+        if response.status == 500 && open_access == Some("N") {
+            // Issue #457 (Python), followed here by #608. Since at least
+            // 2026-10-12 Europe PMC answers **500** where it answered 404 for an
+            // article it holds and does not serve: on 2026-10-15, over the
+            // addresses bmlib sends, 37 of 37 `isOpenAccess: N` records answered
+            // 500, every one a `pmcid`; the `PPR` half rests on a hand-taken draw
+            // of 2026-10-13 (15 of 15, not in the repo). No `N` record has been
+            // seen to serve (0 of 53 under the 404 regime, 0 of 60 by hand and 0
+            // of 37 in that run — a floor, not a proof). So `NOT_SERVED` is what
+            // every draw supports whether this 500 is the new "not served" or an
+            // outage.
+            //
+            // **The flag interprets an answer; it does not gate a request**, so
+            // nothing that would have been served is lost. Exactly `"N"`, as
+            // `inEPMC` is tested against exactly `"Y"`. The cost: an outage, or a
+            // URL bmlib builds wrongly, is now quiet for every `"N"` record; any
+            // other record's 500 still WARNs below.
+            log_line(
+                Level::Debug,
+                &format!(
+                    "EuropePMC served no full text for {subject}: HTTP 500 from {url}, for a \
+                     record it lists as not open access"
+                ),
+            );
+            return FullTextFetch {
+                text: None,
+                status: FullTextStatus::NotServed,
+            };
+        }
+
         if response.status != 200 {
-            // Issue #191. Every status that is neither the 200 below nor the 404
-            // above: a 429, a 503, a 403. None of them is a statement about
+            // Issue #191. Every status that is neither the 200 below nor a *not
+            // served* above: a 429, a 503, a 403, and since #457 a 500 for a
+            // record not listed as closed access. None of them is a statement about
             // whether Europe PMC holds this article's full text, which is the one
             // thing `NOT_SERVED` asserts — so `REQUEST_FAILED`.
             //
             // WARNING, and the asymmetry with the 404 is the measurement, not a
             // preference. This branch took 0 of the 81 non-200s among 200 live
-            // probes, so it fires on nothing in a healthy draw and a WARNING is
-            // not noise. It is the level the consequence needs: results are
+            // probes (2026-09-05), so it fired on nothing in a healthy draw and a
+            // WARNING is not noise. That draw predates the 500 (#457); since the
+            // 500 it fires on 2 of the 39 non-200s at the addresses bmlib sends,
+            // both open-access `PPR` preprints, and the reading is kept (#462). It
+            // is the level the consequence needs: results are
             // cacheable and nothing in this package retries, so an outage window
             // silently caches a corpus of absences.
             log_line(
