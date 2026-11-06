@@ -90,7 +90,8 @@ pub fn version_map() -> BTreeMap<&'static str, &'static str> {
 /// Reconstruct an abstract from OpenAlex's inverted-index representation.
 ///
 /// OpenAlex stores abstracts as `{"word": [pos, ...], ...}`. This flattens into
-/// `(position, word)` pairs, sorts by position, and joins.
+/// `(position, word)` pairs, sorts by position (two words at one position by
+/// the word), and joins.
 ///
 /// Returns `None` when the index is absent or empty — **not** an empty string,
 /// so the storage layer's `COALESCE` merge can still fill the field from another

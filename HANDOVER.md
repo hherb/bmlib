@@ -17,8 +17,9 @@ two words at one position kept the index's key order; Rust reads the index
 as serde_json's `BTreeMap` (no key order) and sorted by position then word.
 Python now sorts the `(position, word)` tuples. Oracle case
 `abstract/tie-at-one-position` in both `openalex_cases.json` copies,
-expectation regenerated, and a Python unit test. No well-formed index has a
-tie, so nothing measured moves.
+expectation regenerated, and a Python unit test. A well-formed index has no
+tie, so no record should move (argued, not measured: no OpenAlex corpus is
+committed).
 
 ## Earlier, 2026-11-06 (all merged; the CHANGELOG entries are the argument)
 

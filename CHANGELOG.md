@@ -15,8 +15,9 @@ All notable changes to bmlib are documented here. The format is based on
   sorted by position then word: `{"zeta": [0], "alpha": [0]}` read
   `"zeta alpha"` in Python and `"alpha zeta"` in Rust. Python now sorts the
   `(position, word)` pairs as tuples. A well-formed inverted index holds one
-  word per position, so no measured record moves; the oracle corpus gains
-  the tie case (`abstract/tie-at-one-position`).
+  word per position, so no record should move — an argument, not a
+  measurement, since no OpenAlex corpus is committed; the oracle corpus
+  gains the tie case (`abstract/tie-at-one-position`).
 
 - **A fence inside a blockquote closes, a backtick in a backtick fence's
   info string opens none, and no unclosed opener costs quadratic time**
