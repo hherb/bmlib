@@ -148,7 +148,8 @@ the field existed — never the enum's "nothing happened" member.
 `FullTextStatus::is_refusal()` separates a document that was served and
 refused (`Truncated`, `UnterminatedMarkup`, `UnclosedRegion`,
 `EntirelyNested`, `Undecodable`) from one that never arrived (`NotAttempted`,
-`SearchFailed`, `NotServed` — Europe PMC's own 404 — and `RequestFailed`);
+`SearchFailed`, `NotServed` — Europe PMC's own *not served*: a 404, or a 500
+for a record it lists as `isOpenAccess: N` — and `RequestFailed`);
 `REFUSED_FULL_TEXT_STATUSES` and `NOT_REFUSED_FULL_TEXT_STATUSES` name the two
 sides. `TrialResultsStatus::is_answered()` is true for `Posted` and
 `NotPosted` only: for `PartlyAnswered`, `RequestFailed`, `NotCheckable` and

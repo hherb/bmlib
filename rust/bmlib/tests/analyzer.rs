@@ -787,6 +787,65 @@ fn the_full_text_statuses_are_distinct() {
     }
 }
 
+/// Issue #608, following Python's #457: a 500 is Europe PMC's *not served* only
+/// for a record it lists as `isOpenAccess: N`; for any other flag — `Y`, absent,
+/// or not a string — it is nobody answering. The flag never gates the request:
+/// a closed-access record that serves is still scanned.
+#[test]
+fn a_500_is_not_served_only_for_a_closed_access_record() {
+    let cases: Vec<(&str, Option<Value>, u16, &str, FullTextStatus)> = vec![
+        (
+            "N-500",
+            Some(json!("N")),
+            500,
+            "",
+            FullTextStatus::NotServed,
+        ),
+        (
+            "Y-500",
+            Some(json!("Y")),
+            500,
+            "",
+            FullTextStatus::RequestFailed,
+        ),
+        ("absent-500", None, 500, "", FullTextStatus::RequestFailed),
+        (
+            "bool-500",
+            Some(json!(false)),
+            500,
+            "",
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "N-503",
+            Some(json!("N")),
+            503,
+            "",
+            FullTextStatus::RequestFailed,
+        ),
+        (
+            "N-200",
+            Some(json!("N")),
+            200,
+            "<article><body>x</body></article>",
+            FullTextStatus::Analyzed,
+        ),
+    ];
+    for (name, flag, status, body, want) in cases {
+        let mut record = epmc_record(Some("PMC123"), "123", "Y", "");
+        if let Some(flag) = flag {
+            record["isOpenAccess"] = flag;
+        }
+        let (analyzer, client) = harness(default_settings());
+        let client = client
+            .route(&search_url("EXT_ID:123"), 200, &search_body(vec![record]))
+            .route(&fulltext_url("PMC123"), status, body);
+        let result = analyzer.analyze(&client, "doc-1", Some("123"), None);
+        assert_eq!(result.full_text_status, Some(want), "{name}");
+        assert_eq!(result.validate(), Ok(()), "{name}");
+    }
+}
+
 /// A served, whole, article-shaped body is scanned: `full_text_analyzed` is set
 /// and a missing disclosure becomes an explicit `Some(false)`.
 #[test]
