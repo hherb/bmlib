@@ -1,16 +1,37 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-06 (**this session's PR is on `feat/634-secret-store`**, for #634; PRs #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-06 (**this session's PR is on `fix/689-secret-unreadable-item`**, for #689; PRs #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684 and this session's._
+#668-#672, #674-#679, #682-#684, #687 and this session's._
 
-## This session: API keys in the OS keychain, both languages (#634)
+## This session: a `SecretError` says whether saving a key helps (#689)
 
-Branch `feat/634-secret-store`, PR #687, moved from StudyAnalyzer (its phase 2b
+Branch `fix/689-secret-unreadable-item`, filed by StudyAnalyzer PR
+hherb/StudyAnalyzer#92's review. **Half 1 was already fixed** by PR #687's review commit `cb7c35cf`
+(the issue was filed against `26f69db9`, before it): a non-UTF-8 item reads
+as unreadable and `set` replaces it. **Half 2**: `SecretError.kind` /
+`SecretError::kind()`, a `SecretErrorKind` the same in both languages —
+`unreadable-item` (saving a key replaces it), `ambiguous-item` (Rust's
+`keyring` `Ambiguous`, on a read or a write; **not replaced**, the
+maintainer's choice, since `set` would overwrite one of two items it cannot
+see), `store` (everything else, Python's lone-surrogate refusal included).
+Rust adds `SecretError::with_kind` (`new` stays, kind `Store`); Python's
+`SecretError(message, kind=STORE)` pickles with its kind. The fixture's
+`fail_read`/`fail_write` now name a kind and an error expectation names the
+kind expected; a 13th scenario pins the ambiguous item. Review fixes: a
+`Vault` that raises `unreadable-item` itself is replaced by `set` too (a 14th
+scenario), Python's `kind` is coerced to the member (an unknown name raises),
+and the fixture's `kinds` list holds both languages' names to it. **For StudyAnalyzer**:
+show "saving a key replaces the damaged item" only for `UnreadableItem`;
+`AmbiguousItem` asks the user to remove one item in the keychain.
+
+## Earlier, 2026-11-06: API keys in the OS keychain, both languages (#634, PR #687, merged)
+
+Moved from StudyAnalyzer (its phase 2b
 built it; its follow-up PR deletes its copy and pins this). `bmlib/secrets.py`
 and `rust/bmlib/src/secrets.rs`: `SecretStore` over a `Vault`, `KeyBundle`
 (one item `{provider: key}`, read once for `get`s and cached, read again
@@ -140,7 +161,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -252,8 +273,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,355 passing + 165 skipped** on `fix/608-rust-500-not-served`
-  (`uv run pytest tests/ -v`, 2026-11-06; Rust 1,600 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,418 passing + 165 skipped** on `fix/689-secret-unreadable-item`
+  (`uv run pytest tests/ -v`, 2026-11-07; 9,569 + 14 with the PostgreSQL DSN; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -282,7 +303,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**123 open once #634 closes** (#685, #686 filed) (`gh issue list --state open --limit 300 --json number`,
+**122 open once #689 closes** (#685, #686, #688 filed; #688 is a design choice, the `log` facade or a per-module sink) (`gh issue list --state open --limit 300 --json number`,
 2026-11-06); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

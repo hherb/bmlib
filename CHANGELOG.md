@@ -103,14 +103,19 @@ All notable changes to bmlib are documented here. The format is based on
   that touches the OS); `MemorySecrets` for tests. `set` over an item that is
   not a key list (or not UTF-8) replaces it (logged), `get` and `delete`
   report it; a failed write leaves the cache; a `SecretError` never holds a
-  key, nor, in Python, chains an exception that could. The OS keychain
+  key, nor, in Python, chains an exception that could. Its `kind`
+  (`SecretErrorKind`, #689) says whether saving a key will help:
+  `unreadable-item` (it replaces the item), `ambiguous-item` (two keychain
+  items match; bmlib's own `KeyringVault` reports it in Rust only; `set` refuses rather than writing over
+  one it cannot see) or `store` (locked, denied, no keychain), so an app
+  offers "save a key to replace the damaged item" only when it is true. The OS keychain
   is `KeyringVault`: Python's over the `keyring` package (new extra
   `secrets`, in `all`), Rust's over the `keyring` crate's v1 stores (new
   feature `keyring`, off by default, so a mobile build brings its own
   `Vault`). The item's text is read and written by `read_key_list` /
   `write_key_list`, held together with `KeyBundle`'s behaviour by
-  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 12 store
-  scenarios). macOS addresses one item from both languages; Linux only
+  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 14 store
+  scenarios, each failure by kind). macOS addresses one item from both languages; Linux only
   while Python writes first (its `application` attribute makes a second
   item beside Rust's, which Rust then reads as ambiguous); Windows not yet
   (the crate names the credential `account.service`, the package

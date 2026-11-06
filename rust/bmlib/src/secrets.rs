@@ -50,27 +50,71 @@ pub const API_KEYS_ACCOUNT: &str = "api-keys";
 /// quotes the item, which may hold keys.
 const UNREADABLE: &str = "the keychain item is not a valid key list";
 
+/// What kind of failure a [`SecretError`] is, so an app can say what will
+/// help (#689). The same three as Python's `SecretErrorKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SecretErrorKind {
+    /// The item is there but is not a key list (not JSON of strings, or not
+    /// even text): saving a key replaces it with one holding just that key.
+    UnreadableItem,
+    /// More than one keychain item matches (Linux, see #686). Saving a key
+    /// does not help; the user has to remove one in the keychain.
+    AmbiguousItem,
+    /// The store failed or refused: locked, access denied, no keychain at all.
+    Store,
+}
+
+impl SecretErrorKind {
+    /// The kind's name in the shared fixture and in Python: `unreadable-item`,
+    /// `ambiguous-item`, `store`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SecretErrorKind::UnreadableItem => "unreadable-item",
+            SecretErrorKind::AmbiguousItem => "ambiguous-item",
+            SecretErrorKind::Store => "store",
+        }
+    }
+}
+
 /// A secret store failed. The text is the platform's message or bmlib's own,
-/// and never holds a key.
+/// and never holds a key; [`kind`](Self::kind) says which failure it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SecretError(String);
+pub struct SecretError {
+    kind: SecretErrorKind,
+    message: String,
+}
 
 impl SecretError {
-    /// An error saying `message`, which must not hold a key.
+    /// A [`SecretErrorKind::Store`] error saying `message`, which must not hold a key.
     pub fn new(message: impl Into<String>) -> Self {
-        SecretError(message.into())
+        SecretError::with_kind(SecretErrorKind::Store, message)
+    }
+
+    /// An error of `kind` saying `message`, which must not hold a key (a
+    /// [`Vault`] of an app's own reports an ambiguous item this way).
+    pub fn with_kind(kind: SecretErrorKind, message: impl Into<String>) -> Self {
+        SecretError {
+            kind,
+            message: message.into(),
+        }
+    }
+
+    /// Which failure this is.
+    pub fn kind(&self) -> SecretErrorKind {
+        self.kind
     }
 
     /// The message, without the `secret store:` prefix `Display` adds.
     pub fn message(&self) -> &str {
-        &self.0
+        &self.message
     }
 }
 
 impl fmt::Display for SecretError {
     /// `secret store: <message>`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "secret store: {}", self.0)
+        write!(f, "secret store: {}", self.message)
     }
 }
 
@@ -142,7 +186,8 @@ pub type KeyList = BTreeMap<String, String>;
 /// keeps its later key.
 pub fn read_key_list(text: &str) -> Result<KeyList, SecretError> {
     // The parse error is dropped: it could quote the item's text.
-    serde_json::from_str(text).map_err(|_| SecretError(UNREADABLE.into()))
+    serde_json::from_str(text)
+        .map_err(|_| SecretError::with_kind(SecretErrorKind::UnreadableItem, UNREADABLE))
 }
 
 /// The item's text for `keys`: compact JSON, providers sorted, non-ASCII
@@ -195,8 +240,8 @@ impl<V: Vault> KeyBundle<V> {
 
     /// The cache, and the keys in it: read from the vault into the cache if
     /// nothing is cached yet or `fresh` (a write is about to follow, and must
-    /// start from the item as it is now). An item that is not a key list is an
-    /// error, unless `replace_unreadable` (a key is about to be saved): then,
+    /// start from the item as it is now). An item that is not a key list (or
+    /// that the vault reports as unreadable) is an error, unless `replace_unreadable` (a key is about to be saved): then,
     /// logged, the keys start empty and the cache is left as it was until they
     /// are written.
     fn loaded(
@@ -209,18 +254,21 @@ impl<V: Vault> KeyBundle<V> {
             let keys = keys.clone();
             return Ok((guard, keys));
         }
-        let keys = match self.vault.read()? {
-            None => KeyList::new(),
-            Some(text) => match read_key_list(&text) {
-                Ok(keys) => keys,
-                Err(_) if replace_unreadable => {
-                    eprintln!(
-                        "bmlib.secrets WARNING: {UNREADABLE}; replacing it with the key being saved"
-                    );
-                    return Ok((guard, KeyList::new()));
-                }
-                Err(e) => return Err(e),
-            },
+        // The vault may report an unreadable item itself; a set replaces it either way.
+        let read = self.vault.read().and_then(|text| match text {
+            None => Ok(KeyList::new()),
+            Some(text) => read_key_list(&text),
+        });
+        let keys = match read {
+            Ok(keys) => keys,
+            Err(e) if replace_unreadable && e.kind() == SecretErrorKind::UnreadableItem => {
+                eprintln!(
+                    "bmlib.secrets WARNING: {}; replacing it with the key being saved",
+                    e.message()
+                );
+                return Ok((guard, KeyList::new()));
+            }
+            Err(e) => return Err(e),
         };
         *guard = Some(keys.clone());
         Ok((guard, keys))
@@ -288,7 +336,7 @@ impl KeyringVault {
         keyring::v1::Entry::new(&self.service, &self.account).map_err(|e| {
             match (&e, keyring::v1::Entry::store_status()) {
                 (keyring::v1::Error::NoDefaultStore, Err(why)) => {
-                    SecretError(format!("{e}: {why}"))
+                    SecretError::new(format!("{e}: {why}"))
                 }
                 _ => keyring_error(e),
             }
@@ -297,10 +345,16 @@ impl KeyringVault {
 }
 
 /// A keyring failure as a [`SecretError`]: the platform's message, which holds
-/// no key (keyring-core's `Display` prints no item bytes).
+/// no key (keyring-core's `Display` prints no item bytes). Two matching items
+/// are [`SecretErrorKind::AmbiguousItem`], on a read or a write; the rest
+/// [`SecretErrorKind::Store`].
 #[cfg(feature = "keyring")]
 fn keyring_error(e: keyring::v1::Error) -> SecretError {
-    SecretError(e.to_string())
+    let kind = match e {
+        keyring::v1::Error::Ambiguous(_) => SecretErrorKind::AmbiguousItem,
+        _ => SecretErrorKind::Store,
+    };
+    SecretError::with_kind(kind, e.to_string())
 }
 
 /// What a read of the item came to: its text, `None` when there is no item,
@@ -319,6 +373,12 @@ fn read_result(r: keyring::v1::Result<String>) -> Result<Option<String>, SecretE
     }
 }
 
+/// What a write of the item came to (see [`keyring_error`]).
+#[cfg(feature = "keyring")]
+fn write_result(r: keyring::v1::Result<()>) -> Result<(), SecretError> {
+    r.map_err(keyring_error)
+}
+
 #[cfg(feature = "keyring")]
 impl Vault for KeyringVault {
     /// Reads the item (an absent one is `None`; one that is not text reads as
@@ -328,7 +388,7 @@ impl Vault for KeyringVault {
     }
     /// Writes the item.
     fn write(&self, text: &str) -> Result<(), SecretError> {
-        self.entry()?.set_password(text).map_err(keyring_error)
+        write_result(self.entry()?.set_password(text))
     }
 }
 
@@ -361,6 +421,7 @@ mod tests {
     fn an_unreadable_item_is_not_quoted() {
         let e = read_key_list("not json sk-leaky").unwrap_err();
         assert_eq!(e.message(), UNREADABLE);
+        assert_eq!(e.kind(), SecretErrorKind::UnreadableItem);
         assert!(!e.to_string().contains("sk-leaky"));
     }
 
@@ -439,9 +500,52 @@ mod tests {
         let not_text = read_result(Err(E::BadEncoding(b"\xff sk-leaky".to_vec()))).unwrap();
         assert_eq!(
             not_text.as_deref().map(read_key_list),
-            Some(Err(SecretError::new(UNREADABLE)))
+            Some(Err(SecretError::with_kind(
+                SecretErrorKind::UnreadableItem,
+                UNREADABLE
+            )))
         );
         let other = read_result(Err(E::Invalid("service".into(), "empty".into()))).unwrap_err();
         assert!(!other.message().is_empty());
+        assert_eq!(other.kind(), SecretErrorKind::Store);
+        let two = read_result(Err(E::Ambiguous(vec![]))).unwrap_err();
+        assert_eq!(two.kind(), SecretErrorKind::AmbiguousItem);
+    }
+
+    /// A keychain write naming two items is ambiguous too; the rest are store failures.
+    #[cfg(feature = "keyring")]
+    #[test]
+    fn a_keychain_error_keeps_its_kind() {
+        use keyring::v1::Error as E;
+        assert_eq!(
+            keyring_error(E::Ambiguous(vec![])).kind(),
+            SecretErrorKind::AmbiguousItem
+        );
+        assert_eq!(
+            keyring_error(E::NoStorageAccess("locked".into())).kind(),
+            SecretErrorKind::Store
+        );
+        assert_eq!(
+            write_result(Err(E::Ambiguous(vec![]))).unwrap_err().kind(),
+            SecretErrorKind::AmbiguousItem
+        );
+    }
+
+    /// Every kind by name, matched without a wildcard so a kind added later
+    /// fails to compile here until it is named (the contract test holds the
+    /// same names to the fixture's `kinds`).
+    #[test]
+    fn every_kind_is_listed() {
+        use SecretErrorKind::{AmbiguousItem, Store, UnreadableItem};
+        let kinds = [UnreadableItem, AmbiguousItem, Store];
+        for k in kinds {
+            match k {
+                UnreadableItem | AmbiguousItem | Store => {}
+            }
+        }
+        assert_eq!(
+            kinds.map(SecretErrorKind::as_str),
+            ["unreadable-item", "ambiguous-item", "store"]
+        );
     }
 }

@@ -23,6 +23,7 @@ from __future__ import annotations
 import builtins
 import json
 import logging
+import pickle
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -38,6 +39,7 @@ from bmlib.secrets import (
     KeyringVault,
     MemorySecrets,
     SecretError,
+    SecretErrorKind,
     read_key_list,
     write_key_list,
 )
@@ -56,10 +58,11 @@ def test_fixture_has_cases() -> None:
 
 @pytest.mark.parametrize("case", FIXTURE["read"], ids=lambda c: c["name"])
 def test_read_agrees_with_the_fixture(case: dict[str, Any]) -> None:
-    if case["expect"].get("error") == "unreadable":
+    if case["expect"].get("error") == "unreadable-item":
         with pytest.raises(SecretError) as caught:
             read_key_list(case["text"])
         assert str(caught.value) == UNREADABLE
+        assert caught.value.kind is SecretErrorKind.UNREADABLE_ITEM
         # No parse error rides along: one can quote the item (JSONDecodeError.doc).
         assert caught.value.__context__ is None and caught.value.__cause__ is None
         return
@@ -74,23 +77,24 @@ def test_write_agrees_with_the_fixture(case: dict[str, Any]) -> None:
 
 
 class FakeVault:
-    """An in-memory vault that counts reads and fails a read or a write when told to."""
+    """An in-memory vault that counts reads and fails a read or a write, with a
+    given kind, when told to."""
 
     def __init__(self, item: str | None) -> None:
         self.item = item
         self.reads = 0
-        self.fail_read = False
-        self.fail_write = False
+        self.fail_read: SecretErrorKind | None = None
+        self.fail_write: SecretErrorKind | None = None
 
     def read(self) -> str | None:
         self.reads += 1
         if self.fail_read:
-            raise SecretError("locked")
+            raise SecretError("locked", self.fail_read)
         return self.item
 
     def write(self, text: str) -> None:
         if self.fail_write:
-            raise SecretError("denied")
+            raise SecretError("denied", self.fail_write)
         self.item = text
 
 
@@ -102,8 +106,9 @@ def test_bundle_agrees_with_the_fixture(case: dict[str, Any]) -> None:
         assert set(step) <= STEP_FIELDS, f"step {i}"
         if "another_writer" in step:
             vault.item = step["another_writer"]
-        vault.fail_write = step.get("fail_write", False)
-        vault.fail_read = step.get("fail_read", False)
+        # A kind the enum does not name raises here, so the fixture cannot drift from it.
+        vault.fail_write = SecretErrorKind(step["fail_write"]) if "fail_write" in step else None
+        vault.fail_read = SecretErrorKind(step["fail_read"]) if "fail_read" in step else None
         got: object
         try:
             if step["op"] == "get":
@@ -115,10 +120,10 @@ def test_bundle_agrees_with_the_fixture(case: dict[str, Any]) -> None:
                 assert step["op"] == "delete"
                 store.delete(step["provider"])
                 got = "ok"
-        except SecretError:
-            got = "error"
-        vault.fail_write = False
-        vault.fail_read = False
+        except SecretError as e:
+            got = {"error": e.kind.value}
+        vault.fail_write = None
+        vault.fail_read = None
         assert got == step["expect"], f"step {i}"
     assert vault.item == case["item_after"]
     assert vault.reads == case["reads"]
@@ -129,6 +134,27 @@ def test_nesting_past_the_recursion_limit_is_unreadable() -> None:
     deep = '{"openai":' + "[" * 100_000 + "]" * 100_000 + "}"
     with pytest.raises(SecretError):
         read_key_list(deep)
+
+
+def test_the_kinds_are_rusts() -> None:
+    # Rust's contract test holds its kinds to the same list.
+    assert [k.value for k in SecretErrorKind] == FIXTURE["kinds"]
+
+
+def test_a_secret_error_pickles_with_its_kind() -> None:
+    e = SecretError("two items", SecretErrorKind.AMBIGUOUS_ITEM)
+    back = pickle.loads(pickle.dumps(e))
+    assert (type(back), str(back), back.kind) == (SecretError, "two items", e.kind)
+
+
+def test_a_kind_given_by_name_is_the_member() -> None:
+    e = SecretError("bad bytes", "unreadable-item")  # type: ignore[arg-type]  # an untyped Vault's call
+    assert e.kind is SecretErrorKind.UNREADABLE_ITEM
+
+
+def test_an_unknown_kind_is_refused() -> None:
+    with pytest.raises(ValueError):
+        SecretError("x", "bogus")  # type: ignore[arg-type]  # the misspelling under test
 
 
 def test_memory_secrets_set_get_delete() -> None:
@@ -197,6 +223,7 @@ def test_a_backend_failure_is_a_secret_error(backend: DictKeyring) -> None:
         with pytest.raises(SecretError) as caught:
             call()
         assert str(caught.value) == "RuntimeError: the keychain is locked"
+        assert caught.value.kind is SecretErrorKind.STORE
         assert caught.value.__context__ is None and caught.value.__cause__ is None
 
 
@@ -206,6 +233,7 @@ def test_an_item_that_is_not_utf8_is_unreadable_and_replaced(backend: DictKeyrin
     with pytest.raises(SecretError) as caught:
         store.get("openai")
     assert str(caught.value) == UNREADABLE and caught.value.__context__ is None
+    assert caught.value.kind is SecretErrorKind.UNREADABLE_ITEM
     store.set("openai", "k1")
     assert backend.items == {("com.example.app", API_KEYS_ACCOUNT): '{"openai":"k1"}'}
 
@@ -239,6 +267,7 @@ def test_set_refuses_a_lone_surrogate_and_writes_nothing() -> None:
         with pytest.raises(SecretError) as caught:
             store.set(provider, key)
         assert caught.value.__context__ is None
+        assert caught.value.kind is SecretErrorKind.STORE
     assert vault.item == '{"anthropic":"k0"}'
     assert store.get("anthropic") == "k0"
 

@@ -13,15 +13,17 @@ pip install bmlib[secrets]    # the keyring package (MIT); also in `all`
 ```
 
 ```python
-from bmlib.secrets import KeyBundle, SecretError
+from bmlib.secrets import KeyBundle, SecretError, SecretErrorKind
 
 keys = KeyBundle.keyring("com.example.myapp")   # service: the app's bundle id
 keys.set("openai", "sk-...")
 try:
     key = keys.get("openai")    # None when no key is stored
 except SecretError as e:
-    key = None                  # the keychain is locked or refused: fall back to the env var
+    key = None                  # fall back to the env var
     print(e)                    # the platform's message; never a key
+    if e.kind is SecretErrorKind.UNREADABLE_ITEM:
+        print("Saving a key replaces the damaged keychain item.")
 ```
 
 | Name | What it is |
@@ -32,6 +34,8 @@ except SecretError as e:
 | `KeyringVault(service, account)` | The OS keychain item, through `keyring` (imported when used; when it cannot be imported, a `SecretError` saying what the import raised). An item that is not UTF-8 reads as unreadable. Any other backend failure is a `SecretError` naming its type and message, with no exception chained to it (one could hold the item) |
 | `MemorySecrets()` | An in-memory `SecretStore`, for tests or a session that keeps no key |
 | `read_key_list(text)` / `write_key_list(keys)` | The item's text ↔ `dict[str, str]`. Reading refuses anything but an object of strings (and a lone surrogate, a byte-order mark) with a `SecretError` that does not quote the text; writing is compact, sorted by provider, non-ASCII as is |
+| `SecretError(message, kind=SecretErrorKind.STORE)` | Every failure: `str()` is the platform's message or bmlib's own, never a key; `kind` says which failure (#689), and a kind given by name becomes the member (an unknown one raises `ValueError`). Pickles with its kind |
+| `SecretErrorKind` | `UNREADABLE_ITEM` (`"unreadable-item"`: not a key list, or not UTF-8; `set` replaces it, also when a `Vault` of an app's own raises it from `read`), `AMBIGUOUS_ITEM` (`"ambiguous-item"`: two items match; `set` does not replace it, the user removes one in the keychain; `KeyringVault` never reports it, a `Vault` of an app's own may), `STORE` (`"store"`: locked, denied, no keychain, the `keyring` package missing, or a provider or key no keychain holds). Rust's `SecretErrorKind`, by the same names |
 | `API_KEYS_ACCOUNT` | `"api-keys"`, the item's account |
 
 **Platforms** (#686). On macOS (the login keychain's generic password,

@@ -48,12 +48,13 @@ With the feature, `KeyBundle::keyring("com.example.myapp")` is the item
 | Item | What it is |
 |---|---|
 | `SecretStore` | `get(provider) -> Option<String>`, `set(provider, key)`, `delete(provider)` (absent is fine); `Send + Sync` |
-| `KeyBundle<V: Vault>` | A `SecretStore` over one item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it; a failed read is not cached. `set` over an item that is not a key list replaces it with one holding just the new key, dropping whatever it held (logged to stderr); `get` and `delete` report it. A failed write leaves the cache as it was. Its `Debug` shows `loaded`, never a key |
+| `KeyBundle<V: Vault>` | A `SecretStore` over one item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it; a failed read is not cached. `set` over an item that is not a key list replaces it with one holding just the new key, dropping whatever it held (logged to stderr); `get` and `delete` report it (`UnreadableItem`). A failed write leaves the cache as it was. Its `Debug` shows `loaded`, never a key |
 | `Vault` | `read() -> Option<String>`, `write(text)`: the one item, the only part that touches the OS |
-| `KeyringVault::new(service, account)` | *(feature `keyring`)* The OS keychain item; a missing item reads as `None`, one that is not UTF-8 (or not in the store's format) as unreadable, so `set` replaces it. A store that could not be set up says why |
+| `KeyringVault::new(service, account)` | *(feature `keyring`)* The OS keychain item; a missing item reads as `None`, one that is not UTF-8 (or not in the store's format) as unreadable, so `set` replaces it; two matching items (`Ambiguous`, on a read or a write) are `AmbiguousItem`, which `set` does not replace. A store that could not be set up says why |
 | `MemorySecrets` | An in-memory `SecretStore` |
 | `read_key_list` / `write_key_list` | The item's text ↔ `KeyList` (`BTreeMap<String, String>`): an object of strings or a `SecretError` that does not quote the text; compact, sorted, non-ASCII as is |
-| `SecretError` | `SecretError::new(message)`, `message()`: the platform's message or bmlib's own; never a key. `Display` adds `secret store: `, which Python's `str()` does not |
+| `SecretError` | `SecretError::new(message)` (kind `Store`), `with_kind(kind, message)`, `kind()`, `message()`: the platform's message or bmlib's own; never a key. `Display` adds `secret store: `, which Python's `str()` does not |
+| `SecretErrorKind` | *(non-exhaustive, #689)* What will help: `UnreadableItem` (not a key list, or not UTF-8; saving a key replaces it, also when a `Vault` of an app's own returns it from `read`), `AmbiguousItem` (two items match; the user removes one in the keychain), `Store` (locked, denied, no keychain). `as_str()` is Python's name (`"unreadable-item"`, `"ambiguous-item"`, `"store"`) |
 
 **Platforms** (#686). macOS addresses the same item as Python. Linux does
 only while Python writes first: Python's `keyring` adds an `application`
