@@ -8,6 +8,16 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Two words at one position of an OpenAlex abstract are ordered by the
+  word, in both languages** (#583). `_reconstruct_abstract` sorted by
+  position alone, so a tie kept the index's key order, where Rust (reading
+  the index as serde_json's `BTreeMap`, which has no key order to keep)
+  sorted by position then word: `{"zeta": [0], "alpha": [0]}` read
+  `"zeta alpha"` in Python and `"alpha zeta"` in Rust. Python now sorts the
+  `(position, word)` pairs as tuples. A well-formed inverted index holds one
+  word per position, so no measured record moves; the oracle corpus gains
+  the tie case (`abstract/tie-at-one-position`).
+
 - **A fence inside a blockquote closes, a backtick in a backtick fence's
   info string opens none, and no unclosed opener costs quadratic time**
   (#548, #549, with the Rust crate). `canonical_from_markdown` stripped `>`

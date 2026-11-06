@@ -117,9 +117,8 @@ pub fn reconstruct_abstract(inverted_index: Option<&Value>) -> Option<String> {
         return None;
     }
 
-    // Python's `sort` on `(position, word)` tuples is by position then word, and
-    // a *stable* sort by position alone would keep the dict's order for a tie.
-    // Sorting on both reproduces Python's ordering exactly.
+    // By position, then word, as Python's tuple sort (#583): serde_json's map is
+    // a BTreeMap, so the document's key order is not there to break a tie.
     pairs.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
     Some(
         pairs

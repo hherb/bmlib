@@ -263,6 +263,12 @@ class TestReconstructAbstract:
         inverted = {"end": [2], "the": [1], "beginning": [0]}
         assert _reconstruct_abstract(inverted) == "beginning the end"
 
+    def test_two_words_at_one_position_are_ordered_by_word(self):
+        # #583: Rust reads the index as a BTreeMap and cannot see key order,
+        # so a tie is broken by the word in both languages, never by order.
+        assert _reconstruct_abstract({"zeta": [0], "alpha": [0]}) == "alpha zeta"
+        assert _reconstruct_abstract({"alpha": [0], "zeta": [0]}) == "alpha zeta"
+
 
 # ---------------------------------------------------------------------------
 # Test _normalize
