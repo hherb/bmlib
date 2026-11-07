@@ -1,14 +1,23 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PR is on `fix/705-anthropic-sampling`**; PRs #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is on `fix/706-review-timeouts`**; PRs #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709 and this session's._
 
-## This session: Anthropic is sent no sampling parameters (#705)
+## This session: #706's review, which missed its merge (branch `fix/706-review-timeouts`)
+
+PR #706 merged at `c16e6175` before its finalcheck fixes were pushed, so they
+come here, cherry-picked onto `main` after PR #709: a POST's DNS lookup is
+bounded by `timeout_seconds` (`timeout_resolve`; with no whole-request limit
+`ureq` waited as long as the system did), and a stream's body that stalls
+names its limit (`NamedTimeouts`, a `TimedOut` `io::Error`), with tests. The
+detail is under #702 below.
+
+## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
 
 Branch `fix/705-anthropic-sampling`, from `main` after PR #704. **The
 maintainer's choice: never send them**, both languages. Checked first (the
@@ -35,11 +44,19 @@ maintainer's choice: reuse `stream_timeout_seconds`**, no new field. Every
 POST now runs on `post_agent` (the stream's split: `timeout_seconds` per
 sending step, `stream_timeout_seconds` for the response headers and body); a
 GET keeps its whole-request 45 s. A `ureq` timeout is a `Transport` naming
-the limit (`UreqClient::transport_error`). Rust only: Python's Anthropic and
+the limit (`UreqClient::transport_error`), and so does a stream's body read
+(`NamedTimeouts`, a `TimedOut` `io::Error`). **The finalcheck review** (in this session's PR, not in #706): a
+POST's host lookup had no limit once the global one went (`timeout_resolve`
+now `timeout_seconds`); tests for a body that stalls after its headers
+(`post_json` and a stream), `get_with_headers`' whole-request limit, and a
+unit test of every timeout's message. Left as the maintainer chose:
+`model_limits`' `/api/show` now waits 600 s for an answer, three attempts. Rust only: Python's Anthropic and
 OpenAI SDKs (1.x/2.x and 2.x/3.x alike) read for 600 s, Ollama's not at all
 (#652). Three new tests in `tests/http.rs`. Downstream: StudyAnalyzer's
 `LimitedClient` clips only `timeout_seconds`, so its POSTs need
-`stream_timeout_seconds` clipped too when its pin moves.
+`stream_timeout_seconds` clipped too when its pin moves, and its
+`quote_threshold` test's 900 s `timeout_seconds` now needs
+`stream_timeout_seconds` to wait that long.
 
 ## Earlier, 2026-11-07 (Python LLM bodies, all merged; the CHANGELOG is the argument)
 
