@@ -45,6 +45,32 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A 200 nested too deeply to decode is a `ValueError` on every LLM
+  provider, not a bare `RecursionError`** (#698; the maintainer's choice of
+  2026-11-07). Python's `json` decodes recursively, so a body nested past the
+  recursion limit (`[` × 100,000; × 1,000,000 on Python 3.14) escaped `chat()` on Anthropic, OpenAI and
+  every provider over the OpenAI SDK, and Ollama's `chat()`, a stream's first
+  line and `embed`/`embed_batch`, as neither the `ValueError` a non-JSON body
+  raises nor the SDK's refusal. It is now `ValueError("<provider>: the
+  response is nested too deeply to decode")`, the `RecursionError` its
+  `__cause__`, recognised by its frames (the `json` decoder's, under httpx's
+  `Response.json` — httpx2's for anthropic 2.x and openai 3.x — or directly,
+  called from the provider's own SDK) by the new
+  `providers.base.too_deep_body`, so a recursion bug in bmlib, or a deep
+  `json.loads` bmlib makes itself, or a request too deep for the SDK to
+  encode, still propagates as itself. Ollama's `model_limits` names it in its
+  `ContextWindowError` and does not retry it. An Ollama *refusal* too deep to
+  read is the `ollama.ResponseError` the SDK was building, its status kept,
+  so `model_limits` still retries a 5xx. A model's content too deep to decode
+  is unreadable content and no longer escapes `chat()`: `json_mode` falls
+  back to `extract_json`, and an OpenAI-compatible tool call keeps its
+  arguments as `{"_raw": ...}`. An Anthropic or OpenAI-compatible stream's
+  events, and an Ollama stream's lines after the first, already reported it
+  as `StreamError`, and model listing and `get_model_metadata` already fell
+  back; both unchanged. Python
+  only: Rust's `serde_json` refuses a body nested past 128 levels with an
+  ordinary decode error (its `unbounded_depth` feature is not enabled).
+
 - **Ollama's embedding and model-lookup calls read a body that is not a JSON
   object as `chat()` does** (#697). **Breaking for a caller catching
   `ConnectionError` from `embed`/`embed_batch`**, the maintainer's choice:
@@ -88,9 +114,9 @@ All notable changes to bmlib are documented here. The format is based on
   `ollama>=0.5`**: 0.3 handed bmlib the decoded body unparsed (a
   non-object 200 came back as an empty `LLMResponse`, raising nothing), and
   0.4 has no `think` keyword, so `chat(think=True)` raised `TypeError`. No
-  draw has seen any of these bodies. Left open: the provider's `embed` and
-  `show` calls (#697), and a body nested past the decoder, which escapes as
-  `RecursionError` (#698).
+  draw has seen any of these bodies. The provider's `embed` and `show` calls
+  (#697) and a body nested past the decoder (#698) followed; see their
+  entries.
 
 - **ClinicalTrials.gov no longer refuses a `User-Agent` without
   `python-httpx`, and the docs say so** (#606). Re-measured 2026-11-07: bare

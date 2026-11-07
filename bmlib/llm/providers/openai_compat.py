@@ -57,6 +57,7 @@ from bmlib.llm.providers.base import (
     ModelPricing,
     ProviderCapabilities,
     _sdk_import_failed,
+    too_deep_body,
 )
 from bmlib.llm.stream import (
     CANCELLED_STOP_REASON,
@@ -165,7 +166,10 @@ class OpenAICompatibleProvider(BaseProvider):
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
         think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
 
-        response = client.chat.completions.create(**request_kwargs)
+        try:
+            response = client.chat.completions.create(**request_kwargs)
+        except RecursionError as exc:
+            raise too_deep_body(exc, "openai", self.PROVIDER_NAME) from exc
 
         # An error-shaped 200 is the server's failure, not bmlib's (#617), so it
         # is a ValueError naming what arrived.
@@ -228,14 +232,14 @@ class OpenAICompatibleProvider(BaseProvider):
                     parsed = json.loads(args_raw)
                     if isinstance(parsed, dict):
                         args = parsed
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, RecursionError):
                     args = {"_raw": args_raw}
             tool_calls.append(LLMToolCall(id=call_id, name=name, arguments=args))
 
         if json_mode and content:
             try:
                 json.loads(content)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
                 content = extract_json(content)
 
         return LLMResponse(
