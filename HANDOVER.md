@@ -1,14 +1,30 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-07 (**this session's PR is on `fix/697-ollama-embed-show`**; PRs #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-07 (**this session's PR is on `fix/702-chat-response-timeout`**; PRs #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699, #700 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701 and this session's._
 
-## This session: Ollama's embed and model lookup read a bad body as `chat()` does (#697)
+## This session: a non-streamed chat waits for its answer as a stream does (#702)
+
+Branch `fix/702-chat-response-timeout`, from `main` after PR #701. From
+StudyAnalyzer PR #100's review: `UreqClient::post_json` ran under one 45 s
+`timeout_global`, so a thinking model's large `max_tokens` timed out a
+non-streamed chat (every PICO call, every condenser batch). **The
+maintainer's choice: reuse `stream_timeout_seconds`**, no new field. Every
+POST now runs on `post_agent` (the stream's split: `timeout_seconds` per
+sending step, `stream_timeout_seconds` for the response headers and body); a
+GET keeps its whole-request 45 s. A `ureq` timeout is a `Transport` naming
+the limit (`UreqClient::transport_error`). Rust only: Python's Anthropic and
+OpenAI SDKs (1.x/2.x and 2.x/3.x alike) read for 600 s, Ollama's not at all
+(#652). Three new tests in `tests/http.rs`. Downstream: StudyAnalyzer's
+`LimitedClient` clips only `timeout_seconds`, so its POSTs need
+`stream_timeout_seconds` clipped too when its pin moves.
+
+## Earlier, 2026-11-07: Ollama's embed and model lookup read a bad body as `chat()` does (#697, PR #701, merged)
 
 Branch `fix/697-ollama-embed-show`, from `main` after PRs #699 and #700
 merged (the maintainer's order). **The maintainer's choice: narrow
@@ -343,7 +359,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**119 open once #697 closes** (#694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #698, PR #692's review's, is a decision; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**119 open once #702 closes** (#694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #698, PR #692's review's, is a decision; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-07); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

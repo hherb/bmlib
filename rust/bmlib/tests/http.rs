@@ -367,7 +367,59 @@ fn a_stream_still_times_out() {
     };
     let outcome = client.post_json_stream(&url, &serde_json::json!({}), &BTreeMap::new());
     assert!(
-        matches!(outcome, Err(FetchError::Transport(_))),
+        matches!(&outcome, Err(FetchError::Transport(m))
+            if m == "timed out after 1 s waiting for the response headers (receive response)"),
+        "{outcome:?}"
+    );
+}
+
+/// A non-streamed POST (a chat) gets the stream's split too (#702): a model
+/// writing a long answer outlasts the ordinary timeout...
+#[test]
+fn a_post_may_outlast_the_ordinary_timeout() {
+    let (url, handle) = serve_slowly(std::time::Duration::from_millis(1_500), "{}");
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let response = client
+        .post_json(&url, &serde_json::json!({}), &BTreeMap::new())
+        .expect("the answer within the stream timeout");
+    assert_eq!(response.text().expect("UTF-8"), "{}");
+    handle.join().expect("server");
+}
+
+/// ...and a timeout on its response names the limit that ran out.
+#[test]
+fn a_post_still_times_out_naming_the_limit() {
+    let (url, _handle) = serve_slowly(std::time::Duration::from_millis(2_500), "{}");
+    let client = UreqClient {
+        timeout_seconds: 30,
+        stream_timeout_seconds: 1,
+        ..UreqClient::new()
+    };
+    let outcome = client.post_json(&url, &serde_json::json!({}), &BTreeMap::new());
+    assert!(
+        matches!(&outcome, Err(FetchError::Transport(m))
+            if m == "timed out after 1 s waiting for the response headers (receive response)"),
+        "{outcome:?}"
+    );
+}
+
+/// A GET keeps one limit on the whole request, also named when it runs out.
+#[test]
+fn a_get_times_out_on_the_whole_request() {
+    let (url, _handle) = serve_slowly(std::time::Duration::from_millis(2_500), "{}");
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let outcome = client.get(&url);
+    assert!(
+        matches!(&outcome, Err(FetchError::Transport(m))
+            if m == "timed out after 1 s on the whole request (global)"),
         "{outcome:?}"
     );
 }
