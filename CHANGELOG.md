@@ -45,6 +45,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The Anthropic provider sends no `temperature` or `top_p`** (#705; both
+  languages, the maintainer's choice). anthropic 2.x (what a fresh install
+  resolves) has no such parameters on `Messages.create()`, so `chat()` and
+  `chat_stream()` raised `TypeError` on every call before a request left; the
+  API version it sends, `2026-10-21`, refuses all three sampling parameters
+  on every model, so `extra_body` is no way round it; and Claude Opus 4.7 and
+  later refuse any of them on `2023-06-01` too, so bmlib's default `0.7` was
+  a 400 against every current Opus model on any SDK, and in Rust. The
+  parameters stay in the signatures (the other providers use them) and are
+  not sent to Anthropic, thinking or not, so a request samples at the API's
+  defaults: on Claude 4.6 and earlier models a lowered `temperature` no
+  longer takes effect. The mocked provider tests could not see it, since a
+  mock accepts any keyword; a test now drives the installed
+  SDK over a mock transport, and #704's strict xfail is gone.
+
 - **A 200 nested too deeply to decode is a `ValueError` on every LLM
   provider, not a bare `RecursionError`** (#698; the maintainer's choice of
   2026-11-07). Python's `json` decodes recursively, so a body nested past the

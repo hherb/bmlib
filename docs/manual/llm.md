@@ -318,9 +318,9 @@ Send a chat request, routing to the appropriate provider. Token usage is automat
 |-----------|------|---------|-------------|
 | `messages` | `list[LLMMessage]` | *(required)* | The conversation messages. |
 | `model` | `str \| None` | `None` | Model string (e.g. `"ollama:medgemma4B_it_q8"`). Uses default if `None`. |
-| `temperature` | `float` | `0.7` | Sampling temperature (0.0 = deterministic, 1.0 = creative). |
+| `temperature` | `float` | `0.7` | Sampling temperature (0.0 = deterministic, 1.0 = creative). *(unreleased)* **Not sent to Anthropic** (#705): API version `2026-10-21`, which anthropic 2.x sends, refuses it on every model and Claude Opus 4.7+ refuses it on `2023-06-01` too, so an Anthropic request samples at the API's defaults. |
 | `max_tokens` | `int` | `4096` | Maximum tokens to generate. |
-| `top_p` | `float \| None` | `None` | Nucleus sampling parameter. |
+| `top_p` | `float \| None` | `None` | Nucleus sampling parameter. *(unreleased)* Not sent to Anthropic, as `temperature` is not. |
 | `json_mode` | `bool` | `False` | Request JSON output. For Anthropic, extracts JSON from code blocks if needed. For Ollama, uses native `format="json"`. For OpenAI-compatible providers, sets `response_format={"type": "json_object"}`. |
 | `tools` | `list[LLMToolDefinition] \| None` | `None` | Tool definitions the model may call. See [Tool Calling](#tool-calling). |
 | `tool_choice` | `str` | `"auto"` | Tool selection strategy. Ignored when `tools` is `None`. |
@@ -821,7 +821,7 @@ print(response.content)   # the final answer, clean
 | Provider | Request side | Response side (`LLMResponse.thinking`) |
 |----------|--------------|------------------------------------------|
 | Ollama | `think` forwarded natively (`bool` or effort string; `int` degrades to on/off by truthiness). `think=False` reaches the server, for models that think by default. | `message.thinking` |
-| Anthropic | Truthy `think` enables extended thinking with `budget_tokens`: `int` sets the budget, effort levels map to 2048/8192/16384, `True` = 8192. The budget is clamped to `[1024, max_tokens - 1]`; `max_tokens <= 1024` or a negative budget raises `ValueError`. `temperature` / `top_p` are omitted from the request (the API requires default sampling with thinking). | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
+| Anthropic | Truthy `think` enables extended thinking with `budget_tokens`: `int` sets the budget, effort levels map to 2048/8192/16384, `True` = 8192. The budget is clamped to `[1024, max_tokens - 1]`; `max_tokens <= 1024` or a negative budget raises `ValueError`. `temperature` / `top_p` are never sent, thinking or not *(unreleased)*. | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
 | OpenAI / DeepSeek / Mistral / Gemini (OpenAI-compatible) | An effort **string** on a reasoning model (e.g. OpenAI o-series) is sent as `reasoning_effort`. Other values are not forwarded (unknown parameters make many servers return 400) — use `extra_body` for server-specific knobs, e.g. `extra_body={"chat_template_kwargs": {"enable_thinking": True}}` for vLLM. | `message.reasoning_content` (DeepSeek, vLLM, SGLang) or `message.reasoning` (OpenRouter-style). Fallback: a leading `<think>…</think>` block is split out of `content` — only when the caller passed a truthy `think`. |
 
 Whether a given model actually thinks — or rejects the parameter — is between

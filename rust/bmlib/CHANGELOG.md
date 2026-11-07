@@ -448,6 +448,14 @@ The Python library is documented separately, in the repository's
   or a list as its JSON; it now reads as `""` at confidence 0.0 with no
   findings, which `is_valid` drops before consolidation.
 
+### Fixed
+
+- **Anthropic requests carry no `temperature` or `top_p`** (#705, as
+  Python's): Claude Opus 4.7 and later refuse any sampling parameter on API
+  version `2023-06-01`, which the crate sends, so the default `0.7` made
+  every chat with a current Opus model a 400. `ChatRequest.temperature` and
+  `top_p` still reach the other protocols; `extra_body` can still set them.
+
 ## [0.3.0] - 2026-10-31
 
 Published with the Python library's 0.12.0, from the same merge commit. **The

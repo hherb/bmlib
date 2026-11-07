@@ -230,19 +230,21 @@ class TestAnthropicThinkingRequest:
         assert "temperature" not in req
         assert "top_p" not in req
 
-    def test_no_think_request_unchanged(self):
+    def test_no_think_request_sends_no_sampling_either(self):
+        # Never sent, thinking or not (#705).
         provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], temperature=0.2)
+        provider.chat([LLMMessage(role="user", content="q")], temperature=0.2, top_p=0.9)
         req = _anthropic_request(provider)
         assert "thinking" not in req
-        assert req["temperature"] == 0.2
+        assert "temperature" not in req
+        assert "top_p" not in req
 
     def test_think_false_request_unchanged(self):
         provider = _anthropic_provider()
         provider.chat([LLMMessage(role="user", content="q")], think=False)
         req = _anthropic_request(provider)
         assert "thinking" not in req
-        assert "temperature" in req
+        assert "temperature" not in req
 
 
 class TestAnthropicThinkingResponse:
