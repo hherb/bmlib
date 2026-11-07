@@ -196,6 +196,9 @@ jobs:
         # so an ungated use of `sqlite` or `http-ureq` would stay green here and
         # break only the apps' builds.
         run: cargo clippy -p bmlib --no-default-features --all-targets -- -D warnings
+      - name: clippy (bmlib model-download without llama.cpp)
+        # The verified download an installer links without compiling llama.cpp.
+        run: cargo clippy -p bmlib --no-default-features --features model-download,http-ureq --all-targets -- -D warnings
       - name: clippy (bmlib-ffi, as shipped and with the HTTP sketch)
         # `-p bmlib-ffi` alone resolves bmlib without its defaults, as the apps
         # build it; the sketch is off by default and must still compile.
@@ -348,6 +351,8 @@ jobs:
         # No model here: `tests/embed_live.rs` runs only its model-free test
         # and the live ones return early without BMLIB_EMBED_MODEL.
         run: cargo test -p bmlib --features embed
+      - name: test (model-download, no llama.cpp)
+        run: cargo test -p bmlib --no-default-features --features model-download,http-ureq --test embed_model
 
   ci-success:
     name: CI success

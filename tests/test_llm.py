@@ -2334,3 +2334,308 @@ class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
             self._provider(b"[1]", 400).model_limits("m")
         assert caught.value.status == 400
         assert delays == []
+
+
+# 10**6, not 10**5: Python 3.14's decoder reads 100,000 levels without recursing.
+_TOO_DEEP = b"[" * 10**6 + b"]" * 10**6
+
+
+def _anthropic_create_lacks_temperature() -> bool:
+    """Does the installed anthropic SDK's ``Messages.create`` refuse ``temperature`` (#705)?"""
+    try:
+        from anthropic.resources.messages import Messages
+    except ImportError:
+        return False
+    import inspect
+
+    return "temperature" not in inspect.signature(Messages.create).parameters
+
+
+def _sdk_httpx(sdk: str):
+    """The HTTP library *sdk*'s client takes: httpx, or httpx2 from anthropic 2.x / openai 3.x."""
+    base = pytest.importorskip(f"{sdk}._base_client")
+    return getattr(base, "httpx2", None) or base.httpx
+
+
+class TestABodyNestedTooDeeplyIsTheServers:
+    """A 200 nested past the JSON decoder is a ``ValueError``, not a ``RecursionError`` (#698).
+
+    Driven through each real SDK over a mock transport, since what is
+    recognised is the SDK's own decode frames; a body that is not JSON was
+    already a ``ValueError`` (``json.JSONDecodeError``) on every provider.
+    """
+
+    _MESSAGES = [LLMMessage(role="user", content="hi")]
+
+    @staticmethod
+    def _transport(
+        *bodies: bytes, content_type: str = "application/json", httpx=None, status: int = 200
+    ):
+        httpx = httpx or pytest.importorskip("httpx")
+        seen: list[object] = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(
+                status, content=b"".join(bodies), headers={"content-type": content_type}
+            )
+
+        return httpx.MockTransport(handler), seen
+
+    def _ollama(self, *bodies: bytes, content_type: str = "application/json", status: int = 200):
+        ollama = pytest.importorskip("ollama")
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        transport, seen = self._transport(*bodies, content_type=content_type, status=status)
+        provider = OllamaProvider()
+        provider._client = ollama.Client(host="http://ollama.test", transport=transport)
+        return provider, seen
+
+    def _anthropic(self):
+        anthropic = pytest.importorskip("anthropic")
+        httpx = _sdk_httpx("anthropic")
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        transport, _ = self._transport(_TOO_DEEP, httpx=httpx)
+        provider = AnthropicProvider(api_key="k")
+        provider._client = anthropic.Anthropic(
+            api_key="k", http_client=httpx.Client(transport=transport), max_retries=0
+        )
+        return provider
+
+    def _openai_family(self, cls, body: bytes = _TOO_DEEP):
+        openai = pytest.importorskip("openai")
+        httpx = _sdk_httpx("openai")
+
+        transport, _ = self._transport(body, httpx=httpx)
+        provider = cls(api_key="k")
+        provider._client = openai.OpenAI(
+            api_key="k",
+            base_url="https://api.stub.test/v1",
+            http_client=httpx.Client(transport=transport),
+            max_retries=0,
+        )
+        return provider
+
+    def _chat_raises(self, provider, name: str) -> None:
+        with pytest.raises(ValueError) as info:
+            provider.chat(self._MESSAGES, model="m")
+        assert str(info.value) == f"{name}: the response is nested too deeply to decode"
+        assert isinstance(info.value.__cause__, RecursionError)
+
+    def test_ollama_chat(self):
+        self._chat_raises(self._ollama(_TOO_DEEP)[0], "ollama")
+
+    @pytest.mark.xfail(
+        condition=_anthropic_create_lacks_temperature(),
+        raises=TypeError,
+        strict=True,
+        reason="#705: anthropic 2.x's create() takes no temperature, so chat() sends nothing",
+    )
+    def test_anthropic_chat(self):
+        self._chat_raises(self._anthropic(), "anthropic")
+
+    def test_openai_chat(self):
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+        self._chat_raises(self._openai_family(OpenAIProvider), "openai")
+
+    def test_a_provider_over_the_openai_sdk_is_named_as_itself(self):
+        from bmlib.llm.providers.deepseek import DeepSeekProvider
+
+        self._chat_raises(self._openai_family(DeepSeekProvider), "deepseek")
+
+    def test_an_ollama_streams_first_line_raises_what_chat_raises(self):
+        provider, _ = self._ollama(_TOO_DEEP + b"\n", content_type="application/x-ndjson")
+        with pytest.raises(ValueError) as info:
+            provider.chat_stream(self._MESSAGES, lambda _delta: None, model="m")
+        assert str(info.value) == "ollama: the response is nested too deeply to decode"
+        assert isinstance(info.value.__cause__, RecursionError)
+
+    def test_a_later_line_is_still_a_stream_failure(self):
+        from bmlib.llm.stream import StreamError
+
+        first = json.dumps({"model": "m", "message": {"role": "assistant", "content": "a"}})
+        provider, _ = self._ollama(
+            first.encode() + b"\n", _TOO_DEEP + b"\n", content_type="application/x-ndjson"
+        )
+        with pytest.raises(StreamError):
+            provider.chat_stream(self._MESSAGES, lambda _delta: None, model="m")
+
+    def test_ollama_embedding_is_not_a_connection_failure(self, caplog):
+        provider, _ = self._ollama(_TOO_DEEP)
+        with caplog.at_level(logging.ERROR), pytest.raises(ValueError) as info:
+            provider.embed_batch(["x"], model="m")
+        assert not isinstance(info.value, ConnectionError)
+        assert str(info.value) == "ollama: the response is nested too deeply to decode"
+        assert isinstance(info.value.__cause__, RecursionError)
+        assert "Ollama embedding error" not in caplog.text
+
+    def test_ollama_model_limits_names_it_and_does_not_retry(self):
+        from bmlib.llm.context_window import ContextWindowError
+
+        provider, seen = self._ollama(_TOO_DEEP)
+        with pytest.raises(ContextWindowError, match="nested too deeply to decode") as info:
+            provider.model_limits("m")
+        assert len(seen) == 1
+        cause = info.value.__cause__
+        assert str(cause) == "ollama: the response is nested too deeply to decode"
+        assert isinstance(cause.__cause__, RecursionError)
+
+    @pytest.mark.parametrize("call", ["chat", "embed_batch", "chat_stream"])
+    def test_an_ollama_refusal_too_deep_to_read_keeps_its_status(self, call):
+        ollama = pytest.importorskip("ollama")
+
+        provider, _ = self._ollama(_TOO_DEEP, status=500)
+        calls = {
+            "chat": lambda: provider.chat(self._MESSAGES, model="m"),
+            "embed_batch": lambda: provider.embed_batch(["x"], model="m"),
+            "chat_stream": lambda: provider.chat_stream(self._MESSAGES, lambda _d: None, model="m"),
+        }
+        with pytest.raises(ollama.ResponseError) as info:
+            calls[call]()
+        assert info.value.status_code == 500
+        assert isinstance(info.value.__cause__, RecursionError)
+
+    def test_an_ollama_refusal_too_deep_to_read_is_retried_by_model_limits(self, monkeypatch):
+        import bmlib.llm.context_window as cw
+        from bmlib.llm.context_window import ContextWindowError
+
+        monkeypatch.setattr(cw.time, "sleep", lambda _s: None)
+        provider, seen = self._ollama(_TOO_DEEP, status=503)
+        with pytest.raises(ContextWindowError) as info:
+            provider.model_limits("m")
+        assert info.value.status == 503
+        assert len(seen) > 1
+
+    @staticmethod
+    def _completion(content: str = "", arguments: str | None = None) -> bytes:
+        message: dict[str, object] = {"role": "assistant", "content": content}
+        if arguments is not None:
+            message["tool_calls"] = [
+                {"id": "c", "type": "function", "function": {"name": "t", "arguments": arguments}}
+            ]
+        choice = {"index": 0, "message": message, "finish_reason": "stop"}
+        return json.dumps(
+            {
+                "id": "x",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "m",
+                "choices": [choice],
+            }
+        ).encode()
+
+    def test_model_content_too_deep_to_decode_is_returned_as_content(self):
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+        deep = _TOO_DEEP.decode()
+        provider = self._openai_family(OpenAIProvider, self._completion(content=deep))
+        assert provider.chat(self._MESSAGES, model="m", json_mode=True).content == deep
+
+    def test_tool_arguments_too_deep_to_decode_are_kept_raw(self):
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+        deep = _TOO_DEEP.decode()
+        provider = self._openai_family(OpenAIProvider, self._completion(arguments=deep))
+        [call] = provider.chat(self._MESSAGES, model="m").tool_calls
+        assert call.arguments == {"_raw": deep}
+
+
+def _run_as(module: str, source: str, *args: object) -> object:
+    """Run *source*'s ``f(*args)`` as code of *module*, so its frame is that module's."""
+    namespace: dict[str, object] = {"__name__": module}
+    exec(compile(source, f"<{module}>", "exec"), namespace)
+    return namespace["f"](*args)  # type: ignore[operator]
+
+
+class TestOnlyTheSdksOwnDecodeIsRecognised:
+    """``too_deep_body`` reads the frames, so a recursion bug in bmlib is not relabelled (#698)."""
+
+    @staticmethod
+    def _raised(module: str, source: str, *args: object) -> RecursionError:
+        with pytest.raises(RecursionError) as info:
+            _run_as(module, source, *args)
+        return info.value
+
+    def _response(self, library: str = "httpx"):
+        return pytest.importorskip(library).Response(200, content=_TOO_DEEP)
+
+    def test_json_loads_in_the_sdk_is_recognised(self):
+        from bmlib.llm.providers.base import too_deep_body
+
+        source = "import json\ndef f(b): return json.loads(b)"
+        exc = self._raised("ollama._client", source, _TOO_DEEP)
+        assert str(too_deep_body(exc, "ollama", "ollama")).startswith("ollama: ")
+
+    @pytest.mark.parametrize("library", ["httpx", "httpx2"])
+    def test_response_json_in_the_sdk_is_recognised(self, library):
+        from bmlib.llm.providers.base import too_deep_body
+
+        source = "def f(r): return r.json()"
+        exc = self._raised("anthropic._response", source, self._response(library))
+        assert isinstance(too_deep_body(exc, "anthropic", "anthropic"), ValueError)
+
+    def test_another_sdks_decode_is_not_this_providers(self):
+        from bmlib.llm.providers.base import too_deep_body
+
+        exc = self._raised("anthropic._response", "def f(r): return r.json()", self._response())
+        with pytest.raises(RecursionError):
+            too_deep_body(exc, "openai", "openai")
+
+    @pytest.mark.parametrize(
+        ("source", "arg"),
+        [
+            ("import json\ndef f(b): return json.loads(b)", _TOO_DEEP),
+            ("def f(r): return r.json()", None),
+        ],
+        ids=["json.loads", "Response.json"],
+    )
+    def test_a_decode_bmlib_makes_itself_is_reraised(self, source, arg):
+        from bmlib.llm.providers.base import too_deep_body
+
+        exc = self._raised("bmlib.llm.x", source, self._response() if arg is None else arg)
+        with pytest.raises(RecursionError) as info:
+            too_deep_body(exc, "ollama", "ollama")
+        assert info.value is exc
+
+    @pytest.mark.parametrize("library", ["httpx", "httpx2"])
+    def test_response_json_stands_in_without_the_library(self, library):
+        from bmlib.llm.providers.base import too_deep_body
+
+        namespace: dict[str, object] = {"__name__": f"{library}._models"}
+        exec("import json\ndef json_(b): return json.loads(b)", namespace)
+        exc = self._raised(
+            "anthropic._response", "def f(g, b): return g(b)", namespace["json_"], _TOO_DEEP
+        )
+        assert isinstance(too_deep_body(exc, "anthropic", "anthropic"), ValueError)
+
+    def test_a_request_too_deep_to_encode_is_reraised(self):
+        from bmlib.llm.providers.base import too_deep_body
+
+        deep: list[object] = []
+        for _ in range(10**6):
+            deep = [deep]
+        exc = self._raised(
+            "openai._utils._json", "import json\ndef f(o): return json.dumps(o)", deep
+        )
+        with pytest.raises(RecursionError) as info:
+            too_deep_body(exc, "openai", "openai")
+        assert info.value is exc
+
+    def test_a_recursion_in_httpx_that_decodes_nothing_is_reraised(self):
+        from bmlib.llm.providers.base import too_deep_body
+
+        namespace: dict[str, object] = {"__name__": "httpx._models"}
+        exec("def g(): raise RecursionError('stack exhausted')", namespace)
+        exc = self._raised("anthropic._response", "def f(g): return g()", namespace["g"])
+        with pytest.raises(RecursionError) as info:
+            too_deep_body(exc, "anthropic", "anthropic")
+        assert info.value is exc
+
+    def test_a_recursion_in_the_sdk_that_decodes_nothing_is_reraised(self):
+        from bmlib.llm.providers.base import too_deep_body
+
+        exc = self._raised("ollama._client", "def f(): return f()")
+        with pytest.raises(RecursionError):
+            too_deep_body(exc, "ollama", "ollama")

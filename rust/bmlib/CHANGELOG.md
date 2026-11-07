@@ -11,6 +11,14 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`model-download` feature and `embed::download_verified`**: the pinned,
+  sha256-verified file download (`verify_model`, `ModelError`,
+  `download_model`, `download_model_from`) no longer needs llama.cpp: it is
+  gated on the new `model-download` feature (which `embed` implies; the
+  download also needs `http-ureq`). `download_verified(url, file, size,
+  sha256, directory, progress)` fetches any file the same way, with no
+  Hugging Face `revision` rule; `download_model_from` now calls it.
+
 - **A model's output limit beside its window**: `read_output_limit`,
   `ModelLimits { window, max_output }`, `read_model_limits` and
   `LlmClient::model_limits(model)`, which reads both from the one request

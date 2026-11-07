@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from types import FrameType
 from typing import TYPE_CHECKING
 
 from bmlib.llm.context_window import ModelLimits, known_context_window
@@ -275,3 +276,66 @@ def _sdk_import_failed(package: str, exc: ImportError) -> str:
         f"Could not import the {package!r} package ({exc}). "
         f"If it is missing, install it with: pip install bmlib[{package}]"
     )
+
+
+def traceback_frames(exc: BaseException) -> list[FrameType]:
+    """The frames *exc*'s traceback passed through, outermost first."""
+    frames = []
+    tb = exc.__traceback__
+    while tb is not None:
+        frames.append(tb.tb_frame)
+        tb = tb.tb_next
+    return frames
+
+
+def _module(frame: FrameType) -> str:
+    name = frame.f_globals.get("__name__")
+    return name if isinstance(name, str) else ""
+
+
+def _package(frame: FrameType) -> str:
+    return _module(frame).partition(".")[0]
+
+
+# ``Response.json``: ollama-python is on httpx, anthropic 2.x and openai 3.x on httpx2.
+_RESPONSE_DECODERS = frozenset({"httpx._models", "httpx2._models"})
+
+# ``json.scanner`` is the pure-Python scanner, used where the C one is missing.
+_JSON_DECODERS = frozenset({"json.decoder", "json.scanner"})
+
+
+def too_deep_body(exc: RecursionError, sdk: str, provider: str) -> ValueError:
+    """*exc* as the server's unreadable body if *sdk* raised it decoding one, else re-raised (#698).
+
+    ``json`` decodes recursively, so a 200 nested past the interpreter's
+    recursion limit raises ``RecursionError`` from the provider SDK's own
+    decode, where a body that is not JSON raises ``json.JSONDecodeError``, a
+    ``ValueError``. Only that raise is recognised, by its frames: the
+    innermost is the ``json`` decoder's, under the rest of the ``json`` package,
+    called by httpx's (or httpx2's) ``Response.json`` or directly, from a frame
+    of *sdk*'s own package. A recursion bug in bmlib, a deep ``json.loads``
+    bmlib makes itself, and a request too deep for the SDK to *encode* are
+    re-raised.
+
+    Args:
+        exc: The ``RecursionError`` the SDK call raised.
+        sdk: The SDK's top-level package (``"anthropic"``, ``"openai"``, ``"ollama"``).
+        provider: The provider the message names (``"deepseek"`` over the ``openai`` SDK).
+
+    Returns:
+        ``ValueError("<provider>: the response is nested too deeply to decode")``.
+
+    Raises:
+        RecursionError: *exc* itself, if it was not raised by *sdk*'s own decode.
+    """
+    frames = traceback_frames(exc)
+    # The decoder, not json.encoder: both SDKs json.dumps the request themselves.
+    if not frames or _module(frames[-1]) not in _JSON_DECODERS:
+        raise exc
+    while frames and _package(frames[-1]) == "json":
+        frames.pop()
+    if frames and _module(frames[-1]) in _RESPONSE_DECODERS:
+        frames.pop()
+    if not frames or _package(frames[-1]) != sdk:
+        raise exc
+    return ValueError(f"{provider}: the response is nested too deeply to decode")
