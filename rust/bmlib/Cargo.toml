@@ -139,11 +139,15 @@ html = ["dep:scraper", "dep:ego-tree", "dep:html5ever"]
 # rewriter and the PostgreSQL DDL are always present; this adds the driver that
 # can actually run a statement against a server.
 postgres = ["dep:postgres", "dep:bytes"]
+# Pinned, sha256-verified file download (`embed::verify_model`, `ModelError`,
+# and with `http-ureq` `download_verified`) without llama.cpp, for a host that
+# fetches a model file but does not run it. `embed` implies it.
+model-download = []
 # The in-process embedder: `bmlib::embed`'s model verification and `Embedder`.
 # Off by default, so a build that never embeds needs no C++ toolchain. The
 # constants and vector rules in `bmlib::embed` are always present; the download
 # additionally needs `http-ureq`.
-embed = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
+embed = ["model-download", "dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
 # `embed` with llama.cpp's Metal backend named explicitly. On macOS `embed`
 # already uses Metal (llama.cpp's default); a CPU-only build needs
 # `GGML_METAL=OFF` in the environment.

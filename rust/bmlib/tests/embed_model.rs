@@ -16,9 +16,9 @@
 
 //! The verified model download, against a loopback server only.
 
-#![cfg(all(feature = "embed", feature = "http-ureq"))]
+#![cfg(all(feature = "model-download", feature = "http-ureq"))]
 
-use bmlib::embed::{download_model_from, verify_model, ModelError, ModelFile};
+use bmlib::embed::{download_model_from, download_verified, verify_model, ModelError, ModelFile};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -393,4 +393,26 @@ fn tempdir(tag: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+#[test]
+fn download_verified_fetches_a_non_huggingface_file() {
+    const SHA_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    let server = serve(b"abc".to_vec(), false);
+    let tmp = tempdir("verified");
+    let path = download_verified(&server.url, "x.bin", 3, SHA_ABC, &tmp, &mut |_, _| true).unwrap();
+    assert_eq!(path, tmp.join("x.bin"));
+    assert_eq!(std::fs::read(&path).unwrap(), b"abc");
+
+    let wrong = "0".repeat(64);
+    let tmp = tempdir("verified-bad");
+    let err = download_verified(&server.url, "x.bin", 3, &wrong, &tmp, &mut |_, _| true);
+    assert!(
+        matches!(err, Err(ModelError::ChecksumMismatch { .. })),
+        "{err:?}"
+    );
+    assert!(!tmp.join("x.bin").exists());
+
+    let err = download_verified(&server.url, "../x", 3, SHA_ABC, &tmp, &mut |_, _| true);
+    assert!(matches!(err, Err(ModelError::Invalid(_))), "{err:?}");
 }

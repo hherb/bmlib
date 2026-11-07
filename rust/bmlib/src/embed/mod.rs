@@ -31,9 +31,9 @@ mod vectors;
 #[cfg(feature = "embed")]
 pub use embedder::{EmbedError, Embedder};
 
-#[cfg(all(feature = "embed", feature = "http-ureq"))]
-pub use model::{download_model, download_model_from};
-#[cfg(feature = "embed")]
+#[cfg(all(feature = "model-download", feature = "http-ureq"))]
+pub use model::{download_model, download_model_from, download_verified};
+#[cfg(feature = "model-download")]
 pub use model::{verify_model, ModelError};
 pub use model::{ModelFile, ARCTIC_EMBED_L_V2_F16, ARCTIC_EMBED_L_V2_Q8_0};
 pub use vectors::{
