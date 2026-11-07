@@ -9,6 +9,15 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed
+
+- **A PICO part loses no quote the model gave, and a part the paper omits
+  may have no description** (#577, #618), as in Python: `verify_quotes`
+  reads a bare string as a list of one, and `read_part` checks quotes given
+  beside `reported: false` (one found makes the part `Verified`; the rest
+  are kept) and accepts a blank, `null` or absent description on a part
+  that stays `NotReported`. The oracle gains a case and one moves.
+
 ### Added
 
 - **A live check that ClinicalTrials.gov answers a default `UreqClient`**

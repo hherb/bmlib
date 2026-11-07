@@ -221,8 +221,8 @@ Items 8 (PR #586, `bmlib.embed.store`, imported as that and not re-exported),
 5 (PRs #580/#584, `lookup_record`), 7 (PR #575, `PicoAgent`), 11 and 6
 (PRs #568/#562, context windows, streamed chat); the CHANGELOG entries are
 the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
-a vector.** Filed from their reviews and open: #581-#583, #585, #572, #577,
-#618, **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
+a vector.** Filed from their reviews and open: #581-#583, #585, #572 (#577 and
+#618 fixed on `fix/577-618-pico-replies`), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
 - **Plan 2b**: `download_model`, then `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16,
@@ -323,7 +323,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 **121 open once #606 closes** (#688 is a design choice, the `log` facade or a per-module sink) (`gh issue list --state open --limit 300 --json number`,
 2026-11-07); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's, #617 still open for its Ollama half; #556–#647 are not yet
-sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
+sorted into the lists below). **PR #615's review filed** **#617** (its OpenAI-compatible half done by PR #620; Ollama's SDK raises `TypeError` itself, left by decision) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
