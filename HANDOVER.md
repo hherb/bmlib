@@ -18,11 +18,19 @@ maintainer's choice: reuse `stream_timeout_seconds`**, no new field. Every
 POST now runs on `post_agent` (the stream's split: `timeout_seconds` per
 sending step, `stream_timeout_seconds` for the response headers and body); a
 GET keeps its whole-request 45 s. A `ureq` timeout is a `Transport` naming
-the limit (`UreqClient::transport_error`). Rust only: Python's Anthropic and
+the limit (`UreqClient::transport_error`), and so does a stream's body read
+(`NamedTimeouts`, a `TimedOut` `io::Error`). **The finalcheck review**: a
+POST's host lookup had no limit once the global one went (`timeout_resolve`
+now `timeout_seconds`); tests for a body that stalls after its headers
+(`post_json` and a stream), `get_with_headers`' whole-request limit, and a
+unit test of every timeout's message. Left as the maintainer chose:
+`model_limits`' `/api/show` now waits 600 s for an answer, three attempts. Rust only: Python's Anthropic and
 OpenAI SDKs (1.x/2.x and 2.x/3.x alike) read for 600 s, Ollama's not at all
 (#652). Three new tests in `tests/http.rs`. Downstream: StudyAnalyzer's
 `LimitedClient` clips only `timeout_seconds`, so its POSTs need
-`stream_timeout_seconds` clipped too when its pin moves.
+`stream_timeout_seconds` clipped too when its pin moves, and its
+`quote_threshold` test's 900 s `timeout_seconds` now needs
+`stream_timeout_seconds` to wait that long.
 
 ## Earlier, 2026-11-07: a 200 nested too deeply to decode is a `ValueError` (#698, PR #704, merged)
 

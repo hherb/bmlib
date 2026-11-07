@@ -24,7 +24,8 @@
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse, HttpStream};
 use std::collections::BTreeMap;
 
-/// How long a request may take before it is abandoned.
+/// How long a GET may take before it is abandoned, and each step of sending
+/// a POST ([`DEFAULT_STREAM_TIMEOUT_SECONDS`] covers a POST's response).
 ///
 /// A default, because the alternative is a walk that hangs for ever on a server
 /// holding the connection open — and the fetchers' loops are long enough that one
@@ -56,8 +57,8 @@ pub struct UreqClient {
     /// on 2026-11-07 (issue #606); `tests/live_network.rs` checks it.
     pub user_agent: String,
     /// Seconds before a GET is abandoned. For a POST, the limit on each step
-    /// of sending it: connecting, then the request headers, then the request
-    /// body.
+    /// of sending it: looking up the host, connecting, then the request
+    /// headers, then the request body.
     pub timeout_seconds: u64,
     /// Seconds a POST's response headers may take, and then its body: a
     /// non-streamed chat ([`HttpClient::post_json`]) as well as a stream
@@ -102,13 +103,15 @@ impl UreqClient {
     }
 
     /// The blocking agent a POST runs on: [`UreqClient::timeout_seconds`] for
-    /// each step of sending, then [`UreqClient::stream_timeout_seconds`] for
+    /// each step of sending (the host lookup included: with no whole-request
+    /// limit, `ureq` would otherwise wait on DNS as long as the system does), then [`UreqClient::stream_timeout_seconds`] for
     /// the response headers and again for the response body.
     fn post_agent(&self) -> Result<ureq::Agent, FetchError> {
         let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
         let stream = Some(std::time::Duration::from_secs(self.stream_timeout_seconds));
         self.agent_with(
             ureq::Agent::config_builder()
+                .timeout_resolve(step)
                 .timeout_connect(step)
                 .timeout_send_request(step)
                 .timeout_send_body(step)
@@ -139,23 +142,63 @@ impl UreqClient {
     /// timeout, so a caller sees "timed out after 600 s waiting for the
     /// response headers" rather than a bare "timeout: receive response".
     fn transport_error(&self, error: &ureq::Error) -> FetchError {
-        let ureq::Error::Timeout(kind) = error else {
-            return FetchError::Transport(error.to_string());
-        };
+        match error {
+            ureq::Error::Timeout(kind) => FetchError::Transport(self.timeout_message(*kind)),
+            other => FetchError::Transport(other.to_string()),
+        }
+    }
+
+    /// What a timeout of `kind` says: the limit that ran out, in seconds, and
+    /// what was being waited for, such as "timed out after 600 s waiting for
+    /// the response headers (receive response)".
+    fn timeout_message(&self, kind: ureq::Timeout) -> String {
         let (seconds, waiting) = match kind {
             ureq::Timeout::RecvResponse => (
                 self.stream_timeout_seconds,
                 "waiting for the response headers",
             ),
             ureq::Timeout::RecvBody => (self.stream_timeout_seconds, "reading the response body"),
-            ureq::Timeout::Resolve | ureq::Timeout::Connect => (self.timeout_seconds, "connecting"),
+            ureq::Timeout::Resolve => (self.timeout_seconds, "looking up the host"),
+            ureq::Timeout::Connect => (self.timeout_seconds, "connecting"),
             ureq::Timeout::SendRequest | ureq::Timeout::SendBody => {
                 (self.timeout_seconds, "sending the request")
             }
             // `Global` is a GET's only limit; the others are not set here.
             _ => (self.timeout_seconds, "on the whole request"),
         };
-        FetchError::Transport(format!("timed out after {seconds} s {waiting} ({kind})"))
+        format!("timed out after {seconds} s {waiting} ({kind})")
+    }
+}
+
+/// A stream's body that names the limit when a read times out, as
+/// [`UreqClient::transport_error`] does for everything before the body.
+///
+/// `ureq` reports a timeout while the body is read as an `io::Error` wrapping
+/// its own error, which would read "timeout: receive body"; this one reads
+/// "timed out after 600 s reading the response body (receive body)". Any
+/// other read error passes through unchanged.
+struct NamedTimeouts {
+    /// The response body, as `ureq` hands it out.
+    body: ureq::BodyReader<'static>,
+    /// The client the stream was opened with, for its limits.
+    client: UreqClient,
+}
+
+impl std::io::Read for NamedTimeouts {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.body.read(buf).map_err(|e| {
+            let kind = match e
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<ureq::Error>())
+            {
+                Some(ureq::Error::Timeout(kind)) => *kind,
+                _ => return e,
+            };
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                self.client.timeout_message(kind),
+            )
+        })
     }
 }
 
@@ -260,7 +303,75 @@ impl HttpClient for UreqClient {
             status: response.status().as_u16(),
             // `into_reader` has no size cap, unlike `read_to_vec`: a stream's
             // length is bounded by `stream_timeout_seconds` instead.
-            body: Box::new(response.into_body().into_reader()),
+            body: Box::new(NamedTimeouts {
+                body: response.into_body().into_reader(),
+                client: self.clone(),
+            }),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A client whose two limits differ, so a message shows which it named.
+    fn client() -> UreqClient {
+        UreqClient {
+            timeout_seconds: 7,
+            stream_timeout_seconds: 99,
+            ..UreqClient::default()
+        }
+    }
+
+    /// Every timeout `ureq` can raise names the limit that was set for it.
+    #[test]
+    fn each_timeout_names_its_limit() {
+        let cases = [
+            (
+                ureq::Timeout::Resolve,
+                "timed out after 7 s looking up the host (resolve)",
+            ),
+            (
+                ureq::Timeout::Connect,
+                "timed out after 7 s connecting (connect)",
+            ),
+            (
+                ureq::Timeout::SendRequest,
+                "timed out after 7 s sending the request (send request)",
+            ),
+            (
+                ureq::Timeout::SendBody,
+                "timed out after 7 s sending the request (send body)",
+            ),
+            (
+                ureq::Timeout::RecvResponse,
+                "timed out after 99 s waiting for the response headers (receive response)",
+            ),
+            (
+                ureq::Timeout::RecvBody,
+                "timed out after 99 s reading the response body (receive body)",
+            ),
+            (
+                ureq::Timeout::Global,
+                "timed out after 7 s on the whole request (global)",
+            ),
+        ];
+        for (kind, expected) in cases {
+            let error = client().transport_error(&ureq::Error::Timeout(kind));
+            assert_eq!(
+                error,
+                FetchError::Transport(expected.to_string()),
+                "{kind:?}"
+            );
+        }
+    }
+
+    /// Anything that is not a timeout keeps `ureq`'s own words.
+    #[test]
+    fn other_errors_keep_their_text() {
+        let error = ureq::Error::Io(std::io::Error::other("boom"));
+        let expected = FetchError::Transport(error.to_string());
+        assert_eq!(client().transport_error(&error), expected);
     }
 }
