@@ -34,6 +34,7 @@ import time
 import urllib.request
 from collections.abc import Callable, Iterable, Iterator
 from functools import partial
+from types import FrameType
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -367,30 +368,85 @@ def _non_object_body(exc: BaseException) -> str | None:
     Returns:
         The JSON type's name (``"an array"``), or ``None`` if *exc* is not that.
     """
-    tb = exc.__traceback__
-    if tb is None:
+    frames = _traceback_frames(exc)
+    if not frames or frames[-1].f_globals.get("__name__") != "ollama._client":
         return None
-    while tb.tb_next is not None:
-        tb = tb.tb_next
-    if tb.tb_frame.f_globals.get("__name__") != "ollama._client":
-        return None
-    code = tb.tb_frame.f_code
+    code = frames[-1].f_code
     if isinstance(exc, TypeError) and code.co_name == "_request":
         match = _NOT_A_MAPPING.search(str(exc))
-        name = match.group(1) if match else None
+        name = match.group(1) if match else ""
     elif isinstance(exc, AttributeError) and code.co_name == "inner" and exc.name == "get":
         name = type(exc.obj).__name__
     else:
         return None
-    return _JSON_TYPE_NAMES.get(name) if name else None
+    return _JSON_TYPE_NAMES.get(name)
 
 
-def _refused_body(exc: TypeError | AttributeError) -> ValueError:
-    """*exc* as the server's failure if :func:`_non_object_body` names it; else re-raise."""
+def _unbuilt_response_error(exc: BaseException) -> Exception | None:
+    """The ``ollama.ResponseError`` the SDK was building when it raised *exc* (#617).
+
+    ``ResponseError.__init__`` reads its message with ``json.loads(error).get(...)``
+    and suppresses only ``JSONDecodeError``, so a refusal whose body is JSON but
+    not an object raises ``AttributeError`` (``.get``), and a streamed
+    ``{"error": X}`` whose X is not text raises ``TypeError`` (from
+    ``json.loads``). Only a raise in that frame, of that shape, is recognised;
+    the error is rebuilt from the frame's own arguments, the server's text and
+    status, so :func:`~bmlib.llm.utils.http_status` still reads the status.
+
+    Returns:
+        The ``ResponseError`` the SDK meant to raise, or ``None`` if *exc* is not that.
+    """
+    import ollama
+
+    frames = _traceback_frames(exc)
+    for depth, frame in enumerate(frames):
+        if (
+            frame.f_globals.get("__name__") == "ollama._types"
+            and frame.f_code.co_name == "__init__"
+            and isinstance(frame.f_locals.get("self"), ollama.ResponseError)
+        ):
+            below = frames[depth + 1 :]
+            break
+    else:
+        return None
+    if isinstance(exc, AttributeError):
+        recognised = not below and exc.name == "get"
+    elif isinstance(exc, TypeError):
+        recognised = len(below) == 1 and below[0].f_globals.get("__name__") == "json"
+    else:
+        recognised = False
+    if not recognised:
+        return None
+    error = frame.f_locals["error"]
+    text = error if isinstance(error, str) else json.dumps(error)
+    # The SDK's own constructor, handed an error object it can read.
+    return ollama.ResponseError(json.dumps({"error": text}), frame.f_locals["status_code"])
+
+
+def _traceback_frames(exc: BaseException) -> list[FrameType]:
+    """The frames *exc*'s traceback passed through, outermost first."""
+    frames = []
+    tb = exc.__traceback__
+    while tb is not None:
+        frames.append(tb.tb_frame)
+        tb = tb.tb_next
+    return frames
+
+
+def _refused_body(exc: TypeError | AttributeError) -> Exception:
+    """*exc* as the server's failure if the SDK raised it reading a body; else re-raise it.
+
+    A 200 that is not a JSON object is a ``ValueError`` (:func:`_non_object_body`);
+    a refusal the SDK could not read is the ``ollama.ResponseError`` it was building
+    (:func:`_unbuilt_response_error`).
+    """
     got = _non_object_body(exc)
-    if got is None:
+    if got is not None:
+        return ValueError(f"ollama: the response is not a JSON object (got {got})")
+    refused = _unbuilt_response_error(exc)
+    if refused is None:
         raise exc
-    return ValueError(f"ollama: the response is not a JSON object (got {got})")
+    return refused
 
 
 def _opened(stream: Iterable[Any]) -> Iterator[Any]:
@@ -557,6 +613,8 @@ class OllamaProvider(BaseProvider):
         Raises:
             ValueError: A bad ``num_ctx``, or a 200 whose body is not a JSON
                 object (#617), named by its JSON type.
+            ollama.ResponseError: If the server refuses the request, its body
+                JSON that is not an object included (#617).
         """
         model = model or self.default_model
         client = self._get_client()
@@ -567,7 +625,7 @@ class OllamaProvider(BaseProvider):
         except (TypeError, AttributeError) as exc:
             raise _refused_body(exc) from exc
 
-        # ollama >=0.4 returns Pydantic models; older versions return dicts.
+        # The SDK returns Pydantic models; a test's stand-in client may return dicts.
         message = _safe_get(response, "message")
         content: str = _safe_get(message, "content", "") if message else ""
 
@@ -732,7 +790,8 @@ class OllamaProvider(BaseProvider):
             NotImplementedError: If *tools* is passed.
             ConnectionError: If the server cannot be reached, as :meth:`chat`.
             ollama.ResponseError: If the server refuses the request, as
-                :meth:`chat`.
+                :meth:`chat`, a first line whose ``error`` the SDK cannot read
+                included.
             ValueError: If the first line is not a JSON object, as :meth:`chat`.
             StreamError: If the stream fails after it opens or ends early.
         """
@@ -743,7 +802,7 @@ class OllamaProvider(BaseProvider):
         return read_stream(
             "ollama",
             lambda: client.chat(**request_kwargs, stream=True),
-            # ollama >=0.4 yields Pydantic models; older versions yield dicts.
+            # The SDK yields Pydantic models; a test's stand-in client may yield dicts.
             lambda stream: sdk_events(
                 _opened(stream), lambda c: c.model_dump() if hasattr(c, "model_dump") else c
             ),

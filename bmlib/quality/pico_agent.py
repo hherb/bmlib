@@ -341,12 +341,14 @@ def verify_quotes(
         ``(citations, not_found, dropped)``: the paper's spans for the quotes
         found, in the order the quotes came and each span once; the quotes not
         found, verbatim; and how many were not usable text at all.  An absent
-        ``quotes`` (``None``) drops nothing; any other value that is not a list
-        counts as one dropped, as does a member that is not a string or is
-        blank.
+        ``quotes`` (``None``) drops nothing, and a bare string reads as a list
+        of one (#577); any other value that is not a list counts as one
+        dropped, as does a member that is not a string or is blank.
     """
     if quotes is None:
         return [], [], 0
+    if isinstance(quotes, str):
+        quotes = [quotes]
     if not isinstance(quotes, list):
         logger.debug("Reading quotes as none: the answer was a %s", type(quotes).__name__)
         return [], [], 1
@@ -381,27 +383,39 @@ def verify_quotes(
 def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
     """Read one PICO part and verify its quotes.
 
+    Quotes given beside ``reported: false`` are verified too (#577): one the
+    paper holds makes the part reported, and the rest stay on the part as not
+    found or dropped.  A part that stays not reported may have a blank or
+    absent description, read as ``""`` when absent (#618); a reported part
+    may not.
+
     Raises:
-        ValueError: When *value* is not an object carrying a non-blank
-            string ``description`` — a part that cannot be shown at all.
+        ValueError: When *value* is not an object, its ``description`` is
+            neither a string nor absent, or a reported part's description is
+            absent or blank — a part that cannot be shown at all.
     """
     if not isinstance(value, dict):
         raise _UnreadableReplyError(f"expected an object, got {type(value).__name__}")
     description = value.get("description")
+    citations, not_found, dropped = verify_quotes(value.get("quotes"), text, min_similarity)
+    # Only an explicit ``false`` is an absence: ``bool("no")`` is ``True``, and
+    # a flag the model garbled must not hide a part it described.
+    reported = as_bool(value.get("reported"), "reported") is not False or bool(citations)
+    if description is None and not reported:
+        description = ""
     if not isinstance(description, str):
         raise _UnreadableReplyError(f"description is a {type(description).__name__}, not text")
     # A blank description shows nothing, as ``null`` does, so it is asked again (#578).
-    if not description.strip():
+    if reported and not description.strip():
         raise _UnreadableReplyError("description is blank")
 
     confidence = clamped_confidence(value.get("confidence"))
-    # Only an explicit ``false`` is an absence: ``bool("no")`` is ``True``, and
-    # a flag the model garbled must not hide a part it described.
-    if as_bool(value.get("reported"), "reported") is False:
-        return PicoPart(description, PicoPartState.NOT_REPORTED, confidence)
-
-    citations, not_found, dropped = verify_quotes(value.get("quotes"), text, min_similarity)
-    state = PicoPartState.VERIFIED if citations else PicoPartState.UNVERIFIED
+    if not reported:
+        state = PicoPartState.NOT_REPORTED
+    elif citations:
+        state = PicoPartState.VERIFIED
+    else:
+        state = PicoPartState.UNVERIFIED
     return PicoPart(description, state, confidence, citations, not_found, dropped)
 
 

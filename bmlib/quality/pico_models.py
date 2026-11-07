@@ -219,7 +219,8 @@ class PicoPart:
     """One of the four PICO parts.
 
     The state agrees with the quotes: a part is ``VERIFIED`` exactly when it
-    carries a citation, and a ``NOT_REPORTED`` part carries no quotes at all.
+    carries a citation.  A ``NOT_REPORTED`` part may still carry the quotes the
+    model gave beside ``reported: false`` that were not found (#577).
 
     Attributes:
         description: The model's description, kept whatever the state.
@@ -244,9 +245,8 @@ class PicoPart:
 
         Raises:
             ValueError: The state is not a :class:`PicoPartState`, disagrees
-                with the citations, a ``NOT_REPORTED`` part carries quotes,
-                the confidence is not ``None`` or a number in [0, 1], or
-                ``quotes_dropped`` is negative.
+                with the citations, the confidence is not ``None`` or a number
+                in [0, 1], or ``quotes_dropped`` is negative.
         """
         if not isinstance(self.state, PicoPartState):
             raise ValueError(f"state must be a PicoPartState, got {self.state!r}")
@@ -255,10 +255,6 @@ class PicoPart:
                 f"a {self.state.value} part carries {len(self.citations)} citation(s): "
                 "a part is verified exactly when one of its quotes was found"
             )
-        if self.state is PicoPartState.NOT_REPORTED and (
-            self.quotes_not_found or self.quotes_dropped
-        ):
-            raise ValueError("a not-reported part carries no quotes")
         _check_confidence(self.confidence, "a part's")
         if self.quotes_dropped < 0:
             raise ValueError(f"quotes_dropped must not be negative, got {self.quotes_dropped}")

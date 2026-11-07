@@ -23,7 +23,31 @@ table). Rust and Python on par; fixture section `output_limits`. Gemini's
 and Anthropic's fields are from their API docs and SDK types, not a live
 call.
 
-## Earlier, 2026-11-07: Rust warnings are `log` records (#688, #685; PR #693, merged)
+## Earlier, 2026-11-07: an Ollama 200 that is not a JSON object is the server's failure (#617; PR #692 merged, its review fixes on 
+
+Branch `fix/617-openai-compat-choices` (named before the scope moved to the
+Ollama half; the OpenAI half was PR #620). The maintainer chose to fix the half left
+open, and chose the mechanism: keep the SDK transport and recognise its raise.
+`_non_object_body` in `ollama.py` accepts a `TypeError` only from the SDK's
+`Client._request` (`cls(**body)`, message "argument after ** must be a
+mapping, not X") and an `AttributeError` only from its stream's `inner`
+(`part.get`), both by the innermost frame's module (`__name__ ==
+"ollama._client"`) and function name; `chat()` and `_opened` (a stream's first
+line) re-raise it as `ValueError("ollama: the response is not a JSON object
+(got an array)")`. **PR #692's review added the refusal half**:
+`ResponseError.__init__` itself crashes on an error body that is JSON but not
+an object (`.get` on a list, or `json.loads` on a streamed non-text `error`),
+so `_unbuilt_response_error` recognises that frame (`ollama._types`,
+`__init__`, `self` a `ResponseError`, the raise in it or in `json` directly
+below) and rebuilds the `ResponseError` from the frame's `error` and
+`status_code`. The extra now needs `ollama>=0.5`, since 0.4 has no `think`.
+Tested through the real SDK over `httpx.MockTransport` (37 tests, every guard
+mutation-killed, passing on ollama 0.4.0, 0.5.0 and 0.6.1 and on 3.11-3.13).
+**Filed**: #697 (the provider's `embed`/`show` calls misreport the same
+bodies) and #698 (a body nested past the decoder escapes as `RecursionError`).
+Rust already refused such a body (`parse_ollama_response`).
+
+## Earlier, 2026-11-07: Rust warnings are `log` records (#688, #685, PR #693, merged)
 
 Branch `fix/688-rust-log-facade`, filed by StudyAnalyzer PR
 hherb/StudyAnalyzer#92's review; the maintainer chose option (a), the `log`
@@ -234,8 +258,8 @@ Items 8 (PR #586, `bmlib.embed.store`, imported as that and not re-exported),
 5 (PRs #580/#584, `lookup_record`), 7 (PR #575, `PicoAgent`), 11 and 6
 (PRs #568/#562, context windows, streamed chat); the CHANGELOG entries are
 the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
-a vector.** Filed from their reviews and open: #581-#583, #585, #572, #577,
-#618, **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
+a vector.** Filed from their reviews and open: #581-#583, #585, #572 (#577 and
+#618 fixed on `fix/577-618-pico-replies`), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
 - **Plan 2b**: `download_model`, then `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16,
@@ -304,7 +328,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,586 passing + 14 skipped with the PostgreSQL DSN** on
+- **Tests: 9,606 passing + 14 skipped with the PostgreSQL DSN** on
   `fix/617-openai-compat-choices` (`uv run pytest tests/ -v`, 2026-11-07; 9,418 + 165 without it on `fix/606-ctgov-user-agent`; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
@@ -334,9 +358,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open once #617 closes** (#688 is a design choice, the `log` facade or a per-module sink; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host) (`gh issue list --state open --limit 300 --json number`,
+**119 open once #577 and #618 close** (#694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #697 and #698 are PR #692's review's) (`gh issue list --state open --limit 300 --json number`,
 2026-11-07); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
-sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and this session's) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
+sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
