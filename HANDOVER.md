@@ -1,15 +1,38 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-07 (**this session's PR is on `fix/688-rust-log-facade`**, for #688 and #685; PRs #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
-_Last updated: 2026-11-07 (**this session's PR is on `fix/617-openai-compat-choices`**, for #617's Ollama half; PRs #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-07 (**this session's PR is on `fix/617-review-followup`**, PR #692's review fixes for #617; PRs #693 (#688, #685), #692 (#617's Ollama half), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690, #691 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693 and this session's._
 
-## This session: Rust warnings are `log` records (#688, #685)
+## This session: an Ollama 200 that is not a JSON object is the server's failure (#617; PR #692 merged, its review fixes on `fix/617-review-followup`)
+
+Branch `fix/617-openai-compat-choices` (named before the scope moved to the
+Ollama half; the OpenAI half was PR #620). The maintainer chose to fix the half left
+open, and chose the mechanism: keep the SDK transport and recognise its raise.
+`_non_object_body` in `ollama.py` accepts a `TypeError` only from the SDK's
+`Client._request` (`cls(**body)`, message "argument after ** must be a
+mapping, not X") and an `AttributeError` only from its stream's `inner`
+(`part.get`), both by the innermost frame's module (`__name__ ==
+"ollama._client"`) and function name; `chat()` and `_opened` (a stream's first
+line) re-raise it as `ValueError("ollama: the response is not a JSON object
+(got an array)")`. **PR #692's review added the refusal half**:
+`ResponseError.__init__` itself crashes on an error body that is JSON but not
+an object (`.get` on a list, or `json.loads` on a streamed non-text `error`),
+so `_unbuilt_response_error` recognises that frame (`ollama._types`,
+`__init__`, `self` a `ResponseError`, the raise in it or in `json` directly
+below) and rebuilds the `ResponseError` from the frame's `error` and
+`status_code`. The extra now needs `ollama>=0.5`, since 0.4 has no `think`.
+Tested through the real SDK over `httpx.MockTransport` (37 tests, every guard
+mutation-killed, passing on ollama 0.4.0, 0.5.0 and 0.6.1 and on 3.11-3.13).
+**Filed**: #697 (the provider's `embed`/`show` calls misreport the same
+bodies) and #698 (a body nested past the decoder escapes as `RecursionError`).
+Rust already refused such a body (`parse_ollama_response`).
+
+## Earlier, 2026-11-07: Rust warnings are `log` records (#688, #685, PR #693, merged)
 
 Branch `fix/688-rust-log-facade`, filed by StudyAnalyzer PR
 hherb/StudyAnalyzer#92's review; the maintainer chose option (a), the `log`
@@ -34,30 +57,6 @@ The 2026-09-06 403 (#194) no longer reproduces (the default `UreqClient`
 served 6 of 6 on 2026-11-07), so no code change: the docs give both dates,
 and `clinicaltrials_gov_answers_a_default_client` in `tests/live_network.rs`
 (`BMLIB_LIVE_TESTS=1`, no CI job) guards the edge.
-## This session: an Ollama 200 that is not a JSON object is the server's failure (#617)
-
-Branch `fix/617-openai-compat-choices` (named before the scope moved to the
-Ollama half; the OpenAI half was PR #620). The maintainer chose to fix the half left
-open, and chose the mechanism: keep the SDK transport and recognise its raise.
-`_non_object_body` in `ollama.py` accepts a `TypeError` only from the SDK's
-`Client._request` (`cls(**body)`, message "argument after ** must be a
-mapping, not X") and an `AttributeError` only from its stream's `inner`
-(`part.get`), both by the innermost frame's file (`ollama/_client.py`, looked
-up through `importlib` since the package rebinds `ollama._client` to a
-`Client`) and name; `chat()` and `_opened` (a stream's first line) re-raise
-it as `ValueError("ollama: the response is not a JSON object (got an
-array)")`. Tested through the real SDK over `httpx.MockTransport`, the
-negative control raising the SDK's own message from a function named
-`_request` in another file (the filename check's mutant dies). Message wording
-checked on 3.11-3.13. Rust already refused such a body (`parse_ollama_response`).
-
-## Earlier, 2026-11-07: ClinicalTrials.gov answers a default client (#606, PR #691, merged)
-
-The issue's premise was refuted: the #194 edge that 403'd a `User-Agent`
-without `python-httpx` served 200 to every shape on 2026-11-07. No code
-change; the docs give both dates, and a Rust live guard
-(`clinicaltrials_gov_answers_a_default_client`, `BMLIB_LIVE_TESTS=1`, run by
-no CI job) asserts the posted-results check is answered.
 
 ## Earlier, 2026-11-06: a `SecretError` says whether saving a key helps (#689, PR #690, merged)
 
@@ -290,7 +289,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,586 passing + 14 skipped with the PostgreSQL DSN** on
+- **Tests: 9,606 passing + 14 skipped with the PostgreSQL DSN** on
   `fix/617-openai-compat-choices` (`uv run pytest tests/ -v`, 2026-11-07; 9,418 + 165 without it on `fix/606-ctgov-user-agent`; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
