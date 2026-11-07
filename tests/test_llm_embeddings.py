@@ -131,9 +131,9 @@ class TestOllamaEmbedBatch:
     def test_api_failure_raises_connection_error(self):
         p = OllamaProvider()
         p._client = MagicMock()
-        p._client.embed.side_effect = RuntimeError("server down")
+        p._client.embed.side_effect = ConnectionError("server down")
 
-        with pytest.raises(ConnectionError, match="server down"):
+        with pytest.raises(ConnectionError, match=r"^Ollama embedding failed: server down$"):
             p.embed_batch(["a"], model="nomic-embed-text")
 
     def test_large_batch_is_split_at_default_bound(self):
@@ -262,9 +262,9 @@ class TestOllamaSingleEmbed:
         # survive the delegation.
         p = OllamaProvider()
         p._client = MagicMock()
-        p._client.embed.side_effect = RuntimeError("server down")
+        p._client.embed.side_effect = ConnectionError("server down")
 
-        with pytest.raises(ConnectionError, match="server down"):
+        with pytest.raises(ConnectionError, match=r"^Ollama embedding failed: server down$"):
             p.embed("some text", model="nomic-embed-text")
 
     def test_single_embed_empty_response_raises(self):
