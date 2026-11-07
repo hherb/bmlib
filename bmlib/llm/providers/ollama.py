@@ -547,7 +547,9 @@ class OllamaProvider(BaseProvider):
         :class:`NoSuchModelError`; any other 404 (a plain-text ``404 page not
         found`` included) is a wrong address and a
         :class:`ContextWindowError`. A connection failure or 5xx is retried
-        with backoff; any other refusal is not.
+        with backoff; any other refusal is not. A body that is not a JSON
+        object is read as :meth:`chat` reads it (#697): a refusal by its
+        status, a 200 as a :class:`ContextWindowError` that is not retried.
 
         Raises:
             NoSuchModelError: The server has no such model.
@@ -558,9 +560,15 @@ class OllamaProvider(BaseProvider):
 
         client = self._get_client()
 
+        def show() -> Any:
+            try:
+                return client.show(model)
+            except (TypeError, AttributeError) as exc:
+                raise _refused_body(exc) from exc
+
         def fetch() -> object:
             try:
-                return as_dict(client.show(model))
+                return as_dict(show())
             except ollama.ResponseError as exc:
                 if exc.status_code == HTTP_NOT_FOUND and _names_a_missing_model(exc):
                     raise NoSuchModelError(
@@ -841,8 +849,10 @@ class OllamaProvider(BaseProvider):
             An :class:`EmbeddingResponse` with the embedding vector.
 
         Raises:
-            ConnectionError: If the request to the Ollama server fails.
-            ValueError: If the server returns no vector (protocol violation).
+            ConnectionError: As :meth:`embed_batch`.
+            ValueError: If the server returns no vector, or a body that is
+                not a JSON object (protocol violations).
+            ollama.ResponseError: As :meth:`embed_batch`.
         """
         # Dropped rather than forwarded: leaving it in **kwargs would
         # collide with embed_batch's own parameter of that name.
@@ -898,16 +908,22 @@ class OllamaProvider(BaseProvider):
             requests made.
 
         Raises:
-            ConnectionError: If a request to the Ollama server fails.
+            ConnectionError: If the Ollama server cannot be reached (a
+                transport failure). Nothing else is reported as one (#697).
             ValueError: If *max_batch_size* is less than 1, or if the
                 server returns a different number of vectors than texts
-                sent (protocol violation).
+                sent, or a 200 whose body is not a JSON object (protocol
+                violations).
+            ollama.ResponseError: If the server refuses the request, its
+                body JSON that is not an object included.
         """
         model = model or self.default_model
         if max_batch_size is not None and max_batch_size < 1:
             raise ValueError(f"max_batch_size must be >= 1, got {max_batch_size}")
         if not texts:
             return BatchEmbeddingResponse(embeddings=[], model=model)
+
+        import httpx  # ollama-python's own transport, installed with it
 
         batch_size = max_batch_size or DEFAULT_EMBED_BATCH_SIZE
         client = self._get_client()
@@ -920,9 +936,12 @@ class OllamaProvider(BaseProvider):
 
             try:
                 response = client.embed(model=model, input=group, **kwargs)
-            except Exception as e:
-                logger.error("Ollama embedding error: %s", e)
-                raise ConnectionError(f"Ollama embedding failed: {e}") from e
+            except (TypeError, AttributeError) as exc:
+                raise _refused_body(exc) from exc
+            # Only a failure to reach the server is a connection failure (#697).
+            except (ConnectionError, httpx.TransportError) as exc:
+                logger.error("Ollama embedding error: %s", exc)
+                raise ConnectionError(f"Ollama embedding failed: {exc}") from exc
 
             group_embeddings: list[list[float]] = _safe_get(response, "embeddings", []) or []
             if len(group_embeddings) != len(group):
