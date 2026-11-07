@@ -53,7 +53,7 @@ Issues = "https://github.com/hherb/bmlib/issues"
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.41"]
-ollama = ["ollama>=0.3"]
+ollama = ["ollama>=0.4"]
 openai = ["openai>=1.0"]
 postgresql = ["psycopg2-binary>=2.9"]
 transparency = ["httpx>=0.25"]
