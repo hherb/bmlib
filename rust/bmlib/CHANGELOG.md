@@ -30,6 +30,21 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **Anthropic thinking takes the shape the model reports** (#707, with
+  Python). A `think` holding an integer was sent as `budget_tokens`, which
+  every current Claude model refuses with a 400, and any other `think` (`true`,
+  an effort level) was dropped for Anthropic. `LlmClient::chat`,
+  `chat_stream` and `chat_stream_with_cancel` now fetch the model's
+  `GET /v1/models/{id}` (on every such call: `LlmClient` holds no cache) when
+  `think` is on (`think_is_on`: not `""`, `"false"` or 0) and add the fields
+  `anthropic_thinking(think, max_tokens, model_body)` reads off it: adaptive
+  plus `output_config.effort` where the model reports them, a budget only for
+  a model reporting budgets. A field set by `extra_body` is left alone. A
+  refusal is the new `ChatError::Thinking(ThinkingRefusal)` (not retryable),
+  before the chat is sent; a refused lookup is the `ChatError::Http` it was.
+  **`chat_body` no longer carries `thinking`** for Anthropic, its shape needing
+  the metadata. Shared fixture `tests/fixtures/anthropic_thinking.json`.
+
 - **A PICO part loses no quote the model gave, and a part the paper omits
   may have no description** (#577, #618), as in Python: `verify_quotes`
   reads a bare string as a list of one, and `read_part` checks quotes given

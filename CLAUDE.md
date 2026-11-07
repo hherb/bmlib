@@ -834,7 +834,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | Module               | Test file(s)                                               |
 |----------------------|------------------------------------------------------------|
 | `db/`                | `test_db.py`, `test_migrations.py`, `test_backends.py`     |
-| `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py`, `test_json_extraction.py` |
+| `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_anthropic_thinking_contract.py` (the shared `anthropic_thinking.json`, which Rust asserts too), `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py`, `test_json_extraction.py` |
 | `agents/`            | `test_agents.py`                                           |
 | `citations/`         | `test_citations_parser.py`, `test_citations_formatter.py`, `test_citations_builder.py`, `test_passage_match.py`, `test_passage_match_contract.py` |
 | `embed/`             | `test_embed_vectors.py` (shared `embedding_contract.json`), `test_embed_model.py`, `test_embed_live.py` (the live tests need `BMLIB_EMBED_MODEL`, else skipped; the `Embedder`'s own rules run model-free against a fake llama object), `test_embed_store.py` (both backends, a fake embedder), `test_vector_store_contract.py` (shared `vector_store.json`, written by `scripts/make_vector_store_fixture.py`) |

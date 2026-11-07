@@ -41,6 +41,7 @@ use crate::llm::stream::{
     ndjson_events, run_stream, run_stream_until, SseEvents, StreamDelta, StreamState, SSE_DONE,
     STREAM_USAGE_PROVIDERS,
 };
+use crate::llm::thinking::{anthropic_thinking, think_is_on, ThinkingRefusal};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpStream};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
@@ -265,7 +266,9 @@ pub struct ChatRequest {
     pub tools: Option<Vec<LLMToolDefinition>>,
     /// The canonical choice among them.
     pub tool_choice: String,
-    /// Ask for a separated reasoning trace.
+    /// Ask for a separated reasoning trace. For Anthropic the shape is read
+    /// off the model's own metadata before the chat is sent (#707; see
+    /// [`crate::llm::anthropic_thinking`]), so [`chat_body`] carries none.
     pub think: Option<String>,
     /// Extra top-level body fields, merged last so a caller can set anything a
     /// server accepts without this port knowing the name.
@@ -363,6 +366,9 @@ pub enum ChatError {
     /// Tools were passed to [`LlmClient::chat_stream`], which does not carry
     /// tool calls; refused rather than sent without them.
     StreamingToolsUnsupported,
+    /// `think` asked an Anthropic model for thinking it does not take,
+    /// refused before the chat was sent (#707).
+    Thinking(ThinkingRefusal),
 }
 
 impl std::fmt::Display for ChatError {
@@ -385,6 +391,7 @@ impl std::fmt::Display for ChatError {
                 f,
                 "chat_stream does not carry tool calls; use chat() for a request with tools"
             ),
+            ChatError::Thinking(refusal) => write!(f, "{refusal}"),
         }
     }
 }
@@ -576,14 +583,8 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
                     body.insert("tool_choice".to_string(), choice);
                 }
             }
-            // Anthropic's reasoning is requested with a `thinking` object, whose
-            // budget must be a positive number of tokens below the output cap.
-            if let Some(budget) = request.think.as_deref().and_then(|t| t.parse::<i64>().ok()) {
-                body.insert(
-                    "thinking".to_string(),
-                    json!({"type": "enabled", "budget_tokens": budget}),
-                );
-            }
+            // No `thinking` here: its shape depends on the model's metadata,
+            // which `LlmClient` fetches and adds (#707, `add_anthropic_thinking`).
         }
         Protocol::Ollama => {
             body.insert(
@@ -1012,7 +1013,8 @@ impl LlmClient {
             self.base_url.as_deref(),
             self.api_key.as_deref(),
         )?;
-        let body = chat_body(request, &target, self.is_reasoning_model(&target.model));
+        let mut body = chat_body(request, &target, self.is_reasoning_model(&target.model));
+        self.add_anthropic_thinking(request, &target, &mut body)?;
         let url = chat_url(&target);
         let headers = chat_headers(&target);
 
@@ -1101,7 +1103,8 @@ impl LlmClient {
             self.base_url.as_deref(),
             self.api_key.as_deref(),
         )?;
-        let body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        let mut body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        self.add_anthropic_thinking(request, &target, &mut body)?;
         let url = chat_url(&target);
         let stream = open_stream(
             &*self.client,
@@ -1166,7 +1169,8 @@ impl LlmClient {
                 .finish(&target.model, true)
                 .map_err(ChatError::Stream);
         }
-        let body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        let mut body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        self.add_anthropic_thinking(request, &target, &mut body)?;
         let url = chat_url(&target);
         let headers = chat_headers(&target);
         let events = WorkerEvents::spawn(
@@ -1183,6 +1187,57 @@ impl LlmClient {
         })?;
         record_usage(&target, &response);
         Ok(response)
+    }
+
+    /// Add the `thinking` (and `output_config`) fields an Anthropic request's
+    /// `think` stands for, read off the model's `GET /v1/models/{id}` (#707).
+    ///
+    /// Nothing for another protocol or a `think` that is off
+    /// ([`crate::llm::think_is_on`]). One lookup per call, retried as a chat
+    /// is; a field the caller's `extra_body` already set is left alone, as
+    /// `extra_body` is merged last in [`chat_body`].
+    fn add_anthropic_thinking(
+        &self,
+        request: &ChatRequest,
+        target: &Target,
+        body: &mut Value,
+    ) -> Result<(), ChatError> {
+        let Some(think) = request.think.as_deref().filter(|t| think_is_on(t)) else {
+            return Ok(());
+        };
+        if target.protocol != Protocol::Anthropic {
+            return Ok(());
+        }
+        let (url, _) = context_window_request(target);
+        let headers = chat_headers(target);
+        let response = send_with_retries(
+            self.retry_base_delay,
+            &|| false,
+            || self.client.get_with_headers(&url, &headers),
+            |response| response.status,
+        )
+        .map_err(|e| match e {
+            FetchError::HttpStatus { status, .. } => http_error(&url, status, ""),
+            other => ChatError::Transport(other.to_string()),
+        })?;
+        if !response.is_success() {
+            return Err(http_error(&url, response.status, response.text_or_empty()));
+        }
+        let model_body: Value = response
+            .text()
+            .ok()
+            .and_then(|text| serde_json::from_str(text).ok())
+            .ok_or_else(|| {
+                ChatError::Malformed(format!("{url} returned a body that is not JSON"))
+            })?;
+        let fields = anthropic_thinking(think, request.max_tokens, &model_body)
+            .map_err(ChatError::Thinking)?;
+        if let Some(body) = body.as_object_mut() {
+            for (key, value) in fields {
+                body.entry(key).or_insert(value);
+            }
+        }
+        Ok(())
     }
 
     /// The context window of `model`, in tokens, from the provider.

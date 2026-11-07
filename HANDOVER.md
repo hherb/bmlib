@@ -1,30 +1,40 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PR is on `fix/705-anthropic-sampling`**; PRs #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is on `fix/707-anthropic-adaptive-thinking`**; PRs #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709 and this session's._
 
-## This session: Anthropic is sent no sampling parameters (#705)
+## This session: Anthropic thinking takes the shape the model reports (#707)
 
-Branch `fix/705-anthropic-sampling`, from `main` after PR #704. **The
-maintainer's choice: never send them**, both languages. Checked first (the
-`claude-api` skill): anthropic ≥ 2.0.0 sends API version `2026-10-21`, which
-refuses `temperature`/`top_p`/`top_k` on every model, the default included, so
-`extra_body` is no way round it; 1.x already dropped the keywords; and Claude
-Opus 4.7+ refuse any of them on `2023-06-01`, so bmlib's default `0.7` was a
-400 on every current Opus in Python even on 0.x and in Rust (which sends
-`2023-06-01`). The parameters stay in the signatures; `_request_kwargs` lost
-its `temperature` argument. `TestAnthropicSendsNoSamplingParameters` drives the
-installed SDK over a mock transport (it and #704's `test_anthropic_chat`, no
-longer xfailed, fail on `main`'s provider). Older models (4.6 and earlier) lose
-a lowered temperature. **Filed: #707** (`think=` sends `budget_tokens`, which
-every current Claude model refuses: a model-family decision, both languages,
-now the most urgent LLM item) and **#708** (`chat_json`'s temperature-0
-no-retry rule assumes greedy sampling, which Anthropic no longer does).
+Branch `fix/707-anthropic-adaptive-thinking`. **The maintainer's choices**:
+read the Models API's `capabilities` (not a name rule), and refuse an `int`
+budget on an adaptive-only model. Python's `resolve_thinking(think,
+max_tokens, model_body)` and Rust's `anthropic_thinking` read
+`capabilities.thinking.types.{adaptive,enabled}` and
+`capabilities.effort.<level>`: adaptive (+ `output_config.effort`) where
+reported, a budget only to a model reporting budgets (`int` on Opus/Sonnet
+4.6 is still a budget), every refusal before the chat
+(`ThinkingRefusedError(ValueError).reason` / `ChatError::Thinking`). Shared
+fixture `tests/fixtures/anthropic_thinking.json`; its model bodies follow
+Anthropic's docs and were **not probed live** (no key here). Python memoises
+the lookup per model per provider and sends the effort through `extra_body`
+(`create()` takes `output_config` only from about anthropic 0.80; the floor is
+0.41); Rust looks up on every thinking call (`LlmClient` has public fields,
+so a cache would be breaking) and `chat_body` no longer carries `thinking`.
+**Open from it**: #708 (chat_json's temperature-0 no-retry rule) still stands;
+`display: "summarized"` is not sent, so the current models' thinking text
+comes back empty (`LLMResponse.thinking` is `None` on Opus 4.7+ by default):
+**#710**, a decision.
+
+## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
+
+The maintainer's choice: never send them, both languages (API version
+`2026-10-21` and Claude Opus 4.7+ refuse them). Filed #707 (this session)
+and #708.
 
 ## Earlier, 2026-11-07: a non-streamed chat waits for its answer as a stream does (#702, PR #706, merged)
 
@@ -268,8 +278,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,674 passing + 14 skipped with the PostgreSQL DSN** on
-  `fix/705-anthropic-sampling` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,624 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,556 passing + 165 skipped without the PostgreSQL DSN** on
+  `fix/707-anthropic-adaptive-thinking` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,658 with `cargo test --workspace --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -298,7 +308,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**120 open once #705 closes** (#707 and #708, filed from #705, are `think=`'s `budget_tokens` and `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**120 open once #707 closes** (#710, filed from #707, is the thinking `display` default; #708, filed from #705, is `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-08); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

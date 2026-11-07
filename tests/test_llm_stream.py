@@ -199,6 +199,11 @@ class TestAnthropicProvider:
     def test_streams_the_request_chat_would_send(self):
         stream = _FakeStream(_events("anthropic/thinking-then-text"))
         provider = self._provider(stream)
+        # A model taking a budget (#707: the shape comes from its capabilities).
+        provider._client.models.retrieve.return_value = {
+            "id": "claude-x",
+            "capabilities": {"thinking": {"types": {"enabled": {"supported": True}}}},
+        }
         seen: list[StreamDelta] = []
         response = provider.chat_stream(
             [LLMMessage(role="system", content="Be brief."), *MESSAGES],

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -2402,6 +2403,43 @@ class TestAnthropicSendsNoSamplingParameters:
         assert "temperature" not in bodies[0]
         assert "top_p" not in bodies[0]
         assert bodies[0]["max_tokens"] == 4096
+
+    def test_thinking_reaches_the_wire_as_the_model_reports(self):
+        # #707: GET /v1/models/{id} first, then adaptive thinking and the effort
+        # in the body, through the installed SDK (the effort rides extra_body).
+        anthropic = pytest.importorskip("anthropic")
+        httpx = _sdk_httpx("anthropic")
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        model_body = json.loads(
+            (Path(__file__).parent / "fixtures" / "anthropic_thinking.json").read_text()
+        )["models"]["adaptive-only"]
+        seen: list[tuple[str, str, dict | None]] = []
+
+        def handler(request):
+            body = json.loads(request.content) if request.content else None
+            seen.append((request.method, request.url.path, body))
+            if request.method == "GET":
+                return httpx.Response(200, json={**model_body, "type": "model"})
+            return httpx.Response(200, json=self._OK)
+
+        provider = AnthropicProvider(api_key="k")
+        provider._client = anthropic.Anthropic(
+            api_key="k",
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+            max_retries=0,
+        )
+        provider.chat(
+            [LLMMessage(role="user", content="hi")], model="claude-opus-5-5", think="xhigh"
+        )
+        assert [(m, p) for m, p, _ in seen] == [
+            ("GET", "/v1/models/claude-opus-5-5"),
+            ("POST", "/v1/messages"),
+        ]
+        sent = seen[1][2]
+        assert sent["thinking"] == {"type": "adaptive"}
+        assert sent["output_config"] == {"effort": "xhigh"}
+        assert "budget_tokens" not in json.dumps(sent)
 
 
 class TestABodyNestedTooDeeplyIsTheServers:

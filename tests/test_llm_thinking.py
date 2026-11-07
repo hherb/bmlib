@@ -16,6 +16,8 @@ use mocked SDK clients — no network access.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -154,7 +156,16 @@ class TestOllamaThinking:
 # ---------------------------------------------------------------------------
 
 
-def _anthropic_provider(blocks=None, stop_reason="end_turn"):
+_THINKING_FIXTURE = json.loads(
+    (Path(__file__).parent / "fixtures" / "anthropic_thinking.json").read_text()
+)
+
+
+def _anthropic_provider(blocks=None, stop_reason="end_turn", model_body="budget-only"):
+    """A provider over a mocked client whose ``models.retrieve`` answers *model_body*.
+
+    *model_body* names a body in ``anthropic_thinking.json`` (#707).
+    """
     from bmlib.llm.providers.anthropic import AnthropicProvider
 
     provider = AnthropicProvider(api_key="test-key")
@@ -165,6 +176,7 @@ def _anthropic_provider(blocks=None, stop_reason="end_turn"):
     )
     mock_client = MagicMock()
     mock_client.messages.create.return_value = response
+    mock_client.models.retrieve.return_value = _THINKING_FIXTURE["models"][model_body]
     provider._client = mock_client
     return provider
 
@@ -173,59 +185,83 @@ def _anthropic_request(provider):
     return provider._client.messages.create.call_args.kwargs
 
 
+_Q = [LLMMessage(role="user", content="q")]
+
+
 class TestAnthropicThinkingRequest:
-    def test_think_true_enables_thinking(self):
+    """The request shape comes from the model's own capabilities (#707).
+
+    The rule itself is the shared fixture's (``test_anthropic_thinking_contract.py``);
+    these pin what the provider does with it.
+    """
+
+    def test_budget_only_model_gets_a_budget(self):
         provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], max_tokens=32_000, think=True)
+        provider.chat(_Q, model="claude-haiku-4-5", max_tokens=32_000, think=True)
         req = _anthropic_request(provider)
         assert req["thinking"] == {"type": "enabled", "budget_tokens": 8192}
+        assert "extra_body" not in req
+        provider._client.models.retrieve.assert_called_once_with("claude-haiku-4-5")
 
-    def test_think_int_sets_budget(self):
-        provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], max_tokens=32_000, think=4096)
+    def test_adaptive_model_gets_adaptive_and_effort(self):
+        provider = _anthropic_provider(model_body="adaptive-only")
+        provider.chat(_Q, model="claude-opus-5-5", max_tokens=8000, think="high")
         req = _anthropic_request(provider)
-        assert req["thinking"]["budget_tokens"] == 4096
+        assert req["thinking"] == {"type": "adaptive"}
+        # Through extra_body: create() takes output_config only from SDK ~0.80.
+        assert req["extra_body"] == {"output_config": {"effort": "high"}}
+        assert "output_config" not in req
 
-    def test_effort_levels_map_to_budgets(self):
-        for level, budget in (("low", 2048), ("medium", 8192), ("high", 16384)):
+    def test_adaptive_true_sends_no_effort(self):
+        provider = _anthropic_provider(model_body="adaptive-only")
+        provider.chat(_Q, model="claude-opus-5-5", think=True)
+        req = _anthropic_request(provider)
+        assert req["thinking"] == {"type": "adaptive"}
+        assert "extra_body" not in req
+
+    def test_a_refusal_is_raised_before_the_chat_is_sent(self):
+        from bmlib.llm.providers.anthropic import ThinkingRefusedError
+
+        provider = _anthropic_provider(model_body="adaptive-only")
+        with pytest.raises(ThinkingRefusedError, match="takes no thinking budget") as raised:
+            provider.chat(_Q, model="claude-opus-5-5", max_tokens=16_000, think=4096)
+        assert raised.value.reason == "budget-not-supported"
+        assert isinstance(raised.value, ValueError)
+        provider._client.messages.create.assert_not_called()
+
+    def test_the_lookup_is_made_once_per_model(self):
+        provider = _anthropic_provider()
+        for _ in range(3):
+            provider.chat(_Q, model="claude-haiku-4-5", max_tokens=8000, think=True)
+        provider.chat(_Q, model="claude-other", max_tokens=8000, think=True)
+        assert [c.args for c in provider._client.models.retrieve.call_args_list] == [
+            ("claude-haiku-4-5",),
+            ("claude-other",),
+        ]
+
+    def test_a_failed_lookup_raises_the_sdks_error_and_is_not_kept(self):
+        provider = _anthropic_provider()
+        provider._client.models.retrieve.side_effect = [RuntimeError("down"), {"id": "x"}]
+        with pytest.raises(RuntimeError, match="down"):
+            provider.chat(_Q, model="m", max_tokens=8000, think=True)
+        provider._client.messages.create.assert_not_called()
+        provider._client.models.retrieve.side_effect = None
+        provider._client.models.retrieve.return_value = _THINKING_FIXTURE["models"]["both"]
+        provider.chat(_Q, model="m", max_tokens=8000, think=True)
+        assert provider._client.models.retrieve.call_count == 2
+        assert _anthropic_request(provider)["thinking"] == {"type": "adaptive"}
+
+    def test_no_think_makes_no_lookup(self):
+        for think in (None, False, 0, ""):
             provider = _anthropic_provider()
-            provider.chat([LLMMessage(role="user", content="q")], max_tokens=64_000, think=level)
-            req = _anthropic_request(provider)
-            assert req["thinking"]["budget_tokens"] == budget, level
-
-    def test_budget_clamped_below_max_tokens(self):
-        provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], max_tokens=2000, think=50_000)
-        req = _anthropic_request(provider)
-        assert req["thinking"]["budget_tokens"] == 1999
-
-    def test_small_max_tokens_raises(self):
-        provider = _anthropic_provider()
-        with pytest.raises(ValueError, match="max_tokens"):
-            provider.chat([LLMMessage(role="user", content="q")], max_tokens=1024, think=True)
-
-    def test_unknown_effort_level_raises(self):
-        provider = _anthropic_provider()
-        with pytest.raises(ValueError, match="think"):
-            provider.chat([LLMMessage(role="user", content="q")], max_tokens=8000, think="turbo")
-
-    def test_negative_budget_raises(self):
-        # A negative budget is a caller bug — fail loudly instead of
-        # silently clamping it up to the API minimum.
-        provider = _anthropic_provider()
-        with pytest.raises(ValueError, match="egative"):
-            provider.chat([LLMMessage(role="user", content="q")], max_tokens=8000, think=-100)
+            provider.chat(_Q, think=think)
+            assert "thinking" not in _anthropic_request(provider)
+            provider._client.models.retrieve.assert_not_called()
 
     def test_thinking_sends_no_sampling_parameters(self):
         # Never sent (#705); thinking does not bring them back.
         provider = _anthropic_provider()
-        provider.chat(
-            [LLMMessage(role="user", content="q")],
-            temperature=0.2,
-            max_tokens=8000,
-            top_p=0.9,
-            think=True,
-        )
+        provider.chat(_Q, temperature=0.2, max_tokens=8000, top_p=0.9, think=True)
         req = _anthropic_request(provider)
         assert "temperature" not in req
         assert "top_p" not in req
@@ -233,18 +269,11 @@ class TestAnthropicThinkingRequest:
     def test_no_think_request_sends_no_sampling_either(self):
         # Never sent, thinking or not (#705).
         provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], temperature=0.2, top_p=0.9)
+        provider.chat(_Q, temperature=0.2, top_p=0.9)
         req = _anthropic_request(provider)
         assert "thinking" not in req
         assert "temperature" not in req
         assert "top_p" not in req
-
-    def test_think_false_sends_no_thinking(self):
-        provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], think=False)
-        req = _anthropic_request(provider)
-        assert "thinking" not in req
-        assert "temperature" not in req
 
 
 class TestAnthropicThinkingResponse:

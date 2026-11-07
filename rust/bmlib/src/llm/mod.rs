@@ -43,6 +43,7 @@ pub mod pricing;
 pub mod protocol;
 pub mod stream;
 pub mod text_utils;
+pub mod thinking;
 pub mod token_tracker;
 pub mod utils;
 
@@ -84,6 +85,10 @@ pub use text_utils::{
     chunk_text, combine_title_and_text, get_text_with_priority, process_with_map_reduce,
     process_with_rolling_summary, ChunkInfo, ChunkerError, TextChunk, TextChunker,
     DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_MIN_CHUNK_SIZE,
+};
+pub use thinking::{
+    anthropic_thinking, think_is_on, ThinkingRefusal, DEFAULT_THINKING_BUDGET, THINKING_BUDGET_MIN,
+    THINKING_EFFORT_BUDGETS,
 };
 pub use token_tracker::{
     reset_token_tracker, with_token_tracker, ModelUsage, TokenTracker, TokenUsageRecord,

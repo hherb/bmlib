@@ -813,7 +813,7 @@ print(response.content)   # the final answer, clean
 | Value | Meaning |
 |-------|---------|
 | `True` / `False` | Enable / explicitly disable thinking. |
-| `"low"` / `"medium"` / `"high"` | Effort level. |
+| `"low"` / `"medium"` / `"high"` | Effort level (Anthropic also takes `"xhigh"` and `"max"` where the model reports them). |
 | `int` | Thinking token budget. |
 
 ### Per-provider mapping
@@ -821,7 +821,7 @@ print(response.content)   # the final answer, clean
 | Provider | Request side | Response side (`LLMResponse.thinking`) |
 |----------|--------------|------------------------------------------|
 | Ollama | `think` forwarded natively (`bool` or effort string; `int` degrades to on/off by truthiness). `think=False` reaches the server, for models that think by default. | `message.thinking` |
-| Anthropic | Truthy `think` enables extended thinking with `budget_tokens`: `int` sets the budget, effort levels map to 2048/8192/16384, `True` = 8192. The budget is clamped to `[1024, max_tokens - 1]`; `max_tokens <= 1024` or a negative budget raises `ValueError`. `temperature` / `top_p` are never sent, thinking or not *(unreleased)*. | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
+| Anthropic | The shape is read off the model's own `models.retrieve` (`GET /v1/models/{id}`), once per model per provider, before the chat is sent *(unreleased, #707)*. A model reporting **adaptive** thinking (Claude Opus 4.6+, Sonnet 4.6+, Haiku 5.5, Fable) is sent `thinking: {"type": "adaptive"}`: `True` at the model's default effort, an effort level the model reports as `output_config.effort`, and an `int` budget is refused. A model reporting only **budgets** (Haiku 4.5 and older) is sent `budget_tokens`: `int` sets it, `"low"`/`"medium"`/`"high"` map to 2048/8192/16384, `True` = 8192, clamped to `[1024, max_tokens - 1]`. An `int` on a model reporting both (Opus 4.6, Sonnet 4.6) is a budget. Every refusal is `ThinkingRefusedError` (a `ValueError`, its `reason` naming the rule), raised before the chat; a failed lookup raises the SDK's error. `temperature` / `top_p` are never sent, thinking or not *(unreleased)*. | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
 | OpenAI / DeepSeek / Mistral / Gemini (OpenAI-compatible) | An effort **string** on a reasoning model (e.g. OpenAI o-series) is sent as `reasoning_effort`. Other values are not forwarded (unknown parameters make many servers return 400) — use `extra_body` for server-specific knobs, e.g. `extra_body={"chat_template_kwargs": {"enable_thinking": True}}` for vLLM. | `message.reasoning_content` (DeepSeek, vLLM, SGLang) or `message.reasoning` (OpenRouter-style). Fallback: a leading `<think>…</think>` block is split out of `content` — only when the caller passed a truthy `think`. |
 
 Whether a given model actually thinks — or rejects the parameter — is between
@@ -831,7 +831,7 @@ example, errors when `think=True` is sent to a model without thinking support.
 Two provider-specific caveats:
 
 - **Effort strings are only validated by Anthropic.** Anthropic raises
-  `ValueError` for an effort level outside `"low"`/`"medium"`/`"high"`;
+  `ThinkingRefusedError` for an effort level the model does not report;
   Ollama and the OpenAI-compatible providers forward the string verbatim.
   That lets you use server-specific levels (e.g. OpenAI's `"minimal"`), but
   an invalid value surfaces as a server-side error rather than a local one.

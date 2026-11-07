@@ -1,0 +1,133 @@
+{
+  "description": "How a truthy `think` becomes Anthropic request fields (#707), read off the model's own `GET /v1/models/{id}` body. Python's `bmlib.llm.providers.anthropic.resolve_thinking` and Rust's `bmlib::llm::anthropic_thinking` are both held to it. `think` is Python's value; Rust carries it as text (a bool as `true`/`false`, a number as its digits, a string as itself). The model bodies follow the shape the Models API documents (`capabilities.thinking.types.{adaptive,enabled}.supported`, `capabilities.effort.<level>.supported`) and are written from Anthropic's documentation of each model family, not recorded live. Rules: adaptive wins for `true` and an effort string where the model reports it; an int is a budget and needs `enabled`; an effort level must be one the model reports; a budget is clamped to [1024, max_tokens - 1] and needs max_tokens > 1024. A refusal is raised before the chat request is sent.",
+  "models": {
+    "adaptive-only": {
+      "id": "claude-opus-5-5",
+      "max_input_tokens": 1000000,
+      "max_tokens": 128000,
+      "capabilities": {
+        "thinking": {"supported": true, "types": {"enabled": {"supported": false}, "adaptive": {"supported": true}}},
+        "effort": {
+          "supported": true,
+          "low": {"supported": true},
+          "medium": {"supported": true},
+          "high": {"supported": true},
+          "xhigh": {"supported": true},
+          "max": {"supported": true}
+        }
+      }
+    },
+    "both": {
+      "id": "claude-opus-4-6",
+      "max_input_tokens": 1000000,
+      "max_tokens": 128000,
+      "capabilities": {
+        "thinking": {"supported": true, "types": {"enabled": {"supported": true}, "adaptive": {"supported": true}}},
+        "effort": {
+          "supported": true,
+          "low": {"supported": true},
+          "medium": {"supported": true},
+          "high": {"supported": true},
+          "xhigh": {"supported": false},
+          "max": {"supported": true}
+        }
+      }
+    },
+    "budget-only": {
+      "id": "claude-haiku-4-5",
+      "max_input_tokens": 200000,
+      "max_tokens": 64000,
+      "capabilities": {
+        "thinking": {"supported": true, "types": {"enabled": {"supported": true}, "adaptive": {"supported": false}}},
+        "effort": {
+          "supported": false,
+          "low": {"supported": false},
+          "medium": {"supported": false},
+          "high": {"supported": false},
+          "xhigh": {"supported": false},
+          "max": {"supported": false}
+        }
+      }
+    },
+    "no-thinking": {
+      "id": "claude-3-5-haiku-20241022",
+      "capabilities": {
+        "thinking": {"supported": false, "types": {"enabled": {"supported": false}, "adaptive": {"supported": false}}},
+        "effort": {"supported": false}
+      }
+    },
+    "no-capabilities": {"id": "claude-proxy", "max_tokens": 8192},
+    "types-not-an-object": {"id": "claude-odd", "capabilities": {"thinking": {"supported": true, "types": ["adaptive"]}}},
+    "leaf-not-a-bool": {
+      "id": "claude-odd-leaf",
+      "capabilities": {
+        "thinking": {"supported": true, "types": {"enabled": {"supported": "true"}, "adaptive": {"supported": 1}}}
+      }
+    }
+  },
+  "off": [
+    {"name": "false", "think": false},
+    {"name": "zero", "think": 0},
+    {"name": "null", "think": null},
+    {"name": "empty string", "think": ""}
+  ],
+  "cases": [
+    {"name": "true on an adaptive-only model", "model": "adaptive-only", "think": true, "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
+    {"name": "an effort level on an adaptive-only model", "model": "adaptive-only", "think": "high", "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}}},
+    {"name": "an effort level is folded to lower case", "model": "adaptive-only", "think": "XHigh", "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}}}},
+    {"name": "max effort on an adaptive-only model", "model": "adaptive-only", "think": "max", "max_tokens": 512,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "max"}}}},
+    {"name": "an int budget on an adaptive-only model is refused", "model": "adaptive-only", "think": 4096, "max_tokens": 16000,
+     "expect": {"refusal": "budget-not-supported"}},
+    {"name": "an unknown effort level is refused", "model": "adaptive-only", "think": "extreme", "max_tokens": 4096,
+     "expect": {"refusal": "effort-not-supported"}},
+
+    {"name": "true on a model taking both is adaptive", "model": "both", "think": true, "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
+    {"name": "an effort level on a model taking both is adaptive", "model": "both", "think": "low", "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}}},
+    {"name": "an effort level the model does not report is refused", "model": "both", "think": "xhigh", "max_tokens": 4096,
+     "expect": {"refusal": "effort-not-supported"}},
+    {"name": "an int budget on a model taking both is a budget", "model": "both", "think": 4096, "max_tokens": 16000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 4096}}}},
+    {"name": "a budget is clamped below max_tokens", "model": "both", "think": 50000, "max_tokens": 2000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 1999}}}},
+    {"name": "a budget is raised to the API minimum", "model": "both", "think": 100, "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 1024}}}},
+    {"name": "a negative budget is refused", "model": "both", "think": -5, "max_tokens": 4096,
+     "expect": {"refusal": "negative-budget"}},
+    {"name": "a budget with no room under max_tokens is refused", "model": "both", "think": 2048, "max_tokens": 1024,
+     "expect": {"refusal": "max-tokens-too-small"}},
+
+    {"name": "true on a budget-only model is the default budget", "model": "budget-only", "think": true, "max_tokens": 16000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 8192}}}},
+    {"name": "true on a budget-only model is clamped below max_tokens", "model": "budget-only", "think": true, "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 4095}}}},
+    {"name": "low on a budget-only model is its preset budget", "model": "budget-only", "think": "low", "max_tokens": 16000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 2048}}}},
+    {"name": "medium on a budget-only model is its preset budget", "model": "budget-only", "think": "medium", "max_tokens": 16000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 8192}}}},
+    {"name": "high on a budget-only model is its preset budget", "model": "budget-only", "think": "HIGH", "max_tokens": 32000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 16384}}}},
+    {"name": "xhigh has no preset budget", "model": "budget-only", "think": "xhigh", "max_tokens": 32000,
+     "expect": {"refusal": "effort-not-supported"}},
+    {"name": "an int budget on a budget-only model", "model": "budget-only", "think": 3000, "max_tokens": 16000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 3000}}}},
+    {"name": "true with no room for the minimum budget is refused", "model": "budget-only", "think": true, "max_tokens": 1024,
+     "expect": {"refusal": "max-tokens-too-small"}},
+
+    {"name": "a model reporting no thinking is refused", "model": "no-thinking", "think": true, "max_tokens": 4096,
+     "expect": {"refusal": "not-supported"}},
+    {"name": "a model reporting no thinking refuses a budget too", "model": "no-thinking", "think": 2048, "max_tokens": 4096,
+     "expect": {"refusal": "not-supported"}},
+    {"name": "a body with no capabilities is refused, not guessed", "model": "no-capabilities", "think": true, "max_tokens": 4096,
+     "expect": {"refusal": "no-capabilities"}},
+    {"name": "thinking types that are not an object are refused", "model": "types-not-an-object", "think": "high", "max_tokens": 4096,
+     "expect": {"refusal": "no-capabilities"}},
+    {"name": "a leaf that is not true is not support", "model": "leaf-not-a-bool", "think": true, "max_tokens": 4096,
+     "expect": {"refusal": "not-supported"}}
+  ]
+}
