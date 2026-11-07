@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from bmlib.llm.context_window import as_dict, fetch_context_window
+from bmlib.llm.context_window import ModelLimits, as_dict, fetch_model_limits
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
 
@@ -74,8 +74,8 @@ class MistralProvider(OpenAICompatibleProvider):
         ),
     ]
 
-    def context_window(self, model: str) -> int | None:
-        """The model's ``max_context_length``, from ``GET /models/{id}``.
+    def model_limits(self, model: str) -> ModelLimits:
+        """The model's ``max_context_length``, from ``GET /models/{id}`` (no output limit).
 
         The openai SDK retries transient failures itself, so no backoff here.
 
@@ -86,7 +86,7 @@ class MistralProvider(OpenAICompatibleProvider):
         import openai
 
         client = self._get_client()
-        return fetch_context_window(
+        return fetch_model_limits(
             self.PROVIDER_NAME,
             model,
             lambda: as_dict(client.models.retrieve(model)),

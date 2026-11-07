@@ -40,6 +40,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from bmlib.llm.context_window import ModelLimits
 from bmlib.llm.data_types import (
     BatchEmbeddingResponse,
     EmbeddingResponse,
@@ -522,6 +523,19 @@ class LLMClient:
             provider, model = model.split(":", 1)
         provider = (provider or self.default_provider).lower()
         return self._get_provider(provider).context_window(model)
+
+    def model_limits(self, model: str, provider: str | None = None) -> ModelLimits:
+        """Return *model*'s context window and largest reply, from one lookup.
+
+        Routes and raises as :meth:`context_window`. ``max_output`` is the
+        most a request's ``max_tokens`` may ask for: Anthropic, Gemini and
+        DeepSeek state it; Mistral, Ollama and OpenAI (answered from the
+        table) do not, and give ``None``. Rust's ``LlmClient::model_limits``.
+        """
+        if provider is None and ":" in model:
+            provider, model = model.split(":", 1)
+        provider = (provider or self.default_provider).lower()
+        return self._get_provider(provider).model_limits(model)
 
     def get_provider_info(self, provider: str) -> dict[str, object]:
         """Return a dict of provider metadata (name, URLs, capabilities).

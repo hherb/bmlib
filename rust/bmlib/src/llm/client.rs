@@ -25,7 +25,9 @@
 //! `"deepseek:deepseek-chat"` keeps working, and the same defaults, so a caller
 //! who names no model gets what they got before.
 
-use crate::llm::context_window::{known_context_window, read_context_window, ContextWindowError};
+use crate::llm::context_window::{
+    known_context_window, read_model_limits, ContextWindowError, ModelLimits,
+};
 use crate::llm::data_types::{LLMMessage, LLMResponse, LLMToolDefinition};
 use crate::llm::model_listing::{
     read_model_listing, ListModelsError, ANTHROPIC_LISTING_PAGE_SIZE, MAX_LISTING_PAGES,
@@ -1195,7 +1197,7 @@ impl LlmClient {
     /// answer **together**: a prompt plus the room left for the reply must fit
     /// inside it. OpenAI publishes no metadata endpoint, so it answers from
     /// [`known_context_window`] with no key and no request. Every other
-    /// provider is asked, and the answer is read by [`read_context_window`].
+    /// provider is asked, and the answer is read by [`crate::llm::read_context_window`].
     /// A transport failure or a [`RETRYABLE_STATUSES`] status is retried like
     /// opening a stream; a 404 is [`ContextWindowError::NoSuchModel`] at once,
     /// except from DeepSeek (its list names no model) and from Ollama unless
@@ -1217,6 +1219,22 @@ impl LlmClient {
     /// provider does not have, a transport failure or other refused status, or
     /// a body that is not JSON ([`ContextWindowError::Malformed`]).
     pub fn context_window(&self, model: &str) -> Result<Option<u64>, ContextWindowError> {
+        self.model_limits(model).map(|limits| limits.window)
+    }
+
+    /// The context window and the largest reply of `model`, from one request
+    /// to the provider (see [`Self::context_window`] for the routing, the
+    /// retries and the errors, which are the same).
+    ///
+    /// `max_output` is the most a request's `max_tokens` may ask for, read by
+    /// [`crate::llm::read_output_limit`]: Anthropic, Gemini and DeepSeek state
+    /// it; Mistral, Ollama and OpenAI (answered from the table) do not, and
+    /// give `None`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::context_window`].
+    pub fn model_limits(&self, model: &str) -> Result<ModelLimits, ContextWindowError> {
         let request = ChatRequest::new(Vec::new()).with_model(model);
         // Route once with a stand-in key, only to learn the provider: OpenAI
         // needs no key here, so a missing one must not stop it.
@@ -1228,7 +1246,10 @@ impl LlmClient {
         )
         .map_err(context_window_routing_error)?;
         if routed.provider == "openai" {
-            return Ok(known_context_window(&routed.provider, &routed.model));
+            return Ok(ModelLimits {
+                window: known_context_window(&routed.provider, &routed.model),
+                max_output: None,
+            });
         }
         let target = resolve_target(
             &request,
@@ -1271,7 +1292,7 @@ impl LlmClient {
         let body: Value = serde_json::from_str(&text).map_err(|e| {
             ContextWindowError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
         })?;
-        read_context_window(&target.provider, &target.model, &body)
+        read_model_limits(&target.provider, &target.model, &body)
     }
 
     /// The models `provider` offers, sorted and without duplicates (#680).

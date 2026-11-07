@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from bmlib.llm.utils import http_status
@@ -64,6 +65,20 @@ _FIELD_BY_PROVIDER: Mapping[str, str] = {
 
 #: DeepSeek lists every model in one body; this is the per-model field.
 DEEPSEEK_WINDOW_FIELD = "context_window"
+
+#: Providers whose metadata names the largest reply (the most a request's
+#: ``max_tokens`` may ask for), with the body field that holds it.
+_OUTPUT_FIELD_BY_PROVIDER: Mapping[str, str] = {
+    "anthropic": "max_tokens",
+    "gemini": "outputTokenLimit",
+}
+
+#: DeepSeek's per-model field for the largest reply.
+DEEPSEEK_OUTPUT_FIELD = "max_output_tokens"
+
+#: Providers whose metadata states no output limit: reading one is unknown,
+#: not an error.
+_NO_OUTPUT_FIELD = frozenset({"mistral", "ollama"})
 
 #: Largest count Rust's ``u64`` holds; Python refuses more so both agree.
 MAX_WINDOW = 2**64 - 1
@@ -105,41 +120,62 @@ class NoSuchModelError(ContextWindowError):
     """The provider has no model with this name (as opposed to: no window)."""
 
 
-def _as_count(provider: str, model: str, what: str, value: Any) -> int | None:
+def _as_count(
+    provider: str, model: str, what: str, value: Any, unknown: str = "window"
+) -> int | None:
     """Return ``value`` if it is a positive integer count, else ``None``.
 
     A bool, float, string, zero, negative or beyond-:data:`MAX_WINDOW` number
     is refused (WARNING, quoting the value): a wrong window silently truncates
-    or overflows a prompt, so "unknown" is the honest answer.
+    or overflows a prompt, so "unknown" is the honest answer. ``unknown``
+    names the figure in the message (``window`` or ``output limit``).
     """
     if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MAX_WINDOW:
         return value
     logger.warning(
-        "%s/%s: %s is %r, not a token count; window unknown", provider, model, what, value
+        "%s/%s: %s is %r, not a token count; %s unknown", provider, model, what, value, unknown
     )
     return None
 
 
-def _wrong_type(provider: str, model: str, what: str, value: Any) -> None:
+def _wrong_type(provider: str, model: str, what: str, value: Any, unknown: str = "window") -> None:
     """Log (WARNING) that ``what`` is not the JSON object it should be."""
     logger.warning(
-        "%s/%s: %s is %r, not a JSON object; window unknown", provider, model, what, value
+        "%s/%s: %s is %r, not a JSON object; %s unknown", provider, model, what, value, unknown
     )
 
 
-def _field(provider: str, model: str, obj: Any, name: str) -> int | None:
+def _field(provider: str, model: str, obj: Any, name: str, unknown: str = "window") -> int | None:
     """Read ``name`` from the object ``obj`` as a count.
 
     An absent field is unknown (INFO); a wrong-typed ``obj`` or a refused
-    value is unknown (WARNING).
+    value is unknown (WARNING). ``unknown`` names the figure in the message.
     """
     if not isinstance(obj, Mapping):
-        _wrong_type(provider, model, "metadata", obj)
+        _wrong_type(provider, model, "metadata", obj, unknown)
         return None
     if name not in obj:
-        logger.info("%s/%s: metadata has no %r; window unknown", provider, model, name)
+        logger.info("%s/%s: metadata has no %r; %s unknown", provider, model, name, unknown)
         return None
-    return _as_count(provider, model, repr(name), obj[name])
+    return _as_count(provider, model, repr(name), obj[name], unknown)
+
+
+def _deepseek_entry(provider: str, model: str, body: Any, unknown: str) -> Mapping[str, Any] | None:
+    """DeepSeek's list entry for ``model``; ``None`` when ``data`` is not a list.
+
+    Non-object entries are skipped; with duplicate ids the first wins.
+
+    Raises:
+        NoSuchModelError: the list has no entry for ``model``.
+    """
+    data = body.get("data") if isinstance(body, Mapping) else None
+    if not isinstance(data, list):
+        _wrong_type(provider, model, "data", data, unknown)
+        return None
+    entry = next((e for e in data if isinstance(e, Mapping) and e.get("id") == model), None)
+    if entry is None:
+        raise NoSuchModelError(f"deepseek has no model {model!r}", provider=provider, model=model)
+    return entry
 
 
 def read_context_window(provider: str, model: str, body: Any) -> int | None:
@@ -158,17 +194,8 @@ def read_context_window(provider: str, model: str, body: Any) -> int | None:
     if provider in _FIELD_BY_PROVIDER:
         return _field(provider, model, body, _FIELD_BY_PROVIDER[provider])
     if provider == "deepseek":
-        data = body.get("data") if isinstance(body, Mapping) else None
-        if not isinstance(data, list):
-            _wrong_type(provider, model, "data", data)
-            return None
-        # Non-object entries are skipped; with duplicate ids the first wins.
-        entry = next((e for e in data if isinstance(e, Mapping) and e.get("id") == model), None)
-        if entry is None:
-            raise NoSuchModelError(
-                f"deepseek has no model {model!r}", provider=provider, model=model
-            )
-        return _field(provider, model, entry, DEEPSEEK_WINDOW_FIELD)
+        entry = _deepseek_entry(provider, model, body, "window")
+        return None if entry is None else _field(provider, model, entry, DEEPSEEK_WINDOW_FIELD)
     if provider == "ollama":
         # ``modelinfo`` is the spelling the ollama client library exposes.
         candidates = (
@@ -189,6 +216,62 @@ def read_context_window(provider: str, model: str, body: Any) -> int | None:
             return None
         return _field(provider, model, info, arch + OLLAMA_WINDOW_KEY_SUFFIX)
     raise ValueError(f"{provider!r} has no model metadata to read a context window from")
+
+
+def read_output_limit(provider: str, model: str, body: Any) -> int | None:
+    """Read the largest reply ``model`` may give (tokens) out of its metadata.
+
+    That is the most a request's ``max_tokens`` may ask for; a request above
+    it is refused by the provider. ``body`` is what :func:`read_context_window`
+    takes. Anthropic states it as ``max_tokens``, Gemini as
+    ``outputTokenLimit``, DeepSeek's list as ``max_output_tokens``; Mistral and
+    Ollama state none, so they give ``None``. A value that is not a positive
+    count is ``None`` (WARNING), as for the window.
+
+    Raises:
+        NoSuchModelError: deepseek's list has no entry for ``model``.
+        ValueError: ``provider`` has no metadata to read.
+    """
+    unknown = "output limit"
+    if provider in _OUTPUT_FIELD_BY_PROVIDER:
+        return _field(provider, model, body, _OUTPUT_FIELD_BY_PROVIDER[provider], unknown)
+    if provider in _NO_OUTPUT_FIELD:
+        return None
+    if provider == "deepseek":
+        entry = _deepseek_entry(provider, model, body, unknown)
+        return (
+            None
+            if entry is None
+            else _field(provider, model, entry, DEEPSEEK_OUTPUT_FIELD, unknown)
+        )
+    raise ValueError(f"{provider!r} has no model metadata to read an output limit from")
+
+
+@dataclass(frozen=True)
+class ModelLimits:
+    """What a provider states about a model; either figure is ``None`` when unstated.
+
+    Attributes:
+        window: The context window in tokens, input and reply together (see
+            :func:`read_context_window`).
+        max_output: The largest reply in tokens, the most a request's
+            ``max_tokens`` may ask for (see :func:`read_output_limit`).
+    """
+
+    window: int | None = None
+    max_output: int | None = None
+
+
+def read_model_limits(provider: str, model: str, body: Any) -> ModelLimits:
+    """Read both of ``model``'s limits out of one metadata ``body``.
+
+    See :func:`read_context_window` and :func:`read_output_limit`; raises as
+    they do.
+    """
+    return ModelLimits(
+        window=read_context_window(provider, model, body),
+        max_output=read_output_limit(provider, model, body),
+    )
 
 
 def with_backoff(call: Callable[[], T], retry_on: tuple[type[BaseException], ...]) -> T:
@@ -236,6 +319,21 @@ def fetch_context_window(
 ) -> int | None:
     """Fetch a provider's metadata with ``fetch`` and read the window from it.
 
+    :func:`fetch_model_limits`'s ``window``; see there.
+    """
+    return fetch_model_limits(provider, model, fetch, not_found=not_found, retry_on=retry_on).window
+
+
+def fetch_model_limits(
+    provider: str,
+    model: str,
+    fetch: Callable[[], Any],
+    *,
+    not_found: tuple[type[BaseException], ...] = (),
+    retry_on: tuple[type[BaseException], ...] = (),
+) -> ModelLimits:
+    """Fetch a provider's metadata with ``fetch`` and read both limits from it.
+
     ``fetch`` returns the body ``read_context_window`` takes. It is retried
     (see :func:`with_backoff`) only on ``retry_on``. A ``not_found`` exception
     becomes :class:`NoSuchModelError`; any other failure, once retries are
@@ -262,4 +360,4 @@ def fetch_context_window(
             model=model,
             status=status,
         ) from exc
-    return read_context_window(provider, model, body)
+    return read_model_limits(provider, model, body)

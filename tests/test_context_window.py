@@ -34,9 +34,12 @@ from bmlib.llm.client import LLMClient
 from bmlib.llm.context_window import (
     KNOWN_CONTEXT_WINDOWS,
     ContextWindowError,
+    ModelLimits,
     NoSuchModelError,
     known_context_window,
     read_context_window,
+    read_model_limits,
+    read_output_limit,
 )
 from bmlib.llm.providers.anthropic import AnthropicProvider
 from bmlib.llm.providers.deepseek import DeepSeekProvider
@@ -72,6 +75,33 @@ def test_metadata_cases(case):
     else:
         want = None if expect.get("unknown") else expect["window"]
         assert read_context_window(*args) == want
+
+
+@pytest.mark.parametrize("case", FIXTURE["output_limits"]["cases"], ids=lambda c: c["name"])
+def test_output_limit_cases(case):
+    expect = case["expect"]
+    args = (case["provider"], case["model"], case["body"])
+    if expect.get("error") == "no_such_model":
+        for read in (read_output_limit, read_model_limits):
+            with pytest.raises(NoSuchModelError):
+                read(*args)
+        return
+    want = None if expect.get("unknown") else expect["max_output"]
+    assert read_output_limit(*args) == want
+    if "window" in expect:
+        assert read_model_limits(*args) == ModelLimits(window=expect["window"], max_output=want)
+
+
+def test_output_limit_of_a_provider_without_metadata_is_a_value_error():
+    with pytest.raises(ValueError):
+        read_output_limit("openai", "gpt-4o-mini", {})
+
+
+def test_refused_output_limit_logs_warning_naming_it(caplog):
+    with caplog.at_level(logging.WARNING, logger=cw.__name__):
+        assert read_output_limit("gemini", "g", {"outputTokenLimit": "8192"}) is None
+    assert "'8192'" in caplog.text
+    assert "output limit unknown" in caplog.text
 
 
 def test_provider_without_metadata_is_a_value_error():
@@ -152,6 +182,10 @@ class TestClientRouting:
         assert client.context_window("gpt-4o-mini", provider="openai") == 128_000
         assert client.context_window("gpt-4o-mini") == 128_000  # default provider
 
+    def test_openai_model_limits_state_no_output_limit(self):
+        client = _client_with(OpenAIProvider(api_key="k"))
+        assert client.model_limits("openai:gpt-4o-mini") == ModelLimits(window=128_000)
+
     def test_unknown_provider_propagates(self):
         with pytest.raises(ValueError, match="Unknown provider"):
             LLMClient().context_window("nosuchprovider:m")
@@ -219,6 +253,20 @@ class TestOpenAICompatible:
         ]
         p._client = SimpleNamespace(models=_Models(list_=listed))
         assert p.context_window("deepseek-chat") == 128_000
+
+    def test_deepseek_model_limits_from_one_list(self):
+        p = DeepSeekProvider(api_key="k")
+        listed = [
+            _Dumpable(
+                {"id": "deepseek-flash", "context_window": 1_048_576, "max_output_tokens": 393_216}
+            )
+        ]
+        p._client = SimpleNamespace(models=_Models(list_=listed))
+        client = _client_with(p)
+        assert client.model_limits("deepseek:deepseek-flash") == ModelLimits(
+            window=1_048_576, max_output=393_216
+        )
+        assert p.context_window("deepseek-flash") == 1_048_576
 
     def test_deepseek_404_is_a_transport_error(self):
         import openai

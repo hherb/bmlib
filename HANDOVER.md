@@ -1,15 +1,29 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-07 (**this session's PR is on `fix/688-rust-log-facade`**, for #688 and #685; PRs #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
-_Last updated: 2026-11-07 (**this session's PR is on `fix/617-openai-compat-choices`**, for #617's Ollama half; PRs #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-07 (**this session's PR is on `feat/output-limit`**, a model's output limit; PRs #693 (#688), #692 (#617), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690, #691 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693 and this session's._
 
-## This session: Rust warnings are `log` records (#688, #685)
+## This session: a model's output limit beside its window
+
+Branch `feat/output-limit`, from StudyAnalyzer's phase 2b click-through:
+`deepseek-flash` (DeepSeek-V4.1-Flash) thinks by default, its reasoning
+counts against `max_tokens`, and a PICO run's 4096 was spent before the JSON
+ended. StudyAnalyzer will size `max_tokens` from the window, kept under the
+model's own output limit (a request above it is a 400), which only the
+provider states. `read_output_limit` / `read_model_limits` /
+`model_limits` read it from the metadata the window already comes from
+(Anthropic `max_tokens`, Gemini `outputTokenLimit`, DeepSeek
+`max_output_tokens`, seen live; Mistral and Ollama none, OpenAI from no
+table). Rust and Python on par; fixture section `output_limits`. Gemini's
+and Anthropic's fields are from their API docs and SDK types, not a live
+call.
+
+## Earlier, 2026-11-07: Rust warnings are `log` records (#688, #685; PR #693, merged)
 
 Branch `fix/688-rust-log-facade`, filed by StudyAnalyzer PR
 hherb/StudyAnalyzer#92's review; the maintainer chose option (a), the `log`
@@ -34,7 +48,7 @@ The 2026-09-06 403 (#194) no longer reproduces (the default `UreqClient`
 served 6 of 6 on 2026-11-07), so no code change: the docs give both dates,
 and `clinicaltrials_gov_answers_a_default_client` in `tests/live_network.rs`
 (`BMLIB_LIVE_TESTS=1`, no CI job) guards the edge.
-## This session: an Ollama 200 that is not a JSON object is the server's failure (#617)
+## Earlier, 2026-11-07: an Ollama 200 that is not a JSON object is the server's failure (#617; PR #692, merged)
 
 Branch `fix/617-openai-compat-choices` (named before the scope moved to the
 Ollama half; the OpenAI half was PR #620). The maintainer chose to fix the half left

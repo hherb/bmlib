@@ -9,6 +9,17 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added
+
+- **A model's output limit beside its window**: `read_output_limit`,
+  `ModelLimits { window, max_output }`, `read_model_limits` and
+  `LlmClient::model_limits(model)`, which reads both from the one request
+  `context_window` makes (`context_window` is now its `window`). Anthropic's
+  `max_tokens`, Gemini's `outputTokenLimit` and DeepSeek's `max_output_tokens`
+  are read; Mistral, Ollama and OpenAI (answered from the table) give `None`.
+  As Python's; the contract is `output_limits` in
+  `tests/fixtures/context_window.json`.
+
 ### Changed
 
 - **Warnings are `log` records, not stderr lines** (#688, and #685's option

@@ -20,8 +20,9 @@ from __future__ import annotations
 
 from bmlib.llm.context_window import (
     ContextWindowError,
+    ModelLimits,
     NoSuchModelError,
-    fetch_context_window,
+    fetch_model_limits,
 )
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
@@ -97,8 +98,8 @@ class GeminiProvider(OpenAICompatibleProvider):
         ),
     ]
 
-    def context_window(self, model: str) -> int | None:
-        """The model's ``inputTokenLimit``, from the native ``models.get``.
+    def model_limits(self, model: str) -> ModelLimits:
+        """The model's ``inputTokenLimit`` and ``outputTokenLimit``, from the native ``models.get``.
 
         The OpenAI-compatible endpoint lists no windows, so this asks the
         native API (the base URL without its ``/openai``). A 404 is
@@ -136,7 +137,7 @@ class GeminiProvider(OpenAICompatibleProvider):
                 )
             return resp.json()
 
-        return fetch_context_window(
+        return fetch_model_limits(
             self.PROVIDER_NAME,
             model,
             fetch,
