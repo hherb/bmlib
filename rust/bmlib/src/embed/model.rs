@@ -128,7 +128,7 @@ pub const ARCTIC_EMBED_L_V2_Q8_0: ModelFile = ModelFile {
 const _: () = assert!(ARCTIC_EMBED_L_V2_F16.check().is_ok());
 const _: () = assert!(ARCTIC_EMBED_L_V2_Q8_0.check().is_ok());
 
-#[cfg(feature = "embed")]
+#[cfg(feature = "model-download")]
 mod verified {
     use super::ModelFile;
     use sha2::{Digest, Sha256};
@@ -224,16 +224,21 @@ mod verified {
     }
 
     /// Compare a measured size and digest with the pinned ones, size first.
-    pub(super) fn check(model: &ModelFile, size: u64, sha256: &str) -> Result<(), ModelError> {
-        if size != model.size {
+    pub(super) fn check(
+        expected_size: u64,
+        expected_sha256: &str,
+        size: u64,
+        sha256: &str,
+    ) -> Result<(), ModelError> {
+        if size != expected_size {
             return Err(ModelError::SizeMismatch {
-                expected: model.size,
+                expected: expected_size,
                 actual: size,
             });
         }
-        if sha256 != model.sha256 {
+        if sha256 != expected_sha256 {
             return Err(ModelError::ChecksumMismatch {
-                expected: model.sha256.to_string(),
+                expected: expected_sha256.to_string(),
                 actual: sha256.to_string(),
             });
         }
@@ -247,11 +252,16 @@ mod verified {
     /// [`ModelError::SizeMismatch`] or [`ModelError::ChecksumMismatch`] on a
     /// mismatch; [`ModelError::Io`] if the file cannot be read.
     pub fn verify_model(path: &Path, model: &ModelFile) -> Result<(), ModelError> {
-        let size = std::fs::metadata(path)?.len();
-        if size != model.size {
+        verify_file(path, model.size, model.sha256)
+    }
+
+    /// [`verify_model`] for a bare size and digest.
+    pub(super) fn verify_file(path: &Path, size: u64, sha256: &str) -> Result<(), ModelError> {
+        let found = std::fs::metadata(path)?.len();
+        if found != size {
             return Err(ModelError::SizeMismatch {
-                expected: model.size,
-                actual: size,
+                expected: size,
+                actual: found,
             });
         }
         let mut file = File::open(path)?;
@@ -264,17 +274,17 @@ mod verified {
             }
             hasher.update(&block[..n]);
         }
-        check(model, size, &format!("{:x}", hasher.finalize()))
+        check(size, sha256, found, &format!("{:x}", hasher.finalize()))
     }
 }
 
-#[cfg(feature = "embed")]
+#[cfg(feature = "model-download")]
 pub use verified::{verify_model, ModelError};
 
-#[cfg(all(feature = "embed", feature = "http-ureq"))]
+#[cfg(all(feature = "model-download", feature = "http-ureq"))]
 mod download {
-    use super::verified::{check, BLOCK_SIZE};
-    use super::{verify_model, ModelError, ModelFile};
+    use super::verified::{check, verify_file, BLOCK_SIZE};
+    use super::{is_bare_file_name, is_lower_hex, ModelError, ModelFile};
     use sha2::{Digest, Sha256};
     use std::fs::File;
     use std::io::{Read, Write};
@@ -340,10 +350,48 @@ mod download {
         progress: &mut dyn FnMut(u64, u64) -> bool,
     ) -> Result<PathBuf, ModelError> {
         model.check().map_err(ModelError::Invalid)?;
+        download_verified(
+            url,
+            model.file,
+            model.size,
+            model.sha256,
+            directory,
+            progress,
+        )
+    }
+
+    /// Fetch `url` into `directory/file`, kept only if its size and sha256
+    /// match; the same atomic, cancellable, already-verified-is-free download
+    /// as [`download_model_from`], for any file rather than a Hugging Face
+    /// model (so no `revision` rule).
+    ///
+    /// # Errors
+    ///
+    /// As [`download_model`]; [`ModelError::Invalid`] if `file` is not a bare
+    /// file name, `size` is zero or `sha256` is not 64 lower-case hex digits.
+    pub fn download_verified(
+        url: &str,
+        file: &str,
+        size: u64,
+        sha256: &str,
+        directory: &Path,
+        progress: &mut dyn FnMut(u64, u64) -> bool,
+    ) -> Result<PathBuf, ModelError> {
+        if !is_bare_file_name(file) {
+            return Err(ModelError::Invalid("file must be a bare file name"));
+        }
+        if size == 0 {
+            return Err(ModelError::Invalid("size must be positive"));
+        }
+        if !is_lower_hex(sha256, 64) {
+            return Err(ModelError::Invalid(
+                "sha256 must be 64 lower-case hex digits",
+            ));
+        }
         std::fs::create_dir_all(directory)?;
-        let final_path = directory.join(model.file);
+        let final_path = directory.join(file);
         if final_path.exists() {
-            match verify_model(&final_path, model) {
+            match verify_file(&final_path, size, sha256) {
                 Ok(()) => return Ok(final_path),
                 Err(
                     e @ (ModelError::SizeMismatch { .. } | ModelError::ChecksumMismatch { .. }),
@@ -368,7 +416,7 @@ mod download {
             .map_or(0, |d| d.as_nanos());
         let part = directory.join(format!(
             ".{}.{}-{nanos}-{}.part",
-            model.file,
+            file,
             std::process::id(),
             CALLS.fetch_add(1, Ordering::Relaxed)
         ));
@@ -376,17 +424,18 @@ mod download {
             path: &part,
             armed: true,
         };
-        fetch(url, model, &part, progress)?;
+        fetch(url, size, sha256, &part, progress)?;
         std::fs::rename(&part, &final_path)?;
         guard.armed = false;
         Ok(final_path)
     }
 
-    /// Stream `url` into `part`, failing as soon as more than `model.size`
-    /// bytes arrive, then check size and sha256.
+    /// Stream `url` into `part`, failing as soon as more than `size` bytes
+    /// arrive, then check size and sha256.
     fn fetch(
         url: &str,
-        model: &ModelFile,
+        size: u64,
+        sha256: &str,
         part: &Path,
         progress: &mut dyn FnMut(u64, u64) -> bool,
     ) -> Result<(), ModelError> {
@@ -445,20 +494,20 @@ mod download {
             out.write_all(&block)?;
             hasher.update(&block);
             done += block.len() as u64;
-            if done > model.size {
+            if done > size {
                 return Err(ModelError::SizeMismatch {
-                    expected: model.size,
+                    expected: size,
                     actual: done,
                 });
             }
-            if !progress(done, model.size) {
+            if !progress(done, size) {
                 return Err(ModelError::Cancelled);
             }
         }
         out.sync_all()?;
-        check(model, done, &format!("{:x}", hasher.finalize()))
+        check(size, sha256, done, &format!("{:x}", hasher.finalize()))
     }
 }
 
-#[cfg(all(feature = "embed", feature = "http-ureq"))]
-pub use download::{download_model, download_model_from};
+#[cfg(all(feature = "model-download", feature = "http-ureq"))]
+pub use download::{download_model, download_model_from, download_verified};
