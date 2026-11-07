@@ -2186,7 +2186,9 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
 
 
 class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
-    """``embed`` and ``model_limits`` report a body that is not an object as ``chat()`` does (#697).
+    """``embed`` and ``model_limits`` read a body that is not an object as ``chat()`` does (#697).
+
+    ``model_limits`` wraps the resulting error in ``ContextWindowError``.
 
     Driven through the real SDK over a mock transport, as #617's class is.
     ``embed_batch`` reports only a transport failure as ``ConnectionError``.
@@ -2232,12 +2234,24 @@ class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
         assert caught.value.error == "[1]"
         assert http_status(caught.value) == 500
 
-    def test_an_embedding_refusal_is_not_a_connection_error(self):
+    @pytest.mark.parametrize("body", [b"not json", b"", b'{"embeddings": "x"}'])
+    def test_an_embedding_200_the_sdk_cannot_parse_is_not_a_connection_error(self, body, caplog):
+        # The SDK's own ValueError (a JSONDecodeError, a pydantic ValidationError)
+        # passes through; widening the transport clause would make it #697 again.
+        with caplog.at_level(logging.ERROR, logger="bmlib.llm.providers.ollama"):
+            with pytest.raises(ValueError) as caught:
+                self._provider(body).embed_batch(["a"], model="m")
+        assert not isinstance(caught.value, ConnectionError)
+        assert caplog.records == []
+
+    def test_an_embedding_refusal_is_not_a_connection_error(self, caplog):
         ollama = pytest.importorskip("ollama")
 
-        with pytest.raises(ollama.ResponseError) as caught:
-            self._provider(b'{"error": "model not found"}', 404).embed_batch(["a"], model="m")
+        with caplog.at_level(logging.ERROR, logger="bmlib.llm.providers.ollama"):
+            with pytest.raises(ollama.ResponseError) as caught:
+                self._provider(b'{"error": "model not found"}', 404).embed_batch(["a"], model="m")
         assert caught.value.status_code == 404
+        assert caplog.records == []
 
     def test_an_unreachable_server_is_a_connection_error(self):
         httpx = pytest.importorskip("httpx")
@@ -2246,13 +2260,17 @@ class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
         with pytest.raises(ConnectionError, match="^Ollama embedding failed: "):
             provider.embed_batch(["a"], model="m")
 
-    def test_a_read_timeout_is_a_connection_error(self):
+    def test_a_read_timeout_is_a_connection_error(self, caplog):
         httpx = pytest.importorskip("httpx")
 
         provider = self._raising(httpx.ReadTimeout("slow"))
-        with pytest.raises(ConnectionError, match="^Ollama embedding failed: slow$") as caught:
-            provider.embed_batch(["a"], model="m")
+        with caplog.at_level(logging.ERROR, logger="bmlib.llm.providers.ollama"):
+            with pytest.raises(ConnectionError, match="^Ollama embedding failed: slow$") as caught:
+                provider.embed_batch(["a"], model="m")
         assert isinstance(caught.value.__cause__, httpx.ReadTimeout)
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (logging.ERROR, "Ollama embedding error: slow")
+        ]
 
     def test_a_bmlib_defect_is_not_a_connection_error(self):
         from bmlib.llm.providers.ollama import OllamaProvider
@@ -2271,15 +2289,27 @@ class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
         with pytest.raises(TypeError, match="unexpected keyword argument"):
             self._provider(b"{}").embed_batch(["a"], model="m", no_such_option=1)
 
-    def test_a_show_200_that_is_not_an_object_is_a_context_window_error(self):
+    def test_a_show_200_that_is_not_an_object_is_a_context_window_error(self, monkeypatch):
+        from bmlib.llm import context_window as cw
         from bmlib.llm.context_window import ContextWindowError
 
+        delays: list[float] = []
+        monkeypatch.setattr(cw.time, "sleep", delays.append)
         with pytest.raises(ContextWindowError) as caught:
             self._provider(b"[]").model_limits("m")
         expected = ": ollama: the response is not a JSON object (got an array)"
         assert str(caught.value).endswith(expected)
         assert caught.value.status is None
         assert isinstance(caught.value.__cause__, ValueError)
+        assert isinstance(caught.value.__cause__.__cause__, TypeError)
+        assert delays == []
+
+    @pytest.mark.parametrize(("body", "status"), [(b"[]", 200), (b"[1]", 500)])
+    def test_model_metadata_still_falls_back_on_such_a_body(self, body, status):
+        from bmlib.llm.providers.ollama import FALLBACK_CONTEXT_WINDOW
+
+        meta = self._provider(body, status).get_model_metadata("m")
+        assert meta.context_window == FALLBACK_CONTEXT_WINDOW
 
     def test_a_show_5xx_the_sdk_cannot_read_is_retried(self, monkeypatch):
         ollama = pytest.importorskip("ollama")

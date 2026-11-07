@@ -493,7 +493,7 @@ Generate an embedding vector for *text*, routing on the *model* string. See [Emb
 
 **Returns:** `EmbeddingResponse` with the vector, model, dimensions, and input token count.
 
-**Raises:** `NotImplementedError` for providers that do not implement embeddings (everything except Ollama).
+**Raises:** `NotImplementedError` for providers that do not implement embeddings (everything except Ollama); otherwise as `embed_batch()` below, which Ollama's `embed` delegates to.
 
 **Example:**
 
@@ -532,7 +532,7 @@ Generate embedding vectors for many texts, sent to the provider **in batches** r
 
 **Returns:** `BatchEmbeddingResponse` with one vector per input text, in input order. `input_tokens` is summed across every request made.
 
-**Raises:** `NotImplementedError` for providers without embedding support (everything except Ollama); `ConnectionError` if the provider cannot be reached (a transport failure, and nothing else); the provider's own error if it refuses the request (Ollama: `ollama.ResponseError`); `ValueError` if `max_batch_size < 1`, or if the provider returns a different number of vectors than texts sent, or a 200 whose body is not a JSON object.
+**Raises:** `NotImplementedError` for providers without embedding support (everything except Ollama); `ConnectionError` if the request fails in transport (connection refused, timed out or dropped, and nothing else); the provider's own error if it refuses the request (Ollama: `ollama.ResponseError`); `ValueError` if `max_batch_size < 1`, or if the provider returns a different number of vectors than texts sent, or a 200 whose body is not a JSON object.
 
 > **Note — batching is bounded, and not atomic.** Texts are sent in groups of at most `max_batch_size` so that a large corpus does not become one enormous request. If a later group fails, the vectors already computed for earlier groups are **discarded** along with the raised exception — the caller must retry the whole batch. For very large corpora, chunk the work yourself if you need to checkpoint partial progress.
 
@@ -1047,7 +1047,7 @@ batch = client.embed_batch(
 print(len(batch.embeddings), batch.input_tokens)
 ```
 
-Ollama raises `ConnectionError("Ollama embedding failed: ...")` only if the server cannot be reached (a refused connection or an `httpx` transport error such as a timeout), `ollama.ResponseError` if it refuses the request (a missing model is a 404), and `ValueError` if it returns a different number of vectors than texts sent, or a 200 whose body is not a JSON object (`"ollama: the response is not a JSON object (got an array)"`). Anything else (a bad keyword argument, a bmlib defect) propagates as itself (#697; until then every failure was a `ConnectionError`).
+Ollama raises `ConnectionError("Ollama embedding failed: ...")` only if the request fails in transport (a refused connection, or an `httpx` transport error such as a timeout or a dropped connection), `ollama.ResponseError` if it refuses the request (a missing model is a 404), and `ValueError` if it returns a different number of vectors than texts sent, or a 200 whose body is not a JSON object (`"ollama: the response is not a JSON object (got an array)"`). Anything else (a bad keyword argument, a bmlib defect) propagates as itself (#697; until then every failure was a `ConnectionError`).
 
 > **Note:** Unlike `chat()`, the embedding paths do **not** record usage with the global `TokenTracker`, even though `input_tokens` is populated. Track embedding cost yourself if you need it.
 

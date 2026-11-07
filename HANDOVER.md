@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-07 (**this session's PR is on `fix/697-ollama-embed-show`**; PRs #700 (output limit), #699 and #692 (#617), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-07 (**this session's PR is on `fix/697-ollama-embed-show`**; PRs #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
@@ -12,8 +12,9 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 
 Branch `fix/697-ollama-embed-show`, from `main` after PRs #699 and #700
 merged (the maintainer's order). **The maintainer's choice: narrow
-`embed_batch`'s catch-all.** Only a server that cannot be reached (the SDK's
-`ConnectionError`, or an `httpx.TransportError` such as a read timeout) is
+`embed_batch`'s catch-all.** Only a transport failure (the builtin
+`ConnectionError` the SDK raises for a refused connection, or an
+`httpx.TransportError` such as a read timeout or a dropped connection) is
 `ConnectionError("Ollama embedding failed: ...")` now; a refusal is
 `ollama.ResponseError`, a 200 that is not a JSON object the `ValueError`
 `chat()` raises, anything else (a bad keyword argument, a bmlib defect)
@@ -21,11 +22,16 @@ itself. Breaking for a caller catching `ConnectionError`; in the CHANGELOG
 under *Fixed*. `model_limits`' `show()` goes through #617's `_refused_body`:
 a 5xx the SDK could not read is retried (it was an `AttributeError`), a 200
 that is not an object is a `ContextWindowError` naming it.
-`get_model_metadata` keeps its documented swallow-everything fallback. 12
+`get_model_metadata` keeps its documented swallow-everything fallback. 17
 tests through the real SDK over `httpx.MockTransport`
-(`TestOllamaEmbedAndShowReadTheBodyAsChatDoes`); 10 fail on `main`, both
-halves of the narrowed `except` mutation-killed, passing on ollama 0.5.0 and
-0.6.1. Python only: Rust has no Ollama embedding. **#698** (`RecursionError`
+(`TestOllamaEmbedAndShowReadTheBodyAsChatDoes`), 10 of the first cut's 12
+failing on `main`, both halves of the narrowed `except` mutation-killed; the
+finalcheck review's five added pins (a 200 the SDK cannot parse, the ERROR
+line on the transport branch alone, a non-object 200 not retried by
+`model_limits`, its cause chain, `get_model_metadata`'s fallback over a real
+SDK) each kill a mutant that survived before, and `import httpx` moved below
+`_get_client()` so a core install gets the "Install with" message. The first
+cut passed on ollama 0.5.0 and 0.6.1; the review's additions ran on 0.6.1. Python only: Rust has no Ollama embedding. **#698** (`RecursionError`
 from an over-deep body) is still open and a decision.
 
 ## Earlier, 2026-11-07: a model's output limit beside its window (PR #700, merged)
@@ -307,8 +313,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,606 passing + 14 skipped with the PostgreSQL DSN** on
-  `fix/617-openai-compat-choices` (`uv run pytest tests/ -v`, 2026-11-07; 9,491 + 165 without it on `fix/697-ollama-embed-show`; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,647 passing + 14 skipped with the PostgreSQL DSN** on
+  `fix/697-ollama-embed-show` (`uv run pytest tests/ -v`, 2026-11-07; Rust 1,613 with `cargo test -p bmlib --all-features` on `fix/606-ctgov-user-agent` before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest

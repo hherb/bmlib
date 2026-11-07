@@ -48,18 +48,20 @@ All notable changes to bmlib are documented here. The format is based on
 - **Ollama's embedding and model-lookup calls read a body that is not a JSON
   object as `chat()` does** (#697). **Breaking for a caller catching
   `ConnectionError` from `embed`/`embed_batch`**, the maintainer's choice:
-  only a server that cannot be reached (the SDK's `ConnectionError`, or an
-  `httpx.TransportError` such as a timeout) is a `ConnectionError` now. A
+  only a transport failure (the builtin `ConnectionError` the SDK raises for
+  a refused connection, or an `httpx.TransportError` such as a timeout or a
+  dropped connection) is a `ConnectionError` now. A
   refusal is the `ollama.ResponseError` it is (a missing model a 404), a 200
   that is not a JSON object a `ValueError` naming its JSON type, and anything
   else (a keyword argument the SDK does not take, a bmlib defect) itself,
   where every failure was a `ConnectionError("Ollama embedding failed: ...")`
   with an ERROR line, claiming a connection failure for a server that
-  answered. `model_limits`/`context_window` read the same bodies through
+  answered. `OllamaProvider.model_limits`/`.context_window(model)` read the same bodies through
   #617's recogniser: a 5xx the SDK could not read is retried as a 5xx (it
   arrived as an `AttributeError` and was not), and a 200 that is not an
   object is a `ContextWindowError` naming it. `get_model_metadata` keeps its
-  documented fallback to defaults on any failure.
+  documented fallback to defaults on any failure, and so does the lazy
+  `context_window` of a `list_models()` result.
 
 - **An Ollama 200 that is not a JSON object is the server's failure** (#617's
   Ollama half, the maintainer's choice to close it). ollama-python reads the
