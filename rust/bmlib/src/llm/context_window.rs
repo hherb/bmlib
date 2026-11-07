@@ -55,6 +55,18 @@ const FIELD_BY_PROVIDER: &[(&str, &str)] = &[
 /// DeepSeek lists every model in one body; this is the per-model field.
 const DEEPSEEK_WINDOW_FIELD: &str = "context_window";
 
+/// Body field holding the most a reply may be (the largest `max_tokens` a
+/// request may ask for), per provider whose model object names it.
+const OUTPUT_FIELD_BY_PROVIDER: &[(&str, &str)] =
+    &[("anthropic", "max_tokens"), ("gemini", "outputTokenLimit")];
+
+/// DeepSeek's per-model field for the largest reply.
+const DEEPSEEK_OUTPUT_FIELD: &str = "max_output_tokens";
+
+/// Providers whose metadata states no output limit: reading one is unknown,
+/// not an error.
+const NO_OUTPUT_FIELD: &[&str] = &["mistral", "ollama"];
+
 /// Ollama: the architecture names the prefix of the window's key.
 const OLLAMA_ARCHITECTURE_KEY: &str = "general.architecture";
 /// Ollama: appended to the architecture to form the window's key.
@@ -139,21 +151,8 @@ pub fn read_context_window(
         return Ok(field(body, name));
     }
     match provider {
-        "deepseek" => {
-            // A `data` of the wrong type is unknown, not "no such model".
-            let Some(list) = body["data"].as_array() else {
-                return Ok(None);
-            };
-            // Non-object entries never match; with duplicate ids the first wins.
-            let entry = list
-                .iter()
-                .find(|e| e.is_object() && e["id"] == model)
-                .ok_or_else(|| ContextWindowError::NoSuchModel {
-                    provider: provider.to_string(),
-                    model: model.to_string(),
-                })?;
-            Ok(field(entry, DEEPSEEK_WINDOW_FIELD))
-        }
+        "deepseek" => Ok(deepseek_entry(provider, model, body)?
+            .and_then(|entry| field(entry, DEEPSEEK_WINDOW_FIELD))),
         "ollama" => {
             // `modelinfo` is the spelling the ollama client library exposes.
             let info = ["model_info", "modelinfo"]
@@ -170,4 +169,89 @@ pub fn read_context_window(
         }
         other => Err(ContextWindowError::UnknownProvider(other.to_string())),
     }
+}
+
+/// What a provider states about a model: its context window and the largest
+/// reply it may give (the most a request's `max_tokens` may ask for). Either
+/// is `None` when the provider does not state it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ModelLimits {
+    /// The context window in tokens, input and reply together (see
+    /// [`read_context_window`]).
+    pub window: Option<u64>,
+    /// The largest reply in tokens (see [`read_output_limit`]).
+    pub max_output: Option<u64>,
+}
+
+/// Read the largest reply `model` may give (tokens) out of a provider's
+/// metadata: the most a request's `max_tokens` may ask for. A request above
+/// it is refused by the provider, so a caller sizing `max_tokens` keeps under
+/// it.
+///
+/// `body` is what [`read_context_window`] takes. Anthropic states it as
+/// `max_tokens`, Gemini as `outputTokenLimit`, DeepSeek's list as
+/// `max_output_tokens`; Mistral and Ollama state none, so they are `Ok(None)`.
+/// A value that is not a positive count is `Ok(None)`, as for the window.
+///
+/// # Errors
+///
+/// A deepseek list without `model` is [`ContextWindowError::NoSuchModel`]; a
+/// provider with no metadata at all is [`ContextWindowError::UnknownProvider`].
+pub fn read_output_limit(
+    provider: &str,
+    model: &str,
+    body: &Value,
+) -> Result<Option<u64>, ContextWindowError> {
+    if let Some((_, name)) = OUTPUT_FIELD_BY_PROVIDER
+        .iter()
+        .find(|(p, _)| *p == provider)
+    {
+        return Ok(field(body, name));
+    }
+    if NO_OUTPUT_FIELD.contains(&provider) {
+        return Ok(None);
+    }
+    match provider {
+        "deepseek" => Ok(deepseek_entry(provider, model, body)?
+            .and_then(|entry| field(entry, DEEPSEEK_OUTPUT_FIELD))),
+        other => Err(ContextWindowError::UnknownProvider(other.to_string())),
+    }
+}
+
+/// Read both of `model`'s limits out of one metadata `body` (see
+/// [`read_context_window`] and [`read_output_limit`]).
+///
+/// # Errors
+///
+/// As [`read_context_window`].
+pub fn read_model_limits(
+    provider: &str,
+    model: &str,
+    body: &Value,
+) -> Result<ModelLimits, ContextWindowError> {
+    Ok(ModelLimits {
+        window: read_context_window(provider, model, body)?,
+        max_output: read_output_limit(provider, model, body)?,
+    })
+}
+
+/// DeepSeek's list entry for `model`: `Ok(None)` when `data` is not a list
+/// (unknown, not "no such model"), [`ContextWindowError::NoSuchModel`] when no
+/// entry names it. Non-object entries never match; with duplicate ids the
+/// first wins.
+fn deepseek_entry<'a>(
+    provider: &str,
+    model: &str,
+    body: &'a Value,
+) -> Result<Option<&'a Value>, ContextWindowError> {
+    let Some(list) = body["data"].as_array() else {
+        return Ok(None);
+    };
+    list.iter()
+        .find(|e| e.is_object() && e["id"] == model)
+        .map(Some)
+        .ok_or_else(|| ContextWindowError::NoSuchModel {
+            provider: provider.to_string(),
+            model: model.to_string(),
+        })
 }

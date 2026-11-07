@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from bmlib.llm.context_window import as_dict, fetch_context_window
+from bmlib.llm.context_window import ModelLimits, as_dict, fetch_model_limits
 from bmlib.llm.data_types import (
     LLMMessage,
     LLMResponse,
@@ -154,8 +154,8 @@ class AnthropicProvider(BaseProvider):
 
     # --- Core operations ---
 
-    def context_window(self, model: str) -> int | None:
-        """The model's ``max_input_tokens``, from ``models.retrieve``.
+    def model_limits(self, model: str) -> ModelLimits:
+        """The model's ``max_input_tokens`` and ``max_tokens``, from ``models.retrieve``.
 
         The SDK retries transient failures itself, so no backoff here.
 
@@ -166,7 +166,7 @@ class AnthropicProvider(BaseProvider):
         import anthropic
 
         client = self._get_client()
-        return fetch_context_window(
+        return fetch_model_limits(
             self.PROVIDER_NAME,
             model,
             lambda: as_dict(client.models.retrieve(model)),

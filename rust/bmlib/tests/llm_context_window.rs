@@ -18,7 +18,8 @@
 //! (the same file Python's `tests/test_context_window.py` reads).
 
 use bmlib::llm::{
-    known_context_window, read_context_window, ContextWindowError, KNOWN_CONTEXT_WINDOWS,
+    known_context_window, read_context_window, read_model_limits, read_output_limit,
+    ContextWindowError, ModelLimits, KNOWN_CONTEXT_WINDOWS,
 };
 use bmlib::llm::{LlmClient, STREAM_OPEN_ATTEMPTS};
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
@@ -94,6 +95,50 @@ fn metadata_cases() {
             assert_eq!(got, Ok(case["expect"]["window"].as_u64()), "{name}");
         }
     }
+}
+
+#[test]
+fn output_limit_cases() {
+    let fx = fixture();
+    for case in fx["output_limits"]["cases"].as_array().unwrap() {
+        let name = &case["name"];
+        let provider = case["provider"].as_str().unwrap();
+        let model = case["model"].as_str().unwrap();
+        let expect = &case["expect"];
+        let got = read_output_limit(provider, model, &case["body"]);
+        if expect["error"] == "no_such_model" {
+            let refused = Err(ContextWindowError::NoSuchModel {
+                provider: provider.to_string(),
+                model: model.to_string(),
+            });
+            assert_eq!(got, refused, "{name}");
+            assert_eq!(
+                read_model_limits(provider, model, &case["body"]),
+                refused.map(|_: Option<u64>| ModelLimits::default()),
+                "{name}"
+            );
+            continue;
+        }
+        assert_eq!(got, Ok(expect["max_output"].as_u64()), "{name}");
+        if let Some(window) = expect["window"].as_u64() {
+            assert_eq!(
+                read_model_limits(provider, model, &case["body"]),
+                Ok(ModelLimits {
+                    window: Some(window),
+                    max_output: expect["max_output"].as_u64(),
+                }),
+                "{name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn output_limit_of_a_provider_without_metadata_is_an_error() {
+    assert_eq!(
+        read_output_limit("nosuch", "m", &json!({})),
+        Err(ContextWindowError::UnknownProvider("nosuch".to_string()))
+    );
 }
 
 #[test]
@@ -236,6 +281,36 @@ fn deepseek_gets_the_list() {
     );
     assert_eq!(t.last().1, "https://api.deepseek.com/models");
     assert_eq!(t.last().3["Authorization"], "Bearer k");
+}
+
+#[test]
+fn model_limits_reads_both_from_one_request() {
+    let t = Scripted::ok(json!({"data": [
+        {"id": "deepseek-flash", "context_window": 1048576, "max_output_tokens": 393216}
+    ]}));
+    assert_eq!(
+        client(t.clone()).model_limits("deepseek:deepseek-flash"),
+        Ok(ModelLimits {
+            window: Some(1_048_576),
+            max_output: Some(393_216),
+        })
+    );
+    assert_eq!(t.calls(), 1);
+}
+
+#[test]
+fn openai_model_limits_state_no_output_limit() {
+    let t = Scripted::new(Vec::new());
+    let mut c = LlmClient::new(t.clone());
+    c.api_key = None;
+    assert_eq!(
+        c.model_limits("openai:gpt-4o-mini"),
+        Ok(ModelLimits {
+            window: Some(128_000),
+            max_output: None,
+        })
+    );
+    assert_eq!(t.calls(), 0);
 }
 
 #[test]

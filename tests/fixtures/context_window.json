@@ -1191,5 +1191,233 @@
         }
       }
     ]
+  },
+  "output_limits": {
+    "description": "The largest reply a model may give (the most a request's max_tokens may ask for), read from the same metadata body as the window: Python's read_output_limit / read_model_limits and Rust's read_output_limit / read_model_limits. `expect.max_output` is the count, `expect.unknown` true where the body states none (Mistral and Ollama never state one; a mistral `max_tokens` is not read), `expect.error` `no_such_model` where deepseek's list lacks the model. Where `expect.window` is given, read_model_limits reads that window from the same body. Field names: Anthropic's model object `max_tokens` (its SDK: 'Maximum value for the max_tokens parameter'), Gemini's `outputTokenLimit`, DeepSeek's list `max_output_tokens` (seen live on 2026-11-07).",
+    "cases": [
+      {
+        "name": "anthropic happy",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "body": {
+          "id": "claude-sonnet-5-5",
+          "max_input_tokens": 1000000,
+          "max_tokens": 128000
+        },
+        "expect": {
+          "max_output": 128000,
+          "window": 1000000
+        }
+      },
+      {
+        "name": "anthropic field missing",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "body": {
+          "id": "claude-sonnet-5-5",
+          "max_input_tokens": 1000000
+        },
+        "expect": {
+          "unknown": true,
+          "window": 1000000
+        }
+      },
+      {
+        "name": "anthropic zero",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "body": {
+          "id": "claude-sonnet-5-5",
+          "max_tokens": 0
+        },
+        "expect": {
+          "unknown": true
+        }
+      },
+      {
+        "name": "anthropic string",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "body": {
+          "id": "claude-sonnet-5-5",
+          "max_tokens": "128000"
+        },
+        "expect": {
+          "unknown": true
+        }
+      },
+      {
+        "name": "anthropic float",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5",
+        "body": {
+          "id": "claude-sonnet-5-5",
+          "max_tokens": 128000.5
+        },
+        "expect": {
+          "unknown": true
+        }
+      },
+      {
+        "name": "gemini happy",
+        "provider": "gemini",
+        "model": "gemini-3-pro",
+        "body": {
+          "name": "models/gemini-3-pro",
+          "inputTokenLimit": 1048576,
+          "outputTokenLimit": 65536
+        },
+        "expect": {
+          "max_output": 65536,
+          "window": 1048576
+        }
+      },
+      {
+        "name": "gemini field missing",
+        "provider": "gemini",
+        "model": "gemini-3-pro",
+        "body": {
+          "name": "models/gemini-3-pro",
+          "inputTokenLimit": 1048576
+        },
+        "expect": {
+          "unknown": true,
+          "window": 1048576
+        }
+      },
+      {
+        "name": "deepseek happy, second in the list",
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "body": {
+          "object": "list",
+          "data": [
+            {
+              "id": "deepseek-v4-pro",
+              "context_window": 1048576,
+              "max_output_tokens": 1
+            },
+            {
+              "id": "deepseek-flash",
+              "context_window": 1048576,
+              "max_output_tokens": 393216
+            }
+          ]
+        },
+        "expect": {
+          "max_output": 393216,
+          "window": 1048576
+        }
+      },
+      {
+        "name": "deepseek field missing",
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "body": {
+          "object": "list",
+          "data": [
+            {
+              "id": "deepseek-v4-pro",
+              "context_window": 1048576,
+              "max_output_tokens": 1
+            },
+            {
+              "id": "deepseek-flash",
+              "context_window": 1048576
+            }
+          ]
+        },
+        "expect": {
+          "unknown": true,
+          "window": 1048576
+        }
+      },
+      {
+        "name": "deepseek negative",
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "body": {
+          "object": "list",
+          "data": [
+            {
+              "id": "deepseek-v4-pro",
+              "context_window": 1048576,
+              "max_output_tokens": 1
+            },
+            {
+              "id": "deepseek-flash",
+              "max_output_tokens": -1
+            }
+          ]
+        },
+        "expect": {
+          "unknown": true
+        }
+      },
+      {
+        "name": "deepseek data not a list",
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "body": {
+          "data": {
+            "id": "deepseek-flash"
+          }
+        },
+        "expect": {
+          "unknown": true
+        }
+      },
+      {
+        "name": "deepseek absent model",
+        "provider": "deepseek",
+        "model": "deepseek-absent",
+        "body": {
+          "object": "list",
+          "data": [
+            {
+              "id": "deepseek-v4-pro",
+              "context_window": 1048576,
+              "max_output_tokens": 1
+            },
+            {
+              "id": "deepseek-flash",
+              "max_output_tokens": 393216
+            }
+          ]
+        },
+        "expect": {
+          "error": "no_such_model"
+        }
+      },
+      {
+        "name": "mistral states none",
+        "provider": "mistral",
+        "model": "mistral-large-latest",
+        "body": {
+          "id": "mistral-large-latest",
+          "max_context_length": 131072,
+          "max_tokens": 4096
+        },
+        "expect": {
+          "unknown": true,
+          "window": 131072
+        }
+      },
+      {
+        "name": "ollama states none",
+        "provider": "ollama",
+        "model": "llama3.2",
+        "body": {
+          "model_info": {
+            "general.architecture": "llama",
+            "llama.context_length": 131072
+          }
+        },
+        "expect": {
+          "unknown": true,
+          "window": 131072
+        }
+      }
+    ]
   }
 }

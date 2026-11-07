@@ -6,6 +6,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A model's output limit beside its window** (StudyAnalyzer's PICO run on
+  `deepseek-flash`, a thinking model whose reasoning spent its 4096-token
+  `max_tokens`). `read_output_limit(provider, model, body)` reads the largest
+  reply a model may give (the most `max_tokens` may ask for) from the
+  metadata the window is read from: Anthropic's `max_tokens`, Gemini's
+  `outputTokenLimit`, DeepSeek's `max_output_tokens`; Mistral and Ollama state
+  none (`None`). `ModelLimits(window, max_output)`, `read_model_limits`,
+  `fetch_model_limits` and `LLMClient.model_limits(model, provider=None)`
+  read both from one request; each provider implements `model_limits`, and
+  `BaseProvider.context_window` is now its `window`. Rust has the same
+  (`LlmClient::model_limits`); the contract is the new `output_limits`
+  section of `tests/fixtures/context_window.json`.
+
 ### Changed
 
 - **A PICO part loses no quote the model gave, and a part the paper omits

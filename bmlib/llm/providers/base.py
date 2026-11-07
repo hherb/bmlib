@@ -27,7 +27,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from bmlib.llm.context_window import known_context_window
+from bmlib.llm.context_window import ModelLimits, known_context_window
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -224,15 +224,27 @@ class BaseProvider(ABC):
     def context_window(self, model: str) -> int | None:
         """The context window of *model* in tokens, or ``None`` if unknown.
 
-        Input and answer together (see :meth:`LLMClient.context_window`).
-        The default asks bmlib's table of known windows and makes no request;
-        providers whose API states a window override it.
+        Input and answer together (see :meth:`LLMClient.context_window`):
+        :meth:`model_limits`'s ``window``.
 
         Raises:
             ContextWindowError: An override could not fetch the metadata.
             NoSuchModelError: The provider has no such model.
         """
-        return known_context_window(self.PROVIDER_NAME, model)
+        return self.model_limits(model).window
+
+    def model_limits(self, model: str) -> ModelLimits:
+        """The context window and the largest reply of *model*, from one lookup.
+
+        The default asks bmlib's table of known windows, makes no request and
+        states no output limit; providers whose API states the figures
+        override it.
+
+        Raises:
+            ContextWindowError: An override could not fetch the metadata.
+            NoSuchModelError: The provider has no such model.
+        """
+        return ModelLimits(window=known_context_window(self.PROVIDER_NAME, model))
 
     # --- Utility ---
 

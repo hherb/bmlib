@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from bmlib.llm.context_window import as_dict, fetch_context_window
+from bmlib.llm.context_window import ModelLimits, as_dict, fetch_model_limits
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
 
@@ -58,8 +58,8 @@ class DeepSeekProvider(OpenAICompatibleProvider):
         ),
     ]
 
-    def context_window(self, model: str) -> int | None:
-        """The model's ``context_window``, from the one-body model list.
+    def model_limits(self, model: str) -> ModelLimits:
+        """The model's ``context_window`` and ``max_output_tokens``, from the one-body list.
 
         DeepSeek has no per-model endpoint, so this lists them all. The openai
         SDK retries transient failures itself, so no backoff here.
@@ -69,7 +69,7 @@ class DeepSeekProvider(OpenAICompatibleProvider):
             ContextWindowError: The request failed.
         """
         client = self._get_client()
-        return fetch_context_window(
+        return fetch_model_limits(
             self.PROVIDER_NAME,
             model,
             lambda: {"data": [as_dict(m) for m in client.models.list()]},

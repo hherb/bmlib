@@ -53,7 +53,8 @@ pub use client::{
     ERROR_BODY_LIMIT, RETRYABLE_STATUSES, STREAM_OPEN_ATTEMPTS, TOOL_CAPABLE_PROVIDERS,
 };
 pub use context_window::{
-    known_context_window, read_context_window, ContextWindowError, KNOWN_CONTEXT_WINDOWS,
+    known_context_window, read_context_window, read_model_limits, read_output_limit,
+    ContextWindowError, ModelLimits, KNOWN_CONTEXT_WINDOWS,
 };
 pub use data_types::{
     BatchEmbeddingResponse, EmbeddingResponse, LLMMessage, LLMResponse, LLMToolCall,

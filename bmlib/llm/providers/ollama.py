@@ -40,9 +40,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 from bmlib.llm.context_window import (
     ContextWindowError,
+    ModelLimits,
     NoSuchModelError,
     as_dict,
-    fetch_context_window,
+    fetch_model_limits,
 )
 from bmlib.llm.data_types import (
     BatchEmbeddingResponse,
@@ -538,8 +539,8 @@ class OllamaProvider(BaseProvider):
 
     # --- Context window ---
 
-    def context_window(self, model: str) -> int | None:
-        """The model's trained context window, from the server's ``show``.
+    def model_limits(self, model: str) -> ModelLimits:
+        """The model's trained context window, from ``show`` (no output limit).
 
         This is the window the model supports, not the one it is loaded with
         (that is ``num_ctx``). A 404 whose JSON ``error`` says "not found" is
@@ -575,7 +576,7 @@ class OllamaProvider(BaseProvider):
                     ) from exc
                 raise
 
-        return fetch_context_window(
+        return fetch_model_limits(
             self.PROVIDER_NAME,
             model,
             fetch,
