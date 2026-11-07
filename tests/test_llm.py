@@ -2339,6 +2339,23 @@ class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
 _TOO_DEEP = b"[" * 100_000 + b"]" * 100_000
 
 
+def _anthropic_create_lacks_temperature() -> bool:
+    """Does the installed anthropic SDK's ``Messages.create`` refuse ``temperature`` (#705)?"""
+    try:
+        from anthropic.resources.messages import Messages
+    except ImportError:
+        return False
+    import inspect
+
+    return "temperature" not in inspect.signature(Messages.create).parameters
+
+
+def _sdk_httpx(sdk: str):
+    """The HTTP library *sdk*'s client takes: httpx, or httpx2 from anthropic 2.x / openai 3.x."""
+    base = pytest.importorskip(f"{sdk}._base_client")
+    return getattr(base, "httpx2", None) or base.httpx
+
+
 class TestABodyNestedTooDeeplyIsTheServers:
     """A 200 nested past the JSON decoder is a ``ValueError``, not a ``RecursionError`` (#698).
 
@@ -2350,8 +2367,8 @@ class TestABodyNestedTooDeeplyIsTheServers:
     _MESSAGES = [LLMMessage(role="user", content="hi")]
 
     @staticmethod
-    def _transport(*bodies: bytes, content_type: str = "application/json"):
-        httpx = pytest.importorskip("httpx")
+    def _transport(*bodies: bytes, content_type: str = "application/json", httpx=None):
+        httpx = httpx or pytest.importorskip("httpx")
         seen: list[object] = []
 
         def handler(request):
@@ -2373,10 +2390,10 @@ class TestABodyNestedTooDeeplyIsTheServers:
 
     def _anthropic(self):
         anthropic = pytest.importorskip("anthropic")
-        httpx = pytest.importorskip("httpx")
+        httpx = _sdk_httpx("anthropic")
         from bmlib.llm.providers.anthropic import AnthropicProvider
 
-        transport, _ = self._transport(_TOO_DEEP)
+        transport, _ = self._transport(_TOO_DEEP, httpx=httpx)
         provider = AnthropicProvider(api_key="k")
         provider._client = anthropic.Anthropic(
             api_key="k", http_client=httpx.Client(transport=transport), max_retries=0
@@ -2385,9 +2402,9 @@ class TestABodyNestedTooDeeplyIsTheServers:
 
     def _openai_family(self, cls):
         openai = pytest.importorskip("openai")
-        httpx = pytest.importorskip("httpx")
+        httpx = _sdk_httpx("openai")
 
-        transport, _ = self._transport(_TOO_DEEP)
+        transport, _ = self._transport(_TOO_DEEP, httpx=httpx)
         provider = cls(api_key="k")
         provider._client = openai.OpenAI(
             api_key="k",
@@ -2406,6 +2423,12 @@ class TestABodyNestedTooDeeplyIsTheServers:
     def test_ollama_chat(self):
         self._chat_raises(self._ollama(_TOO_DEEP)[0], "ollama")
 
+    @pytest.mark.xfail(
+        condition=_anthropic_create_lacks_temperature(),
+        raises=TypeError,
+        strict=True,
+        reason="#705: anthropic 2.x's create() takes no temperature, so chat() sends nothing",
+    )
     def test_anthropic_chat(self):
         self._chat_raises(self._anthropic(), "anthropic")
 
@@ -2467,9 +2490,8 @@ class TestOnlyTheSdksOwnDecodeIsRecognised:
             _run_as(module, source, *args)
         return info.value
 
-    def _response(self):
-        httpx = pytest.importorskip("httpx")
-        return httpx.Response(200, content=_TOO_DEEP)
+    def _response(self, library: str = "httpx"):
+        return pytest.importorskip(library).Response(200, content=_TOO_DEEP)
 
     def test_json_loads_in_the_sdk_is_recognised(self):
         from bmlib.llm.providers.base import too_deep_body
@@ -2478,10 +2500,12 @@ class TestOnlyTheSdksOwnDecodeIsRecognised:
         exc = self._raised("ollama._client", source, _TOO_DEEP)
         assert str(too_deep_body(exc, "ollama", "ollama")).startswith("ollama: ")
 
-    def test_response_json_in_the_sdk_is_recognised(self):
+    @pytest.mark.parametrize("library", ["httpx", "httpx2"])
+    def test_response_json_in_the_sdk_is_recognised(self, library):
         from bmlib.llm.providers.base import too_deep_body
 
-        exc = self._raised("anthropic._response", "def f(r): return r.json()", self._response())
+        source = "def f(r): return r.json()"
+        exc = self._raised("anthropic._response", source, self._response(library))
         assert isinstance(too_deep_body(exc, "anthropic", "anthropic"), ValueError)
 
     def test_another_sdks_decode_is_not_this_providers(self):

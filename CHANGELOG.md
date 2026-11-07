@@ -54,7 +54,8 @@ All notable changes to bmlib are documented here. The format is based on
   raises nor the SDK's refusal. It is now `ValueError("<provider>: the
   response is nested too deeply to decode")`, the `RecursionError` its
   `__cause__`, recognised by its frames (the `json` package's, under httpx's
-  `Response.json` or directly, called from the provider's own SDK) by the new
+  `Response.json` — httpx2's for anthropic 2.x and openai 3.x — or directly,
+  called from the provider's own SDK) by the new
   `providers.base.too_deep_body`, so a recursion bug in bmlib, or a deep
   `json.loads` bmlib makes itself, still propagates as itself. Ollama's
   `model_limits` names it in its `ContextWindowError` and does not retry it.

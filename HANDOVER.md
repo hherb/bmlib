@@ -20,7 +20,8 @@ OpenAI streams (`StreamError`), `model_limits` (`ContextWindowError`), model
 listing and `get_model_metadata` (fallbacks). Now `ValueError("<provider>:
 the response is nested too deeply to decode")` via
 `providers.base.too_deep_body(exc, sdk, provider)`: the innermost frames must
-be `json`'s, optionally under `httpx._models` (`Response.json`), directly
+be `json`'s, optionally under `httpx._models` or `httpx2._models`
+(`Response.json`; anthropic 2.x and openai 3.x are on httpx2), directly
 under a frame of that provider's SDK; anything else re-raises. Ollama's
 `_traceback_frames` moved there as `traceback_frames`. DeepSeek/Mistral/
 Gemini are named as themselves. 14 tests (`TestABodyNestedTooDeeplyIsTheServers`
@@ -28,6 +29,12 @@ through the real SDKs, `TestOnlyTheSdksOwnDecodeIsRecognised` on synthetic
 module frames); an 11-mutant sweep (each guard, each of the six call sites,
 the provider name) all killed. Python only: Rust's `serde_json` refuses past
 128 levels with an ordinary error.
+**CI found #705**: a fresh install resolves anthropic 2.6.0, whose
+`Messages.create()` takes no `temperature`/`top_p`, so
+`AnthropicProvider.chat()` raises `TypeError` on every call. Nothing on `main`
+noticed (the provider tests mock the client). `test_anthropic_chat` is a
+strict xfail there; **#705 is a decision** (drop, `extra_body`, or cap at
+`anthropic<2`) and the most urgent open item.
 
 ## Earlier, 2026-11-07: Ollama's embed and model lookup read a bad body as `chat()` does (#697, PR #701, merged)
 
@@ -85,14 +92,10 @@ in the keychain.
 
 ## Earlier, 2026-11-06: API keys in the OS keychain, both languages (#634, PR #687, merged)
 
-Moved from StudyAnalyzer. `bmlib/secrets.py` / `rust/bmlib/src/secrets.rs`:
-`KeyBundle` (one item `{provider: key}`, cached for `get`s, re-read before a
-write), `KeyringVault` (Python extra `secrets`, Rust feature `keyring`),
-`MemorySecrets`; shared fixture `tests/fixtures/secret_key_list.json`. No test
-touches a real keychain. **Unverified live**: macOS is one item from both
-languages; Linux only while Python writes first, Windows not (**#686**); iOS
-needs the crate's `protected` store (StudyAnalyzer #74). The CHANGELOG has
-the review's fixes.
+`bmlib/secrets.py` / `rust/bmlib/src/secrets.rs` (`KeyBundle`,
+`KeyringVault`, `MemorySecrets`; fixture `secret_key_list.json`). **Unverified
+live** beyond macOS: Linux only while Python writes first, Windows not
+(**#686**); iOS needs the crate's `protected` store (StudyAnalyzer #74).
 
 ## Earlier, 2026-11-06: Rust reads a closed-access record's full-text 500 as not served (#608, PR #683, merged)
 
@@ -312,7 +315,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**119 open once #698 closes** (#702, filed 2026-11-07 from hherb/StudyAnalyzer#100's review, is Rust's 45 s whole-call timeout capping a non-streamed chat, so a thinking model's large `max_tokens` times out — both languages, a timeout-split design; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**120 open once #698 closes** (#705, filed from PR #704's CI, is anthropic 2.x refusing `temperature` — every Anthropic `chat()` raises `TypeError`, a decision; #702, filed 2026-11-07 from hherb/StudyAnalyzer#100's review, is Rust's 45 s whole-call timeout capping a non-streamed chat, so a thinking model's large `max_tokens` times out — both languages, a timeout-split design; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-07); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

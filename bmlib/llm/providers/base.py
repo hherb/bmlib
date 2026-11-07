@@ -297,6 +297,10 @@ def _package(frame: FrameType) -> str:
     return _module(frame).partition(".")[0]
 
 
+# ``Response.json``: ollama-python is on httpx, anthropic 2.x and openai 3.x on httpx2.
+_RESPONSE_DECODERS = frozenset({"httpx._models", "httpx2._models"})
+
+
 def too_deep_body(exc: RecursionError, sdk: str, provider: str) -> ValueError:
     """*exc* as the server's unreadable body if *sdk* raised it decoding one, else re-raised (#698).
 
@@ -304,7 +308,7 @@ def too_deep_body(exc: RecursionError, sdk: str, provider: str) -> ValueError:
     recursion limit raises ``RecursionError`` from the provider SDK's own
     decode, where a body that is not JSON raises ``json.JSONDecodeError``, a
     ``ValueError``. Only that raise is recognised, by its frames: the
-    innermost are the ``json`` package's, called by httpx's ``Response.json``
+    innermost are the ``json`` package's, called by httpx's (or httpx2's) ``Response.json``
     or directly, from a frame of *sdk*'s own package. A recursion bug in
     bmlib, or a deep ``json.loads`` bmlib makes itself, is re-raised.
 
@@ -320,7 +324,7 @@ def too_deep_body(exc: RecursionError, sdk: str, provider: str) -> ValueError:
     raised_in = len(frames)
     while frames and _package(frames[-1]) == "json":
         frames.pop()
-    if len(frames) < raised_in and frames and _module(frames[-1]) == "httpx._models":
+    if len(frames) < raised_in and frames and _module(frames[-1]) in _RESPONSE_DECODERS:
         frames.pop()
     if len(frames) == raised_in or not frames or _package(frames[-1]) != sdk:
         raise exc
