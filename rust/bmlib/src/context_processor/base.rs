@@ -389,8 +389,9 @@ impl ProcessingCore {
                     .map(|s| (*s).to_string())
                     .or_else(|| panic.downcast_ref::<String>().cloned())
                     .unwrap_or_else(|| "a panic that is not text".to_string());
-                eprintln!(
-                    "bmlib.context_processor.base WARNING: Progress callback failed: {reason}"
+                log::warn!(
+                    target: "bmlib.context_processor.base",
+                    "Progress callback failed: {reason}"
                 );
             }
         }

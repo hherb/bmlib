@@ -460,8 +460,9 @@ fn kind(raw: &str, unknown_kinds: &mut HashSet<String>) -> RetractionKind {
     let kind = RetractionKind::from_raw(raw);
     let key = raw.trim().to_lowercase();
     if kind == RetractionKind::Other && key != "other" && unknown_kinds.insert(key) {
-        eprintln!(
-            "bmlib.publications.retraction_status WARNING: Unrecognised Crossref relation type \
+        log::warn!(
+            target: "bmlib.publications.retraction_status",
+            "Unrecognised Crossref relation type \
              {raw:?}; kept as \"other\" with the original in raw_kind. Crossref's answer for a \
              paper whose updated-by carries it counts as not given, so the paper reads \
              unchecked, not clear."

@@ -28,8 +28,8 @@
 //! accept non-ASCII decimal digits; these do not, and no model reply is known to
 //! carry one.
 //!
-//! Python logs a refused value at DEBUG; the port has no logging facade and
-//! does not.
+//! Python logs a refused value at DEBUG, naming its field; these take no field
+//! name, so the port does not.
 
 use serde_json::Value;
 

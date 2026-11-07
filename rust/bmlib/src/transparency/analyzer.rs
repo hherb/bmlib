@@ -56,9 +56,9 @@
 //!   are interpolated into the URL by [`encode_query`]; the `User-Agent`
 //!   ([`user_agent`]) and [`JSON_ACCEPT_HEADERS`] are exposed as values for a
 //!   real transport to send, but nothing here can attach them.
-//! * Python's `logging` has no facade in this crate. Levels are preserved as a
-//!   prefix on `stderr`, matching `jats_reader`'s convention, so a measured
-//!   WARNING is still distinguishable from a measured DEBUG.
+//! * Lines are `log` records under Python's logger name,
+//!   `bmlib.transparency.analyzer`, at Python's levels, so a measured WARNING
+//!   is still distinguishable from a measured DEBUG (and a test can check which).
 //! * Python holds `_api_reachable` in `threading.local()` so concurrent
 //!   `analyze()` calls cannot contaminate each other. Here it is a field on the
 //!   per-call [`Analysis`] threaded through the request helpers — the plan's §6
@@ -99,18 +99,16 @@ enum Level {
     Warning,
 }
 
-/// Write one log line to `stderr`.
+/// Log one line under Python's logger name, `bmlib.transparency.analyzer`.
 ///
-/// The crate has no logging facade; `jats_reader` writes its ERROR lines with
-/// `eprintln!` and this follows it. The level is a prefix on the message so
-/// that a line's level — which is a measured claim in this module, per issue
-/// #191 — survives without a logger to set.
+/// A line's level is a measured claim in this module (issue #191), so tests
+/// check it with a capturing logger (#685).
 fn log_line(level: Level, message: &str) {
-    let prefix = match level {
-        Level::Debug => "DEBUG",
-        Level::Warning => "WARNING",
+    let level = match level {
+        Level::Debug => log::Level::Debug,
+        Level::Warning => log::Level::Warn,
     };
-    eprintln!("bmlib.transparency.analyzer {prefix}: {message}");
+    log::log!(target: "bmlib.transparency.analyzer", level, "{message}");
 }
 
 // ---------------------------------------------------------------------------

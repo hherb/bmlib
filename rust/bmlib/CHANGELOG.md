@@ -18,6 +18,23 @@ The Python library is documented separately, in the repository's
   are kept) and accepts a blank, `null` or absent description on a part
   that stays `NotReported`. The oracle gains a case and one moves.
 
+- **Warnings are `log` records, not stderr lines** (#688, and #685's option
+  (b)). The crate depends on the [`log`](https://docs.rs/log) facade
+  (MIT/Apache-2.0); every `eprintln!` in the library is now a record whose
+  target is the Python module's logger name (`bmlib.secrets`,
+  `bmlib.embed.model`, `bmlib.fulltext.service`, `bmlib.fulltext.jats_parser`,
+  `bmlib.transparency.analyzer`, …) at Python's level, the message without
+  the old `bmlib.x WARNING:` prefix. A packaged app keeps no stderr, so its
+  logger (`env_logger`, `tauri-plugin-log`) now receives them: `KeyBundle::set`
+  replacing an unreadable item, a model file deleted and fetched again, a
+  disabled full-text cache. **A host with no logger now sees nothing**, where
+  it saw stderr. `FullTextService` still keeps its `LogLine`s. Tests read the
+  records with `tests/common/log_capture.rs` (per thread, as `caplog`): the
+  secrets warning mirrors Python's `test_saving_over_an_unreadable_item_says_so_once`,
+  and `a_500_is_not_served_only_for_a_closed_access_record` pins each
+  full-text line's level (DEBUG not served, WARN no answer, a new 404 case),
+  so #685's two mutants now fail.
+
 ### Added
 
 - **A live check that ClinicalTrials.gov answers a default `UreqClient`**
