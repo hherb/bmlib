@@ -8,6 +8,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An Ollama 200 that is not a JSON object is the server's failure** (#617's
+  Ollama half, the maintainer's choice to close it). ollama-python reads the
+  body with `cls(**body)`, and each streamed line with `part.get(...)`, so a
+  JSON array, string, number, boolean or `null` raised `TypeError` or
+  `AttributeError` out of `OllamaProvider.chat()` (and out of `chat_stream()`
+  for the first line) — `_BUG_TYPES` members, so `PicoAgent` and the
+  condenser propagated the server's answer as a bmlib defect. Both now raise
+  `ValueError("ollama: the response is not a JSON object (got an array)")`,
+  chained to the SDK's exception. The SDK keeps the transport: the raise is
+  recognised by the frame it came from (`Client._request` or its stream's
+  `inner`, in the SDK's own `_client.py`) and its message, so a `TypeError`
+  raised anywhere else, bmlib's included, propagates unchanged. It names the
+  JSON type and not the bytes, which the SDK has already discarded (Rust's
+  `parse_ollama_response` quotes the body). A later streamed line that is
+  not an object was already a `StreamError`. No draw has seen such a body.
+
 - **ClinicalTrials.gov no longer refuses a `User-Agent` without
   `python-httpx`, and the docs say so** (#606). Re-measured 2026-11-07: bare
   `bmlib/{version}`, `curl`, `python-requests` and a browser string all served

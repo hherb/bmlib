@@ -341,6 +341,60 @@ class _LazyOllamaModelMetadata(ModelMetadata):
         )
 
 
+# What a JSON value decoded into a Python type is called in JSON.
+_JSON_TYPE_NAMES = {
+    "list": "an array",
+    "str": "a string",
+    "int": "a number",
+    "float": "a number",
+    "bool": "a boolean",
+    "NoneType": "null",
+}
+
+_NOT_A_MAPPING = re.compile(r"argument after \*\* must be a mapping, not (\w+)$")
+
+
+def _non_object_body(exc: BaseException) -> str | None:
+    """What JSON the server sent in place of an object, if *exc* says so (#617).
+
+    ollama-python reads a 200 with ``cls(**body)`` in ``Client._request``,
+    and each streamed line with ``part.get(...)`` in its ``inner``, so a body
+    that is not a JSON object raises ``TypeError`` or ``AttributeError``,
+    both ``_BUG_TYPES`` members. Only that raise is recognised, by the frame
+    it came from and what it says, so a bmlib defect anywhere else is not.
+
+    Returns:
+        The JSON type's name (``"an array"``), or ``None`` if *exc* is not that.
+    """
+    import importlib
+
+    tb = exc.__traceback__
+    if tb is None:
+        return None
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    code = tb.tb_frame.f_code
+    # Not ollama._client: the package rebinds that name to a Client instance.
+    if code.co_filename != importlib.import_module("ollama._client").__file__:
+        return None
+    if isinstance(exc, TypeError) and code.co_name == "_request":
+        match = _NOT_A_MAPPING.search(str(exc))
+        name = match.group(1) if match else None
+    elif isinstance(exc, AttributeError) and code.co_name == "inner" and exc.name == "get":
+        name = type(exc.obj).__name__
+    else:
+        return None
+    return _JSON_TYPE_NAMES.get(name) if name else None
+
+
+def _refused_body(exc: TypeError | AttributeError) -> ValueError:
+    """*exc* as the server's failure if :func:`_non_object_body` names it; else re-raise."""
+    got = _non_object_body(exc)
+    if got is None:
+        raise exc
+    return ValueError(f"ollama: the response is not a JSON object (got {got})")
+
+
 def _opened(stream: Iterable[Any]) -> Iterator[Any]:
     """Open ollama-python's stream as :meth:`OllamaProvider.chat` would.
 
@@ -348,7 +402,9 @@ def _opened(stream: Iterable[Any]) -> Iterator[Any]:
     call is the request being refused or not, and it raises what ``chat()``
     raises rather than :class:`~bmlib.llm.stream.StreamError`. The SDK's
     stream path leaves a refused connection as ``httpx.ConnectError``, which
-    its ``chat()`` turns into ``ConnectionError``; so this does too.
+    its ``chat()`` turns into ``ConnectionError``; so this does too, and a
+    first line that is not a JSON object is the ``ValueError`` ``chat()``
+    raises for such a body.
     """
     import httpx  # ollama-python's own transport, installed with it
 
@@ -359,6 +415,8 @@ def _opened(stream: Iterable[Any]) -> Iterator[Any]:
         return iter(())
     except httpx.ConnectError as exc:
         raise ConnectionError(f"failed to connect to Ollama: {exc}") from exc
+    except (TypeError, AttributeError) as exc:
+        raise _refused_body(exc) from exc
     return itertools.chain([first], iterator)
 
 
@@ -497,12 +555,19 @@ class OllamaProvider(BaseProvider):
                 is often far smaller than the model's window and silently
                 drops the start of a long prompt. Anything else raises
                 :class:`ValueError`.
+
+        Raises:
+            ValueError: A bad ``num_ctx``, or a 200 whose body is not a JSON
+                object (#617), named by its JSON type.
         """
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
 
-        response = client.chat(**request_kwargs)
+        try:
+            response = client.chat(**request_kwargs)
+        except (TypeError, AttributeError) as exc:
+            raise _refused_body(exc) from exc
 
         # ollama >=0.4 returns Pydantic models; older versions return dicts.
         message = _safe_get(response, "message")
@@ -670,6 +735,7 @@ class OllamaProvider(BaseProvider):
             ConnectionError: If the server cannot be reached, as :meth:`chat`.
             ollama.ResponseError: If the server refuses the request, as
                 :meth:`chat`.
+            ValueError: If the first line is not a JSON object, as :meth:`chat`.
             StreamError: If the stream fails after it opens or ends early.
         """
         refuse_tools(kwargs)
