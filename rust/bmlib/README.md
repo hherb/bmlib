@@ -27,6 +27,7 @@ needs none of them pulls in none:
 | `pdf` | off | `mupdf`, `mupdf-sys` | PDF → text with MuPDF, the engine Python's PyMuPDF binds. Compiled from source and linked statically (a C compiler and libclang); nothing is downloaded or loaded at run time. |
 | `html` | off | `scraper`, `ego-tree` | `fulltext::canonical`'s HTML → canonical text, over html5ever as Python's `html` extra is. |
 | `postgres` | off | `postgres` | A real PostgreSQL backend. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present — this adds the driver that can run a statement against a server. |
+| `model-download` | off | nothing | `embed::verify_model`, `ModelError` and, with `http-ureq`, `download_model` and `download_verified`: a pinned, sha256-verified download with no llama.cpp. `embed` implies it. |
 | `embed` | off | `llama-cpp-2` | `embed::Embedder` and model verification; the download also needs `http-ureq`. Builds llama.cpp (cmake and a C++ compiler). The constants and vector rules in `embed` are always present. |
 | `embed-metal` | off | `embed` + llama.cpp's Metal backend | Names Metal explicitly; on macOS `embed` already uses it, and a CPU-only build needs `GGML_METAL=OFF`. |
 
