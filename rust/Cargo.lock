@@ -371,6 +371,7 @@ dependencies = [
  "keyring",
  "llama-cpp-2",
  "llama-cpp-sys-2",
+ "log",
  "mupdf",
  "mupdf-sys",
  "postgres",

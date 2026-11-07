@@ -48,7 +48,7 @@ With the feature, `KeyBundle::keyring("com.example.myapp")` is the item
 | Item | What it is |
 |---|---|
 | `SecretStore` | `get(provider) -> Option<String>`, `set(provider, key)`, `delete(provider)` (absent is fine); `Send + Sync` |
-| `KeyBundle<V: Vault>` | A `SecretStore` over one item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it; a failed read is not cached. `set` over an item that is not a key list replaces it with one holding just the new key, dropping whatever it held (logged to stderr); `get` and `delete` report it (`UnreadableItem`). A failed write leaves the cache as it was. Its `Debug` shows `loaded`, never a key |
+| `KeyBundle<V: Vault>` | A `SecretStore` over one item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it; a failed read is not cached. `set` over an item that is not a key list replaces it with one holding just the new key, dropping whatever it held (a WARN record under `bmlib.secrets`); `get` and `delete` report it (`UnreadableItem`). A failed write leaves the cache as it was. Its `Debug` shows `loaded`, never a key |
 | `Vault` | `read() -> Option<String>`, `write(text)`: the one item, the only part that touches the OS |
 | `KeyringVault::new(service, account)` | *(feature `keyring`)* The OS keychain item; a missing item reads as `None`, one that is not UTF-8 (or not in the store's format) as unreadable, so `set` replaces it; two matching items (`Ambiguous`, on a read or a write) are `AmbiguousItem`, which `set` does not replace. A store that could not be set up says why |
 | `MemorySecrets` | An in-memory `SecretStore` |

@@ -1518,12 +1518,12 @@ impl FullTextService {
 
     fn push_log(&self, level: LogLevel, message: impl Into<String>) {
         let message = message.into();
-        let label = match level {
-            LogLevel::Debug => "DEBUG",
-            LogLevel::Info => "INFO",
-            LogLevel::Warning => "WARNING",
+        let record_level = match level {
+            LogLevel::Debug => log::Level::Debug,
+            LogLevel::Info => log::Level::Info,
+            LogLevel::Warning => log::Level::Warn,
         };
-        eprintln!("{label}: {message}");
+        log::log!(target: "bmlib.fulltext.service", record_level, "{message}");
         self.log
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -3222,15 +3222,17 @@ pub fn default_cache() -> Option<FullTextCache> {
 /// can name does not open one.
 fn default_cache_at(default: Option<FullTextCache>) -> Option<FullTextCache> {
     let Some(cache) = default else {
-        eprintln!(
-            "WARNING: Could not determine a home directory for the full-text cache (HOME is unset and this platform's own fallback found nothing); retrieval still works and full text still parses, but nothing will be cached, so every run re-fetches — and a PDF-only article comes back as a bare URL, since a PDF is downloaded into the cache and extracted only once cached. Pass cache=FullTextCache(cache_dir=...) to name a location."
+        log::warn!(
+            target: "bmlib.fulltext.service",
+            "Could not determine a home directory for the full-text cache (HOME is unset and this platform's own fallback found nothing); retrieval still works and full text still parses, but nothing will be cached, so every run re-fetches — and a PDF-only article comes back as a bare URL, since a PDF is downloaded into the cache and extracted only once cached. Pass cache=FullTextCache(cache_dir=...) to name a location."
         );
         return None;
     };
     for directory in [cache.cache_dir.clone(), cache.pdf_dir(), cache.html_dir()] {
         if let Err(error) = std::fs::create_dir_all(&directory) {
-            eprintln!(
-                "WARNING: Could not create the full-text cache directory ({:?}: {error}); retrieval still works and full text still parses, but nothing will be cached, so every run re-fetches — and a PDF-only article comes back as a bare URL, since a PDF is downloaded into the cache and extracted only once cached. Pass cache=FullTextCache(cache_dir=...) to use a writable location.",
+            log::warn!(
+                target: "bmlib.fulltext.service",
+                "Could not create the full-text cache directory ({:?}: {error}); retrieval still works and full text still parses, but nothing will be cached, so every run re-fetches — and a PDF-only article comes back as a bare URL, since a PDF is downloaded into the cache and extracted only once cached. Pass cache=FullTextCache(cache_dir=...) to use a writable location.",
                 error.kind()
             );
             return None;

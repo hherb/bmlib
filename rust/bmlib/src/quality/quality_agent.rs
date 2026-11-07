@@ -167,7 +167,10 @@ impl<'a> QualityAgent<'a> {
         if title.trim().is_empty() && abstract_text.trim().is_empty() {
             // Left to itself the model would return fully-formed strengths and
             // limitations for a paper it was told nothing about.
-            eprintln!("bmlib.quality.quality_agent WARNING: Cannot assess: both title and abstract are empty");
+            log::warn!(
+                target: "bmlib.quality.quality_agent",
+                "Cannot assess: both title and abstract are empty"
+            );
             return QualityAssessment::unclassified();
         }
 
@@ -198,8 +201,9 @@ impl<'a> QualityAgent<'a> {
             // crashes are repaired in `llm_parsers`. The Python's WARNING too,
             // since nothing above this reports the failure (#489).
             Err(e) => {
-                eprintln!(
-                    "bmlib.quality.quality_agent WARNING: Quality assessment failed after retries: {e}"
+                log::warn!(
+                    target: "bmlib.quality.quality_agent",
+                    "Quality assessment failed after retries: {e}"
                 );
                 QualityAssessment::unclassified()
             }

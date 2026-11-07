@@ -499,10 +499,10 @@ pub fn parse_with_pmc_id(xml: &str, known_pmc_id: &str) -> Result<JATSArticle, J
 /// Parse a JATS document and return the article **and** the audit.
 ///
 /// The two `parse` functions are this one with the audit logged and dropped.
-/// Every diagnostic is written to stderr at ERROR and every counted loss at
-/// WARNING — the port links no logging facade, so stderr is the level's
-/// mapping; a caller wanting the lines rather than the side effect reads them
-/// from the returned [`JatsReport`].
+/// Every diagnostic is logged at ERROR and every counted loss at WARNING, under
+/// Python's logger name `bmlib.fulltext.jats_parser`; a caller wanting the
+/// lines rather than the side effect reads them from the returned
+/// [`JatsReport`].
 ///
 /// # Errors
 ///
@@ -513,11 +513,17 @@ pub fn parse_audited(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsEr
 
     let report = handler.finish();
     for message in &report.diagnostics {
-        eprintln!("ERROR: JATS parse of {}: {}", report.article_label, message);
+        log::error!(
+            target: "bmlib.fulltext.jats_parser",
+            "JATS parse of {}: {}",
+            report.article_label,
+            message
+        );
     }
     for message in &report.warnings {
-        eprintln!(
-            "WARNING: JATS parse of {}: {}",
+        log::warn!(
+            target: "bmlib.fulltext.jats_parser",
+            "JATS parse of {}: {}",
             report.article_label, message
         );
     }

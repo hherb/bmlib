@@ -18,6 +18,8 @@
 //! same file Python's `tests/test_secrets.py` reads, #634): how the one
 //! keychain item reads and is written, and what a `KeyBundle` does over it.
 
+mod common;
+
 use bmlib::secrets::{
     read_key_list, write_key_list, KeyBundle, KeyList, SecretError, SecretErrorKind, SecretStore,
     Vault,
@@ -191,4 +193,30 @@ fn bundles_agree_with_the_fixture() {
             "{name}: reads"
         );
     }
+}
+
+/// Python's `test_saving_over_an_unreadable_item_says_so_once`: one WARNING
+/// under `bmlib.secrets`, naming the item's state and never its contents
+/// (`sk-leaky`), so a host's logger receives it (#688).
+#[test]
+fn saving_over_an_unreadable_item_says_so_once() {
+    let vault = FakeVault::default();
+    *vault.item.lock().unwrap() = Some("not json sk-leaky".to_string());
+    let store = KeyBundle::new(vault);
+    common::log_capture::start();
+    store
+        .set("openai", "k1")
+        .expect("the set replaces the item");
+    let got: Vec<(log::Level, String)> = common::log_capture::take("bmlib.secrets")
+        .into_iter()
+        .map(|record| (record.level, record.message))
+        .collect();
+    assert_eq!(
+        got,
+        [(
+            log::Level::Warn,
+            "the keychain item is not a valid key list; replacing it with the key being saved"
+                .to_string()
+        )]
+    );
 }

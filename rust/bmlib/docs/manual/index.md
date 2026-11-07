@@ -81,6 +81,15 @@ building one, which is what lets them be tested without a network:
 (the mobile apps, through `rust/bmlib-ffi`) supplies its own. Likewise every
 database function takes `&mut dyn Db`.
 
+**Logged through the `log` facade.** Every warning is a
+[`log`](https://docs.rs/log) record whose target is the Python module's logger
+name (`bmlib.secrets`, `bmlib.fulltext.service`, …) at Python's level, so a
+host filters both languages alike and its logger (`env_logger`,
+`tauri-plugin-log`) receives them; a packaged app keeps no stderr (#688). With
+no logger installed nothing is printed, where Python's `logging` still writes
+a WARNING to stderr. Tests read the records with
+`tests/common/log_capture.rs`, as Python's `caplog` does.
+
 **Equivalent to a corrected Python.** Where the Python library is wrong, the
 port implements the intended behaviour and says so in the module that does.
 What is deliberately *kept* is the Python repository's

@@ -16,7 +16,7 @@
 
 //! Shared harnesses.
 //!
-//! Three so far:
+//! Four so far:
 //!
 //! * [`both_backends!`] runs one test body against SQLite and PostgreSQL. It is
 //!   the Rust equivalent of `tests/test_backends.py`'s `backend_conn` fixture;
@@ -31,11 +31,14 @@
 //! * [`oracle`] reads the differential corpora's **response vocabulary** — a
 //!   body, a status, a transport failure — the same way in every harness that
 //!   scripts a fetcher's transport.
+//! * [`log_capture`] keeps what bmlib logged on the test's thread, by target
+//!   and level, as Python's `caplog` does.
 
 #![allow(dead_code)]
 
 #[cfg(feature = "postgres")]
 pub mod live_pg;
+pub mod log_capture;
 pub mod oracle;
 pub mod pg_sim;
 pub mod pubmed_sim;

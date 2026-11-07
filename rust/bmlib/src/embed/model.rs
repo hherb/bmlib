@@ -304,7 +304,7 @@ mod download {
     ///
     /// An already-verified file costs no network, but it is re-hashed on
     /// every call (about 1 s per GB), so call this once per launch. A
-    /// mismatched one is deleted, with a WARNING on stderr, and fetched again.
+    /// mismatched one is deleted, with a WARNING logged, and fetched again.
     /// The download goes through a temporary file named for this call alone
     /// (`.<file>.<pid>-<time>-<n>.part`), which is synced to disk before the
     /// rename and removed on any failure or cancel, so concurrent calls cost
@@ -348,8 +348,9 @@ mod download {
                 Err(
                     e @ (ModelError::SizeMismatch { .. } | ModelError::ChecksumMismatch { .. }),
                 ) => {
-                    eprintln!(
-                        "bmlib.embed.model WARNING: deleting {} and fetching it again: {e}",
+                    log::warn!(
+                        target: "bmlib.embed.model",
+                        "deleting {} and fetching it again: {e}",
                         final_path.display()
                     );
                     match std::fs::remove_file(&final_path) {
