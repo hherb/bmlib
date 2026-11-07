@@ -189,16 +189,20 @@ class AnthropicProvider(BaseProvider):
                 messages (``role="tool"``) and assistant messages with
                 ``tool_calls`` for multi-turn tool conversations.
             model: Model identifier (e.g. ``"claude-sonnet-4-20250514"``).
-            temperature: Sampling temperature.
+            temperature: Accepted for the common provider signature and
+                **not sent** (#705): anthropic >= 1.0's ``create()`` takes no
+                such keyword, API version ``2026-10-21``, which anthropic
+                2.x sends, refuses a sampling parameter on every
+                model, and Claude Opus 4.7 and later refuse one on
+                ``2023-06-01`` too, so every request samples at the API's
+                defaults.
             max_tokens: Maximum tokens to generate.
-            **kwargs: Extra options (``top_p``, ``json_mode``,
-                ``tools``, ``tool_choice``, ``think``). A truthy
-                ``think`` enables extended thinking: ``True`` uses the
-                default budget, an ``int`` sets ``budget_tokens``, and
-                ``"low"``/``"medium"``/``"high"`` map to preset budgets.
-                With thinking enabled the API only accepts default
-                sampling parameters, so ``temperature`` and ``top_p``
-                are omitted from the request.
+            **kwargs: Extra options (``json_mode``, ``tools``,
+                ``tool_choice``, ``think``; ``top_p`` is not sent, as
+                *temperature* is not). A truthy ``think`` enables extended
+                thinking: ``True`` uses the default budget, an ``int`` sets
+                ``budget_tokens``, and ``"low"``/``"medium"``/``"high"`` map
+                to preset budgets.
 
         Raises:
             ValueError: If *think* is truthy but *max_tokens* leaves no
@@ -209,7 +213,7 @@ class AnthropicProvider(BaseProvider):
         """
         model = model or self.default_model
         client = self._get_client()
-        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
+        request_kwargs = self._request_kwargs(messages, model, max_tokens, kwargs)
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
 
         try:
@@ -263,7 +267,6 @@ class AnthropicProvider(BaseProvider):
         self,
         messages: list[LLMMessage],
         model: str,
-        temperature: float,
         max_tokens: int,
         kwargs: dict[str, object],
     ) -> dict[str, object]:
@@ -273,7 +276,6 @@ class AnthropicProvider(BaseProvider):
         Raises:
             ValueError: As :meth:`chat` documents for *think*.
         """
-        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
         tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
         tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
         think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
@@ -288,22 +290,16 @@ class AnthropicProvider(BaseProvider):
             "model": model,
             "messages": chat_messages,
             "max_tokens": max_tokens,
-            "temperature": temperature,
         }
+        # No temperature or top_p (#705): see chat()'s docstring.
         if system_content:
             request_kwargs["system"] = system_content
-        if top_p is not None:
-            request_kwargs["top_p"] = top_p
 
         if think:
             request_kwargs["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": _resolve_thinking_budget(think, max_tokens),
             }
-            # The API rejects non-default sampling parameters while
-            # thinking is enabled — omit them rather than error out.
-            request_kwargs.pop("temperature", None)
-            request_kwargs.pop("top_p", None)
 
         # Tool calling: convert OpenAI-style tool defs to Anthropic format
         # and forward tool_choice if explicitly set.
@@ -340,7 +336,7 @@ class AnthropicProvider(BaseProvider):
         refuse_tools(kwargs)
         model = model or self.default_model
         client = self._get_client()
-        request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
+        request_kwargs = self._request_kwargs(messages, model, max_tokens, kwargs)
         return read_stream(
             "anthropic",
             lambda: client.messages.create(**request_kwargs, stream=True),

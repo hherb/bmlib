@@ -216,8 +216,8 @@ class TestAnthropicThinkingRequest:
         with pytest.raises(ValueError, match="egative"):
             provider.chat([LLMMessage(role="user", content="q")], max_tokens=8000, think=-100)
 
-    def test_temperature_and_top_p_omitted_when_thinking(self):
-        # The API rejects non-default sampling params with thinking enabled.
+    def test_thinking_sends_no_sampling_parameters(self):
+        # Never sent (#705); thinking does not bring them back.
         provider = _anthropic_provider()
         provider.chat(
             [LLMMessage(role="user", content="q")],
@@ -230,19 +230,21 @@ class TestAnthropicThinkingRequest:
         assert "temperature" not in req
         assert "top_p" not in req
 
-    def test_no_think_request_unchanged(self):
+    def test_no_think_request_sends_no_sampling_either(self):
+        # Never sent, thinking or not (#705).
         provider = _anthropic_provider()
-        provider.chat([LLMMessage(role="user", content="q")], temperature=0.2)
+        provider.chat([LLMMessage(role="user", content="q")], temperature=0.2, top_p=0.9)
         req = _anthropic_request(provider)
         assert "thinking" not in req
-        assert req["temperature"] == 0.2
+        assert "temperature" not in req
+        assert "top_p" not in req
 
-    def test_think_false_request_unchanged(self):
+    def test_think_false_sends_no_thinking(self):
         provider = _anthropic_provider()
         provider.chat([LLMMessage(role="user", content="q")], think=False)
         req = _anthropic_request(provider)
         assert "thinking" not in req
-        assert "temperature" in req
+        assert "temperature" not in req
 
 
 class TestAnthropicThinkingResponse:

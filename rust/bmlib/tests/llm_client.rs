@@ -267,7 +267,7 @@ fn the_system_prompt_is_separate_on_anthropic() {
 
 /// A reasoning model gets `max_completion_tokens` and **no `temperature`**,
 /// which OpenAI's o-series rejects rather than ignores. On the OpenAI protocol
-/// only — Anthropic has no such restriction and keeps its `temperature`.
+/// only; Anthropic is never sent one (see `anthropic_sends_no_sampling_parameters`).
 #[test]
 fn a_reasoning_model_drops_temperature_and_renames_the_cap() {
     let transport = ScriptedClient::ok(json!({"choices": [{"message": {"content": "x"}}]}));
@@ -289,17 +289,18 @@ fn a_reasoning_model_drops_temperature_and_renames_the_cap() {
     assert_eq!(body["temperature"], json!(0.7));
 }
 
-/// Anthropic's extended thinking **drops `temperature` and `top_p`**: the API
-/// rejects non-default sampling parameters while thinking is enabled, and the
-/// Python's provider omits them for that reason.
+/// Anthropic is **never sent `temperature` or `top_p`** (#705), thinking or
+/// not: API version `2026-10-21` refuses them on every model and Claude Opus
+/// 4.7+ refuses them on `2023-06-01` too.
 #[test]
-fn anthropic_thinking_drops_the_sampling_parameters() {
+fn anthropic_sends_no_sampling_parameters() {
     let mut request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("anthropic:m");
+    request.temperature = 0.2;
     request.top_p = Some(0.9);
     let target = resolve_target(&request, "anthropic", None, Some("k")).expect("resolves");
     let body = chat_body(&request, &target, false);
-    assert_eq!(body["temperature"], json!(0.7), "kept without thinking");
-    assert_eq!(body["top_p"], json!(0.9));
+    assert!(body.get("temperature").is_none(), "{body:?}");
+    assert!(body.get("top_p").is_none(), "{body:?}");
 
     request.think = Some("2048".to_string());
     let body = chat_body(&request, &target, false);

@@ -253,7 +253,8 @@ class BaseAgent:
         repair is truncation all the same: repair closes the brackets and
         strings the model never closed, so it cannot vouch for completeness.
         At temperature 0 the retry is provably futile (greedy sampling
-        reproduces the identical truncation), so it raises immediately;
+        reproduces the identical truncation), so it raises immediately
+        (not so on Anthropic, which is sent no temperature, #705; see #708);
         at temperature > 0 a retry may sample a shorter completion that
         fits, so truncation still gets the normal retries, but the
         final error names the real cause.

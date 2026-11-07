@@ -295,7 +295,8 @@ pub trait ChatSource {
 /// * **Truncated** — the model hit the ceiling. At `temperature == 0.0` greedy
 ///   sampling reproduces the identical truncation, so retrying pays for it again
 ///   and the call fails at once; above zero a retry may sample a shorter
-///   completion that fits, so it is retried.
+///   completion that fits, so it is retried. (Not so on Anthropic, which is
+///   sent no `temperature` (#705); see #708.)
 /// * **Wrong shape under `require_dict`** — the same argument: the same messages
 ///   at temperature 0 return the same array.
 /// * **Empty** or **unparseable** — always retried: both can be sampling noise.

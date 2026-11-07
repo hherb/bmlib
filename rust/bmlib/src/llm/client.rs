@@ -253,11 +253,11 @@ pub struct ChatRequest {
     pub messages: Vec<LLMMessage>,
     /// The provider:model string, or a bare model for the default provider.
     pub model: Option<String>,
-    /// Sampling temperature.
+    /// Sampling temperature. Not sent to Anthropic (#705).
     pub temperature: f64,
     /// The output cap. Sent as `max_completion_tokens` for a reasoning model.
     pub max_tokens: i64,
-    /// Nucleus sampling, when set.
+    /// Nucleus sampling, when set. Not sent to Anthropic (#705).
     pub top_p: Option<f64>,
     /// Ask the server for a JSON object.
     pub json_mode: bool,
@@ -561,10 +561,10 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
             }
             body.insert("messages".to_string(), Value::Array(messages));
             body.insert("max_tokens".to_string(), json!(request.max_tokens));
-            body.insert("temperature".to_string(), json!(request.temperature));
-            if let Some(top_p) = request.top_p {
-                body.insert("top_p".to_string(), json!(top_p));
-            }
+            // No `temperature` or `top_p` (#705): API version `2026-10-21`
+            // refuses them on every model and Claude Opus 4.7+ on
+            // `2023-06-01` too, so Anthropic samples at its defaults, as the
+            // Python provider does.
             if let Some(tools) = request.tools.as_ref() {
                 body.insert(
                     "tools".to_string(),
@@ -583,11 +583,6 @@ pub fn chat_body(request: &ChatRequest, target: &Target, is_reasoning: bool) -> 
                     "thinking".to_string(),
                     json!({"type": "enabled", "budget_tokens": budget}),
                 );
-                // The API rejects non-default sampling parameters while
-                // thinking is enabled, so they are omitted, as the Python's
-                // provider omits them.
-                body.remove("temperature");
-                body.remove("top_p");
             }
         }
         Protocol::Ollama => {

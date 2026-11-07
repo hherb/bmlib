@@ -2340,21 +2340,68 @@ class TestOllamaEmbedAndShowReadTheBodyAsChatDoes:
 _TOO_DEEP = b"[" * 10**6 + b"]" * 10**6
 
 
-def _anthropic_create_lacks_temperature() -> bool:
-    """Does the installed anthropic SDK's ``Messages.create`` refuse ``temperature`` (#705)?"""
-    try:
-        from anthropic.resources.messages import Messages
-    except ImportError:
-        return False
-    import inspect
-
-    return "temperature" not in inspect.signature(Messages.create).parameters
-
-
 def _sdk_httpx(sdk: str):
-    """The HTTP library *sdk*'s client takes: httpx, or httpx2 from anthropic 2.x / openai 3.x."""
-    base = pytest.importorskip(f"{sdk}._base_client")
+    """The HTTP library *sdk*'s client takes: httpx, or httpx2 from anthropic 2.x / openai 3.x.
+
+    Skips only when *sdk* is not installed: an installed SDK whose private
+    ``_base_client`` moved fails, so the real-SDK tests cannot go quiet.
+    """
+    pytest.importorskip(sdk)
+    import importlib
+
+    base = importlib.import_module(f"{sdk}._base_client")
     return getattr(base, "httpx2", None) or base.httpx
+
+
+class TestAnthropicSendsNoSamplingParameters:
+    """``temperature`` and ``top_p`` never reach the wire (#705).
+
+    Through the installed SDK over a mock transport: anthropic ≥ 1.0's
+    ``create()`` refuses them as keywords, and API version ``2026-10-21``
+    and Claude Opus 4.7+ refuse them in the body, so the provider's mocked
+    clients, which accept any keyword, could not see the defect.
+    """
+
+    _OK = {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "m",
+        "content": [{"type": "text", "text": "hello"}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 3, "output_tokens": 1},
+    }
+
+    def _provider(self):
+        anthropic = pytest.importorskip("anthropic")
+        httpx = _sdk_httpx("anthropic")
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        bodies: list[dict] = []
+
+        def handler(request):
+            bodies.append(json.loads(request.content))
+            return httpx.Response(200, json=self._OK)
+
+        provider = AnthropicProvider(api_key="k")
+        provider._client = anthropic.Anthropic(
+            api_key="k",
+            http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+            max_retries=0,
+        )
+        return provider, bodies
+
+    def test_chat_sends_neither(self):
+        provider, bodies = self._provider()
+        response = provider.chat(
+            [LLMMessage(role="user", content="hi")], model="m", temperature=0.2, top_p=0.9
+        )
+        assert response.content == "hello"
+        assert len(bodies) == 1
+        assert "temperature" not in bodies[0]
+        assert "top_p" not in bodies[0]
+        assert bodies[0]["max_tokens"] == 4096
 
 
 class TestABodyNestedTooDeeplyIsTheServers:
@@ -2426,12 +2473,6 @@ class TestABodyNestedTooDeeplyIsTheServers:
     def test_ollama_chat(self):
         self._chat_raises(self._ollama(_TOO_DEEP)[0], "ollama")
 
-    @pytest.mark.xfail(
-        condition=_anthropic_create_lacks_temperature(),
-        raises=TypeError,
-        strict=True,
-        reason="#705: anthropic 2.x's create() takes no temperature, so chat() sends nothing",
-    )
     def test_anthropic_chat(self):
         self._chat_raises(self._anthropic(), "anthropic")
 
