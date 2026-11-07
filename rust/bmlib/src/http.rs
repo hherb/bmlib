@@ -31,13 +31,17 @@ use std::collections::BTreeMap;
 /// stall costs the whole day's work.
 pub const DEFAULT_TIMEOUT_SECONDS: u64 = 45;
 
-/// How long a streamed body may take to arrive in full.
+/// How long a POST's response may take: its headers, then its body.
 ///
-/// [`DEFAULT_TIMEOUT_SECONDS`] covers a whole request, and a long streamed
-/// answer outlasts it: a model writing a few thousand tokens takes minutes.
-/// `ureq` has no idle timeout, so a stream gets the ordinary timeout for each
-/// step of sending the request, then this for the response headers (a local
-/// server may load the model before it answers) and this again for the body.
+/// [`DEFAULT_TIMEOUT_SECONDS`] covers a whole GET, and a model's answer
+/// outlasts it: a model writing a few thousand tokens takes minutes, streamed
+/// or not (#702: a thinking model's large `max_tokens` timed out a
+/// non-streamed chat at 45 s instead of stopping at its length). `ureq` has no
+/// idle timeout, so a POST ([`HttpClient::post_json`] and
+/// [`HttpClient::post_json_stream`]) gets the ordinary timeout for each step of
+/// sending the request, then this for the response headers (a local server may
+/// load the model before it answers) and this again for the body. Python's
+/// Anthropic and OpenAI SDKs read for 600 s by default, so the two agree.
 pub const DEFAULT_STREAM_TIMEOUT_SECONDS: u64 = 600;
 
 /// A blocking HTTP client over `ureq`.
@@ -51,12 +55,13 @@ pub struct UreqClient {
     /// carrying `python-httpx` with a 403 on 2026-09-06 and served the default
     /// on 2026-11-07 (issue #606); `tests/live_network.rs` checks it.
     pub user_agent: String,
-    /// Seconds before a request is abandoned. For a stream, the limit on each
-    /// step of sending it: connecting, then the request headers, then the
-    /// request body.
+    /// Seconds before a GET is abandoned. For a POST, the limit on each step
+    /// of sending it: connecting, then the request headers, then the request
+    /// body.
     pub timeout_seconds: u64,
-    /// Seconds a stream's response headers may take, and then its body
-    /// ([`HttpClient::post_json_stream`]).
+    /// Seconds a POST's response headers may take, and then its body: a
+    /// non-streamed chat ([`HttpClient::post_json`]) as well as a stream
+    /// ([`HttpClient::post_json_stream`]), since both wait on a model writing.
     pub stream_timeout_seconds: u64,
 }
 
@@ -87,7 +92,8 @@ impl UreqClient {
         UreqClient::default()
     }
 
-    /// The blocking agent a request runs on.
+    /// The blocking agent a GET runs on: [`UreqClient::timeout_seconds`] for
+    /// the whole request.
     fn agent(&self) -> Result<ureq::Agent, FetchError> {
         self.agent_with(
             ureq::Agent::config_builder()
@@ -95,10 +101,10 @@ impl UreqClient {
         )
     }
 
-    /// The blocking agent a stream runs on: [`UreqClient::timeout_seconds`]
-    /// for each step of sending, then [`UreqClient::stream_timeout_seconds`]
-    /// for the response headers and again for the response body.
-    fn stream_agent(&self) -> Result<ureq::Agent, FetchError> {
+    /// The blocking agent a POST runs on: [`UreqClient::timeout_seconds`] for
+    /// each step of sending, then [`UreqClient::stream_timeout_seconds`] for
+    /// the response headers and again for the response body.
+    fn post_agent(&self) -> Result<ureq::Agent, FetchError> {
         let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
         let stream = Some(std::time::Duration::from_secs(self.stream_timeout_seconds));
         self.agent_with(
@@ -128,6 +134,29 @@ impl UreqClient {
             .build();
         Ok(ureq::Agent::new_with_config(config))
     }
+
+    /// A `ureq` failure as a transport failure, naming the limit when it is a
+    /// timeout, so a caller sees "timed out after 600 s waiting for the
+    /// response headers" rather than a bare "timeout: receive response".
+    fn transport_error(&self, error: &ureq::Error) -> FetchError {
+        let ureq::Error::Timeout(kind) = error else {
+            return FetchError::Transport(error.to_string());
+        };
+        let (seconds, waiting) = match kind {
+            ureq::Timeout::RecvResponse => (
+                self.stream_timeout_seconds,
+                "waiting for the response headers",
+            ),
+            ureq::Timeout::RecvBody => (self.stream_timeout_seconds, "reading the response body"),
+            ureq::Timeout::Resolve | ureq::Timeout::Connect => (self.timeout_seconds, "connecting"),
+            ureq::Timeout::SendRequest | ureq::Timeout::SendBody => {
+                (self.timeout_seconds, "sending the request")
+            }
+            // `Global` is a GET's only limit; the others are not set here.
+            _ => (self.timeout_seconds, "on the whole request"),
+        };
+        FetchError::Transport(format!("timed out after {seconds} s {waiting} ({kind})"))
+    }
 }
 
 /// Read a `ureq` response into a [`HttpResponse`], whatever its status.
@@ -136,6 +165,7 @@ impl UreqClient {
 /// and for good reason: what a walker does with a 404 or a 429 differs from what
 /// it does with no connection at all.
 fn read_response(
+    client: &UreqClient,
     result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
 ) -> Result<HttpResponse, FetchError> {
     let response = match result {
@@ -148,7 +178,7 @@ fn read_response(
         Err(ureq::Error::StatusCode(code)) => {
             return Ok(HttpResponse::from_bytes(code, Vec::new()));
         }
-        Err(other) => return Err(FetchError::Transport(other.to_string())),
+        Err(other) => return Err(client.transport_error(&other)),
     };
     let status = response.status().as_u16();
     // **Bytes, never a string.** `read_to_string` rejects a body that is not
@@ -158,14 +188,14 @@ fn read_response(
     let body = response
         .into_body()
         .read_to_vec()
-        .map_err(|e| FetchError::Transport(e.to_string()))?;
+        .map_err(|e| client.transport_error(&e))?;
     Ok(HttpResponse::from_bytes(status, body))
 }
 
 impl HttpClient for UreqClient {
     fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
         let agent = self.agent()?;
-        read_response(agent.get(url).call())
+        read_response(self, agent.get(url).call())
     }
 
     fn get_with_headers(
@@ -178,7 +208,7 @@ impl HttpClient for UreqClient {
         for (name, value) in headers {
             request = request.header(name, value);
         }
-        read_response(request.call())
+        read_response(self, request.call())
     }
 
     fn post_json(
@@ -187,7 +217,7 @@ impl HttpClient for UreqClient {
         body: &serde_json::Value,
         headers: &BTreeMap<String, String>,
     ) -> Result<HttpResponse, FetchError> {
-        let agent = self.agent()?;
+        let agent = self.post_agent()?;
         let mut request = agent.post(url);
         for (name, value) in headers {
             request = request.header(name, value);
@@ -197,7 +227,7 @@ impl HttpClient for UreqClient {
         let payload = serde_json::to_string(body).map_err(|e| {
             FetchError::Transport(format!("could not encode the request body: {e}"))
         })?;
-        read_response(request.send(payload))
+        read_response(self, request.send(payload))
     }
 
     fn post_json_stream(
@@ -206,7 +236,7 @@ impl HttpClient for UreqClient {
         body: &serde_json::Value,
         headers: &BTreeMap<String, String>,
     ) -> Result<HttpStream, FetchError> {
-        let agent = self.stream_agent()?;
+        let agent = self.post_agent()?;
         let mut request = agent.post(url);
         for (name, value) in headers {
             request = request.header(name, value);
@@ -224,7 +254,7 @@ impl HttpClient for UreqClient {
                     body: Box::new(std::io::empty()),
                 });
             }
-            Err(other) => return Err(FetchError::Transport(other.to_string())),
+            Err(other) => return Err(self.transport_error(&other)),
         };
         Ok(HttpStream {
             status: response.status().as_u16(),
