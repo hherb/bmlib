@@ -232,14 +232,14 @@ class OpenAICompatibleProvider(BaseProvider):
                     parsed = json.loads(args_raw)
                     if isinstance(parsed, dict):
                         args = parsed
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, RecursionError):
                     args = {"_raw": args_raw}
             tool_calls.append(LLMToolCall(id=call_id, name=name, arguments=args))
 
         if json_mode and content:
             try:
                 json.loads(content)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
                 content = extract_json(content)
 
         return LLMResponse(

@@ -390,7 +390,8 @@ def _unbuilt_response_error(exc: BaseException) -> Exception | None:
     and suppresses only ``JSONDecodeError``, so a refusal whose body is JSON but
     not an object raises ``AttributeError`` (``.get``), and a streamed
     ``{"error": X}`` whose X is not text raises ``TypeError`` (from
-    ``json.loads``). Only a raise in that frame, of that shape, is recognised;
+    ``json.loads``), and a refusal nested too deeply to decode raises
+    ``RecursionError`` (#698). Only a raise in that frame, of that shape, is recognised;
     the error is rebuilt from the frame's own arguments, the server's text and
     status, so :func:`~bmlib.llm.utils.http_status` still reads the status.
 
@@ -414,6 +415,10 @@ def _unbuilt_response_error(exc: BaseException) -> Exception | None:
         recognised = not below and exc.name == "get"
     elif isinstance(exc, TypeError):
         recognised = len(below) == 1 and below[0].f_globals.get("__name__") == "json"
+    elif isinstance(exc, RecursionError):
+        recognised = bool(below) and all(
+            str(f.f_globals.get("__name__")).partition(".")[0] == "json" for f in below
+        )
     else:
         recognised = False
     if not recognised:
@@ -440,6 +445,17 @@ def _refused_body(exc: TypeError | AttributeError) -> Exception:
     return refused
 
 
+def _too_deep(exc: RecursionError) -> Exception:
+    """*exc* as the server's failure if the SDK raised it decoding a body; else re-raise it (#698).
+
+    A refusal is the ``ollama.ResponseError`` the SDK was building, its status
+    kept (:func:`_unbuilt_response_error`); a 200 is
+    :func:`~bmlib.llm.providers.base.too_deep_body`'s ``ValueError``.
+    """
+    refused = _unbuilt_response_error(exc)
+    return refused if refused is not None else too_deep_body(exc, "ollama", "ollama")
+
+
 def _opened(stream: Iterable[Any]) -> Iterator[Any]:
     """Open ollama-python's stream as :meth:`OllamaProvider.chat` would.
 
@@ -463,7 +479,7 @@ def _opened(stream: Iterable[Any]) -> Iterator[Any]:
     except (TypeError, AttributeError) as exc:
         raise _refused_body(exc) from exc
     except RecursionError as exc:
-        raise too_deep_body(exc, "ollama", "ollama") from exc
+        raise _too_deep(exc) from exc
     return itertools.chain([first], iterator)
 
 
@@ -561,7 +577,7 @@ class OllamaProvider(BaseProvider):
             except (TypeError, AttributeError) as exc:
                 raise _refused_body(exc) from exc
             except RecursionError as exc:
-                raise too_deep_body(exc, "ollama", "ollama") from exc
+                raise _too_deep(exc) from exc
 
         def fetch() -> object:
             try:
@@ -631,7 +647,7 @@ class OllamaProvider(BaseProvider):
         except (TypeError, AttributeError) as exc:
             raise _refused_body(exc) from exc
         except RecursionError as exc:
-            raise too_deep_body(exc, "ollama", "ollama") from exc
+            raise _too_deep(exc) from exc
 
         # The SDK returns Pydantic models; a test's stand-in client may return dicts.
         message = _safe_get(response, "message")
@@ -943,7 +959,7 @@ class OllamaProvider(BaseProvider):
             except (TypeError, AttributeError) as exc:
                 raise _refused_body(exc) from exc
             except RecursionError as exc:
-                raise too_deep_body(exc, "ollama", "ollama") from exc
+                raise _too_deep(exc) from exc
             # Only a transport failure is a connection failure (#697).
             except (ConnectionError, httpx.TransportError) as exc:
                 logger.error("Ollama embedding error: %s", exc)

@@ -24,10 +24,18 @@ be `json`'s, optionally under `httpx._models` or `httpx2._models`
 (`Response.json`; anthropic 2.x and openai 3.x are on httpx2), directly
 under a frame of that provider's SDK; anything else re-raises. Ollama's
 `_traceback_frames` moved there as `traceback_frames`. DeepSeek/Mistral/
-Gemini are named as themselves. 14 tests (`TestABodyNestedTooDeeplyIsTheServers`
+Gemini are named as themselves. 25 tests (`TestABodyNestedTooDeeplyIsTheServers`
 through the real SDKs, `TestOnlyTheSdksOwnDecodeIsRecognised` on synthetic
 module frames); an 11-mutant sweep (each guard, each of the six call sites,
-the provider name) all killed. Python only: Rust's `serde_json` refuses past
+the provider name) all killed. **The finalcheck review** narrowed and widened
+it: the innermost frame must be the *decoder* (`json.decoder`/`json.scanner`),
+since both SDKs `json.dumps` the request themselves and a tool schema too deep
+to encode was reported as the response; an Ollama *refusal* too deep to read
+is the `ollama.ResponseError` the SDK was building, status kept (and a 5xx
+retried by `model_limits`), not a 200's `ValueError`; bmlib's own decodes of
+the model's content (`json_mode`, OpenAI tool arguments) treat too deep as
+unreadable, where a bare `RecursionError` escaped `chat()`; and the fixture is
+`[`×10⁶, since 3.14 decodes 100,000 levels. Python only: Rust's `serde_json` refuses past
 128 levels with an ordinary error.
 **CI found #705**: a fresh install resolves anthropic 2.6.0, whose
 `Messages.create()` takes no `temperature`/`top_p`, so
@@ -203,7 +211,8 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 The CHANGELOG entries are the argument. Open from them: **#595**
 (`render_html`'s weaker furniture rule); the MuPDF 1.27/1.28 gap closes when
-the crate bundles 1.28. **For StudyAnalyzer**: map `Unreadable`/`Encrypted`
+the crate bundles 1.28; two upstream `messense/mupdf-rs` bugs are not
+reported (the maintainer's call). **For StudyAnalyzer**: map `Unreadable`/`Encrypted`
 to `invalid_input`, `Engine` to an error; pass `PdfLimit { cancel, deadline }`
 to `extract_blocks_within`/`page_texts_within`; a result with
 `pdf_download_failure` set is a free PDF worth a retry, never "no full text
@@ -285,7 +294,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,661 passing + 14 skipped with the PostgreSQL DSN** on
+- **Tests: 9,671 passing + 14 skipped + 1 xfailed (#705) with the PostgreSQL DSN** on
   `fix/698-deep-response-body` (`uv run pytest tests/ -v`, 2026-11-07; Rust 1,613 with `cargo test -p bmlib --all-features` on `fix/606-ctgov-user-agent` before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need

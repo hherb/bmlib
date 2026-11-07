@@ -246,7 +246,7 @@ class AnthropicProvider(BaseProvider):
         if json_mode and content:
             try:
                 json.loads(content)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
                 content = extract_json(content)
 
         return LLMResponse(
