@@ -356,12 +356,13 @@ must not be re-done.
   which is the same failure as measuring a different URL or a different
   header. `follow_redirects=False` is written out rather than left to the
   default, because here it is a decision.
-- **`_user_agent` appends `python-httpx`, and it is not decoration** (#194).
-  ClinicalTrials.gov's edge refuses every other header shape measured —
-  `curl`, `python-requests`, `Python-urllib`, `Go-http-client`,
-  `PostmanRuntime` and a browser string included — with a bare 134-byte 403.
-  Do not "tidy" the token out: it is the whole reason step 6 of the pipeline
-  works at all. It is appended to bmlib's identification rather than
+- **`_user_agent` appends `python-httpx`, and keeps it** (#194, #606).
+  On 2026-09-06 ClinicalTrials.gov's edge refused every other header shape
+  measured — `curl`, `python-requests`, `Python-urllib`, `Go-http-client`,
+  `PostmanRuntime` and a browser string included — with a bare 134-byte 403,
+  so the token was the whole reason step 6 of the pipeline worked. On
+  2026-11-07 every shape probed served 200 (#606). Do not "tidy" the token
+  out anyway: it costs nothing and the edge's rule may come back. It is appended to bmlib's identification rather than
   replacing it, since CrossRef and NCBI both ask a caller to name itself, and
   it is true — bmlib *is* httpx here. **No test can hold this**, every test in
   the suite mocking its client, which is exactly why the 403 survived a whole

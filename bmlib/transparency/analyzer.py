@@ -455,8 +455,8 @@ def _user_agent(email: str, httpx_version: str) -> str:
     about every registered trial.
 
     **The value itself lives in** :func:`bmlib._user_agent.user_agent`
-    (issue #196), which says why its trailing ``python-httpx`` token is
-    load-bearing. ``publications.sync`` built the refused shape inline, so
+    (issue #196), which says why its trailing ``python-httpx`` token was
+    load-bearing (#194) and is kept (#606). ``publications.sync`` built the refused shape inline, so
     the header was one claim about what bmlib is held in two places free to
     drift; this name is kept because the sampler and the suite pin it.
 
@@ -519,8 +519,8 @@ def _user_agent(email: str, httpx_version: str) -> str:
 #: not about the endpoint, and it is **not measured**.
 #:
 #: The ClinicalTrials.gov row is also the live confirmation of issue #194: the
-#: same draw against the header this module used to send is 403 for every
-#: probe, and 53 of 53 serve under the corrected one.
+#: same draw against the header this module used to send was 403 for every
+#: probe on 2026-09-06, and 53 of 53 served under the corrected one.
 _CROSSREF_ORDINARY_STATUSES: frozenset[int] = frozenset()
 _EUROPEPMC_SEARCH_ORDINARY_STATUSES: frozenset[int] = frozenset()
 _PUBMED_ORDINARY_STATUSES: frozenset[int] = frozenset()

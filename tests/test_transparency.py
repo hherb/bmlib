@@ -4793,8 +4793,10 @@ class TestTheUserAgentIsOneClinicalTrialsGovAccepts:
     six, four accessions all 403'd on bmlib's, and of thirteen header shapes
     tried only the five carrying the token ``python-httpx`` served 200 —
     ``curl``, ``python-requests``, ``Python-urllib``, ``Go-http-client``,
-    ``PostmanRuntime`` and a browser string were all refused. So the rule is
-    the token, and the token can sit anywhere in the header.
+    ``PostmanRuntime`` and a browser string were all refused. So the rule was
+    the token, and the token could sit anywhere in the header. Re-measured
+    2026-11-07 (#606), every shape probed served 200; the token is kept in
+    case the rule comes back.
 
     **What is pinned here is the token and nothing about the edge.** No test
     can hold a remote allow-list; no test in this suite makes a live request,

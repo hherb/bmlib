@@ -46,10 +46,10 @@ pub struct UreqClient {
     /// The user agent every request carries.
     ///
     /// Several of the endpoints this library reads **ask a caller to identify
-    /// itself**, and one of them refuses a request that does not: a bare
-    /// client-library token is answered with a 403 by at least one registry.
-    /// Naming bmlib and a contact address is the polite form those services
-    /// document.
+    /// itself**; naming bmlib and a contact address is the polite form those
+    /// services document. ClinicalTrials.gov refused every shape not
+    /// carrying `python-httpx` with a 403 on 2026-09-06 and served the default
+    /// on 2026-11-07 (issue #606); `tests/live_network.rs` checks it.
     pub user_agent: String,
     /// Seconds before a request is abandoned. For a stream, the limit on each
     /// step of sending it: connecting, then the request headers, then the

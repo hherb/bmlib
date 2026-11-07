@@ -406,3 +406,69 @@ fn a_rejected_pubmed_search_is_an_error_not_a_quiet_day() {
         "the DTD is handled, so no refusal should mention it: {error}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// ClinicalTrials.gov
+// ---------------------------------------------------------------------------
+
+/// **A default [`UreqClient`] gets an answer from ClinicalTrials.gov** (issue
+/// #606), the guard Python has in `scripts/sample_api_failures.py` and this
+/// crate had nowhere.
+///
+/// ClinicalTrials.gov's edge refused every `User-Agent` without a
+/// `python-httpx` token with a bare 403 on 2026-09-06 (Python #194), which
+/// made every posted-results check `RequestFailed`. On 2026-11-07 it served
+/// `bmlib/0.3.0` 200 six times of six, so the default client needs no
+/// analyzer header. The rule can come back without notice and no offline test
+/// can see it: this is what does.
+///
+/// Two halves. The bare request names the header as the likely cause only for
+/// a 403, the refusal's own status; the whole `analyze()` holds the claim a
+/// caller makes, that the check was *answered* — `NotRegistered` would mean no
+/// accession was detected for the paper, a different failure, and is refused
+/// too.
+#[test]
+fn clinicaltrials_gov_answers_a_default_client() {
+    use bmlib::transparency::analyzer::{TransparencyAnalyzer, CLINICALTRIALS_STUDY_URL};
+    use bmlib::transparency::models::{TransparencySettings, TrialResultsStatus};
+
+    if !enabled() {
+        return;
+    }
+    let _guard = request_lock();
+    let client = UreqClient::new();
+
+    // BNT162b2's phase 3 trial, the manual's own example paper.
+    let url = format!(
+        "{}?fields=hasResults",
+        CLINICALTRIALS_STUDY_URL.replace("{nct_id}", "NCT04368728")
+    );
+    let response = client.get(&url).expect("ClinicalTrials.gov is reachable");
+    assert_eq!(
+        response.status,
+        200,
+        "ClinicalTrials.gov answered {} to the default user agent {:?}, not 200{}: {:.200}",
+        response.status,
+        client.user_agent,
+        if response.status == 403 {
+            " (a 403 is #194's header rule returning, #606)"
+        } else {
+            ""
+        },
+        String::from_utf8_lossy(&response.body)
+    );
+
+    let analyzer = TransparencyAnalyzer::new("", api_key(), TransparencySettings::default());
+    let result = analyzer.analyze(
+        &client,
+        "live-606",
+        Some("33301246"),
+        Some("10.1056/NEJMoa2034577"),
+    );
+    let status = result.trial_results_status;
+    assert!(
+        status.is_some_and(TrialResultsStatus::is_answered),
+        "the posted-results check was not answered: {status:?}, {:?}",
+        result.risk_indicators
+    );
+}

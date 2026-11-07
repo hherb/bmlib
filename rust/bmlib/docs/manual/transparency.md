@@ -73,10 +73,13 @@ not a `Result`: one dead API costs a component, never the analysis.
 `analyze` takes `&self`; the rate limiter is a `Mutex` shared by every
 thread using one analyzer.
 
-For the network, use `bmlib::http::UreqClient` and **give it the analyzer's
-user agent**. The analyzer requests through `HttpClient::get`, which sends
-no per-request header, so the client must carry it, and ClinicalTrials.gov answers a request without the
-`python-httpx` token with a 403:
+For the network, use `bmlib::http::UreqClient`. The analyzer requests
+through `HttpClient::get`, which sends no per-request header, so the client's
+own `user_agent` is what every API sees. The default (`bmlib/{version}`) is
+served by ClinicalTrials.gov again: it refused any header without a
+`python-httpx` token with a 403 on 2026-09-06 (Python #194) and served the
+default 6 of 6 on 2026-11-07 (#606). To name a contact address, as CrossRef
+and NCBI ask, set the analyzer's own header, which is Python's:
 
 ```rust,ignore
 use bmlib::http::UreqClient;

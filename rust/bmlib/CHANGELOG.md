@@ -11,6 +11,16 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **A live check that ClinicalTrials.gov answers a default `UreqClient`**
+  (#606). `clinicaltrials_gov_answers_a_default_client` in
+  `tests/live_network.rs` (gated on `BMLIB_LIVE_TESTS`) requests a trial with
+  the default `bmlib/{version}` and runs `analyze()` on its paper, asserting
+  the posted-results check was answered. The issue's premise is refuted: the
+  edge that refused any header without `python-httpx` on 2026-09-06 served
+  the default 6 of 6 on 2026-11-07, so no code changes and the manual no
+  longer tells a caller to set the analyzer's header. The test is what sees
+  the rule come back; a mutant breaking the analyzer's request fails it.
+
 - **API keys in the OS keychain** (`secrets`, #634, with Python's
   `bmlib.secrets`). A `SecretStore` (`get`, `set`, `delete`) over one
   keychain item holding `{provider: key}`: `KeyBundle` reads it once for
