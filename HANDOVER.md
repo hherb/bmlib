@@ -22,7 +22,8 @@ prints a WARNING): said in the manual's conventions. Tests:
 `tests/common/log_capture.rs` (per-thread, `caplog`-like); the secrets
 warning mirrors Python's test; `a_500_is_not_served_only_for_a_closed_access_record`
 pins each full-text line's level (+ an `N-404` case), and #685's first
-mutant (the `N`-500 line at WARNING) fails it. Python unchanged. **For
+mutant (the `N`-500 line at WARNING) fails it. Python unchanged. Filed
+**#694**: `bmlib-ffi` installs no logger, so a mobile host gets none. **For
 StudyAnalyzer**: re-pin and drop `save_api_key`'s own damaged-item log line
 if tauri-plugin-log now shows bmlib's.
 
