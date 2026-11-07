@@ -34,7 +34,6 @@ import time
 import urllib.request
 from collections.abc import Callable, Iterable, Iterator
 from functools import partial
-from types import FrameType
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -59,6 +58,8 @@ from bmlib.llm.providers.base import (
     ModelPricing,
     ProviderCapabilities,
     _sdk_import_failed,
+    too_deep_body,
+    traceback_frames,
 )
 from bmlib.llm.stream import (
     Stop,
@@ -368,7 +369,7 @@ def _non_object_body(exc: BaseException) -> str | None:
     Returns:
         The JSON type's name (``"an array"``), or ``None`` if *exc* is not that.
     """
-    frames = _traceback_frames(exc)
+    frames = traceback_frames(exc)
     if not frames or frames[-1].f_globals.get("__name__") != "ollama._client":
         return None
     code = frames[-1].f_code
@@ -398,7 +399,7 @@ def _unbuilt_response_error(exc: BaseException) -> Exception | None:
     """
     import ollama
 
-    frames = _traceback_frames(exc)
+    frames = traceback_frames(exc)
     for depth, frame in enumerate(frames):
         if (
             frame.f_globals.get("__name__") == "ollama._types"
@@ -421,16 +422,6 @@ def _unbuilt_response_error(exc: BaseException) -> Exception | None:
     text = error if isinstance(error, str) else json.dumps(error)
     # The SDK's own constructor, handed an error object it can read.
     return ollama.ResponseError(json.dumps({"error": text}), frame.f_locals["status_code"])
-
-
-def _traceback_frames(exc: BaseException) -> list[FrameType]:
-    """The frames *exc*'s traceback passed through, outermost first."""
-    frames = []
-    tb = exc.__traceback__
-    while tb is not None:
-        frames.append(tb.tb_frame)
-        tb = tb.tb_next
-    return frames
 
 
 def _refused_body(exc: TypeError | AttributeError) -> Exception:
@@ -457,8 +448,8 @@ def _opened(stream: Iterable[Any]) -> Iterator[Any]:
     raises rather than :class:`~bmlib.llm.stream.StreamError`. The SDK's
     stream path leaves a refused connection as ``httpx.ConnectError``, which
     its ``chat()`` turns into ``ConnectionError``; so this does too, and a
-    first line that is not a JSON object is the ``ValueError`` ``chat()``
-    raises for such a body.
+    first line that is not a JSON object, or is nested too deeply to decode,
+    is the ``ValueError`` ``chat()`` raises for such a body.
     """
     import httpx  # ollama-python's own transport, installed with it
 
@@ -471,6 +462,8 @@ def _opened(stream: Iterable[Any]) -> Iterator[Any]:
         raise ConnectionError(f"failed to connect to Ollama: {exc}") from exc
     except (TypeError, AttributeError) as exc:
         raise _refused_body(exc) from exc
+    except RecursionError as exc:
+        raise too_deep_body(exc, "ollama", "ollama") from exc
     return itertools.chain([first], iterator)
 
 
@@ -567,6 +560,8 @@ class OllamaProvider(BaseProvider):
                 return client.show(model)
             except (TypeError, AttributeError) as exc:
                 raise _refused_body(exc) from exc
+            except RecursionError as exc:
+                raise too_deep_body(exc, "ollama", "ollama") from exc
 
         def fetch() -> object:
             try:
@@ -622,7 +617,8 @@ class OllamaProvider(BaseProvider):
 
         Raises:
             ValueError: A bad ``num_ctx``, or a 200 whose body is not a JSON
-                object (#617), named by its JSON type.
+                object (#617), named by its JSON type, or is nested too deeply
+                to decode (#698).
             ollama.ResponseError: If the server refuses the request,
                 including a refusal whose body is JSON but not an object (#617).
         """
@@ -634,6 +630,8 @@ class OllamaProvider(BaseProvider):
             response = client.chat(**request_kwargs)
         except (TypeError, AttributeError) as exc:
             raise _refused_body(exc) from exc
+        except RecursionError as exc:
+            raise too_deep_body(exc, "ollama", "ollama") from exc
 
         # The SDK returns Pydantic models; a test's stand-in client may return dicts.
         message = _safe_get(response, "message")
@@ -802,7 +800,8 @@ class OllamaProvider(BaseProvider):
             ollama.ResponseError: If the server refuses the request, as
                 :meth:`chat`, a first line whose ``error`` the SDK cannot read
                 included.
-            ValueError: If the first line is not a JSON object, as :meth:`chat`.
+            ValueError: If the first line is not a JSON object or is nested
+                too deeply to decode, as :meth:`chat`.
             StreamError: If the stream fails after it opens or ends early.
         """
         refuse_tools(kwargs)
@@ -853,7 +852,8 @@ class OllamaProvider(BaseProvider):
         Raises:
             ConnectionError: As :meth:`embed_batch`.
             ValueError: If the server returns no vector, or a 200 whose body
-                is not a JSON object (protocol violations).
+                is not a JSON object or is nested too deeply to decode
+                (protocol violations).
             ollama.ResponseError: As :meth:`embed_batch`.
         """
         # Dropped rather than forwarded: leaving it in **kwargs would
@@ -915,8 +915,8 @@ class OllamaProvider(BaseProvider):
                 one (#697).
             ValueError: If *max_batch_size* is less than 1, or if the
                 server returns a different number of vectors than texts
-                sent, or a 200 whose body is not a JSON object (protocol
-                violations).
+                sent, or a 200 whose body is not a JSON object or is nested
+                too deeply to decode (protocol violations, #698).
             ollama.ResponseError: If the server refuses the request,
                 including a refusal whose body is JSON but not an object.
         """
@@ -942,6 +942,8 @@ class OllamaProvider(BaseProvider):
                 response = client.embed(model=model, input=group, **kwargs)
             except (TypeError, AttributeError) as exc:
                 raise _refused_body(exc) from exc
+            except RecursionError as exc:
+                raise too_deep_body(exc, "ollama", "ollama") from exc
             # Only a transport failure is a connection failure (#697).
             except (ConnectionError, httpx.TransportError) as exc:
                 logger.error("Ollama embedding error: %s", exc)

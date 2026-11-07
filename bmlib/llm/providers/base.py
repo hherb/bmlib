@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from types import FrameType
 from typing import TYPE_CHECKING
 
 from bmlib.llm.context_window import ModelLimits, known_context_window
@@ -275,3 +276,52 @@ def _sdk_import_failed(package: str, exc: ImportError) -> str:
         f"Could not import the {package!r} package ({exc}). "
         f"If it is missing, install it with: pip install bmlib[{package}]"
     )
+
+
+def traceback_frames(exc: BaseException) -> list[FrameType]:
+    """The frames *exc*'s traceback passed through, outermost first."""
+    frames = []
+    tb = exc.__traceback__
+    while tb is not None:
+        frames.append(tb.tb_frame)
+        tb = tb.tb_next
+    return frames
+
+
+def _module(frame: FrameType) -> str:
+    name = frame.f_globals.get("__name__")
+    return name if isinstance(name, str) else ""
+
+
+def _package(frame: FrameType) -> str:
+    return _module(frame).partition(".")[0]
+
+
+def too_deep_body(exc: RecursionError, sdk: str, provider: str) -> ValueError:
+    """*exc* as the server's unreadable body if *sdk* raised it decoding one, else re-raised (#698).
+
+    ``json`` decodes recursively, so a 200 nested past the interpreter's
+    recursion limit raises ``RecursionError`` from the provider SDK's own
+    decode, where a body that is not JSON raises ``json.JSONDecodeError``, a
+    ``ValueError``. Only that raise is recognised, by its frames: the
+    innermost are the ``json`` package's, called by httpx's ``Response.json``
+    or directly, from a frame of *sdk*'s own package. A recursion bug in
+    bmlib, or a deep ``json.loads`` bmlib makes itself, is re-raised.
+
+    Args:
+        exc: The ``RecursionError`` the SDK call raised.
+        sdk: The SDK's top-level package (``"anthropic"``, ``"openai"``, ``"ollama"``).
+        provider: The provider the message names (``"deepseek"`` over the ``openai`` SDK).
+
+    Returns:
+        ``ValueError("<provider>: the response is nested too deeply to decode")``.
+    """
+    frames = traceback_frames(exc)
+    raised_in = len(frames)
+    while frames and _package(frames[-1]) == "json":
+        frames.pop()
+    if len(frames) < raised_in and frames and _module(frames[-1]) == "httpx._models":
+        frames.pop()
+    if len(frames) == raised_in or not frames or _package(frames[-1]) != sdk:
+        raise exc
+    return ValueError(f"{provider}: the response is nested too deeply to decode")

@@ -38,6 +38,7 @@ from bmlib.llm.providers.base import (
     ModelPricing,
     ProviderCapabilities,
     _sdk_import_failed,
+    too_deep_body,
 )
 from bmlib.llm.stream import (
     Stop,
@@ -203,14 +204,18 @@ class AnthropicProvider(BaseProvider):
             ValueError: If *think* is truthy but *max_tokens* leaves no
                 room for the minimum thinking budget, *think* is a
                 negative token budget, or *think* is an unrecognised
-                effort-level string.
+                effort-level string; or if the response is nested too
+                deeply to decode (#698).
         """
         model = model or self.default_model
         client = self._get_client()
         request_kwargs = self._request_kwargs(messages, model, temperature, max_tokens, kwargs)
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
 
-        response = client.messages.create(**request_kwargs)
+        try:
+            response = client.messages.create(**request_kwargs)
+        except RecursionError as exc:
+            raise too_deep_body(exc, "anthropic", "anthropic") from exc
 
         # Anthropic returns content blocks. Walk them and split into
         # text content, thinking, and tool calls.

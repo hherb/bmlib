@@ -45,6 +45,24 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A 200 nested too deeply to decode is a `ValueError` on every LLM
+  provider, not a bare `RecursionError`** (#698; the maintainer's choice of
+  2026-11-07). Python's `json` decodes recursively, so a body nested past the
+  recursion limit (`[` × 100,000) escaped `chat()` on Anthropic, OpenAI and
+  every provider over the OpenAI SDK, and Ollama's `chat()`, a stream's first
+  line and `embed`/`embed_batch`, as neither the `ValueError` a non-JSON body
+  raises nor the SDK's refusal. It is now `ValueError("<provider>: the
+  response is nested too deeply to decode")`, the `RecursionError` its
+  `__cause__`, recognised by its frames (the `json` package's, under httpx's
+  `Response.json` or directly, called from the provider's own SDK) by the new
+  `providers.base.too_deep_body`, so a recursion bug in bmlib, or a deep
+  `json.loads` bmlib makes itself, still propagates as itself. Ollama's
+  `model_limits` names it in its `ContextWindowError` and does not retry it.
+  A stream's later events already reported it as `StreamError`, and model
+  listing and `get_model_metadata` already fell back; both unchanged. Python
+  only: Rust's `serde_json` refuses a body nested past 128 levels with an
+  ordinary decode error (its `unbounded_depth` feature is not enabled).
+
 - **Ollama's embedding and model-lookup calls read a body that is not a JSON
   object as `chat()` does** (#697). **Breaking for a caller catching
   `ConnectionError` from `embed`/`embed_batch`**, the maintainer's choice:
