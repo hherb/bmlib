@@ -366,17 +366,14 @@ def _non_object_body(exc: BaseException) -> str | None:
     Returns:
         The JSON type's name (``"an array"``), or ``None`` if *exc* is not that.
     """
-    import importlib
-
     tb = exc.__traceback__
     if tb is None:
         return None
     while tb.tb_next is not None:
         tb = tb.tb_next
-    code = tb.tb_frame.f_code
-    # Not ollama._client: the package rebinds that name to a Client instance.
-    if code.co_filename != importlib.import_module("ollama._client").__file__:
+    if tb.tb_frame.f_globals.get("__name__") != "ollama._client":
         return None
+    code = tb.tb_frame.f_code
     if isinstance(exc, TypeError) and code.co_name == "_request":
         match = _NOT_A_MAPPING.search(str(exc))
         name = match.group(1) if match else None

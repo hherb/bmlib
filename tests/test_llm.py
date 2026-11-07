@@ -1970,3 +1970,33 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
         provider._client = _Broken()
         with pytest.raises(TypeError, match="must be a mapping"):
             provider.chat(self._MESSAGES, model="m")
+
+    @pytest.mark.parametrize(
+        ("function", "raising"),
+        [
+            # The SDK's message from another SDK function.
+            ("_other", 'raise TypeError("argument after ** must be a mapping, not list")'),
+            # The SDK's parse function raising some other TypeError.
+            ("_request", 'raise TypeError("keywords must be strings")'),
+            # The stream's function missing another attribute.
+            ("inner", "[].foo"),
+            # .get missing outside the stream's function.
+            ("_other", "[].get"),
+        ],
+    )
+    def test_an_sdk_raise_of_another_shape_is_not_recognised(self, function, raising):
+        """Each guard in ``_non_object_body`` is needed: the module alone is not enough."""
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        namespace: dict = {"__name__": "ollama._client"}
+        exec(f"def {function}():\n    {raising}\n", namespace)
+
+        class _Client:
+            def chat(self, **_kwargs):
+                namespace[function]()
+
+        provider = OllamaProvider()
+        provider._client = _Client()
+        with pytest.raises((TypeError, AttributeError)) as caught:
+            provider.chat(self._MESSAGES, model="m")
+        assert not isinstance(caught.value, ValueError)

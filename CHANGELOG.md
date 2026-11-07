@@ -18,8 +18,12 @@ All notable changes to bmlib are documented here. The format is based on
   `ValueError("ollama: the response is not a JSON object (got an array)")`,
   chained to the SDK's exception. The SDK keeps the transport: the raise is
   recognised by the frame it came from (`Client._request` or its stream's
-  `inner`, in the SDK's own `_client.py`) and its message, so a `TypeError`
-  raised anywhere else, bmlib's included, propagates unchanged. It names the
+  `inner`, in the module `ollama._client`) and its message, so a `TypeError`
+  raised anywhere else, bmlib's included, propagates unchanged. **The
+  `ollama` extra now requires `ollama>=0.4`**: 0.3 handed bmlib the decoded
+  body unparsed, so a non-object 200 came back as an
+  `LLMResponse` with empty content, raising nothing, and a stream's first
+  line raised `AttributeError` from a function this recognition does not name. It names the
   JSON type and not the bytes, which the SDK has already discarded (Rust's
   `parse_ollama_response` quotes the body). A later streamed line that is
   not an object was already a `StreamError`. No draw has seen such a body.
@@ -875,9 +879,8 @@ All notable changes to bmlib are documented here. The format is based on
   or `None`. A choice with no `message`, or with content that is not text,
   reads as empty content, as in Rust, and logs a WARNING naming the provider
   and `finish_reason`. Applies to OpenAI, DeepSeek, Mistral, Gemini and
-  any `OpenAICompatibleProvider`. Ollama's half is left open by decision: its
-  SDK raises `TypeError` itself for a JSON array body, which only the traceback
-  tells from a bmlib defect, and no draw has seen one.
+  any `OpenAICompatibleProvider`. Ollama's half followed, recognised by the
+  SDK frame that raised it (the entry above).
 
 - **An integer `sample_size` in a PICO extraction reply is kept** (#578).
   `"sample_size": 150` is the natural answer to the prompt's *"the number of

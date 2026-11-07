@@ -282,8 +282,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,418 passing + 165 skipped** on `fix/606-ctgov-user-agent`
-  (`uv run pytest tests/ -v`, 2026-11-07; 9,569 + 14 with the PostgreSQL DSN; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,586 passing + 14 skipped with the PostgreSQL DSN** on
+  `fix/617-openai-compat-choices` (`uv run pytest tests/ -v`, 2026-11-07; 9,418 + 165 without it on `fix/606-ctgov-user-agent`; Rust 1,613 with `cargo test -p bmlib --all-features` on the same branch before the review's two tests, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -312,7 +312,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**120 open once #617 closes** (#688 is a design choice, the `log` facade or a per-module sink) (`gh issue list --state open --limit 300 --json number`,
+**121 open once #617 closes** (#688 is a design choice, the `log` facade or a per-module sink; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host) (`gh issue list --state open --limit 300 --json number`,
 2026-11-07); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and this session's) and **#618** (the PICO prompt does not ask for a description on a part not reported; a decision). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
