@@ -32,10 +32,12 @@ assert_eq!(client.stream_timeout_seconds, DEFAULT_STREAM_TIMEOUT_SECONDS); // 60
 client.user_agent = "myapp/1.0 (mailto:me@example.org)".to_string();
 ```
 
-`timeout_seconds` bounds a whole request. A streamed POST
-(`post_json_stream`, used for LLM streaming) gets `timeout_seconds` for each
+`timeout_seconds` bounds a whole GET. A POST, streamed (`post_json_stream`)
+or not (`post_json`, every non-streamed chat), gets `timeout_seconds` for each
 step of sending, then `stream_timeout_seconds` for the response headers and
-again for the body. `UreqClient` implements all four trait methods.
+again for the body, since both wait on a model writing (#702). A timeout is a
+`FetchError::Transport` naming the limit that ran out, as in `timed out after
+600 s waiting for the response headers (receive response)`. `UreqClient` implements all four trait methods.
 
 **A non-success status is a response, not an error.** `get` returns
 `Ok(HttpResponse)` for a 404 or a 429, with its body; `Err(FetchError::Transport)`

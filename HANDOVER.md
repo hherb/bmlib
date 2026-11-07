@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PR is on `fix/705-anthropic-sampling`**; PRs #704 (#698), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is on `fix/705-anthropic-sampling`**; PRs #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706 and this session's._
 
 ## This session: Anthropic is sent no sampling parameters (#705)
 
@@ -26,43 +26,27 @@ every current Claude model refuses: a model-family decision, both languages,
 now the most urgent LLM item) and **#708** (`chat_json`'s temperature-0
 no-retry rule assumes greedy sampling, which Anthropic no longer does).
 
-## Earlier, 2026-11-07: a 200 nested too deeply to decode is a `ValueError` (#698, PR #704, merged)
+## Earlier, 2026-11-07: a non-streamed chat waits for its answer as a stream does (#702, PR #706, merged)
 
-Every provider's `chat()`, Ollama's stream first line and `embed_batch` raise
-`ValueError("<provider>: the response is nested too deeply to decode")`, via
-`providers.base.too_deep_body`, recognised by the SDK's decoder frames
-(`json.decoder`/`json.scanner`, optionally under `httpx`'s or `httpx2`'s
-`Response.json`). Python only: `serde_json` refuses past 128 levels.
+From StudyAnalyzer PR #100's review: `UreqClient::post_json` ran under one 45 s
+`timeout_global`, so a thinking model's large `max_tokens` timed out a
+non-streamed chat (every PICO call, every condenser batch). **The
+maintainer's choice: reuse `stream_timeout_seconds`**, no new field. Every
+POST now runs on `post_agent` (the stream's split: `timeout_seconds` per
+sending step, `stream_timeout_seconds` for the response headers and body); a
+GET keeps its whole-request 45 s. A `ureq` timeout is a `Transport` naming
+the limit (`UreqClient::transport_error`). Rust only: Python's Anthropic and
+OpenAI SDKs (1.x/2.x and 2.x/3.x alike) read for 600 s, Ollama's not at all
+(#652). Three new tests in `tests/http.rs`. Downstream: StudyAnalyzer's
+`LimitedClient` clips only `timeout_seconds`, so its POSTs need
+`stream_timeout_seconds` clipped too when its pin moves.
 
-## Earlier, 2026-11-07: Ollama's embed and model lookup read a bad body as `chat()` does (#697, PR #701, merged)
+## Earlier, 2026-11-07 (Python LLM bodies, all merged; the CHANGELOG is the argument)
 
-The maintainer's choice: `embed_batch` reports only a transport failure as
-`ConnectionError` (breaking, in the CHANGELOG); a refusal is
-`ollama.ResponseError`, a non-object 200 the `ValueError` `chat()` raises;
-`model_limits` retries a 5xx the SDK could not read; `get_model_metadata`
-keeps its fallback. Python only: Rust has no Ollama embedding.
-
-## Earlier, 2026-11-07: a model's output limit beside its window (PR #700, merged)
-
-From StudyAnalyzer's phase 2b: `deepseek-flash` thinks by default and its
-reasoning spent a PICO run's 4096 `max_tokens`. `read_output_limit` /
-`read_model_limits` / `model_limits` read the output limit from the metadata
-the window comes from (Anthropic `max_tokens`, Gemini `outputTokenLimit`,
-DeepSeek `max_output_tokens`, seen live; Mistral and Ollama none, OpenAI
-none). Rust and Python on par; fixture section `output_limits`. Gemini's and
-Anthropic's fields are from their docs, not a live call.
-
-## Earlier, 2026-11-07: an Ollama 200 that is not a JSON object is the server's failure (#617, PRs #692 and #699, merged)
-
-The maintainer kept the SDK transport and had bmlib recognise its raise.
-`_non_object_body` accepts a `TypeError` only from the SDK's
-`Client._request` (`cls(**body)`) and an `AttributeError` only from its
-stream's `inner` (`part.get`), by the innermost frame's module
-(`ollama._client`) and function name; `chat()` and a stream's first line
-raise `ValueError("ollama: the response is not a JSON object (got an
-array)")`. #699 added the refusal half: `_unbuilt_response_error` rebuilds
-the `ResponseError` whose own `__init__` crashed on a non-object error body,
-and the extra needs `ollama>=0.5`. Rust already refused such a body.
+- **#698** (PR #704): a 200 nested too deeply to decode is `ValueError("<provider>: the response is nested too deeply to decode")`, recognised by the SDK's decoder frames (`providers.base.too_deep_body`); `serde_json` refuses past 128 levels.
+- **#697** (PR #701): Ollama's `embed_batch` reports only a transport failure as `ConnectionError` (breaking); `model_limits` retries a 5xx the SDK could not read.
+- **Output limits** (PR #700): `read_output_limit` / `model_limits` beside the window, both languages (Gemini's and Anthropic's fields from their docs).
+- **#617** (PRs #692, #699): an Ollama 200 that is not a JSON object, or a refusal the SDK cannot read, is recognised by the SDK frame that raised; the extra needs `ollama>=0.5`.
 
 ## Earlier, 2026-11-07: Rust warnings are `log` records (#688, #685, PR #693, merged)
 
@@ -314,7 +298,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open once #705 closes** (#707 and #708, filed from #705, are `think=`'s `budget_tokens` and `chat_json`'s greedy premise; #702, filed 2026-11-07 from hherb/StudyAnalyzer#100's review, is Rust's 45 s whole-call timeout capping a non-streamed chat, so a thinking model's large `max_tokens` times out — both languages, a timeout-split design; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**120 open once #705 closes** (#707 and #708, filed from #705, are `think=`'s `budget_tokens` and `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-08); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
