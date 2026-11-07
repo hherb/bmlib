@@ -131,15 +131,37 @@ class TestReadingAReply:
     def test_no_quotes_given_is_unverified(self) -> None:
         assert read_part(part(quotes=[]), TEXT, SIM).state is PicoPartState.UNVERIFIED
 
-    def test_not_reported_ignores_its_quotes(self) -> None:
-        result = read_part(part(reported=False), TEXT, SIM)
+    def test_not_reported_without_quotes_is_not_reported(self) -> None:
+        result = read_part(part(reported=False, quotes=[]), TEXT, SIM)
 
         assert result.state is PicoPartState.NOT_REPORTED
         assert result.citations == []
         assert result.quotes_not_found == []
 
+    def test_not_reported_with_a_quote_found_is_reported(self) -> None:
+        """#577: the model contradicted itself, and the paper backs the part."""
+        result = read_part(part(reported=False), TEXT, SIM)
+
+        assert result.state is PicoPartState.VERIFIED
+        assert [c.text for c in result.citations] == ["Adults aged 40-65"]
+
+    def test_not_reported_keeps_the_quotes_not_found(self) -> None:
+        """#577: quotes beside ``reported: false`` are counted, not discarded."""
+        result = read_part(part(reported=False, quotes=["insulin", 3]), TEXT, SIM)
+
+        assert result.state is PicoPartState.NOT_REPORTED
+        assert result.quotes_not_found == ["insulin"]
+        assert result.quotes_dropped == 1
+
     def test_quotes_as_a_bare_string(self) -> None:
+        """#577: a bare string is read as a list of one."""
         result = read_part(part(quotes="Adults aged 40-65"), TEXT, SIM)
+
+        assert result.state is PicoPartState.VERIFIED
+        assert result.quotes_dropped == 0
+
+    def test_a_blank_bare_string_is_dropped(self) -> None:
+        result = read_part(part(quotes="  "), TEXT, SIM)
 
         assert result.state is PicoPartState.UNVERIFIED
         assert result.quotes_dropped == 1
@@ -177,8 +199,21 @@ class TestReadingAReply:
         """
         with pytest.raises(_UnreadableReplyError, match="blank"):
             read_part(part(description=blank), TEXT, SIM)
+        # A quote found makes the part reported, whatever the flag says (#577).
         with pytest.raises(_UnreadableReplyError, match="blank"):
             read_part(part(description=blank, reported=False), TEXT, SIM)
+
+    @pytest.mark.parametrize("blank", ["", "   ", None])
+    def test_a_not_reported_part_may_have_no_description(self, blank: str | None) -> None:
+        """#618: nothing to describe is a fair answer for a part the paper omits."""
+        result = read_part(part(description=blank, reported=False, quotes=[]), TEXT, SIM)
+
+        assert result.state is PicoPartState.NOT_REPORTED
+        assert result.description == (blank or "")
+
+    def test_a_not_reported_description_that_is_not_text_raises(self) -> None:
+        with pytest.raises(_UnreadableReplyError, match="int, not text"):
+            read_part(part(description=3, reported=False, quotes=[]), TEXT, SIM)
 
     def test_a_missing_part_raises(self) -> None:
         data = reply()
@@ -190,7 +225,7 @@ class TestReadingAReply:
         data = reply(
             population=part(confidence=0.9),
             intervention=part(confidence=0.7),
-            comparison=part(reported=False, confidence=0.1),
+            comparison=part(reported=False, confidence=0.1, quotes=[]),
             outcome=part(confidence=None),
         )
 
@@ -255,7 +290,10 @@ class TestReadingAReply:
 
     def test_models_round_trip(self) -> None:
         extraction = read_extraction(
-            reply(comparison=part(reported=False), outcome=part(quotes=["lost words"])),
+            reply(
+                comparison=part(reported=False, quotes=["absent words"]),
+                outcome=part(quotes=["lost words"]),
+            ),
             TEXT,
             SIM,
         )
@@ -869,7 +907,7 @@ class TestWhatAReplyGives:
 
     def test_a_not_reported_part_keeps_its_confidence_out_of_the_mean(self) -> None:
         extraction = read_extraction(
-            reply(comparison=part(reported=False, confidence=0.2)), TEXT, SIM
+            reply(comparison=part(reported=False, confidence=0.2, quotes=[])), TEXT, SIM
         )
         assert extraction.comparison.confidence == 0.2
         assert extraction.overall_confidence == pytest.approx(0.9)
@@ -937,7 +975,7 @@ class TestStoredResults:
         extraction = read_extraction(
             reply(
                 population=part(quotes=[FUZZY_QUOTE, 7, "  "]),
-                comparison=part(reported=False),
+                comparison=part(reported=False, quotes=[]),
                 outcome=part(quotes=["lost words"]),
             ),
             TEXT,
@@ -976,7 +1014,6 @@ class TestStoredResults:
         [
             (("population", "state"), "verified-ish", "PicoPartState"),
             (("outcome", "state"), "verified", "carries 0 citation"),
-            (("comparison", "quotes_not_found"), ["q"], "not-reported part carries no quotes"),
             (("population", "confidence"), "0.9", "'confidence' is a str"),
             (("population", "confidence"), True, "'confidence' is a bool"),
             (("population", "confidence"), 3, "number in \\[0, 1\\]"),

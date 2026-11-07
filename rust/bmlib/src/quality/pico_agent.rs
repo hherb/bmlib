@@ -220,7 +220,14 @@ pub fn verify_quotes(
     let Some(quotes) = quotes.filter(|value| !value.is_null()) else {
         return Ok((Vec::new(), Vec::new(), 0));
     };
-    let Some(quotes) = quotes.as_array() else {
+    // A bare string reads as a list of one (#577).
+    let one;
+    let quotes = if quotes.is_string() {
+        one = vec![quotes.clone()];
+        &one
+    } else if let Some(quotes) = quotes.as_array() {
+        quotes
+    } else {
         return Ok((Vec::new(), Vec::new(), 1));
     };
 
@@ -257,10 +264,16 @@ pub fn verify_quotes(
 
 /// Read one PICO part and verify its quotes. Python's `read_part`.
 ///
+/// Quotes given beside `reported: false` are verified too (#577): one the
+/// paper holds makes the part reported, and the rest stay on the part as not
+/// found or dropped. A part that stays not reported may have a blank or
+/// absent description, read as `""` when absent (#618); a reported part may
+/// not.
+///
 /// # Errors
 ///
-/// A message when `value` is not an object carrying a non-blank string
-/// `description`.
+/// A message when `value` is not an object, its `description` is neither a
+/// string nor absent, or a reported part's description is absent or blank.
 pub fn read_part(
     value: Option<&Value>,
     text: &str,
@@ -272,36 +285,30 @@ pub fn read_part(
             value.map_or("NoneType", crate::agents::json_type_name)
         ));
     };
-    let Some(description) = object.get("description").and_then(Value::as_str) else {
-        return Err(format!(
-            "description is a {}, not text",
-            object
-                .get("description")
-                .map_or("NoneType", crate::agents::json_type_name)
-        ));
-    };
-    // A blank description shows nothing, as `null` does, so it is asked again (#578).
-    if python_strip(description).is_empty() {
-        return Err("description is blank".to_string());
-    }
-    let description = description.to_string();
-    let confidence = clamped_confidence(object.get("confidence"));
-    // Only an explicit `false` is an absence: a garbled flag must not hide a
-    // part the model described.
-    if object.get("reported").and_then(Value::as_bool) == Some(false) {
-        return Ok(PicoPart {
-            description,
-            state: PicoPartState::NotReported,
-            confidence,
-            citations: Vec::new(),
-            quotes_not_found: Vec::new(),
-            quotes_dropped: 0,
-        });
-    }
-
     let (citations, quotes_not_found, quotes_dropped) =
         verify_quotes(object.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
-    let state = if citations.is_empty() {
+    // Only an explicit `false` is an absence: a garbled flag must not hide a
+    // part the model described.
+    let reported =
+        object.get("reported").and_then(Value::as_bool) != Some(false) || !citations.is_empty();
+    let description = match object.get("description").filter(|value| !value.is_null()) {
+        Some(Value::String(description)) => description.clone(),
+        None if !reported => String::new(),
+        other => {
+            return Err(format!(
+                "description is a {}, not text",
+                other.map_or("NoneType", crate::agents::json_type_name)
+            ))
+        }
+    };
+    // A blank description shows nothing, as `null` does, so it is asked again (#578).
+    if reported && python_strip(&description).is_empty() {
+        return Err("description is blank".to_string());
+    }
+    let confidence = clamped_confidence(object.get("confidence"));
+    let state = if !reported {
+        PicoPartState::NotReported
+    } else if citations.is_empty() {
         PicoPartState::Unverified
     } else {
         PicoPartState::Verified
@@ -868,14 +875,59 @@ mod tests {
 
     #[test]
     fn quotes_as_a_bare_string() {
+        // #577: a bare string is read as a list of one.
         let result = read_part(
             Some(&part(json!({"quotes": "Adults aged 40-65"}))),
             TEXT,
             SIM,
         )
         .expect("a part");
-        assert_eq!(result.state, PicoPartState::Unverified);
-        assert_eq!(result.quotes_dropped, 1);
+        assert_eq!(result.state, PicoPartState::Verified);
+        assert_eq!(result.quotes_dropped, 0);
+
+        let blank = read_part(Some(&part(json!({"quotes": "  "}))), TEXT, SIM).expect("a part");
+        assert_eq!(blank.state, PicoPartState::Unverified);
+        assert_eq!(blank.quotes_dropped, 1);
+    }
+
+    #[test]
+    fn quotes_beside_not_reported_are_verified() {
+        // #577: a quote found makes the part reported; the rest are kept.
+        let found = read_part(Some(&part(json!({"reported": false}))), TEXT, SIM).expect("a part");
+        assert_eq!(found.state, PicoPartState::Verified);
+        assert_eq!(found.citations[0].text, "Adults aged 40-65");
+
+        let lost = read_part(
+            Some(&part(json!({"reported": false, "quotes": ["insulin", 3]}))),
+            TEXT,
+            SIM,
+        )
+        .expect("a part");
+        assert_eq!(lost.state, PicoPartState::NotReported);
+        assert_eq!(lost.quotes_not_found, ["insulin"]);
+        assert_eq!(lost.quotes_dropped, 1);
+    }
+
+    #[test]
+    fn a_not_reported_part_may_have_no_description() {
+        // #618: nothing to describe is a fair answer for a part the paper omits.
+        for (blank, expected) in [(json!(""), ""), (json!("   "), "   "), (Value::Null, "")] {
+            let overrides = json!({"description": blank, "reported": false, "quotes": []});
+            let result = read_part(Some(&part(overrides)), TEXT, SIM).expect("a part");
+            assert_eq!(result.state, PicoPartState::NotReported);
+            assert_eq!(result.description, expected);
+        }
+        let mut absent = part(json!({"reported": false, "quotes": []}));
+        absent
+            .as_object_mut()
+            .expect("an object")
+            .remove("description");
+        let result = read_part(Some(&absent), TEXT, SIM).expect("a part");
+        assert_eq!(result.description, "");
+
+        let overrides = json!({"description": 3, "reported": false, "quotes": []});
+        let error = read_part(Some(&part(overrides)), TEXT, SIM).expect_err("not text");
+        assert_eq!(error, "description is a int, not text");
     }
 
     #[test]
@@ -883,7 +935,7 @@ mod tests {
         let data = json!({
             "population": part(json!({"confidence": 0.9})),
             "intervention": part(json!({"confidence": 0.7})),
-            "comparison": part(json!({"reported": false, "confidence": 0.1})),
+            "comparison": part(json!({"reported": false, "confidence": 0.1, "quotes": []})),
             "outcome": part(json!({"confidence": null})),
         });
         let extraction = read_extraction(&data, TEXT, SIM).expect("an extraction");
@@ -903,7 +955,8 @@ mod tests {
 
     #[test]
     fn a_blank_description_is_refused_as_null_is() {
-        // "\x1c" is blank to Python's `str.strip` and not to `trim`.
+        // "\x1c" is blank to Python's `str.strip` and not to `trim`. The quote
+        // is found, so `reported: false` is overruled and the part is reported.
         for blank in ["", "   ", "\n\t", "\x1c"] {
             for reported in [true, false] {
                 let overrides = json!({"description": blank, "reported": reported});

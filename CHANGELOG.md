@@ -8,6 +8,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **A PICO part loses no quote the model gave, and a part the paper omits
+  may have no description** (#577, #618; both languages). A bare-string
+  `quotes` (`"quotes": "Adults aged…"`) reads as a list of one, where it was
+  counted as one dropped quote and the part read `UNVERIFIED`. Quotes given
+  beside `reported: false` are checked rather than discarded uncounted: one
+  the paper holds makes the part `VERIFIED` (its confidence then counts in
+  the mean), and the rest stay in `quotes_not_found` and `quotes_dropped`,
+  so `PicoPart` no longer refuses a `NOT_REPORTED` part that carries them. A
+  part that stays not reported may have a blank description (`null` or
+  absent reads as `""`), where `{"description": "", "reported": false}` was
+  asked again and, given twice, failed the whole extraction as
+  `UNUSABLE_REPLY`. The prompts are unchanged. The oracle's
+  `not_reported_with_quotes` case moves, and
+  `not_reported_quotes_lost_and_no_description` is new.
+
 - **The Rust crate logs through the `log` facade** (#688, #685), under the
   same logger names and levels as this library, so a Rust host's logger
   receives the warnings Python's `logging` already carries. Rust only; the
