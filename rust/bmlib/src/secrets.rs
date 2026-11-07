@@ -262,8 +262,9 @@ impl<V: Vault> KeyBundle<V> {
         let keys = match read {
             Ok(keys) => keys,
             Err(e) if replace_unreadable && e.kind() == SecretErrorKind::UnreadableItem => {
-                eprintln!(
-                    "bmlib.secrets WARNING: {}; replacing it with the key being saved",
+                log::warn!(
+                    target: "bmlib.secrets",
+                    "{}; replacing it with the key being saved",
                     e.message()
                 );
                 return Ok((guard, KeyList::new()));

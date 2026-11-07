@@ -233,17 +233,17 @@ fn accession(
 // The three sources
 // ---------------------------------------------------------------------------
 
-/// The crate has no logging facade; `transparency::analyzer` writes its lines with
-/// `eprintln!` and a level prefix, and this follows it — a source that could not
-/// be used is a WARNING, as in the Python; the quieter outcomes are not written.
+/// A source that could not be used is a WARNING, as in the Python; the quieter
+/// outcomes are not logged.
 fn report(outcome: SourceOutcome, message: impl Into<String>) -> SourceReport {
     let message = message.into();
     if matches!(
         outcome,
         SourceOutcome::RequestFailed | SourceOutcome::Unreadable | SourceOutcome::OtherRecord
     ) {
-        eprintln!(
-            "bmlib.publications.lookup WARNING: lookup_record: {} ({message})",
+        log::warn!(
+            target: "bmlib.publications.lookup",
+            "lookup_record: {} ({message})",
             outcome.as_str()
         );
     }
@@ -516,8 +516,9 @@ fn assemble(
         let held = slot(&mut record, id);
         match held {
             None => *held = Some(given.clone()),
-            Some(held) if !same(id, held, given) => eprintln!(
-                "bmlib.publications.lookup WARNING: lookup_record: the caller's {} {} differs from the record's {}; keeping the record's",
+            Some(held) if !same(id, held, given) => log::warn!(
+                target: "bmlib.publications.lookup",
+                "lookup_record: the caller's {} {} differs from the record's {}; keeping the record's",
                 match id {
                     Field::Pmid => "pmid",
                     Field::Doi => "doi",

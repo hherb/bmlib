@@ -6,6 +6,13 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **The Rust crate logs through the `log` facade** (#688, #685), under the
+  same logger names and levels as this library, so a Rust host's logger
+  receives the warnings Python's `logging` already carries. Rust only; the
+  detail is in its CHANGELOG.
+
 ### Fixed
 
 - **An Ollama 200 that is not a JSON object is the server's failure** (#617's

@@ -20,6 +20,10 @@ categories = ["science", "text-processing", "parsing"]
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 csv = "1"
+# The logging facade (MIT/Apache-2.0): every warning is a `log` record whose
+# target is the Python module's logger name, so a host's logger (env_logger,
+# tauri-plugin-log) receives it; stderr is lost in a packaged app (#688).
+log = "0.4"
 roxmltree = "0.21.1"
 rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 # SHA-1, for `sanitize_identifier`'s collision guarantee. Its own crate and not

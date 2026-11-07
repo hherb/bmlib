@@ -804,8 +804,9 @@ thread_local! {
 fn report_engine_error(re: &Regex, error: &fancy_regex::Error, what: &str, text: &str) {
     #[cfg(test)]
     ENGINE_ERRORS_REPORTED.with(|count| count.set(count.get() + 1));
-    eprintln!(
-        "bmlib.quality.extractors ERROR: the regex engine gave up ({error}) in {what} \
+    log::error!(
+        target: "bmlib.quality.extractors",
+        "the regex engine gave up ({error}) in {what} \
          on a text of {} characters; later matches of {:?} are lost",
         text.chars().count(),
         re.as_str()

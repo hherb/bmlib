@@ -32,6 +32,8 @@
 //! live or faked `httpx` client, so they are named tests here rather than
 //! oracle cases.
 
+mod common;
+
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use bmlib::transparency::analyzer::{
     discloses_industry_ties, encode_query, epmc_records, extract_coi_text, extract_tagged_coi_text,
@@ -871,8 +873,16 @@ fn a_500_is_not_served_only_for_a_closed_access_record() {
             ARTICLE,
             FullTextStatus::Analyzed,
         ),
+        (
+            "N-404",
+            Some(json!("N")),
+            404,
+            "",
+            FullTextStatus::NotServed,
+        ),
     ];
     for (name, flag, status, body, want) in cases {
+        common::log_capture::start();
         let mut record = epmc_record(Some("PMC123"), "123", "Y", "");
         if let Some(flag) = flag {
             record["isOpenAccess"] = flag;
@@ -902,6 +912,19 @@ fn a_500_is_not_served_only_for_a_closed_access_record() {
             "{name}"
         );
         assert_eq!(result.validate(), Ok(()), "{name}");
+        // #685: the level is the measured claim (#191, #457), so it is pinned:
+        // not served is DEBUG, no answer a WARNING, a scanned article no line.
+        let levels: Vec<log::Level> = common::log_capture::take("bmlib.transparency.analyzer")
+            .into_iter()
+            .filter(|record| record.message.contains(&fulltext_url("PMC123")))
+            .map(|record| record.level)
+            .collect();
+        let expected: &[log::Level] = match want {
+            FullTextStatus::NotServed => &[log::Level::Debug],
+            FullTextStatus::RequestFailed => &[log::Level::Warn],
+            _ => &[],
+        };
+        assert_eq!(levels, expected, "{name}: the full-text line's level");
     }
 }
 

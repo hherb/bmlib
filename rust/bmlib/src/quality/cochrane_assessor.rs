@@ -1191,12 +1191,9 @@ pub(crate) fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
     Some(json_fields::py_clamp(confidence, 0.0, 1.0))
 }
 
-/// Write one WARNING line to `stderr`.
-///
-/// The crate has no logging facade; `transparency::analyzer` writes its lines
-/// with `eprintln!` and a level prefix, and this follows it.
+/// Log one WARNING, under the Python module's logger name.
 fn warn(message: &str) {
-    eprintln!("bmlib.quality.cochrane_assessor WARNING: {message}");
+    log::warn!(target: "bmlib.quality.cochrane_assessor", "{message}");
 }
 
 /// Python's `x or default` for a **judgement** field: truthiness, then `str()`.

@@ -267,9 +267,8 @@ without `</article>` is `Truncated`. The module imports nothing from
 
 - **No exception hierarchy.** Python's ERROR for an exception that can only
   mean a bmlib defect has no counterpart: `FetchError` is a closed enum, so a
-  failed request is a WARNING. Log lines go to `stderr` with a
-  `bmlib.transparency.analyzer DEBUG:`/`WARNING:` prefix; the crate has no
-  logging facade.
+  failed request is a WARNING. Lines are `log` records under
+  `bmlib.transparency.analyzer`, at DEBUG or WARN.
 - **`pubmed_status`** is recorded only by the `Disabled` and `NoIdentifier`
   returns; a result built from an analysis leaves it `None`. The reader takes
   the first `<PubmedArticle>` without checking that it names the PMID

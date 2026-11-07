@@ -74,9 +74,9 @@ patched and read rather than refused.
 
 ### What the parse reports
 
-`parse` and `parse_with_pmc_id` write the audit to stderr (the crate links no
-logging facade): an `ERROR:` line per unwind imbalance, a `WARNING:` line per
-counted loss. `parse_audited(xml, known_pmc_id)` returns a `JatsReport` with
+`parse` and `parse_with_pmc_id` log the audit under Python's logger name,
+`bmlib.fulltext.jats_parser`: an ERROR record per unwind imbalance, a WARN
+record per counted loss. `parse_audited(xml, known_pmc_id)` returns a `JatsReport` with
 the lines instead of only printing them:
 
 ```rust
@@ -184,7 +184,8 @@ How construction differs from Python:
   `with_convert_pdfs(false)` turns extraction off where one is set.
 - **`with_timeout` reaches no request**: the injected transport owns its
   timeout and redirects. The value is kept for fidelity.
-- **Log lines are kept on the service** as well as written to stderr:
+- **Log lines are kept on the service** as well as logged (under
+  `bmlib.fulltext.service`):
   `log_lines()` (each a `LogLine` with a `LogLevel`), `warnings()`,
   `clear_log()`. The exhaustion report, *"N sources had nothing"* against
   *"N attempts failed"*, is Python's, and so is its meaning.
