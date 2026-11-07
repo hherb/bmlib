@@ -454,7 +454,8 @@ The Python library is documented separately, in the repository's
   Python's): Claude Opus 4.7 and later refuse any sampling parameter on API
   version `2023-06-01`, which the crate sends, so the default `0.7` made
   every chat with a current Opus model a 400. `ChatRequest.temperature` and
-  `top_p` still reach the other protocols; `extra_body` can still set them.
+  `top_p` still reach the OpenAI-compatible and Ollama protocols (as before,
+  a reasoning model gets no `temperature`); `extra_body` can still set them.
 
 ## [0.3.0] - 2026-10-31
 

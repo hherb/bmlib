@@ -1686,6 +1686,7 @@ The *Context* columns below are the models' listing metadata, which may be a fal
 | Tool calling | Yes |
 | Embeddings | No |
 | System messages | Separated per Anthropic API requirement; several are joined by a blank line, wherever they sit in the transcript (until *(0.11.0)* only the last was sent, #315) |
+| Sampling parameters | `temperature` / `top_p` are never sent *(unreleased)*, #705 |
 
 **Known model pricing (per million tokens):**
 

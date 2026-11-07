@@ -16,7 +16,7 @@ maintainer's choice: never send them**, both languages. Checked first (the
 refuses `temperature`/`top_p`/`top_k` on every model, the default included, so
 `extra_body` is no way round it; 1.x already dropped the keywords; and Claude
 Opus 4.7+ refuse any of them on `2023-06-01`, so bmlib's default `0.7` was a
-400 on every current Opus in Python on any SDK and in Rust (which sends
+400 on every current Opus in Python even on 0.x and in Rust (which sends
 `2023-06-01`). The parameters stay in the signatures; `_request_kwargs` lost
 its `temperature` argument. `TestAnthropicSendsNoSamplingParameters` drives the
 installed SDK over a mock transport (it and #704's `test_anthropic_chat`, no
@@ -284,7 +284,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,673 passing + 14 skipped with the PostgreSQL DSN** on
+- **Tests: 9,674 passing + 14 skipped with the PostgreSQL DSN** on
   `fix/705-anthropic-sampling` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,624 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need

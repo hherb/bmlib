@@ -217,6 +217,18 @@ class TestAnthropicProvider:
         assert response.model == "claude-x"
         assert stream.closed
 
+    def test_a_stream_without_thinking_sends_no_sampling_parameters(self):
+        # #705: chat_stream sends neither, as chat does.
+        provider = self._provider(_FakeStream(_events("anthropic/thinking-then-text")))
+        provider.chat_stream(
+            MESSAGES, lambda _d: None, model="claude-x", temperature=0.2, top_p=0.9
+        )
+        kwargs = provider._client.messages.create.call_args.kwargs
+        assert kwargs["stream"] is True
+        assert "thinking" not in kwargs
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+
     def test_the_stream_is_closed_when_the_caller_stops(self):
         stream = _FakeStream(_events("anthropic/text"))
         response = self._provider(stream).chat_stream(MESSAGES, lambda _d: False)

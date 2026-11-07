@@ -190,8 +190,9 @@ class AnthropicProvider(BaseProvider):
                 ``tool_calls`` for multi-turn tool conversations.
             model: Model identifier (e.g. ``"claude-sonnet-4-20250514"``).
             temperature: Accepted for the common provider signature and
-                **not sent** (#705): API version ``2026-10-21``, which
-                anthropic 2.x sends, refuses a sampling parameter on every
+                **not sent** (#705): anthropic >= 1.0's ``create()`` takes no
+                such keyword, API version ``2026-10-21``, which anthropic
+                2.x sends, refuses a sampling parameter on every
                 model, and Claude Opus 4.7 and later refuse one on
                 ``2023-06-01`` too, so every request samples at the API's
                 defaults.

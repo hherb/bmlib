@@ -2341,15 +2341,22 @@ _TOO_DEEP = b"[" * 10**6 + b"]" * 10**6
 
 
 def _sdk_httpx(sdk: str):
-    """The HTTP library *sdk*'s client takes: httpx, or httpx2 from anthropic 2.x / openai 3.x."""
-    base = pytest.importorskip(f"{sdk}._base_client")
+    """The HTTP library *sdk*'s client takes: httpx, or httpx2 from anthropic 2.x / openai 3.x.
+
+    Skips only when *sdk* is not installed: an installed SDK whose private
+    ``_base_client`` moved fails, so the real-SDK tests cannot go quiet.
+    """
+    pytest.importorskip(sdk)
+    import importlib
+
+    base = importlib.import_module(f"{sdk}._base_client")
     return getattr(base, "httpx2", None) or base.httpx
 
 
 class TestAnthropicSendsNoSamplingParameters:
     """``temperature`` and ``top_p`` never reach the wire (#705).
 
-    Through the installed SDK over a mock transport: anthropic 2.x's
+    Through the installed SDK over a mock transport: anthropic ≥ 1.0's
     ``create()`` refuses them as keywords, and API version ``2026-10-21``
     and Claude Opus 4.7+ refuse them in the body, so the provider's mocked
     clients, which accept any keyword, could not see the defect.
