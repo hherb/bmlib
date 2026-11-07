@@ -26,14 +26,23 @@ All notable changes to bmlib are documented here. The format is based on
   chained to the SDK's exception. The SDK keeps the transport: the raise is
   recognised by the frame it came from (`Client._request` or its stream's
   `inner`, in the module `ollama._client`) and its message, so a `TypeError`
-  raised anywhere else, bmlib's included, propagates unchanged. **The
-  `ollama` extra now requires `ollama>=0.4`**: 0.3 handed bmlib the decoded
-  body unparsed, so a non-object 200 came back as an
-  `LLMResponse` with empty content, raising nothing, and a stream's first
-  line raised `AttributeError` from a function this recognition does not name. It names the
+  raised anywhere else, bmlib's included, propagates unchanged. It names the
   JSON type and not the bytes, which the SDK has already discarded (Rust's
   `parse_ollama_response` quotes the body). A later streamed line that is
-  not an object was already a `StreamError`. No draw has seen such a body.
+  not an object was already a `StreamError`. **A refusal the SDK cannot read
+  is the `ollama.ResponseError` it was building** (PR #692's review): its
+  `ResponseError.__init__` reads the message with `json.loads(error).get(...)`,
+  so a 4xx/5xx whose body is JSON but not an object (a proxy's bare
+  `"bad gateway"`, `[1]`, `null`), or a streamed `{"error": X}` whose X is not
+  text, raised `AttributeError` or `TypeError` from `ollama._types`. It is
+  recognised by that frame and rebuilt from the frame's own arguments, so the
+  status survives for `http_status()`. **The `ollama` extra now requires
+  `ollama>=0.5`**: 0.3 handed bmlib the decoded body unparsed (a
+  non-object 200 came back as an empty `LLMResponse`, raising nothing), and
+  0.4 has no `think` keyword, so `chat(think=True)` raised `TypeError`. No
+  draw has seen any of these bodies. Left open: the provider's `embed` and
+  `show` calls (#697), and a body nested past the decoder, which escapes as
+  `RecursionError` (#698).
 
 - **ClinicalTrials.gov no longer refuses a `User-Agent` without
   `python-httpx`, and the docs say so** (#606). Re-measured 2026-11-07: bare

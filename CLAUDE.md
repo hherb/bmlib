@@ -26,7 +26,7 @@ uv pip install -e ".[all,dev]"
 | Group          | Packages              | Purpose                                |
 |----------------|-----------------------|----------------------------------------|
 | anthropic      | anthropic>=0.41       | Anthropic Claude LLM provider          |
-| ollama         | ollama>=0.4           | Ollama local LLM provider              |
+| ollama         | ollama>=0.5           | Ollama local LLM provider              |
 | openai         | openai>=1.0           | OpenAI, DeepSeek, Mistral, Gemini, and OpenAI-compatible providers |
 | postgresql     | psycopg2-binary>=2.9  | PostgreSQL database backend            |
 | transparency   | httpx>=0.25           | Transparency analysis API calls        |

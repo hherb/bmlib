@@ -1900,7 +1900,7 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
     _MESSAGES = [LLMMessage(role="user", content="hi")]
 
     @staticmethod
-    def _provider(body: bytes):
+    def _provider(body: bytes, status: int = 200):
         ollama = pytest.importorskip("ollama")
         httpx = pytest.importorskip("httpx")
         from bmlib.llm.providers.ollama import OllamaProvider
@@ -1908,7 +1908,7 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
         provider = OllamaProvider()
         provider._client = ollama.Client(
             host="http://ollama.test",
-            transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=body)),
+            transport=httpx.MockTransport(lambda _request: httpx.Response(status, content=body)),
         )
         return provider
 
@@ -1959,7 +1959,7 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
         from bmlib.llm.providers.ollama import OllamaProvider
 
         def _request():
-            # The SDK's function name and message: only the file tells it apart.
+            # The SDK's function name and message: only the module tells it apart.
             raise TypeError("argument after ** must be a mapping, not list")
 
         class _Broken:
@@ -1972,19 +1972,35 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
             provider.chat(self._MESSAGES, model="m")
 
     @pytest.mark.parametrize(
-        ("function", "raising"),
+        ("function", "raising", "raised", "message"),
         [
             # The SDK's message from another SDK function.
-            ("_other", 'raise TypeError("argument after ** must be a mapping, not list")'),
+            (
+                "_other",
+                'raise TypeError("argument after ** must be a mapping, not list")',
+                TypeError,
+                "argument after ** must be a mapping, not list",
+            ),
             # The SDK's parse function raising some other TypeError.
-            ("_request", 'raise TypeError("keywords must be strings")'),
+            (
+                "_request",
+                'raise TypeError("keywords must be strings")',
+                TypeError,
+                "keywords must be strings",
+            ),
+            # The stream's function raising a TypeError.
+            ("inner", 'raise TypeError("x")', TypeError, "x"),
             # The stream's function missing another attribute.
-            ("inner", "[].foo"),
+            ("inner", "[].foo", AttributeError, "'list' object has no attribute 'foo'"),
+            # .get missing on a type that JSON does not decode to.
+            ("inner", "object().get", AttributeError, "'object' object has no attribute 'get'"),
             # .get missing outside the stream's function.
-            ("_other", "[].get"),
+            ("_other", "[].get", AttributeError, "'list' object has no attribute 'get'"),
         ],
     )
-    def test_an_sdk_raise_of_another_shape_is_not_recognised(self, function, raising):
+    def test_an_sdk_raise_of_another_shape_is_not_recognised(
+        self, function, raising, raised, message
+    ):
         """Each guard in ``_non_object_body`` is needed: the module alone is not enough."""
         from bmlib.llm.providers.ollama import OllamaProvider
 
@@ -1997,6 +2013,172 @@ class TestOllamaRefusesABodyThatIsNotAnObject:
 
         provider = OllamaProvider()
         provider._client = _Client()
-        with pytest.raises((TypeError, AttributeError)) as caught:
+        with pytest.raises(raised) as caught:
             provider.chat(self._MESSAGES, model="m")
-        assert not isinstance(caught.value, ValueError)
+        assert type(caught.value) is raised
+        assert str(caught.value) == message
+
+    def test_a_stream_raise_of_another_shape_is_not_recognised(self):
+        """A first line's bmlib defect leaves ``chat_stream`` as itself, not as a body."""
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        def _lines():
+            raise TypeError("argument after ** must be a mapping, not list")
+            yield  # a generator, so the raise is the first line's
+
+        class _Client:
+            def chat(self, **_kwargs):
+                return _lines()
+
+        provider = OllamaProvider()
+        provider._client = _Client()
+        with pytest.raises(TypeError) as caught:
+            provider.chat_stream(self._MESSAGES, lambda _d: None, model="m")
+        assert type(caught.value) is TypeError
+
+    def test_an_exception_never_raised_is_not_recognised(self):
+        pytest.importorskip("ollama")
+        from bmlib.llm.providers.ollama import _non_object_body, _unbuilt_response_error
+
+        exc = TypeError("argument after ** must be a mapping, not list")
+        assert _non_object_body(exc) is None
+        assert _unbuilt_response_error(exc) is None
+
+    # --- A refusal the SDK cannot read: its ResponseError.__init__ crashes ---
+
+    @pytest.mark.parametrize(
+        ("status", "body"), [(500, b"[1]"), (502, b'"bad gateway"'), (503, b"null")]
+    )
+    def test_a_refusal_whose_body_is_not_an_object_is_a_response_error(self, status, body):
+        ollama = pytest.importorskip("ollama")
+        from bmlib.llm.utils import http_status
+
+        with pytest.raises(ollama.ResponseError) as caught:
+            self._provider(body, status).chat(self._MESSAGES, model="m")
+        assert caught.value.error == body.decode()
+        assert http_status(caught.value) == status
+        assert isinstance(caught.value.__cause__, AttributeError)
+
+    def test_a_refused_stream_whose_body_is_not_an_object_is_a_response_error(self):
+        ollama = pytest.importorskip("ollama")
+
+        with pytest.raises(ollama.ResponseError) as caught:
+            self._provider(b"[1]", 500).chat_stream(self._MESSAGES, lambda _d: None, model="m")
+        assert caught.value.error == "[1]"
+        assert caught.value.status_code == 500
+        assert isinstance(caught.value.__cause__, AttributeError)
+
+    @pytest.mark.parametrize(
+        ("line", "error", "cause"),
+        [
+            (b'{"error": {"m": 1}}', '{"m": 1}', TypeError),
+            (b'{"error": 5}', "5", TypeError),
+            (b'{"error": "123"}', "123", AttributeError),
+            (b'{"error": "[1]"}', "[1]", AttributeError),
+        ],
+    )
+    def test_a_streamed_error_the_sdk_cannot_read_is_a_response_error(self, line, error, cause):
+        ollama = pytest.importorskip("ollama")
+
+        with pytest.raises(ollama.ResponseError) as caught:
+            self._provider(line + b"\n").chat_stream(self._MESSAGES, lambda _d: None, model="m")
+        assert caught.value.error == error
+        assert caught.value.status_code == -1
+        assert type(caught.value.__cause__) is cause
+
+    _INIT = "class _R(ollama.ResponseError):\n    def __init__(self, error, status_code=-1):\n"
+
+    @pytest.mark.parametrize(
+        ("module", "source", "call", "raised", "message"),
+        [
+            # ResponseError's own parse, in another module.
+            (
+                "elsewhere",
+                _INIT + "        json.loads(error).get('error')\n",
+                "_R('[1]', 500)",
+                AttributeError,
+                "'list' object has no attribute 'get'",
+            ),
+            # The parse in a ResponseError method that is not __init__.
+            (
+                "ollama._types",
+                "class _R(ollama.ResponseError):\n"
+                "    def _init(self, error, status_code=-1):\n"
+                "        json.loads(error).get('error')\n",
+                "_R.__new__(_R)._init('[1]', 500)",
+                AttributeError,
+                "'list' object has no attribute 'get'",
+            ),
+            # The parse in the __init__ of a class that is not a ResponseError.
+            (
+                "ollama._types",
+                "class _R:\n    def __init__(self, error, status_code=-1):\n"
+                "        json.loads(error).get('error')\n",
+                "_R('[1]', 500)",
+                AttributeError,
+                "'list' object has no attribute 'get'",
+            ),
+            # Another attribute missing.
+            (
+                "ollama._types",
+                _INIT + "        json.loads(error).foo\n",
+                "_R('[1]', 500)",
+                AttributeError,
+                "'list' object has no attribute 'foo'",
+            ),
+            # .get missing in a function __init__ calls.
+            (
+                "ollama._types",
+                _INIT
+                + "        _parse(error)\ndef _parse(error):\n    json.loads(error).get('e')\n",
+                "_R('[1]', 500)",
+                AttributeError,
+                "'list' object has no attribute 'get'",
+            ),
+            # A TypeError raised in __init__ itself.
+            (
+                "ollama._types",
+                _INIT + "        raise TypeError('the JSON object must be str')\n",
+                "_R({}, 500)",
+                TypeError,
+                "the JSON object must be str",
+            ),
+            # A TypeError from a function __init__ calls that is not json's.
+            (
+                "ollama._types",
+                _INIT + "        _parse(error)\ndef _parse(error):\n    raise TypeError('x')\n",
+                "_R({}, 500)",
+                TypeError,
+                "x",
+            ),
+            # A TypeError raised below json, not by it.
+            (
+                "ollama._types",
+                _INIT + "        json.loads('{}', object_hook=_hook)\n"
+                "def _hook(_obj):\n    raise TypeError('x')\n",
+                "_R('{}', 500)",
+                TypeError,
+                "x",
+            ),
+        ],
+    )
+    def test_a_raise_of_another_shape_beside_response_error_is_not_recognised(
+        self, module, source, call, raised, message
+    ):
+        """Each guard in ``_unbuilt_response_error`` is needed."""
+        ollama = pytest.importorskip("ollama")
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        namespace: dict = {"__name__": module, "ollama": ollama, "json": json}
+        exec(source, namespace)
+
+        class _Client:
+            def chat(self, **_kwargs):
+                eval(call, namespace)
+
+        provider = OllamaProvider()
+        provider._client = _Client()
+        with pytest.raises(raised) as caught:
+            provider.chat(self._MESSAGES, model="m")
+        assert type(caught.value) is raised
+        assert str(caught.value) == message
