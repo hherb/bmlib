@@ -209,9 +209,12 @@ that will not parse. A test supplies its own client (below); production uses
 and writes the day's row to `download_days`. It returns the `SyncReport`; a
 day's failure is a line in `errors` and the run continues, and only a database
 failure outside a day is an `Err`. The clock is the `clock` argument (pass
-`&Utc::now`; a test passes `&|| instant`), never read otherwise: once for day
-selection and the rows' timestamps, and again at each day's close, which judges
-the stored row as it stands then.
+`&Utc::now`; a test passes `&|| instant`), never read otherwise: at the entry
+and at each source's start for the window check and day selection, and at every
+write, as Python reads `datetime.now()` there. A part's checkpoint is stamped
+when it is written, and each day's close judges the stored row as it stands
+then and stamps the row with that same reading. `sync_source`, which is public
+too, checks the window as `sync()` does.
 
 ```rust
 use std::collections::BTreeMap;

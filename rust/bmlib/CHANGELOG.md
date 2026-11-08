@@ -36,10 +36,13 @@ The Python library is documented separately, in the repository's
   refused at the entry before anything is read, or `Db(DbError)`; `From<DbError>`,
   so `?` still works); `sync` and `sync_source` take a clock
   (`&dyn Fn() -> DateTime<Utc>`, pass `&Utc::now`) instead of an instant, read
-  for day selection and again at each day's close, which judges the stored row
-  as it stands then (a row another sync completed during this one's fetch is
-  final, not a fetch in the future); and `upsert_download_day` takes a
-  `peak_count`. Every
+  for day selection and again at every write: a part's checkpoint and a day's
+  row are stamped when written, as Python stamps them, and the close judges the
+  stored row as it stands then (a row another sync completed during this one's
+  fetch is judged as it stands, not as a fetch in the future); `sync_source`
+  returns `Result<(), SyncError>` and refuses a window `sync()` would refuse;
+  `SyncError`'s `source()` is its inner error's own, its `Display` being the
+  inner error's; and `upsert_download_day` takes a `peak_count`. Every
   write transaction of a day starts with the new `lock_day` (SQLite's write
   lock through a no-op `UPDATE`; on PostgreSQL Python's advisory-lock key, so a
   Python and a Rust sync of one database wait for each other); a lock the
@@ -51,8 +54,9 @@ The Python library is documented separately, in the repository's
   `settle_days` + `REFUSAL_GRACE_DAYS` (30) of ending; any other shrink below
   the recorded count completes with a `notes` line. Held to Python by 45
   `judge_peak` cases in `sync_cases.json`. A day whose `download_day_parts`
-  cannot be read now goes through the same close (it wrote its row directly).
-  The rule's lines are `log` records under `bmlib.publications.sync`.
+  cannot be read now goes through the same close (it wrote its row directly),
+  and is logged at ERROR. The rule's lines are `log` records under
+  `bmlib.publications.sync`.
 
 - **An unparseable reply is retried with a correction** (#717, as Python's).
   After the first unparseable reply in a call, `chat_json` calls the new

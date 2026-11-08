@@ -116,16 +116,26 @@ impl TestDb {
     /// A second connection to the same test database, for a test of what two
     /// sessions see of each other. Drop it before the [`TestDb`].
     pub fn another(&self) -> Box<dyn Db> {
-        Box::new(
-            connect_postgresql_params(
-                &self.config.host,
-                self.config.port,
-                &self.name,
-                &self.config.user,
-                &self.config.password,
+        self.connector()()
+    }
+
+    /// What opens a connection to the same test database, for a session that
+    /// lives on another thread: the connection is made there, so it need not be
+    /// `Send`. Close it before the [`TestDb`] is dropped.
+    pub fn connector(&self) -> impl Fn() -> Box<dyn Db> + Send + 'static {
+        let (host, port, name, user, password) = (
+            self.config.host.clone(),
+            self.config.port,
+            self.name.clone(),
+            self.config.user.clone(),
+            self.config.password.clone(),
+        );
+        move || {
+            Box::new(
+                connect_postgresql_params(&host, port, &name, &user, &password)
+                    .expect("another connection"),
             )
-            .expect("a second connection"),
-        )
+        }
     }
 
     /// The connection under test.

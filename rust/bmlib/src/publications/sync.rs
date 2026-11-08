@@ -1492,11 +1492,13 @@ impl std::fmt::Display for SyncError {
     }
 }
 
+// Transparent: `Display` is the inner error's, so `source` is the inner error's
+// own source, or a chain printer would print the same message twice.
 impl std::error::Error for SyncError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            SyncError::Window(e) => Some(e),
-            SyncError::Db(e) => Some(e),
+            SyncError::Window(e) => e.source(),
+            SyncError::Db(e) => e.source(),
         }
     }
 }
@@ -1560,7 +1562,8 @@ struct DayBuffer<'a> {
     db: &'a mut dyn Db,
     source: &'a str,
     day: NaiveDate,
-    now: &'a str,
+    /// Read at each part's write, which is when Python stamps `completed_at`.
+    clock: &'a dyn Fn() -> DateTime<Utc>,
     buffered: Vec<FetchedRecord>,
     added: i64,
     merged: i64,
@@ -1587,12 +1590,17 @@ struct DayBufferState {
 
 impl<'a> DayBuffer<'a> {
     /// A buffer for one day's walk.
-    fn new(db: &'a mut dyn Db, source: &'a str, day: NaiveDate, now: &'a str) -> Self {
+    fn new(
+        db: &'a mut dyn Db,
+        source: &'a str,
+        day: NaiveDate,
+        clock: &'a dyn Fn() -> DateTime<Utc>,
+    ) -> Self {
         DayBuffer {
             db,
             source,
             day,
-            now,
+            clock,
             buffered: Vec::new(),
             added: 0,
             merged: 0,
@@ -1659,7 +1667,8 @@ impl<'a> DayBuffer<'a> {
         // `counts.2` is the failed count: a part that lost a record is not
         // checkpointed even when the fetcher vouched for it.
         if let Some(checkpoint) = checkpoint.filter(|_| counts.2 == 0) {
-            record_day_part(&mut *tx, self.source, self.day, checkpoint, self.now)?;
+            let stamp = timestamp((self.clock)());
+            record_day_part(&mut *tx, self.source, self.day, checkpoint, &stamp)?;
         }
         tx.commit()?;
         Ok(counts)
@@ -1708,9 +1717,12 @@ impl FetchSink for DayBuffer<'_> {
 ///
 /// # Errors
 ///
-/// Only a failure that is **not** attributable to one day: the caller's own
-/// database. A day that fails is recorded as a failed day and the loop moves on,
-/// which is the whole point of the per-day transaction.
+/// [`SyncError::Window`] when the window cannot be walked, checked here as
+/// [`sync`] checks it, since this entry is public too and day selection does
+/// date arithmetic on `recheck_days`. Otherwise only a failure that is **not**
+/// attributable to one day: the caller's own database. A day that fails is
+/// recorded as a failed day and the loop moves on, which is the whole point of
+/// the per-day transaction.
 pub fn sync_source(
     db: &mut dyn Db,
     source: &str,
@@ -1719,13 +1731,18 @@ pub fn sync_source(
     clock: &dyn Fn() -> DateTime<Utc>,
     report: &mut SyncReport,
     settle_days: u32,
-) -> Result<(), DbError> {
-    // Read once for day selection and the rows' timestamps, and again at each
-    // day's close, which judges the stored row as it stands *then*: another sync
-    // may have completed the day during this one's fetch, and its timestamp, read
-    // against this run's start, would look like a fetch in the future (#444's
-    // review). Python reads the wall clock at the close for the same reason.
+) -> Result<(), SyncError> {
+    // Read here for day selection, and again at every write: each part's
+    // checkpoint, and each day's close, which judges the stored row as it stands
+    // *then* and stamps the row with that same reading. Another sync may have
+    // completed the day during this one's fetch, and its timestamp, read against
+    // this run's start, would look like a fetch in the future (#444's review);
+    // and a row stamped with the run's start can read as fetched before its day
+    // was over when the close came after it. Python reads `datetime.now()` at
+    // each of those writes.
     let now = clock();
+    validate_window(request.date_to, request.recheck_days, now.date_naive())
+        .map_err(SyncError::Window)?;
     let rows = load_day_rows(db, source)?;
     let days = days_needing_fetch(
         &rows,
@@ -1742,12 +1759,6 @@ pub fn sync_source(
 
     for needed in days {
         let day = needed.day;
-        // Built once: it is the day row's `completed_at` and every part row's,
-        // and the parts are written from inside the walk now.
-        // Python's `isoformat()` shape (`…T…+00:00`): `read_aware_timestamp` reads
-        // RFC 3339 only, and chrono's `Display` (`… UTC`) is neither, so a day
-        // stored that way could never read as durable and was re-fetched forever.
-        let now_str = now.to_rfc3339_opts(chrono::SecondsFormat::Micros, false);
         // The totals the day's own store adds to; the parts' are the buffer's,
         // folded in once the walk returns.
         let mut day_added = 0i64;
@@ -1763,12 +1774,11 @@ pub fn sync_source(
         // re-offered.
         let (prior_parts, parts_error) = match load_day_parts(db, source, day) {
             Ok(parts) => (parts, None),
-            Err(e) => (
-                std::collections::BTreeMap::new(),
-                Some(format!(
-                    "could not read download_day_parts for {source}/{day}: {e}"
-                )),
-            ),
+            Err(e) => (std::collections::BTreeMap::new(), {
+                let message = format!("could not read download_day_parts for {source}/{day}: {e}");
+                log::error!(target: LOG_TARGET, "{message}");
+                Some(message)
+            }),
         };
 
         let mut fetch_request = FetchRequest::new(day);
@@ -1786,7 +1796,7 @@ pub fn sync_source(
         // part that finished is checkpointed in the same transaction as the
         // records it vouches for. Both are `DayBuffer`'s; see its doc for what
         // each of them used to be.
-        let mut buffer = DayBuffer::new(&mut *db, source, day, &now_str);
+        let mut buffer = DayBuffer::new(&mut *db, source, day, clock);
         let outcome = match &parts_error {
             Some(_) => None,
             None => Some(fetcher.fetch(&fetch_request, &mut buffer)),
@@ -1884,6 +1894,7 @@ pub fn sync_source(
         let resolved = resolve_day_status(source, day, &fetch_result, day_failed);
         let count = day_record_count(day_added, day_merged, carried);
         let stored = read_stored_day(&mut *tx, source, day)?;
+        let closed_at = clock();
         let held = judge_against_peak(
             source,
             day,
@@ -1891,7 +1902,7 @@ pub fn sync_source(
             count,
             stored.as_ref(),
             settle_days,
-            clock(),
+            closed_at,
         );
         let resolved = held.outcome;
         upsert_download_day(
@@ -1901,7 +1912,7 @@ pub fn sync_source(
             &resolved.status,
             count,
             held.peak_count,
-            &now_str,
+            &timestamp(closed_at),
         )?;
         if resolved.is_completed() {
             // The day is complete, so its part rows go with it: the same
@@ -2003,6 +2014,14 @@ pub fn sync(
     Ok(report)
 }
 
+/// A timestamp as this port stores it: Python's `isoformat()` shape
+/// (`…T…+00:00`). `read_aware_timestamp` reads RFC 3339 only, and chrono's
+/// `Display` (`… UTC`) is neither, so a day stored that way could never read as
+/// durable and was re-fetched forever.
+fn timestamp(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Micros, false)
+}
+
 /// The Python exception name a fetcher error corresponds to.
 ///
 /// [`crate::publications::fetchers::FetchError::Transport`] carries why the
@@ -2056,6 +2075,13 @@ mod tests {
         NaiveDate::from_ymd_opt(2024, 6, 10).expect("date")
     }
 
+    /// The instant a buffer's part checkpoints are stamped with.
+    fn buffer_clock() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2024-06-11T12:00:00Z")
+            .expect("instant")
+            .with_timezone(&Utc)
+    }
+
     fn finish(key: Option<&str>, records: usize) -> Progress {
         Progress::PartFinished(PartDisposition::Completed {
             checkpoint: key.map(|key| checkpoint(key, records)),
@@ -2067,7 +2093,7 @@ mod tests {
     #[test]
     fn a_part_boundary_stores_the_buffer_and_empties_it() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
         buffer.record(record("Two"));
         assert_eq!(buffer.buffered.len(), 2, "buffered before the boundary");
@@ -2097,7 +2123,7 @@ mod tests {
     #[test]
     fn a_part_with_no_checkpoint_is_stored_but_not_checkpointed() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
 
         buffer.progress(finish(None, 1));
@@ -2125,7 +2151,7 @@ mod tests {
         // here. `download_day_parts` survives, so "was a checkpoint written?" is
         // answerable.
         execute(&mut *conn, "DROP TABLE publications", &[]).expect("drop the table");
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
 
         buffer.progress(finish(Some("a"), 1));
@@ -2145,7 +2171,7 @@ mod tests {
     #[test]
     fn a_skipped_part_is_remembered_and_stores_nothing() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.progress(Progress::PartFinished(PartDisposition::Skipped {
             part_key: "a".to_string(),
         }));
@@ -2163,7 +2189,7 @@ mod tests {
     #[test]
     fn the_tail_is_what_the_day_still_holds() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
         buffer.record(record("Two"));
         buffer.progress(finish(Some("a"), 1));

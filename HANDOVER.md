@@ -18,7 +18,10 @@ Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
   `From<DbError>`). **Breaking**: `sync`/`sync_source` also take a clock
   (`&Utc::now`) instead of an instant, re-read at each day's close — the
   review's one finding: judged at the run's start, a row another sync had just
-  completed read as a future fetch and was overwritten `failed`.
+  completed read as a future fetch and was overwritten `failed`. The finalcheck
+  review: rows and part checkpoints are now stamped at the write, as Python's
+  are (they carried the run's start); `sync_source`, public, refuses a window
+  too (`Result<(), SyncError>`); `SyncError::source` is the inner error's own.
 - **Lock**: `lock_day` opens every write transaction of a day (the part flush
   and the close); the PostgreSQL key is Python's (`hashtext` + the day's
   ordinal = `num_days_from_ce`), pinned live by `postgres_live.rs`
@@ -31,6 +34,13 @@ Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
   `sync_cases.json`; four mutants each fail them. The unreadable-parts path
   now goes through the same close. `the_days_records_and_its_status_row_commit_together`
   refuses the insert with a trigger, the view it used refusing the lock first.
+  The finalcheck review added the tests its mutants survived (settle period at
+  the close, unreadable checkpoints, the lock failure's fetch error and
+  totals, both stamps) and a live PostgreSQL test of a close waiting on another
+  session's lock (`TestDb::connector()`), which kills reading the row before
+  the lock.
+- **Filed from the review: #722**, Rust `sync()` logs none of the lines Python
+  logs beyond the peak, lock and unreadable-parts ones.
 - **For StudyAnalyzer**: if it calls `sync`, its error type changes; a
   `peak_count` is now written on every row.
 
@@ -61,7 +71,8 @@ Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
   tauri-plugin-log shows bmlib's.
 - **#606** (PR #691): CT.gov's 403 has lifted (live guard). **#689** (PR #690):
   `SecretError.kind` — show "saving a key replaces the damaged item" only for
-  `UnreadableItem`. **#634** (PR #687): API keys in the OS keychain. **#608**
+  `UnreadableItem`. **#634** (PR #687): API keys in the OS keychain; iOS needs the crate's
+  `protected` store (StudyAnalyzer #74). **#608**
   (PR #683): Rust reads a closed-access 500 as not served; #685 filed.
   **#680** (PR #682): Rust model listing; #681 (Gemini chat URL) needs one
   live chat. **#583** (PR #679), **#564** (PR #678; #471 keeps its other half),
@@ -155,7 +166,7 @@ Items 8 (PR #586, `bmlib.embed.store`, imported as that and not re-exported),
 5 (PRs #580/#584, `lookup_record`), 7 (PR #575, `PicoAgent`), 11 and 6
 (PRs #568/#562, context windows, streamed chat); the CHANGELOG entries are
 the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
-a vector.** Filed from their reviews and open: #581, #582, #585 (#583, #572, #577 and #618 since fixed), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
+a vector.** Filed from their reviews and open: #581, #582, #585, #577 (its point 3 left open by PR #696; #583, #572 and #618 since fixed), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
 - **Plan 2b**: `download_model`, then `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16,
@@ -254,7 +265,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**115 open once this session's PR is merged (it settles both #607 and #444)** (#718, #716, #708 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**116 open once this session's PR is merged (it settles both #607 and #444)** (#722, #718, #716, #708 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-09); #665 is #616's residual; #651 is #632's residual; #647 the PICO path's newest; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
