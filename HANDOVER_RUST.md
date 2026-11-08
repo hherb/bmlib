@@ -1238,8 +1238,9 @@ recommends. Three PRs and three newly filed issues.
   `_upsert_download_day` replaced a stored `record_count` with a lower one; the maintainer
   chose a nullable `download_days.peak_count` baseline and a refusal window of
   `settle_days` + 30 days. `sync::upsert_download_day` is the **one** site the port writes
-  a day's count, and #444 lists what to mirror. Until it lands the port keeps the old
-  replace.
+  a day's count, and #444 lists what to mirror. **Done** (2026-11-09, with #607's entry
+  validation and per-day lock): `judge_against_peak`, held to Python by `judge_peak`
+  cases in `sync_cases.json`.
 - **#349 fixed — PR #357.** `fetch/http-error` had **never made a request that carried a
   status**. Both corpora encoded the page as `[body, 500]`; the Python dumpers recognised
   that pair only as a Python *tuple*, which JSON cannot express, and the Rust harness

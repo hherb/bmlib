@@ -22,6 +22,8 @@ from unittest import mock
 from bmlib.publications.models import FetchResult
 from bmlib.publications.sync import (
     _day_was_over_when_fetched,
+    _DayOutcome,
+    _judge_against_peak,
     _note_unreachable_days,
     _read_aware_timestamp,
     _read_verification_date,
@@ -178,6 +180,31 @@ def resolve_status(now_iso, status, day_failed, note=None):
         return {"status": outcome.status, "errors": outcome.errors, "notes": outcome.notes}
 
 
+def judge_peak(a):
+    """Drive `_judge_against_peak` with the case's own instant (#444).
+
+    `now` is the function's own argument, so nothing is frozen.
+    """
+    outcome = _DayOutcome(
+        status=a["status"], errors=list(a.get("errors", [])), notes=list(a.get("notes", []))
+    )
+    held = _judge_against_peak(
+        "s",
+        date.fromisoformat(a["day"]),
+        outcome,
+        a["record_count"],
+        a.get("stored"),
+        a.get("settle_days", 0),
+        datetime.fromisoformat(a["now"]),
+    )
+    return {
+        "status": held.outcome.status,
+        "errors": held.outcome.errors,
+        "notes": held.outcome.notes,
+        "peak_count": held.peak_count,
+    }
+
+
 def run(case):
     fn = case["fn"]
     a = case.get("args", {})
@@ -204,6 +231,8 @@ def run(case):
         return validate_window(a["now"], a["date_to"], a["recheck_days"])
     if fn == "resolve_status":
         return resolve_status(a["now"], a["status"], a["day_failed"], a.get("note"))
+    if fn == "judge_peak":
+        return judge_peak(a)
     raise ValueError(f"unknown fn {fn!r}")
 
 

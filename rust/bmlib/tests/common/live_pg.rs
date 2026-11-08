@@ -63,6 +63,7 @@ pub struct TestDb {
     client: Option<Box<dyn Db>>,
     admin: Client,
     name: String,
+    config: PgConfig,
 }
 
 impl TestDb {
@@ -108,7 +109,23 @@ impl TestDb {
             client: Some(Box::new(client)),
             admin,
             name,
+            config,
         })
+    }
+
+    /// A second connection to the same test database, for a test of what two
+    /// sessions see of each other. Drop it before the [`TestDb`].
+    pub fn another(&self) -> Box<dyn Db> {
+        Box::new(
+            connect_postgresql_params(
+                &self.config.host,
+                self.config.port,
+                &self.name,
+                &self.config.user,
+                &self.config.password,
+            )
+            .expect("a second connection"),
+        )
     }
 
     /// The connection under test.

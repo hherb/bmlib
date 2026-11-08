@@ -1007,7 +1007,7 @@ pub struct DownloadDay {
     pub last_verified_at: Option<String>,
     /// The most records any fetch of this day has stored since the column was
     /// first written, or `None` for a row written before it was kept (Python
-    /// #346; the port follows in #444).
+    /// #346, the port's `sync::judge_against_peak` since #444).
     pub peak_count: Option<i64>,
 }
 

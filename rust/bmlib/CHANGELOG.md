@@ -30,6 +30,25 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **`sync()` validates its window, locks each day and holds a re-fetch to the
+  day's peak** (#607, #444, as Python's #99, #447, #346, #446). **Breaking**:
+  `sync()` returns `Result<SyncReport, SyncError>` (`Window(WindowError)`,
+  refused at the entry before anything is read, or `Db(DbError)`; `From<DbError>`,
+  so `?` still works), and `upsert_download_day` takes a `peak_count`. Every
+  write transaction of a day starts with the new `lock_day` (SQLite's write
+  lock through a no-op `UPDATE`; on PostgreSQL Python's advisory-lock key, so a
+  Python and a Rust sync of one database wait for each other); a lock the
+  day's close cannot have costs that day an `errors` line and not the run. The
+  close reads the stored row (`read_stored_day`) and `judge_against_peak`
+  decides what to write: `download_days.peak_count`, never written before, is
+  the most any fetch stored, and a completed re-fetch under half of it is
+  recorded `failed` while the stored row is not final and the day is within
+  `settle_days` + `REFUSAL_GRACE_DAYS` (30) of ending; any other shrink below
+  the recorded count completes with a `notes` line. Held to Python by 45
+  `judge_peak` cases in `sync_cases.json`. A day whose `download_day_parts`
+  cannot be read now goes through the same close (it wrote its row directly).
+  The rule's lines are `log` records under `bmlib.publications.sync`.
+
 - **An unparseable reply is retried with a correction** (#717, as Python's).
   After the first unparseable reply in a call, `chat_json` calls the new
   `ChatSource::correct_json`, and the source behind `LlmChat` and

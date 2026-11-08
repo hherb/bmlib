@@ -5872,7 +5872,8 @@ and read 0 moves again.
   follows in #444.** The schema and pubmodels corpora went stale with the DDL
   and `DownloadDay`, so the port had to follow that far; `dump_sync.py`
   covers day selection and `_resolve_day_status`, not the hold, and stayed
-  clean through the `_settled_by` refactor.
+  clean through the `_settled_by` refactor. (#444 landed on 2026-11-09, and
+  `dump_sync.py` covers the hold now: its `judge_peak` cases.)
 
 ## publications — a legacy row and two syncs of one day (#446, #447)
 

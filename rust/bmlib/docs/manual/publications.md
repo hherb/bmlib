@@ -289,23 +289,29 @@ part's records when the part finishes, so memory holds one part rather than
 the day, and writes a `download_day_parts` checkpoint for a part that
 reconciled clean; a later run skips a part whose checkpoint still matches.
 
+`sync` refuses a window it cannot walk before anything is read:
+`Err(SyncError::Window(_))` for a `date_to` at or past `9999-12-31` and a
+negative or impossibly large `recheck_days` (`validate_window`); a database
+failure outside a day is `Err(SyncError::Db(_))`. Every write transaction of a
+day starts with `lock_day` (#447): SQLite's write lock, or on PostgreSQL an
+advisory lock keyed as Python keys it, so a Python and a Rust sync of one
+database wait for each other; a day whose close cannot have the lock gets an
+`errors` line and the run goes on. A re-fetch is then held to the most the day
+has held (`judge_against_peak`, #346): a completed fetch storing under half of
+`download_days.peak_count` is recorded `failed` while the stored row is not
+final and the day is within `settle_days` + 30 days of ending, and any other
+shrink completes with a `notes` line. The rule's lines are also `log` records
+(target `bmlib.publications.sync`).
+
 **Differences from Python.**
 
-- `sync` does **not** validate its window. Call
-  `sync::validate_window(date_to, recheck_days, today)` first: it refuses a
-  `date_to` at or past `9999-12-31` and a negative or impossibly large
-  `recheck_days` (`WindowError`). The `datetime`-is-not-a-`date` check Python
-  needs is the type system's here.
+- `validate_window`'s today is `now`'s UTC date, where Python's is
+  `date.today()`. The `datetime`-is-not-a-`date` check Python needs is the
+  type system's here.
 - There is no `on_record` / `on_progress` callback and no `source_configs` /
   `email` / `api_keys` arguments. Configuration is `SyncRequest::configs`,
   keyed by source name; `sync::build_source_configs(source_configs, email,
   api_keys)` assembles it from Python's legacy parameters.
-- **The peak-count hold is not applied** (tracked as #444). The
-  `download_days.peak_count` column exists and `DownloadDay::peak_count` reads
-  it, but the Rust sync neither writes it nor refuses a re-fetch that shrinks
-  below half the peak, so a settling preprint day can be stored lower than it
-  once held. Rust also takes no per-day lock before reading a day's row, so two
-  concurrent syncs of one database are not serialised as Python's are.
 
 ## Looking up one paper
 

@@ -300,8 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_publication_affiliations_publication_id
 ///
 /// `download_days.peak_count` is Python's #346 baseline, nullable on purpose: a
 /// row an earlier bmlib wrote has no peak, and NULL is what tells `sync()` there
-/// is nothing to hold a re-fetch to. The port carries the column and the field
-/// and does not yet apply the rule (#444).
+/// is nothing to hold a re-fetch to (`sync::judge_against_peak`, #444).
 pub const ADDED_COLUMNS: [(&str, &str, &str); 2] = [
     ("publications", "pmcid", "TEXT"),
     ("download_days", "peak_count", "INTEGER"),
