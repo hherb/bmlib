@@ -45,8 +45,33 @@
 //! as-is, which is the case the Python's own test pinned (`{"ok": true}`) and the
 //! only one the shortcut was ever right about.
 
-use crate::llm::{safe_json_loads, LLMResponse};
+use crate::llm::{safe_json_loads, LLMMessage, LLMResponse, Role};
 use serde_json::Value;
+
+/// What [`chat_json`]'s retries after an unparseable reply add to the request
+/// (#717), byte-identical with Python's `JSON_CORRECTION_NOTE`.
+pub const JSON_CORRECTION_NOTE: &str = "Your previous reply could not be read as JSON. \
+    Reply again with the JSON alone: nothing before or after it, and null, never NaN \
+    or Infinity, for a number you cannot give.";
+
+/// `messages` with [`JSON_CORRECTION_NOTE`] on the last user turn.
+///
+/// Appended to that turn's content after a blank line, or sent as a user turn
+/// of its own when the last turn is not the user's, as Python's
+/// `with_json_correction` does. The model's unparseable reply is not sent back:
+/// the note is a fixed size, where the reply could push the start of the prompt
+/// out of a fixed Ollama `num_ctx` unseen.
+#[must_use]
+pub fn with_json_correction(messages: &[LLMMessage]) -> Vec<LLMMessage> {
+    let mut corrected = messages.to_vec();
+    match corrected.last_mut() {
+        Some(last) if last.role == Role::User => {
+            last.content = format!("{}\n\n{JSON_CORRECTION_NOTE}", last.content);
+        }
+        _ => corrected.push(LLMMessage::user(JSON_CORRECTION_NOTE)),
+    }
+    corrected
+}
 
 /// Stop reasons that mean the model hit its output ceiling.
 ///
@@ -280,6 +305,14 @@ pub trait ChatSource {
         None
     }
 
+    /// Put [`JSON_CORRECTION_NOTE`] on the request for the attempts that follow
+    /// ([`with_json_correction`]); [`chat_json`] calls it once, after the first
+    /// unparseable reply (#717).
+    ///
+    /// The default does nothing, so a source that cannot amend its request
+    /// re-sends it unchanged, as every source did before.
+    fn correct_json(&mut self) {}
+
     /// Sleep before a retry.
     ///
     /// Injected so a test does not spend the backoff: the schedule is 1s, 2s,
@@ -300,6 +333,12 @@ pub trait ChatSource {
 /// * **Wrong shape under `require_dict`** — the same argument: the same messages
 ///   at temperature 0 return the same array.
 /// * **Empty** or **unparseable** — always retried: both can be sampling noise.
+///   After the first unparseable reply the source is asked to
+///   [`correct_json`](ChatSource::correct_json), so the retries carry
+///   [`JSON_CORRECTION_NOTE`] and even at temperature 0 ask something new. The
+///   note does not say why the reply failed: `serde_json` reports a `NaN` as
+///   "expected value", like any syntax error, so a note keyed on the cause
+///   could not match Python's.
 ///
 /// # Errors
 ///
@@ -315,6 +354,7 @@ pub fn chat_json(
     let attempts_allowed = max_retries.max(1);
     let mut attempts = 0usize;
     let mut last: Option<ChatJsonError> = None;
+    let mut corrected = false;
 
     for attempt in 0..attempts_allowed {
         if attempt > 0 {
@@ -391,6 +431,10 @@ pub fn chat_json(
         match JsonAttempt::parse(content, 1) {
             JsonAttempt::Unparseable => {
                 last = Some(ChatJsonError::Unparseable { attempts });
+                if !corrected {
+                    source.correct_json();
+                    corrected = true;
+                }
             }
             JsonAttempt::Clean(parsed) => {
                 if require_dict && !parsed.is_object() {

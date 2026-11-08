@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bmlib.agents.base import (
+    JSON_CORRECTION_NOTE,
     BaseAgent,
     ChatJsonEmptyError,
     ChatJsonError,
@@ -31,9 +32,15 @@ from bmlib.agents.base import (
     ChatJsonUnparseableError,
     ChatJsonWrongShapeError,
     ChatStoppedError,
+    with_json_correction,
 )
 from bmlib.agents.metrics import PerformanceMetrics
-from bmlib.llm.data_types import BatchEmbeddingResponse, EmbeddingResponse, LLMResponse
+from bmlib.llm.data_types import (
+    BatchEmbeddingResponse,
+    EmbeddingResponse,
+    LLMMessage,
+    LLMResponse,
+)
 
 
 class TestParseJson:
@@ -647,6 +654,55 @@ class TestChatJson:
         result = agent.chat_json([agent.user_msg("test")])
         assert result == {"ok": True}
         assert agent.llm.chat.call_count == 2
+
+
+class TestAnUnparseableReplyIsRetriedWithACorrection:
+    """The attempts after an unparseable reply carry a fixed note (#717)."""
+
+    @staticmethod
+    def _sent(agent: BaseAgent) -> list[list[tuple[str, str]]]:
+        return [
+            [(m.role, m.content) for m in call.kwargs["messages"]]
+            for call in agent.llm.chat.call_args_list
+        ]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_retries_carry_the_note_and_the_first_attempt_does_not(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response('{"a": NaN}'),
+            _make_response("not json"),
+            _make_response('{"a": 1}'),
+        ]
+        messages = [agent.system_msg("sys"), agent.user_msg("task")]
+        assert agent.chat_json(messages) == {"a": 1}
+        corrected = [("system", "sys"), ("user", f"task\n\n{JSON_CORRECTION_NOTE}")]
+        assert self._sent(agent) == [[("system", "sys"), ("user", "task")], corrected, corrected]
+        # The caller's list is not changed.
+        assert [(m.role, m.content) for m in messages] == [("system", "sys"), ("user", "task")]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_an_empty_reply_is_retried_unchanged(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [_make_response(""), _make_response('{"a": 1}')]
+        agent.chat_json([agent.user_msg("task")])
+        assert self._sent(agent) == [[("user", "task")], [("user", "task")]]
+
+    def test_a_conversation_not_ending_with_the_user_gets_a_user_turn(self):
+        messages = [LLMMessage(role="user", content="q"), LLMMessage(role="assistant", content="{")]
+        assert [(m.role, m.content) for m in with_json_correction(messages)] == [
+            ("user", "q"),
+            ("assistant", "{"),
+            ("user", JSON_CORRECTION_NOTE),
+        ]
+
+    def test_the_note_is_the_rust_ports(self):
+        """Byte-identical with ``JSON_CORRECTION_NOTE`` in rust/bmlib/src/agents/base.rs."""
+        assert JSON_CORRECTION_NOTE == (
+            "Your previous reply could not be read as JSON. Reply again with the JSON alone: "
+            "nothing before or after it, and null, never NaN or Infinity, for a number you "
+            "cannot give."
+        )
 
 
 class TestChatJsonRequireDict:

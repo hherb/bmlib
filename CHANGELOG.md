@@ -23,6 +23,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **An unparseable reply is retried with a correction, not re-sent** (#717,
+  the maintainer's choice after PR #715's review). Both languages re-sent the
+  identical request, so at temperature 0 a retry usually repeated the reply it
+  was retrying, a refused `NaN` (#572) included. The attempts after the first
+  unparseable reply in a `chat_json` call now carry `JSON_CORRECTION_NOTE` on
+  the last user turn (a user turn of its own when the last is not one), via
+  `bmlib.agents.base.with_json_correction`; an empty reply is still retried
+  unchanged. The bad reply is not sent back, since under a fixed Ollama
+  `num_ctx` it could push the start of the prompt out of the window unseen,
+  and the note does not say why the reply failed, since serde_json reports a
+  `NaN` as a syntax error and Rust could not match a note keyed on the cause.
+  The Tier 2, Tier 3, Cochrane and PICO system prompts now end
+  `…no explanation; use null, never NaN or Infinity, for a number you cannot
+  give`. Rust does the same (`ChatSource::correct_json`); the PICO oracle
+  compares every model call's messages, a corrected retry's included.
+
 - **A model reply carrying a number JSON does not define is unparseable** (#572,
   the maintainer's choice of direction). Python's `json` reads `NaN`,
   `Infinity`, `-Infinity`, `1e999` (as `inf`) and an integer up to `int()`'s

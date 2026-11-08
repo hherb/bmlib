@@ -175,7 +175,7 @@ CRITICAL RULES:
 2. DO NOT invent, assume, or fabricate any information
 3. For anything not reported, use \"Not reported\" or \"Details not reported\"
 4. Assess THIS study's methodology, not studies it references
-5. Return ONLY valid JSON, no explanation";
+5. Return ONLY valid JSON, no explanation; use null, never NaN or Infinity, for a number you cannot give";
 
 /// The task prompt, copied byte-for-byte from the Python.
 pub const COCHRANE_TASK_PROMPT: &str = "\

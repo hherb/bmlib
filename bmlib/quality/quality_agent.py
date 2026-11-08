@@ -60,7 +60,8 @@ CRITICAL RULES:
 2. DO NOT invent, assume, or fabricate any information
 3. If information is unclear or not mentioned, use null or "unclear"
 4. Focus on THIS study's methodology, not studies it references
-5. Return ONLY valid JSON, no explanation"""
+5. Return ONLY valid JSON, no explanation; use null, never NaN or \
+Infinity, for a number you cannot give"""
 
 
 ASSESSMENT_USER_TEMPLATE = """\

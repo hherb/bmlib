@@ -92,8 +92,15 @@ Each attempt is classified, and the class decides whether a retry could help:
 | Stopped at the ceiling (`max_tokens` or `length`, `TRUNCATION_STOP_REASONS`), and the JSON parses **strictly** | used as-is | used as-is |
 | Stopped at the ceiling, and parses only after repair (or not at all) | `Truncated` at once | retried |
 | A shape other than an object, under `require_dict` | `WrongShape` at once | retried |
-| Empty, or unparseable even after repair | retried | retried |
+| Empty | retried | retried |
+| Unparseable even after repair | retried, with the correction | retried, with the correction |
 | `source.chat` returned `Err` | `Transport` at once | `Transport` at once |
+
+After the first unparseable reply `chat_json` calls
+`ChatSource::correct_json` once, and `LlmChat`'s source then sends
+`JSON_CORRECTION_NOTE` on the last user turn (`with_json_correction`) for the
+attempts that follow *(unreleased, #717)*; the default does nothing, so a
+source of your own re-sends its request unless it implements it.
 
 At temperature 0 greedy sampling reproduces the same answer, so retrying a
 truncation or a wrong shape only pays for it again. A truncated answer that

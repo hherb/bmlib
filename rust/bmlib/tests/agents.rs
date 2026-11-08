@@ -20,10 +20,11 @@
 //! exercised without a model and without spending the backoff.
 
 use bmlib::agents::{
-    chat_json, classify_stop_reason, group, json_type_name, round_to, ChatJsonError, ChatSource,
-    JsonAttempt, MetricsSnapshot, Monotonic, PerformanceMetrics, StopReasonClass,
+    chat_json, classify_stop_reason, group, json_type_name, round_to, with_json_correction,
+    ChatJsonError, ChatSource, JsonAttempt, MetricsSnapshot, Monotonic, PerformanceMetrics,
+    StopReasonClass, JSON_CORRECTION_NOTE,
 };
-use bmlib::llm::LLMResponse;
+use bmlib::llm::{LLMMessage, LLMResponse, Role};
 use serde_json::{json, Value};
 
 /// A scripted source: one response per call, and a record of the backoffs.
@@ -31,6 +32,8 @@ struct Script {
     responses: Vec<Result<LLMResponse, String>>,
     calls: usize,
     backoffs: Vec<usize>,
+    /// `calls` at each `correct_json` (#717).
+    corrections: Vec<usize>,
 }
 
 impl Script {
@@ -39,6 +42,7 @@ impl Script {
             responses,
             calls: 0,
             backoffs: Vec::new(),
+            corrections: Vec::new(),
         }
     }
 
@@ -61,6 +65,10 @@ impl ChatSource for Script {
         let index = self.calls.min(self.responses.len().saturating_sub(1));
         self.calls += 1;
         self.responses[index].clone()
+    }
+
+    fn correct_json(&mut self) {
+        self.corrections.push(self.calls);
     }
 
     fn backoff(&mut self, attempt: usize) {
@@ -512,4 +520,62 @@ fn the_reported_attempt_count_is_what_was_made() {
     let mut source = Script::new(vec![Ok(response("nonsense", Some("stop"))); 5]);
     let error = chat_json(&mut source, 3, 0.7, Some(100), 4096, false).expect_err("fails");
     assert!(error.to_string().contains("3 attempt"), "{error}");
+}
+
+// ---------------------------------------------------------------------------
+// The corrective retry (#717)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_unparseable_reply_asks_for_the_correction_once() {
+    let mut source = Script::new(vec![
+        Ok(response("{\"a\": NaN}", Some("stop"))),
+        Ok(response("not json", Some("stop"))),
+        Ok(response("{\"a\": 1}", Some("stop"))),
+    ]);
+    let value = succeed(&mut source, 0.0).expect("answers on the third attempt");
+    assert_eq!(value, json!({"a": 1}));
+    assert_eq!(source.corrections, vec![1], "once, after the first reply");
+}
+
+#[test]
+fn an_empty_reply_asks_for_no_correction() {
+    let mut source = Script::new(vec![
+        Ok(response("", Some("stop"))),
+        Ok(response("{\"a\": 1}", Some("stop"))),
+    ]);
+    succeed(&mut source, 0.0).expect("answers");
+    assert!(source.corrections.is_empty());
+}
+
+#[test]
+fn the_correction_goes_on_the_last_user_turn() {
+    let messages = [LLMMessage::system("sys"), LLMMessage::user("task")];
+    let corrected = with_json_correction(&messages);
+    assert_eq!(corrected[0], messages[0]);
+    assert_eq!(corrected[1].role, Role::User);
+    assert_eq!(
+        corrected[1].content,
+        format!("task\n\n{JSON_CORRECTION_NOTE}")
+    );
+    assert_eq!(corrected.len(), 2);
+}
+
+#[test]
+fn a_conversation_not_ending_with_the_user_gets_a_user_turn() {
+    let messages = [LLMMessage::user("q"), LLMMessage::assistant("{")];
+    let corrected = with_json_correction(&messages);
+    assert_eq!(&corrected[..2], &messages[..]);
+    assert_eq!(corrected[2], LLMMessage::user(JSON_CORRECTION_NOTE));
+}
+
+#[test]
+fn the_note_is_pythons() {
+    // Byte-identical with JSON_CORRECTION_NOTE in bmlib/agents/base.py.
+    assert_eq!(
+        JSON_CORRECTION_NOTE,
+        "Your previous reply could not be read as JSON. Reply again with the JSON alone: \
+         nothing before or after it, and null, never NaN or Infinity, for a number you \
+         cannot give."
+    );
 }

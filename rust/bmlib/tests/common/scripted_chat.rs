@@ -18,7 +18,7 @@
 //! `bmlib::agents::chat_json` over a [`Script`] of responses, so a test drives
 //! an agent through the same retry and parsing rules production does.
 
-use bmlib::agents::{chat_json, ChatJsonError, ChatJsonOutcome, ChatSource};
+use bmlib::agents::{chat_json, with_json_correction, ChatJsonError, ChatJsonOutcome, ChatSource};
 use bmlib::llm::{LLMMessage, LLMResponse};
 use bmlib::quality::agent_chat::JsonChat;
 
@@ -31,6 +31,9 @@ pub struct Script {
     pub responses: Vec<Result<LLMResponse, String>>,
     pub calls: usize,
     pub backoffs: Vec<usize>,
+    /// `calls` when `chat_json` asked for the correction (#717): the calls
+    /// from that one on sent the corrected request.
+    pub corrected_at: Option<usize>,
 }
 
 impl Script {
@@ -39,6 +42,7 @@ impl Script {
             responses,
             calls: 0,
             backoffs: Vec::new(),
+            corrected_at: None,
         }
     }
 
@@ -63,6 +67,10 @@ impl ChatSource for Script {
         self.responses[index].clone()
     }
 
+    fn correct_json(&mut self) {
+        self.corrected_at = Some(self.calls);
+    }
+
     fn backoff(&mut self, attempt: usize) {
         self.backoffs.push(attempt);
     }
@@ -80,7 +88,11 @@ pub struct Call {
 /// A [`JsonChat`] that is really [`bmlib::agents::chat_json`] over a [`Script`].
 pub struct ScriptedChat {
     pub source: Script,
+    /// The messages each `chat_json` call was handed.
     pub seen: Vec<Vec<LLMMessage>>,
+    /// The messages each model call sent, a corrected retry's included (#717):
+    /// what Python's oracle dumpers record.
+    pub sent: Vec<Vec<LLMMessage>>,
     pub calls: Vec<Call>,
 }
 
@@ -89,6 +101,7 @@ impl ScriptedChat {
         ScriptedChat {
             source,
             seen: Vec::new(),
+            sent: Vec::new(),
             calls: Vec::new(),
         }
     }
@@ -123,13 +136,25 @@ impl JsonChat for ScriptedChat {
             max_retries,
             require_dict,
         });
-        chat_json(
+        let first = self.source.calls;
+        self.source.corrected_at = None;
+        let outcome = chat_json(
             &mut self.source,
             max_retries,
             temperature,
             Some(max_tokens),
             max_tokens,
             require_dict,
-        )
+        );
+        let corrected = with_json_correction(messages);
+        for call in first..self.source.calls {
+            let correct = self.source.corrected_at.is_some_and(|at| call >= at);
+            self.sent.push(if correct {
+                corrected.clone()
+            } else {
+                messages.to_vec()
+            });
+        }
+        outcome
     }
 }

@@ -141,7 +141,8 @@ CRITICAL RULES:
 1. Base everything ONLY on what is ACTUALLY PRESENT in the text
 2. DO NOT invent, assume, or fabricate any information
 3. Describe THIS study, not studies it references
-4. Return ONLY valid JSON, no explanation"""
+4. Return ONLY valid JSON, no explanation; use null, never NaN or \
+Infinity, for a number you cannot give"""
 
 
 SUITABILITY_TASK_PROMPT = """\

@@ -42,7 +42,8 @@ methodology — NOT the methodology of studies it references.
 Focus on language like "this study", "we conducted", "our analysis".
 Ignore phrases like "previous studies have shown" or "a recent meta-analysis found".
 
-Return ONLY valid JSON, no explanation."""
+Return ONLY valid JSON, no explanation; use null, never NaN or \
+Infinity, for a number you cannot give."""
 
 
 CLASSIFIER_USER_TEMPLATE = """\

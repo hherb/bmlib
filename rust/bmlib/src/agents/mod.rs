@@ -25,7 +25,8 @@ pub mod base;
 pub mod metrics;
 
 pub use base::{
-    chat_json, classify_stop_reason, json_type_name, ChatJsonError, ChatJsonOutcome, ChatSource,
-    JsonAttempt, StopReasonClass, TRUNCATION_STOP_REASONS,
+    chat_json, classify_stop_reason, json_type_name, with_json_correction, ChatJsonError,
+    ChatJsonOutcome, ChatSource, JsonAttempt, StopReasonClass, JSON_CORRECTION_NOTE,
+    TRUNCATION_STOP_REASONS,
 };
 pub use metrics::{group, round_to, MetricsSnapshot, Monotonic, PerformanceMetrics};
