@@ -34,7 +34,12 @@ The Python library is documented separately, in the repository's
   day's peak** (#607, #444, as Python's #99, #447, #346, #446). **Breaking**:
   `sync()` returns `Result<SyncReport, SyncError>` (`Window(WindowError)`,
   refused at the entry before anything is read, or `Db(DbError)`; `From<DbError>`,
-  so `?` still works), and `upsert_download_day` takes a `peak_count`. Every
+  so `?` still works); `sync` and `sync_source` take a clock
+  (`&dyn Fn() -> DateTime<Utc>`, pass `&Utc::now`) instead of an instant, read
+  for day selection and again at each day's close, which judges the stored row
+  as it stands then (a row another sync completed during this one's fetch is
+  final, not a fetch in the future); and `upsert_download_day` takes a
+  `peak_count`. Every
   write transaction of a day starts with the new `lock_day` (SQLite's write
   lock through a no-op `UPDATE`; on PostgreSQL Python's advisory-lock key, so a
   Python and a Rust sync of one database wait for each other); a lock the

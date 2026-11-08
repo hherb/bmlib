@@ -44,7 +44,9 @@
 //! [`NaiveDate`] (or an explicit instant) so a test states the time it means.
 //! That is a real improvement in testability and a deliberate one — the rules
 //! are wall-clock-sensitive by nature, and a rule that reads a global clock is
-//! a rule whose tests are about the clock.
+//! a rule whose tests are about the clock. [`sync`] and [`sync_source`] take a
+//! clock function rather than an instant, because a day's close has to judge
+//! the stored row at the time of the close, not of the run's start.
 
 use std::collections::BTreeSet;
 
@@ -1714,10 +1716,16 @@ pub fn sync_source(
     source: &str,
     fetcher: &dyn Fetcher,
     request: &SyncRequest<'_>,
-    now: DateTime<Utc>,
+    clock: &dyn Fn() -> DateTime<Utc>,
     report: &mut SyncReport,
     settle_days: u32,
 ) -> Result<(), DbError> {
+    // Read once for day selection and the rows' timestamps, and again at each
+    // day's close, which judges the stored row as it stands *then*: another sync
+    // may have completed the day during this one's fetch, and its timestamp, read
+    // against this run's start, would look like a fetch in the future (#444's
+    // review). Python reads the wall clock at the close for the same reason.
+    let now = clock();
     let rows = load_day_rows(db, source)?;
     let days = days_needing_fetch(
         &rows,
@@ -1883,7 +1891,7 @@ pub fn sync_source(
             count,
             stored.as_ref(),
             settle_days,
-            now,
+            clock(),
         );
         let resolved = held.outcome;
         upsert_download_day(
@@ -1943,8 +1951,9 @@ pub fn sync(
     db: &mut dyn Db,
     registry: &crate::publications::fetchers::Registry,
     request: &SyncRequest<'_>,
-    now: DateTime<Utc>,
+    clock: &dyn Fn() -> DateTime<Utc>,
 ) -> Result<SyncReport, SyncError> {
+    let now = clock();
     // At the entry, as Python's `sync()` does (#607): what is refused here would
     // otherwise reach date arithmetic inside day selection.
     validate_window(request.date_to, request.recheck_days, now.date_naive())
@@ -1980,7 +1989,15 @@ pub fn sync(
             },
             Err(_) => 0,
         };
-        sync_source(db, source, fetcher, request, now, &mut report, settle_days)?;
+        sync_source(
+            db,
+            source,
+            fetcher,
+            request,
+            clock,
+            &mut report,
+            settle_days,
+        )?;
     }
 
     Ok(report)

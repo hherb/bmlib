@@ -15,7 +15,10 @@ Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
 
 - **Entry**: `sync()` calls `validate_window` first and returns
   `Result<SyncReport, SyncError>` (`Window(WindowError)` / `Db(DbError)`,
-  `From<DbError>`). **Breaking** for a Rust caller matching on `DbError`.
+  `From<DbError>`). **Breaking**: `sync`/`sync_source` also take a clock
+  (`&Utc::now`) instead of an instant, re-read at each day's close — the
+  review's one finding: judged at the run's start, a row another sync had just
+  completed read as a future fetch and was overwritten `failed`.
 - **Lock**: `lock_day` opens every write transaction of a day (the part flush
   and the close); the PostgreSQL key is Python's (`hashtext` + the day's
   ordinal = `num_days_from_ce`), pinned live by `postgres_live.rs`
@@ -222,7 +225,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests: 9,854 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
-  `BMLIB_REQUIRE_POSTGRESQL=1`) on `fix/607-444-rust-sync-parity` (`uv run pytest tests/`, 2026-11-09; Rust 1,699 with `cargo test --workspace --all-features` there, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+  `BMLIB_REQUIRE_POSTGRESQL=1`) on `fix/607-444-rust-sync-parity` (`uv run pytest tests/`, 2026-11-09; Rust 1,700 with `cargo test --workspace --all-features` there, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest

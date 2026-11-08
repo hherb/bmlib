@@ -550,9 +550,27 @@ fn a_sync_on_postgres_records_and_holds_the_peak() {
         .with_timezone(&chrono::Utc);
 
     let mut report = SyncReport::default();
-    sync_source(db, "pubmed", &Delivers(4), &request, now, &mut report, 90).expect("first");
+    sync_source(
+        db,
+        "pubmed",
+        &Delivers(4),
+        &request,
+        &|| now,
+        &mut report,
+        90,
+    )
+    .expect("first");
     // Settle 90 keeps the day unfinished, so it is offered again.
-    sync_source(db, "pubmed", &Delivers(0), &request, now, &mut report, 90).expect("second");
+    sync_source(
+        db,
+        "pubmed",
+        &Delivers(0),
+        &request,
+        &|| now,
+        &mut report,
+        90,
+    )
+    .expect("second");
 
     let row = fetch_one(
         db,

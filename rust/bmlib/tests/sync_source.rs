@@ -234,7 +234,7 @@ fn a_source_with_nothing_to_fetch_is_synced_without_fetching() {
         "pubmed",
         &fetcher,
         &req,
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -257,7 +257,7 @@ fn a_fetched_day_is_stored_and_recorded() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -301,7 +301,7 @@ fn a_completed_day_is_not_fetched_again() {
             "pubmed",
             &fetcher,
             &request(&["pubmed"]),
-            now(),
+            &now,
             &mut report,
             0,
         )
@@ -328,7 +328,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -356,7 +356,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
         "pubmed",
         &retry,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut again,
         0,
     )
@@ -384,7 +384,7 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
         "openalex",
         &fetcher,
         &request(&["openalex"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -416,7 +416,7 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
 fn a_source_with_no_fetcher_is_not_synced() {
     let mut conn = db();
     let registry = Registry::new();
-    let outcome = sync(&mut *conn, &registry, &request(&["ghost"]), now()).expect("runs");
+    let outcome = sync(&mut *conn, &registry, &request(&["ghost"]), &now).expect("runs");
 
     assert!(outcome.sources_synced.is_empty());
     assert_eq!(
@@ -439,7 +439,7 @@ fn a_source_with_a_fetcher_is_named_in_the_source_list() {
         )
         .expect("a non-resumable source with no settle period registers");
 
-    let outcome = sync(&mut *conn, &registry, &request(&["scripted"]), now()).expect("runs");
+    let outcome = sync(&mut *conn, &registry, &request(&["scripted"]), &now).expect("runs");
 
     assert_eq!(
         outcome.sources_synced,
@@ -472,7 +472,7 @@ fn a_failed_day_reports_the_records_it_holds() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -532,7 +532,7 @@ fn the_days_records_and_its_status_row_commit_together() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -574,7 +574,7 @@ fn a_finished_part_is_checkpointed_and_a_later_run_skips_it() {
         "pubmed",
         &first,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -609,7 +609,7 @@ fn a_finished_part_is_checkpointed_and_a_later_run_skips_it() {
         "pubmed",
         &second,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -677,7 +677,7 @@ fn a_part_that_cannot_be_stored_fails_the_day() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -750,7 +750,7 @@ fn a_days_checkpoints_are_handed_to_the_fetcher() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -794,7 +794,7 @@ fn a_completed_day_clears_its_part_rows() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -841,7 +841,7 @@ fn the_value_error_shaped_failures_are_named_value_error() {
             "pubmed",
             &fetcher,
             &request(&["pubmed"]),
-            now(),
+            &now,
             &mut report,
             0,
         )
@@ -909,7 +909,7 @@ fn sync_refuses_a_window_it_cannot_walk_before_fetching() {
     let mut bad = request(&["scripted"]);
     bad.recheck_days = -1;
 
-    let error = sync(&mut *conn, &registry, &bad, now()).expect_err("refused");
+    let error = sync(&mut *conn, &registry, &bad, &now).expect_err("refused");
 
     assert!(
         matches!(
@@ -935,7 +935,7 @@ fn a_fetched_day_records_its_peak() {
         "pubmed",
         &ScriptedFetcher::records(3),
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -958,7 +958,7 @@ fn a_re_fetch_below_half_an_unfinished_days_peak_is_refused() {
         "pubmed",
         &ScriptedFetcher::records(0),
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         90,
     )
@@ -996,7 +996,7 @@ fn a_day_lock_that_cannot_be_had_costs_the_day_a_line() {
         "pubmed",
         &ScriptedFetcher::records(2),
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -1040,7 +1040,7 @@ fn a_parts_flush_takes_the_days_lock() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -1058,5 +1058,66 @@ fn a_parts_flush_takes_the_days_lock() {
             .any(|line| line.contains("database is locked")),
         "{:?}",
         report.errors
+    );
+}
+
+/// **A day's close judges the stored row at the time of the close** (#444's
+/// review). Another sync may complete the day during this one's fetch; read
+/// against this run's start its fresh timestamp is a fetch in the future, the row
+/// looks unfinished, and a lower count would overwrite the completed day as
+/// failed. Python reads the wall clock at the close.
+#[test]
+fn a_days_close_judges_the_stored_row_when_it_closes() {
+    let mut conn = db();
+    // Completed, peak 100, by a sync that finished 20 minutes into this run.
+    execute(
+        &mut *conn,
+        "INSERT INTO download_days (source, date, status, record_count, downloaded_at, \
+         last_verified_at, peak_count) VALUES ('pubmed', '2024-06-10', 'completed', 100, \
+         '2024-06-20T00:20:00+00:00', '2024-06-20T00:20:00+00:00', 100)",
+        &[],
+    )
+    .expect("seed");
+    let start = chrono::DateTime::parse_from_rfc3339("2024-06-20T00:00:00Z")
+        .expect("instant")
+        .with_timezone(&Utc);
+    let calls = std::cell::Cell::new(0);
+    // The run's start first, then 30 minutes later for every later reading.
+    let clock = || {
+        calls.set(calls.get() + 1);
+        if calls.get() == 1 {
+            start
+        } else {
+            start + chrono::Duration::minutes(30)
+        }
+    };
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &ScriptedFetcher::records(10),
+        &request(&["pubmed"]),
+        &clock,
+        &mut report,
+        0,
+    )
+    .expect("runs");
+
+    assert_eq!(
+        report.days_processed, 1,
+        "the row read as a future fetch at the start"
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(
+        report.notes,
+        [
+            "pubmed/2024-06-10: stored 10 record(s) where an earlier fetch stored 100; recording \
+          the lower count, the day being already final"
+        ]
+    );
+    assert_eq!(
+        text(&mut *conn, "SELECT status FROM download_days"),
+        Some("completed".into())
     );
 }

@@ -204,12 +204,14 @@ that will not parse. A test supplies its own client (below); production uses
 
 ## Syncing days
 
-`sync::sync(db, &registry, &SyncRequest, now)` walks each source's days in
+`sync::sync(db, &registry, &SyncRequest, clock)` walks each source's days in
 `[date_from, date_to]`, stores each day's records through `store_publication`,
 and writes the day's row to `download_days`. It returns the `SyncReport`; a
 day's failure is a line in `errors` and the run continues, and only a database
-failure outside a day is an `Err`. The clock is the `now` argument, never read
-inside.
+failure outside a day is an `Err`. The clock is the `clock` argument (pass
+`&Utc::now`; a test passes `&|| instant`), never read otherwise: once for day
+selection and the rows' timestamps, and again at each day's close, which judges
+the stored row as it stands then.
 
 ```rust
 use std::collections::BTreeMap;
@@ -253,7 +255,7 @@ let request = SyncRequest {
 };
 let now = Utc.with_ymd_and_hms(2024, 6, 11, 12, 0, 0).unwrap(); // the day is over everywhere
 
-let report = sync(&mut db, &registry, &request, now)?;
+let report = sync(&mut db, &registry, &request, &|| now)?;
 assert_eq!((report.days_processed, report.records_added, report.records_merged), (1, 1, 1));
 assert!(report.errors.is_empty());
 assert_eq!(report.sources_synced, ["stub"]);
@@ -261,7 +263,7 @@ let status = fetch_scalar(&mut db, "SELECT status FROM download_days WHERE sourc
 assert_eq!(status, Some(Value::Text("completed".into())));
 
 // Fetched after the day was over, so the next run leaves it alone.
-assert_eq!(sync(&mut db, &registry, &request, now)?.days_processed, 0);
+assert_eq!(sync(&mut db, &registry, &request, &|| now)?.days_processed, 0);
 
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
