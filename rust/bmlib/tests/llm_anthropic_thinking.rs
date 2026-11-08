@@ -246,7 +246,10 @@ fn the_model_is_asked_before_the_chat_and_its_shape_is_sent() {
         seen[0].1
     );
     let body = seen[1].2.as_ref().unwrap();
-    assert_eq!(body["thinking"], json!({"type": "adaptive"}));
+    assert_eq!(
+        body["thinking"],
+        json!({"type": "adaptive", "display": "summarized"})
+    );
     assert_eq!(body["output_config"], json!({"effort": "xhigh"}));
 }
 
@@ -324,7 +327,10 @@ fn extra_body_wins_over_the_looked_up_fields() {
     client(&fake).chat(&req).expect("chat");
     let body = fake.seen()[1].2.clone().unwrap();
     assert_eq!(body["output_config"], json!({"effort": "low"}));
-    assert_eq!(body["thinking"], json!({"type": "adaptive"}));
+    assert_eq!(
+        body["thinking"],
+        json!({"type": "adaptive", "display": "summarized"})
+    );
 }
 
 #[test]
@@ -408,7 +414,7 @@ fn both_streams_send_the_looked_up_fields() {
         let body = seen[1].2.as_ref().unwrap();
         assert_eq!(
             body["thinking"],
-            json!({"type": "adaptive"}),
+            json!({"type": "adaptive", "display": "summarized"}),
             "{cancellable}"
         );
         assert_eq!(
@@ -562,7 +568,7 @@ fn a_lookup_answering_503_is_retried() {
     assert_eq!(methods, ["GET", "GET", "POST"], "{seen:?}");
     assert_eq!(
         seen[2].2.as_ref().unwrap()["thinking"],
-        json!({"type": "adaptive"})
+        json!({"type": "adaptive", "display": "summarized"})
     );
 }
 

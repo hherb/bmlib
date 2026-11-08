@@ -72,6 +72,11 @@ THINKING_BUDGET_MIN = 1024
 THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
 DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
 
+# Adaptive thinking asks for the summarized trace (#710): Opus 4.7+, Sonnet 5+,
+# Haiku 5.5 and Fable default ``display`` to omitted, which returns empty
+# thinking text and leaves ``LLMResponse.thinking`` None though the model thought.
+ADAPTIVE_THINKING_DISPLAY = "summarized"
+
 
 ThinkingRefusalReason = Literal[
     "no-capabilities",
@@ -568,6 +573,11 @@ def _require_think_type(think: object) -> None:
         raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
 
 
+def _adaptive_thinking() -> dict[str, object]:
+    """A fresh adaptive ``thinking`` field, asking for the summarized trace (#710)."""
+    return {"type": "adaptive", "display": ADAPTIVE_THINKING_DISPLAY}
+
+
 def resolve_thinking(
     think: bool | str | int, max_tokens: int, model_body: Any
 ) -> dict[str, object]:
@@ -579,10 +589,12 @@ def resolve_thinking(
     ``True`` (the model's default effort) and for an effort level the model
     reports under ``capabilities.effort`` (sent as ``output_config.effort``);
     on an adaptive model a level it does not report is refused, never a preset
-    budget, even where it also reports ``enabled``. A falsy *think* (thinking
-    off) is no fields. An ``int`` is a budget and needs ``enabled``; with ``enabled`` alone,
-    ``True`` and ``"low"``/``"medium"``/``"high"`` are preset budgets. Held to
-    Rust's ``anthropic_thinking`` by ``tests/fixtures/anthropic_thinking.json``.
+    budget, even where it also reports ``enabled``. Adaptive thinking is sent
+    ``display: "summarized"`` (#710). A falsy *think* (thinking off) is no
+    fields. An ``int`` is a budget and needs ``enabled``; with ``enabled``
+    alone, ``True`` and ``"low"``/``"medium"``/``"high"`` are preset budgets.
+    Held to Rust's ``anthropic_thinking`` by
+    ``tests/fixtures/anthropic_thinking.json``.
 
     Raises:
         ThinkingRefusedError: The model cannot take *think*, or its body says
@@ -610,7 +622,7 @@ def resolve_thinking(
         )
     if isinstance(think, bool):
         if adaptive:
-            return {"thinking": {"type": "adaptive"}}
+            return {"thinking": _adaptive_thinking()}
         return _budget_fields(DEFAULT_THINKING_BUDGET, max_tokens)
     if isinstance(think, int):
         if think < 0:
@@ -628,7 +640,7 @@ def resolve_thinking(
     level = think.lower()
     if adaptive:
         if _supported(caps, "effort", level):
-            return {"thinking": {"type": "adaptive"}, "output_config": {"effort": level}}
+            return {"thinking": _adaptive_thinking(), "output_config": {"effort": level}}
         raise ThinkingRefusedError(
             f"Anthropic model {model!r} does not report think effort level {think!r}",
             reason="effort-not-supported",

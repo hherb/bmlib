@@ -2437,7 +2437,7 @@ class TestAnthropicSendsNoSamplingParameters:
             ("POST", "/v1/messages"),
         ]
         sent = seen[1][2]
-        assert sent["thinking"] == {"type": "adaptive"}
+        assert sent["thinking"] == {"type": "adaptive", "display": "summarized"}
         assert sent["output_config"] == {"effort": "xhigh"}
         assert "budget_tokens" not in json.dumps(sent)
 

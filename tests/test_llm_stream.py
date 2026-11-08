@@ -231,7 +231,7 @@ class TestAnthropicProvider:
         provider._client.models.retrieve.return_value = _THINKING_FIXTURE["models"]["adaptive-only"]
         provider.chat_stream(MESSAGES, lambda d: None, model="claude-x", think="high")
         kwargs = provider._client.messages.create.call_args.kwargs
-        assert kwargs["thinking"] == {"type": "adaptive"}
+        assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
         assert kwargs["extra_body"] == {"output_config": {"effort": "high"}}
 
     def test_a_refused_think_opens_no_stream(self):

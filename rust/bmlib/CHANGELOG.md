@@ -30,6 +30,17 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **Anthropic adaptive thinking asks for the summarized trace** (#710, with
+  Python). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and
+  Fable default thinking's `display` to omitted, so their thinking blocks
+  arrive with empty text: since #707 sent them `{"type": "adaptive"}`,
+  `LLMResponse.thinking` was `None` and `chat_stream` delivered no thinking
+  delta, though the model thought and was billed for it. Every adaptive
+  request is now sent `{"type": "adaptive", "display": "summarized"}` (Opus
+  4.6 and Sonnet 4.6 already default to it); a budget request is unchanged.
+  The display changes what comes back, not what is billed. Held by
+  `tests/fixtures/anthropic_thinking.json` in both languages; not probed live.
+
 - **Anthropic thinking takes the shape the model reports** (#707, with
   Python). A `think` holding an integer was sent as `budget_tokens`, which
   Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse with a 400,

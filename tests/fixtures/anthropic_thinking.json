@@ -1,5 +1,5 @@
 {
-  "description": "How a truthy `think` becomes Anthropic request fields (#707), read off the model's own `GET /v1/models/{id}` body. Python's `bmlib.llm.providers.anthropic.resolve_thinking` and Rust's `bmlib::llm::anthropic_thinking` are both held to it. `think` is Python's value; Rust carries it as text (a bool as `true`/`false`, a number as its digits, a string as itself). The model bodies follow the shape the Models API documents (`capabilities.thinking.types.{adaptive,enabled}.supported`, `capabilities.effort.<level>.supported`) and are written from Anthropic's documentation of each model family, not recorded live. Rules: adaptive wins for `true`; an effort string on an adaptive model must be one it reports under `capabilities.effort`, and on a model taking only budgets must be `low`/`medium`/`high` (a preset budget, whatever `capabilities.effort` says); an int is a budget and needs `enabled`; a model whose body says nothing readable about thinking, or reports none, is refused first; then a negative int is refused before the model is asked whether it takes a budget; a budget is clamped to [1024, max_tokens - 1] and needs max_tokens > 1024. A refusal is raised before the chat request is sent. Python's *string* forms of a number or a bool (`\"4096\"`, `\"true\"`) are effort levels there and cannot be told from the number or bool in Rust's text, so no case uses one.",
+  "description": "How a truthy `think` becomes Anthropic request fields (#707), read off the model's own `GET /v1/models/{id}` body. Python's `bmlib.llm.providers.anthropic.resolve_thinking` and Rust's `bmlib::llm::anthropic_thinking` are both held to it. `think` is Python's value; Rust carries it as text (a bool as `true`/`false`, a number as its digits, a string as itself). The model bodies follow the shape the Models API documents (`capabilities.thinking.types.{adaptive,enabled}.supported`, `capabilities.effort.<level>.supported`) and are written from Anthropic's documentation of each model family, not recorded live. Rules: adaptive wins for `true`, and adaptive thinking is sent `display: \"summarized\"` (#710; the current models default it to omitted, which returns empty thinking text); an effort string on an adaptive model must be one it reports under `capabilities.effort`, and on a model taking only budgets must be `low`/`medium`/`high` (a preset budget, whatever `capabilities.effort` says); an int is a budget and needs `enabled`; a model whose body says nothing readable about thinking, or reports none, is refused first; then a negative int is refused before the model is asked whether it takes a budget; a budget is clamped to [1024, max_tokens - 1] and needs max_tokens > 1024. A refusal is raised before the chat request is sent. Python's *string* forms of a number or a bool (`\"4096\"`, `\"true\"`) are effort levels there and cannot be told from the number or bool in Rust's text, so no case uses one.",
   "models": {
     "adaptive-only": {
       "id": "claude-opus-5-5",
@@ -95,13 +95,13 @@
   ],
   "cases": [
     {"name": "true on an adaptive-only model", "model": "adaptive-only", "think": true, "max_tokens": 4096,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}}}},
     {"name": "an effort level on an adaptive-only model", "model": "adaptive-only", "think": "high", "max_tokens": 4096,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "high"}}}},
     {"name": "an effort level is folded to lower case", "model": "adaptive-only", "think": "XHigh", "max_tokens": 4096,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "xhigh"}}}},
     {"name": "max effort on an adaptive-only model", "model": "adaptive-only", "think": "max", "max_tokens": 512,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "max"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "max"}}}},
     {"name": "an int budget on an adaptive-only model is refused", "model": "adaptive-only", "think": 4096, "max_tokens": 16000,
      "expect": {"refusal": "budget-not-supported"}},
     {"name": "an unknown effort level is refused", "model": "adaptive-only", "think": "extreme", "max_tokens": 4096,
@@ -110,14 +110,14 @@
      "expect": {"refusal": "negative-budget"}},
 
     {"name": "true on an adaptive model reporting no effort is adaptive", "model": "adaptive-no-effort", "think": true, "max_tokens": 4096,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}}}},
     {"name": "an effort level on an adaptive model reporting none is refused, not a budget", "model": "adaptive-no-effort", "think": "medium", "max_tokens": 16000,
      "expect": {"refusal": "effort-not-supported"}},
 
     {"name": "true on a model taking both is adaptive", "model": "both", "think": true, "max_tokens": 4096,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}}}},
     {"name": "an effort level on a model taking both is adaptive", "model": "both", "think": "low", "max_tokens": 4096,
-     "expect": {"fields": {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}}},
+     "expect": {"fields": {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "low"}}}},
     {"name": "an effort level the model does not report is refused", "model": "both", "think": "xhigh", "max_tokens": 4096,
      "expect": {"refusal": "effort-not-supported"}},
     {"name": "an int budget on a model taking both is a budget", "model": "both", "think": 4096, "max_tokens": 16000,

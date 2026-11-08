@@ -18,7 +18,8 @@
 //!
 //! Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse
 //! `{"type": "enabled", "budget_tokens": N}` and think adaptively
-//! (`{"type": "adaptive"}`, depth by `output_config.effort`); Opus 4.6 and
+//! (`{"type": "adaptive", "display": "summarized"}`, #710; depth by
+//! `output_config.effort`); Opus 4.6 and
 //! Sonnet 4.6 take both; the 4.5 models and the thinking models before them
 //! take only a budget, and a model before Sonnet 3.7 does not think. Which one a model takes is
 //! read off its own `GET /v1/models/{id}` body, never guessed from its name.
@@ -174,6 +175,15 @@ fn budget_fields(budget: i64, max_tokens: i64) -> Result<Map<String, Value>, Thi
     Ok(fields)
 }
 
+/// Adaptive thinking's `display` (#710): Opus 4.7+, Sonnet 5+, Haiku 5.5 and
+/// Fable default it to omitted, which returns empty thinking text.
+pub const ADAPTIVE_THINKING_DISPLAY: &str = "summarized";
+
+/// The adaptive `thinking` field, asking for the summarized trace.
+fn adaptive_thinking() -> Value {
+    json!({"type": "adaptive", "display": ADAPTIVE_THINKING_DISPLAY})
+}
+
 /// The request fields `think` becomes for the model `model_body` describes:
 /// its `GET /v1/models/{id}` body. A `think` that is off ([`think_is_on`])
 /// becomes no fields.
@@ -184,8 +194,9 @@ fn budget_fields(budget: i64, max_tokens: i64) -> Result<Map<String, Value>, Thi
 /// level the model reports under `capabilities.effort` (sent as
 /// `output_config.effort`); on an adaptive model a level it does not report
 /// is refused, never a preset budget, even where it also reports `enabled`.
-/// A budget needs `enabled` thinking; with `enabled` alone, `true` and
-/// `low`/`medium`/`high` are preset budgets. A budget is clamped to
+/// Adaptive thinking is sent `display: "summarized"` (#710). A budget needs
+/// `enabled` thinking; with `enabled` alone, `true` and `low`/`medium`/`high`
+/// are preset budgets. A budget is clamped to
 /// `[THINKING_BUDGET_MIN, max_tokens - 1]`.
 ///
 /// # Errors
@@ -221,7 +232,7 @@ pub fn anthropic_thinking(
     if think == "true" {
         if adaptive {
             let mut fields = Map::new();
-            fields.insert("thinking".to_string(), json!({"type": "adaptive"}));
+            fields.insert("thinking".to_string(), adaptive_thinking());
             return Ok(fields);
         }
         return budget_fields(DEFAULT_THINKING_BUDGET, max_tokens);
@@ -239,7 +250,7 @@ pub fn anthropic_thinking(
     if adaptive {
         if supported(caps, &["effort", level.as_str()]) {
             let mut fields = Map::new();
-            fields.insert("thinking".to_string(), json!({"type": "adaptive"}));
+            fields.insert("thinking".to_string(), adaptive_thinking());
             fields.insert("output_config".to_string(), json!({"effort": level}));
             return Ok(fields);
         }

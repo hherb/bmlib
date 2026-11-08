@@ -87,8 +87,8 @@ pub use text_utils::{
     DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_MIN_CHUNK_SIZE,
 };
 pub use thinking::{
-    anthropic_thinking, think_is_on, ThinkingRefusal, DEFAULT_THINKING_BUDGET, THINKING_BUDGET_MIN,
-    THINKING_EFFORT_BUDGETS,
+    anthropic_thinking, think_is_on, ThinkingRefusal, ADAPTIVE_THINKING_DISPLAY,
+    DEFAULT_THINKING_BUDGET, THINKING_BUDGET_MIN, THINKING_EFFORT_BUDGETS,
 };
 pub use token_tracker::{
     reset_token_tracker, with_token_tracker, ModelUsage, TokenTracker, TokenUsageRecord,

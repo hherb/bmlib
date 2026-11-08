@@ -208,7 +208,7 @@ class TestAnthropicThinkingRequest:
         provider = _anthropic_provider(model_body="adaptive-only")
         provider.chat(_Q, model="claude-opus-5-5", max_tokens=8000, think="high")
         req = _anthropic_request(provider)
-        assert req["thinking"] == {"type": "adaptive"}
+        assert req["thinking"] == {"type": "adaptive", "display": "summarized"}
         # Through extra_body: create() takes output_config only from SDK ~0.80.
         assert req["extra_body"] == {"output_config": {"effort": "high"}}
         assert "output_config" not in req
@@ -217,7 +217,7 @@ class TestAnthropicThinkingRequest:
         provider = _anthropic_provider(model_body="adaptive-only")
         provider.chat(_Q, model="claude-opus-5-5", think=True)
         req = _anthropic_request(provider)
-        assert req["thinking"] == {"type": "adaptive"}
+        assert req["thinking"] == {"type": "adaptive", "display": "summarized"}
         assert "extra_body" not in req
 
     def test_a_refusal_is_raised_before_the_chat_is_sent(self):
@@ -254,7 +254,10 @@ class TestAnthropicThinkingRequest:
         provider._client.models.retrieve.return_value = _THINKING_FIXTURE["models"]["both"]
         provider.chat(_Q, model="m", max_tokens=8000, think=True)
         assert provider._client.models.retrieve.call_count == 2
-        assert _anthropic_request(provider)["thinking"] == {"type": "adaptive"}
+        assert _anthropic_request(provider)["thinking"] == {
+            "type": "adaptive",
+            "display": "summarized",
+        }
 
     @pytest.mark.parametrize("case", _THINKING_FIXTURE["off"], ids=lambda c: c["name"])
     def test_no_think_makes_no_lookup(self, case):
