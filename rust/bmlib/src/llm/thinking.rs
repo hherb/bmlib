@@ -16,9 +16,11 @@
 
 //! How a request's `think` becomes Anthropic request fields (#707).
 //!
-//! Current Claude models refuse `{"type": "enabled", "budget_tokens": N}` and
-//! think adaptively (`{"type": "adaptive"}`, depth by `output_config.effort`),
-//! while Haiku 4.5 and older take only a budget. Which one a model takes is
+//! Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse
+//! `{"type": "enabled", "budget_tokens": N}` and think adaptively
+//! (`{"type": "adaptive"}`, depth by `output_config.effort`); Opus 4.6 and
+//! Sonnet 4.6 take both; the 4.5 models and the thinking models before them
+//! take only a budget, and a model before Sonnet 3.7 does not think. Which one a model takes is
 //! read off its own `GET /v1/models/{id}` body, never guessed from its name.
 //! Python's `bmlib.llm.providers.anthropic.resolve_thinking` is the twin, both
 //! held to `tests/fixtures/anthropic_thinking.json`.
@@ -56,12 +58,16 @@ pub enum ThinkingRefusal {
         /// The budget asked for.
         budget: i64,
     },
-    /// An effort level the model does not report.
+    /// An effort level the model cannot take: on an adaptive model one it
+    /// does not report under `capabilities.effort`, on a model taking only
+    /// budgets one with no preset budget (not `low`, `medium` or `high`).
     EffortNotSupported {
         /// The model asked about.
         model: String,
         /// The level asked for, as given.
         effort: String,
+        /// Whether the model thinks adaptively, which decides the rule.
+        adaptive: bool,
     },
     /// A negative token budget.
     NegativeBudget(i64),
@@ -101,9 +107,22 @@ impl std::fmt::Display for ThinkingRefusal {
                 "Anthropic model {model:?} takes no thinking budget (think={budget}); \
                  pass an effort level or true"
             ),
-            ThinkingRefusal::EffortNotSupported { model, effort } => write!(
+            ThinkingRefusal::EffortNotSupported {
+                model,
+                effort,
+                adaptive: true,
+            } => write!(
                 f,
                 "Anthropic model {model:?} does not report think effort level {effort:?}"
+            ),
+            ThinkingRefusal::EffortNotSupported {
+                model,
+                effort,
+                adaptive: false,
+            } => write!(
+                f,
+                "Anthropic model {model:?} takes only a thinking budget, and think={effort:?} \
+                 has none (expected low, medium, high, an integer or true)"
             ),
             ThinkingRefusal::NegativeBudget(budget) => write!(
                 f,
@@ -122,13 +141,15 @@ impl std::fmt::Display for ThinkingRefusal {
 impl std::error::Error for ThinkingRefusal {}
 
 /// Whether `think` asks for thinking, by Python's truthiness of the value the
-/// text stands for: `""`, `"false"` and an integer 0 do not.
+/// text stands for (the shared fixture's encoding: a bool as `true`/`false`,
+/// a number as its digits): `""`, `"false"` and an integer 0 do not. Python's
+/// *string* `"false"` is truthy, which this text cannot express.
 #[must_use]
 pub fn think_is_on(think: &str) -> bool {
     !(think.is_empty() || think == "false" || think.parse::<i64>() == Ok(0))
 }
 
-/// Whether the leaf at `path` under `node` is `{"supported": true}` exactly.
+/// Whether the leaf at `path` under `node` has `supported` exactly `true`.
 fn supported(node: &Value, path: &[&str]) -> bool {
     let mut node = node;
     for key in path {
@@ -209,19 +230,25 @@ pub fn anthropic_thinking(
         return budget_fields(budget, max_tokens);
     }
     let level = think.to_lowercase();
-    if adaptive && supported(caps, &["effort", level.as_str()]) {
-        let mut fields = Map::new();
-        fields.insert("thinking".to_string(), json!({"type": "adaptive"}));
-        fields.insert("output_config".to_string(), json!({"effort": level}));
-        return Ok(fields);
-    }
-    if !adaptive {
-        if let Some((_, budget)) = THINKING_EFFORT_BUDGETS.iter().find(|(l, _)| *l == level) {
-            return budget_fields(*budget, max_tokens);
+    if adaptive {
+        if supported(caps, &["effort", level.as_str()]) {
+            let mut fields = Map::new();
+            fields.insert("thinking".to_string(), json!({"type": "adaptive"}));
+            fields.insert("output_config".to_string(), json!({"effort": level}));
+            return Ok(fields);
         }
+        return Err(ThinkingRefusal::EffortNotSupported {
+            model,
+            effort: think.to_string(),
+            adaptive,
+        });
+    }
+    if let Some((_, budget)) = THINKING_EFFORT_BUDGETS.iter().find(|(l, _)| *l == level) {
+        return budget_fields(*budget, max_tokens);
     }
     Err(ThinkingRefusal::EffortNotSupported {
         model,
         effort: think.to_string(),
+        adaptive,
     })
 }

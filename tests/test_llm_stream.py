@@ -36,7 +36,7 @@ from bmlib.llm import (
     reset_token_tracker,
     run_stream,
 )
-from bmlib.llm.providers.anthropic import AnthropicProvider
+from bmlib.llm.providers.anthropic import AnthropicProvider, ThinkingRefusedError
 from bmlib.llm.providers.base import BaseProvider
 from bmlib.llm.providers.deepseek import DeepSeekProvider
 from bmlib.llm.providers.gemini import GeminiProvider
@@ -49,6 +49,9 @@ FIXTURE = Path(__file__).parent / "fixtures" / "chat_stream.json"
 CASES = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
 
 MESSAGES = [LLMMessage(role="user", content="Was it blinded?")]
+_THINKING_FIXTURE = json.loads(
+    (Path(__file__).parent / "fixtures" / "anthropic_thinking.json").read_text(encoding="utf-8")
+)
 
 
 def _drive(case: dict) -> tuple[list[StreamDelta], object]:
@@ -221,6 +224,36 @@ class TestAnthropicProvider:
         assert response.content == "Yes."
         assert response.model == "claude-x"
         assert stream.closed
+
+    def test_an_adaptive_model_streams_its_shape(self):
+        # #707: the stream sends what chat() would, adaptive shape included.
+        provider = self._provider(_FakeStream(_events("anthropic/thinking-then-text")))
+        provider._client.models.retrieve.return_value = _THINKING_FIXTURE["models"]["adaptive-only"]
+        provider.chat_stream(MESSAGES, lambda d: None, model="claude-x", think="high")
+        kwargs = provider._client.messages.create.call_args.kwargs
+        assert kwargs["thinking"] == {"type": "adaptive"}
+        assert kwargs["extra_body"] == {"output_config": {"effort": "high"}}
+
+    def test_a_refused_think_opens_no_stream(self):
+        provider = self._provider(_FakeStream(_events("anthropic/thinking-then-text")))
+        provider._client.models.retrieve.return_value = _THINKING_FIXTURE["models"]["adaptive-only"]
+        with pytest.raises(ThinkingRefusedError) as raised:
+            provider.chat_stream(MESSAGES, lambda d: None, model="claude-x", think=4096)
+        assert raised.value.reason == "budget-not-supported"
+        provider._client.messages.create.assert_not_called()
+
+    def test_a_cancel_already_set_makes_no_lookup(self):
+        # The lookup is part of opening the stream, which a set cancel skips.
+        provider = self._provider(_FakeStream(_events("anthropic/thinking-then-text")))
+        provider._client.models.retrieve.side_effect = RuntimeError("must not be asked")
+        cancel = threading.Event()
+        cancel.set()
+        response = provider.chat_stream(
+            MESSAGES, lambda d: None, model="claude-x", cancel=cancel, think=True
+        )
+        assert response.stop_reason == CANCELLED_STOP_REASON
+        provider._client.models.retrieve.assert_not_called()
+        provider._client.messages.create.assert_not_called()
 
     def test_a_stream_without_thinking_sends_no_sampling_parameters(self):
         # #705: chat_stream sends neither, as chat does.

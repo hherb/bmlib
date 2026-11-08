@@ -32,18 +32,23 @@ The Python library is documented separately, in the repository's
 
 - **Anthropic thinking takes the shape the model reports** (#707, with
   Python). A `think` holding an integer was sent as `budget_tokens`, which
-  every current Claude model refuses with a 400, and any other `think` (`true`,
-  an effort level) was dropped for Anthropic. `LlmClient::chat`,
+  Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse with a 400,
+  and any other `think` (`true`, an effort level) was dropped for Anthropic. `LlmClient::chat`,
   `chat_stream` and `chat_stream_with_cancel` now fetch the model's
   `GET /v1/models/{id}` (on every such call: `LlmClient` holds no cache) when
   `think` is on (`think_is_on`: not `""`, `"false"` or 0) and add the fields
   `anthropic_thinking(think, max_tokens, model_body)` reads off it: adaptive
   plus `output_config.effort` where the model reports them, a budget only for
-  a model reporting budgets. A field set by `extra_body` is left alone. A
-  refusal is the new `ChatError::Thinking(ThinkingRefusal)` (not retryable),
-  before the chat is sent; a refused lookup is the `ChatError::Http` it was.
-  **`chat_body` no longer carries `thinking`** for Anthropic, its shape needing
-  the metadata. Shared fixture `tests/fixtures/anthropic_thinking.json`.
+  a model reporting budgets. `extra_body` wins: a `thinking` it sets is left
+  whole, and an `output_config` it sets gains only the keys it lacks (its
+  `format` and the looked-up `effort` are both sent). A refusal is the new
+  `ChatError::Thinking(ThinkingRefusal)` (not retryable), before the chat is
+  sent; a failed lookup is `ChatError::Http`, `Transport` or `Malformed`,
+  naming the models URL, retried as opening a stream is. In
+  `chat_stream_with_cancel` the lookup runs on the worker, so a cancel stops
+  it at once, and a cancel already set makes none. Shared fixture
+  `tests/fixtures/anthropic_thinking.json`. `chat_body`'s change is under
+  *Changed — breaking*.
 
 - **A PICO part loses no quote the model gave, and a part the paper omits
   may have no description** (#577, #618), as in Python: `verify_quotes`
@@ -291,6 +296,11 @@ The Python library is documented separately, in the repository's
   one PDF no longer reports a bogus font).
 
 ### Changed — breaking
+
+- **`chat_body` no longer carries an Anthropic `thinking`** (#707): its shape
+  needs the model's metadata, which `LlmClient` fetches and adds (see
+  *Changed*), so a caller building a body with `chat_body` and sending it
+  itself gets no thinking.
 
 - **A failed context-window lookup carries the HTTP status** (#664, with the
   Python library, filed by StudyAnalyzer's review):

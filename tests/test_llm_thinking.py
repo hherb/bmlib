@@ -24,6 +24,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from bmlib.llm.data_types import LLMMessage, LLMResponse
+from bmlib.llm.providers.anthropic import ThinkingRefusedError
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing
 
 # ---------------------------------------------------------------------------
@@ -220,7 +221,6 @@ class TestAnthropicThinkingRequest:
         assert "extra_body" not in req
 
     def test_a_refusal_is_raised_before_the_chat_is_sent(self):
-        from bmlib.llm.providers.anthropic import ThinkingRefusedError
 
         provider = _anthropic_provider(model_body="adaptive-only")
         with pytest.raises(ThinkingRefusedError, match="takes no thinking budget") as raised:
@@ -242,8 +242,13 @@ class TestAnthropicThinkingRequest:
     def test_a_failed_lookup_raises_the_sdks_error_and_is_not_kept(self):
         provider = _anthropic_provider()
         provider._client.models.retrieve.side_effect = [RuntimeError("down"), {"id": "x"}]
-        with pytest.raises(RuntimeError, match="down"):
+        with pytest.raises(RuntimeError, match="down") as raised:
             provider.chat(_Q, model="m", max_tokens=8000, think=True)
+        # The SDK's message names no URL, so a note says it was the lookup.
+        assert raised.value.__notes__ == [
+            "raised by the lookup of 'm''s thinking capabilities "
+            "(GET /v1/models/{id}, #707), before the chat was sent"
+        ]
         provider._client.messages.create.assert_not_called()
         provider._client.models.retrieve.side_effect = None
         provider._client.models.retrieve.return_value = _THINKING_FIXTURE["models"]["both"]
@@ -251,12 +256,20 @@ class TestAnthropicThinkingRequest:
         assert provider._client.models.retrieve.call_count == 2
         assert _anthropic_request(provider)["thinking"] == {"type": "adaptive"}
 
-    def test_no_think_makes_no_lookup(self):
-        for think in (None, False, 0, ""):
-            provider = _anthropic_provider()
-            provider.chat(_Q, think=think)
-            assert "thinking" not in _anthropic_request(provider)
-            provider._client.models.retrieve.assert_not_called()
+    @pytest.mark.parametrize("case", _THINKING_FIXTURE["off"], ids=lambda c: c["name"])
+    def test_no_think_makes_no_lookup(self, case):
+        provider = _anthropic_provider()
+        provider.chat(_Q, think=case["think"])
+        assert "thinking" not in _anthropic_request(provider)
+        provider._client.models.retrieve.assert_not_called()
+
+    def test_a_think_of_the_wrong_type_is_refused_before_the_capabilities(self):
+        # A float is no think value: said as that, not as what the model lacks.
+        provider = _anthropic_provider(model_body="no-capabilities")
+        with pytest.raises(ValueError, match="Unsupported think value 4096.0") as raised:
+            provider.chat(_Q, max_tokens=8000, think=4096.0)
+        assert not isinstance(raised.value, ThinkingRefusedError)
+        provider._client.messages.create.assert_not_called()
 
     def test_thinking_sends_no_sampling_parameters(self):
         # Never sent (#705); thinking does not bring them back.

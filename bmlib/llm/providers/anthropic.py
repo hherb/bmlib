@@ -60,12 +60,13 @@ CACHE_TTL_SECONDS = 3600
 # Rough chars-per-token ratio for fallback estimation
 CHARS_PER_TOKEN_ESTIMATE = 4
 
-# Extended thinking with a budget (a model reporting ``enabled`` thinking,
-# #707): the API-imposed minimum budget, and the budgets the cross-provider
-# ``think`` effort levels map to there. ``think=True`` uses the "medium"
-# budget. Budgets are clamped to max_tokens - 1 because the API requires
-# budget_tokens < max_tokens. A model reporting ``adaptive`` thinking is sent
-# the effort level itself, as ``output_config.effort``.
+# Extended thinking with a budget (#707): the API-imposed minimum budget, and
+# the budgets ``True`` and the cross-provider effort levels map to on a model
+# reporting only ``enabled`` thinking (``think=True`` uses the "medium"
+# budget); an ``int`` is a budget wherever ``enabled`` is reported. Budgets are
+# clamped to max_tokens - 1 because the API requires budget_tokens <
+# max_tokens. A model reporting ``adaptive`` thinking is sent ``True`` as
+# adaptive and an effort level itself, as ``output_config.effort``.
 THINKING_BUDGET_MIN = 1024
 THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
 DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
@@ -196,12 +197,20 @@ class AnthropicProvider(BaseProvider):
     def _model_body(self, model: str) -> Any:
         """*model*'s ``models.retrieve`` body as a dict, fetched once and kept.
 
-        A failed lookup raises the SDK's own error, as a failed chat does, and
-        is not kept, so the next call asks again.
+        A failed lookup raises the SDK's own error, as a failed chat does, with
+        a note naming the lookup (the SDK's message names no URL, so it would
+        read as the chat failing), and is not kept, so the next call asks again.
         """
         body = self._model_bodies.get(model)
         if body is None:
-            body = as_dict(self._get_client().models.retrieve(model))
+            try:
+                body = as_dict(self._get_client().models.retrieve(model))
+            except Exception as exc:
+                exc.add_note(
+                    f"raised by the lookup of {model!r}'s thinking capabilities "
+                    f"(GET /v1/models/{{id}}, #707), before the chat was sent"
+                )
+                raise
             self._model_bodies[model] = body
         return body
 
@@ -244,7 +253,11 @@ class AnthropicProvider(BaseProvider):
             ThinkingRefusedError: A ``ValueError``: *think* is truthy and the
                 model cannot take it (its ``reason`` says which rule), before
                 the chat request is sent.
-            ValueError: If the response is nested too deeply to decode (#698).
+            ValueError: If *think* is not a ``bool``, ``int`` or ``str``, or
+                the response is nested too deeply to decode (#698).
+            anthropic.APIError: The SDK's own error, from the chat or, for a
+                truthy *think*, from the model lookup before it (with a note
+                naming the lookup).
         """
         model = model or self.default_model
         client = self._get_client()
@@ -309,7 +322,8 @@ class AnthropicProvider(BaseProvider):
         :meth:`chat_stream` send, from their arguments and extra options.
 
         Raises:
-            ThinkingRefusedError: As :meth:`chat` documents for *think*.
+            ThinkingRefusedError: As :meth:`chat` documents for *think*, and
+                the ``ValueError`` and the lookup's SDK error it documents.
         """
         tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
         tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
@@ -363,20 +377,24 @@ class AnthropicProvider(BaseProvider):
         Sends the request :meth:`chat` would, with ``stream=True``, and reads
         the events through :func:`~bmlib.llm.stream.read_stream`, which
         *cancel* stops at once (#635). The SDK retries opening the stream
-        itself.
+        itself. The request is built where the stream is opened, so a
+        thinking model's lookup (#707) is covered by *cancel* too: a cancel
+        already set makes no lookup.
 
         Raises:
             NotImplementedError: If *tools* is passed.
             StreamError: If the stream fails after it opens or ends early.
-            ThinkingRefusedError: As :meth:`chat` documents for *think*.
+            ThinkingRefusedError: As :meth:`chat` documents for *think*, and
+                the ``ValueError`` and the lookup's SDK error it documents.
         """
         refuse_tools(kwargs)
         model = model or self.default_model
         client = self._get_client()
-        request_kwargs = self._request_kwargs(messages, model, max_tokens, kwargs)
         return read_stream(
             "anthropic",
-            lambda: client.messages.create(**request_kwargs, stream=True),
+            lambda: client.messages.create(
+                **self._request_kwargs(messages, model, max_tokens, kwargs), stream=True
+            ),
             lambda stream: sdk_events(stream, lambda e: e.to_dict()),
             model,
             on_delta,
@@ -496,7 +514,7 @@ class AnthropicProvider(BaseProvider):
 
 
 def _supported(node: Any, *path: str) -> bool:
-    """Whether the leaf at *path* under *node* is ``{"supported": true}`` exactly."""
+    """Whether the leaf at *path* under *node* has ``supported`` exactly ``True``."""
     for key in path:
         node = node.get(key) if isinstance(node, dict) else None
     return isinstance(node, dict) and node.get("supported") is True
@@ -532,7 +550,10 @@ def resolve_thinking(
     Raises:
         ThinkingRefusedError: The model cannot take *think*, or its body says
             nothing readable about thinking (refused, never guessed).
+        ValueError: *think* is not a ``bool``, ``int`` or ``str``.
     """
+    if not isinstance(think, (bool, int, str)):
+        raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
     caps = model_body.get("capabilities") if isinstance(model_body, dict) else None
     thinking = caps.get("thinking") if isinstance(caps, dict) else None
     types = thinking.get("types") if isinstance(thinking, dict) else None
@@ -566,17 +587,21 @@ def resolve_thinking(
                 reason="budget-not-supported",
             )
         return _budget_fields(think, max_tokens)
-    if isinstance(think, str):
-        level = think.lower()
-        if adaptive and _supported(caps, "effort", level):
+    level = think.lower()
+    if adaptive:
+        if _supported(caps, "effort", level):
             return {"thinking": {"type": "adaptive"}, "output_config": {"effort": level}}
-        if not adaptive and level in THINKING_EFFORT_BUDGETS:
-            return _budget_fields(THINKING_EFFORT_BUDGETS[level], max_tokens)
         raise ThinkingRefusedError(
             f"Anthropic model {model!r} does not report think effort level {think!r}",
             reason="effort-not-supported",
         )
-    raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
+    if level in THINKING_EFFORT_BUDGETS:
+        return _budget_fields(THINKING_EFFORT_BUDGETS[level], max_tokens)
+    raise ThinkingRefusedError(
+        f"Anthropic model {model!r} takes only a thinking budget, and think={think!r} "
+        f"has none (expected {', '.join(THINKING_EFFORT_BUDGETS)}, an int or True)",
+        reason="effort-not-supported",
+    )
 
 
 # ---------------------------------------------------------------------------

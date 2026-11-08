@@ -762,7 +762,8 @@ pub fn parse_response(
 /// stops the retries (a cancelled stream's worker).
 ///
 /// Returns the last outcome, retried or not, for the caller to judge:
-/// shared by opening a stream and by a context-window lookup.
+/// shared by opening a stream, a context-window lookup and an Anthropic
+/// thinking lookup.
 /// `status_of` reads the status out of a successful send.
 fn send_with_retries<T>(
     base_delay: Duration,
@@ -859,13 +860,14 @@ struct WorkerEvents<'a> {
 }
 
 impl<'a> WorkerEvents<'a> {
+    /// Send `body` to `target`'s chat URL on a worker; `thinking` asks for
+    /// its Anthropic thinking fields to be looked up and added first.
     fn spawn(
         client: Arc<dyn HttpClient + Send + Sync>,
         base_delay: Duration,
-        url: String,
         body: Value,
-        headers: BTreeMap<String, String>,
-        protocol: Protocol,
+        target: Target,
+        thinking: Option<Thinking>,
         cancel: &'a AtomicBool,
     ) -> Self {
         let (sender, events) = mpsc::channel();
@@ -873,6 +875,27 @@ impl<'a> WorkerEvents<'a> {
         let gave_up = Arc::clone(&abandoned);
         let worker = std::thread::spawn(move || {
             let give_up = || gave_up.load(Ordering::SeqCst);
+            let (url, headers, protocol) =
+                (chat_url(&target), chat_headers(&target), target.protocol);
+            let mut body = body;
+            if let Some(t) = thinking {
+                let added = add_anthropic_thinking(
+                    &*client,
+                    base_delay,
+                    &give_up,
+                    &target,
+                    &t.think,
+                    t.max_tokens,
+                    &mut body,
+                );
+                if let Err(e) = added {
+                    let _ = sender.send(Err(e));
+                    return;
+                }
+                if give_up() {
+                    return;
+                }
+            }
             match open_stream(&*client, base_delay, &give_up, &url, &body, &headers) {
                 Ok(stream) => {
                     for event in stream_events(stream.body, protocol, &url) {
@@ -922,6 +945,79 @@ impl Drop for WorkerEvents<'_> {
     fn drop(&mut self) {
         self.abandoned.store(true, Ordering::SeqCst);
     }
+}
+
+/// What [`WorkerEvents`] needs to add a request's Anthropic thinking fields.
+struct Thinking {
+    think: String,
+    max_tokens: i64,
+}
+
+/// A request's `think` and `max_tokens`, when its thinking needs the model's
+/// metadata: `think` is on ([`crate::llm::think_is_on`]) and the protocol is
+/// Anthropic (#707).
+fn anthropic_think(request: &ChatRequest, target: &Target) -> Option<(String, i64)> {
+    let think = request.think.as_deref().filter(|t| think_is_on(t))?;
+    (target.protocol == Protocol::Anthropic).then(|| (think.to_string(), request.max_tokens))
+}
+
+/// Add the `thinking` (and `output_config`) fields `think` stands for, read
+/// off the model's `GET /v1/models/{id}` (#707).
+///
+/// One lookup per call, retried as opening a stream is
+/// ([`send_with_retries`], stopped by `give_up`). `extra_body` is merged last
+/// in [`chat_body`], so the caller's fields win: a `thinking` it set is left
+/// whole (merged key by key, a budget could land beside `adaptive`), and an
+/// `output_config` it set gains only the keys it lacks, so its `format` and
+/// the looked-up `effort` are both sent.
+fn add_anthropic_thinking(
+    client: &dyn HttpClient,
+    base_delay: Duration,
+    give_up: &dyn Fn() -> bool,
+    target: &Target,
+    think: &str,
+    max_tokens: i64,
+    body: &mut Value,
+) -> Result<(), ChatError> {
+    let (url, _) = context_window_request(target);
+    let headers = chat_headers(target);
+    let response = send_with_retries(
+        base_delay,
+        give_up,
+        || client.get_with_headers(&url, &headers),
+        |response| response.status,
+    )
+    .map_err(|e| match e {
+        FetchError::HttpStatus { status, .. } => http_error(&url, status, ""),
+        other => ChatError::Transport(other.to_string()),
+    })?;
+    if !response.is_success() {
+        return Err(http_error(&url, response.status, response.text_or_empty()));
+    }
+    let text = response.text().map_err(|e| {
+        ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
+    })?;
+    let model_body: Value = serde_json::from_str(text).map_err(|e| {
+        ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
+    })?;
+    let fields = anthropic_thinking(think, max_tokens, &model_body).map_err(ChatError::Thinking)?;
+    let Some(body) = body.as_object_mut() else {
+        return Ok(());
+    };
+    for (key, value) in fields {
+        match (body.get_mut(&key), value) {
+            (None, value) => {
+                body.insert(key, value);
+            }
+            (Some(Value::Object(theirs)), Value::Object(ours)) if key == "output_config" => {
+                for (k, v) in ours {
+                    theirs.entry(k).or_insert(v);
+                }
+            }
+            (Some(_), _) => {}
+        }
+    }
+    Ok(())
 }
 
 /// A chat client over an [`HttpClient`].
@@ -1005,7 +1101,9 @@ impl LlmClient {
     /// # Errors
     ///
     /// A routing failure, a transport failure, or a body the protocol cannot
-    /// read.
+    /// read. With an Anthropic `think` on (#707): the model lookup's own
+    /// failure (HTTP, transport, a body that is not JSON) or a
+    /// [`ChatError::Thinking`] refusal, both before the chat is sent.
     pub fn chat(&self, request: &ChatRequest) -> Result<LLMResponse, ChatError> {
         let target = resolve_target(
             request,
@@ -1014,7 +1112,17 @@ impl LlmClient {
             self.api_key.as_deref(),
         )?;
         let mut body = chat_body(request, &target, self.is_reasoning_model(&target.model));
-        self.add_anthropic_thinking(request, &target, &mut body)?;
+        if let Some((think, max_tokens)) = anthropic_think(request, &target) {
+            add_anthropic_thinking(
+                &*self.client,
+                self.retry_base_delay,
+                &|| false,
+                &target,
+                &think,
+                max_tokens,
+                &mut body,
+            )?;
+        }
         let url = chat_url(&target);
         let headers = chat_headers(&target);
 
@@ -1088,7 +1196,8 @@ impl LlmClient {
     ///
     /// A routing failure, tools ([`ChatError::StreamingToolsUnsupported`]), a
     /// transport failure (a client that cannot stream among them), a rejected
-    /// request, or a stream that failed or ended early ([`ChatError::Stream`]).
+    /// request, or a stream that failed or ended early ([`ChatError::Stream`]);
+    /// with an Anthropic `think` on, what [`LlmClient::chat`]'s lookup raises.
     pub fn chat_stream(
         &self,
         request: &ChatRequest,
@@ -1104,7 +1213,17 @@ impl LlmClient {
             self.api_key.as_deref(),
         )?;
         let mut body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
-        self.add_anthropic_thinking(request, &target, &mut body)?;
+        if let Some((think, max_tokens)) = anthropic_think(request, &target) {
+            add_anthropic_thinking(
+                &*self.client,
+                self.retry_base_delay,
+                &|| false,
+                &target,
+                &think,
+                max_tokens,
+                &mut body,
+            )?;
+        }
         let url = chat_url(&target);
         let stream = open_stream(
             &*self.client,
@@ -1135,7 +1254,8 @@ impl LlmClient {
     /// [`CANCELLED_STOP_REASON`](crate::llm::CANCELLED_STOP_REASON) (or the
     /// server's own, when its end marker had arrived); its usage is recorded
     /// as for a stop from `on_delta`. A `cancel` already set sends nothing
-    /// and records no usage.
+    /// and records no usage. An Anthropic thinking request's model lookup
+    /// (#707) runs on the worker too, so `cancel` stops it the same way.
     ///
     /// The worker is abandoned rather than interrupted: it sends no further
     /// retry, and it closes the connection when the read it is blocked in
@@ -1169,17 +1289,17 @@ impl LlmClient {
                 .finish(&target.model, true)
                 .map_err(ChatError::Stream);
         }
-        let mut body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
-        self.add_anthropic_thinking(request, &target, &mut body)?;
-        let url = chat_url(&target);
-        let headers = chat_headers(&target);
+        let body = chat_stream_body(request, &target, self.is_reasoning_model(&target.model));
+        // The thinking lookup runs on the worker too, so a cancel stops it at
+        // once as it stops the stream's opening (#707).
+        let thinking = anthropic_think(request, &target)
+            .map(|(think, max_tokens)| Thinking { think, max_tokens });
         let events = WorkerEvents::spawn(
             Arc::clone(&self.client),
             self.retry_base_delay,
-            url,
             body,
-            headers,
-            target.protocol,
+            target.clone(),
+            thinking,
             cancel,
         );
         let response = run_stream_until(target.protocol, events, &target.model, on_delta, &|| {
@@ -1187,57 +1307,6 @@ impl LlmClient {
         })?;
         record_usage(&target, &response);
         Ok(response)
-    }
-
-    /// Add the `thinking` (and `output_config`) fields an Anthropic request's
-    /// `think` stands for, read off the model's `GET /v1/models/{id}` (#707).
-    ///
-    /// Nothing for another protocol or a `think` that is off
-    /// ([`crate::llm::think_is_on`]). One lookup per call, retried as a chat
-    /// is; a field the caller's `extra_body` already set is left alone, as
-    /// `extra_body` is merged last in [`chat_body`].
-    fn add_anthropic_thinking(
-        &self,
-        request: &ChatRequest,
-        target: &Target,
-        body: &mut Value,
-    ) -> Result<(), ChatError> {
-        let Some(think) = request.think.as_deref().filter(|t| think_is_on(t)) else {
-            return Ok(());
-        };
-        if target.protocol != Protocol::Anthropic {
-            return Ok(());
-        }
-        let (url, _) = context_window_request(target);
-        let headers = chat_headers(target);
-        let response = send_with_retries(
-            self.retry_base_delay,
-            &|| false,
-            || self.client.get_with_headers(&url, &headers),
-            |response| response.status,
-        )
-        .map_err(|e| match e {
-            FetchError::HttpStatus { status, .. } => http_error(&url, status, ""),
-            other => ChatError::Transport(other.to_string()),
-        })?;
-        if !response.is_success() {
-            return Err(http_error(&url, response.status, response.text_or_empty()));
-        }
-        let model_body: Value = response
-            .text()
-            .ok()
-            .and_then(|text| serde_json::from_str(text).ok())
-            .ok_or_else(|| {
-                ChatError::Malformed(format!("{url} returned a body that is not JSON"))
-            })?;
-        let fields = anthropic_thinking(think, request.max_tokens, &model_body)
-            .map_err(ChatError::Thinking)?;
-        if let Some(body) = body.as_object_mut() {
-            for (key, value) in fields {
-                body.entry(key).or_insert(value);
-            }
-        }
-        Ok(())
     }
 
     /// The context window of `model`, in tokens, from the provider.

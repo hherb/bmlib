@@ -1,5 +1,5 @@
 {
-  "description": "How a truthy `think` becomes Anthropic request fields (#707), read off the model's own `GET /v1/models/{id}` body. Python's `bmlib.llm.providers.anthropic.resolve_thinking` and Rust's `bmlib::llm::anthropic_thinking` are both held to it. `think` is Python's value; Rust carries it as text (a bool as `true`/`false`, a number as its digits, a string as itself). The model bodies follow the shape the Models API documents (`capabilities.thinking.types.{adaptive,enabled}.supported`, `capabilities.effort.<level>.supported`) and are written from Anthropic's documentation of each model family, not recorded live. Rules: adaptive wins for `true` and an effort string where the model reports it; an int is a budget and needs `enabled`; an effort level must be one the model reports; a budget is clamped to [1024, max_tokens - 1] and needs max_tokens > 1024. A refusal is raised before the chat request is sent.",
+  "description": "How a truthy `think` becomes Anthropic request fields (#707), read off the model's own `GET /v1/models/{id}` body. Python's `bmlib.llm.providers.anthropic.resolve_thinking` and Rust's `bmlib::llm::anthropic_thinking` are both held to it. `think` is Python's value; Rust carries it as text (a bool as `true`/`false`, a number as its digits, a string as itself). The model bodies follow the shape the Models API documents (`capabilities.thinking.types.{adaptive,enabled}.supported`, `capabilities.effort.<level>.supported`) and are written from Anthropic's documentation of each model family, not recorded live. Rules: adaptive wins for `true`; an effort string on an adaptive model must be one it reports under `capabilities.effort`, and on a model taking only budgets must be `low`/`medium`/`high` (a preset budget, whatever `capabilities.effort` says); an int is a budget and needs `enabled`; a negative int is refused before anything else is asked of the model; a budget is clamped to [1024, max_tokens - 1] and needs max_tokens > 1024. A refusal is raised before the chat request is sent. Python's *string* forms of a number or a bool (`\"4096\"`, `\"true\"`) are effort levels there and cannot be told from the number or bool in Rust's text, so no case uses one.",
   "models": {
     "adaptive-only": {
       "id": "claude-opus-5-5",
@@ -49,6 +49,28 @@
         }
       }
     },
+    "budget-with-effort": {
+      "id": "claude-opus-4-5",
+      "max_input_tokens": 200000,
+      "max_tokens": 64000,
+      "capabilities": {
+        "thinking": {"supported": true, "types": {"enabled": {"supported": true}, "adaptive": {"supported": false}}},
+        "effort": {
+          "supported": true,
+          "low": {"supported": true},
+          "medium": {"supported": true},
+          "high": {"supported": true},
+          "xhigh": {"supported": false},
+          "max": {"supported": false}
+        }
+      }
+    },
+    "adaptive-no-effort": {
+      "id": "claude-adaptive-no-effort",
+      "capabilities": {
+        "thinking": {"supported": true, "types": {"enabled": {"supported": false}, "adaptive": {"supported": true}}}
+      }
+    },
     "no-thinking": {
       "id": "claude-3-5-haiku-20241022",
       "capabilities": {
@@ -84,6 +106,13 @@
      "expect": {"refusal": "budget-not-supported"}},
     {"name": "an unknown effort level is refused", "model": "adaptive-only", "think": "extreme", "max_tokens": 4096,
      "expect": {"refusal": "effort-not-supported"}},
+    {"name": "a negative budget on an adaptive-only model is negative, not unsupported", "model": "adaptive-only", "think": -5, "max_tokens": 4096,
+     "expect": {"refusal": "negative-budget"}},
+
+    {"name": "true on an adaptive model reporting no effort is adaptive", "model": "adaptive-no-effort", "think": true, "max_tokens": 4096,
+     "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
+    {"name": "an effort level on an adaptive model reporting none is refused, not a budget", "model": "adaptive-no-effort", "think": "medium", "max_tokens": 16000,
+     "expect": {"refusal": "effort-not-supported"}},
 
     {"name": "true on a model taking both is adaptive", "model": "both", "think": true, "max_tokens": 4096,
      "expect": {"fields": {"thinking": {"type": "adaptive"}}}},
@@ -118,6 +147,11 @@
      "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 3000}}}},
     {"name": "true with no room for the minimum budget is refused", "model": "budget-only", "think": true, "max_tokens": 1024,
      "expect": {"refusal": "max-tokens-too-small"}},
+
+    {"name": "an effort level a budget-only model reports is still a preset budget, not adaptive", "model": "budget-with-effort", "think": "high", "max_tokens": 32000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 16384}}}},
+    {"name": "true on a budget-only model reporting effort is the default budget", "model": "budget-with-effort", "think": true, "max_tokens": 16000,
+     "expect": {"fields": {"thinking": {"type": "enabled", "budget_tokens": 8192}}}},
 
     {"name": "a model reporting no thinking is refused", "model": "no-thinking", "think": true, "max_tokens": 4096,
      "expect": {"refusal": "not-supported"}},
