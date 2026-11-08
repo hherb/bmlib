@@ -471,5 +471,77 @@
         "c"
       ]
     }
+  },
+  {
+    "name": "loads/nan-refused",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{\"a\": NaN}",
+      "repair": false
+    }
+  },
+  {
+    "name": "loads/nan-refused-after-repair",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{\"a\": NaN}"
+    }
+  },
+  {
+    "name": "loads/infinity-refused",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "[Infinity, -Infinity]",
+      "repair": false
+    }
+  },
+  {
+    "name": "loads/float-overflow-refused",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{\"a\": 1e999}",
+      "repair": false
+    }
+  },
+  {
+    "name": "loads/integer-past-binary64-refused",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{\"a\": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000}",
+      "repair": false
+    }
+  },
+  {
+    "name": "loads/underflow-is-zero",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{\"a\": 1e-999}",
+      "repair": false
+    }
+  },
+  {
+    "name": "extract/nan-candidate-skipped",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "first {\"a\": NaN} then {\"b\": 2}"
+    }
+  },
+  {
+    "name": "extractjson/nan-candidate-skipped",
+    "fn": "extract_json",
+    "args": {
+      "text": "[NaN] then {\"b\": 2}"
+    }
+  },
+  {
+    "name": "salvage/nan-value-dropped",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "{\"a\": NaN, \"b\": 2}",
+      "keys": [
+        "a",
+        "b"
+      ]
+    }
   }
 ]

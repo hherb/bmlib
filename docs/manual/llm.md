@@ -1207,6 +1207,17 @@ Repair a malformed JSON string and return the repaired text. Valid input is retu
 
 **Raises:** `JSONRepairError` if unrepairable; `ValueError` if the input is empty or exceeds `MAX_JSON_LENGTH`.
 
+### `strict_json_loads`
+
+```python
+from bmlib.llm.utils import strict_json_decoder, strict_json_loads
+
+def strict_json_loads(text: str) -> Any
+def strict_json_decoder() -> json.JSONDecoder
+```
+
+`json.loads()` reading only what RFC 8259 and the Rust port's `serde_json` read *(unreleased, #572)*: `NaN`, `Infinity`, `-Infinity`, a float past the binary64 range (`1e999`, `1.8e308`) and an integer past it raise `json.JSONDecodeError` (so an existing `except json.JSONDecodeError` catches them), as do integers past Python's 4,300-digit conversion limit. A number that underflows reads as `0.0`; an integer inside the binary64 range stays an exact `int` (Rust holds one past `u64` as a float). `strict_json_decoder()` is a fresh decoder with the same refusals, for `raw_decode`, where a refusal is a `ValueError`. Every decode in `parse_json()`, `extract_json()`, `repair_json()`, `safe_json_loads()`, `extract_and_repair_json()` and `salvage_json_fields()` goes through these, so each refuses those numbers: `salvage_json_fields` drops a field holding one, and repair does not mend one.
+
 ### `safe_json_loads`
 
 ```python

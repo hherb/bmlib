@@ -23,7 +23,12 @@ import json
 import pytest
 
 from bmlib.llm.json_repair import extract_and_repair_json, salvage_json_fields
-from bmlib.llm.utils import extract_json, iter_json_spans
+from bmlib.llm.utils import (
+    extract_json,
+    iter_json_spans,
+    strict_json_decoder,
+    strict_json_loads,
+)
 
 
 class TestIterJsonSpans:
@@ -380,3 +385,39 @@ class TestSalvageJsonFields:
         # it would escape the promise never to raise on malformed text.
         text = '{"j": ' * 20000
         assert salvage_json_fields(text, ["j"]) == {}
+
+
+class TestOnlyJsonNumbersAreRead:
+    """Every decode on the ``chat_json`` path reads what ``serde_json`` reads (#572)."""
+
+    @pytest.mark.parametrize(
+        "text",
+        ['{"a": NaN}', "[Infinity]", "[-Infinity]", '{"a": 1e999}', '{"a": -1.8e308}']
+        + ["[" + "1" + "0" * 400 + "]", "[-" + "9" * 400 + "]", "[" + "1" * 5000 + "]"],
+        ids=["nan", "inf", "-inf", "1e999", "-1.8e308", "int-400", "-int-400", "int-5000"],
+    )
+    def test_a_number_json_does_not_define_is_a_decode_error(self, text: str) -> None:
+        with pytest.raises(json.JSONDecodeError):
+            strict_json_loads(text)
+
+    def test_ordinary_values_read_as_json_reads_them(self) -> None:
+        text = '{"a": [1, -2.5, 1e-999, 1.7976931348623157e308, 123456789012345678901], "b": 0}'
+        assert strict_json_loads(text) == json.loads(text)
+
+    def test_a_syntax_error_is_still_the_decoders(self) -> None:
+        with pytest.raises(json.JSONDecodeError, match="Expecting value"):
+            strict_json_loads("[")
+
+    def test_the_raw_decoder_refuses_as_a_value_error(self) -> None:
+        with pytest.raises(ValueError, match="NaN is not a JSON value"):
+            strict_json_decoder().raw_decode("NaN")
+
+    def test_extract_json_passes_over_a_nan_candidate(self) -> None:
+        assert extract_json('[NaN] then {"b": 2}') == '{"b": 2}'
+
+    def test_salvage_drops_only_the_nan_field(self) -> None:
+        assert salvage_json_fields('{"a": NaN, "b": 2}', ["a", "b"]) == {"b": 2}
+
+    def test_repair_does_not_launder_nan(self) -> None:
+        with pytest.raises(ValueError):
+            extract_and_repair_json('{"a": NaN}')

@@ -50,7 +50,7 @@ from typing import Any, Literal, overload
 from bmlib.agents.metrics import PerformanceMetrics
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.json_repair import extract_and_repair_json
-from bmlib.llm.utils import extract_json
+from bmlib.llm.utils import extract_json, strict_json_loads
 from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
@@ -624,7 +624,7 @@ class BaseAgent:
         """
         # Try direct parse
         try:
-            return json.loads(text)
+            return strict_json_loads(text)
         except (json.JSONDecodeError, RecursionError):
             pass
 
@@ -639,7 +639,7 @@ class BaseAgent:
         candidate = extract_json(text, allow_fragments=False)
         if candidate != text:
             try:
-                return json.loads(candidate)
+                return strict_json_loads(candidate)
             except (json.JSONDecodeError, RecursionError):
                 pass
 
@@ -650,7 +650,7 @@ class BaseAgent:
         # truncation, unquoted keys) after extracting the JSON span.
         try:
             repaired, was_repaired = extract_and_repair_json(text)
-            parsed = json.loads(repaired)
+            parsed = strict_json_loads(repaired)
         except (ValueError, json.JSONDecodeError, RecursionError):
             pass
         else:
@@ -669,7 +669,7 @@ class BaseAgent:
         fragment = extract_json(text)
         if fragment != text:
             try:
-                return json.loads(fragment)
+                return strict_json_loads(fragment)
             except (json.JSONDecodeError, RecursionError):
                 pass
 

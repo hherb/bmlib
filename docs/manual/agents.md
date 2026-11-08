@@ -329,6 +329,8 @@ expected a JSON object or array, got int      # any scalar result
 expected a JSON object, got list              # require_dict=True only
 ```
 
+**Only numbers JSON defines are read** *(unreleased)*: every stage decodes with [`strict_json_loads()`](llm.md#strict_json_loads), so `NaN`, `Infinity`, `-Infinity`, a float past the binary64 range (`1e999`) and an integer past it are a decode failure at every stage, and a reply carrying one is unparseable — `ChatJsonUnparseableError` from `chat_json()`, as in Rust, where the same reply gave `UnusableReply` while Python returned a result (#572). Before, `json.loads()` read them as `nan`, `inf` and an exact `int`. `1e-999` still reads as `0.0`.
+
 `RecursionError` is caught at every stage alongside the decode errors. `json.loads()` descends recursively, so text nested past the interpreter's stack limit — `'{"j": ' * 20000`, the shape a repetition-looping model emits — blows the stack rather than failing to decode. Such a response is unparseable, and the contract is to report that as `ValueError`.
 
 **Example:**

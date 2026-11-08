@@ -39,7 +39,7 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from bmlib.llm.utils import iter_json_spans
+from bmlib.llm.utils import iter_json_spans, strict_json_decoder, strict_json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ def repair_json(json_str: str, max_attempts: int = MAX_REPAIR_ATTEMPTS) -> str:
 
     # First, try to parse as-is.
     try:
-        json.loads(json_str)
+        strict_json_loads(json_str)
         return json_str  # Already valid
     except json.JSONDecodeError:
         pass  # Need repairs
@@ -96,7 +96,7 @@ def repair_json(json_str: str, max_attempts: int = MAX_REPAIR_ATTEMPTS) -> str:
     for attempt in range(max_attempts):
         try:
             repaired = _apply_repairs(json_str)
-            json.loads(repaired)
+            strict_json_loads(repaired)
 
             if repaired != original_str:
                 logger.debug("JSON repaired successfully on attempt %d", attempt + 1)
@@ -473,14 +473,14 @@ def safe_json_loads(
         raise ValueError("Cannot parse empty JSON string")
 
     try:
-        return json.loads(json_str)
+        return strict_json_loads(json_str)
     except json.JSONDecodeError as e:
         if not repair:
             raise ValueError(f"Invalid JSON: {e}") from e
 
     try:
         repaired = repair_json(json_str, max_attempts)
-        return json.loads(repaired)
+        return strict_json_loads(repaired)
     except (JSONRepairError, json.JSONDecodeError) as e:
         raise ValueError(f"Cannot parse JSON even after repair: {e}") from e
 
@@ -520,7 +520,7 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
 
     for candidate in iter_json_spans(response.strip(), nested_objects=False):
         try:
-            json.loads(candidate)
+            strict_json_loads(candidate)
             return candidate, False
         except (json.JSONDecodeError, RecursionError) as e:
             # RecursionError because json.loads() descends recursively: a
@@ -536,7 +536,7 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
 
         try:
             repaired = repair_json(candidate)
-            json.loads(repaired)  # Validate it parses.
+            strict_json_loads(repaired)  # Validate it parses.
             return repaired, True
         except (JSONRepairError, json.JSONDecodeError, RecursionError) as e:
             # This candidate is a dead end; the next one may not be.
@@ -586,7 +586,7 @@ def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
     if not text:
         return recovered
 
-    decoder = json.JSONDecoder()
+    decoder = strict_json_decoder()
 
     for key in keys:
         pattern = re.compile(r'"' + re.escape(key) + r'"\s*:\s*')

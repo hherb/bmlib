@@ -219,6 +219,27 @@ class TestChatJsonSaysWhy:
         with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
             agent.chat_json([agent.user_msg("x")])
 
+    @pytest.mark.parametrize(
+        "number",
+        ["NaN", "Infinity", "-Infinity", "1e999", "1" + "0" * 400],
+        ids=["nan", "infinity", "minus-infinity", "float-overflow", "integer-overflow"],
+    )
+    def test_a_number_json_does_not_define_is_unparseable(self, _sleep, number):
+        """Rust's ``serde_json`` refuses these, so the same reply must not give
+        a result here and ``UnusableReply`` there (#572)."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('{"a": {"b": 1}, "c": ' + number + "}")
+        with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
+            agent.chat_json([agent.user_msg("x")])
+        assert agent.llm.chat.call_count == 3
+
+    def test_a_truncated_reply_carrying_nan_is_truncated(self, _sleep):
+        """The truncation path's "complete anyway?" test is strict too."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _truncated('{"a": NaN}')
+        with pytest.raises(ChatJsonTruncatedError, match="raise max_tokens"):
+            agent.chat_json([agent.user_msg("x")], temperature=0.0)
+
     def test_the_last_failure_names_the_class(self, _sleep):
         agent = _make_agent()
         agent.llm.chat.side_effect = [

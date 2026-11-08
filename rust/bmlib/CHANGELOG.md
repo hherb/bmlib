@@ -30,6 +30,15 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **`safe_json_loads` wraps an unrepairable input as Python does** (found by
+  #572's new oracle case). With `repair` on, a failed repair returned the
+  repairer's error bare (`Cannot repair JSON after 3 attempts: …`) where
+  Python's reads `Cannot parse JSON even after repair: Cannot repair JSON …`;
+  only `Unrepairable` is wrapped, `TooLarge` passing through as Python's
+  `ValueError` does. The oracle now holds nine more JSON cases (`NaN`,
+  `Infinity`, `1e999`, an integer past binary64, each refused as
+  `serde_json` always did) and four PICO replies (`UnusableReply`).
+
 - **Anthropic adaptive thinking asks for the summarized trace** (#710, with
   Python). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and
   Fable default thinking's `display` to omitted, so their thinking blocks

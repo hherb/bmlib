@@ -19,8 +19,68 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Callable, Iterator
+from typing import Any
+
+
+def _refuse_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not a JSON value")
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"number out of range: {text[:40]}")
+    return value
+
+
+def _float_ranged_int(text: str) -> int:
+    value = int(text)  # past 4,300 digits int() itself raises ValueError
+    try:
+        float(value)
+    except OverflowError:
+        raise ValueError(f"number out of range: {text[:40]}...") from None
+    return value
+
+
+def strict_json_decoder() -> json.JSONDecoder:
+    """A fresh decoder refusing what :func:`strict_json_loads` refuses.
+
+    For :meth:`~json.JSONDecoder.raw_decode`, which reports a refusal as the
+    hook's :class:`ValueError` (a ``JSONDecodeError`` is one too).
+    """
+    return json.JSONDecoder(
+        parse_constant=_refuse_constant,
+        parse_float=_finite_float,
+        parse_int=_float_ranged_int,
+    )
+
+
+def strict_json_loads(text: str) -> Any:
+    """:func:`json.loads` reading only what RFC 8259 and ``serde_json`` read.
+
+    Python's ``json`` accepts ``NaN``, ``Infinity`` and ``-Infinity``, reads
+    ``1e999`` as ``inf`` and keeps an integer of any size; the Rust port's
+    ``serde_json`` refuses all of them ("number out of range" for an integer
+    past the binary64 range), so the same model reply gave a result in Python
+    and ``UnusableReply`` in Rust (#572). Every decode on the ``chat_json``
+    path goes through here, so such a reply is unparseable in both. A number
+    that underflows (``1e-999``) reads as ``0.0`` in both, and an integer
+    inside the binary64 range stays an ``int`` here where Rust holds it as a
+    float past ``u64``.
+
+    Raises:
+        json.JSONDecodeError: For every refusal, so each caller's existing
+            ``except json.JSONDecodeError`` catches these too.
+    """
+    try:
+        return strict_json_decoder().decode(text)
+    except json.JSONDecodeError:
+        raise
+    except ValueError as exc:
+        raise json.JSONDecodeError(str(exc), text, 0) from exc
 
 
 def http_status(exc: object) -> int | None:
@@ -275,7 +335,7 @@ def _first_acceptable(
 
     for candidate in iter_json_spans(text, nested_objects=nested_objects):
         try:
-            parsed = json.loads(candidate)
+            parsed = strict_json_loads(candidate)
         except (json.JSONDecodeError, RecursionError):
             # RecursionError, not just a decode failure: json.loads() descends
             # recursively, so a candidate nested past the interpreter's stack

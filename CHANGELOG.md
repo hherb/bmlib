@@ -23,6 +23,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **A model reply carrying a number JSON does not define is unparseable** (#572,
+  the maintainer's choice of direction). Python's `json` reads `NaN`,
+  `Infinity`, `-Infinity`, `1e999` (as `inf`) and an integer of any size,
+  where the Rust port's `serde_json` refuses them, so the same reply gave a
+  result in Python (a PICO confidence of `None`) and `UnusableReply` in Rust.
+  Every decode on the `chat_json` path (`parse_json`, `extract_json`,
+  `repair_json`, `safe_json_loads`, `extract_and_repair_json`,
+  `salvage_json_fields`) now goes through `bmlib.llm.utils.strict_json_loads`
+  / `strict_json_decoder`, which refuse them (an integer past the binary64
+  range too, as `serde_json` does, measured on 1.0.151), so such a reply is
+  `ChatJsonUnparseableError` and retried. `1e-999` still reads as `0.0`; an
+  integer inside the binary64 range stays an exact `int` (Rust holds one past
+  `u64` as a float, unchanged). New oracle cases: nine in `json_cases.json`,
+  four in `pico_agent_cases.json` (`unusable_reply` in both languages). The
+  readers in `quality/_json_fields.py` and `LLMChunkProcessor` keep refusing a
+  non-finite value handed to them directly.
+
 - **Anthropic adaptive thinking asks for the summarized trace** (#710, the
   maintainer's choice). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and
   Fable default thinking's `display` to omitted, so their thinking blocks
