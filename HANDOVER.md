@@ -302,8 +302,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,603 passing + 166 skipped without the PostgreSQL DSN** on
-  `fix/710-thinking-display` (`uv run pytest tests/`, 2026-11-08; 9,755 + 14 with the DSN on #707's branch; Rust 1,677 with `cargo test --workspace --all-features` on this branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,754 passing + 15 skipped with the PostgreSQL 18 DSN** (port 5532,
+  `BMLIB_REQUIRE_POSTGRESQL=1`) on `fix/710-thinking-display` (`uv run pytest tests/`, 2026-11-08; 9,603 + 166 without it; Rust 1,677 with `cargo test --workspace --all-features` on this branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
