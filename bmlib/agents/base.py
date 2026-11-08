@@ -42,6 +42,7 @@ Usage::
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import time
@@ -58,6 +59,30 @@ logger = logging.getLogger(__name__)
 # Provider stop_reason values that mean the output hit the max_tokens ceiling:
 # Anthropic reports "max_tokens", OpenAI-compatible providers "length".
 _TRUNCATION_STOP_REASONS = ("max_tokens", "length")
+
+#: What :meth:`BaseAgent.chat_json`'s retries after an unparseable reply add to
+#: the request (#717), byte-identical in the Rust port.
+JSON_CORRECTION_NOTE = (
+    "Your previous reply could not be read as JSON. Reply again with the JSON "
+    "alone: nothing before or after it, and null, never NaN or Infinity, for a "
+    "number you cannot give."
+)
+
+
+def with_json_correction(messages: list[LLMMessage]) -> list[LLMMessage]:
+    """*messages* with :data:`JSON_CORRECTION_NOTE` on the last user turn.
+
+    Appended to that turn's content after a blank line, or sent as a user turn
+    of its own when the last turn is not the user's. The model's unparseable
+    reply is not sent back: the note is a fixed size, where the reply could
+    push the start of the prompt out of a fixed Ollama ``num_ctx`` unseen.
+    *messages* is not changed.
+    """
+    if messages and messages[-1].role == "user":
+        last = messages[-1]
+        note = f"{last.content}\n\n{JSON_CORRECTION_NOTE}"
+        return [*messages[:-1], dataclasses.replace(last, content=note)]
+    return [*messages, LLMMessage(role="user", content=JSON_CORRECTION_NOTE)]
 
 
 class ChatJsonError(ValueError):
@@ -259,6 +284,16 @@ class BaseAgent:
         fits, so truncation still gets the normal retries, but the
         final error names the real cause.
 
+        An unparseable reply is not answered by re-sending the same request:
+        the attempts after it carry :data:`JSON_CORRECTION_NOTE`
+        (:func:`with_json_correction`), so even at temperature 0 the retry
+        asks something the first attempt did not (#717).  Once added, the note
+        stays on every later attempt of the call, whatever that attempt's
+        reply; an empty, truncated or wrong-shape reply does not add it.  The
+        note does not say why the reply failed: it is the same for a syntax
+        error and a refused ``NaN``, because the Rust port's decoder cannot
+        tell the two apart.
+
         Args:
             messages: Conversation turns to send.
             temperature: Sampling temperature override.
@@ -296,6 +331,7 @@ class BaseAgent:
         # The class the final raise takes: the last attempt's cause.
         last_cls: type[ChatJsonError] = ChatJsonUnparseableError
         effective_temperature = temperature if temperature is not None else self.temperature
+        sent = messages
 
         def reject_shape(parsed: dict | list, attempt: int) -> str:
             """Name the wrong shape; raise when a retry is provably futile.
@@ -328,18 +364,20 @@ class BaseAgent:
                     raise ChatStoppedError(f"stopped before retry {attempt + 1}{context}")
                 delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
                 logger.warning(
-                    "Retry %d/%d%s after %.0fs (previous: %s)",
+                    "Retry %d/%d%s after %.0fs (previous: %s)%s",
                     attempt + 1,
                     max_retries,
                     context,
                     delay,
                     last_error,
+                    # Says whether the model was asked something new or the same again.
+                    ", with the JSON correction note" if sent is not messages else "",
                 )
                 time.sleep(delay)
                 self._metrics.add_retry()
 
             response = self.chat(
-                messages,
+                sent,
                 json_mode=True,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -399,6 +437,7 @@ class BaseAgent:
             except ValueError:
                 last_error = "unparseable response"
                 last_cls = ChatJsonUnparseableError
+                sent = with_json_correction(messages)
                 logger.error(
                     "LLM returned unparseable response (attempt %d/%d%s), full response: %s",
                     attempt + 1,

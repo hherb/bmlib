@@ -218,7 +218,7 @@ response truncated at max_tokens=256 (stop_reason='max_tokens') — raise max_to
 | Failure | `last_error` | Log level |
 |---------|--------------|-----------|
 | Empty content after `.strip()` | `"empty response from model"` | WARNING — treated as a transport/model error. |
-| `parse_json()` raises `ValueError` | `"unparseable response"` | ERROR, **with the full model output** for diagnosis. A bare scalar answer (`42`) lands here — it is outside `parse_json()`'s `dict \| list` contract. |
+| `parse_json()` raises `ValueError` | `"unparseable response"` | ERROR, **with the full model output** for diagnosis. A bare scalar answer (`42`) lands here — it is outside `parse_json()`'s `dict \| list` contract. The attempts after it carry `JSON_CORRECTION_NOTE` on the last user turn (`bmlib.agents.with_json_correction(messages)`, a user turn of its own when the last is not one), so a retry at temperature 0 asks something new *(unreleased, #717)*; the reply itself is not sent back. The note is added once and stays on every later attempt of the call, whatever that attempt's reply; no other row adds it. |
 | `require_dict=True` and the result is not a dict | `"expected a JSON object, got list"` | ERROR. A separate diagnosis from unparseability: the response *was* valid JSON, just the wrong shape. At temperature 0 this raises immediately instead, for the same reason truncation does. |
 
 **Example — reacting to the two kinds of failure:**

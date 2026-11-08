@@ -1323,6 +1323,37 @@ fn llm_chat_sends_the_tiers_request_through_a_real_client() {
     assert!(user.contains("Title: A trial"), "{user}");
 }
 
+/// **The production adapter sends the correction** after an unparseable reply
+/// (#717): the first request is the caller's, the retry carries
+/// `JSON_CORRECTION_NOTE` on its last user turn. Two attempts, so one real
+/// one-second backoff.
+#[test]
+fn llm_chat_retries_an_unparseable_reply_with_the_correction() {
+    use bmlib::agents::JSON_CORRECTION_NOTE;
+    use bmlib::llm::LLMMessage;
+    use bmlib::quality::agent_chat::JsonChat;
+
+    let transport = RecordingHttp::answering(json!({
+        "choices": [{"message": {"content": "{\"a\": NaN}"}, "finish_reason": "stop"}]
+    }));
+    let client = llm_client(transport.clone());
+    let mut chat = bmlib::quality::agent_chat::LlmChat::new(&client, "openai:gpt-4o");
+    let messages = [LLMMessage::system("sys"), LLMMessage::user("task")];
+    chat.chat_json(&messages, 0.0, 64, 2, true)
+        .expect_err("NaN both times");
+
+    let posted = transport.posted.lock().expect("lock").clone();
+    let users: Vec<&str> = posted
+        .iter()
+        .map(|body| body["messages"][1]["content"].as_str().unwrap_or_default())
+        .collect();
+    let corrected = format!("task\n\n{JSON_CORRECTION_NOTE}");
+    assert_eq!(users, vec!["task", corrected.as_str()]);
+    assert!(posted
+        .iter()
+        .all(|body| body["messages"][0]["content"] == json!("sys")));
+}
+
 /// A failing request through the same adapter degrades the paper rather than
 /// raising — the `except Exception` at the far end of the real transport.
 #[test]
@@ -1375,6 +1406,11 @@ fn run_oracle_case(case: &Value) -> Result<Value, String> {
             )
             .map(|assessment| assessment.to_json())
         }
+        "prompts" => Ok(json!({
+            "CLASSIFIER_SYSTEM_PROMPT": bmlib::quality::CLASSIFIER_SYSTEM_PROMPT,
+            "ASSESSMENT_SYSTEM_PROMPT": bmlib::quality::ASSESSMENT_SYSTEM_PROMPT,
+            "COCHRANE_SYSTEM_PROMPT": bmlib::quality::cochrane_assessor::COCHRANE_SYSTEM_PROMPT,
+        })),
         "render_tier2" => Ok(json!(format_template(
             bmlib::quality::study_classifier::CLASSIFIER_USER_TEMPLATE,
             &[

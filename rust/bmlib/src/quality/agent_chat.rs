@@ -53,7 +53,8 @@ use std::sync::{Mutex, PoisonError};
 use serde_json::Value;
 
 use crate::agents::{
-    chat_json, ChatJsonError, ChatJsonOutcome, ChatSource, TRUNCATION_STOP_REASONS,
+    chat_json, with_json_correction, ChatJsonError, ChatJsonOutcome, ChatSource,
+    TRUNCATION_STOP_REASONS,
 };
 use crate::context_processor::llm_processor::{ContextModel, RequestFailure};
 use crate::llm::{ChatError, ChatRequest, LLMMessage, LLMResponse, LlmClient};
@@ -186,9 +187,10 @@ impl JsonChat for LlmChat<'_> {
 
 /// A [`ChatSource`] over one already-built request.
 ///
-/// The request is immutable, so every attempt sends the same bytes — which is
-/// what makes "at temperature 0 a retry is provably futile" a statement about
-/// the request rather than about the transport.
+/// Every attempt sends the same bytes — which is what makes "at temperature 0 a
+/// retry is provably futile" a statement about the request rather than about
+/// the transport — until an unparseable reply has it
+/// [`correct_json`](ChatSource::correct_json) (#717).
 struct ClientSource<'a> {
     client: &'a LlmClient,
     request: ChatRequest,
@@ -217,6 +219,10 @@ impl ChatSource for ClientSource<'_> {
 
     fn last_failure_status(&self) -> Option<u16> {
         self.failure.as_ref().and_then(ChatError::http_status)
+    }
+
+    fn correct_json(&mut self) {
+        self.request.messages = with_json_correction(&self.request.messages);
     }
 
     fn backoff(&mut self, attempt: usize) {

@@ -152,11 +152,10 @@ fn run(case: &Value) -> Value {
         Ok(result) => json!({ "result": result }),
         Err(error) => json!({ "error": error.kind() }),
     };
-    // Python records one entry per model call; Rust's `seen` holds one per
-    // `chat_json` call, which retries inside. Every call in one run sends the
-    // same messages, so the run is compared as those messages and a count.
-    let mut sent: Vec<Value> = chat
-        .seen
+    // One entry per model call, as Python records them: a retry after an
+    // unparseable reply sends the corrected request (#717).
+    let sent: Vec<Value> = chat
+        .sent
         .iter()
         .map(|messages| {
             Value::Array(
@@ -167,7 +166,6 @@ fn run(case: &Value) -> Value {
             )
         })
         .collect();
-    sent.dedup();
     value["messages"] = Value::Array(sent);
     value["model_calls"] = json!(chat.source.calls);
     value
@@ -255,7 +253,7 @@ fn the_rust_agent_agrees_with_the_python_one() {
             case["name"]
         );
 
-        let mut python_sent = want["value"]["messages"]
+        let python_sent = want["value"]["messages"]
             .as_array()
             .expect("messages")
             .clone();
@@ -265,7 +263,6 @@ fn the_rust_agent_agrees_with_the_python_one() {
             "{}: model calls",
             case["name"]
         );
-        python_sent.dedup();
         assert_eq!(
             got["messages"],
             Value::Array(python_sent),

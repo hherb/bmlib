@@ -30,6 +30,17 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **An unparseable reply is retried with a correction** (#717, as Python's).
+  After the first unparseable reply in a call, `chat_json` calls the new
+  `ChatSource::correct_json`, and the source behind `LlmChat` and
+  `LlmContextModel::complete_json` puts
+  `JSON_CORRECTION_NOTE` on its request's last user turn
+  (`with_json_correction`) for the attempts that follow; the method's default
+  does nothing, so a third-party source re-sends its request unchanged, as
+  before. The Tier 2, Tier 3, Cochrane and PICO system prompts ask for `null`,
+  never `NaN` or `Infinity`. The PICO oracle now compares the messages of every
+  model call rather than one per `chat_json` call (`ScriptedChat::sent`).
+
 - **`safe_json_loads` wraps an unrepairable input as Python does** (found by
   #572's new oracle case). With `repair` on, a failed repair returned the
   repairer's error bare (`Cannot repair JSON after 3 attempts: …`) where

@@ -6,8 +6,9 @@
 
 `CochraneAssessor._parse_assessment` is called on a bare object — it touches no
 instance state — so the corpus pins the reading rules without a model or a
-network. `render_*` cases pin the tiers' user prompts as `str.format` renders
-them, doubled braces collapsed and a substituted value never re-scanned. Cases
+network. The `prompts` case pins the three system prompts verbatim;
+`render_*` cases pin the tiers' user prompts as `str.format` renders them,
+doubled braces collapsed and a substituted value never re-scanned. Cases
 carrying a `corrected` block are places where the port deliberately narrows a
 field to its annotated type (a list of notes keeps only strings,
 `evidence_level` is read only as a string); the block carries the port's value,
@@ -24,12 +25,13 @@ import json
 import sys
 
 from bmlib.quality.cochrane_assessor import (
+    COCHRANE_SYSTEM_PROMPT,
     CONDENSE_CONSOLIDATION_PROMPT,
     CONDENSE_EXTRACTION_PROMPT,
     CochraneAssessor,
 )
-from bmlib.quality.quality_agent import ASSESSMENT_USER_TEMPLATE
-from bmlib.quality.study_classifier import CLASSIFIER_USER_TEMPLATE
+from bmlib.quality.quality_agent import ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE
+from bmlib.quality.study_classifier import CLASSIFIER_SYSTEM_PROMPT, CLASSIFIER_USER_TEMPLATE
 
 
 def cochrane_parse(case: dict) -> dict:
@@ -51,6 +53,13 @@ def run(case: dict) -> object:
     args = case["args"]
     if fn == "cochrane_parse":
         return cochrane_parse(case)
+    # The three system prompts, which no other case renders (#717's review).
+    if fn == "prompts":
+        return {
+            "CLASSIFIER_SYSTEM_PROMPT": CLASSIFIER_SYSTEM_PROMPT,
+            "ASSESSMENT_SYSTEM_PROMPT": ASSESSMENT_SYSTEM_PROMPT,
+            "COCHRANE_SYSTEM_PROMPT": COCHRANE_SYSTEM_PROMPT,
+        }
     # The three tiers' user prompts, rendered exactly as the tiers render them.
     # Formatting is all these cases pin; the tiers' own guards are separate.
     if fn == "render_tier2":
