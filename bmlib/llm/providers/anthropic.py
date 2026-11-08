@@ -18,12 +18,13 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from bmlib.llm.context_window import ModelLimits, as_dict, fetch_model_limits
 from bmlib.llm.data_types import (
@@ -60,13 +61,46 @@ CACHE_TTL_SECONDS = 3600
 # Rough chars-per-token ratio for fallback estimation
 CHARS_PER_TOKEN_ESTIMATE = 4
 
-# Extended thinking: API-imposed minimum budget, and the budgets the
-# cross-provider ``think`` effort levels map to. ``think=True`` uses the
-# "medium" budget. Budgets are clamped to max_tokens - 1 because the API
-# requires budget_tokens < max_tokens.
+# Extended thinking with a budget (#707): the API-imposed minimum budget, and
+# the budgets ``True`` and the cross-provider effort levels map to on a model
+# reporting only ``enabled`` thinking (``think=True`` uses the "medium"
+# budget); an ``int`` is a budget wherever ``enabled`` is reported. Budgets are
+# clamped to max_tokens - 1 because the API requires budget_tokens <
+# max_tokens. A model reporting ``adaptive`` thinking is sent ``True`` as
+# adaptive and an effort level itself, as ``output_config.effort``.
 THINKING_BUDGET_MIN = 1024
 THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
 DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
+
+
+ThinkingRefusalReason = Literal[
+    "no-capabilities",
+    "not-supported",
+    "budget-not-supported",
+    "effort-not-supported",
+    "negative-budget",
+    "max-tokens-too-small",
+]
+
+
+class ThinkingRefusedError(ValueError):
+    """A ``think`` request the model cannot take, refused before it is sent (#707).
+
+    ``reason`` names the rule, as ``tests/fixtures/anthropic_thinking.json``
+    spells it: ``no-capabilities`` (the model's metadata says nothing readable
+    about thinking), ``not-supported``, ``budget-not-supported`` (an ``int``
+    budget for a model that thinks only adaptively), ``effort-not-supported``,
+    ``negative-budget`` or ``max-tokens-too-small``.
+    """
+
+    def __init__(self, message: str, *, reason: ThinkingRefusalReason) -> None:
+        super().__init__(message)
+        self.reason: ThinkingRefusalReason = reason
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # ``reason`` is keyword-only, which pickle's default (``cls(*args)``)
+        # cannot pass, so the error could not cross a process pool.
+        return (functools.partial(type(self), reason=self.reason), self.args)
 
 
 class AnthropicProvider(BaseProvider):
@@ -102,6 +136,8 @@ class AnthropicProvider(BaseProvider):
         super().__init__(api_key=resolved_api_key, base_url=base_url, **kwargs)
         self._models_cache: list[ModelMetadata] | None = None
         self._cache_timestamp: float = 0.0
+        # ``models.retrieve`` bodies by model id, read for ``think`` (#707).
+        self._model_bodies: dict[str, Any] = {}
         # Model ids already warned about for estimated pricing (warn once each).
         self._pricing_warned: set[str] = set()
 
@@ -174,6 +210,32 @@ class AnthropicProvider(BaseProvider):
             not_found=(anthropic.NotFoundError,),
         )
 
+    def _model_body(self, model: str) -> Any:
+        """*model*'s ``models.retrieve`` body as a dict, fetched once and kept.
+
+        A failed lookup raises the SDK's own error, as a failed chat does, with
+        a note naming the lookup (the SDK's message names no URL, so it would
+        read as the chat failing), and is not kept, so the next call asks again.
+        """
+        body = self._model_bodies.get(model)
+        if body is None:
+            try:
+                body = as_dict(self._get_client().models.retrieve(model))
+            except RecursionError as exc:
+                raise too_deep_body(exc, "anthropic", "anthropic") from exc
+            except Exception as exc:
+                exc.add_note(
+                    f"raised by the lookup of {model!r}'s thinking capabilities "
+                    f"(GET /v1/models/{{id}}, #707), before the chat was sent"
+                )
+                raise
+            # A refusal names the model the body describes; a body naming none
+            # (a proxy's stub) is the model asked for.
+            if isinstance(body, dict) and not body.get("id"):
+                body = {**body, "id": model}
+            self._model_bodies[model] = body
+        return body
+
     def chat(
         self,
         messages: list[LLMMessage],
@@ -199,17 +261,25 @@ class AnthropicProvider(BaseProvider):
             max_tokens: Maximum tokens to generate.
             **kwargs: Extra options (``json_mode``, ``tools``,
                 ``tool_choice``, ``think``; ``top_p`` is not sent, as
-                *temperature* is not). A truthy ``think`` enables extended
-                thinking: ``True`` uses the default budget, an ``int`` sets
-                ``budget_tokens``, and ``"low"``/``"medium"``/``"high"`` map
-                to preset budgets.
+                *temperature* is not). A truthy ``think`` enables thinking in
+                the shape the model's own ``models.retrieve`` reports (#707,
+                looked up once per model and kept): adaptive where it is
+                supported, ``True`` at the model's default effort and an
+                effort level as ``output_config.effort``; an ``int`` is a
+                ``budget_tokens`` and needs a model taking budgets, as does
+                ``True`` or ``"low"``/``"medium"``/``"high"`` on a model that
+                takes nothing else (a preset budget). See
+                :func:`resolve_thinking`.
 
         Raises:
-            ValueError: If *think* is truthy but *max_tokens* leaves no
-                room for the minimum thinking budget, *think* is a
-                negative token budget, or *think* is an unrecognised
-                effort-level string; or if the response is nested too
-                deeply to decode (#698).
+            ThinkingRefusedError: A ``ValueError``: *think* is truthy and the
+                model cannot take it (its ``reason`` says which rule), before
+                the chat request is sent.
+            ValueError: If *think* is not a ``bool``, ``int`` or ``str``, or
+                the response is nested too deeply to decode (#698).
+            anthropic.APIError: The SDK's own error, from the chat or, for a
+                truthy *think*, from the model lookup before it (with a note
+                naming the lookup).
         """
         model = model or self.default_model
         client = self._get_client()
@@ -274,7 +344,8 @@ class AnthropicProvider(BaseProvider):
         :meth:`chat_stream` send, from their arguments and extra options.
 
         Raises:
-            ValueError: As :meth:`chat` documents for *think*.
+            ThinkingRefusedError: As :meth:`chat` documents for *think*, and
+                the ``ValueError`` and the lookup's SDK error it documents.
         """
         tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
         tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
@@ -296,10 +367,15 @@ class AnthropicProvider(BaseProvider):
             request_kwargs["system"] = system_content
 
         if think:
-            request_kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": _resolve_thinking_budget(think, max_tokens),
-            }
+            # Checked ahead of the lookup, so a wrong type costs no request
+            # and is not hidden behind a failed one.
+            _require_think_type(think)
+            fields = resolve_thinking(think, max_tokens, self._model_body(model))
+            request_kwargs["thinking"] = fields["thinking"]
+            if "output_config" in fields:
+                # extra_body: create() takes output_config only from about 0.80,
+                # and the extra's floor is 0.41.
+                request_kwargs["extra_body"] = {"output_config": fields["output_config"]}
 
         # Tool calling: convert OpenAI-style tool defs to Anthropic format
         # and forward tool_choice if explicitly set.
@@ -326,20 +402,24 @@ class AnthropicProvider(BaseProvider):
         Sends the request :meth:`chat` would, with ``stream=True``, and reads
         the events through :func:`~bmlib.llm.stream.read_stream`, which
         *cancel* stops at once (#635). The SDK retries opening the stream
-        itself.
+        itself. The request is built where the stream is opened, so a
+        thinking model's lookup (#707) is covered by *cancel* too: a cancel
+        already set makes no lookup.
 
         Raises:
             NotImplementedError: If *tools* is passed.
             StreamError: If the stream fails after it opens or ends early.
-            ValueError: As :meth:`chat` documents for *think*.
+            ThinkingRefusedError: As :meth:`chat` documents for *think*, and
+                the ``ValueError`` and the lookup's SDK error it documents.
         """
         refuse_tools(kwargs)
         model = model or self.default_model
         client = self._get_client()
-        request_kwargs = self._request_kwargs(messages, model, max_tokens, kwargs)
         return read_stream(
             "anthropic",
-            lambda: client.messages.create(**request_kwargs, stream=True),
+            lambda: client.messages.create(
+                **self._request_kwargs(messages, model, max_tokens, kwargs), stream=True
+            ),
             lambda stream: sdk_events(stream, lambda e: e.to_dict()),
             model,
             on_delta,
@@ -454,47 +534,112 @@ class AnthropicProvider(BaseProvider):
 
 
 # ---------------------------------------------------------------------------
-# Extended-thinking helpers (pure functions, unit-testable)
+# Thinking helpers (pure functions, unit-testable)
 # ---------------------------------------------------------------------------
 
 
-def _resolve_thinking_budget(think: bool | str | int, max_tokens: int) -> int:
-    """Resolve a truthy ``think`` value into an Anthropic ``budget_tokens``.
+def _supported(node: Any, *path: str) -> bool:
+    """Whether the leaf at *path* under *node* has ``supported`` exactly ``True``."""
+    for key in path:
+        node = node.get(key) if isinstance(node, dict) else None
+    return isinstance(node, dict) and node.get("supported") is True
 
-    ``True`` → the default budget; an ``int`` → that budget; a string
-    effort level (``"low"``/``"medium"``/``"high"``) → its preset budget.
-    The result is clamped to ``[THINKING_BUDGET_MIN, max_tokens - 1]``
-    because the API requires ``budget_tokens >= 1024`` and
-    ``budget_tokens < max_tokens``.
 
-    Raises:
-        ValueError: If *max_tokens* leaves no room for the minimum
-            budget, the token budget is negative, or the effort-level
-            string is unrecognised.
-    """
+def _budget_fields(budget: int, max_tokens: int) -> dict[str, object]:
+    """``thinking`` with *budget* clamped to ``[THINKING_BUDGET_MIN, max_tokens - 1]``."""
     if max_tokens <= THINKING_BUDGET_MIN:
-        raise ValueError(
+        raise ThinkingRefusedError(
             f"Anthropic extended thinking requires max_tokens > {THINKING_BUDGET_MIN} "
             f"(the API minimum thinking budget); got max_tokens={max_tokens}. "
-            f"Increase max_tokens or disable think."
+            f"Increase max_tokens or disable think.",
+            reason="max-tokens-too-small",
+        )
+    budget = max(THINKING_BUDGET_MIN, min(budget, max_tokens - 1))
+    return {"thinking": {"type": "enabled", "budget_tokens": budget}}
+
+
+def _require_think_type(think: object) -> None:
+    """Refuse a *think* that is not a ``bool``, ``int`` or ``str``.
+
+    Raises:
+        ValueError: *think* is of another type.
+    """
+    if not isinstance(think, (bool, int, str)):
+        raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
+
+
+def resolve_thinking(
+    think: bool | str | int, max_tokens: int, model_body: Any
+) -> dict[str, object]:
+    """The request fields *think* becomes for the model *model_body* describes (#707).
+
+    *model_body* is the model's ``GET /v1/models/{id}`` body; its
+    ``capabilities.thinking.types`` says whether the model thinks
+    ``adaptive``-ly, with an ``enabled`` budget, or both. Adaptive wins for
+    ``True`` (the model's default effort) and for an effort level the model
+    reports under ``capabilities.effort`` (sent as ``output_config.effort``);
+    on an adaptive model a level it does not report is refused, never a preset
+    budget, even where it also reports ``enabled``. A falsy *think* (thinking
+    off) is no fields. An ``int`` is a budget and needs ``enabled``; with ``enabled`` alone,
+    ``True`` and ``"low"``/``"medium"``/``"high"`` are preset budgets. Held to
+    Rust's ``anthropic_thinking`` by ``tests/fixtures/anthropic_thinking.json``.
+
+    Raises:
+        ThinkingRefusedError: The model cannot take *think*, or its body says
+            nothing readable about thinking (refused, never guessed).
+        ValueError: *think* is not a ``bool``, ``int`` or ``str``.
+    """
+    if not think:
+        return {}
+    _require_think_type(think)
+    caps = model_body.get("capabilities") if isinstance(model_body, dict) else None
+    thinking = caps.get("thinking") if isinstance(caps, dict) else None
+    types = thinking.get("types") if isinstance(thinking, dict) else None
+    model = model_body.get("id") if isinstance(model_body, dict) else None
+    if not isinstance(types, dict):
+        raise ThinkingRefusedError(
+            f"Anthropic reports no thinking capabilities for {model!r}, so think= "
+            f"cannot be sent in a shape it takes",
+            reason="no-capabilities",
+        )
+    adaptive = _supported(types, "adaptive")
+    enabled = _supported(types, "enabled")
+    if not (adaptive or enabled):
+        raise ThinkingRefusedError(
+            f"Anthropic model {model!r} reports no thinking support", reason="not-supported"
         )
     if isinstance(think, bool):
-        budget = DEFAULT_THINKING_BUDGET
-    elif isinstance(think, int):
+        if adaptive:
+            return {"thinking": {"type": "adaptive"}}
+        return _budget_fields(DEFAULT_THINKING_BUDGET, max_tokens)
+    if isinstance(think, int):
         if think < 0:
-            raise ValueError(f"Negative thinking budget {think}; expected a positive token count.")
-        budget = think
-    elif isinstance(think, str):
-        try:
-            budget = THINKING_EFFORT_BUDGETS[think.lower()]
-        except KeyError:
-            raise ValueError(
-                f"Unknown think effort level {think!r}; expected one of "
-                f"{sorted(THINKING_EFFORT_BUDGETS)}, a token budget (int), or a bool."
-            ) from None
-    else:
-        raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
-    return max(THINKING_BUDGET_MIN, min(budget, max_tokens - 1))
+            raise ThinkingRefusedError(
+                f"Negative thinking budget {think}; expected a positive token count.",
+                reason="negative-budget",
+            )
+        if not enabled:
+            raise ThinkingRefusedError(
+                f"Anthropic model {model!r} takes no thinking budget (think={think}); "
+                f"pass an effort level or True",
+                reason="budget-not-supported",
+            )
+        return _budget_fields(think, max_tokens)
+    level = think.lower()
+    if adaptive:
+        if _supported(caps, "effort", level):
+            return {"thinking": {"type": "adaptive"}, "output_config": {"effort": level}}
+        raise ThinkingRefusedError(
+            f"Anthropic model {model!r} does not report think effort level {think!r}",
+            reason="effort-not-supported",
+        )
+    if level in THINKING_EFFORT_BUDGETS:
+        return _budget_fields(THINKING_EFFORT_BUDGETS[level], max_tokens)
+    raise ThinkingRefusedError(
+        f"Anthropic model {model!r} takes only a thinking budget, and think={think!r} "
+        f"has none (expected {', '.join(THINKING_EFFORT_BUDGETS)}, an int or True)",
+        reason="effort-not-supported",
+    )
 
 
 # ---------------------------------------------------------------------------
