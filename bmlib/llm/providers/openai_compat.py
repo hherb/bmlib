@@ -51,6 +51,7 @@ from bmlib.llm.data_types import (
     LLMToolCall,
     LLMToolDefinition,
 )
+from bmlib.llm.give_up import install_give_up
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -139,6 +140,8 @@ class OpenAICompatibleProvider(BaseProvider):
                 api_key=self._api_key or "unused",
                 base_url=self._base_url,
             )
+            # A cancelled stream gives its request up at the socket (#649).
+            install_give_up(self._client)
         return self._client
 
     # --- Chat ---

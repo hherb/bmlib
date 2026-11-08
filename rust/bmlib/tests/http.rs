@@ -509,3 +509,114 @@ fn a_get_with_headers_times_out_on_the_whole_request() {
         "{outcome:?}"
     );
 }
+
+/// A stream that may be given up (#649) reads through pauses longer than
+/// its wait slices, and its limits hold and are named as they are without.
+#[test]
+fn a_cancellable_stream_keeps_its_limits() {
+    let flag = || std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (url, handle) = serve_slowly(ms(1_500), ms(1_500), "data: a\n\n");
+    let patient = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let stream = patient
+        .post_json_stream_with_cancel(&url, &serde_json::json!({}), &BTreeMap::new(), flag())
+        .expect("the headers within the stream timeout");
+    assert_eq!(read_all(stream).expect("the body within it"), "data: a\n\n");
+    handle.join().expect("server");
+
+    let (url, _handle) = serve_slowly(ms(2_500), ms(2_500), "data: a\n\n");
+    let hasty = UreqClient {
+        timeout_seconds: 30,
+        stream_timeout_seconds: 1,
+        ..UreqClient::new()
+    };
+    let outcome =
+        hasty.post_json_stream_with_cancel(&url, &serde_json::json!({}), &BTreeMap::new(), flag());
+    assert!(
+        matches!(&outcome, Err(FetchError::Transport(m))
+            if m == "timed out after 1 s waiting for the response headers (receive response)"),
+        "{outcome:?}"
+    );
+}
+
+/// A stream given up before it is sent opens no request: the server reads
+/// no bytes, and the caller is told why.
+#[test]
+fn a_stream_given_up_before_sending_sends_nothing() {
+    let (url, handle) = serve_once(200, "data: a\n\n");
+    let given_up = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let outcome = UreqClient::new().post_json_stream_with_cancel(
+        &url,
+        &serde_json::json!({}),
+        &BTreeMap::new(),
+        given_up,
+    );
+    assert!(
+        matches!(&outcome, Err(FetchError::Transport(m)) if m.contains("given up by its caller")),
+        "{outcome:?}"
+    );
+    assert_eq!(handle.join().expect("server"), "");
+}
+
+/// A stream given up while its body is awaited fails the read at once,
+/// long before the server's pause ends.
+#[test]
+fn a_stream_given_up_while_reading_fails_the_read() {
+    let (url, _handle) = serve_slowly(ms(0), ms(5_000), "data: a\n\n");
+    let given_up = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stream = UreqClient::new()
+        .post_json_stream_with_cancel(
+            &url,
+            &serde_json::json!({}),
+            &BTreeMap::new(),
+            std::sync::Arc::clone(&given_up),
+        )
+        .expect("the headers");
+    let started = std::time::Instant::now();
+    let setter = std::sync::Arc::clone(&given_up);
+    std::thread::spawn(move || {
+        std::thread::sleep(ms(200));
+        setter.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    // Only the abandoned worker sees this error, and drops it.
+    read_all(stream).expect_err("the read is given up");
+    assert!(started.elapsed() < ms(2_000), "{:?}", started.elapsed());
+}
+
+/// A body delimited by the connection's close, given up mid-read, fails
+/// rather than reading as complete: the give-up is not taken for the
+/// server closing (the review of #649).
+#[test]
+fn a_close_delimited_body_given_up_is_not_complete() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let url = format!("http://{}/path", listener.local_addr().expect("addr"));
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        read_request(&stream);
+        let _ = stream.write_all(b"HTTP/1.1 200 X\r\nConnection: close\r\n\r\ndata: a\n\n");
+        let _ = stream.flush();
+        std::thread::sleep(ms(5_000));
+    });
+    let given_up = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stream = UreqClient::new()
+        .post_json_stream_with_cancel(
+            &url,
+            &serde_json::json!({}),
+            &BTreeMap::new(),
+            std::sync::Arc::clone(&given_up),
+        )
+        .expect("the headers");
+    let setter = std::sync::Arc::clone(&given_up);
+    std::thread::spawn(move || {
+        std::thread::sleep(ms(300));
+        setter.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    let error = read_all(stream).expect_err("a given-up body is not a whole one");
+    assert!(
+        error.to_string().contains("given up by its caller"),
+        "{error}"
+    );
+}

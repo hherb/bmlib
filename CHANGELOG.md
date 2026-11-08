@@ -67,7 +67,8 @@ All notable changes to bmlib are documented here. The format is based on
   with an `io::Error` of kind `TimedOut` saying the same (`timed out after
   600 s reading the response body (receive body)`). The body's limit is on
   its whole read, not on a pause in it. Python needs no change: the
-  Anthropic and OpenAI SDKs read for 600 s by default, and Ollama's client has no timeout (#652).
+  Anthropic and OpenAI SDKs read for 600 s by default, and Ollama's client has no timeout (a
+  cancelled stream's wait is bounded since #649).
 - **A PICO part loses no quote the model gave, and a part the paper omits
   may have no description** (#577, #618; both languages). A bare-string
   `quotes` (`"quotes": "Adults aged…"`) reads as a list of one, where it was
@@ -90,6 +91,38 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A cancelled stream gives its request up at the socket** (#649, #652; both
+  languages). A cancel returned at once but left the worker blocked in its
+  socket read until the server answered, so a local server went on reading
+  the prompt (minutes for a long paper on a large model, holding the GPU and
+  the next request); in Python the Anthropic and OpenAI SDKs also retried
+  opening the stream after the cancel, sending the prompt again, and an Ollama
+  server that never answered held the worker for the life of the process. Now
+  the worker's wait for the server is cut into 50 ms slices (`CANCEL_POLL_SECONDS`,
+  `CANCEL_POLL_INTERVAL`) with the abandon checked between them, so once the
+  caller returns (a cancel, a stop from `on_delta`, a raise) the read fails,
+  nothing more is written, the connection closes, and no request is sent
+  again (Python opens no new connection; Rust's retry loop sends none); a
+  slice that times out has read nothing, and the wait's own limit and its
+  name are kept. A write or connect already under way is not sliced and runs
+  to its own timeout. A given-up body fails its next read with an `Other` I/O
+  error, so one delimited by the connection's close is not read as complete.
+  `ureq` 3.5's per-read limit is not honoured on a cancellable stream (bmlib
+  sets none).
+  Rust: a new `HttpClient::post_json_stream_with_cancel(url, body, headers,
+  abandoned)`, whose default ignores the flag and calls `post_json_stream` (a
+  wrapping client forwards it to keep the interrupt); `UreqClient` honours it
+  with a connector on `ureq`'s `unversioned` transport API wrapping the
+  default chain, so TLS is covered too. Python: `bmlib.llm.give_up`, a network
+  backend wrapper each provider installs on its SDK client's connection pools
+  (`install_give_up`, through httpcore's and httpcore2's private
+  `pool._network_backend`; a client without one is a WARNING and keeps the old
+  behaviour), active only on a stream worker's thread (`watch_this_thread`).
+  `CANCEL_POLL_SECONDS` moved there; `bmlib.llm.stream` still exports it. A
+  Rust stream's Anthropic thinking lookup, a GET, is not given up, and ends
+  within its own timeout. The contract is the new shared
+  `tests/fixtures/stream_give_up.json`: seven cases over the real stack
+  against a local server that stalls or refuses.
 - **The Anthropic provider sends no `temperature` or `top_p`** (#705; both
   languages, the maintainer's choice). anthropic 1.x and 2.x (2.x is what a
   fresh install resolves) have no such parameters on `Messages.create()`, so
@@ -367,12 +400,8 @@ All notable changes to bmlib are documented here. The format is based on
   caller's thread looks at the cancel every 50 ms, so it returns at once with
   what arrived and `stop_reason` `"cancelled"`, its usage recorded as for a
   stop; a cancel already set sends nothing and records no usage. The request
-  is **abandoned, not interrupted**: the worker closes the connection at the
-  next event or when its request fails, so a server still reading the prompt
-  goes on until then (and, with a cancel, a stop from `on_delta` closes it at
-  the next event). In Python nothing bounds that wait (#652): the Anthropic
-  and OpenAI SDKs may still retry opening the stream after the cancel, and
-  the Ollama client has no timeout. A failure the cancel overtook is logged
+  was **abandoned, not interrupted** until #649 (see *Fixed*: it is now given
+  up at the socket). A failure the cancel overtook is logged
   at DEBUG. Without
   a cancel nothing changes. The built-in providers take `cancel` through the
   new `bmlib.llm.stream.read_stream`; `run_stream` takes `cancelled=`; a

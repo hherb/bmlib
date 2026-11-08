@@ -21,8 +21,15 @@
 //! without a network. This is the one implementation that actually goes out, and
 //! it is deliberately the only place in the crate that knows how.
 
+use crate::llm::CANCEL_POLL_INTERVAL;
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse, HttpStream};
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::transport::{
+    Buffers, ConnectionDetails, Connector, DefaultConnector, NextTimeout, Transport,
+};
 
 /// How long a GET may take before it is abandoned, and each step of sending
 /// a POST ([`DEFAULT_STREAM_TIMEOUT_SECONDS`] covers a POST's response).
@@ -107,10 +114,13 @@ impl UreqClient {
     /// limit, `ureq` would otherwise wait on DNS as long as the system does),
     /// then [`UreqClient::stream_timeout_seconds`] for the response headers and
     /// again for the whole response body.
-    fn post_agent(&self) -> Result<ureq::Agent, FetchError> {
+    ///
+    /// With `abandoned`, its connections give up once the flag is set
+    /// ([`GiveUp`], #649).
+    fn post_agent(&self, abandoned: Option<Arc<AtomicBool>>) -> Result<ureq::Agent, FetchError> {
         let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
         let stream = Some(std::time::Duration::from_secs(self.stream_timeout_seconds));
-        self.agent_with(
+        let config = self.config_with(
             ureq::Agent::config_builder()
                 .timeout_resolve(step)
                 .timeout_connect(step)
@@ -118,7 +128,15 @@ impl UreqClient {
                 .timeout_send_body(step)
                 .timeout_recv_response(stream)
                 .timeout_recv_body(stream),
-        )
+        );
+        Ok(match abandoned {
+            None => ureq::Agent::new_with_config(config),
+            Some(abandoned) => ureq::Agent::with_parts(
+                config,
+                DefaultConnector::new().chain(GiveUp { abandoned }),
+                DefaultResolver::default(),
+            ),
+        })
     }
 
     /// Finish an agent's configuration with what every request shares.
@@ -126,7 +144,15 @@ impl UreqClient {
         &self,
         builder: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>,
     ) -> Result<ureq::Agent, FetchError> {
-        let config = builder
+        Ok(ureq::Agent::new_with_config(self.config_with(builder)))
+    }
+
+    /// Finish a configuration with what every request shares.
+    fn config_with(
+        &self,
+        builder: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>,
+    ) -> ureq::config::Config {
+        builder
             .user_agent(self.user_agent.clone())
             // **Set explicitly rather than relied on.** `ureq`'s default is
             // already `false`, but the trait's contract is that a 404 is a
@@ -135,8 +161,7 @@ impl UreqClient {
             // its status **and its body** — which is where an API puts the message
             // that distinguishes a bad key from a bad model.
             .http_status_as_error(false)
-            .build();
-        Ok(ureq::Agent::new_with_config(config))
+            .build()
     }
 
     /// A `ureq` failure as a transport failure, naming the limit when it is a
@@ -261,7 +286,7 @@ impl HttpClient for UreqClient {
         body: &serde_json::Value,
         headers: &BTreeMap<String, String>,
     ) -> Result<HttpResponse, FetchError> {
-        let agent = self.post_agent()?;
+        let agent = self.post_agent(None)?;
         let mut request = agent.post(url);
         for (name, value) in headers {
             request = request.header(name, value);
@@ -280,7 +305,35 @@ impl HttpClient for UreqClient {
         body: &serde_json::Value,
         headers: &BTreeMap<String, String>,
     ) -> Result<HttpStream, FetchError> {
-        let agent = self.post_agent()?;
+        self.open_stream(url, body, headers, None)
+    }
+
+    /// A wait for the server fails within [`CANCEL_POLL_INTERVAL`] of
+    /// `abandoned` being set, and nothing is written after it, so the server
+    /// sees the connection close. A write or a connect already under way runs
+    /// to its own limit (`timeout_seconds`) first.
+    fn post_json_stream_with_cancel(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &BTreeMap<String, String>,
+        abandoned: Arc<AtomicBool>,
+    ) -> Result<HttpStream, FetchError> {
+        self.open_stream(url, body, headers, Some(abandoned))
+    }
+}
+
+impl UreqClient {
+    /// [`HttpClient::post_json_stream`], given up once `abandoned` is set
+    /// when there is one.
+    fn open_stream(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &BTreeMap<String, String>,
+        abandoned: Option<Arc<AtomicBool>>,
+    ) -> Result<HttpStream, FetchError> {
+        let agent = self.post_agent(abandoned)?;
         let mut request = agent.post(url);
         for (name, value) in headers {
             request = request.header(name, value);
@@ -309,6 +362,136 @@ impl HttpClient for UreqClient {
                 client: self.clone(),
             }),
         })
+    }
+}
+
+/// What a connection given up by its caller fails with.
+///
+/// `Other`, because the kinds a reader might pick mean something else to
+/// `ureq` or `std`: `ureq` reads `UnexpectedEof`, `ConnectionAborted` and
+/// `ConnectionReset` as the server closing, which ends a body delimited by
+/// the close as if it were complete, and `std`'s readers retry an
+/// `Interrupted` read at once, which would spin.
+fn given_up() -> ureq::Error {
+    ureq::Error::Io(std::io::Error::other(
+        "the request was given up by its caller",
+    ))
+}
+
+/// The last link of a stream's connector chain: wraps each connection
+/// `ureq`'s default chain opens (TCP, then TLS) in [`GivesUp`], and fails
+/// a connection opened once `abandoned` is set, before any request is sent
+/// on it (#649).
+///
+/// Built on `ureq`'s `unversioned` transport API, which may change in a
+/// minor release; the tests in this module drive it over real sockets.
+#[derive(Debug)]
+struct GiveUp {
+    /// Set by the caller when it stops waiting for the stream.
+    abandoned: Arc<AtomicBool>,
+}
+
+impl Connector<Box<dyn Transport>> for GiveUp {
+    type Out = Box<dyn Transport>;
+
+    fn connect(
+        &self,
+        _details: &ConnectionDetails,
+        chained: Option<Box<dyn Transport>>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        // Checked once the connection is open, since the chain before this
+        // opens it: a stream given up while connecting sends nothing.
+        if self.abandoned.load(Ordering::SeqCst) {
+            return Err(given_up());
+        }
+        Ok(chained.map(|inner| {
+            Box::new(GivesUp {
+                inner,
+                abandoned: Arc::clone(&self.abandoned),
+            }) as Box<dyn Transport>
+        }))
+    }
+}
+
+/// A connection that fails its wait for the server once `abandoned` is set.
+///
+/// A blocked socket read cannot be woken from another thread, and `ureq`
+/// hands out no socket to shut down. So a wait for input is cut into
+/// slices of [`CANCEL_POLL_INTERVAL`], with `abandoned` looked at between
+/// them. A slice that times out has read nothing, so the next slice reads
+/// on as the whole wait would have, and the wait's own limit is kept: once
+/// it is reached, the timeout `ureq` names is the one it set. Once
+/// `abandoned` is set, the wait fails and `ureq` drops the connection,
+/// which closes it; nothing more is written to it either. A write already
+/// under way is not sliced (a write cut short would lose its place), so it
+/// runs to its own limit.
+#[derive(Debug)]
+struct GivesUp {
+    /// The connection `ureq`'s default chain opened.
+    inner: Box<dyn Transport>,
+    /// Set by the caller when it stops waiting for the stream.
+    abandoned: Arc<AtomicBool>,
+}
+
+impl GivesUp {
+    /// [`given_up`] once the caller has stopped waiting.
+    fn check(&self) -> Result<(), ureq::Error> {
+        if self.abandoned.load(Ordering::SeqCst) {
+            Err(given_up())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Transport for GivesUp {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.inner.buffers()
+    }
+
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        self.check()?;
+        self.inner.transmit_output(amount, timeout)
+    }
+
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        // A wait already out of time fails at once, as `ureq`'s own
+        // transports do (`not_zero` would grant it a second).
+        if timeout.after.is_zero() {
+            return Err(ureq::Error::Timeout(timeout.reason));
+        }
+        let started = std::time::Instant::now();
+        // `None`: the wait has no limit of its own.
+        let limit = timeout.not_zero().map(|d| *d);
+        loop {
+            self.check()?;
+            let left = limit.map(|l| l.saturating_sub(started.elapsed()));
+            if left.is_some_and(|l| l.is_zero()) {
+                return Err(ureq::Error::Timeout(timeout.reason));
+            }
+            let slice = left.map_or(CANCEL_POLL_INTERVAL, |l| l.min(CANCEL_POLL_INTERVAL));
+            let sliced = NextTimeout {
+                after: slice.into(),
+                ..timeout
+            };
+            match self.inner.await_input(sliced) {
+                // The slice ran out, not the wait: read on. shortcut: `ureq`
+                // 3.5's per-read limit, longer than a slice, never fires here
+                // (each slice is shorter); bmlib sets none, so honour it if a
+                // client ever does.
+                Err(ureq::Error::Timeout(reason))
+                    if reason == timeout.reason && left.is_none_or(|l| l > slice) => {}
+                other => return other,
+            }
+        }
+    }
+
+    fn is_open(&mut self) -> bool {
+        !self.abandoned.load(Ordering::SeqCst) && self.inner.is_open()
+    }
+
+    fn is_tls(&self) -> bool {
+        self.inner.is_tls()
     }
 }
 
@@ -374,15 +557,19 @@ mod tests {
     #[test]
     fn each_agent_sets_its_limits() {
         let s = |n| Some(std::time::Duration::from_secs(n));
-        let post = client().post_agent().unwrap().config().timeouts();
-        assert_eq!(post.global, None);
-        assert_eq!(post.per_call, None);
-        assert_eq!(post.resolve, s(7));
-        assert_eq!(post.connect, s(7));
-        assert_eq!(post.send_request, s(7));
-        assert_eq!(post.send_body, s(7));
-        assert_eq!(post.recv_response, s(99));
-        assert_eq!(post.recv_body, s(99));
+        // A stream that may be given up (#649) keeps the same limits.
+        let abandonable = Some(Arc::new(AtomicBool::new(false)));
+        for abandoned in [None, abandonable] {
+            let post = client().post_agent(abandoned).unwrap().config().timeouts();
+            assert_eq!(post.global, None);
+            assert_eq!(post.per_call, None);
+            assert_eq!(post.resolve, s(7));
+            assert_eq!(post.connect, s(7));
+            assert_eq!(post.send_request, s(7));
+            assert_eq!(post.send_body, s(7));
+            assert_eq!(post.recv_response, s(99));
+            assert_eq!(post.recv_body, s(99));
+        }
         let get = client().agent().unwrap().config().timeouts();
         assert_eq!(get.global, s(7));
         assert_eq!(get.resolve, None);

@@ -1,0 +1,66 @@
+{
+  "description": "The shared contract for a cancelled stream's connection (#649, #652). Each case runs a provider's cancellable chat stream against a local server, over the real HTTP stack (Rust's UreqClient, Python's SDK clients), with the base URL http://127.0.0.1:<port> and any path accepted. `server` is how the server behaves on the first request: `stalls_before_headers` reads the request and sends nothing, as Ollama does while it reads a long prompt; `stalls_after_first_event` sends `content_type` headers and the `event` bytes as a chunked body, then sends nothing; `refuses_retryably` answers HTTP 503 with `Retry-After: 1` and the body `{\"error\": {\"message\": \"busy\"}}`, keeping the connection open. Every later request is counted and sends nothing. `cancel` says when the caller's cancel is set: `once_requested` once the server has read the whole first request (and answered it, for `refuses_retryably`), `on_first_delta` from the first delta's callback. Once the cancel is set, the call returns, and within `closed_within_ms` every connection the server accepted reads end of file or an error, and the server has received `requests` requests in all: a retry must not send the prompt again. The call returns a response with `stop_reason` `cancelled` and `deltas` (the text deltas received), except for `refuses_retryably`, where the call may instead raise the refusal's error.",
+  "closed_within_ms": 3000,
+  "cases": [
+    {
+      "name": "ollama/stalls-before-headers",
+      "provider": "ollama",
+      "server": "stalls_before_headers",
+      "cancel": "once_requested",
+      "requests": 1,
+      "deltas": []
+    },
+    {
+      "name": "ollama/stalls-after-first-event",
+      "provider": "ollama",
+      "server": "stalls_after_first_event",
+      "content_type": "application/x-ndjson",
+      "event": "{\"model\": \"m\", \"created_at\": \"2026-11-08T00:00:00Z\", \"message\": {\"role\": \"assistant\", \"content\": \"The trial \"}, \"done\": false}\n",
+      "cancel": "on_first_delta",
+      "requests": 1,
+      "deltas": ["The trial "]
+    },
+    {
+      "name": "openai/stalls-before-headers",
+      "provider": "openai",
+      "server": "stalls_before_headers",
+      "cancel": "once_requested",
+      "requests": 1,
+      "deltas": []
+    },
+    {
+      "name": "openai/stalls-after-first-event",
+      "provider": "openai",
+      "server": "stalls_after_first_event",
+      "content_type": "text/event-stream",
+      "event": "data: {\"id\": \"c1\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"m\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"The trial \"}, \"finish_reason\": null}]}\n\n",
+      "cancel": "on_first_delta",
+      "requests": 1,
+      "deltas": ["The trial "]
+    },
+    {
+      "name": "openai/refuses-retryably",
+      "provider": "openai",
+      "server": "refuses_retryably",
+      "cancel": "once_requested",
+      "requests": 1,
+      "deltas": []
+    },
+    {
+      "name": "anthropic/stalls-before-headers",
+      "provider": "anthropic",
+      "server": "stalls_before_headers",
+      "cancel": "once_requested",
+      "requests": 1,
+      "deltas": []
+    },
+    {
+      "name": "anthropic/refuses-retryably",
+      "provider": "anthropic",
+      "server": "refuses_retryably",
+      "cancel": "once_requested",
+      "requests": 1,
+      "deltas": []
+    }
+  ]
+}

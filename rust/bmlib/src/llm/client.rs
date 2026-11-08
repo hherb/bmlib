@@ -792,20 +792,27 @@ fn send_with_retries<T>(
 
 /// Open a stream, retrying a transport failure or a retryable status.
 ///
-/// The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
+/// With `abandoned` (a cancellable stream's worker), the client is asked to
+/// give the request up once it is set
+/// ([`HttpClient::post_json_stream_with_cancel`], #649), and `give_up` reads
+/// it. The body of a refused request is read up to [`ERROR_BODY_LIMIT`]
 /// bytes: it only explains the status.
 fn open_stream(
     client: &dyn HttpClient,
     base_delay: Duration,
-    give_up: &dyn Fn() -> bool,
+    abandoned: Option<&Arc<AtomicBool>>,
     url: &str,
     body: &Value,
     headers: &BTreeMap<String, String>,
 ) -> Result<HttpStream, ChatError> {
+    let give_up = || abandoned.is_some_and(|a| a.load(Ordering::SeqCst));
     let mut stream = send_with_retries(
         base_delay,
-        give_up,
-        || client.post_json_stream(url, body, headers),
+        &give_up,
+        || match abandoned {
+            Some(a) => client.post_json_stream_with_cancel(url, body, headers, Arc::clone(a)),
+            None => client.post_json_stream(url, body, headers),
+        },
         |stream| stream.status,
     )
     .map_err(|e| ChatError::Transport(e.to_string()))?;
@@ -850,8 +857,12 @@ fn stream_events<'a>(
 ///
 /// The iterator ends once `cancel` is set, without waiting for the worker,
 /// and when the worker has nothing more to send. Dropping it abandons the
-/// worker: its retries stop, and its next send fails, which drops the body
-/// and so closes the connection.
+/// worker: its retries stop, and the read its request is waiting in fails
+/// (with `http-ureq`'s client, within [`CANCEL_POLL_INTERVAL`]; #649), which
+/// closes the connection; a write already under way runs to its own limit
+/// first. A client that does not honour
+/// [`HttpClient::post_json_stream_with_cancel`] closes it only once that
+/// wait ends, or at the worker's next send.
 struct WorkerEvents<'a> {
     events: Receiver<Result<Value, ChatError>>,
     cancel: &'a AtomicBool,
@@ -896,7 +907,7 @@ impl<'a> WorkerEvents<'a> {
                     return;
                 }
             }
-            match open_stream(&*client, base_delay, &give_up, &url, &body, &headers) {
+            match open_stream(&*client, base_delay, Some(&gave_up), &url, &body, &headers) {
                 Ok(stream) => {
                     for event in stream_events(stream.body, protocol, &url) {
                         if sender.send(event).is_err() {
@@ -1251,7 +1262,7 @@ impl LlmClient {
         let stream = open_stream(
             &*self.client,
             self.retry_base_delay,
-            &|| false,
+            None,
             &url,
             &body,
             &chat_headers(&target),
@@ -1280,13 +1291,16 @@ impl LlmClient {
     /// and records no usage. An Anthropic thinking request's model lookup
     /// (#707) runs on the worker too, so `cancel` stops it the same way.
     ///
-    /// The worker is abandoned rather than interrupted: it sends no further
-    /// retry, and it closes the connection when the read it is blocked in
-    /// returns (the server answers, or
-    /// `UreqClient::stream_timeout_seconds`, with the `http-ureq` feature,
-    /// ends it). So a server still reading the prompt goes on reading it
-    /// until then. A stop from `on_delta` likewise closes the connection at
-    /// the next event rather than before this returns.
+    /// Once this returns, the worker sends no further retry, and its
+    /// request is given up ([`HttpClient::post_json_stream_with_cancel`],
+    /// #649): with the `http-ureq` feature's `UreqClient`, the read it is
+    /// waiting in fails within [`CANCEL_POLL_INTERVAL`] (a write already
+    /// under way runs to its own limit first) and the connection closes, so a local server still reading the prompt stops
+    /// (Ollama stops when its client goes away). That holds for a stop from
+    /// `on_delta` too. A client that does not honour it closes the
+    /// connection only when its wait ends (the server answers or a timeout).
+    /// The thinking lookup is a GET, which is not given up: it ends within
+    /// its own timeout and sends no chat after it.
     ///
     /// # Errors
     ///
