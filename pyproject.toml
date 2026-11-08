@@ -79,9 +79,9 @@ html = ["markupever>=0.4.0"]
 # floor is the one version verified against the reference vectors. Not in
 # `all`: it needs a C++ toolchain, which `all` must not.
 embed = ["llama-cpp-python>=0.3.36"]
-# API keys in the OS keychain (bmlib.secrets.KeyringVault): on macOS the same
-# item as Rust's `keyring` feature (Linux and Windows: docs/manual/secrets.md,
-# #686). MIT.
+# API keys in the OS keychain (bmlib.secrets.KeyringVault): the same item as
+# Rust's `keyring` feature (#686). It also installs what KeyringVault uses on
+# Windows (pywin32-ctypes) and Linux (secretstorage). MIT.
 secrets = ["keyring>=25"]
 # mypy is pinned for the same reason ruff is (see .github/workflows/ci.yml):
 # a release with new checks would otherwise fail CI on files a PR never

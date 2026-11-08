@@ -354,6 +354,52 @@ jobs:
       - name: test (model-download, no llama.cpp)
         run: cargo test -p bmlib --no-default-features --features model-download,http-ureq --test embed_model
 
+  keychain-interop:
+    name: Keychain interop (${{ matrix.os }})
+    # #686: Rust's and Python's KeyringVault must address one keychain item.
+    # Neither Windows nor Linux can be checked on a developer's Mac, so this
+    # is the live check: each language writes, the other reads, on the
+    # runner's own Credential Manager or gnome-keyring.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-rust-keychain-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-keychain-
+      - name: Build Rust's keychain example
+        working-directory: rust
+        run: cargo build -p bmlib --no-default-features --features keyring --example keychain_vault
+      - name: Install bmlib with its keychain extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[secrets]" pytest
+      - name: Interop (Linux, gnome-keyring)
+        if: runner.os == 'Linux'
+        env:
+          BMLIB_KEYCHAIN_INTEROP_BIN: ${{ github.workspace }}/rust/target/debug/examples/keychain_vault
+        run: |
+          sudo apt-get update && sudo apt-get install -y gnome-keyring
+          dbus-run-session -- sh -c "printf ci | gnome-keyring-daemon --components=secrets --daemonize --unlock && pytest tests/test_secrets_interop.py -v -rs"
+      - name: Interop (Windows, Credential Manager)
+        if: runner.os == 'Windows'
+        env:
+          BMLIB_KEYCHAIN_INTEROP_BIN: ${{ github.workspace }}\rust\target\debug\examples\keychain_vault.exe
+        run: pytest tests/test_secrets_interop.py -v -rs
+
   ci-success:
     name: CI success
     # Aggregate gate: point branch protection at this single check so the job
@@ -361,7 +407,7 @@ jobs:
     # `skipped` as well as on `failure`, which is why no job above carries a
     # `paths` filter — a filtered-out job would block every unrelated PR.
     if: always()
-    needs: [lint, types, test, build, rust-lint, rust-test, rust-embed, rust-postgres]
+    needs: [lint, types, test, build, rust-lint, rust-test, rust-embed, rust-postgres, keychain-interop]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

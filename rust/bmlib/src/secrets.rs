@@ -33,11 +33,10 @@
 //! the `keyring` crate's v1 stores). Everything else is always compiled, so a
 //! build without it (the mobile apps) can bring its own [`Vault`].
 //!
-//! On macOS, Rust and Python address the same item. On Linux only while
-//! Python writes first: Python's `keyring` adds an `application` attribute,
-//! so its write beside an item Rust created makes a second one, and Rust then
-//! finds two (`Ambiguous`). On Windows not yet: the `keyring` crate names the
-//! credential `account.service`, Python's `keyring` `service`. Both are #686.
+//! Rust and Python address the same item on every platform (#686). On
+//! Windows that takes the `target` modifier: the credential is named by the
+//! service alone, as Python names it, where the crate's default is
+//! `account.service`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -58,7 +57,7 @@ pub enum SecretErrorKind {
     /// The item is there but is not a key list (not JSON of strings, or not
     /// even text): saving a key replaces it with one holding just that key.
     UnreadableItem,
-    /// More than one keychain item matches (Linux, see #686). Saving a key
+    /// More than one keychain item matches (Linux). Saving a key
     /// does not help; the user has to remove one in the keychain.
     AmbiguousItem,
     /// The store failed or refused: locked, access denied, no keychain at all.
@@ -334,7 +333,7 @@ impl KeyringVault {
     /// The keychain entry for the item. When the platform store could not be
     /// set up, the error says why, not only that there is no store.
     fn entry(&self) -> Result<keyring::v1::Entry, SecretError> {
-        keyring::v1::Entry::new(&self.service, &self.account).map_err(|e| {
+        platform_entry(&self.service, &self.account).map_err(|e| {
             match (&e, keyring::v1::Entry::store_status()) {
                 (keyring::v1::Error::NoDefaultStore, Err(why)) => {
                     SecretError::new(format!("{e}: {why}"))
@@ -343,6 +342,50 @@ impl KeyringVault {
             }
         })
     }
+}
+
+/// The entry for `account` of `service`, named as the platform's own store
+/// names it.
+#[cfg(all(feature = "keyring", not(windows)))]
+fn platform_entry(service: &str, account: &str) -> keyring::v1::Result<keyring::v1::Entry> {
+    keyring::v1::Entry::new(service, account)
+}
+
+/// On Windows the credential is named by the service alone, as Python's
+/// `keyring` names it (#686), where the crate's default is `account.service`.
+#[cfg(all(feature = "keyring", windows))]
+fn platform_entry(service: &str, account: &str) -> keyring::v1::Result<keyring::v1::Entry> {
+    // `v1::Entry::new` sets the store up first; building through keyring-core must too.
+    if keyring::v1::Entry::store_status().is_err() {
+        return Err(keyring::v1::Error::NoDefaultStore);
+    }
+    let target = std::collections::HashMap::from([("target", service)]);
+    keyring_core::Entry::new_with_modifiers(service, account, &target)
+        .map(|inner| keyring::v1::Entry { inner })
+}
+
+/// After a write on Windows, the credential's `UserName` is the account, as
+/// Python writes it: an entry named by `target` creates one with none.
+#[cfg(all(feature = "keyring", windows))]
+fn name_the_account(entry: &keyring::v1::Entry, account: &str) -> keyring::v1::Result<()> {
+    if entry
+        .inner
+        .get_attributes()?
+        .get("username")
+        .map(String::as_str)
+        == Some(account)
+    {
+        return Ok(());
+    }
+    entry
+        .inner
+        .update_attributes(&std::collections::HashMap::from([("username", account)]))
+}
+
+/// Elsewhere the store already records the account.
+#[cfg(all(feature = "keyring", not(windows)))]
+fn name_the_account(_: &keyring::v1::Entry, _: &str) -> keyring::v1::Result<()> {
+    Ok(())
 }
 
 /// A keyring failure as a [`SecretError`]: the platform's message, which holds
@@ -389,7 +432,9 @@ impl Vault for KeyringVault {
     }
     /// Writes the item.
     fn write(&self, text: &str) -> Result<(), SecretError> {
-        write_result(self.entry()?.set_password(text))
+        let entry = self.entry()?;
+        write_result(entry.set_password(text))?;
+        write_result(name_the_account(&entry, &self.account))
     }
 }
 

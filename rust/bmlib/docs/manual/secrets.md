@@ -56,11 +56,14 @@ With the feature, `KeyBundle::keyring("com.example.myapp")` is the item
 | `SecretError` | `SecretError::new(message)` (kind `Store`), `with_kind(kind, message)`, `kind()`, `message()`: the platform's message or bmlib's own; never a key. `Display` adds `secret store: `, which Python's `str()` does not |
 | `SecretErrorKind` | *(non-exhaustive, #689)* What will help: `UnreadableItem` (not a key list, or not UTF-8; saving a key replaces it, also when a `Vault` of an app's own returns it from `read`), `AmbiguousItem` (two items match; the user removes one in the keychain), `Store` (locked, denied, no keychain). `as_str()` is Python's name (`"unreadable-item"`, `"ambiguous-item"`, `"store"`) |
 
-**Platforms** (#686). macOS addresses the same item as Python. Linux does
-only while Python writes first: Python's `keyring` adds an `application`
-attribute, so its write beside an item this crate created makes a second
-item, and this crate's lookup then fails as ambiguous. Windows does not yet:
-the `keyring` crate names the credential `account.service`, Python's
-`keyring` `service`. iOS needs the crate's `protected` store, which the v1
+**Platforms** (#686). Every platform addresses the same item as Python: on
+macOS the login keychain's generic password (service and account); on
+Windows the generic credential named by the service alone (the `target`
+modifier, where the crate's default is `account.service`), its `UserName` set
+to the account after a write; on Linux the Secret Service item matched by
+`service` and `username`, which Python's `KeyringVault` now also writes with
+just those two attributes, so two matching items are `AmbiguousItem` in both
+languages. CI's `keychain-interop` job checks Windows and Linux live, through
+the `keychain_vault` example. iOS needs the crate's `protected` store, which the v1
 stores this feature uses do not configure; a mobile app brings its own
 `Vault`.

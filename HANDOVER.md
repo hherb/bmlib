@@ -1,14 +1,48 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PR is #719, branch `feat/717-json-correction`**; PRs #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is on `fix/686-one-keychain-item`**; PRs #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719 and this session's._
 
-## This session: an unparseable reply is retried with a correction (#717, PR #719, branch `feat/717-json-correction`)
+## This session: one keychain item from both languages, on every platform (#686, branch `fix/686-one-keychain-item`)
+
+**The maintainer's choices** (2026-11-08): Python matches Rust on Linux, both
+name the Windows credential by the service, and a live CI job checks it.
+The keychain feature (#634) is unreleased, so the CHANGELOG, ROADMAP and both
+manuals were rewritten in place rather than given a *Fixed* entry.
+
+- **Windows.** Rust builds its entry through `keyring-core` (a Windows-only
+  optional dependency, since `keyring` does not re-export it) with the
+  `target` modifier set to the service, then sets `UserName` to the account
+  (an entry named by `target` creates one with none). Python's
+  `KeyringVault` reads and writes that credential through `win32cred`
+  (`pywin32-ctypes`, installed with `keyring` there): `keyring.set_password`
+  first copies the old value to `api-keys@<service>`, so a deleted key stayed
+  in Credential Manager.
+- **Linux.** Python goes through `secretstorage` with Rust's rules: search
+  every collection for `{service, username}`; none creates one in the
+  default collection with just those two (label `keyring:<account>@<service>`,
+  Rust's); one is updated; two or more are `AMBIGUOUS_ITEM`, on a read or a
+  write, as in Rust. An item carrying `keyring`'s extra `application` is
+  still found.
+- **macOS** is unchanged (`keyring`). `bmlib.secrets._PLATFORM` picks the
+  path, so the tests can fake each store (`test_secrets.py`; six mutants,
+  all killed).
+- **Live check.** CI's new `keychain-interop` job (ubuntu with an unlocked
+  gnome-keyring, and windows) builds Rust's `keychain_vault` example and runs
+  `tests/test_secrets_interop.py`: each language writes first in turn, the
+  other reads, and exactly one item remains. It is in `ci-success`'s needs.
+  The Windows-only Rust code was type-checked and clippy-clean here for
+  `x86_64-pc-windows-gnu`; that job is the first to *run* it.
+- **Not done.** A user's own `keyring` backend on Windows or Linux is no
+  longer consulted (Rust never did). Nothing migrates an item an earlier
+  commit wrote, since none has shipped.
+
+## Earlier, 2026-11-08: an unparseable reply is retried with a correction (#717, PR #719, branch `feat/717-json-correction`)
 
 The maintainer chose options 1, 2 and 4 of PR #715's discussion, holding 3
 (read `NaN` as `null`) until measured: **#718**. Both languages re-sent the
@@ -150,8 +184,8 @@ in the keychain.
 
 `bmlib/secrets.py` / `rust/bmlib/src/secrets.rs` (`KeyBundle`,
 `KeyringVault`, `MemorySecrets`; fixture `secret_key_list.json`). **Unverified
-live** beyond macOS: Linux only while Python writes first, Windows not
-(**#686**); iOS needs the crate's `protected` store (StudyAnalyzer #74).
+live** beyond macOS until #686 (fixed on `fix/686-one-keychain-item`, with
+a live CI job); iOS needs the crate's `protected` store (StudyAnalyzer #74).
 
 ## Earlier, 2026-11-06: Rust reads a closed-access record's full-text 500 as not served (#608, PR #683, merged)
 

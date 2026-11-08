@@ -113,6 +113,11 @@ llama-cpp-sys-2 = { version = "=0.1.159", optional = true }
 sha2 = "0.10"
 keyring = { version = "4.2", optional = true }
 
+[target.'cfg(windows)'.dependencies]
+# For the `target` modifier that names the Windows credential as Python's
+# `keyring` names it (#686): the `keyring` crate does not re-export it.
+keyring-core = { version = "1.0.1", optional = true }
+
 [features]
 # `sqlite` and `http-ureq` are on by default, so a consumer depending on bmlib
 # with its default features builds exactly what it built before. A consumer
@@ -155,7 +160,7 @@ embed-metal = ["embed", "llama-cpp-2/metal"]
 # The OS keychain behind `bmlib::secrets::KeyringVault` (macOS Keychain,
 # Windows Credential Manager, Linux Secret Service). Off by default: the rest
 # of `secrets` is always present, and a mobile build brings its own `Vault`.
-keyring = ["dep:keyring"]
+keyring = ["dep:keyring", "dep:keyring-core"]
 
 [lints]
 workspace = true
@@ -165,6 +170,10 @@ workspace = true
 # database. Listed so `cargo test -p bmlib --no-default-features` builds and
 # runs the rest rather than failing to compile; every other test is still
 # discovered automatically.
+
+[[example]]
+name = "keychain_vault"
+required-features = ["keyring"]
 
 [[test]]
 name = "biorxiv"

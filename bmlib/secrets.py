@@ -29,13 +29,10 @@ or bmlib's own, an unreadable item is reported without quoting it, and it is
 raised with no exception chained to it (one could hold the item's text). Its
 :attr:`~SecretError.kind` says whether saving a key will help (#689).
 
-The OS keychain itself is :class:`KeyringVault`, over the ``keyring`` package
-(extra ``secrets``), imported only when it is used. On macOS it addresses
-the same item as Rust's ``KeyringVault``. On Linux only while Python writes
-first: this package adds an ``application`` attribute, so its write beside an
-item Rust created makes a second one, which Rust then reads as ambiguous. On
-Windows not yet (Rust's ``keyring`` crate names the credential
-``account.service``, this package ``service``). Both are #686.
+The OS keychain itself is :class:`KeyringVault` (extra ``secrets``), which
+addresses the same item as Rust's ``KeyringVault`` on every platform (#686):
+through the ``keyring`` package on macOS, and on Windows and Linux through
+the platform library ``keyring`` itself uses, with Rust's naming.
 
 The shared contract is ``tests/fixtures/secret_key_list.json``.
 """
@@ -44,12 +41,20 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
+from collections.abc import Callable
+from contextlib import closing
 from enum import StrEnum
 from types import ModuleType
-from typing import Protocol
+from typing import Any, Protocol, TypeVar
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+_PLATFORM = sys.platform
+"""Which keychain :class:`KeyringVault` addresses; a constant so a test can choose."""
 
 API_KEYS_ACCOUNT = "api-keys"
 """The account (keychain item name) holding every provider's key."""
@@ -78,9 +83,8 @@ class SecretErrorKind(StrEnum):
 
     AMBIGUOUS_ITEM = "ambiguous-item"
     """More than one keychain item matches. Saving a key does not help; the
-    user has to remove one in the keychain. :class:`KeyringVault` never
-    reports it (Python's ``keyring`` reads whichever item comes first, #686);
-    a :class:`Vault` of an app's own may."""
+    user has to remove one in the keychain. :class:`KeyringVault` reports
+    it on Linux, as Rust's does (#686); a :class:`Vault` of an app's own may."""
 
     STORE = "store"
     """The store failed or refused: locked, access denied, no keychain at all,
@@ -273,8 +277,15 @@ class KeyBundle:
 
 
 class KeyringVault:
-    """The OS keychain item named by ``service`` and ``account``, through the
-    ``keyring`` package (extra ``secrets``)."""
+    """The OS keychain item named by ``service`` and ``account``: the item
+    Rust's ``KeyringVault`` reads and writes (#686). On macOS through the
+    ``keyring`` package; on Windows the generic credential named by the
+    service alone, with ``UserName`` the account, through ``win32cred``; on
+    Linux the Secret Service item carrying exactly the attributes ``service``
+    and ``username``, through ``secretstorage``. Both are installed with
+    ``keyring`` on their platform (extra ``secrets``). On Linux two matching
+    items are :attr:`SecretErrorKind.AMBIGUOUS_ITEM`, on a read or a write,
+    as in Rust."""
 
     def __init__(self, service: str, account: str) -> None:
         self.service = service
@@ -282,31 +293,145 @@ class KeyringVault:
 
     def read(self) -> str | None:
         """Read the item (an absent one is ``None``). An item that is not
-        UTF-8 reads as text that is not a key list, so a :class:`KeyBundle`
+        text reads as text that is not a key list, so a :class:`KeyBundle`
         reports it as unreadable and a ``set`` replaces it, as Rust's does."""
-        keyring = _import_keyring()
-        error: str | None = None
-        # Each error is raised after its except clause, so the backend's
-        # exception (a UnicodeError holds the item's bytes) is not chained.
-        try:
-            return keyring.get_password(self.service, self.account)
-        except UnicodeDecodeError:
-            return ""
-        # A backend raises its platform's own errors, not only KeyringError.
-        except Exception as e:
-            error = _describe(e)
-        raise SecretError(error)
+        return _guarded(_platform_read, self.service, self.account)
 
     def write(self, text: str) -> None:
-        """Write the item."""
-        keyring = _import_keyring()
-        error: str | None = None
-        try:
-            keyring.set_password(self.service, self.account, text)
+        """Write the item, creating it if need be."""
+        _guarded(_platform_write, self.service, self.account, text)
+
+
+def _guarded(op: Callable[..., T], *args: str) -> T:
+    """``op(*args)``, with any failure but a :class:`SecretError` raised as one
+    saying what was raised. Raised after the except clause, so the backend's
+    exception (a UnicodeError holds the item's bytes) is not chained."""
+    error: str | None = None
+    try:
+        return op(*args)
+    except SecretError:
+        raise
+    # A backend raises its platform's own errors, not only KeyringError.
+    except Exception as e:
+        error = _describe(e)
+    raise SecretError(error)
+
+
+def _platform_read(service: str, account: str) -> str | None:
+    """The item's text on this platform (see :class:`KeyringVault`)."""
+    if _PLATFORM == "win32":
+        return _wincred_read(service)
+    if _PLATFORM.startswith("linux"):
+        return _secret_service_read(service, account)
+    try:
+        return _import_keyring().get_password(service, account)
+    except UnicodeDecodeError:
+        return ""
+
+
+def _platform_write(service: str, account: str, text: str) -> None:
+    """Write the item's text on this platform (see :class:`KeyringVault`)."""
+    if _PLATFORM == "win32":
+        _wincred_write(service, account, text)
+    elif _PLATFORM.startswith("linux"):
+        _secret_service_write(service, account, text)
+    else:
+        _import_keyring().set_password(service, account, text)
+
+
+_CRED_NOT_FOUND = 1168
+"""Windows' ``ERROR_NOT_FOUND``, what ``CredRead`` raises for no credential."""
+
+
+def _wincred_read(service: str) -> str | None:
+    """The generic credential named ``service``, decoded as UTF-16 (the
+    encoding both ``keyring`` packages write); one that will not decode
+    reads as ``""``."""
+    pywintypes, win32cred = _import_wincred()
+    try:
+        cred = win32cred.CredRead(Type=win32cred.CRED_TYPE_GENERIC, TargetName=service)
+    except pywintypes.error as e:
+        if e.winerror == _CRED_NOT_FOUND:
+            return None
+        raise
+    try:
+        return bytes(cred["CredentialBlob"]).decode("utf-16-le")
+    except UnicodeDecodeError:
+        return ""
+
+
+def _wincred_write(service: str, account: str, text: str) -> None:
+    """Write the credential named ``service`` in place. Not through
+    ``keyring.set_password``, which first copies the old value to
+    ``account@service``, so a deleted key would stay in Credential Manager."""
+    _, win32cred = _import_wincred()
+    win32cred.CredWrite(
+        {
+            "Type": win32cred.CRED_TYPE_GENERIC,
+            "TargetName": service,
+            "UserName": account,
+            "CredentialBlob": text,
+            "Persist": win32cred.CRED_PERSIST_ENTERPRISE,
+        },
+        0,
+    )
+
+
+def _secret_service_items(connection: Any, service: str, account: str) -> list[Any]:
+    """Every item, in any collection, matching ``service`` and ``account``
+    (Rust's search). Two or more raise :attr:`SecretErrorKind.AMBIGUOUS_ITEM`."""
+    secretstorage = _import_secretstorage()
+    items = list(secretstorage.search_items(connection, {"service": service, "username": account}))
+    if len(items) > 1:
+        raise SecretError(
+            f"{len(items)} keychain items match service {service!r} and account {account!r}",
+            SecretErrorKind.AMBIGUOUS_ITEM,
+        )
+    return items
+
+
+def _unlocked(thing: Any) -> None:
+    """Unlock a Secret Service item or collection, asking the user if need be."""
+    if thing.is_locked() and thing.unlock():
+        raise SecretError("the keychain stayed locked: the unlock prompt was dismissed")
+
+
+def _secret_service_read(service: str, account: str) -> str | None:
+    """The matching item's secret as UTF-8 text; one that will not decode
+    reads as ``""``."""
+    secretstorage = _import_secretstorage()
+    connection = secretstorage.dbus_init()
+    with closing(connection):
+        items = _secret_service_items(connection, service, account)
+        if not items:
+            return None
+        _unlocked(items[0])
+        secret = items[0].get_secret()
+    try:
+        return bytes(secret).decode("utf-8")
+    except UnicodeDecodeError:
+        return ""
+
+
+def _secret_service_write(service: str, account: str, text: str) -> None:
+    """Replace the matching item's secret, or create the item in the default
+    collection with just ``service`` and ``username``, as Rust creates it."""
+    secretstorage = _import_secretstorage()
+    connection = secretstorage.dbus_init()
+    with closing(connection):
+        items = _secret_service_items(connection, service, account)
+        if items:
+            _unlocked(items[0])
+            items[0].set_secret(text.encode("utf-8"))
             return
-        except Exception as e:
-            error = _describe(e)
-        raise SecretError(error)
+        collection = secretstorage.get_default_collection(connection)
+        _unlocked(collection)
+        collection.create_item(
+            f"keyring:{account}@{service}",
+            {"service": service, "username": account},
+            text.encode("utf-8"),
+            replace=True,
+        )
 
 
 def _import_keyring() -> ModuleType:
@@ -317,6 +442,31 @@ def _import_keyring() -> ModuleType:
     except ImportError as e:
         raise SecretError(f"{_NO_KEYRING}: {_describe(e)}") from e
     return keyring
+
+
+def _import_wincred() -> tuple[ModuleType, ModuleType]:
+    """``pywintypes`` and ``win32cred`` from ``pywin32-ctypes`` (installed
+    with ``keyring`` on Windows), or a :class:`SecretError`."""
+    try:
+        # Windows only; `unused-ignore` where it is installed.
+        from win32ctypes.pywin32 import (  # type: ignore[import-not-found, unused-ignore]
+            pywintypes,
+            win32cred,
+        )
+    except ImportError as e:
+        raise SecretError(f"{_NO_KEYRING}: {_describe(e)}") from e
+    return pywintypes, win32cred
+
+
+def _import_secretstorage() -> ModuleType:
+    """``secretstorage`` (installed with ``keyring`` on Linux), or a
+    :class:`SecretError`."""
+    try:
+        # Linux only; `unused-ignore` where it is installed.
+        import secretstorage  # type: ignore[import-not-found, unused-ignore]
+    except ImportError as e:
+        raise SecretError(f"{_NO_KEYRING}: {_describe(e)}") from e
+    return secretstorage
 
 
 def _describe(e: BaseException) -> str:

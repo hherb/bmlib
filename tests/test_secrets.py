@@ -24,7 +24,9 @@ import builtins
 import json
 import logging
 import pickle
+import sys
 import threading
+import types
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -33,6 +35,7 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
+from bmlib import secrets
 from bmlib.secrets import (
     API_KEYS_ACCOUNT,
     KeyBundle,
@@ -196,8 +199,10 @@ class DictKeyring(KeyringBackend):
 
 
 @pytest.fixture
-def backend() -> Iterator[DictKeyring]:
-    """A :class:`DictKeyring` as the process's keyring, restored afterwards."""
+def backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[DictKeyring]:
+    """A :class:`DictKeyring` as the process's keyring, restored afterwards,
+    on the platform that goes through ``keyring`` (macOS)."""
+    monkeypatch.setattr(secrets, "_PLATFORM", "darwin")
     before = keyring.get_keyring()
     ring = DictKeyring()
     keyring.set_keyring(ring)
@@ -238,11 +243,19 @@ def test_an_item_that_is_not_utf8_is_unreadable_and_replaced(backend: DictKeyrin
     assert backend.items == {("com.example.app", API_KEYS_ACCOUNT): '{"openai":"k1"}'}
 
 
-def test_a_missing_keyring_package_is_a_secret_error(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("platform", "module"),
+    [("darwin", "keyring"), ("win32", "win32ctypes.pywin32"), ("linux", "secretstorage")],
+)
+def test_a_missing_keyring_package_is_a_secret_error(
+    monkeypatch: pytest.MonkeyPatch, platform: str, module: str
+) -> None:
+    monkeypatch.setattr(secrets, "_PLATFORM", platform)
+    monkeypatch.delitem(sys.modules, module, raising=False)
     real_import = builtins.__import__
 
     def no_keyring(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "keyring":
+        if name == module:
             raise ModuleNotFoundError("No module named 'jeepney'")
         return real_import(name, *args, **kwargs)
 
@@ -315,3 +328,239 @@ def test_the_vault_is_read_only() -> None:
     store = KeyBundle(FakeVault(None))
     with pytest.raises(AttributeError):
         store.vault = FakeVault(None)  # type: ignore[misc]  # the assignment under test
+
+
+# --- Windows: the generic credential named by the service (#686) ------------
+
+
+class FakeWinError(Exception):
+    """``pywintypes.error``: a Windows error code and the failing call."""
+
+    def __init__(self, winerror: int, funcname: str) -> None:
+        super().__init__(winerror, funcname, "message")
+        self.winerror = winerror
+        self.funcname = funcname
+
+
+class FakeCredentialManager:
+    """``win32cred`` over a dict of credentials by ``TargetName``, holding each
+    blob as UTF-16-LE bytes, as ``pywin32-ctypes`` writes a ``str`` and reads
+    back ``bytes``."""
+
+    CRED_TYPE_GENERIC = 1
+    CRED_PERSIST_ENTERPRISE = 3
+
+    def __init__(self) -> None:
+        self.creds: dict[str, dict[str, Any]] = {}
+        self.fail: int | None = None
+
+    def CredRead(self, Type: int, TargetName: str) -> dict[str, Any]:  # noqa: N802, N803
+        assert Type == self.CRED_TYPE_GENERIC
+        if self.fail:
+            raise FakeWinError(self.fail, "CredRead")
+        if TargetName not in self.creds:
+            raise FakeWinError(1168, "CredRead")
+        return dict(self.creds[TargetName])
+
+    def CredWrite(self, credential: dict[str, Any], flags: int) -> None:  # noqa: N802
+        assert flags == 0 and credential["Type"] == self.CRED_TYPE_GENERIC
+        if self.fail:
+            raise FakeWinError(self.fail, "CredWrite")
+        blob = credential["CredentialBlob"].encode("utf-16-le")
+        self.creds[credential["TargetName"]] = {**credential, "CredentialBlob": blob}
+
+
+@pytest.fixture
+def wincred(monkeypatch: pytest.MonkeyPatch) -> FakeCredentialManager:
+    """A :class:`FakeCredentialManager` as ``win32ctypes.pywin32``, on Windows."""
+    manager = FakeCredentialManager()
+    pywin32 = types.ModuleType("win32ctypes.pywin32")
+    pywin32.pywintypes = types.SimpleNamespace(error=FakeWinError)  # type: ignore[attr-defined]
+    pywin32.win32cred = manager  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "win32ctypes", types.ModuleType("win32ctypes"))
+    monkeypatch.setitem(sys.modules, "win32ctypes.pywin32", pywin32)
+    monkeypatch.setattr(secrets, "_PLATFORM", "win32")
+    return manager
+
+
+def test_windows_names_the_credential_by_the_service_alone(
+    wincred: FakeCredentialManager,
+) -> None:
+    store = KeyBundle.keyring("com.example.app")
+    assert store.get("openai") is None
+    store.set("openai", "k1")
+    store.set("anthropic", "k2")
+    store.delete("openai")
+    # One credential, Rust's name and Python's; no `api-keys@service` copy keeping k1.
+    assert list(wincred.creds) == ["com.example.app"]
+    cred = wincred.creds["com.example.app"]
+    assert cred["UserName"] == API_KEYS_ACCOUNT
+    assert cred["Persist"] == wincred.CRED_PERSIST_ENTERPRISE
+    assert cred["CredentialBlob"] == '{"anthropic":"k2"}'.encode("utf-16-le")
+
+
+def test_windows_reads_a_credential_rust_wrote(wincred: FakeCredentialManager) -> None:
+    wincred.creds["com.example.app"] = {
+        "TargetName": "com.example.app",
+        "UserName": API_KEYS_ACCOUNT,
+        "CredentialBlob": '{"openai":"k1"}'.encode("utf-16-le"),
+    }
+    assert KeyBundle.keyring("com.example.app").get("openai") == "k1"
+
+
+@pytest.mark.parametrize(
+    "blob", [b"\x00", '{"openai":"\ud800"}'.encode("utf-16-le", "surrogatepass")]
+)
+def test_windows_a_blob_that_is_not_utf16_is_unreadable(
+    wincred: FakeCredentialManager, blob: bytes
+) -> None:
+    wincred.creds["com.example.app"] = {"UserName": API_KEYS_ACCOUNT, "CredentialBlob": blob}
+    with pytest.raises(SecretError) as caught:
+        KeyBundle.keyring("com.example.app").get("openai")
+    assert caught.value.kind is SecretErrorKind.UNREADABLE_ITEM
+    assert caught.value.__context__ is None
+
+
+def test_windows_a_failure_is_a_secret_error(wincred: FakeCredentialManager) -> None:
+    wincred.fail = 5  # ERROR_ACCESS_DENIED
+    vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
+    for call in (vault.read, lambda: vault.write("{}")):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert caught.value.kind is SecretErrorKind.STORE
+        assert str(caught.value).startswith("FakeWinError: (5, ")
+        assert caught.value.__context__ is None
+
+
+# --- Linux: the Secret Service item carrying service and username (#686) -----
+
+
+class FakeItem:
+    """A Secret Service item."""
+
+    def __init__(self, attributes: dict[str, str], secret: bytes, locked: bool = False) -> None:
+        self.attributes = attributes
+        self.secret = secret
+        self.locked = locked
+        self.dismiss = False
+
+    def is_locked(self) -> bool:
+        return self.locked
+
+    def unlock(self) -> bool:
+        self.locked = self.dismiss
+        return self.dismiss
+
+    def get_secret(self) -> bytes:
+        assert not self.locked
+        return self.secret
+
+    def set_secret(self, secret: bytes) -> None:
+        assert not self.locked
+        self.secret = secret
+
+
+class FakeSecretService:
+    """``secretstorage`` over a list of items: a search matches every item
+    carrying the attributes asked for, whatever else it carries, as the
+    Secret Service does."""
+
+    def __init__(self) -> None:
+        self.items: list[FakeItem] = []
+        self.created: list[tuple[str, dict[str, str]]] = []
+        self.open_connections = 0
+
+    def dbus_init(self) -> Any:
+        self.open_connections += 1
+        service = self
+
+        class Connection:
+            def close(self) -> None:
+                service.open_connections -= 1
+
+        return Connection()
+
+    def search_items(self, connection: Any, attributes: dict[str, str]) -> Iterator[FakeItem]:
+        return (i for i in self.items if attributes.items() <= i.attributes.items())
+
+    def get_default_collection(self, connection: Any) -> Any:
+        service = self
+
+        class Collection:
+            def is_locked(self) -> bool:
+                return False
+
+            def create_item(
+                self, label: str, attributes: dict[str, str], secret: bytes, replace: bool
+            ) -> None:
+                service.created.append((label, attributes))
+                service.items.append(FakeItem(dict(attributes), secret))
+
+        return Collection()
+
+
+@pytest.fixture
+def secret_service(monkeypatch: pytest.MonkeyPatch) -> FakeSecretService:
+    """A :class:`FakeSecretService` as ``secretstorage``, on Linux."""
+    fake = FakeSecretService()
+    module = types.ModuleType("secretstorage")
+    for name in ("dbus_init", "search_items", "get_default_collection"):
+        setattr(module, name, getattr(fake, name))
+    monkeypatch.setitem(sys.modules, "secretstorage", module)
+    monkeypatch.setattr(secrets, "_PLATFORM", "linux")
+    return fake
+
+
+ATTRIBUTES = {"service": "com.example.app", "username": API_KEYS_ACCOUNT}
+
+
+def test_linux_keeps_one_item_with_rusts_attributes(secret_service: FakeSecretService) -> None:
+    store = KeyBundle.keyring("com.example.app")
+    assert store.get("openai") is None
+    store.set("openai", "k1")
+    store.set("anthropic", "k2")
+    # Created once, with exactly Rust's attributes and label; then updated in place.
+    assert secret_service.created == [(f"keyring:{API_KEYS_ACCOUNT}@com.example.app", ATTRIBUTES)]
+    assert [i.secret for i in secret_service.items] == [b'{"anthropic":"k2","openai":"k1"}']
+    assert secret_service.open_connections == 0
+
+
+def test_linux_updates_an_item_another_writer_made(secret_service: FakeSecretService) -> None:
+    # Python's `keyring` adds `application`; such an item is found and updated, not doubled.
+    secret_service.items.append(
+        FakeItem({**ATTRIBUTES, "application": "Python keyring library"}, b'{"a":"1"}', True)
+    )
+    store = KeyBundle.keyring("com.example.app")
+    store.set("b", "2")
+    assert secret_service.created == []
+    assert [i.secret for i in secret_service.items] == [b'{"a":"1","b":"2"}']
+
+
+def test_linux_two_items_are_ambiguous(secret_service: FakeSecretService) -> None:
+    secret_service.items = [FakeItem(dict(ATTRIBUTES), b"{}"), FakeItem(dict(ATTRIBUTES), b"{}")]
+    vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
+    for call in (vault.read, lambda: vault.write('{"a":"1"}')):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert caught.value.kind is SecretErrorKind.AMBIGUOUS_ITEM
+    assert [i.secret for i in secret_service.items] == [b"{}", b"{}"]
+    assert secret_service.open_connections == 0
+
+
+def test_linux_a_secret_that_is_not_utf8_is_unreadable(secret_service: FakeSecretService) -> None:
+    secret_service.items.append(FakeItem(dict(ATTRIBUTES), b'\xff{"openai":"sk-leaky"}'))
+    with pytest.raises(SecretError) as caught:
+        KeyBundle.keyring("com.example.app").get("openai")
+    assert caught.value.kind is SecretErrorKind.UNREADABLE_ITEM
+    assert caught.value.__context__ is None
+
+
+def test_linux_a_dismissed_unlock_is_a_secret_error(secret_service: FakeSecretService) -> None:
+    item = FakeItem(dict(ATTRIBUTES), b"{}", locked=True)
+    item.dismiss = True
+    secret_service.items.append(item)
+    with pytest.raises(SecretError) as caught:
+        KeyringVault("com.example.app", API_KEYS_ACCOUNT).read()
+    assert caught.value.kind is SecretErrorKind.STORE
+    assert "dismissed" in str(caught.value)
+    assert secret_service.open_connections == 0

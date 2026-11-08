@@ -369,6 +369,7 @@ dependencies = [
  "fancy-regex",
  "html5ever",
  "keyring",
+ "keyring-core",
  "llama-cpp-2",
  "llama-cpp-sys-2",
  "log",
