@@ -145,15 +145,18 @@ class LLMClient:
         ``False``, an effort level (``"low"``/``"medium"``/``"high"``),
         or an ``int`` token budget. Each provider maps the value to its
         native parameter — Ollama forwards it natively (int degrades to
-        ``True``), Anthropic enables extended thinking with a token
-        budget (int sets it, effort levels use presets), and
-        OpenAI-compatible providers send ``reasoning_effort`` for
+        ``True``), Anthropic sends the shape the model's own metadata
+        reports (adaptive, an effort level, or a token budget; looked up
+        once per model) and raises
+        :class:`~bmlib.llm.providers.anthropic.ThinkingRefusedError`, a
+        ``ValueError``, before sending a request the model cannot take,
+        and OpenAI-compatible providers send ``reasoning_effort`` for
         effort strings on reasoning models. Providers with no native
         mapping ignore the request side but still extract reasoning
         output from the response (e.g. DeepSeek's
-        ``reasoning_content``). Whether a given model actually thinks —
-        or errors on the parameter — is between the provider and the
-        model; bmlib does not pre-validate it.
+        ``reasoning_content``). Outside Anthropic, whether a given model
+        actually thinks — or errors on the parameter — is between the
+        provider and the model; bmlib does not pre-validate it.
 
         Context window
         --------------

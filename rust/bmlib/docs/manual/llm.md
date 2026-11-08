@@ -139,7 +139,7 @@ answers from `TOOL_CAPABLE_PROVIDERS`, which today is every registered row.
 | Protocol | `think` | Sent as |
 |---|---|---|
 | OpenAI-compatible | an effort (`"low"`, …) | `reasoning_effort`, only to a reasoning model |
-| Anthropic | an integer budget (`"2048"`) | `thinking: {type: enabled, budget_tokens}`; `temperature` and `top_p` dropped |
+| Anthropic | `"true"`, an effort, or an integer budget | the shape the model's `GET /v1/models/{id}` reports, fetched before the chat (#707): `thinking: {type: adaptive}` (an effort as `output_config.effort`) on an adaptive model, `thinking: {type: enabled, budget_tokens}` on one taking only budgets (`low`/`medium`/`high` = 2048/8192/16384, `true` = 8192); an integer needs a model taking budgets. A request the model cannot take is `ChatError::Thinking`, before the chat. `temperature` and `top_p` are never sent |
 | Ollama | `"true"`, `"false"`, an integer, or an effort | `think` (an integer is on unless 0) |
 
 The trace comes back in `LLMResponse.thinking`. A local OpenAI-compatible

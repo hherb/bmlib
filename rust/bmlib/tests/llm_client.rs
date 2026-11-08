@@ -302,12 +302,11 @@ fn anthropic_sends_no_sampling_parameters() {
     assert!(body.get("temperature").is_none(), "{body:?}");
     assert!(body.get("top_p").is_none(), "{body:?}");
 
+    // `thinking` is added by `LlmClient` from the model's metadata (#707),
+    // never by `chat_body`, and does not bring the sampling parameters back.
     request.think = Some("2048".to_string());
     let body = chat_body(&request, &target, false);
-    assert_eq!(
-        body["thinking"],
-        json!({"type": "enabled", "budget_tokens": 2048})
-    );
+    assert!(body.get("thinking").is_none(), "{body:?}");
     assert!(body.get("temperature").is_none(), "{body:?}");
     assert!(body.get("top_p").is_none(), "{body:?}");
 }

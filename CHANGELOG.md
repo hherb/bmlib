@@ -23,6 +23,34 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **Anthropic thinking takes the shape the model reports** (#707; the
+  maintainer's choice of the Models API over a name rule). `think=` was always
+  sent as `{"type": "enabled", "budget_tokens": N}`, which Claude Opus 4.7 and
+  later, Sonnet 5+, Haiku 5.5 and Fable refuse with a 400, so `think=` failed
+  on every one of them. The provider now reads the model's own
+  `capabilities.thinking.types` from `models.retrieve` (once per model per
+  provider; a failed lookup raises the SDK's error, with a note naming the
+  lookup, and is not kept; a `chat_stream` cancel already set makes none) and sends
+  `{"type": "adaptive"}` where the model reports it — `True` at the model's
+  default effort, an effort level the model reports (now `xhigh` and `max`
+  too) as `output_config.effort`, through `extra_body` since `create()` takes
+  `output_config` only from about anthropic 0.80 — and `budget_tokens` only to
+  a model reporting budgets. **An `int` budget for an adaptive-only model is
+  refused** (the maintainer's choice), as is an effort level the model cannot
+  take (on an adaptive model one it does not report, on a model taking only
+  budgets one other than `low`/`medium`/`high`) and a model reporting no
+  thinking: `bmlib.llm.providers.anthropic.ThinkingRefusedError`, a
+  `ValueError` whose `reason` names the rule, raised before the chat. Opus 4.6
+  and Sonnet 4.6 move from a budget to adaptive for `True` and an effort level.
+  The pure rule is `resolve_thinking(think, max_tokens, model_body)`; Python
+  and Rust are held to `tests/fixtures/anthropic_thinking.json` (its model
+  bodies follow Anthropic's documentation, not a live probe). A thinking chat
+  now costs one extra request the first time per model. A falsy `think` is no
+  fields for every model; a `think` of the wrong type is a `ValueError` before
+  any lookup; a lookup body nested too deeply is #698's `ValueError`; a body
+  naming no model (a proxy's stub) is refused naming the model asked for; and
+  `ThinkingRefusedError` pickles, `reason` and all.
+
 - **A non-streamed chat waits for its answer as a stream does** (#702, Rust;
   from StudyAnalyzer PR #100's review). `UreqClient::post_json` ran under one
   45 s limit on the whole request, so a thinking model given a large

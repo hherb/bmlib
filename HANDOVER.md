@@ -37,6 +37,57 @@ a lowered temperature. **Filed: #707** (`think=` sends `budget_tokens`, which
 every current Claude model refuses: a model-family decision, both languages,
 now the most urgent LLM item) and **#708** (`chat_json`'s temperature-0
 no-retry rule assumes greedy sampling, which Anthropic no longer does).
+## Earlier session: Anthropic thinking takes the shape the model reports (#707)
+
+Branch `fix/707-anthropic-adaptive-thinking`. **The maintainer's choices**:
+read the Models API's `capabilities` (not a name rule), and refuse an `int`
+budget on an adaptive-only model. Python's `resolve_thinking(think,
+max_tokens, model_body)` and Rust's `anthropic_thinking` read
+`capabilities.thinking.types.{adaptive,enabled}` and
+`capabilities.effort.<level>`: adaptive (+ `output_config.effort`) where
+reported, a budget only to a model reporting budgets (`int` on Opus/Sonnet
+4.6 is still a budget), every refusal before the chat
+(`ThinkingRefusedError(ValueError).reason` / `ChatError::Thinking`). Shared
+fixture `tests/fixtures/anthropic_thinking.json`; its model bodies follow
+Anthropic's docs and were **not probed live** (no key here). Python memoises
+the lookup per model per provider and sends the effort through `extra_body`
+(`create()` takes `output_config` only from about anthropic 0.80; the floor is
+0.41); Rust looks up on every thinking call (`LlmClient` has public fields,
+so a cache would be breaking) and `chat_body` no longer carries `thinking`.
+**The finalcheck review's fixes** (same PR): a stream's lookup is part of
+opening it, so a cancel already set makes none and a cancel stops a stalled
+one at once (Python builds the kwargs in `read_stream`'s opener, Rust runs it
+on `chat_stream_with_cancel`'s worker); Rust's `extra_body.output_config`
+keeps its keys and gains the effort (a `thinking` it sets stays whole);
+Python's failed lookup carries a note naming it; a `think` of the wrong type
+is a `ValueError` before the capabilities are read; five fixture cases (a
+budget-only model reporting effort, an adaptive one reporting none, a negative
+budget on an adaptive-only model) pin three mutants that survived in both
+languages, and the effort rule is restated as it is (on a budget-only model
+`low`/`medium`/`high` are presets whatever `capabilities.effort` says).
+**The second finalcheck** (same PR): an off `think` is no fields from either
+resolver (Python's `False` had turned thinking on, `0` a 1024 budget; Rust's
+`"false"` was refused), held by the fixture's `off` cases in both; Rust holds
+the budget below an `extra_body` `max_tokens`, names the models URL on every
+failed lookup, and files a client that cannot make it (`Config`) as
+`Malformed`, not a retryable `Transport`; a body with no `id` is refused
+naming the model asked for (both); Python checks `think`'s type before the
+lookup, turns a too-deep lookup body into #698's `ValueError`, and
+`ThinkingRefusedError` pickles; the fixture's description had the refusal
+order wrong (capabilities first, then a negative budget), and a case now pins
+it. Rust tests now cover the cancellable stream's refusal and 401, the
+lookup's retry, a cancel landing during a lookup that then answers, and both
+`EffortNotSupported` messages; each was mutation-checked.
+**Open from it**: #708 (chat_json's temperature-0 no-retry rule) still stands;
+`display: "summarized"` is not sent, so the current models' thinking text
+comes back empty (`LLMResponse.thinking` is `None` on Opus 4.7+ by default):
+**#710**, a decision.
+
+## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
+
+The maintainer's choice: never send them, both languages (API version
+`2026-10-21` and Claude Opus 4.7+ refuse them). Filed #707 (this session)
+and #708.
 
 ## Earlier, 2026-11-07: a non-streamed chat waits for its answer as a stream does (#702, PR #706, merged)
 
@@ -290,8 +341,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,674 passing + 14 skipped with the PostgreSQL DSN** on
-  `fix/705-anthropic-sampling` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,624 with `cargo test -p bmlib --all-features` on the same branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,755 passing + 14 skipped with the PostgreSQL DSN** on
+  `fix/707-anthropic-adaptive-thinking` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,658 with `cargo test --workspace --all-features` on the same branch before the review's 6 tests, not re-counted, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -320,7 +371,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**120 open once #705 closes** (#707 and #708, filed from #705, are `think=`'s `budget_tokens` and `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**120 open once #707 closes** (#710, filed from #707, is the thinking `display` default; #708, filed from #705, is `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-08); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
