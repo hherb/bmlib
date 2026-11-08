@@ -30,9 +30,9 @@ raised with no exception chained to it (one could hold the item's text). Its
 :attr:`~SecretError.kind` says whether saving a key will help (#689).
 
 The OS keychain itself is :class:`KeyringVault` (extra ``secrets``), which
-addresses the same item as Rust's ``KeyringVault`` on every platform (#686):
-through the ``keyring`` package on macOS, and on Windows and Linux through
-the platform library ``keyring`` itself uses, with Rust's naming.
+addresses the same item as Rust's ``KeyringVault`` on macOS, Windows, Linux
+and the BSDs (#686): through the ``keyring`` package on macOS, and elsewhere
+through the platform library ``keyring`` itself uses, with Rust's naming.
 
 The shared contract is ``tests/fixtures/secret_key_list.json``.
 """
@@ -56,6 +56,10 @@ T = TypeVar("T")
 _PLATFORM = sys.platform
 """Which keychain :class:`KeyringVault` addresses; a constant so a test can choose."""
 
+_SECRET_SERVICE_PLATFORMS = ("linux", "freebsd", "openbsd", "netbsd", "dragonfly")
+"""The ``sys.platform`` prefixes whose keychain is the Secret Service, the
+non-Apple Unixes on which Rust's ``keyring`` uses it."""
+
 API_KEYS_ACCOUNT = "api-keys"
 """The account (keychain item name) holding every provider's key."""
 
@@ -64,9 +68,9 @@ _UNREADABLE = "the keychain item is not a valid key list"
 never quotes the item, which may hold keys."""
 
 
-_NO_KEYRING = "the keyring package could not be imported (extra `secrets`)"
-"""The start of the error when :class:`KeyringVault` cannot import ``keyring``;
-what the import raised follows it."""
+_NO_KEYRING = "a package KeyringVault needs could not be imported (extra `secrets`)"
+"""The start of the error when :class:`KeyringVault` cannot import ``keyring``,
+``win32ctypes`` or ``secretstorage``; what the import raised follows it."""
 
 _NOT_TEXT = "a provider or key that is not valid text"
 """The error when :meth:`KeyBundle.set` is given a lone surrogate, which no
@@ -84,11 +88,13 @@ class SecretErrorKind(StrEnum):
     AMBIGUOUS_ITEM = "ambiguous-item"
     """More than one keychain item matches. Saving a key does not help; the
     user has to remove one in the keychain. :class:`KeyringVault` reports
-    it on Linux, as Rust's does (#686); a :class:`Vault` of an app's own may."""
+    it where the keychain is the Secret Service, as Rust's does (#686); a
+    :class:`Vault` of an app's own may."""
 
     STORE = "store"
     """The store failed or refused: locked, access denied, no keychain at all,
-    or a provider or key no keychain can hold."""
+    a Windows credential of the same name another account holds, or a
+    provider or key no keychain can hold."""
 
 
 class SecretError(Exception):
@@ -281,11 +287,12 @@ class KeyringVault:
     Rust's ``KeyringVault`` reads and writes (#686). On macOS through the
     ``keyring`` package; on Windows the generic credential named by the
     service alone, with ``UserName`` the account, through ``win32cred``; on
-    Linux the Secret Service item carrying exactly the attributes ``service``
-    and ``username``, through ``secretstorage``. Both are installed with
-    ``keyring`` on their platform (extra ``secrets``). On Linux two matching
-    items are :attr:`SecretErrorKind.AMBIGUOUS_ITEM`, on a read or a write,
-    as in Rust."""
+    Linux and the BSDs the Secret Service item carrying exactly the
+    attributes ``service`` and ``username``, through ``secretstorage``. Both
+    are installed by the extra ``secrets``. On Windows a credential of that
+    name whose ``UserName`` is another account is refused, on a read or a
+    write, and left as it is; on the Secret Service two matching items are
+    :attr:`SecretErrorKind.AMBIGUOUS_ITEM`, on a read or a write, as in Rust."""
 
     def __init__(self, service: str, account: str) -> None:
         self.service = service
@@ -320,8 +327,8 @@ def _guarded(op: Callable[..., T], *args: str) -> T:
 def _platform_read(service: str, account: str) -> str | None:
     """The item's text on this platform (see :class:`KeyringVault`)."""
     if _PLATFORM == "win32":
-        return _wincred_read(service)
-    if _PLATFORM.startswith("linux"):
+        return _wincred_read(service, account)
+    if _PLATFORM.startswith(_SECRET_SERVICE_PLATFORMS):
         return _secret_service_read(service, account)
     try:
         return _import_keyring().get_password(service, account)
@@ -333,7 +340,7 @@ def _platform_write(service: str, account: str, text: str) -> None:
     """Write the item's text on this platform (see :class:`KeyringVault`)."""
     if _PLATFORM == "win32":
         _wincred_write(service, account, text)
-    elif _PLATFORM.startswith("linux"):
+    elif _PLATFORM.startswith(_SECRET_SERVICE_PLATFORMS):
         _secret_service_write(service, account, text)
     else:
         _import_keyring().set_password(service, account, text)
@@ -343,17 +350,35 @@ _CRED_NOT_FOUND = 1168
 """Windows' ``ERROR_NOT_FOUND``, what ``CredRead`` raises for no credential."""
 
 
-def _wincred_read(service: str) -> str | None:
-    """The generic credential named ``service``, decoded as UTF-16 (the
-    encoding both ``keyring`` packages write); one that will not decode
-    reads as ``""``."""
+def _wincred_credential(service: str, account: str) -> dict[str, Any] | None:
+    """The generic credential named ``service``, or ``None``. One whose
+    ``UserName`` is another account raises: it is not this item, and a write
+    would destroy it. ``""`` is this item, what Rust leaves when naming the
+    account after its first write failed."""
     pywintypes, win32cred = _import_wincred()
     try:
-        cred = win32cred.CredRead(Type=win32cred.CRED_TYPE_GENERIC, TargetName=service)
+        cred: dict[str, Any] = win32cred.CredRead(
+            Type=win32cred.CRED_TYPE_GENERIC, TargetName=service
+        )
     except pywintypes.error as e:
         if e.winerror == _CRED_NOT_FOUND:
             return None
         raise
+    owner = cred.get("UserName") or ""
+    if owner not in ("", account):
+        raise SecretError(
+            f"the keychain item {service!r} belongs to account {owner!r}, not {account!r}"
+        )
+    return cred
+
+
+def _wincred_read(service: str, account: str) -> str | None:
+    """The credential's blob decoded as UTF-16 (the encoding Python's
+    ``keyring`` and Rust's crate both write); one that will not decode reads
+    as ``""``."""
+    cred = _wincred_credential(service, account)
+    if cred is None:
+        return None
     try:
         return bytes(cred["CredentialBlob"]).decode("utf-16-le")
     except UnicodeDecodeError:
@@ -364,6 +389,7 @@ def _wincred_write(service: str, account: str, text: str) -> None:
     """Write the credential named ``service`` in place. Not through
     ``keyring.set_password``, which first copies the old value to
     ``account@service``, so a deleted key would stay in Credential Manager."""
+    _wincred_credential(service, account)
     _, win32cred = _import_wincred()
     win32cred.CredWrite(
         {

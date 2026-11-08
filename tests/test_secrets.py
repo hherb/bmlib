@@ -263,7 +263,7 @@ def test_a_missing_keyring_package_is_a_secret_error(
     vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
     # What the import raised is said, since a present keyring can fail on its own dependency.
     said = (
-        "the keyring package could not be imported (extra `secrets`): "
+        "a package KeyringVault needs could not be imported (extra `secrets`): "
         "ModuleNotFoundError: No module named 'jeepney'"
     )
     for call in (vault.read, lambda: vault.write("{}")):
@@ -469,8 +469,12 @@ class FakeSecretService:
         self.items: list[FakeItem] = []
         self.created: list[tuple[str, dict[str, str]]] = []
         self.open_connections = 0
+        self.collection = FakeItem({}, b"")
+        self.no_bus = False
 
     def dbus_init(self) -> Any:
+        if self.no_bus:
+            raise RuntimeError("no D-Bus session bus")
         self.open_connections += 1
         service = self
 
@@ -488,11 +492,15 @@ class FakeSecretService:
 
         class Collection:
             def is_locked(self) -> bool:
-                return False
+                return service.collection.is_locked()
+
+            def unlock(self) -> bool:
+                return service.collection.unlock()
 
             def create_item(
                 self, label: str, attributes: dict[str, str], secret: bytes, replace: bool
             ) -> None:
+                assert not service.collection.locked
                 service.created.append((label, attributes))
                 service.items.append(FakeItem(dict(attributes), secret))
 
@@ -564,3 +572,93 @@ def test_linux_a_dismissed_unlock_is_a_secret_error(secret_service: FakeSecretSe
     assert caught.value.kind is SecretErrorKind.STORE
     assert "dismissed" in str(caught.value)
     assert secret_service.open_connections == 0
+
+
+def test_linux_an_item_of_another_account_is_left_alone(
+    secret_service: FakeSecretService,
+) -> None:
+    other = FakeItem({"service": "com.example.app", "username": "oauth-token"}, b"token")
+    secret_service.items.append(other)
+    store = KeyBundle.keyring("com.example.app")
+    assert store.get("openai") is None
+    store.set("openai", "k1")
+    assert other.secret == b"token"
+    assert secret_service.created == [(f"keyring:{API_KEYS_ACCOUNT}@com.example.app", ATTRIBUTES)]
+
+
+@pytest.mark.parametrize("dismiss", [False, True])
+def test_linux_a_locked_collection_is_unlocked_before_the_first_write(
+    secret_service: FakeSecretService, dismiss: bool
+) -> None:
+    secret_service.collection.locked = True
+    secret_service.collection.dismiss = dismiss
+    vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
+    if dismiss:
+        with pytest.raises(SecretError, match="dismissed") as caught:
+            vault.write("{}")
+        assert caught.value.kind is SecretErrorKind.STORE
+        assert secret_service.items == []
+    else:
+        vault.write("{}")
+        assert [i.secret for i in secret_service.items] == [b"{}"]
+    assert secret_service.open_connections == 0
+
+
+def test_linux_a_locked_item_is_unlocked_before_a_write(secret_service: FakeSecretService) -> None:
+    item = FakeItem(dict(ATTRIBUTES), b"{}", locked=True)
+    secret_service.items.append(item)
+    KeyringVault("com.example.app", API_KEYS_ACCOUNT).write('{"a":"1"}')
+    assert item.secret == b'{"a":"1"}'
+
+
+def test_linux_no_secret_service_is_a_store_error(secret_service: FakeSecretService) -> None:
+    secret_service.no_bus = True
+    vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
+    for call in (vault.read, lambda: vault.write("{}")):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert caught.value.kind is SecretErrorKind.STORE
+        assert str(caught.value) == "RuntimeError: no D-Bus session bus"
+        assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize("platform", ["freebsd14", "openbsd7", "netbsd10", "dragonfly6"])
+def test_the_bsds_use_the_secret_service_as_rust_does(
+    secret_service: FakeSecretService, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    monkeypatch.setattr(secrets, "_PLATFORM", platform)
+    KeyBundle.keyring("com.example.app").set("openai", "k1")
+    assert secret_service.created == [(f"keyring:{API_KEYS_ACCOUNT}@com.example.app", ATTRIBUTES)]
+
+
+@pytest.mark.parametrize("owner", [API_KEYS_ACCOUNT, ""])
+def test_windows_reads_and_names_a_credential_of_this_account(
+    wincred: FakeCredentialManager, owner: str
+) -> None:
+    # "" is what Rust leaves if naming the account after its first write failed.
+    wincred.creds["com.example.app"] = {
+        "TargetName": "com.example.app",
+        "UserName": owner,
+        "CredentialBlob": '{"openai":"k1"}'.encode("utf-16-le"),
+    }
+    store = KeyBundle.keyring("com.example.app")
+    assert store.get("openai") == "k1"
+    store.set("anthropic", "k2")
+    assert wincred.creds["com.example.app"]["UserName"] == API_KEYS_ACCOUNT
+
+
+def test_windows_a_credential_of_another_account_is_refused_and_kept(
+    wincred: FakeCredentialManager,
+) -> None:
+    # What Python's `keyring.set_password(service, "db", ...)` leaves at the service's name.
+    theirs = {"TargetName": "com.example.app", "UserName": "db", "CredentialBlob": b"p\x00w\x00"}
+    wincred.creds["com.example.app"] = dict(theirs)
+    vault = KeyringVault("com.example.app", API_KEYS_ACCOUNT)
+    for call in (vault.read, lambda: vault.write('{"openai":"k1"}')):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert caught.value.kind is SecretErrorKind.STORE
+        assert str(caught.value) == (
+            "the keychain item 'com.example.app' belongs to account 'db', not 'api-keys'"
+        )
+    assert wincred.creds == {"com.example.app": theirs}

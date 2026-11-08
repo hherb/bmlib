@@ -80,9 +80,13 @@ html = ["markupever>=0.4.0"]
 # `all`: it needs a C++ toolchain, which `all` must not.
 embed = ["llama-cpp-python>=0.3.36"]
 # API keys in the OS keychain (bmlib.secrets.KeyringVault): the same item as
-# Rust's `keyring` feature (#686). It also installs what KeyringVault uses on
-# Windows (pywin32-ctypes) and Linux (secretstorage). MIT.
-secrets = ["keyring>=25"]
+# Rust's `keyring` feature (#686). `keyring` also installs what KeyringVault
+# uses on Windows (pywin32-ctypes) and Linux (secretstorage); the BSDs need
+# secretstorage named, `keyring` asking for it on Linux alone. MIT.
+secrets = [
+    "keyring>=25",
+    "secretstorage>=3.2; platform_system == 'FreeBSD' or platform_system == 'OpenBSD' or platform_system == 'NetBSD' or platform_system == 'DragonFly'",
+]
 # mypy is pinned for the same reason ruff is (see .github/workflows/ci.yml):
 # a release with new checks would otherwise fail CI on files a PR never
 # touched. `psycopg2` is the one extra shipping no `py.typed`, so

@@ -17,9 +17,13 @@
 """Rust and Python take turns on one real keychain item (#686).
 
 Runs only where ``BMLIB_KEYCHAIN_INTEROP_BIN`` names Rust's
-``keychain_vault`` example (``cargo build --example keychain_vault
---features keyring``): CI's Windows and Linux (gnome-keyring) jobs. It
-writes and then removes items under a fresh service name.
+``keychain_vault`` example (in ``rust/``, ``cargo build -p bmlib --features
+keyring --example keychain_vault``): CI's ``keychain-interop`` job, on
+Windows and on Linux (gnome-keyring). That job also sets
+``BMLIB_REQUIRE_KEYCHAIN_INTEROP=1``, which turns the skip into a failure, so
+a lost variable cannot leave the tests unrun behind a green job. It writes
+and then removes items under a fresh service name. Not on macOS, whose
+item Python reaches through ``keyring`` as Rust names it.
 """
 
 from __future__ import annotations
@@ -32,16 +36,33 @@ from collections.abc import Iterator
 
 import pytest
 
-from bmlib.secrets import API_KEYS_ACCOUNT, KeyBundle
+from bmlib.secrets import API_KEYS_ACCOUNT, KeyBundle, SecretError, SecretErrorKind
 
 BINARY = os.environ.get("BMLIB_KEYCHAIN_INTEROP_BIN")
 
-pytestmark = pytest.mark.skipif(not BINARY, reason="BMLIB_KEYCHAIN_INTEROP_BIN is not set")
+if not BINARY and os.environ.get("BMLIB_REQUIRE_KEYCHAIN_INTEROP") == "1":
+    pytest.fail("BMLIB_REQUIRE_KEYCHAIN_INTEROP=1 but BMLIB_KEYCHAIN_INTEROP_BIN is not set")
+
+pytestmark = pytest.mark.skipif(
+    not BINARY or sys.platform == "darwin",
+    reason="needs BMLIB_KEYCHAIN_INTEROP_BIN, on Windows or a Secret Service",
+)
+
+KEY = "ключ-🔑"
+"""A key outside ASCII and the BMP: the encodings are the contract (UTF-16-LE
+in a Windows credential, UTF-8 in a Secret Service item)."""
+
+
+def rust(service: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Rust's ``KeyringVault`` on ``service``: ``read``, or ``write <text>``."""
+    return subprocess.run(
+        [BINARY or "", service, *args], capture_output=True, encoding="utf-8", errors="strict"
+    )
 
 
 def rust_read(service: str) -> str | None:
     """The item's text as Rust's ``KeyringVault`` reads it."""
-    done = subprocess.run([BINARY or "", service, "read"], capture_output=True, text=True)
+    done = rust(service, "read")
     if done.returncode == 3:
         return None
     assert done.returncode == 0, done.stderr
@@ -50,14 +71,32 @@ def rust_read(service: str) -> str | None:
 
 def rust_write(service: str, text: str) -> None:
     """Write the item as Rust's ``KeyringVault`` writes it."""
-    done = subprocess.run([BINARY or "", service, "write", text], capture_output=True, text=True)
+    done = rust(service, "write", text)
     assert done.returncode == 0, done.stderr
+
+
+def assert_both_refuse(
+    service: str, kind: SecretErrorKind, message: str, rust_message: str | None = None
+) -> None:
+    """A read and a write in each language fail with ``kind``: Python's with
+    ``message``, Rust's with one starting ``rust_message`` (``message`` if
+    not given)."""
+    for args in (("read",), ("write", "{}")):
+        done = rust(service, *args)
+        assert done.returncode == 1, done
+        assert done.stderr.startswith(f"{kind}: {rust_message or message}"), done.stderr
+    store = KeyBundle.keyring(service)
+    for call in (lambda: store.get("a"), lambda: store.set("a", "1")):
+        with pytest.raises(SecretError) as caught:
+            call()
+        assert (caught.value.kind, str(caught.value)) == (kind, message)
 
 
 def platform_items(service: str) -> list[dict[str, str]]:
     """What the platform holds for ``service``, apart from bmlib: each Windows
-    credential under either name ``keyring`` uses, or each Secret Service item
-    carrying ``service``, as its attributes (plus ``target``/``user`` on Windows)."""
+    credential named by the service, ``keyring``'s ``account@service`` copy or
+    the crate's default ``account.service``, or each Secret Service item
+    carrying ``service``, as its attributes (``target`` and ``user`` on Windows)."""
     if sys.platform == "win32":
         from win32ctypes.pywin32 import pywintypes, win32cred
 
@@ -120,6 +159,7 @@ def assert_one_item(service: str) -> None:
 
 def test_rust_writes_first(service: str) -> None:
     rust_write(service, '{"a":"1"}')
+    assert_one_item(service)  # Rust names the account itself (Windows' `name_the_account`)
     store = KeyBundle.keyring(service)
     assert store.get("a") == "1"
     store.set("b", "2")
@@ -133,11 +173,54 @@ def test_rust_writes_first(service: str) -> None:
 
 def test_python_writes_first(service: str) -> None:
     assert rust_read(service) is None
-    KeyBundle.keyring(service).set("a", "1")
-    assert rust_read(service) == '{"a":"1"}'
-    rust_write(service, '{"a":"1","b":"2"}')
+    KeyBundle.keyring(service).set("a", KEY)
+    assert rust_read(service) == f'{{"a":"{KEY}"}}'
+    rust_write(service, f'{{"a":"{KEY}","b":"{KEY}2"}}')
     store = KeyBundle.keyring(service)
-    assert store.get("b") == "2"
+    assert store.get("b") == f"{KEY}2"
     store.set("c", "3")
-    assert rust_read(service) == '{"a":"1","b":"2","c":"3"}'
+    assert rust_read(service) == f'{{"a":"{KEY}","b":"{KEY}2","c":"3"}}'
     assert_one_item(service)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a Windows credential's UserName")
+def test_a_credential_of_another_account_is_refused_and_kept(service: str) -> None:
+    from win32ctypes.pywin32 import win32cred
+
+    theirs = {
+        "Type": win32cred.CRED_TYPE_GENERIC,
+        "TargetName": service,
+        "UserName": "db",
+        "CredentialBlob": "secret",
+        "Persist": win32cred.CRED_PERSIST_ENTERPRISE,
+    }
+    win32cred.CredWrite(theirs, 0)
+    assert_both_refuse(
+        service,
+        SecretErrorKind.STORE,
+        f"the keychain item '{service}' belongs to account 'db', not '{API_KEYS_ACCOUNT}'",
+    )
+    cred = win32cred.CredRead(Type=win32cred.CRED_TYPE_GENERIC, TargetName=service)
+    assert (cred["UserName"], bytes(cred["CredentialBlob"]).decode("utf-16-le")) == ("db", "secret")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Secret Service items")
+def test_two_items_are_ambiguous_in_both_languages(service: str) -> None:
+    import secretstorage
+
+    rust_write(service, '{"a":"1"}')
+    connection = secretstorage.dbus_init()
+    try:
+        secretstorage.get_default_collection(connection).create_item(
+            "a second one",
+            {"service": service, "username": API_KEYS_ACCOUNT, "application": "other"},
+            b'{"b":"2"}',
+        )
+    finally:
+        connection.close()
+    assert_both_refuse(
+        service,
+        SecretErrorKind.AMBIGUOUS_ITEM,
+        f"2 keychain items match service {service!r} and account {API_KEYS_ACCOUNT!r}",
+        "Entry is matched by 2 credentials",
+    )

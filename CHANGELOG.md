@@ -388,15 +388,17 @@ All notable changes to bmlib are documented here. The format is based on
   `write_key_list`, held together with `KeyBundle`'s behaviour by
   `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 14 store
   scenarios, each failure by kind). Both languages address one item on
-  every platform (#686, the maintainer's choices): on Windows the credential
-  named by the service alone, its `UserName` the account (Rust through the
-  `target` modifier; Python writes it in place, where `keyring.set_password`
-  first copies the old value to `account@service`, keeping a deleted key);
-  on Linux the Secret Service item carrying just `service` and `username`
+  macOS, Windows, Linux and the BSDs (#686, the maintainer's choices): on
+  Windows the credential named by the service alone, its `UserName` the
+  account (Rust through the `target` modifier; Python writes it in place,
+  where `keyring.set_password` first copies the old value to
+  `account@service`, keeping a deleted key), and one of that name another
+  account holds refused as `store` rather than overwritten; on Linux and the
+  BSDs the Secret Service item carrying just `service` and `username`
   (Python no longer adds `keyring`'s `application` attribute, which made a
   second item beside Rust's), two of them `ambiguous-item` in both
   languages. CI's new `keychain-interop` job checks Windows and Linux live,
-  each language reading what the other wrote.
+  each language reading what the other wrote and refusing what it must.
 
 - **Rust lists a provider's models** (#680, filed by StudyAnalyzer, whose
   Settings offer the models to pick from). `LlmClient::list_models(provider)`

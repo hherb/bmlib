@@ -8,7 +8,7 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
 #668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719 and this session's._
 
-## This session: one keychain item from both languages, on every platform (#686, branch `fix/686-one-keychain-item`)
+## This session: one keychain item from both languages, on every platform (#686, PR #720, branch `fix/686-one-keychain-item`)
 
 **The maintainer's choices** (2026-11-08): Python matches Rust on Linux, both
 name the Windows credential by the service, and a live CI job checks it.
@@ -38,9 +38,25 @@ manuals were rewritten in place rather than given a *Fixed* entry.
   other reads, and exactly one item remains. It is in `ci-success`'s needs.
   The Windows-only Rust code was type-checked and clippy-clean here for
   `x86_64-pc-windows-gnu`; that job is the first to *run* it.
-- **Not done.** A user's own `keyring` backend on Windows or Linux is no
-  longer consulted (Rust never did). Nothing migrates an item an earlier
-  commit wrote, since none has shipped.
+- **PR #720's review.** Two reviewers found that on Windows both languages
+  took *any* credential named by the service as the item, so another
+  account's (`keyring.set_password(service, "db", …)` leaves it there) read
+  as unreadable, and `set`, the remedy that kind names, overwrote it. Both
+  now refuse a credential whose `UserName` is neither the account nor empty
+  (`STORE`, on a read or a write) and leave it; empty is Rust's state when
+  naming the account after its first write failed, which is now a WARNING
+  and not a failed write (the key list was saved; reporting it failed left
+  `KeyBundle`'s cache stale). The BSDs take the Secret Service path, as in
+  Rust, `secretstorage` named for them in the extra. The interop job sets
+  `BMLIB_REQUIRE_KEYCHAIN_INTEROP=1`, turning a skip into a failure, lints
+  the Windows-only Rust code, and checks live a non-ASCII key, Rust naming
+  the account itself, another account's credential refused (Windows) and
+  two items ambiguous in both languages (Linux).
+- **Not done.** A user's own `keyring` backend off macOS is no longer
+  consulted (Rust never did). Nothing migrates an item an earlier commit
+  wrote, since none has shipped. `KeyringVault` still reports any exception
+  a backend raises as `STORE` naming its type, a bmlib defect included, as
+  before this PR.
 
 ## Earlier, 2026-11-08: an unparseable reply is retried with a correction (#717, PR #719, branch `feat/717-json-correction`)
 

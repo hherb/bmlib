@@ -362,6 +362,9 @@ jobs:
     # runner's own Credential Manager or gnome-keyring.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # Job-wide, so a step that loses the binary's path fails rather than skips.
+      BMLIB_REQUIRE_KEYCHAIN_INTEROP: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -383,6 +386,11 @@ jobs:
       - name: Build Rust's keychain example
         working-directory: rust
         run: cargo build -p bmlib --no-default-features --features keyring --example keychain_vault
+      - name: clippy (Windows-only keychain code)
+        # rust-lint runs on Linux, where `platform_entry`'s Windows half is not compiled.
+        if: runner.os == 'Windows'
+        working-directory: rust
+        run: cargo clippy -p bmlib --no-default-features --features keyring --lib --examples -- -D warnings
       - name: Install bmlib with its keychain extra
         run: |
           python -m pip install --upgrade pip

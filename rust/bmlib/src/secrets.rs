@@ -33,10 +33,11 @@
 //! the `keyring` crate's v1 stores). Everything else is always compiled, so a
 //! build without it (the mobile apps) can bring its own [`Vault`].
 //!
-//! Rust and Python address the same item on every platform (#686). On
-//! Windows that takes the `target` modifier: the credential is named by the
-//! service alone, as Python names it, where the crate's default is
-//! `account.service`.
+//! Rust and Python address the same item on macOS, Windows, Linux and the
+//! BSDs (#686). On Windows that takes the `target` modifier: the credential
+//! is named by the service alone, as Python names it, where the crate's
+//! default is `account.service`; one of that name another account holds is
+//! refused, not overwritten.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -364,6 +365,36 @@ fn platform_entry(service: &str, account: &str) -> keyring::v1::Result<keyring::
         .map(|inner| keyring::v1::Entry { inner })
 }
 
+/// On Windows a credential named by the service whose `UserName` is another
+/// account is not this item, and a write would destroy it, so it is refused
+/// and left as it is, as Python refuses it. An empty `UserName` is this item:
+/// what a write leaves when [`name_the_account`] failed.
+#[cfg(all(feature = "keyring", windows))]
+fn check_owner(
+    entry: &keyring::v1::Entry,
+    service: &str,
+    account: &str,
+) -> Result<(), SecretError> {
+    let attributes = match entry.inner.get_attributes() {
+        Ok(attributes) => attributes,
+        Err(keyring::v1::Error::NoEntry) => return Ok(()),
+        Err(e) => return Err(keyring_error(e)),
+    };
+    let owner = attributes.get("username").map_or("", String::as_str);
+    if owner.is_empty() || owner == account {
+        return Ok(());
+    }
+    Err(SecretError::new(format!(
+        "the keychain item '{service}' belongs to account '{owner}', not '{account}'"
+    )))
+}
+
+/// Elsewhere the store addresses the item by its account already.
+#[cfg(all(feature = "keyring", not(windows)))]
+fn check_owner(_: &keyring::v1::Entry, _: &str, _: &str) -> Result<(), SecretError> {
+    Ok(())
+}
+
 /// After a write on Windows, the credential's `UserName` is the account, as
 /// Python writes it: an entry named by `target` creates one with none.
 #[cfg(all(feature = "keyring", windows))]
@@ -428,13 +459,24 @@ impl Vault for KeyringVault {
     /// Reads the item (an absent one is `None`; one that is not text reads as
     /// unreadable, see `read_result`).
     fn read(&self) -> Result<Option<String>, SecretError> {
-        read_result(self.entry()?.get_password())
+        let entry = self.entry()?;
+        check_owner(&entry, &self.service, &self.account)?;
+        read_result(entry.get_password())
     }
-    /// Writes the item.
+    /// Writes the item. Naming the account afterwards (Windows) failing is a
+    /// warning, not a failed write: the key list was saved, and both
+    /// languages read a credential with no `UserName` as this item.
     fn write(&self, text: &str) -> Result<(), SecretError> {
         let entry = self.entry()?;
+        check_owner(&entry, &self.service, &self.account)?;
         write_result(entry.set_password(text))?;
-        write_result(name_the_account(&entry, &self.account))
+        if let Err(e) = name_the_account(&entry, &self.account) {
+            log::warn!(
+                target: "bmlib.secrets",
+                "the key list was saved, but naming its account failed: {e}"
+            );
+        }
+        Ok(())
     }
 }
 
