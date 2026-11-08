@@ -35,10 +35,11 @@ All notable changes to bmlib are documented here. The format is based on
   `/api/show` in `model_limits`); a GET keeps its 45 s. A timeout is now a
   `FetchError::Transport` naming the limit (`timed out after 600 s waiting for
   the response headers (receive response)`), where it was `timeout: receive
-  response`; a stream's body that stalls while it is read fails with an
-  `io::Error` of kind `TimedOut` saying the same (`timed out after 600 s
-  reading the response body (receive body)`). Python needs no change: the Anthropic and OpenAI SDKs read for
-  600 s by default, and Ollama's client has no timeout (#652).
+  response`; a stream's body still being read when its limit runs out fails
+  with an `io::Error` of kind `TimedOut` saying the same (`timed out after
+  600 s reading the response body (receive body)`). The body's limit is on
+  its whole read, not on a pause in it. Python needs no change: the
+  Anthropic and OpenAI SDKs read for 600 s by default, and Ollama's client has no timeout (#652).
 - **A PICO part loses no quote the model gave, and a part the paper omits
   may have no description** (#577, #618; both languages). A bare-string
   `quotes` (`"quotes": "Adults aged…"`) reads as a list of one, where it was

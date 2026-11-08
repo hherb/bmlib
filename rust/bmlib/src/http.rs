@@ -104,8 +104,9 @@ impl UreqClient {
 
     /// The blocking agent a POST runs on: [`UreqClient::timeout_seconds`] for
     /// each step of sending (the host lookup included: with no whole-request
-    /// limit, `ureq` would otherwise wait on DNS as long as the system does), then [`UreqClient::stream_timeout_seconds`] for
-    /// the response headers and again for the response body.
+    /// limit, `ureq` would otherwise wait on DNS as long as the system does),
+    /// then [`UreqClient::stream_timeout_seconds`] for the response headers and
+    /// again for the whole response body.
     fn post_agent(&self) -> Result<ureq::Agent, FetchError> {
         let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
         let stream = Some(std::time::Duration::from_secs(self.stream_timeout_seconds));
@@ -324,7 +325,7 @@ mod tests {
         }
     }
 
-    /// Every timeout `ureq` can raise names the limit that was set for it.
+    /// Every timeout this client sets names its own limit; `Global` is a GET's.
     #[test]
     fn each_timeout_names_its_limit() {
         let cases = [
@@ -365,6 +366,27 @@ mod tests {
                 "{kind:?}"
             );
         }
+    }
+
+    /// A POST's agent bounds every step, the host lookup included, and sets
+    /// no whole-request limit (#706); a GET's has that limit alone. Read off
+    /// the agent, since no test can make DNS stall.
+    #[test]
+    fn each_agent_sets_its_limits() {
+        let s = |n| Some(std::time::Duration::from_secs(n));
+        let post = client().post_agent().unwrap().config().timeouts();
+        assert_eq!(post.global, None);
+        assert_eq!(post.per_call, None);
+        assert_eq!(post.resolve, s(7));
+        assert_eq!(post.connect, s(7));
+        assert_eq!(post.send_request, s(7));
+        assert_eq!(post.send_body, s(7));
+        assert_eq!(post.recv_response, s(99));
+        assert_eq!(post.recv_body, s(99));
+        let get = client().agent().unwrap().config().timeouts();
+        assert_eq!(get.global, s(7));
+        assert_eq!(get.resolve, None);
+        assert_eq!(get.recv_body, None);
     }
 
     /// Anything that is not a timeout keeps `ureq`'s own words.

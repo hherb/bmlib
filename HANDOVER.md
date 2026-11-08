@@ -10,12 +10,15 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 
 ## This session: #706's review, which missed its merge (branch `fix/706-review-timeouts`)
 
-PR #706 merged at `c16e6175` before its finalcheck fixes were pushed, so they
-come here, cherry-picked onto `main` after PR #709: a POST's DNS lookup is
-bounded by `timeout_seconds` (`timeout_resolve`; with no whole-request limit
-`ureq` waited as long as the system did), and a stream's body that stalls
-names its limit (`NamedTimeouts`, a `TimedOut` `io::Error`), with tests. The
-detail is under #702 below.
+PR #706 merged (head `c16e6175`, merge commit `d9504e8c`) before its
+finalcheck fixes were pushed, so they come here, cherry-picked onto `main`
+after PR #709: a POST's DNS lookup is bounded by `timeout_seconds`
+(`timeout_resolve`; with no whole-request limit `ureq` waited as long as the
+system did), and a stream's body that runs out of time names its limit
+(`NamedTimeouts`, a `TimedOut` `io::Error`), with tests. This PR's own
+finalcheck added a unit test reading every limit off both agents (nothing
+had pinned `timeout_resolve`) and one that a non-timeout body error passes
+through unchanged. The detail is under #702 below.
 
 ## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
 
@@ -44,15 +47,17 @@ maintainer's choice: reuse `stream_timeout_seconds`**, no new field. Every
 POST now runs on `post_agent` (the stream's split: `timeout_seconds` per
 sending step, `stream_timeout_seconds` for the response headers and body); a
 GET keeps its whole-request 45 s. A `ureq` timeout is a `Transport` naming
-the limit (`UreqClient::transport_error`), and so does a stream's body read
-(`NamedTimeouts`, a `TimedOut` `io::Error`). **The finalcheck review** (in this session's PR, not in #706): a
-POST's host lookup had no limit once the global one went (`timeout_resolve`
-now `timeout_seconds`); tests for a body that stalls after its headers
-(`post_json` and a stream), `get_with_headers`' whole-request limit, and a
-unit test of every timeout's message. Left as the maintainer chose:
-`model_limits`' `/api/show` now waits 600 s for an answer, three attempts. Rust only: Python's Anthropic and
+the limit (`UreqClient::transport_error`). Rust only: Python's Anthropic and
 OpenAI SDKs (1.x/2.x and 2.x/3.x alike) read for 600 s, Ollama's not at all
-(#652). Three new tests in `tests/http.rs`. Downstream: StudyAnalyzer's
+(#652). #706 added three tests in `tests/http.rs`. **The finalcheck review**
+(in PR #712, not in #706): a POST's host lookup had no limit once the global
+one went (`timeout_resolve` now `timeout_seconds`); a stream's body read
+names its limit too (`NamedTimeouts`); tests for a body outlasting its limit
+after its headers (`post_json` and a stream), `get_with_headers`'
+whole-request limit, a short body's own error passing through, and unit
+tests of every timeout's message and of both agents' limits. Left as the
+maintainer chose: `model_limits`' `/api/show` now waits up to 600 s for the
+headers and 600 s more for the body, on each of three attempts. Downstream: StudyAnalyzer's
 `LimitedClient` clips only `timeout_seconds`, so its POSTs need
 `stream_timeout_seconds` clipped too when its pin moves, and its
 `quote_threshold` test's 900 s `timeout_seconds` now needs

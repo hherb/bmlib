@@ -432,7 +432,7 @@ fn a_get_times_out_on_the_whole_request() {
 }
 
 /// A POST whose headers arrive in time but whose body stalls fails on the
-/// body's own limit, named (#702's review: nothing tested that limit).
+/// body's own limit, named (#706's review: nothing tested that limit).
 #[test]
 fn a_post_body_times_out_naming_the_limit() {
     let (url, _handle) = serve_slowly(ms(0), ms(2_500), "{}");
@@ -467,6 +467,30 @@ fn a_stream_body_times_out_naming_the_limit() {
         error.to_string(),
         "timed out after 1 s reading the response body (receive body)"
     );
+}
+
+/// A stream's body that ends short is `ureq`'s own error, not a timeout:
+/// only a timeout is renamed.
+#[test]
+fn a_stream_body_cut_short_keeps_its_own_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        read_request(&stream);
+        let _ = stream
+            .write_all(b"HTTP/1.1 200 X\r\nContent-Length: 100\r\nConnection: close\r\n\r\ndata:");
+    });
+    let stream = UreqClient::new()
+        .post_json_stream(
+            &format!("http://127.0.0.1:{port}/path"),
+            &serde_json::json!({}),
+            &BTreeMap::new(),
+        )
+        .expect("the headers");
+    handle.join().expect("server");
+    let error = read_all(stream).expect_err("the body ends short");
+    assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof, "{error}");
 }
 
 /// A GET with headers (a model listing) keeps the whole-request limit too.
