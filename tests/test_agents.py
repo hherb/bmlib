@@ -219,6 +219,61 @@ class TestChatJsonSaysWhy:
         with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
             agent.chat_json([agent.user_msg("x")])
 
+    @pytest.mark.parametrize(
+        "number",
+        ["NaN", "Infinity", "-Infinity", "1e999", "1" + "0" * 400],
+        ids=["nan", "infinity", "minus-infinity", "float-overflow", "integer-overflow"],
+    )
+    def test_a_number_json_does_not_define_is_unparseable(self, _sleep, number):
+        """Rust's ``serde_json`` refuses these, so the same reply must not give
+        a result here and ``UnusableReply`` there (#572)."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('{"a": {"b": 1}, "c": ' + number + "}")
+        with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
+            agent.chat_json([agent.user_msg("x")])
+        assert agent.llm.chat.call_count == 3
+
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            '[{"a": 1}, {"b": NaN}]',
+            '{"s": NaN} {"s": 0.5}',
+            '```json\n{"s": Infinity}\n```\nAlternatively: {"s": 0}',
+            'Sure:\n[{"a": 1}, {"b": NaN}]',
+            "{'a': 1, 'b': NaN}",
+            '{"a": "x\\ud83d"}',
+        ],
+        ids=["array-tail", "second-object", "fence-then-prose", "prose", "repair", "surrogate"],
+    )
+    def test_no_stage_answers_around_a_refused_value(self, _sleep, reply):
+        """Each fallback stage reads another span, so without the refusal being
+        final these came back as {"a": 1}, {"s": 0.5} or {"s": 0}, where Rust's
+        chat_json refuses the reply (#572's review)."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response(reply)
+        with pytest.raises(ChatJsonUnparseableError, match="unparseable response"):
+            agent.chat_json([agent.user_msg("x")])
+
+    def test_a_refusal_seen_before_repair_does_not_reach_it(self, _sleep, caplog):
+        """Repair cannot mend a NaN, so it is not tried and logs no failure."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('Sure:\n[{"a": 1}, {"b": NaN}]')
+        with caplog.at_level("WARNING", logger="bmlib.llm.json_repair"):
+            with pytest.raises(ChatJsonUnparseableError):
+                agent.chat_json([agent.user_msg("x")])
+        assert "JSON repair failed after" not in caplog.text
+
+    def test_parse_json_names_the_refusal(self, _sleep):
+        with pytest.raises(ValueError, match=r"does not define \(NaN is not a JSON value\)"):
+            BaseAgent.parse_json('[{"a": 1}, {"b": NaN}]')
+
+    def test_a_truncated_reply_carrying_nan_is_truncated(self, _sleep):
+        """The truncation path's "complete anyway?" test is strict too."""
+        agent = _make_agent()
+        agent.llm.chat.return_value = _truncated('{"a": NaN}')
+        with pytest.raises(ChatJsonTruncatedError, match="raise max_tokens"):
+            agent.chat_json([agent.user_msg("x")], temperature=0.0)
+
     def test_the_last_failure_names_the_class(self, _sleep):
         agent = _make_agent()
         agent.llm.chat.side_effect = [

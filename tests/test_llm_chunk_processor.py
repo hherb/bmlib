@@ -496,15 +496,18 @@ class TestTheModelCallIsRetried:
     def test_the_reply_is_read_once_and_never_resent(self) -> None:
         # ``float()`` of an integer past a double's range raises OverflowError;
         # reading the reply is no request, so it is neither retried nor fatal.
+        # ``chat_json`` refuses such a reply since #572, so the parsed value is
+        # handed in directly, as a ``chat_json`` override may hand it.
         agent = BaseAgent(llm=MagicMock(), model="test:model")
-        huge = "1" + "0" * 400
-        answer = _answer('{"extracted_content": "the digest", "confidence": ' + huge + "}")
-        agent.llm.chat = MagicMock(return_value=answer)
-        result = LLMChunkProcessor(agent, use_structured_output=True).process(["chunk"], query="q")
+        parsed = {"extracted_content": "the digest", "confidence": 10**400}
+        with patch.object(agent, "chat_json", return_value=parsed) as chat_json:
+            result = LLMChunkProcessor(agent, use_structured_output=True).process(
+                ["chunk"], query="q"
+            )
 
         assert result.status is ProcessingStatus.COMPLETED
         assert result.content == "the digest"
-        assert agent.llm.chat.call_count == 1
+        assert chat_json.call_count == 1
 
     def test_a_truncated_completion_is_not_retried(self) -> None:
         agent = BaseAgent(llm=MagicMock(), model="test:model")

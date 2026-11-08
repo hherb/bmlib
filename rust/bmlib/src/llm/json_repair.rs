@@ -598,7 +598,14 @@ pub fn safe_json_loads(
             "Invalid JSON: {immediate_error}"
         )));
     }
-    let repaired = repair_json(json_str, max_attempts)?;
+    // Python wraps only the repairer's own failure (`JSONRepairError`); its
+    // too-large `ValueError` passes through bare, as `TooLarge` does here.
+    let repaired = repair_json(json_str, max_attempts).map_err(|e| match e {
+        RepairError::Unrepairable(m) => {
+            RepairError::Unrepairable(format!("Cannot parse JSON even after repair: {m}"))
+        }
+        other => other,
+    })?;
     serde_json::from_str::<Value>(&repaired)
         .map_err(|e| RepairError::Unrepairable(format!("Cannot parse JSON even after repair: {e}")))
 }

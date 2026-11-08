@@ -32,7 +32,8 @@ A wrong type is the same case one step further: ``int(True)`` is 1, so a
 boolean became a measured sample size, and ``float(True)`` is 1.0, the most
 confident answer there is.  ``bool`` is excluded from every numeric reader for
 that reason, and a non-finite float is refused because it is no measurement
-(``json.loads`` accepts ``NaN`` and ``Infinity``).
+(``json.loads`` accepts ``NaN`` and ``Infinity``; ``parse_json`` has refused
+them since #572, so this guards a value handed to a reader directly).
 
 A refused value that was *present* is logged at DEBUG, naming the field.  Not
 higher: no draw of model replies exists to say how often a small model sends

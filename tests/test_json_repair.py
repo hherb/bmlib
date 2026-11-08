@@ -211,3 +211,17 @@ class TestTruncationIsClosedInReverseOpeningOrder:
         # quote after them closes the string and the brackets after it count.
         truncated = '{"a": "x' + "\\" * 2 + '", "b": [1'
         assert json.loads(repair_json(truncated)) == {"a": "x\\", "b": [1]}
+
+
+class TestRepairDoesNotMendAValueJsonDoesNotDefine:
+    """A ``NaN`` is not a defect repair fixes: serde_json refuses it after repair too (#572)."""
+
+    def test_safe_json_loads_without_repair_refuses_nan(self) -> None:
+        with pytest.raises(ValueError, match="NaN is not a JSON value"):
+            safe_json_loads('{"a": NaN}', repair=False)
+
+    @pytest.mark.parametrize("text", ['{"a": NaN}', "{'a': NaN}"], ids=["double", "single"])
+    def test_repair_json_refuses_nan(self, text: str) -> None:
+        # The single-quoted form is repaired to {"a": NaN}, which plain json reads.
+        with pytest.raises(JSONRepairError, match="NaN is not a JSON value"):
+            repair_json(text)

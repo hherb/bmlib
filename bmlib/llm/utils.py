@@ -22,6 +22,11 @@ import json
 import re
 from collections.abc import Callable, Iterator
 
+# Re-exported: the chat_json path's decoder (#572) is public here.
+from bmlib._strict_json import strict_json_decoder as strict_json_decoder
+from bmlib._strict_json import strict_json_loads as strict_json_loads
+from bmlib._strict_json import watch_refusals
+
 
 def http_status(exc: object) -> int | None:
     """The HTTP status *exc* reports the server answered with, or ``None``.
@@ -251,6 +256,24 @@ def extract_json(text: str, *, allow_fragments: bool = True) -> str:
     return fragment if fragment is not None else text
 
 
+def json_mode_reply(content: str) -> str:
+    """The JSON a provider's ``json_mode`` reply carries, for its ``content``.
+
+    *content* when it decodes, else what :func:`extract_json` finds in it —
+    unless a value JSON does not define was refused on the way (#572), when it
+    is *content* unchanged: an object picked around the refused value would
+    reach ``chat_json`` as a clean answer, where Rust's client, which swaps
+    nothing, refuses the reply.
+    """
+    with watch_refusals() as refused:
+        try:
+            strict_json_loads(content)
+            return content
+        except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
+            extracted = extract_json(content)
+    return content if refused else extracted
+
+
 def _first_acceptable(
     text: str, fences: Callable[[], set[str]], *, nested_objects: bool
 ) -> str | None:
@@ -275,7 +298,7 @@ def _first_acceptable(
 
     for candidate in iter_json_spans(text, nested_objects=nested_objects):
         try:
-            parsed = json.loads(candidate)
+            parsed = strict_json_loads(candidate)
         except (json.JSONDecodeError, RecursionError):
             # RecursionError, not just a decode failure: json.loads() descends
             # recursively, so a candidate nested past the interpreter's stack

@@ -23,7 +23,14 @@ import json
 import pytest
 
 from bmlib.llm.json_repair import extract_and_repair_json, salvage_json_fields
-from bmlib.llm.utils import extract_json, iter_json_spans
+from bmlib.llm.utils import (
+    extract_json,
+    iter_json_spans,
+    json_mode_reply,
+    strict_json_decoder,
+    strict_json_loads,
+    watch_refusals,
+)
 
 
 class TestIterJsonSpans:
@@ -380,3 +387,94 @@ class TestSalvageJsonFields:
         # it would escape the promise never to raise on malformed text.
         text = '{"j": ' * 20000
         assert salvage_json_fields(text, ["j"]) == {}
+
+
+class TestOnlyJsonNumbersAreRead:
+    """Every decode on the ``chat_json`` path reads what ``serde_json`` reads (#572)."""
+
+    @pytest.mark.parametrize(
+        "text",
+        ['{"a": NaN}', "[Infinity]", "[-Infinity]", '{"a": 1e999}', '{"a": -1.8e308}']
+        + ["[" + "1" + "0" * 400 + "]", "[-" + "9" * 400 + "]", "[" + "1" * 5000 + "]"]
+        + ['{"a": "x\\ud83d"}', '{"\\udc00": 1}', "[" * 128 + "]" * 128],
+        ids=["nan", "inf", "-inf", "1e999", "-1.8e308", "int-400", "-int-400", "int-5000"]
+        + ["lone-surrogate", "lone-surrogate-key", "depth-128"],
+    )
+    def test_a_value_json_does_not_define_is_a_decode_error(self, text: str) -> None:
+        with pytest.raises(json.JSONDecodeError):
+            strict_json_loads(text)
+
+    def test_ordinary_values_read_as_json_reads_them(self) -> None:
+        text = '{"a": [1, -2.5, 1e-999, 1.7976931348623157e308, 123456789012345678901], "b": 0}'
+        assert strict_json_loads(text) == json.loads(text)
+
+    def test_serde_jsons_depth_limit_is_read(self) -> None:
+        assert strict_json_loads("[" * 127 + "]" * 127) == json.loads("[" * 127 + "]" * 127)
+
+    def test_a_syntax_error_is_still_the_decoders(self) -> None:
+        with pytest.raises(json.JSONDecodeError) as exc:
+            strict_json_loads("[")
+        assert (exc.value.msg, exc.value.pos) == ("Expecting value", 1)
+
+    def test_the_raw_decoder_refuses_as_a_value_error(self) -> None:
+        with pytest.raises(ValueError, match="NaN is not a JSON value"):
+            strict_json_decoder().raw_decode("NaN")
+
+    def test_extract_json_passes_over_a_nan_candidate(self) -> None:
+        # An object, so the dict preference cannot pick {"b": 2} on its own.
+        assert extract_json('{"a": NaN} then {"b": 2}') == '{"b": 2}'
+
+    def test_extract_json_does_not_raise_past_ints_digit_limit(self) -> None:
+        text = "[" + "1" * 5000 + "]"
+        assert extract_json(text) == text
+
+    def test_salvage_drops_a_lone_surrogate_field(self) -> None:
+        assert salvage_json_fields('{"a": "x\\ud83d", "b": 2}', ["a", "b"]) == {"b": 2}
+
+    def test_salvage_drops_only_the_nan_field(self) -> None:
+        assert salvage_json_fields('{"a": NaN, "b": 2}', ["a", "b"]) == {"b": 2}
+
+    def test_repair_does_not_launder_nan(self) -> None:
+        with pytest.raises(ValueError):
+            extract_and_repair_json('{"a": NaN}')
+
+
+class TestARefusalIsSeen:
+    """``watch_refusals`` is how a fallback learns a span was refused, not malformed."""
+
+    def test_a_refusal_is_recorded_and_a_syntax_error_is_not(self) -> None:
+        with watch_refusals() as refused:
+            for text in ('{"a": NaN}', "{"):
+                with pytest.raises(json.JSONDecodeError):
+                    strict_json_loads(text)
+        assert refused == ["NaN is not a JSON value"]
+
+    def test_the_enclosing_block_sees_a_nested_blocks_refusals(self) -> None:
+        with watch_refusals() as outer:
+            with watch_refusals() as inner:
+                with pytest.raises(json.JSONDecodeError):
+                    strict_json_loads("[Infinity]")
+        assert inner == outer == ["Infinity is not a JSON value"]
+
+
+class TestAJsonModeReply:
+    """What a provider's ``json_mode`` reply becomes (#572's review)."""
+
+    def test_json_is_kept(self) -> None:
+        assert json_mode_reply('{"a": 1}') == '{"a": 1}'
+
+    def test_prose_round_json_is_stripped(self) -> None:
+        assert json_mode_reply('Sure: {"a": 1} Hope that helps.') == '{"a": 1}'
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            'Sure:\n[{"id": 1}, {"id": 2, "s": NaN}]',
+            '{"s": NaN} {"s": 0.5}',
+            "Sure: [" + "1" * 5000 + "]",
+        ],
+        ids=["array-tail", "second-object", "int-past-the-digit-limit"],
+    )
+    def test_a_refused_value_leaves_the_reply_as_it_came(self, content: str) -> None:
+        # Swapped for {"id": 1} / {"s": 0.5}, chat_json would read a clean answer.
+        assert json_mode_reply(content) == content

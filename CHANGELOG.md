@@ -23,6 +23,37 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **A model reply carrying a number JSON does not define is unparseable** (#572,
+  the maintainer's choice of direction). Python's `json` reads `NaN`,
+  `Infinity`, `-Infinity`, `1e999` (as `inf`) and an integer up to `int()`'s
+  4,300 digits, where the Rust port's `serde_json` refuses them, so the same
+  reply gave a result in Python (a PICO confidence of `None`) and
+  `UnusableReply` in Rust. Every decode on the `chat_json` path (`parse_json`,
+  `extract_json`, `extract_and_repair_json`, `repair_json`) and the public
+  helpers `safe_json_loads` and `salvage_json_fields` now go through
+  `bmlib.llm.utils.strict_json_loads` / `strict_json_decoder`, which refuse
+  them (an integer past the binary64 range too, as `serde_json` does, measured
+  on 1.0.151), and a lone surrogate escape and nesting deeper than 127 levels,
+  which `serde_json` refuses too; such a reply is `ChatJsonUnparseableError`
+  and retried. **A refusal is final** (PR #715's review): `parse_json`'s
+  fallback stages read *another* span of the reply, so
+  `[{"a": 1}, {"b": NaN}]` came back as `{"a": 1}` and
+  `{"s": NaN} {"s": 0.5}` as `{"s": 0.5}`, where Rust refuses both; and the
+  Anthropic and OpenAI-compatible providers' `json_mode` swap
+  (`json_mode_reply`, now shared) keeps such a reply as it came rather than
+  replacing it with the object beside the refused value, which also stops a
+  4,300-digit integer escaping their `chat()` as a bare `ValueError`.
+  `1e-999` still reads as `0.0`; an integer inside the binary64 range stays an
+  exact `int` (Rust holds one outside `i64`/`u64` as a float, unchanged). The
+  hooks and the surrogate-and-depth walk live in one private module,
+  `bmlib/_strict_json.py`, which `publications/retraction_status.py` (its old
+  second copy) now uses too. New oracle cases: thirteen in `json_cases.json`,
+  seven in `pico_agent_cases.json` (`unusable_reply` in both languages). The
+  readers in `quality/_json_fields.py` still refuse a non-finite value handed
+  to them directly; `LLMChunkProcessor` falls back to its default confidence
+  only for an integer past the double range, and clamps a `NaN` or infinity
+  handed to it directly (to 0.0 and 1.0).
+
 - **Anthropic adaptive thinking asks for the summarized trace** (#710, the
   maintainer's choice). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and
   Fable default thinking's `display` to omitted, so their thinking blocks
