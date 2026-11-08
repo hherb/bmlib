@@ -287,10 +287,12 @@ class BaseAgent:
         An unparseable reply is not answered by re-sending the same request:
         the attempts after it carry :data:`JSON_CORRECTION_NOTE`
         (:func:`with_json_correction`), so even at temperature 0 the retry
-        asks something the first attempt did not (#717).  The note does not
-        say why the reply failed, which is the same for a syntax error and a
-        refused ``NaN``, so the Rust port, whose decoder cannot tell the two
-        apart, sends it alike.
+        asks something the first attempt did not (#717).  Once added, the note
+        stays on every later attempt of the call, whatever that attempt's
+        reply; an empty, truncated or wrong-shape reply does not add it.  The
+        note does not say why the reply failed: it is the same for a syntax
+        error and a refused ``NaN``, because the Rust port's decoder cannot
+        tell the two apart.
 
         Args:
             messages: Conversation turns to send.
@@ -362,12 +364,14 @@ class BaseAgent:
                     raise ChatStoppedError(f"stopped before retry {attempt + 1}{context}")
                 delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
                 logger.warning(
-                    "Retry %d/%d%s after %.0fs (previous: %s)",
+                    "Retry %d/%d%s after %.0fs (previous: %s)%s",
                     attempt + 1,
                     max_retries,
                     context,
                     delay,
                     last_error,
+                    # Says whether the model was asked something new or the same again.
+                    ", with the JSON correction note" if sent is not messages else "",
                 )
                 time.sleep(delay)
                 self._metrics.add_retry()

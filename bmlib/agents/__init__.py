@@ -17,6 +17,7 @@
 """Agent base class for LLM-powered tasks."""
 
 from bmlib.agents.base import (
+    JSON_CORRECTION_NOTE,
     BaseAgent,
     ChatJsonEmptyError,
     ChatJsonError,
@@ -24,10 +25,12 @@ from bmlib.agents.base import (
     ChatJsonUnparseableError,
     ChatJsonWrongShapeError,
     ChatStoppedError,
+    with_json_correction,
 )
 from bmlib.agents.metrics import PerformanceMetrics
 
 __all__ = [
+    "JSON_CORRECTION_NOTE",
     "BaseAgent",
     "ChatJsonEmptyError",
     "ChatJsonError",
@@ -36,4 +39,5 @@ __all__ = [
     "ChatJsonWrongShapeError",
     "ChatStoppedError",
     "PerformanceMetrics",
+    "with_json_correction",
 ]

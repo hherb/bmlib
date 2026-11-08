@@ -549,6 +549,56 @@ fn an_empty_reply_asks_for_no_correction() {
 }
 
 #[test]
+fn a_truncation_asks_for_no_correction() {
+    let mut source = Script::new(vec![
+        Ok(response("{\"a\": ", Some("max_tokens"))),
+        Ok(response("not json", Some("stop"))),
+        Ok(response("{\"a\": 1}", Some("stop"))),
+    ]);
+    succeed(&mut source, 0.7).expect("answers on the third attempt");
+    assert_eq!(
+        source.corrections,
+        vec![2],
+        "after the unparseable reply alone"
+    );
+}
+
+#[test]
+fn a_later_reply_of_another_kind_asks_for_no_second_correction() {
+    for second in [
+        response("{\"a\": ", Some("max_tokens")),
+        response("", Some("stop")),
+        response("[1]", Some("stop")),
+    ] {
+        let mut source = Script::new(vec![
+            Ok(response("not json", Some("stop"))),
+            Ok(second.clone()),
+            Ok(response("{}", Some("stop"))),
+        ]);
+        chat_json(&mut source, 3, 0.7, Some(100), 4096, true).expect("answers");
+        assert_eq!(source.corrections, vec![1], "{second:?}");
+    }
+}
+
+#[test]
+fn a_wrong_shape_asks_for_no_correction() {
+    let mut source = Script::new(vec![
+        Ok(response("[1]", Some("stop"))),
+        Ok(response("{\"a\": 1}", Some("stop"))),
+    ]);
+    chat_json(&mut source, 3, 0.7, Some(100), 4096, true).expect("answers");
+    assert!(source.corrections.is_empty());
+}
+
+#[test]
+fn an_empty_conversation_gets_the_note_alone() {
+    assert_eq!(
+        with_json_correction(&[]),
+        vec![LLMMessage::user(JSON_CORRECTION_NOTE)]
+    );
+}
+
+#[test]
 fn the_correction_goes_on_the_last_user_turn() {
     let messages = [LLMMessage::system("sys"), LLMMessage::user("task")];
     let corrected = with_json_correction(&messages);

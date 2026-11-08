@@ -334,8 +334,10 @@ pub trait ChatSource {
 ///   at temperature 0 return the same array.
 /// * **Empty** or **unparseable** — always retried: both can be sampling noise.
 ///   After the first unparseable reply the source is asked to
-///   [`correct_json`](ChatSource::correct_json), so the retries carry
-///   [`JSON_CORRECTION_NOTE`] and even at temperature 0 ask something new. The
+///   [`correct_json`](ChatSource::correct_json), so the retries of a source
+///   that implements it (the quality agents' and the condenser's do) carry
+///   [`JSON_CORRECTION_NOTE`] and even at temperature 0 ask something new; a
+///   source keeping the default re-sends its request unchanged. The
 ///   note does not say why the reply failed: `serde_json` reports a `NaN` as
 ///   "expected value", like any syntax error, so a note keyed on the cause
 ///   could not match Python's.

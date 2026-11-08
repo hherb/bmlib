@@ -40,6 +40,7 @@ from bmlib.llm.data_types import (
     EmbeddingResponse,
     LLMMessage,
     LLMResponse,
+    LLMToolCall,
 )
 
 
@@ -687,6 +688,75 @@ class TestAnUnparseableReplyIsRetriedWithACorrection:
         agent.llm.chat.side_effect = [_make_response(""), _make_response('{"a": 1}')]
         agent.chat_json([agent.user_msg("task")])
         assert self._sent(agent) == [[("user", "task")], [("user", "task")]]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_truncation_does_not_add_the_note(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _truncated('{"a": '),
+            _make_response("not json"),
+            _make_response('{"a": 1}'),
+        ]
+        agent.chat_json([agent.user_msg("task")])
+        corrected = [("user", f"task\n\n{JSON_CORRECTION_NOTE}")]
+        assert self._sent(agent) == [[("user", "task")], [("user", "task")], corrected]
+
+    @pytest.mark.parametrize(
+        "second",
+        [_truncated('{"a": '), _make_response(""), _make_response("[1]")],
+        ids=["truncated", "empty", "wrong-shape"],
+    )
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_note_stays_after_a_later_reply_of_another_kind(self, _sleep, second):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [_make_response("not json"), second, _make_response("{}")]
+        agent.chat_json([agent.user_msg("task")], require_dict=True)
+        corrected = [("user", f"task\n\n{JSON_CORRECTION_NOTE}")]
+        assert self._sent(agent) == [[("user", "task")], corrected, corrected]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_wrong_shape_is_retried_unchanged(self, _sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [_make_response("[1]"), _make_response('{"a": 1}')]
+        agent.chat_json([agent.user_msg("task")], require_dict=True)
+        assert self._sent(agent) == [[("user", "task")], [("user", "task")]]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_tool_turn_keeps_its_fields_and_the_note_follows_it(self, _sleep):
+        agent = _make_agent()
+        call = LLMToolCall(id="t1", name="lookup", arguments={})
+        messages = [
+            agent.user_msg("task"),
+            LLMMessage(role="assistant", content="", tool_calls=[call]),
+            LLMMessage(role="tool", content='{"r": 1}', tool_call_id="t1"),
+        ]
+        agent.llm.chat.side_effect = [_make_response("x"), _make_response('{"a": 1}')]
+        agent.chat_json(messages)
+        calls = agent.llm.chat.call_args_list
+        assert calls[0].kwargs["messages"] == messages
+        assert calls[1].kwargs["messages"] == [
+            *messages,
+            LLMMessage(role="user", content=JSON_CORRECTION_NOTE),
+        ]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_retry_line_says_the_note_was_sent(self, _sleep, caplog):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response(""),
+            _make_response("not json"),
+            _make_response('{"a": 1}'),
+        ]
+        with caplog.at_level("WARNING", logger="bmlib.agents.base"):
+            agent.chat_json([agent.user_msg("task")])
+        retries = [r.getMessage() for r in caplog.records if r.getMessage().startswith("Retry ")]
+        assert retries == [
+            "Retry 2/3 after 1s (previous: empty response from model)",
+            "Retry 3/3 after 2s (previous: unparseable response), with the JSON correction note",
+        ]
+
+    def test_an_empty_conversation_gets_the_note_alone(self):
+        assert with_json_correction([]) == [LLMMessage(role="user", content=JSON_CORRECTION_NOTE)]
 
     def test_a_conversation_not_ending_with_the_user_gets_a_user_turn(self):
         messages = [LLMMessage(role="user", content="q"), LLMMessage(role="assistant", content="{")]

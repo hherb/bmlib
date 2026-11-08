@@ -32,7 +32,8 @@ The Python library is documented separately, in the repository's
 
 - **An unparseable reply is retried with a correction** (#717, as Python's).
   After the first unparseable reply in a call, `chat_json` calls the new
-  `ChatSource::correct_json`, and `LlmChat`'s source puts
+  `ChatSource::correct_json`, and the source behind `LlmChat` and
+  `LlmContextModel::complete_json` puts
   `JSON_CORRECTION_NOTE` on its request's last user turn
   (`with_json_correction`) for the attempts that follow; the method's default
   does nothing, so a third-party source re-sends its request unchanged, as

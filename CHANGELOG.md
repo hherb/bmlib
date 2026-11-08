@@ -29,8 +29,9 @@ All notable changes to bmlib are documented here. The format is based on
   was retrying, a refused `NaN` (#572) included. The attempts after the first
   unparseable reply in a `chat_json` call now carry `JSON_CORRECTION_NOTE` on
   the last user turn (a user turn of its own when the last is not one), via
-  `bmlib.agents.base.with_json_correction`; an empty reply is still retried
-  unchanged. The bad reply is not sent back, since under a fixed Ollama
+  `bmlib.agents.with_json_correction`, and keep it whatever the later replies;
+  an empty, truncated or wrong-shape reply does not add it. The retry WARNING
+  ends `with the JSON correction note` when it was sent. The bad reply is not sent back, since under a fixed Ollama
   `num_ctx` it could push the start of the prompt out of the window unseen,
   and the note does not say why the reply failed, since serde_json reports a
   `NaN` as a syntax error and Rust could not match a note keyed on the cause.

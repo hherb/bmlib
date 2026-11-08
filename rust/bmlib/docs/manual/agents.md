@@ -97,9 +97,10 @@ Each attempt is classified, and the class decides whether a retry could help:
 | `source.chat` returned `Err` | `Transport` at once | `Transport` at once |
 
 After the first unparseable reply `chat_json` calls
-`ChatSource::correct_json` once, and `LlmChat`'s source then sends
-`JSON_CORRECTION_NOTE` on the last user turn (`with_json_correction`) for the
-attempts that follow *(unreleased, #717)*; the default does nothing, so a
+`ChatSource::correct_json` once, and the source behind `LlmChat` and
+`LlmContextModel::complete_json` then sends `JSON_CORRECTION_NOTE` on the last
+user turn (`with_json_correction`) for every attempt that follows, whatever its
+reply *(unreleased, #717)*; the default does nothing, so a
 source of your own re-sends its request unless it implements it.
 
 At temperature 0 greedy sampling reproduces the same answer, so retrying a

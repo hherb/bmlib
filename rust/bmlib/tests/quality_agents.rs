@@ -1406,6 +1406,11 @@ fn run_oracle_case(case: &Value) -> Result<Value, String> {
             )
             .map(|assessment| assessment.to_json())
         }
+        "prompts" => Ok(json!({
+            "CLASSIFIER_SYSTEM_PROMPT": bmlib::quality::CLASSIFIER_SYSTEM_PROMPT,
+            "ASSESSMENT_SYSTEM_PROMPT": bmlib::quality::ASSESSMENT_SYSTEM_PROMPT,
+            "COCHRANE_SYSTEM_PROMPT": bmlib::quality::cochrane_assessor::COCHRANE_SYSTEM_PROMPT,
+        })),
         "render_tier2" => Ok(json!(format_template(
             bmlib::quality::study_classifier::CLASSIFIER_USER_TEMPLATE,
             &[

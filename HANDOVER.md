@@ -1,20 +1,22 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PRs are on `fix/572-nan-refused` and, stacked on it, `feat/717-json-correction`**; PRs #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is #719, branch `feat/717-json-correction`**; PRs #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#714 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715 and this session's._
 
-## This session, stacked on PR #715: an unparseable reply is retried with a correction (#717, branch `feat/717-json-correction`)
+## This session: an unparseable reply is retried with a correction (#717, PR #719, branch `feat/717-json-correction`)
 
 The maintainer chose options 1, 2 and 4 of PR #715's discussion, holding 3
 (read `NaN` as `null`) until measured: **#718**. Both languages re-sent the
 identical request after an unparseable reply; the retries now carry
 `JSON_CORRECTION_NOTE` on the last user turn (`with_json_correction`, a user
-turn of its own when the last is not one), once per `chat_json` call, and the
+turn of its own when the last is not one): added once, after the first
+unparseable reply, and carried by every later attempt of the call; an empty,
+truncated or wrong-shape reply adds nothing. The
 four JSON system prompts ask for `null`, never `NaN` or `Infinity`.
 
 - **Options 1 and 2 became one rule.** A corrected retry is not the request
@@ -25,16 +27,29 @@ four JSON system prompts ask for `null`, never `NaN` or `Infinity`.
   serde_json reports a `NaN` as "expected value", so Rust cannot key a note on
   the cause.
 - **Rust**: `ChatSource::correct_json` (defaulted, so a third-party source
-  re-sends as before); `LlmChat`'s source implements it. The PICO oracle now
-  compares every model call's messages (`ScriptedChat::sent`), where it
-  compared one deduplicated list per `chat_json` call, so a corrected retry is
-  held to Python's exactly. Cochrane, Tier 2 and Tier 3 prompts are pinned
-  across languages by no oracle; all four were checked byte-identical by
-  parsing the Rust literals in a one-off script.
-- **For StudyAnalyzer**: nothing to change. A retry costs ~200 characters of
+  re-sends as before); `ClientSource`, behind both `LlmChat` and
+  `LlmContextModel::complete_json` (the condenser), implements it. The PICO
+  oracle now compares every model call's messages (`ScriptedChat::sent`),
+  where it compared one deduplicated list per `chat_json` call; `sent` is
+  rebuilt in the harness from when `correct_json` was called, so the oracle
+  pins the timing and the helper, and
+  `llm_chat_retries_an_unparseable_reply_with_the_correction` pins what
+  `ClientSource` posts.
+- **The PR's review (finalcheck)**: the Tier 2, Tier 3 and Cochrane system
+  prompts were pinned across languages by no oracle (a pre-existing gap the
+  PR's prompt edits relied on a one-off script for); `cochrane_assessor_cases`
+  has a `system_prompts` case now, and a one-character mutant of the Rust
+  Cochrane prompt fails it. New tests pin the note's behaviour beside the
+  other reply kinds (a truncation or wrong shape adds none; a later empty,
+  truncated or wrong-shape reply keeps it; a tool turn keeps its fields), the
+  Python retry WARNING says `with the JSON correction note` when it was sent,
+  `bmlib.agents` re-exports `JSON_CORRECTION_NOTE` and `with_json_correction`
+  as Rust's `bmlib::agents` does, and `chat_json`'s rustdoc no longer promises
+  the note for a source keeping the default.
+- **For StudyAnalyzer**: nothing to change. A retry costs ~170 characters of
   input more than before.
 
-## This session: a reply carrying a number JSON does not define is unparseable (#572, PR #715, branch `fix/572-nan-refused`)
+## Earlier, 2026-11-08 (merged): a reply carrying a number JSON does not define is unparseable (#572, PR #715)
 
 **The maintainer's direction (2026-11-08): Python refuses.** Python's `json`
 read `NaN`, `Infinity`, `-Infinity`, `1e999` (as `inf`) and an integer up to
