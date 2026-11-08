@@ -88,7 +88,7 @@ def install_give_up(sdk_client: Any) -> bool:
     for transport in transports:
         pool = getattr(transport, "_pool", None)
         backend = getattr(pool, "_network_backend", None)
-        if backend is None:
+        if pool is None or backend is None:
             continue
         if not isinstance(backend, _GivingUpBackend):
             pool._network_backend = _GivingUpBackend(backend, _core_module(pool))
