@@ -35,9 +35,14 @@ The Python library is documented separately, in the repository's
   repairer's error bare (`Cannot repair JSON after 3 attempts: …`) where
   Python's reads `Cannot parse JSON even after repair: Cannot repair JSON …`;
   only `Unrepairable` is wrapped, `TooLarge` passing through as Python's
-  `ValueError` does. The oracle now holds nine more JSON cases (`NaN`,
-  `Infinity`, `1e999`, an integer past binary64, each refused as
-  `serde_json` always did) and four PICO replies (`UnusableReply`).
+  `ValueError` does. The oracle now holds thirteen more JSON cases: eight
+  refusals `serde_json` always made (`NaN`, `NaN` after repair, a
+  single-quoted `NaN` through `repair_json`, `Infinity`, `1e999`, an integer
+  past binary64, a lone surrogate escape, nesting 128 deep), one underflow read
+  as `0.0`, and four where a refused candidate or field is skipped (a `NaN`
+  object through each extractor, a 5,000-digit integer, a `NaN` field). And seven PICO replies, each
+  `UnusableReply` in both languages: four carrying a refused number, and three
+  where Python's `parse_json` used to answer with the object beside one.
 
 - **Anthropic adaptive thinking asks for the summarized trace** (#710, with
   Python). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and

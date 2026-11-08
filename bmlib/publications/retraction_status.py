@@ -41,9 +41,7 @@ No transport lives here: the apps bring their own, and so does the desktop.
 
 from __future__ import annotations
 
-import json
 import logging
-import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -52,6 +50,7 @@ from enum import StrEnum
 from typing import Any
 from urllib.parse import quote
 
+from bmlib._strict_json import strict_json_loads
 from bmlib.publications.models import RetractionNature, RetractionNotice
 from bmlib.publications.storage import _normalize_doi
 
@@ -551,44 +550,6 @@ def _read_item(doi: str, item: Mapping[str, Any], unknown_kinds: set[str]) -> Cr
     return CrossrefResult(CrossrefOutcome.SERVED, tuple(evidence), tuple(targets), doi=doi)
 
 
-def _refuse_constant(name: str) -> Any:
-    # NaN and Infinity are not JSON; serde_json refuses them, so this does too.
-    raise ValueError(f"{name} is not JSON")
-
-
-def _finite_float(text: str) -> float:
-    value = float(text)
-    if math.isinf(value):
-        raise ValueError(f"number out of range: {text[:40]}")
-    return value
-
-
-def _float_sized_int(text: str) -> int:
-    value = int(text)
-    # Past i64 / u64 serde_json reads an integer as a float, and refuses one
-    # no float can hold; float() raises OverflowError at that same point.
-    float(value)
-    return value
-
-
-#: serde_json's nesting limit: 127 levels of arrays or objects parse, 128 do
-#: not (measured on serde_json 1.0.151, the version ``rust/Cargo.lock`` pins).
-_SERDE_MAX_DEPTH = 127
-
-
-def _check_serde_parity(value: Any, depth: int = 0) -> None:
-    """Refuse what parsed here and serde_json refuses: deep nesting, lone surrogates."""
-    if isinstance(value, str):
-        value.encode("utf-8")  # a lone surrogate raises UnicodeEncodeError
-    elif isinstance(value, dict | list):
-        if depth == _SERDE_MAX_DEPTH:
-            raise ValueError(f"nested deeper than {_SERDE_MAX_DEPTH} levels")
-        for key in value if isinstance(value, dict) else ():
-            key.encode("utf-8")
-        for child in value.values() if isinstance(value, dict) else value:
-            _check_serde_parity(child, depth + 1)
-
-
 def parse_crossref_retraction_response(
     status: int, body: bytes | str, requested_dois: Iterable[str]
 ) -> dict[str, CrossrefResult]:
@@ -617,14 +578,8 @@ def parse_crossref_retraction_response(
     try:
         # Decoded as UTF-8 explicitly: json.loads would also sniff UTF-16 and
         # UTF-32 from bytes, which the Rust port does not.
-        data = json.loads(
-            body.decode("utf-8") if isinstance(body, bytes) else body,
-            parse_constant=_refuse_constant,
-            parse_float=_finite_float,
-            parse_int=_float_sized_int,
-        )
-        _check_serde_parity(data)
-    except (ValueError, OverflowError, RecursionError) as exc:
+        data = strict_json_loads(body.decode("utf-8") if isinstance(body, bytes) else body)
+    except (ValueError, RecursionError) as exc:
         return failed(f"body is not JSON: {exc}")
     message = data.get("message") if isinstance(data, dict) else None
     items = message.get("items") if isinstance(message, dict) else None

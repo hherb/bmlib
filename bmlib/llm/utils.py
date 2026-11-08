@@ -19,68 +19,13 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from collections.abc import Callable, Iterator
-from typing import Any
 
-
-def _refuse_constant(name: str) -> Any:
-    raise ValueError(f"{name} is not a JSON value")
-
-
-def _finite_float(text: str) -> float:
-    value = float(text)
-    if not math.isfinite(value):
-        raise ValueError(f"number out of range: {text[:40]}")
-    return value
-
-
-def _float_ranged_int(text: str) -> int:
-    value = int(text)  # past 4,300 digits int() itself raises ValueError
-    try:
-        float(value)
-    except OverflowError:
-        raise ValueError(f"number out of range: {text[:40]}...") from None
-    return value
-
-
-def strict_json_decoder() -> json.JSONDecoder:
-    """A fresh decoder refusing what :func:`strict_json_loads` refuses.
-
-    For :meth:`~json.JSONDecoder.raw_decode`, which reports a refusal as the
-    hook's :class:`ValueError` (a ``JSONDecodeError`` is one too).
-    """
-    return json.JSONDecoder(
-        parse_constant=_refuse_constant,
-        parse_float=_finite_float,
-        parse_int=_float_ranged_int,
-    )
-
-
-def strict_json_loads(text: str) -> Any:
-    """:func:`json.loads` reading only what RFC 8259 and ``serde_json`` read.
-
-    Python's ``json`` accepts ``NaN``, ``Infinity`` and ``-Infinity``, reads
-    ``1e999`` as ``inf`` and keeps an integer of any size; the Rust port's
-    ``serde_json`` refuses all of them ("number out of range" for an integer
-    past the binary64 range), so the same model reply gave a result in Python
-    and ``UnusableReply`` in Rust (#572). Every decode on the ``chat_json``
-    path goes through here, so such a reply is unparseable in both. A number
-    that underflows (``1e-999``) reads as ``0.0`` in both, and an integer
-    inside the binary64 range stays an ``int`` here where Rust holds it as a
-    float past ``u64``.
-
-    Raises:
-        json.JSONDecodeError: For every refusal, so each caller's existing
-            ``except json.JSONDecodeError`` catches these too.
-    """
-    try:
-        return strict_json_decoder().decode(text)
-    except json.JSONDecodeError:
-        raise
-    except ValueError as exc:
-        raise json.JSONDecodeError(str(exc), text, 0) from exc
+# Re-exported: the chat_json path's decoder (#572) is public here.
+from bmlib._strict_json import strict_json_decoder as strict_json_decoder
+from bmlib._strict_json import strict_json_loads as strict_json_loads
+from bmlib._strict_json import watch_refusals
 
 
 def http_status(exc: object) -> int | None:
@@ -309,6 +254,24 @@ def extract_json(text: str, *, allow_fragments: bool = True) -> str:
     # return comes from the brace-only pass and is therefore a dict.
     fragment = _first_acceptable(text, fences, nested_objects=True)
     return fragment if fragment is not None else text
+
+
+def json_mode_reply(content: str) -> str:
+    """The JSON a provider's ``json_mode`` reply carries, for its ``content``.
+
+    *content* when it decodes, else what :func:`extract_json` finds in it —
+    unless a value JSON does not define was refused on the way (#572), when it
+    is *content* unchanged: an object picked around the refused value would
+    reach ``chat_json`` as a clean answer, where Rust's client, which swaps
+    nothing, refuses the reply.
+    """
+    with watch_refusals() as refused:
+        try:
+            strict_json_loads(content)
+            return content
+        except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
+            extracted = extract_json(content)
+    return content if refused else extracted
 
 
 def _first_acceptable(

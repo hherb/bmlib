@@ -2725,3 +2725,35 @@ class TestOnlyTheSdksOwnDecodeIsRecognised:
         exc = self._raised("ollama._client", "def f(): return f()")
         with pytest.raises(RecursionError):
             too_deep_body(exc, "ollama", "ollama")
+
+
+class TestAnAnthropicJsonModeReplyIsNotPickedAroundARefusal:
+    """Anthropic's ``json_mode`` swap keeps a reply whose JSON holds a ``NaN`` (#572)."""
+
+    @pytest.mark.parametrize(
+        ("content", "expected"),
+        [
+            ('Sure: {"a": 1}', '{"a": 1}'),
+            ('Sure: [{"a": 1}, {"b": NaN}]', 'Sure: [{"a": 1}, {"b": NaN}]'),
+        ],
+        ids=["clean", "refused"],
+    )
+    def test_the_content(self, content, expected):
+        from unittest.mock import MagicMock
+
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        class _TextBlock:
+            type = "text"
+            text = content
+
+        response = MagicMock()
+        response.content = [_TextBlock()]
+        response.usage.input_tokens = 1
+        response.usage.output_tokens = 1
+        response.stop_reason = "end_turn"
+        provider = AnthropicProvider(api_key="k")
+        provider._client = MagicMock()
+        provider._client.messages.create.return_value = response
+        result = provider.chat([LLMMessage(role="user", content="Hi")], model="m", json_mode=True)
+        assert result.content == expected

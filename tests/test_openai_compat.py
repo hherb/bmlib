@@ -172,6 +172,32 @@ def _served(body: bytes, content_type: str = "application/json"):
     )
 
 
+class TestAJsonModeReplyIsNotPickedAroundARefusal:
+    """A ``json_mode`` reply whose JSON holds a ``NaN`` is not swapped for the
+    object beside it, which ``chat_json`` would read as a clean answer (#572)."""
+
+    @staticmethod
+    def _completion(content: str) -> bytes:
+        import json
+
+        choice = {"index": 0, "message": {"role": "assistant", "content": content}}
+        return json.dumps({"id": "x", "model": "m", "choices": [choice]}).encode()
+
+    @pytest.mark.parametrize(
+        ("content", "expected"),
+        [
+            ('Sure: {"a": 1}', '{"a": 1}'),
+            ('Sure: [{"a": 1}, {"b": NaN}]', 'Sure: [{"a": 1}, {"b": NaN}]'),
+        ],
+        ids=["clean", "refused"],
+    )
+    def test_the_content(self, StubProvider, content, expected):
+        p = StubProvider(api_key="k")
+        p._client = _served(self._completion(content))
+        result = p.chat([LLMMessage(role="user", content="Hi")], json_mode=True)
+        assert result.content == expected
+
+
 class TestAnErrorShaped200IsTheServers:
     """A 200 carrying no choice is the server's failure, not a bmlib defect (#617).
 

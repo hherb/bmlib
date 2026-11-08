@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import functools
-import json
 import logging
 import os
 import time
@@ -49,7 +48,7 @@ from bmlib.llm.stream import (
     refuse_tools,
     sdk_events,
 )
-from bmlib.llm.utils import extract_json
+from bmlib.llm.utils import json_mode_reply
 
 logger = logging.getLogger(__name__)
 
@@ -326,10 +325,7 @@ class AnthropicProvider(BaseProvider):
                     )
 
         if json_mode and content:
-            try:
-                json.loads(content)
-            except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
-                content = extract_json(content)
+            content = json_mode_reply(content)
 
         return LLMResponse(
             content=content,

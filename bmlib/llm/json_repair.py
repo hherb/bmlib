@@ -39,6 +39,7 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
+from bmlib._strict_json import check_serde_parity
 from bmlib.llm.utils import iter_json_spans, strict_json_decoder, strict_json_loads
 
 logger = logging.getLogger(__name__)
@@ -637,6 +638,7 @@ def _decode_value_at(
     """
     try:
         value, _ = decoder.raw_decode(text, index)
+        check_serde_parity(value)
         return value, True
     except (ValueError, RecursionError):
         pass
@@ -647,6 +649,7 @@ def _decode_value_at(
     # The value runs to the end of a truncated document: close it and retry.
     try:
         value, _ = decoder.raw_decode(repair_json(text[index:]), 0)
+        check_serde_parity(value)
         return value, True
     except (JSONRepairError, ValueError, RecursionError):
         return None, False

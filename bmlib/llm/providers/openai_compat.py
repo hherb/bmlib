@@ -70,7 +70,7 @@ from bmlib.llm.stream import (
     sdk_events,
     stop_reader,
 )
-from bmlib.llm.utils import extract_json
+from bmlib.llm.utils import json_mode_reply
 
 logger = logging.getLogger(__name__)
 
@@ -240,10 +240,7 @@ class OpenAICompatibleProvider(BaseProvider):
             tool_calls.append(LLMToolCall(id=call_id, name=name, arguments=args))
 
         if json_mode and content:
-            try:
-                json.loads(content)
-            except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
-                content = extract_json(content)
+            content = json_mode_reply(content)
 
         return LLMResponse(
             content=content,

@@ -50,7 +50,7 @@ from typing import Any, Literal, overload
 from bmlib.agents.metrics import PerformanceMetrics
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.json_repair import extract_and_repair_json
-from bmlib.llm.utils import extract_json, strict_json_loads
+from bmlib.llm.utils import extract_json, strict_json_loads, watch_refusals
 from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
@@ -621,7 +621,28 @@ class BaseAgent:
         With *allow_repair* false, only the stages that fabricate nothing run
         — the repair stage and the fragment stage are skipped, and a text they
         would have rescued raises :class:`ValueError` instead.
+
+        A reply holding a value JSON does not define (``NaN``, ``1e999``, a
+        lone surrogate, #572) raises :class:`ValueError` whatever a later
+        stage would find: the stages fall back to *another* span of the text,
+        so ``[{"a": 1}, {"b": NaN}]`` would otherwise come back as
+        ``{"a": 1}``, where Rust's ``chat_json`` refuses the reply.
         """
+        with watch_refusals() as refused:
+            try:
+                value = BaseAgent._parse_json_stages(text, allow_repair, refused)
+            except ValueError:
+                if not refused:
+                    raise
+        if refused:
+            raise ValueError(
+                f"LLM response holds what JSON does not define ({refused[0]}): {text[:200]!r}"
+            )
+        return value
+
+    @staticmethod
+    def _parse_json_stages(text: str, allow_repair: bool, refused: list[str]) -> Any:
+        """:meth:`_parse_json_any`'s stages, stopping once a decode has refused a value."""
         # Try direct parse
         try:
             return strict_json_loads(text)
@@ -637,11 +658,16 @@ class BaseAgent:
         # which is the same silent loss the whole-span preference exists to
         # prevent.
         candidate = extract_json(text, allow_fragments=False)
-        if candidate != text:
+        if candidate != text and not refused:
             try:
                 return strict_json_loads(candidate)
             except (json.JSONDecodeError, RecursionError):
                 pass
+
+        # A refusal is final: repair cannot mend a NaN, and the stages below
+        # would only find a different value (or log a repair failure for it).
+        if refused:
+            raise ValueError(refused[0])
 
         if not allow_repair:
             raise ValueError(f"No complete JSON in LLM response: {text[:200]!r}")
