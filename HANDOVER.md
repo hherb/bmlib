@@ -1,6 +1,7 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-11-08 (**this session's PR is on `fix/649-cancel-closes-socket`**; PRs #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is on `fix/710-thinking-display`**; PRs #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
@@ -46,6 +47,18 @@ sent again. A write or connect already under way is not sliced.
   and Rust's first). Unit tests in `tests/test_give_up.py` and `tests/http.rs`.
 - **Not given up:** Rust's Anthropic thinking lookup (a GET, 45 s); Python's
   third-party providers that make their own client without `install_give_up`.
+## previous session: Anthropic adaptive thinking returns its summary (#710, branch `fix/710-thinking-display`)
+
+**The maintainer's choice: always send `display: "summarized"`** with adaptive
+thinking, both languages (`ADAPTIVE_THINKING_DISPLAY`, Python's
+`providers.anthropic` and Rust's `llm::thinking`, re-exported). Opus 4.7+,
+Sonnet 5+, Haiku 5.5 and Fable default it to omitted (per the `claude-api`
+skill's docs; **not probed live**, no key here), so `LLMResponse.thinking` was
+`None` and a stream sent no thinking delta. Budget requests are unchanged; a
+caller's own `extra_body` `thinking` still wins whole in Rust. The shared
+`anthropic_thinking.json` expects the field on its 7 adaptive cases;
+mutating the constant to `"omitted"` reddens 12 Python tests. Open beside it:
+#708 (`chat_json`'s temperature-0 premise), a decision.
 
 ## Earlier, 2026-11-08: #706's review, which missed its merge (PR #712, merged)
 
@@ -59,68 +72,16 @@ finalcheck added a unit test reading every limit off both agents (nothing
 had pinned `timeout_resolve`) and one that a non-timeout body error passes
 through unchanged. The detail is under #702 below.
 
-## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
+## Earlier, 2026-11-08: Anthropic thinking takes the shape the model reports (#707, PR #711, merged)
 
-Branch `fix/705-anthropic-sampling`, from `main` after PR #704. **The
-maintainer's choice: never send them**, both languages. Checked first (the
-`claude-api` skill): anthropic ≥ 2.0.0 sends API version `2026-10-21`, which
-refuses `temperature`/`top_p`/`top_k` on every model, the default included, so
-`extra_body` is no way round it; 1.x already dropped the keywords; and Claude
-Opus 4.7+ refuse any of them on `2023-06-01`, so bmlib's default `0.7` was a
-400 on every current Opus in Python even on 0.x and in Rust (which sends
-`2023-06-01`). The parameters stay in the signatures; `_request_kwargs` lost
-its `temperature` argument. `TestAnthropicSendsNoSamplingParameters` drives the
-installed SDK over a mock transport (it and #704's `test_anthropic_chat`, no
-longer xfailed, fail on `main`'s provider). Older models (4.6 and earlier) lose
-a lowered temperature. **Filed: #707** (`think=` sends `budget_tokens`, which
-every current Claude model refuses: a model-family decision, both languages,
-now the most urgent LLM item) and **#708** (`chat_json`'s temperature-0
-no-retry rule assumes greedy sampling, which Anthropic no longer does).
-## Earlier session: Anthropic thinking takes the shape the model reports (#707)
-
-Branch `fix/707-anthropic-adaptive-thinking`. **The maintainer's choices**:
-read the Models API's `capabilities` (not a name rule), and refuse an `int`
-budget on an adaptive-only model. Python's `resolve_thinking(think,
-max_tokens, model_body)` and Rust's `anthropic_thinking` read
-`capabilities.thinking.types.{adaptive,enabled}` and
-`capabilities.effort.<level>`: adaptive (+ `output_config.effort`) where
-reported, a budget only to a model reporting budgets (`int` on Opus/Sonnet
-4.6 is still a budget), every refusal before the chat
-(`ThinkingRefusedError(ValueError).reason` / `ChatError::Thinking`). Shared
-fixture `tests/fixtures/anthropic_thinking.json`; its model bodies follow
-Anthropic's docs and were **not probed live** (no key here). Python memoises
-the lookup per model per provider and sends the effort through `extra_body`
-(`create()` takes `output_config` only from about anthropic 0.80; the floor is
-0.41); Rust looks up on every thinking call (`LlmClient` has public fields,
-so a cache would be breaking) and `chat_body` no longer carries `thinking`.
-**The finalcheck review's fixes** (same PR): a stream's lookup is part of
-opening it, so a cancel already set makes none and a cancel stops a stalled
-one at once (Python builds the kwargs in `read_stream`'s opener, Rust runs it
-on `chat_stream_with_cancel`'s worker); Rust's `extra_body.output_config`
-keeps its keys and gains the effort (a `thinking` it sets stays whole);
-Python's failed lookup carries a note naming it; a `think` of the wrong type
-is a `ValueError` before the capabilities are read; five fixture cases (a
-budget-only model reporting effort, an adaptive one reporting none, a negative
-budget on an adaptive-only model) pin three mutants that survived in both
-languages, and the effort rule is restated as it is (on a budget-only model
-`low`/`medium`/`high` are presets whatever `capabilities.effort` says).
-**The second finalcheck** (same PR): an off `think` is no fields from either
-resolver (Python's `False` had turned thinking on, `0` a 1024 budget; Rust's
-`"false"` was refused), held by the fixture's `off` cases in both; Rust holds
-the budget below an `extra_body` `max_tokens`, names the models URL on every
-failed lookup, and files a client that cannot make it (`Config`) as
-`Malformed`, not a retryable `Transport`; a body with no `id` is refused
-naming the model asked for (both); Python checks `think`'s type before the
-lookup, turns a too-deep lookup body into #698's `ValueError`, and
-`ThinkingRefusedError` pickles; the fixture's description had the refusal
-order wrong (capabilities first, then a negative budget), and a case now pins
-it. Rust tests now cover the cancellable stream's refusal and 401, the
-lookup's retry, a cancel landing during a lookup that then answers, and both
-`EffortNotSupported` messages; each was mutation-checked.
-**Open from it**: #708 (chat_json's temperature-0 no-retry rule) still stands;
-`display: "summarized"` is not sent, so the current models' thinking text
-comes back empty (`LLMResponse.thinking` is `None` on Opus 4.7+ by default):
-**#710**, a decision.
+**The maintainer's choices**: read the Models API's `capabilities` (not a name
+rule) and refuse an `int` budget on an adaptive-only model. Python's
+`resolve_thinking` and Rust's `anthropic_thinking`, held by
+`tests/fixtures/anthropic_thinking.json` (model bodies from Anthropic's docs,
+**not probed live**); Python memoises the lookup per model, Rust looks up per
+call; an off `think` is no fields in both; a stream's lookup is part of
+opening it, so a cancel covers it. The CHANGELOG entry and PR #711's two
+finalcheck rounds are the argument.
 
 ## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
 
@@ -284,7 +245,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PR #711 (#707, thinking shape), PR #712 (#706's review), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -381,8 +342,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,755 passing + 14 skipped with the PostgreSQL DSN** on
-  `fix/707-anthropic-adaptive-thinking` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,658 with `cargo test --workspace --all-features` on the same branch before the review's 6 tests, not re-counted, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,754 passing + 15 skipped with the PostgreSQL 18 DSN** (port 5532,
+  `BMLIB_REQUIRE_POSTGRESQL=1`) on `fix/710-thinking-display` (`uv run pytest tests/`, 2026-11-08; 9,603 + 166 without it; Rust 1,677 with `cargo test --workspace --all-features` on this branch, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
