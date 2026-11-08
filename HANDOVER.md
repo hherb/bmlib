@@ -1,5 +1,6 @@
 # HANDOVER — bmlib development
 
+_Last updated: 2026-11-08 (**this session's PR is on `fix/649-cancel-closes-socket`**; PRs #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 _Last updated: 2026-11-08 (**this session's PR is on `fix/710-thinking-display`**; PRs #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
@@ -8,7 +9,45 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
 #668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711, #712 and this session's._
 
-## This session: Anthropic adaptive thinking returns its summary (#710, branch `fix/710-thinking-display`)
+## This session: a cancelled stream gives its request up at the socket (#649, #652; branch `fix/649-cancel-closes-socket`)
+
+The maintainer's choices (2026-11-08, from StudyAnalyzer): **yes** to `ureq`'s
+`unversioned` transport API and a bmlib-owned interrupt, and close #652 in the
+same PR. A Stop returned at once but left the worker blocked in its socket read
+until the server answered, so Ollama kept reading a long prompt (minutes), and
+in Python the SDKs' retries resent the prompt after the cancel. Now the wait is
+cut into 50 ms slices with the abandon checked between them; once abandoned, a
+read fails, nothing more is written, the connection closes, and no request is
+sent again. A write or connect already under way is not sliced.
+
+- **Rust:** `HttpClient::post_json_stream_with_cancel(.., abandoned:
+  Arc<AtomicBool>)`, defaulting to `post_json_stream` (a wrapping client must
+  forward it: StudyAnalyzer's `LimitedClient` does once it pins this).
+  `UreqClient` builds the stream's agent with `DefaultConnector::new().chain(GiveUp)`;
+  `GivesUp` slices `await_input` (struct update `..timeout`, so `ureq` 3.4 and
+  3.5's `NextTimeout` both compile; 3.5's per-read limit is not honoured on
+  such a stream, a `shortcut:`, bmlib sets none). `WorkerEvents`' existing
+  `abandoned` flag is what it watches, so a stop from `on_delta` closes it too.
+  The give-up error is `ErrorKind::Other`: `ureq` reads `ConnectionAborted`
+  (and `UnexpectedEof`, `ConnectionReset`) as the server closing, which ended a
+  close-delimited body as complete (the pre-PR review; a test pins it). In
+  Rust the connection opens (the default chain runs first) and then sends no
+  request.
+- **Python:** `bmlib/llm/give_up.py`. Each provider's `_get_client` calls
+  `install_give_up(client)`, which wraps `pool._network_backend` (httpcore and
+  httpcore2, private) on the transport and proxy mounts; `read_stream`'s worker
+  calls `watch_this_thread(abandoned)`, and the wrapper acts only on such a
+  thread (thread-local), so pooled connections and `chat()` pass through.
+  Installed when the client is made, since a pooled connection keeps its
+  backend. `CANCEL_POLL_SECONDS` moved there (re-exported by `stream`).
+- **Contract:** `tests/fixtures/stream_give_up.json`, seven cases (ollama,
+  openai, anthropic; stalls before headers, after one event, a retryable 503)
+  over the real stack against a local server; both languages' tests fail on
+  `main`'s behaviour (checked by disabling the fix: all seven Python cases,
+  and Rust's first). Unit tests in `tests/test_give_up.py` and `tests/http.rs`.
+- **Not given up:** Rust's Anthropic thinking lookup (a GET, 45 s); Python's
+  third-party providers that make their own client without `install_give_up`.
+## previous session: Anthropic adaptive thinking returns its summary (#710, branch `fix/710-thinking-display`)
 
 **The maintainer's choice: always send `display: "summarized"`** with adaptive
 thinking, both languages (`ADAPTIVE_THINKING_DISPLAY`, Python's
@@ -171,7 +210,8 @@ word)` tuples, as Rust does; oracle case `abstract/tie-at-one-position`.
   `HtmlError { TooLarge, TimedOut }`. Filed **#656**. → a too-large page is
   not worth retrying, a timeout may be.
 - **#635** (PR #650): `chat_stream(..., cancel=)`, Rust
-  `chat_stream_with_cancel`; abandoned, not interrupted (**#649**, **#652**).
+  `chat_stream_with_cancel`; given up at the socket since #649/#652 (this
+  session's PR).
   → an empty `content` with `stop_reason == "cancelled"` is "stopped before
   any text".
 - **#632, #640-#642, #638** (PRs #648, #644, #639): `find_passage` rejects a
@@ -332,8 +372,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**119 open once #710 closes** (#707 closed; #708, filed from #705, is `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
-2026-11-08); #665 is #616's residual; #651 is #632's residual; #649 and #652 are #635's residuals (decisions: closing the socket; bounding Python's abandoned worker), #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
+**118 open once this session's PR closes #649 and #652** (#710, filed from #707, is the thinking `display` default; #708, filed from #705, is `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+2026-11-08); #665 is #616's residual; #651 is #632's residual; #649 and #652 (#635's residuals) close with this session's PR, #647 the PICO path's newest, #634 StudyAnalyzer's; #556–#647 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and

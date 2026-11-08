@@ -187,6 +187,10 @@ name = "http"
 required-features = ["http-ureq"]
 
 [[test]]
+name = "stream_give_up_contract"
+required-features = ["http-ureq"]
+
+[[test]]
 name = "live_network"
 required-features = ["http-ureq"]
 

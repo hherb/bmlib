@@ -365,6 +365,37 @@ pub trait HttpClient {
             "this HttpClient does not implement post_json_stream (POST {url})"
         )))
     }
+
+    /// [`HttpClient::post_json_stream`], given up once `abandoned` is set.
+    ///
+    /// For a stream its caller may stop before the server answers (#649): a
+    /// local model server sends nothing until it has read the whole prompt,
+    /// which for a long paper takes minutes, and it stops reading only when
+    /// the connection closes. Once `abandoned` is set, a client that honours
+    /// it fails the read it is waiting in (the stream's opening or its body)
+    /// and writes nothing more, so the request's connection closes; a write
+    /// or connect already under way runs to its own limit first.
+    ///
+    /// The default ignores `abandoned` and calls `post_json_stream`, so the
+    /// request runs on until the server answers or a timeout ends it. A
+    /// client that wraps another forwards this method, or its wrapped
+    /// client's interrupt is lost.
+    ///
+    /// # Errors
+    ///
+    /// As [`HttpClient::post_json_stream`]; a request given up is
+    /// [`FetchError::Transport`], and a body given up fails its next read
+    /// with an I/O error.
+    fn post_json_stream_with_cancel(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &std::collections::BTreeMap<String, String>,
+        abandoned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<HttpStream, FetchError> {
+        let _ = abandoned;
+        self.post_json_stream(url, body, headers)
+    }
 }
 
 /// A response whose body is read as it arrives.

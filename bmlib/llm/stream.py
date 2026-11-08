@@ -53,6 +53,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol, TypeVar, cast, get_args
 
 from bmlib.llm.data_types import LLMResponse
+from bmlib.llm.give_up import CANCEL_POLL_SECONDS, watch_this_thread
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,6 @@ matters only to the Rust port, which keeps the same list.
 
 THINKING_BLOCK_SEPARATOR = "\n\n"
 """What joins two of Anthropic's reasoning blocks, as ``chat()`` joins them."""
-
-CANCEL_POLL_SECONDS = 0.05
-"""How often a cancellable stream looks at its cancel while it waits."""
 
 Stop = threading.Event | Callable[[], bool]
 """A stop or cancel: an ``Event``, or a zero-argument callable answering
@@ -542,15 +540,18 @@ def read_stream(
     stops the call at once, even before the first event: the response holds
     what arrived, with ``stop_reason`` :data:`CANCELLED_STOP_REASON`. A
     cancel already set sends nothing. The worker is then abandoned: it hands
-    nothing more over, and closes the stream at the next event it receives
-    or when its request fails, so a server still reading the prompt keeps
-    reading it until then. The same holds when *on_delta* stops the stream
-    or raises. Nothing here bounds that wait (#652): the Anthropic and
-    OpenAI SDKs time a request out, but they also retry opening it, which an
-    abandoned worker cannot stop, so the prompt may be sent again; and the
-    Ollama client has no timeout, so a cancelled request to a server that
-    never answers keeps its thread and connection for the life of the
-    process. A failure the cancel overtook is logged at DEBUG, not raised.
+    nothing more over, and its request is given up (#649,
+    :mod:`bmlib.llm.give_up`): the read it waits in fails within
+    :data:`CANCEL_POLL_SECONDS` and it writes nothing more (a write or connect
+    already under way runs to its own timeout first), which closes the
+    connection, so a server
+    still reading the prompt stops; and an SDK's retry of opening the stream
+    opens no connection and sends nothing (#652). The same holds when
+    *on_delta* stops the stream or raises. That needs the provider's SDK
+    client to carry the give-up wrapper (:func:`~bmlib.llm.give_up.install_give_up`,
+    which every bmlib provider applies); without it the worker closes the
+    stream only at the next event or when its request fails. A failure the
+    cancel overtook is logged at DEBUG, not raised.
 
     Args:
         protocol: One of :data:`STREAM_PROTOCOLS`.
@@ -585,6 +586,7 @@ def read_stream(
             return True
 
     def work() -> None:
+        watch_this_thread(abandoned)
         try:
             with closing_stream(open_stream()) as stream:
                 for event in events(stream):

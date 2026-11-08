@@ -52,6 +52,7 @@ from bmlib.llm.data_types import (
     LLMToolCall,
     LLMToolDefinition,
 )
+from bmlib.llm.give_up import install_give_up
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -544,6 +545,8 @@ class OllamaProvider(BaseProvider):
                 self._client = ollama.Client(host=self._base_url)
             except ImportError as exc:
                 raise ImportError(_sdk_import_failed("ollama", exc)) from exc
+            # A cancelled stream gives its request up at the socket (#649).
+            install_give_up(self._client)
         return self._client
 
     # --- Context window ---
