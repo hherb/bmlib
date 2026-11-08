@@ -18,12 +18,13 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from bmlib.llm.context_window import ModelLimits, as_dict, fetch_model_limits
 from bmlib.llm.data_types import (
@@ -72,6 +73,16 @@ THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
 DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
 
 
+ThinkingRefusalReason = Literal[
+    "no-capabilities",
+    "not-supported",
+    "budget-not-supported",
+    "effort-not-supported",
+    "negative-budget",
+    "max-tokens-too-small",
+]
+
+
 class ThinkingRefusedError(ValueError):
     """A ``think`` request the model cannot take, refused before it is sent (#707).
 
@@ -82,9 +93,14 @@ class ThinkingRefusedError(ValueError):
     ``negative-budget`` or ``max-tokens-too-small``.
     """
 
-    def __init__(self, message: str, *, reason: str) -> None:
+    def __init__(self, message: str, *, reason: ThinkingRefusalReason) -> None:
         super().__init__(message)
-        self.reason = reason
+        self.reason: ThinkingRefusalReason = reason
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # ``reason`` is keyword-only, which pickle's default (``cls(*args)``)
+        # cannot pass, so the error could not cross a process pool.
+        return (functools.partial(type(self), reason=self.reason), self.args)
 
 
 class AnthropicProvider(BaseProvider):
@@ -205,12 +221,18 @@ class AnthropicProvider(BaseProvider):
         if body is None:
             try:
                 body = as_dict(self._get_client().models.retrieve(model))
+            except RecursionError as exc:
+                raise too_deep_body(exc, "anthropic", "anthropic") from exc
             except Exception as exc:
                 exc.add_note(
                     f"raised by the lookup of {model!r}'s thinking capabilities "
                     f"(GET /v1/models/{{id}}, #707), before the chat was sent"
                 )
                 raise
+            # A refusal names the model the body describes; a body naming none
+            # (a proxy's stub) is the model asked for.
+            if isinstance(body, dict) and not body.get("id"):
+                body = {**body, "id": model}
             self._model_bodies[model] = body
         return body
 
@@ -345,6 +367,9 @@ class AnthropicProvider(BaseProvider):
             request_kwargs["system"] = system_content
 
         if think:
+            # Checked ahead of the lookup, so a wrong type costs no request
+            # and is not hidden behind a failed one.
+            _require_think_type(think)
             fields = resolve_thinking(think, max_tokens, self._model_body(model))
             request_kwargs["thinking"] = fields["thinking"]
             if "output_config" in fields:
@@ -533,17 +558,29 @@ def _budget_fields(budget: int, max_tokens: int) -> dict[str, object]:
     return {"thinking": {"type": "enabled", "budget_tokens": budget}}
 
 
+def _require_think_type(think: object) -> None:
+    """Refuse a *think* that is not a ``bool``, ``int`` or ``str``.
+
+    Raises:
+        ValueError: *think* is of another type.
+    """
+    if not isinstance(think, (bool, int, str)):
+        raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
+
+
 def resolve_thinking(
     think: bool | str | int, max_tokens: int, model_body: Any
 ) -> dict[str, object]:
-    """The request fields a truthy *think* becomes for the model *model_body* describes (#707).
+    """The request fields *think* becomes for the model *model_body* describes (#707).
 
     *model_body* is the model's ``GET /v1/models/{id}`` body; its
     ``capabilities.thinking.types`` says whether the model thinks
     ``adaptive``-ly, with an ``enabled`` budget, or both. Adaptive wins for
     ``True`` (the model's default effort) and for an effort level the model
-    reports under ``capabilities.effort`` (sent as ``output_config.effort``).
-    An ``int`` is a budget and needs ``enabled``; with ``enabled`` alone,
+    reports under ``capabilities.effort`` (sent as ``output_config.effort``);
+    on an adaptive model a level it does not report is refused, never a preset
+    budget, even where it also reports ``enabled``. A falsy *think* (thinking
+    off) is no fields. An ``int`` is a budget and needs ``enabled``; with ``enabled`` alone,
     ``True`` and ``"low"``/``"medium"``/``"high"`` are preset budgets. Held to
     Rust's ``anthropic_thinking`` by ``tests/fixtures/anthropic_thinking.json``.
 
@@ -552,8 +589,9 @@ def resolve_thinking(
             nothing readable about thinking (refused, never guessed).
         ValueError: *think* is not a ``bool``, ``int`` or ``str``.
     """
-    if not isinstance(think, (bool, int, str)):
-        raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
+    if not think:
+        return {}
+    _require_think_type(think)
     caps = model_body.get("capabilities") if isinstance(model_body, dict) else None
     thinking = caps.get("thinking") if isinstance(caps, dict) else None
     types = thinking.get("types") if isinstance(thinking, dict) else None

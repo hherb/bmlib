@@ -269,7 +269,24 @@ class TestAnthropicThinkingRequest:
         with pytest.raises(ValueError, match="Unsupported think value 4096.0") as raised:
             provider.chat(_Q, max_tokens=8000, think=4096.0)
         assert not isinstance(raised.value, ThinkingRefusedError)
+        provider._client.models.retrieve.assert_not_called()
         provider._client.messages.create.assert_not_called()
+
+    def test_a_refusal_names_the_model_asked_for_when_the_body_names_none(self):
+        # A proxy's stub body, carrying no id: the refusal still says which model.
+        provider = _anthropic_provider(model_body="no-capabilities")
+        provider._client.models.retrieve.return_value = {"type": "model"}
+        with pytest.raises(ThinkingRefusedError, match="'claude-opus-5-5'"):
+            provider.chat(_Q, model="claude-opus-5-5", max_tokens=8000, think=True)
+
+    def test_a_refusal_survives_a_pickle(self):
+        # A process pool returns it to the parent as it was raised.
+        import pickle
+
+        error = ThinkingRefusedError("no budget", reason="budget-not-supported")
+        again = pickle.loads(pickle.dumps(error))
+        assert type(again) is ThinkingRefusedError
+        assert (str(again), again.reason) == ("no budget", "budget-not-supported")
 
     def test_thinking_sends_no_sampling_parameters(self):
         # Never sent (#705); thinking does not bring them back.

@@ -60,8 +60,9 @@ def test_every_model_body_is_used():
 
 
 @pytest.mark.parametrize("case", FIXTURE["off"], ids=lambda c: c["name"])
-def test_off_is_falsy(case):
-    # Python's truthiness, which Rust's ``think_is_on`` follows; that the
-    # provider makes no lookup for these is
+@pytest.mark.parametrize("model", sorted(FIXTURE["models"]))
+def test_off_is_no_fields(case, model):
+    # Off is no fields for any model, never thinking on or a refusal (Rust's
+    # ``off_is_off``); that the provider makes no lookup for these is
     # ``test_llm_thinking.py::test_no_think_makes_no_lookup``.
-    assert not case["think"]
+    assert resolve_thinking(case["think"], 4096, FIXTURE["models"][model]) == {}

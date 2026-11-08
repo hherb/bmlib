@@ -45,7 +45,11 @@ All notable changes to bmlib are documented here. The format is based on
   The pure rule is `resolve_thinking(think, max_tokens, model_body)`; Python
   and Rust are held to `tests/fixtures/anthropic_thinking.json` (its model
   bodies follow Anthropic's documentation, not a live probe). A thinking chat
-  now costs one extra request the first time per model.
+  now costs one extra request the first time per model. A falsy `think` is no
+  fields for every model; a `think` of the wrong type is a `ValueError` before
+  any lookup; a lookup body nested too deeply is #698's `ValueError`; a body
+  naming no model (a proxy's stub) is refused naming the model asked for; and
+  `ThinkingRefusedError` pickles, `reason` and all.
 
 - **A non-streamed chat waits for its answer as a stream does** (#702, Rust;
   from StudyAnalyzer PR #100's review). `UreqClient::post_json` ran under one

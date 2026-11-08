@@ -2508,6 +2508,13 @@ class TestABodyNestedTooDeeplyIsTheServers:
         assert str(info.value) == f"{name}: the response is nested too deeply to decode"
         assert isinstance(info.value.__cause__, RecursionError)
 
+    def test_anthropic_thinking_lookup(self):
+        # The model lookup a truthy think makes first (#707) decodes the same way.
+        with pytest.raises(ValueError) as info:
+            self._anthropic().chat(self._MESSAGES, model="m", max_tokens=8000, think=True)
+        assert str(info.value) == "anthropic: the response is nested too deeply to decode"
+        assert isinstance(info.value.__cause__, RecursionError)
+
     def test_ollama_chat(self):
         self._chat_raises(self._ollama(_TOO_DEEP)[0], "ollama")
 

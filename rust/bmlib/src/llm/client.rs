@@ -969,7 +969,9 @@ fn anthropic_think(request: &ChatRequest, target: &Target) -> Option<(String, i6
 /// in [`chat_body`], so the caller's fields win: a `thinking` it set is left
 /// whole (merged key by key, a budget could land beside `adaptive`), and an
 /// `output_config` it set gains only the keys it lacks, so its `format` and
-/// the looked-up `effort` are both sent.
+/// the looked-up `effort` are both sent; one that is not an object wins whole,
+/// as a `thinking` does. The budget is held below the `max_tokens` the body
+/// carries, `extra_body`'s if it set one.
 fn add_anthropic_thinking(
     client: &dyn HttpClient,
     base_delay: Duration,
@@ -987,9 +989,13 @@ fn add_anthropic_thinking(
         || client.get_with_headers(&url, &headers),
         |response| response.status,
     )
+    // Each error names the lookup's URL, or a timeout here reads as the chat's.
+    // Only a transport failure is retryable: a client that cannot make the
+    // lookup at all (`get_with_headers`' default is a `Config`) never will.
     .map_err(|e| match e {
+        FetchError::Transport(m) => ChatError::Transport(format!("{url}: {m}")),
         FetchError::HttpStatus { status, .. } => http_error(&url, status, ""),
-        other => ChatError::Transport(other.to_string()),
+        other => ChatError::Malformed(format!("{url}: {other}")),
     })?;
     if !response.is_success() {
         return Err(http_error(&url, response.status, response.text_or_empty()));
@@ -997,13 +1003,30 @@ fn add_anthropic_thinking(
     let text = response.text().map_err(|e| {
         ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
     })?;
-    let model_body: Value = serde_json::from_str(text).map_err(|e| {
+    let mut model_body: Value = serde_json::from_str(text).map_err(|e| {
         ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
     })?;
-    let fields = anthropic_thinking(think, max_tokens, &model_body).map_err(ChatError::Thinking)?;
+    // A refusal names the model the body describes; a body naming none (a
+    // proxy's stub) is the model asked for.
+    if let Some(fields) = model_body.as_object_mut() {
+        if !fields
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+        {
+            fields.insert("id".to_string(), Value::String(target.model.clone()));
+        }
+    }
     let Some(body) = body.as_object_mut() else {
         return Ok(());
     };
+    // `extra_body` may have replaced `max_tokens`, and the budget must stay
+    // below the one sent.
+    let max_tokens = body
+        .get("max_tokens")
+        .and_then(Value::as_i64)
+        .unwrap_or(max_tokens);
+    let fields = anthropic_thinking(think, max_tokens, &model_body).map_err(ChatError::Thinking)?;
     for (key, value) in fields {
         match (body.get_mut(&key), value) {
             (None, value) => {

@@ -43,8 +43,14 @@ The Python library is documented separately, in the repository's
   whole, and an `output_config` it sets gains only the keys it lacks (its
   `format` and the looked-up `effort` are both sent). A refusal is the new
   `ChatError::Thinking(ThinkingRefusal)` (not retryable), before the chat is
-  sent; a failed lookup is `ChatError::Http`, `Transport` or `Malformed`,
-  naming the models URL, retried as opening a stream is. In
+  sent; a failed lookup names the models URL and is `ChatError::Http`,
+  `Transport` (retried as opening a stream is, and retryable) or `Malformed`
+  (not retryable, which includes a client that cannot make the lookup at all:
+  `get_with_headers`' default is a `FetchError::Config`). A budget is held below
+  the `max_tokens` the body sends, `extra_body`'s if it set one; an
+  `output_config` there that is not an object wins whole; an off `think` is
+  no fields from `anthropic_thinking`; a body naming no model is refused
+  naming the model asked for. In
   `chat_stream_with_cancel` the lookup runs on the worker, so a cancel stops
   it at once, and a cancel already set makes none. Shared fixture
   `tests/fixtures/anthropic_thinking.json`. `chat_body`'s change is under

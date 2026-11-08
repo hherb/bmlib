@@ -71,13 +71,35 @@ fn every_case() {
 
 #[test]
 fn off_is_off() {
-    for case in fixture()["off"].as_array().unwrap() {
-        assert!(
-            !think_is_on(&think_text(&case["think"])),
-            "{}",
-            case["name"]
-        );
+    let fx = fixture();
+    for case in fx["off"].as_array().unwrap() {
+        let think = think_text(&case["think"]);
+        assert!(!think_is_on(&think), "{}", case["name"]);
+        // Off is no fields for any model, never thinking on or a refusal.
+        for body in fx["models"].as_object().unwrap().values() {
+            let fields = anthropic_thinking(&think, 4096, body).expect("off");
+            assert!(fields.is_empty(), "{}: {fields:?}", case["name"]);
+        }
     }
+}
+
+/// Each refusal says which rule it is: an adaptive model's unreported level
+/// and a budget-only model's unknown one read differently.
+#[test]
+fn an_unsupported_effort_says_which_kind_of_model_refused_it() {
+    let fx = fixture();
+    let adaptive = anthropic_thinking("xhigh", 4096, &fx["models"]["both"]).unwrap_err();
+    assert_eq!(
+        adaptive.to_string(),
+        "Anthropic model \"claude-opus-4-6\" does not report think effort level \"xhigh\""
+    );
+    let budget = anthropic_thinking("max", 4096, &fx["models"]["budget-only"]).unwrap_err();
+    assert!(
+        budget.to_string().contains("takes only a thinking budget"),
+        "{budget}"
+    );
+    let err = ChatError::Thinking(budget.clone());
+    assert_eq!(err.to_string(), budget.to_string());
 }
 
 type Seen = (String, String, Option<Value>);
@@ -108,6 +130,8 @@ data: {\"type\":\"message_stop\"}
 struct Fake {
     model_body: Value,
     get_status: u16,
+    /// How many lookups answer 503 before `get_status` does.
+    get_failures: Mutex<u32>,
     seen: Mutex<Vec<Seen>>,
 }
 
@@ -116,6 +140,7 @@ impl Fake {
         Arc::new(Fake {
             model_body,
             get_status,
+            get_failures: Mutex::new(0),
             seen: Mutex::new(Vec::new()),
         })
     }
@@ -139,6 +164,14 @@ impl HttpClient for Fake {
             .lock()
             .unwrap()
             .push(("GET".into(), url.into(), None));
+        let mut failures = self.get_failures.lock().unwrap();
+        if *failures > 0 {
+            *failures -= 1;
+            return Ok(HttpResponse {
+                status: 503,
+                body: Vec::new(),
+            });
+        }
         Ok(HttpResponse {
             status: self.get_status,
             body: self.model_body.to_string().into_bytes(),
@@ -404,6 +437,10 @@ fn a_cancel_already_set_makes_no_lookup() {
 struct StalledLookup {
     entered: Mutex<mpsc::Sender<()>>,
     release: Mutex<mpsc::Receiver<()>>,
+    /// What the lookup answers once released: `None` is a transport failure.
+    answer: Option<Value>,
+    /// Told of every stream opened.
+    opened: Mutex<mpsc::Sender<()>>,
 }
 
 impl HttpClient for StalledLookup {
@@ -417,7 +454,19 @@ impl HttpClient for StalledLookup {
     ) -> Result<HttpResponse, FetchError> {
         let _ = self.entered.lock().unwrap().send(());
         let _ = self.release.lock().unwrap().recv();
-        Err(FetchError::Transport("released".into()))
+        match &self.answer {
+            Some(body) => Ok(HttpResponse::ok(body.to_string().into_bytes())),
+            None => Err(FetchError::Transport("released".into())),
+        }
+    }
+    fn post_json_stream(
+        &self,
+        url: &str,
+        _body: &Value,
+        _headers: &BTreeMap<String, String>,
+    ) -> Result<HttpStream, FetchError> {
+        let _ = self.opened.lock().unwrap().send(());
+        Err(FetchError::Transport(format!("opened {url}")))
     }
     fn post_json(
         &self,
@@ -433,9 +482,12 @@ impl HttpClient for StalledLookup {
 fn a_cancel_stops_a_stalled_lookup_at_once() {
     let (entered_tx, entered) = mpsc::channel();
     let (release, release_rx) = mpsc::channel::<()>();
+    let (opened_tx, _opened) = mpsc::channel();
     let mut client = LlmClient::new(Arc::new(StalledLookup {
         entered: Mutex::new(entered_tx),
         release: Mutex::new(release_rx),
+        answer: None,
+        opened: Mutex::new(opened_tx),
     }));
     client.api_key = Some("k".to_string());
     let cancel = Arc::new(AtomicBool::new(false));
@@ -464,15 +516,174 @@ fn a_cancel_stops_a_stalled_lookup_at_once() {
     drop(release);
 }
 
+/// Both streams refuse before they open: a refusal, and a refused lookup,
+/// are the caller's error and no stream is sent without the thinking.
 #[test]
 fn a_stream_asks_the_model_too() {
+    for cancellable in [false, true] {
+        for (body, status) in [
+            (fixture()["models"]["adaptive-only"].clone(), 200),
+            (json!({}), 401),
+        ] {
+            let fake = Fake::new(body, status);
+            let req = request("anthropic:claude-opus-5-5", Some("4096"));
+            let mut on_delta = |_: &_| ControlFlow::Continue(());
+            let err = if cancellable {
+                client(&fake).chat_stream_with_cancel(&req, &AtomicBool::new(false), &mut on_delta)
+            } else {
+                client(&fake).chat_stream(&req, &mut on_delta)
+            }
+            .expect_err("refused before the stream opens");
+            match (&err, status) {
+                (ChatError::Thinking(r), 200) => assert_eq!(r.reason(), "budget-not-supported"),
+                (ChatError::Http { status: 401, .. }, 401) => {}
+                other => panic!("{cancellable}: {other:?}"),
+            }
+            assert_eq!(
+                fake.seen().len(),
+                1,
+                "{cancellable} {status}: {:?}",
+                fake.seen()
+            );
+        }
+    }
+}
+
+/// A lookup answering 503 is retried, as opening a stream is.
+#[test]
+fn a_lookup_answering_503_is_retried() {
     let fake = Fake::new(fixture()["models"]["adaptive-only"].clone(), 200);
+    *fake.get_failures.lock().unwrap() = 1;
+    client(&fake)
+        .chat(&request("anthropic:claude-opus-5-5", Some("true")))
+        .expect("chat");
+    let seen = fake.seen();
+    let methods: Vec<&str> = seen.iter().map(|s| s.0.as_str()).collect();
+    assert_eq!(methods, ["GET", "GET", "POST"], "{seen:?}");
+    assert_eq!(
+        seen[2].2.as_ref().unwrap()["thinking"],
+        json!({"type": "adaptive"})
+    );
+}
+
+/// A lookup that fails names its URL, and only a transport failure is
+/// retryable: a client that cannot make the lookup is a setup error.
+#[test]
+fn a_failed_lookup_names_its_url() {
+    struct Fails(FetchError);
+    impl HttpClient for Fails {
+        fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {
+            Err(self.0.clone())
+        }
+        fn get_with_headers(
+            &self,
+            url: &str,
+            _headers: &BTreeMap<String, String>,
+        ) -> Result<HttpResponse, FetchError> {
+            self.get(url)
+        }
+        fn post_json(
+            &self,
+            url: &str,
+            _body: &Value,
+            _headers: &BTreeMap<String, String>,
+        ) -> Result<HttpResponse, FetchError> {
+            panic!("no chat may be sent: POST {url}")
+        }
+    }
+    let cases = [
+        (FetchError::Transport("timed out".into()), true),
+        (FetchError::Config("no GET with headers".into()), false),
+        (
+            FetchError::HttpStatus {
+                url: "u".into(),
+                status: 404,
+            },
+            false,
+        ),
+    ];
+    for (error, retryable) in cases {
+        let mut client = LlmClient::new(Arc::new(Fails(error.clone())));
+        client.api_key = Some("k".to_string());
+        client.retry_base_delay = Duration::ZERO;
+        let err = client
+            .chat(&request("anthropic:claude-opus-5-5", Some("true")))
+            .expect_err("the lookup failed");
+        assert!(
+            err.to_string().contains("/v1/models/claude-opus-5-5"),
+            "{err}"
+        );
+        assert_eq!(err.is_retryable(), retryable, "{error:?}: {err:?}");
+        match (&error, &err) {
+            (FetchError::Transport(_), ChatError::Transport(_))
+            | (FetchError::Config(_), ChatError::Malformed(_))
+            | (FetchError::HttpStatus { .. }, ChatError::Http { status: 404, .. }) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+/// A budget is held below the `max_tokens` the body sends, `extra_body`'s.
+#[test]
+fn a_budget_stays_below_the_max_tokens_extra_body_sets() {
+    let fake = Fake::new(fixture()["models"]["budget-only"].clone(), 200);
+    let mut req = request("anthropic:claude-haiku-4-5", Some("16384"));
+    req.max_tokens = 32000;
+    req.extra_body = Some(json!({"max_tokens": 2000}));
+    client(&fake).chat(&req).expect("chat");
+    let body = fake.seen()[1].2.clone().unwrap();
+    assert_eq!(body["max_tokens"], json!(2000));
+    assert_eq!(
+        body["thinking"],
+        json!({"type": "enabled", "budget_tokens": 1999})
+    );
+}
+
+/// A lookup body naming no model (a proxy's stub) is refused naming the
+/// model asked for.
+#[test]
+fn a_refusal_names_the_model_asked_for_when_the_body_names_none() {
+    let fake = Fake::new(json!({"type": "model"}), 200);
     let err = client(&fake)
-        .chat_stream(
-            &request("anthropic:claude-opus-5-5", Some("4096")),
-            &mut |_| std::ops::ControlFlow::Continue(()),
+        .chat(&request("anthropic:claude-opus-5-5", Some("true")))
+        .expect_err("refused");
+    assert!(err.to_string().contains("\"claude-opus-5-5\""), "{err}");
+}
+
+/// A cancel that arrives while the lookup is in flight opens no stream once
+/// the lookup answers: the caller has gone, and the chat would be billed.
+#[test]
+fn a_lookup_that_answers_after_a_cancel_opens_no_stream() {
+    let (entered_tx, entered) = mpsc::channel();
+    let (release, release_rx) = mpsc::channel::<()>();
+    let (opened_tx, opened) = mpsc::channel();
+    let mut client = LlmClient::new(Arc::new(StalledLookup {
+        entered: Mutex::new(entered_tx),
+        release: Mutex::new(release_rx),
+        answer: Some(fixture()["models"]["adaptive-only"].clone()),
+        opened: Mutex::new(opened_tx),
+    }));
+    client.api_key = Some("k".to_string());
+    let cancel = Arc::new(AtomicBool::new(false));
+    let setter = {
+        let cancel = Arc::clone(&cancel);
+        std::thread::spawn(move || {
+            entered.recv().expect("the lookup was made");
+            cancel.store(true, Ordering::SeqCst);
+        })
+    };
+    let response = client
+        .chat_stream_with_cancel(
+            &request("anthropic:claude-opus-5-5", Some("true")),
+            &cancel,
+            &mut |_| ControlFlow::Continue(()),
         )
-        .expect_err("refused before the stream opens");
-    assert!(matches!(err, ChatError::Thinking(_)), "{err:?}");
-    assert_eq!(fake.seen().len(), 1);
+        .expect("cancelled");
+    assert_eq!(response.stop_reason.as_deref(), Some(CANCELLED_STOP_REASON));
+    setter.join().unwrap();
+    release.send(()).expect("the worker is waiting");
+    assert!(
+        opened.recv_timeout(Duration::from_secs(1)).is_err(),
+        "a stream was opened after the cancel"
+    );
 }

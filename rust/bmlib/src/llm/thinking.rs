@@ -174,16 +174,19 @@ fn budget_fields(budget: i64, max_tokens: i64) -> Result<Map<String, Value>, Thi
     Ok(fields)
 }
 
-/// The request fields `think` (on, by [`think_is_on`]) becomes for the model
-/// `model_body` describes: its `GET /v1/models/{id}` body.
+/// The request fields `think` becomes for the model `model_body` describes:
+/// its `GET /v1/models/{id}` body. A `think` that is off ([`think_is_on`])
+/// becomes no fields.
 ///
 /// `think` is read as Python's value: `"true"` is the bool, an integer is a
 /// token budget, any other text an effort level (folded to lower case).
 /// Adaptive wins for `true` (the model's default effort) and for an effort
 /// level the model reports under `capabilities.effort` (sent as
-/// `output_config.effort`). A budget needs `enabled` thinking; with `enabled`
-/// alone, `true` and `low`/`medium`/`high` are preset budgets. A budget is
-/// clamped to `[THINKING_BUDGET_MIN, max_tokens - 1]`.
+/// `output_config.effort`); on an adaptive model a level it does not report
+/// is refused, never a preset budget, even where it also reports `enabled`.
+/// A budget needs `enabled` thinking; with `enabled` alone, `true` and
+/// `low`/`medium`/`high` are preset budgets. A budget is clamped to
+/// `[THINKING_BUDGET_MIN, max_tokens - 1]`.
 ///
 /// # Errors
 ///
@@ -194,6 +197,9 @@ pub fn anthropic_thinking(
     max_tokens: i64,
     model_body: &Value,
 ) -> Result<Map<String, Value>, ThinkingRefusal> {
+    if !think_is_on(think) {
+        return Ok(Map::new());
+    }
     let model = model_body
         .get("id")
         .and_then(Value::as_str)

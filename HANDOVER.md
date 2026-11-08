@@ -36,6 +36,19 @@ budget-only model reporting effort, an adaptive one reporting none, a negative
 budget on an adaptive-only model) pin three mutants that survived in both
 languages, and the effort rule is restated as it is (on a budget-only model
 `low`/`medium`/`high` are presets whatever `capabilities.effort` says).
+**The second finalcheck** (same PR): an off `think` is no fields from either
+resolver (Python's `False` had turned thinking on, `0` a 1024 budget; Rust's
+`"false"` was refused), held by the fixture's `off` cases in both; Rust holds
+the budget below an `extra_body` `max_tokens`, names the models URL on every
+failed lookup, and files a client that cannot make it (`Config`) as
+`Malformed`, not a retryable `Transport`; a body with no `id` is refused
+naming the model asked for (both); Python checks `think`'s type before the
+lookup, turns a too-deep lookup body into #698's `ValueError`, and
+`ThinkingRefusedError` pickles; the fixture's description had the refusal
+order wrong (capabilities first, then a negative budget), and a case now pins
+it. Rust tests now cover the cancellable stream's refusal and 401, the
+lookup's retry, a cancel landing during a lookup that then answers, and both
+`EffortNotSupported` messages; each was mutation-checked.
 **Open from it**: #708 (chat_json's temperature-0 no-retry rule) still stands;
 `display: "summarized"` is not sent, so the current models' thinking text
 comes back empty (`LLMResponse.thinking` is `None` on Opus 4.7+ by default):
@@ -289,7 +302,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,719 passing + 14 skipped with the PostgreSQL DSN** on
+- **Tests: 9,755 passing + 14 skipped with the PostgreSQL DSN** on
   `fix/707-anthropic-adaptive-thinking` (`uv run pytest tests/ -v`, 2026-11-08; Rust 1,658 with `cargo test --workspace --all-features` on the same branch before the review's 6 tests, not re-counted, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
