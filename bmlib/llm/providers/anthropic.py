@@ -69,13 +69,13 @@ CHARS_PER_TOKEN_ESTIMATE = 4
 # max_tokens. A model reporting ``adaptive`` thinking is sent ``True`` as
 # adaptive and an effort level itself, as ``output_config.effort``.
 THINKING_BUDGET_MIN = 1024
+THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
+DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
 
 # Adaptive thinking asks for the summarized trace (#710): Opus 4.7+, Sonnet 5+,
 # Haiku 5.5 and Fable default ``display`` to omitted, which returns empty
-# thinking text, so ``LLMResponse.thinking`` was None though the model thought.
+# thinking text and leaves ``LLMResponse.thinking`` None though the model thought.
 ADAPTIVE_THINKING_DISPLAY = "summarized"
-THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
-DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
 
 
 ThinkingRefusalReason = Literal[
@@ -590,10 +590,11 @@ def resolve_thinking(
     reports under ``capabilities.effort`` (sent as ``output_config.effort``);
     on an adaptive model a level it does not report is refused, never a preset
     budget, even where it also reports ``enabled``. Adaptive thinking is sent
-    ``display: "summarized"`` (#710). A falsy *think* (thinking
-    off) is no fields. An ``int`` is a budget and needs ``enabled``; with ``enabled`` alone,
-    ``True`` and ``"low"``/``"medium"``/``"high"`` are preset budgets. Held to
-    Rust's ``anthropic_thinking`` by ``tests/fixtures/anthropic_thinking.json``.
+    ``display: "summarized"`` (#710). A falsy *think* (thinking off) is no
+    fields. An ``int`` is a budget and needs ``enabled``; with ``enabled``
+    alone, ``True`` and ``"low"``/``"medium"``/``"high"`` are preset budgets.
+    Held to Rust's ``anthropic_thinking`` by
+    ``tests/fixtures/anthropic_thinking.json``.
 
     Raises:
         ThinkingRefusedError: The model cannot take *think*, or its body says

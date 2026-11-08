@@ -18,7 +18,8 @@
 //!
 //! Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse
 //! `{"type": "enabled", "budget_tokens": N}` and think adaptively
-//! (`{"type": "adaptive"}`, depth by `output_config.effort`); Opus 4.6 and
+//! (`{"type": "adaptive", "display": "summarized"}`, #710; depth by
+//! `output_config.effort`); Opus 4.6 and
 //! Sonnet 4.6 take both; the 4.5 models and the thinking models before them
 //! take only a budget, and a model before Sonnet 3.7 does not think. Which one a model takes is
 //! read off its own `GET /v1/models/{id}` body, never guessed from its name.
@@ -193,8 +194,9 @@ fn adaptive_thinking() -> Value {
 /// level the model reports under `capabilities.effort` (sent as
 /// `output_config.effort`); on an adaptive model a level it does not report
 /// is refused, never a preset budget, even where it also reports `enabled`.
-/// Adaptive thinking is sent `display: "summarized"` (#710). A budget needs `enabled` thinking; with `enabled` alone, `true` and
-/// `low`/`medium`/`high` are preset budgets. A budget is clamped to
+/// Adaptive thinking is sent `display: "summarized"` (#710). A budget needs
+/// `enabled` thinking; with `enabled` alone, `true` and `low`/`medium`/`high`
+/// are preset budgets. A budget is clamped to
 /// `[THINKING_BUDGET_MIN, max_tokens - 1]`.
 ///
 /// # Errors
