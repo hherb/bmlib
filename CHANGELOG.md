@@ -56,14 +56,18 @@ All notable changes to bmlib are documented here. The format is based on
   45 s limit on the whole request, so a thinking model given a large
   `max_tokens` timed out mid-answer instead of stopping at its length, and a
   retry paid for the tokens again. It now gets the stream's split:
-  `timeout_seconds` for each step of sending, `stream_timeout_seconds` (600 s)
-  for the response headers and again for the body. Every `post_json` in bmlib
+  `timeout_seconds` for each step of sending (the host lookup included, which
+  a stream's agent left unbounded), `stream_timeout_seconds` (600 s) for the
+  response headers and again for the body. Every `post_json` in bmlib
   is an LLM call (`chat`, `chat_json`, the condenser's batches, Ollama's
   `/api/show` in `model_limits`); a GET keeps its 45 s. A timeout is now a
   `FetchError::Transport` naming the limit (`timed out after 600 s waiting for
   the response headers (receive response)`), where it was `timeout: receive
-  response`. Python needs no change: the Anthropic and OpenAI SDKs read for
-  600 s by default, and Ollama's client has no timeout (#652).
+  response`; a stream's body still being read when its limit runs out fails
+  with an `io::Error` of kind `TimedOut` saying the same (`timed out after
+  600 s reading the response body (receive body)`). The body's limit is on
+  its whole read, not on a pause in it. Python needs no change: the
+  Anthropic and OpenAI SDKs read for 600 s by default, and Ollama's client has no timeout (#652).
 - **A PICO part loses no quote the model gave, and a part the paper omits
   may have no description** (#577, #618; both languages). A bare-string
   `quotes` (`"quotes": "Adults aged…"`) reads as a list of one, where it was

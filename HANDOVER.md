@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PR is on `fix/707-anthropic-adaptive-thinking`**; PRs #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-08 (**this session's PR is on `fix/706-review-timeouts`**; PRs #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
@@ -8,7 +8,36 @@ crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
 #668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709 and this session's._
 
-## This session: Anthropic thinking takes the shape the model reports (#707)
+## This session: #706's review, which missed its merge (branch `fix/706-review-timeouts`)
+
+PR #706 merged (head `c16e6175`, merge commit `d9504e8c`) before its
+finalcheck fixes were pushed, so they come here, cherry-picked onto `main`
+after PR #709: a POST's DNS lookup is bounded by `timeout_seconds`
+(`timeout_resolve`; with no whole-request limit `ureq` waited as long as the
+system did), and a stream's body that runs out of time names its limit
+(`NamedTimeouts`, a `TimedOut` `io::Error`), with tests. This PR's own
+finalcheck added a unit test reading every limit off both agents (nothing
+had pinned `timeout_resolve`) and one that a non-timeout body error passes
+through unchanged. The detail is under #702 below.
+
+## Earlier, 2026-11-08: Anthropic is sent no sampling parameters (#705, PR #709, merged)
+
+Branch `fix/705-anthropic-sampling`, from `main` after PR #704. **The
+maintainer's choice: never send them**, both languages. Checked first (the
+`claude-api` skill): anthropic ≥ 2.0.0 sends API version `2026-10-21`, which
+refuses `temperature`/`top_p`/`top_k` on every model, the default included, so
+`extra_body` is no way round it; 1.x already dropped the keywords; and Claude
+Opus 4.7+ refuse any of them on `2023-06-01`, so bmlib's default `0.7` was a
+400 on every current Opus in Python even on 0.x and in Rust (which sends
+`2023-06-01`). The parameters stay in the signatures; `_request_kwargs` lost
+its `temperature` argument. `TestAnthropicSendsNoSamplingParameters` drives the
+installed SDK over a mock transport (it and #704's `test_anthropic_chat`, no
+longer xfailed, fail on `main`'s provider). Older models (4.6 and earlier) lose
+a lowered temperature. **Filed: #707** (`think=` sends `budget_tokens`, which
+every current Claude model refuses: a model-family decision, both languages,
+now the most urgent LLM item) and **#708** (`chat_json`'s temperature-0
+no-retry rule assumes greedy sampling, which Anthropic no longer does).
+## Earlier session: Anthropic thinking takes the shape the model reports (#707)
 
 Branch `fix/707-anthropic-adaptive-thinking`. **The maintainer's choices**:
 read the Models API's `capabilities` (not a name rule), and refuse an `int`
@@ -71,9 +100,19 @@ sending step, `stream_timeout_seconds` for the response headers and body); a
 GET keeps its whole-request 45 s. A `ureq` timeout is a `Transport` naming
 the limit (`UreqClient::transport_error`). Rust only: Python's Anthropic and
 OpenAI SDKs (1.x/2.x and 2.x/3.x alike) read for 600 s, Ollama's not at all
-(#652). Three new tests in `tests/http.rs`. Downstream: StudyAnalyzer's
+(#652). #706 added three tests in `tests/http.rs`. **The finalcheck review**
+(in PR #712, not in #706): a POST's host lookup had no limit once the global
+one went (`timeout_resolve` now `timeout_seconds`); a stream's body read
+names its limit too (`NamedTimeouts`); tests for a body outlasting its limit
+after its headers (`post_json` and a stream), `get_with_headers`'
+whole-request limit, a short body's own error passing through, and unit
+tests of every timeout's message and of both agents' limits. Left as the
+maintainer chose: `model_limits`' `/api/show` now waits up to 600 s for the
+headers and 600 s more for the body, on each of three attempts. Downstream: StudyAnalyzer's
 `LimitedClient` clips only `timeout_seconds`, so its POSTs need
-`stream_timeout_seconds` clipped too when its pin moves.
+`stream_timeout_seconds` clipped too when its pin moves, and its
+`quote_threshold` test's 900 s `timeout_seconds` now needs
+`stream_timeout_seconds` to wait that long.
 
 ## Earlier, 2026-11-07 (Python LLM bodies, all merged; the CHANGELOG is the argument)
 

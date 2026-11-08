@@ -279,11 +279,13 @@ fn the_test_helper_matches_the_real_shape() {
     let _ = handle.join();
 }
 
-/// A one-shot server that waits `pause` before its response headers and again
-/// before the body, as a local model server loads the model and then writes.
+/// A one-shot server that waits `head_pause` before its response headers and
+/// `body_pause` before the body, as a local model server loads the model and
+/// then writes.
 /// It drains the request first, for `serve_once`'s reason.
 fn serve_slowly(
-    pause: std::time::Duration,
+    head_pause: std::time::Duration,
+    body_pause: std::time::Duration,
     body: &'static str,
 ) -> (String, std::thread::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -291,19 +293,24 @@ fn serve_slowly(
     let handle = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept");
         let request = read_request(&stream);
-        std::thread::sleep(pause);
+        std::thread::sleep(head_pause);
         let head = format!(
             "HTTP/1.1 200 X\r\nContent-Length: {}\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
             body.len()
         );
         let _ = stream.write_all(head.as_bytes());
         let _ = stream.flush();
-        std::thread::sleep(pause);
+        std::thread::sleep(body_pause);
         let _ = stream.write_all(body.as_bytes());
         let _ = stream.flush();
         request
     });
     (format!("http://127.0.0.1:{port}/path"), handle)
+}
+
+/// `n` milliseconds.
+fn ms(n: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(n)
 }
 
 fn read_all(stream: bmlib::publications::fetchers::HttpStream) -> std::io::Result<String> {
@@ -343,7 +350,7 @@ fn a_refused_stream_carries_its_status_and_body() {
 /// not the ordinary timeout a long answer would outlast.
 #[test]
 fn a_stream_may_outlast_the_ordinary_timeout() {
-    let (url, handle) = serve_slowly(std::time::Duration::from_millis(1_500), "data: a\n\n");
+    let (url, handle) = serve_slowly(ms(1_500), ms(1_500), "data: a\n\n");
     let client = UreqClient {
         timeout_seconds: 1,
         stream_timeout_seconds: 30,
@@ -359,7 +366,7 @@ fn a_stream_may_outlast_the_ordinary_timeout() {
 /// ...and that timeout still holds.
 #[test]
 fn a_stream_still_times_out() {
-    let (url, _handle) = serve_slowly(std::time::Duration::from_millis(2_500), "data: a\n\n");
+    let (url, _handle) = serve_slowly(ms(2_500), ms(2_500), "data: a\n\n");
     let client = UreqClient {
         timeout_seconds: 30,
         stream_timeout_seconds: 1,
@@ -377,7 +384,7 @@ fn a_stream_still_times_out() {
 /// writing a long answer outlasts the ordinary timeout...
 #[test]
 fn a_post_may_outlast_the_ordinary_timeout() {
-    let (url, handle) = serve_slowly(std::time::Duration::from_millis(1_500), "{}");
+    let (url, handle) = serve_slowly(ms(1_500), ms(1_500), "{}");
     let client = UreqClient {
         timeout_seconds: 1,
         stream_timeout_seconds: 30,
@@ -393,7 +400,7 @@ fn a_post_may_outlast_the_ordinary_timeout() {
 /// ...and a timeout on its response names the limit that ran out.
 #[test]
 fn a_post_still_times_out_naming_the_limit() {
-    let (url, _handle) = serve_slowly(std::time::Duration::from_millis(2_500), "{}");
+    let (url, _handle) = serve_slowly(ms(2_500), ms(2_500), "{}");
     let client = UreqClient {
         timeout_seconds: 30,
         stream_timeout_seconds: 1,
@@ -410,13 +417,92 @@ fn a_post_still_times_out_naming_the_limit() {
 /// A GET keeps one limit on the whole request, also named when it runs out.
 #[test]
 fn a_get_times_out_on_the_whole_request() {
-    let (url, _handle) = serve_slowly(std::time::Duration::from_millis(2_500), "{}");
+    let (url, _handle) = serve_slowly(ms(2_500), ms(2_500), "{}");
     let client = UreqClient {
         timeout_seconds: 1,
         stream_timeout_seconds: 30,
         ..UreqClient::new()
     };
     let outcome = client.get(&url);
+    assert!(
+        matches!(&outcome, Err(FetchError::Transport(m))
+            if m == "timed out after 1 s on the whole request (global)"),
+        "{outcome:?}"
+    );
+}
+
+/// A POST whose headers arrive in time but whose body stalls fails on the
+/// body's own limit, named (#706's review: nothing tested that limit).
+#[test]
+fn a_post_body_times_out_naming_the_limit() {
+    let (url, _handle) = serve_slowly(ms(0), ms(2_500), "{}");
+    let client = UreqClient {
+        timeout_seconds: 30,
+        stream_timeout_seconds: 1,
+        ..UreqClient::new()
+    };
+    let outcome = client.post_json(&url, &serde_json::json!({}), &BTreeMap::new());
+    assert!(
+        matches!(&outcome, Err(FetchError::Transport(m))
+            if m == "timed out after 1 s reading the response body (receive body)"),
+        "{outcome:?}"
+    );
+}
+
+/// A stream whose body stalls fails while it is read, naming the limit too.
+#[test]
+fn a_stream_body_times_out_naming_the_limit() {
+    let (url, _handle) = serve_slowly(ms(0), ms(2_500), "data: a\n\n");
+    let client = UreqClient {
+        timeout_seconds: 30,
+        stream_timeout_seconds: 1,
+        ..UreqClient::new()
+    };
+    let stream = client
+        .post_json_stream(&url, &serde_json::json!({}), &BTreeMap::new())
+        .expect("the headers in time");
+    let error = read_all(stream).expect_err("the body stalls");
+    assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+    assert_eq!(
+        error.to_string(),
+        "timed out after 1 s reading the response body (receive body)"
+    );
+}
+
+/// A stream's body that ends short is `ureq`'s own error, not a timeout:
+/// only a timeout is renamed.
+#[test]
+fn a_stream_body_cut_short_keeps_its_own_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        read_request(&stream);
+        let _ = stream
+            .write_all(b"HTTP/1.1 200 X\r\nContent-Length: 100\r\nConnection: close\r\n\r\ndata:");
+    });
+    let stream = UreqClient::new()
+        .post_json_stream(
+            &format!("http://127.0.0.1:{port}/path"),
+            &serde_json::json!({}),
+            &BTreeMap::new(),
+        )
+        .expect("the headers");
+    handle.join().expect("server");
+    let error = read_all(stream).expect_err("the body ends short");
+    assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof, "{error}");
+}
+
+/// A GET with headers (a model listing) keeps the whole-request limit too.
+#[test]
+fn a_get_with_headers_times_out_on_the_whole_request() {
+    let (url, _handle) = serve_slowly(ms(2_500), ms(2_500), "{}");
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let outcome = client.get_with_headers(&url, &BTreeMap::new());
     assert!(
         matches!(&outcome, Err(FetchError::Transport(m))
             if m == "timed out after 1 s on the whole request (global)"),
