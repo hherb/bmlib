@@ -141,8 +141,12 @@ The Python library is documented separately, in the repository's
   `Store` (locked, denied, no keychain). The OS keychain is
   `KeyringVault`, behind the new `keyring` feature (the `keyring` crate's v1
   stores), off by default so a mobile build brings its own `Vault`. Held to
-  Python by `tests/fixtures/secret_key_list.json`; Linux and Windows address
-  a different item from Python's in some cases (#686).
+  Python by `tests/fixtures/secret_key_list.json`; it addresses the same item
+  as Python on macOS, Windows, Linux and the BSDs (#686; on Windows the
+  credential is named by the service alone, through `keyring-core`'s
+  `target` modifier, and one of that name another account holds is refused
+  as `Store` rather than overwritten), checked on Windows and Linux by CI's
+  `keychain-interop` job.
 
 ### Fixed
 

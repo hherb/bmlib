@@ -33,11 +33,11 @@
 //! the `keyring` crate's v1 stores). Everything else is always compiled, so a
 //! build without it (the mobile apps) can bring its own [`Vault`].
 //!
-//! On macOS, Rust and Python address the same item. On Linux only while
-//! Python writes first: Python's `keyring` adds an `application` attribute,
-//! so its write beside an item Rust created makes a second one, and Rust then
-//! finds two (`Ambiguous`). On Windows not yet: the `keyring` crate names the
-//! credential `account.service`, Python's `keyring` `service`. Both are #686.
+//! Rust and Python address the same item on macOS, Windows, Linux and the
+//! BSDs (#686). On Windows that takes the `target` modifier: the credential
+//! is named by the service alone, as Python names it, where the crate's
+//! default is `account.service`; one of that name another account holds is
+//! refused, not overwritten.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -58,7 +58,7 @@ pub enum SecretErrorKind {
     /// The item is there but is not a key list (not JSON of strings, or not
     /// even text): saving a key replaces it with one holding just that key.
     UnreadableItem,
-    /// More than one keychain item matches (Linux, see #686). Saving a key
+    /// More than one keychain item matches (Linux). Saving a key
     /// does not help; the user has to remove one in the keychain.
     AmbiguousItem,
     /// The store failed or refused: locked, access denied, no keychain at all.
@@ -334,7 +334,7 @@ impl KeyringVault {
     /// The keychain entry for the item. When the platform store could not be
     /// set up, the error says why, not only that there is no store.
     fn entry(&self) -> Result<keyring::v1::Entry, SecretError> {
-        keyring::v1::Entry::new(&self.service, &self.account).map_err(|e| {
+        platform_entry(&self.service, &self.account).map_err(|e| {
             match (&e, keyring::v1::Entry::store_status()) {
                 (keyring::v1::Error::NoDefaultStore, Err(why)) => {
                     SecretError::new(format!("{e}: {why}"))
@@ -343,6 +343,80 @@ impl KeyringVault {
             }
         })
     }
+}
+
+/// The entry for `account` of `service`, named as the platform's own store
+/// names it.
+#[cfg(all(feature = "keyring", not(windows)))]
+fn platform_entry(service: &str, account: &str) -> keyring::v1::Result<keyring::v1::Entry> {
+    keyring::v1::Entry::new(service, account)
+}
+
+/// On Windows the credential is named by the service alone, as Python's
+/// `keyring` names it (#686), where the crate's default is `account.service`.
+#[cfg(all(feature = "keyring", windows))]
+fn platform_entry(service: &str, account: &str) -> keyring::v1::Result<keyring::v1::Entry> {
+    // `v1::Entry::new` sets the store up first; building through keyring-core must too.
+    if keyring::v1::Entry::store_status().is_err() {
+        return Err(keyring::v1::Error::NoDefaultStore);
+    }
+    let target = std::collections::HashMap::from([("target", service)]);
+    keyring_core::Entry::new_with_modifiers(service, account, &target)
+        .map(|inner| keyring::v1::Entry { inner })
+}
+
+/// On Windows a credential named by the service whose `UserName` is another
+/// account is not this item, and a write would destroy it, so it is refused
+/// and left as it is, as Python refuses it. An empty `UserName` is this item:
+/// what a write leaves when [`name_the_account`] failed.
+#[cfg(all(feature = "keyring", windows))]
+fn check_owner(
+    entry: &keyring::v1::Entry,
+    service: &str,
+    account: &str,
+) -> Result<(), SecretError> {
+    let attributes = match entry.inner.get_attributes() {
+        Ok(attributes) => attributes,
+        Err(keyring::v1::Error::NoEntry) => return Ok(()),
+        Err(e) => return Err(keyring_error(e)),
+    };
+    let owner = attributes.get("username").map_or("", String::as_str);
+    if owner.is_empty() || owner == account {
+        return Ok(());
+    }
+    Err(SecretError::new(format!(
+        "the keychain item '{service}' belongs to account '{owner}', not '{account}'"
+    )))
+}
+
+/// Elsewhere the store addresses the item by its account already.
+#[cfg(all(feature = "keyring", not(windows)))]
+fn check_owner(_: &keyring::v1::Entry, _: &str, _: &str) -> Result<(), SecretError> {
+    Ok(())
+}
+
+/// After a write on Windows, the credential's `UserName` is the account, as
+/// Python writes it: an entry named by `target` creates one with none.
+#[cfg(all(feature = "keyring", windows))]
+fn name_the_account(entry: &keyring::v1::Entry, account: &str) -> keyring::v1::Result<()> {
+    if entry
+        .inner
+        .get_attributes()?
+        .get("username")
+        .map(String::as_str)
+        == Some(account)
+    {
+        return Ok(());
+    }
+    entry
+        .inner
+        .update_attributes(&std::collections::HashMap::from([("username", account)]))
+}
+
+/// Elsewhere the store already records the account.
+#[cfg(all(feature = "keyring", not(windows)))]
+fn name_the_account(_: &keyring::v1::Entry, _: &str) -> keyring::v1::Result<()> {
+    Ok(())
 }
 
 /// A keyring failure as a [`SecretError`]: the platform's message, which holds
@@ -385,11 +459,24 @@ impl Vault for KeyringVault {
     /// Reads the item (an absent one is `None`; one that is not text reads as
     /// unreadable, see `read_result`).
     fn read(&self) -> Result<Option<String>, SecretError> {
-        read_result(self.entry()?.get_password())
+        let entry = self.entry()?;
+        check_owner(&entry, &self.service, &self.account)?;
+        read_result(entry.get_password())
     }
-    /// Writes the item.
+    /// Writes the item. Naming the account afterwards (Windows) failing is a
+    /// warning, not a failed write: the key list was saved, and both
+    /// languages read a credential with no `UserName` as this item.
     fn write(&self, text: &str) -> Result<(), SecretError> {
-        write_result(self.entry()?.set_password(text))
+        let entry = self.entry()?;
+        check_owner(&entry, &self.service, &self.account)?;
+        write_result(entry.set_password(text))?;
+        if let Err(e) = name_the_account(&entry, &self.account) {
+            log::warn!(
+                target: "bmlib.secrets",
+                "the key list was saved, but naming its account failed: {e}"
+            );
+        }
+        Ok(())
     }
 }
 

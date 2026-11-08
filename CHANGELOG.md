@@ -377,20 +377,28 @@ All notable changes to bmlib are documented here. The format is based on
   key, nor, in Python, chains an exception that could. Its `kind`
   (`SecretErrorKind`, #689) says whether saving a key will help:
   `unreadable-item` (it replaces the item), `ambiguous-item` (two keychain
-  items match; bmlib's own `KeyringVault` reports it in Rust only; `set` refuses rather than writing over
+  items match; bmlib's own `KeyringVault` reports it on Linux, in both languages; `set` refuses rather than writing over
   one it cannot see) or `store` (locked, denied, no keychain), so an app
   offers "save a key to replace the damaged item" only when it is true. The OS keychain
-  is `KeyringVault`: Python's over the `keyring` package (new extra
-  `secrets`, in `all`), Rust's over the `keyring` crate's v1 stores (new
+  is `KeyringVault`: Python's through the `keyring` package (new extra
+  `secrets`, in `all`) on macOS and the platform libraries it installs on
+  Windows (`win32cred`) and Linux (`secretstorage`), Rust's over the `keyring` crate's v1 stores (new
   feature `keyring`, off by default, so a mobile build brings its own
   `Vault`). The item's text is read and written by `read_key_list` /
   `write_key_list`, held together with `KeyBundle`'s behaviour by
   `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 14 store
-  scenarios, each failure by kind). macOS addresses one item from both languages; Linux only
-  while Python writes first (its `application` attribute makes a second
-  item beside Rust's, which Rust then reads as ambiguous); Windows not yet
-  (the crate names the credential `account.service`, the package
-  `service`). Both #686.
+  scenarios, each failure by kind). Both languages address one item on
+  macOS, Windows, Linux and the BSDs (#686, the maintainer's choices): on
+  Windows the credential named by the service alone, its `UserName` the
+  account (Rust through the `target` modifier; Python writes it in place,
+  where `keyring.set_password` first copies the old value to
+  `account@service`, keeping a deleted key), and one of that name another
+  account holds refused as `store` rather than overwritten; on Linux and the
+  BSDs the Secret Service item carrying just `service` and `username`
+  (Python no longer adds `keyring`'s `application` attribute, which made a
+  second item beside Rust's), two of them `ambiguous-item` in both
+  languages. CI's new `keychain-interop` job checks Windows and Linux live,
+  each language reading what the other wrote and refusing what it must.
 
 - **Rust lists a provider's models** (#680, filed by StudyAnalyzer, whose
   Settings offer the models to pick from). `LlmClient::list_models(provider)`

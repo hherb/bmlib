@@ -29,20 +29,32 @@ except SecretError as e:
 | Name | What it is |
 |---|---|
 | `SecretStore` | Protocol: `get(provider) -> str \| None`, `set(provider, key)`, `delete(provider)` (an absent key is fine) |
-| `KeyBundle(vault)` | A `SecretStore` over one `Vault` item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it. A failed read is not cached. `set` over an item that is not a key list (or not UTF-8) replaces it with one holding just the new key, dropping whatever it held (logged at WARNING); `get` and `delete` raise. `set` refuses a provider or key holding a lone surrogate. A failed write leaves the cache as it was. `vault` is read-only. `KeyBundle.keyring(service)` is the OS keychain item `API_KEYS_ACCOUNT` of `service` |
+| `KeyBundle(vault)` | A `SecretStore` over one `Vault` item: `get` reads it once and answers from the cache, `set` and `delete` read it again and rewrite it. A failed read is not cached. `set` over an item that is not a key list (or not text) replaces it with one holding just the new key, dropping whatever it held (logged at WARNING); `get` and `delete` raise. `set` refuses a provider or key holding a lone surrogate. A failed write leaves the cache as it was. `vault` is read-only. `KeyBundle.keyring(service)` is the OS keychain item `API_KEYS_ACCOUNT` of `service` |
 | `Vault` | Protocol: `read() -> str \| None`, `write(text)` — the one item, the only part that touches the OS |
-| `KeyringVault(service, account)` | The OS keychain item, through `keyring` (imported when used; when it cannot be imported, a `SecretError` saying what the import raised). An item that is not UTF-8 reads as unreadable. Any other backend failure is a `SecretError` naming its type and message, with no exception chained to it (one could hold the item) |
+| `KeyringVault(service, account)` | The OS keychain item (see **Platforms**), through a package imported when used (when it cannot be imported, a `SecretError` saying what the import raised). An item that is not text (UTF-8, or UTF-16 in a Windows credential) reads as unreadable. A Windows credential of the item's name that another account holds is refused (`STORE`) and left as it is. Any other backend failure is a `SecretError` naming its type and message, with no exception chained to it (one could hold the item) |
 | `MemorySecrets()` | An in-memory `SecretStore`, for tests or a session that keeps no key |
 | `read_key_list(text)` / `write_key_list(keys)` | The item's text ↔ `dict[str, str]`. Reading refuses anything but an object of strings (and a lone surrogate, a byte-order mark) with a `SecretError` that does not quote the text; writing is compact, sorted by provider, non-ASCII as is |
 | `SecretError(message, kind=SecretErrorKind.STORE)` | Every failure: `str()` is the platform's message or bmlib's own, never a key; `kind` says which failure (#689), and a kind given by name becomes the member (an unknown one raises `ValueError`). Pickles with its kind |
-| `SecretErrorKind` | `UNREADABLE_ITEM` (`"unreadable-item"`: not a key list, or not UTF-8; `set` replaces it, also when a `Vault` of an app's own raises it from `read`), `AMBIGUOUS_ITEM` (`"ambiguous-item"`: two items match; `set` does not replace it, the user removes one in the keychain; `KeyringVault` never reports it, a `Vault` of an app's own may), `STORE` (`"store"`: locked, denied, no keychain, the `keyring` package missing, or a provider or key no keychain holds). Rust's `SecretErrorKind`, by the same names |
+| `SecretErrorKind` | `UNREADABLE_ITEM` (`"unreadable-item"`: not a key list, or not text; `set` replaces it, also when a `Vault` of an app's own raises it from `read`), `AMBIGUOUS_ITEM` (`"ambiguous-item"`: two items match; `set` does not replace it, the user removes one in the keychain; `KeyringVault` reports it on the Secret Service, as Rust's does, and a `Vault` of an app's own may), `STORE` (`"store"`: locked, denied, no keychain, a package `KeyringVault` needs missing, a Windows credential of the item's name that another account holds, or a provider or key no keychain holds). Rust's `SecretErrorKind`, by the same names |
 | `API_KEYS_ACCOUNT` | `"api-keys"`, the item's account |
 
-**Platforms** (#686). On macOS (the login keychain's generic password,
-service and account) both languages address one item. On Linux (Secret
-Service) only while Python writes first: `keyring` adds an `application`
-attribute, so a write beside an item Rust created makes a second item, and
-Rust's lookup (`service` and `username`) then fails as ambiguous, while
-`keyring`'s own lookup reads whichever of the two Secret Service lists first. On Windows
-they do not yet: Rust's `keyring` crate names the credential
-`account.service`, this package `service`.
+**Platforms** (#686). Both languages address one item. On macOS it is the
+login keychain's generic password (service and account), through `keyring`.
+On Windows it is the generic credential named by the service alone, its
+`UserName` the account; this package writes it through `win32cred` and not
+`keyring.set_password`, which first copies the old value to
+`account@service`, so a deleted key would stay in Credential Manager. A
+credential of that name whose `UserName` is another account (what
+`keyring.set_password(service, "other", …)` leaves there) is not this item:
+both languages refuse it, on a read or a write, rather than overwrite it.
+An empty `UserName` is this item, what Rust leaves if naming the account
+after its first write failed (a warning, not a failed write). On Linux and
+the BSDs it is the Secret Service item matched by `service` and `username`
+alone, created in the default collection; this package goes through
+`secretstorage`, since `keyring` adds an `application` attribute (a second
+item beside Rust's) and reads the first of two. Two matching items are
+`AMBIGUOUS_ITEM` in both languages. So off macOS `KeyringVault` uses the
+platform's own store, not a `keyring` backend configured otherwise. CI's
+`keychain-interop` job checks Windows and Linux live, each language reading
+what the other wrote, and both refusing another account's credential and two
+items (`tests/test_secrets_interop.py`).
