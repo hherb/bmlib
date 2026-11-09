@@ -383,6 +383,11 @@ assert_eq!(pico.outcome.state, PicoPartState::NotReported);
 # Ok::<(), bmlib::quality::PicoError>(())
 ```
 
+A quote that `find_passage` rejected as a contradiction (a number, a negation
+or a direction changed) is kept in `quotes_contradicted` with its reason, and a
+reported part holding only such quotes is `PicoPartState::Contradicted`: the
+model misreported the paper *(unreleased, #647)*.
+
 Citation offsets are `char` indices into `text` exactly as passed. Quotes are
 always verified against the original text, never a digest. `min_similarity`
 outside (0, 1] is `PicoError::InvalidSimilarity` before any request (Python

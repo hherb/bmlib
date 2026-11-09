@@ -27,6 +27,21 @@ All notable changes to bmlib are documented here. The format is based on
   parses in a child Python process, which an application with no interpreter
   to start cannot have, so it raises `RuntimeError` there; and the `html`
   extra needs `psutil`. See *Fixed*.
+- **A PICO quote the paper contradicts keeps its reason, and a part holding
+  only such quotes is `CONTRADICTED`** (#647; both languages; **breaking**).
+  Since #632 `find_passage` rejects a near-verbatim quote whose best window
+  changes a number, a negation or a direction; the PICO agent used to file
+  it in `quotes_not_found` beside quotes that matched nothing, so the reason
+  was lost and the part read `UNVERIFIED` ("could not reproduce"). It is now
+  a `PicoContradictedQuote(quote, contradiction)` in the new
+  `PicoPart.quotes_contradicted` (never also in `quotes_not_found`), and a
+  reported part with no citation and at least one such quote is the new
+  `PicoPartState.CONTRADICTED`: the model misreported the paper.
+  `to_dict()` writes `quotes_contradicted`; `from_dict()` reads a record
+  without it as empty, which is true of every record written before #647.
+  `verify_quotes` returns `(citations, not_found, contradicted, dropped)`
+  (Rust's `QuoteCheck` likewise). A caller matching on `PicoPartState` needs
+  the new member; `pico_agent_cases.json` gains `contradicted_quotes`.
 - **An unparseable reply is retried with a correction, not re-sent** (#717,
   the maintainer's choice after PR #715's review). Both languages re-sent the
   identical request, so at temperature 0 a retry usually repeated the reply it

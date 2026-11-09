@@ -64,6 +64,7 @@ from bmlib.quality import (
     PICO_PARTS,
     PicoAgent,
     PicoCitation,
+    PicoContradictedQuote,  # (unreleased, #647)
     PicoError,
     PicoErrorKind,
     PicoExtraction,
@@ -948,6 +949,8 @@ for name in ("population", "intervention", "comparison", "outcome"):
     part = getattr(pico, name)
     if part.state is PicoPartState.UNVERIFIED:
         print(f"Unsure: the model could not reproduce {name} from the text")
+    elif part.state is PicoPartState.CONTRADICTED:
+        print(f"Warning: the model misreported {name}:", part.quotes_contradicted)
     print(part.description, [(c.start, c.end) for c in part.citations])
 ```
 
@@ -990,9 +993,10 @@ extract_prepared(prepared: PicoPrepared, *, min_similarity: float) -> PicoExtrac
 |---|---|
 | `VERIFIED` | At least one of the model's quotes was found. `citations` holds the paper's spans; any quotes not found are kept verbatim in `quotes_not_found`, so an app can say *"1 quote could not be found in the paper"*. |
 | `UNVERIFIED` | The model described the part but none of its quotes was found, or it gave none. **The `description` is kept**: show it under an *Unsure* label and let the reader decide. |
+| `CONTRADICTED` | *(unreleased, #647)* The model described the part, none of its quotes was found, and at least one is the paper's own passage with a number, a negation or a direction changed (`find_passage` rejected it as a contradiction, #632). The model misreported the paper rather than failing to quote it, so show it apart from *Unsure*. `quotes_contradicted` holds each such quote with its reason. |
 | `NOT_REPORTED` | The model says the paper does not state this part. An honest absence, needing no quote, and *(unreleased, #618)* its `description` may be blank (`null` or absent reads as `""`). A single-arm study's comparison is *reported* ("no comparison group", with its quote). *(unreleased, #577)* Quotes given beside `reported: false` are still checked: one the paper holds makes the part `VERIFIED` (the model contradicted itself and the paper backs the part, so a blank description is then refused and asked again), and the rest stay in `quotes_not_found` and `quotes_dropped`. |
 
-`PicoPart` carries `description`, `state`, `confidence` (clamped to 0–1, `None` when unreadable), `citations` (`PicoCitation`: `start`, `end`, `text`, `similarity`, `exact`), `quotes_not_found` and `quotes_dropped` (quotes that were not usable text: not a string, blank, or a `quotes` value that was neither a list nor a string; *(unreleased, #577)* a bare string reads as a list of one).
+`PicoPart` carries `description`, `state`, `confidence` (clamped to 0–1, `None` when unreadable), `citations` (`PicoCitation`: `start`, `end`, `text`, `similarity`, `exact`), `quotes_not_found`, *(unreleased, #647)* `quotes_contradicted` (`PicoContradictedQuote`: `quote`, and `contradiction`, a `PassageContradiction`: `NUMBER`, `NEGATION` or `DIRECTION`; on a part of any state, and never also in `quotes_not_found`; a stored record without the key reads as empty) and `quotes_dropped` (quotes that were not usable text: not a string, blank, or a `quotes` value that was neither a list nor a string; *(unreleased, #577)* a bare string reads as a list of one).
 
 `PicoExtraction` adds `study_type` and `sample_size` (plain strings, not verified; *(unreleased, #578)* an integer `sample_size` reply is kept as its digits, `150` → `"150"`, where a float or a `bool` is unstated) and `overall_confidence`: the mean of the confidences of the parts that are reported and carry one, so a correctly identified absence does not pull it down; `None` when none does. **Nothing is discarded for low confidence**, unlike upstream's 0.5 cut.
 

@@ -57,6 +57,7 @@ from bmlib.quality.manager import QualityManager
 from bmlib.quality.pico_agent import PICO_PARTS, PicoAgent, verify_quotes
 from bmlib.quality.pico_models import (
     PicoCitation,
+    PicoContradictedQuote,
     PicoError,
     PicoErrorKind,
     PicoExtraction,
@@ -99,6 +100,7 @@ __all__ = [
     "PICO_PARTS",
     "PicoAgent",
     "PicoCitation",
+    "PicoContradictedQuote",
     "PicoError",
     "PicoErrorKind",
     "PicoExtraction",
