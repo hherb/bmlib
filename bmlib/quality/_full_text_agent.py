@@ -58,6 +58,15 @@ _T = TypeVar("_T")
 #: How much of the title names the paper in a log line or a condensation label.
 LABEL_CHARS = 60
 
+#: Sampling temperature of every full-text agent (Rust's ``DEFAULT_TEMPERATURE``).
+DEFAULT_TEMPERATURE = 0.1
+
+#: The reply's output ceiling (Rust's ``DEFAULT_MAX_TOKENS``).
+DEFAULT_MAX_TOKENS = 4096
+
+#: ``chat_json``'s attempts per question (Rust's ``DEFAULT_MAX_RETRIES``).
+DEFAULT_MAX_RETRIES = 3
+
 
 class AgentFailure(Enum):
     """The ways a full-text agent's call fails, before an agent names them its own."""
@@ -140,6 +149,7 @@ class _FullTextAgent(BaseAgent):
         template_engine: Unused; accepted as every agent does.
         temperature: Sampling temperature.
         max_tokens: The reply's output ceiling.
+        max_retries: ``chat_json``'s attempts per question.
         condense_config: The budget beyond which text is condensed first.
         num_ctx: The window sent with every request (Ollama); ``None`` sends none.
         stop: Read before every request; once true no request is sent.
@@ -153,14 +163,16 @@ class _FullTextAgent(BaseAgent):
         llm: LLMClient,
         model: str,
         template_engine: TemplateEngine | None = None,
-        temperature: float = 0.1,
-        max_tokens: int = 4096,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         condense_config: ProcessingConfig | None = None,
         num_ctx: int | None = None,
         stop: Stop | None = None,
         condense_progress: Any = None,
         condenser: QueryCondenser | None = None,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
+        self.max_retries = max_retries
         if num_ctx is not None and (
             isinstance(num_ctx, bool)
             or not isinstance(num_ctx, int)
@@ -259,7 +271,12 @@ class _FullTextAgent(BaseAgent):
         for attempt in range(_READ_ATTEMPTS):
             self._raise_if_stopped()
             try:
-                data = self.chat_json(messages, retry_context=label, require_dict=True)
+                data = self.chat_json(
+                    messages,
+                    max_retries=self.max_retries,
+                    retry_context=label,
+                    require_dict=True,
+                )
             except ChatStoppedError as exc:
                 raise self._error(AgentFailure.STOPPED, STOPPED_MESSAGE) from exc
             except _NOT_A_REQUEST_FAILURE:

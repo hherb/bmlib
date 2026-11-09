@@ -33,7 +33,11 @@ use std::sync::atomic::AtomicBool;
 
 use serde_json::{json, Value};
 
+use crate::context_processor::ProcessingConfig;
 use crate::quality::agent_chat::JsonChat;
+use crate::quality::cochrane_assessor::{
+    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+};
 use crate::quality::design_agent::{DesignAgent, DesignProposal, ProposalError, QueryCondenser};
 use crate::quality::evidence_ladder::{
     build_ladder, paper_weight, start_level, EvidenceLadder, LadderSettings,
@@ -49,6 +53,37 @@ const STATUS_NOT_COVERED: &str = "not_covered";
 const STATUS_NO_PRIMARY_OUTCOME: &str = "no_primary_outcome";
 /// Wire `status` of a trial taken all the way through.
 const STATUS_ASSESSED: &str = "assessed";
+
+/// How every step of [`assess_unattended`] asks the model: the options the
+/// design, outcome and RoB 2 agents each take, passed to all three.
+///
+/// `num_ctx` is not here: it belongs to the [`JsonChat`] every step shares
+/// (`LlmChat::with_num_ctx`). Python's `assess_unattended` takes these as
+/// keyword arguments, `num_ctx` among them.
+#[derive(Debug, Clone)]
+pub struct AgentOptions {
+    /// Sampling temperature.
+    pub temperature: f64,
+    /// The reply's output ceiling.
+    pub max_tokens: i64,
+    /// `chat_json`'s attempts per question.
+    pub max_retries: usize,
+    /// The budget beyond which a step condenses the paper first.
+    pub condense_config: ProcessingConfig,
+}
+
+impl Default for AgentOptions {
+    /// The agents' own defaults.
+    fn default() -> Self {
+        AgentOptions {
+            temperature: DEFAULT_TEMPERATURE,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            max_retries: DEFAULT_MAX_RETRIES,
+            condense_config: ProcessingConfig::default()
+                .with_max_context_chars(DEFAULT_CONDENSE_THRESHOLD_CHARS),
+        }
+    }
+}
 
 /// Why the pipeline ended without a result: the step's own error.
 #[derive(Debug, Clone, PartialEq)]
@@ -327,8 +362,8 @@ fn any_condensed(design: &DesignProposal, outcomes: &OutcomeProposal, run: &Rob2
 
 /// Take one paper from full text to its evidence weight, with nobody confirming.
 ///
-/// Every step uses `chat`, the optional `condenser` and `stop`; `text`'s
-/// citation offsets are code points into it exactly as passed.
+/// Every step uses `chat`, the optional `condenser`, `stop` and `options`;
+/// `text`'s citation offsets are code points into it exactly as passed.
 ///
 /// # Errors
 ///
@@ -339,12 +374,17 @@ pub fn assess_unattended(
     mut condenser: Option<&mut dyn QueryCondenser>,
     stop: Option<&AtomicBool>,
     settings: &LadderSettings,
+    options: &AgentOptions,
     title: &str,
     text: &str,
     min_similarity: f64,
 ) -> Result<EvidenceWeight, EvidenceWeightError> {
     let design = {
-        let mut agent = DesignAgent::new(&mut *chat);
+        let mut agent = DesignAgent::new(&mut *chat)
+            .with_temperature(options.temperature)
+            .with_max_tokens(options.max_tokens)
+            .with_max_retries(options.max_retries)
+            .with_condense_config(options.condense_config.clone());
         if let Some(stop) = stop {
             agent = agent.with_stop(stop);
         }
@@ -359,7 +399,11 @@ pub fn assess_unattended(
     };
 
     let outcomes = {
-        let mut agent = OutcomeAgent::new(&mut *chat);
+        let mut agent = OutcomeAgent::new(&mut *chat)
+            .with_temperature(options.temperature)
+            .with_max_tokens(options.max_tokens)
+            .with_max_retries(options.max_retries)
+            .with_condense_config(options.condense_config.clone());
         if let Some(stop) = stop {
             agent = agent.with_stop(stop);
         }
@@ -373,7 +417,11 @@ pub fn assess_unattended(
     }
 
     let run = {
-        let mut agent = Rob2Agent::new(&mut *chat);
+        let mut agent = Rob2Agent::new(&mut *chat)
+            .with_temperature(options.temperature)
+            .with_max_tokens(options.max_tokens)
+            .with_max_retries(options.max_retries)
+            .with_condense_config(options.condense_config.clone());
         if let Some(stop) = stop {
             agent = agent.with_stop(stop);
         }
@@ -459,10 +507,12 @@ mod tests {
     }
 
     /// Answers each request with the next reply; sets `stop` at request `stop_at`.
+    /// Records each request's sampling as `(temperature, max_tokens, max_retries)`.
     struct Scripted<'s> {
         replies: Vec<Value>,
         sent: usize,
         stop: Option<(&'s AtomicBool, usize)>,
+        sampling: Vec<(f64, i64, usize)>,
     }
 
     impl<'s> Scripted<'s> {
@@ -471,6 +521,7 @@ mod tests {
                 replies,
                 sent: 0,
                 stop: None,
+                sampling: Vec::new(),
             }
         }
     }
@@ -479,11 +530,12 @@ mod tests {
         fn chat_json(
             &mut self,
             _messages: &[LLMMessage],
-            _temperature: f64,
-            _max_tokens: i64,
-            _max_retries: usize,
+            temperature: f64,
+            max_tokens: i64,
+            max_retries: usize,
             _require_dict: bool,
         ) -> Result<ChatJsonOutcome, ChatJsonError> {
+            self.sampling.push((temperature, max_tokens, max_retries));
             self.sent += 1;
             if let Some((stop, at)) = self.stop {
                 if self.sent == at {
@@ -508,6 +560,7 @@ mod tests {
             None,
             None,
             &LadderSettings::default(),
+            &AgentOptions::default(),
             "A trial",
             text,
             SIM,
@@ -578,6 +631,7 @@ mod tests {
             None,
             Some(&stop),
             &LadderSettings::default(),
+            &AgentOptions::default(),
             "A trial",
             &text(),
             SIM,
@@ -707,6 +761,7 @@ mod tests {
             Some(&mut condenser),
             None,
             &LadderSettings::default(),
+            &AgentOptions::default(),
             "A trial",
             &big,
             SIM,
@@ -714,6 +769,49 @@ mod tests {
         .expect("result");
         assert!(assessed(result).2);
         assert_eq!(condenser.0.len(), 2 + 5);
+    }
+
+    /// Records the budget of every condensation it is asked for.
+    struct Budgets(Vec<usize>);
+
+    impl QueryCondenser for Budgets {
+        fn condense(
+            &mut self,
+            query: &str,
+            text: &str,
+            label: &str,
+            config: &ProcessingConfig,
+        ) -> crate::context_processor::ProcessingResult {
+            self.0.push(config.max_context_chars);
+            Condenser(Vec::new()).condense(query, text, label, config)
+        }
+    }
+
+    #[test]
+    fn every_option_reaches_all_three_steps() {
+        let options = AgentOptions {
+            temperature: 0.4,
+            max_tokens: 777,
+            max_retries: 2,
+            condense_config: ProcessingConfig::default().with_max_context_chars(100),
+        };
+        let mut condenser = Budgets(Vec::new());
+        let mut chat = Scripted::new(one_outcome_replies());
+        let result = assess_unattended(
+            &mut chat,
+            Some(&mut condenser),
+            None,
+            &LadderSettings::default(),
+            &options,
+            "A trial",
+            &text(),
+            SIM,
+        )
+        .expect("result");
+        assert!(assessed(result).2);
+        // Design, outcomes, then D1-D5: every step condensed at the small budget.
+        assert_eq!(condenser.0, vec![100; 2 + 5]);
+        assert_eq!(chat.sampling, vec![(0.4, 777, 2); 2 + 5]);
     }
 
     fn parts() -> (DesignProposal, OutcomeProposal, Rob2Run) {

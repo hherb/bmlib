@@ -24,6 +24,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents.base import BaseAgent
+from bmlib.context_processor import ProcessingConfig
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.design_agent import ProposalError, ProposalErrorKind
 from bmlib.quality.evidence_ladder import EvidenceLadder, LadderSettings, Level
@@ -225,6 +227,37 @@ class TestAssessed:
         assert isinstance(result, Assessed)
         assert result.condensed is True
         assert len(digest.queries) == 2 + 5
+
+    def test_every_option_reaches_all_three_steps(self) -> None:
+        budgets: list[int] = []
+
+        class Recording(ScriptedCondenser):
+            def condense(self, query: str, text: str, label: str, config: Any, **kw: Any) -> Any:
+                budgets.append(config.max_context_chars)
+                return super().condense(query, text, label, config, **kw)
+
+        original = BaseAgent.chat_json
+        with patch.object(BaseAgent, "chat_json", autospec=True, side_effect=original) as chat_json:
+            result, chat = run(
+                design(),
+                {"primary_outcomes": [outcome("Mortality")]},
+                *rob2_replies(),
+                condenser=Recording(TEXT),
+                temperature=0.4,
+                max_tokens=777,
+                max_retries=2,
+                condense_config=ProcessingConfig(max_context_chars=100),
+                num_ctx=8192,
+            )
+        assert isinstance(result, Assessed) and result.condensed is True
+        # Design, outcomes, then D1-D5: every step condensed at the small budget.
+        assert budgets == [100] * (2 + 5)
+        assert chat.call_count == 2 + 5
+        for call in chat.call_args_list:
+            assert call.kwargs["temperature"] == 0.4
+            assert call.kwargs["max_tokens"] == 777
+            assert call.kwargs["num_ctx"] == 8192
+        assert [c.kwargs["max_retries"] for c in chat_json.call_args_list] == [2] * (2 + 5)
 
 
 class TestCondensedIfAnyStepWas:

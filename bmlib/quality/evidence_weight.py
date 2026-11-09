@@ -36,9 +36,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from bmlib.context_processor import ProcessingConfig
 from bmlib.llm.client import LLMClient
 from bmlib.llm.stream import Stop
-from bmlib.quality._full_text_agent import QueryCondenser
+from bmlib.quality._full_text_agent import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
+    QueryCondenser,
+)
 from bmlib.quality.design_agent import DesignAgent, DesignProposal, ProposalError, _wire
 from bmlib.quality.evidence_ladder import (
     EvidenceLadder,
@@ -289,6 +295,11 @@ def assess_unattended(
     min_similarity: float,
     stop: Stop | None = None,
     condenser: QueryCondenser | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    condense_config: ProcessingConfig | None = None,
+    num_ctx: int | None = None,
 ) -> EvidenceWeight:
     """Take one paper from full text to its evidence weight, with nobody confirming.
 
@@ -301,6 +312,14 @@ def assess_unattended(
         min_similarity: How close a quote must be to a span of *text*.
         stop: Read before every request; once true the run ends.
         condenser: Condenses an oversized paper; defaults to the model itself.
+        temperature: Sampling temperature of every step.
+        max_tokens: The reply's output ceiling in every step.
+        max_retries: ``chat_json``'s attempts per question in every step.
+        condense_config: The budget beyond which a step condenses the paper;
+            ``None`` is the agents' default.
+        num_ctx: The window sent with every request (Ollama); ``None`` sends none.
+
+    Every option reaches all three agents (design, outcomes, RoB 2).
 
     Returns:
         :class:`NotCovered` (not a parallel-group RCT: one request made),
@@ -309,10 +328,18 @@ def assess_unattended(
     Raises:
         EvidenceWeightError: A step could not be made at all (empty text, bad
             ``min_similarity``, stop, an unreadable proposal), wrapping its own error.
-        ValueError: The model's provider is unknown.
+        ValueError: The model's provider is unknown, or *num_ctx* is out of range.
         ImportError: The provider's SDK is not installed.
     """
-    kwargs: dict[str, Any] = {"stop": stop, "condenser": condenser}
+    kwargs: dict[str, Any] = {
+        "stop": stop,
+        "condenser": condenser,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "max_retries": max_retries,
+        "condense_config": condense_config,
+        "num_ctx": num_ctx,
+    }
     try:
         design = DesignAgent(llm_client, model, **kwargs).propose(
             title, text, min_similarity=min_similarity

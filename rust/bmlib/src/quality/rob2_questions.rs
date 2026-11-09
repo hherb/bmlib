@@ -404,7 +404,10 @@ mod tests {
                 usize::from(conditional.contains(question)),
                 "{question}"
             );
-            assert!(applies.iter().all(|l| l.contains("answer NA")), "{question}");
+            assert!(
+                applies.iter().all(|l| l.contains("answer NA")),
+                "{question}"
+            );
         }
     }
 
