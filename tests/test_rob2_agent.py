@@ -28,6 +28,7 @@ import pytest
 from bmlib.citations import PassageContradiction
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality._condense import CondensationRefusedError
 from bmlib.quality.evidence_ladder import EffectScale, ReportedResult
 from bmlib.quality.outcome_agent import ProposedOutcome
 from bmlib.quality.pico_models import PicoContradictedQuote
@@ -496,6 +497,29 @@ class TestTheAgent:
         assert all(assessed(d).condensed for d in domains)
         # Quotes are verified against the original text, not the digest.
         assert [c.text for c in assessed(run.study).answers["1.1"].citations] == [RANDOM]
+
+    def test_a_failed_condensation_fails_its_domain_once_and_is_not_retried(self) -> None:
+        class Refusing(ScriptedCondenser):
+            def condense(self, query: str, *args: Any, **kwargs: Any) -> Any:
+                self.queries.append(query)
+                raise CondensationRefusedError("the digest does not fit")
+
+        text = TEXT + " " + "Filler sentence about nothing. " * 20
+        condenser = Refusing("unused")
+        agent = make_agent(
+            condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
+        )
+
+        run = agent.assess("A trial", text, [OUTCOME, SECOND], min_similarity=SIM)
+
+        # One attempt per domain, cached for the second outcome; no question is sent.
+        assert condenser.queries == [query for _, query in ROB2_CONDENSE_QUERIES]
+        agent.llm.chat.assert_not_called()
+        domains = [run.study] + [d for o in run.outcomes for d in o.domains]
+        assert all(
+            isinstance(d, DomainFailed) and "could not be condensed" in d.reason for d in domains
+        )
+        assert [o.overall for o in run.outcomes] == [None, None]
 
     def test_a_paper_that_fits_is_sent_whole(self) -> None:
         agent = make_agent(*low_run())

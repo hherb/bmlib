@@ -12,7 +12,10 @@ All notable changes to bmlib are documented here. The format is based on
   piece 6). `assess_unattended` (`bmlib/quality/evidence_weight.py`,
   `rust/bmlib/src/quality/evidence_weight.rs`) chains the design proposal, the
   primary-outcome proposal, RoB 2 over all outcomes, the ladder per outcome and
-  the paper's weight, accepting the machine's proposals as they come. A design
+  the paper's weight, accepting the machine's proposals as they come. Every
+  step gets the same temperature, `max_tokens`, `max_retries` and condensation
+  budget (Rust `AgentOptions`, whose `Default` is the agents' own; Python keyword
+  arguments, `num_ctx` among them; Rust's `num_ctx` is the chat's). A design
   that is not a parallel-group RCT ends as `NotCovered` after one request; a
   trial with no primary outcome as `NoPrimaryOutcome`; otherwise `Assessed`
   holds one `AssessedOutcome` per outcome, whose `ladder` is `None` with a
@@ -25,7 +28,12 @@ All notable changes to bmlib are documented here. The format is based on
   ladder version or settings that do not validate. `EvidenceWeightError` wraps the
   step's own `ProposalError` / `Rob2RunError`. The result has `to_dict` /
   `to_json` and a checked `evidence_weight_from_dict` / `EvidenceWeight::from_json`;
-  Python gains `EvidenceLadder.from_wire` for it.
+  Python gains `EvidenceLadder.from_wire` for it. Contract:
+  `tests/fixtures/evidence_weight.json`, written by `scripts/make_evidence_weight.py`:
+  the model's replies for each status (with a ladder, a refused result and a
+  failed domain) and the result both pipelines make of them, plus wire-form
+  refusals. `bmlib.quality` now exports the evidence-weight names Rust's
+  `quality` module does.
 
 - **The RoB 2 assessor** (StudyAnalyzer evidence weight, piece 4).
   `Rob2Agent` (`bmlib/quality/rob2_agent.py`, `rust/bmlib/src/quality/rob2_agent.rs`)

@@ -90,6 +90,10 @@ DOMAINS_ALL: tuple[Domain, ...] = tuple(Domain)
 Answers = Mapping[str, Answer]
 """Question id such as ``"2.3"`` to its answer; a question not asked is absent."""
 
+ESCALATION_CONCERNS = 2
+"""How many domains with some concerns, with none High, force the escalation
+decision (Rust's ``ESCALATION_CONCERNS``)."""
+
 _QUESTIONS: dict[Domain, tuple[str, ...]] = {
     Domain.D1: ("1.1", "1.2", "1.3"),
     Domain.D2: ("2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7"),
@@ -282,7 +286,7 @@ def needs_escalation_decision(domains: Sequence[Judgement]) -> bool:
     """
     _check_domains(domains)
     return Judgement.HIGH not in domains and (
-        sum(d is Judgement.SOME_CONCERNS for d in domains) >= 2
+        sum(d is Judgement.SOME_CONCERNS for d in domains) >= ESCALATION_CONCERNS
     )
 
 

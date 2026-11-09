@@ -47,7 +47,21 @@ from bmlib.quality.data_models import (
     QualityAssessment,
     QualityFilter,
     QualityTier,
+    RctLayout,
     StudyDesign,
+)
+from bmlib.quality.design_agent import (
+    DESIGN_CONDENSE_QUERY,
+    DESIGN_PROMPT_VERSION,
+    DESIGN_SYSTEM_PROMPT,
+    DESIGN_TASK_PROMPT,
+    DesignAgent,
+    DesignProposal,
+    LlmQueryCondenser,
+    ProposalError,
+    ProposalErrorKind,
+    QueryCondenser,
+    read_design_reply,
 )
 from bmlib.quality.evidence_ladder import (
     LADDER_VERSION,
@@ -62,11 +76,31 @@ from bmlib.quality.evidence_ladder import (
     paper_weight,
     start_level,
 )
+from bmlib.quality.evidence_weight import (
+    Assessed,
+    AssessedOutcome,
+    EvidenceWeight,
+    EvidenceWeightError,
+    NoPrimaryOutcome,
+    NotCovered,
+    assess_unattended,
+    evidence_weight_from_dict,
+)
 from bmlib.quality.extractors import (
     extract_sample_size_dimension,
     extract_study_type,
 )
 from bmlib.quality.manager import QualityManager
+from bmlib.quality.outcome_agent import (
+    OUTCOME_CONDENSE_QUERY,
+    OUTCOME_PROMPT_VERSION,
+    OUTCOME_SYSTEM_PROMPT,
+    OUTCOME_TASK_PROMPT,
+    OutcomeAgent,
+    OutcomeProposal,
+    ProposedOutcome,
+    read_outcome_reply,
+)
 from bmlib.quality.pico_agent import PICO_PARTS, PicoAgent, verify_quotes
 from bmlib.quality.pico_models import (
     PicoCitation,
@@ -79,9 +113,31 @@ from bmlib.quality.pico_models import (
     PicoPrepared,
     PicoSuitability,
 )
+from bmlib.quality.rob2_agent import (
+    NOT_APPLICABLE,
+    ROB2_DOMAIN_PROMPT,
+    ROB2_SYSTEM_PROMPT,
+    DomainAssessment,
+    DomainFailed,
+    DomainResult,
+    Escalation,
+    MachineAnswer,
+    OutcomeRob2,
+    Rob2Agent,
+    Rob2Run,
+    Rob2RunError,
+    Rob2RunErrorKind,
+    domain_prompt,
+    escalation_message,
+    read_domain_reply,
+    read_escalation_reply,
+    rob2_overall,
+)
 from bmlib.quality.rob2_algorithm import (
+    DOMAINS_ALL,
     ROB2_ALGORITHM_VERSION,
     Answer,
+    Answers,
     Domain,
     Judgement,
     Rob2Error,
@@ -90,6 +146,7 @@ from bmlib.quality.rob2_algorithm import (
     domain_judgement,
     needs_escalation_decision,
     overall_judgement,
+    questions,
 )
 from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
 
@@ -134,7 +191,7 @@ __all__ = [
     "PicoPrepared",
     "PicoSuitability",
     "verify_quotes",
-    # The RoB 2 decision rules
+    # The evidence ladder and the number
     "LADDER_VERSION",
     "EffectScale",
     "EvidenceLadder",
@@ -146,8 +203,11 @@ __all__ = [
     "build_ladder",
     "paper_weight",
     "start_level",
+    # The RoB 2 decision rules
+    "DOMAINS_ALL",
     "ROB2_ALGORITHM_VERSION",
     "Answer",
+    "Answers",
     "Domain",
     "Judgement",
     "Rob2Error",
@@ -156,4 +216,55 @@ __all__ = [
     "domain_judgement",
     "needs_escalation_decision",
     "overall_judgement",
+    "questions",
+    # The trial layout and the design proposal
+    "RctLayout",
+    "DESIGN_CONDENSE_QUERY",
+    "DESIGN_PROMPT_VERSION",
+    "DESIGN_SYSTEM_PROMPT",
+    "DESIGN_TASK_PROMPT",
+    "DesignAgent",
+    "DesignProposal",
+    "LlmQueryCondenser",
+    "ProposalError",
+    "ProposalErrorKind",
+    "QueryCondenser",
+    "read_design_reply",
+    # Primary outcomes and their results
+    "OUTCOME_CONDENSE_QUERY",
+    "OUTCOME_PROMPT_VERSION",
+    "OUTCOME_SYSTEM_PROMPT",
+    "OUTCOME_TASK_PROMPT",
+    "OutcomeAgent",
+    "OutcomeProposal",
+    "ProposedOutcome",
+    "read_outcome_reply",
+    # The RoB 2 assessor
+    "NOT_APPLICABLE",
+    "ROB2_DOMAIN_PROMPT",
+    "ROB2_SYSTEM_PROMPT",
+    "DomainAssessment",
+    "DomainFailed",
+    "DomainResult",
+    "Escalation",
+    "MachineAnswer",
+    "OutcomeRob2",
+    "Rob2Agent",
+    "Rob2Run",
+    "Rob2RunError",
+    "Rob2RunErrorKind",
+    "domain_prompt",
+    "escalation_message",
+    "read_domain_reply",
+    "read_escalation_reply",
+    "rob2_overall",
+    # The unattended evidence-weight pipeline
+    "Assessed",
+    "AssessedOutcome",
+    "EvidenceWeight",
+    "EvidenceWeightError",
+    "NoPrimaryOutcome",
+    "NotCovered",
+    "assess_unattended",
+    "evidence_weight_from_dict",
 ]

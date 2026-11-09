@@ -32,6 +32,11 @@
 //! | `quality/study_classifier.py` | [`study_classifier`] | ported (Tier 2) |
 //! | `quality/quality_agent.py` | [`quality_agent`] | ported (Tier 3) |
 //! | `quality/cochrane_assessor.py` | [`cochrane_assessor`] | ported (Tier 4) |
+//! | `quality/rob2_algorithm.py` | [`rob2_algorithm`] | ported (evidence weight, piece 4a) |
+//! | `quality/evidence_ladder.py` | [`evidence_ladder`] | ported (evidence weight, piece 5) |
+//! | `quality/_full_text_agent.py` | [`full_text_agent`] | ported (evidence weight, pieces 1-4) |
+//! | `quality/design_agent.py` | [`design_agent`] | ported (evidence weight, pieces 1, 2) |
+//! | `quality/outcome_agent.py` | [`outcome_agent`] | ported (evidence weight, piece 3) |
 //! | `quality/rob2_questions.py` | [`rob2_questions`] | ported (evidence weight, piece 4) |
 //! | `quality/rob2_agent.py` | [`rob2_agent`] | ported (evidence weight, piece 4) |
 //! | `quality/evidence_weight.py` | [`evidence_weight`] | ported (evidence weight, piece 6) |
