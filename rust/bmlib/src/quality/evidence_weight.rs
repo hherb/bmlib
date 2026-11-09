@@ -176,6 +176,8 @@ impl AssessedOutcome {
 }
 
 /// What [`assess_unattended`] returns.
+// One value per paper, never held in bulk; boxing `Assessed` would only make matching on it clumsier.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvidenceWeight {
     /// The paper is not a parallel-group randomised trial; nothing more was asked.
@@ -387,6 +389,8 @@ fn any_condensed(design: &DesignProposal, outcomes: &OutcomeProposal, run: &Rob2
 ///
 /// [`EvidenceWeightError`] when a step could not be made at all (empty text,
 /// bad `min_similarity`, stop, an unreadable proposal), wrapping its own error.
+// The borrowed chat, condenser and stop cannot share a struct with the owned options.
+#[allow(clippy::too_many_arguments)]
 pub fn assess_unattended(
     chat: &mut dyn JsonChat,
     mut condenser: Option<&mut dyn QueryCondenser>,
