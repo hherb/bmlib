@@ -176,6 +176,18 @@ fn at_zero_a_source_sent_no_temperature_retries() {
     let value = chat_json(&mut source, 3, 0.0, Some(100), 4096, true).expect("retried");
     assert_eq!(value.value, json!({"a": 1}));
     assert_eq!(source.0.calls, 2);
+
+    // The two other wrong-shape sites: a clean array that was truncated, and
+    // a repaired array that was not.
+    for (first, stop) in [("[1]", "max_tokens"), ("[1, 2", "stop")] {
+        let mut source = NoTemperature(Script::new(vec![
+            Ok(response(first, Some(stop))),
+            Ok(response(r#"{"a": 1}"#, Some("stop"))),
+        ]));
+        let value = chat_json(&mut source, 3, 0.0, Some(100), 4096, true).expect("retried");
+        assert_eq!(value.value, json!({"a": 1}), "{first} / {stop}");
+        assert_eq!(source.0.calls, 2, "{first} / {stop}");
+    }
 }
 
 /// Above zero a retry may sample a shorter completion that fits, so truncation

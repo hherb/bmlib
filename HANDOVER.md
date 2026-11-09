@@ -78,6 +78,10 @@ Found on the way: OpenAI's reasoning models were never sent a temperature
 either. Pre-existing and left alone: Python counts a reasoning model only on
 the `openai` provider (`o\d`), Rust on any OpenAI-protocol one (`o1`/`o3`/`o4`
 prefixes), filed as **#730**. This branch is stacked on PR #728's.
+PR #729's review added Rust tests for `ClientSource`'s override and the
+two wrong-shape sites no test reached, and filed **#731**: `deepseek-reasoner`
+is sent a temperature it ignores, so the fail-fast still fires there (loud;
+the decision is whether the capability means "sent" or "greedy").
 
 ## Earlier, 2026-11-09: a defect in one condensation batch refuses the digest (#665, PR #728)
 
@@ -346,7 +350,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**115 open once PR #728 and this session's are merged (they settle #665 and #708)** (#726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**117 open once PR #728 and this session's are merged (they settle #665 and #708)** (#731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-09); #651 is #632's residual; #556–#726 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

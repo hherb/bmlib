@@ -27,7 +27,7 @@ All notable changes to bmlib are documented here. The format is based on
   temperature** (#708; both languages). A truncated or wrong-shape reply at
   temperature 0 raised at once, since greedy sampling repeats it; but
   Anthropic is sent no `temperature` since #705, and an OpenAI reasoning
-  model (o1/o3/o4) never was, so each samples at its API's default and a
+  model (o1, o3, …; the Rust rule differs, #730) never was, so each samples at its API's default and a
   retry may succeed. `chat_json` now takes the normal retries there, as above
   0. New: `BaseProvider.honours_temperature(model)` (`True`; `False` for
   Anthropic and, through `_is_reasoning_model`, an OpenAI reasoning model)

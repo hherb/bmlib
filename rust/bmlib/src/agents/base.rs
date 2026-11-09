@@ -314,9 +314,9 @@ pub trait ChatSource {
     fn correct_json(&mut self) {}
 
     /// Whether the request is sent its `temperature` (#708). One sent none
-    /// (Anthropic since #705, an OpenAI reasoning model) samples at the API's
-    /// default, so at temperature 0 [`chat_json`] retries as above zero rather
-    /// than calling a retry futile.
+    /// (Anthropic since #705, a reasoning model on the OpenAI protocol)
+    /// samples at the API's default, so at temperature 0 [`chat_json`] retries
+    /// as above zero rather than calling a retry futile.
     ///
     /// The default, `true`, keeps a source that cannot tell on the greedy rule.
     fn honours_temperature(&self) -> bool {
@@ -340,8 +340,8 @@ pub trait ChatSource {
 ///   and the call fails at once; above zero a retry may sample a shorter
 ///   completion that fits, so it is retried. So is a source that sends no
 ///   `temperature` ([`honours_temperature`](ChatSource::honours_temperature)
-///   false: Anthropic since #705, an OpenAI reasoning model), whose sampling is
-///   not greedy (#708).
+///   false: Anthropic since #705, a reasoning model on the OpenAI protocol),
+///   whose sampling is not greedy (#708).
 /// * **Wrong shape under `require_dict`** — the same argument: the same messages
 ///   at temperature 0 return the same array.
 /// * **Empty** or **unparseable** — always retried: both can be sampling noise.

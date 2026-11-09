@@ -307,7 +307,8 @@ class BaseAgent:
             require_dict: Demand a JSON object.  A response that parses to
                 anything else is retried like any other bad response — and,
                 at temperature 0, fails immediately for the same reason
-                truncation does.  The shape failure is reported separately
+                truncation does (where the model is sent its temperature,
+                #708).  The shape failure is reported separately
                 from "unparseable response": they are different diagnoses.
             **kwargs: Passed through to :meth:`chat`.
 
@@ -319,9 +320,9 @@ class BaseAgent:
             ChatJsonError: A ``ValueError`` subclass naming the cause —
                 :class:`ChatJsonTruncatedError`, :class:`ChatJsonWrongShapeError`,
                 :class:`ChatJsonEmptyError` or :class:`ChatJsonUnparseableError`.  An
-                immediate raise (truncation or a wrong shape at temperature 0)
-                names its own cause; one after the retries are spent names the
-                last attempt's.
+                immediate raise (truncation or a wrong shape at temperature 0,
+                where the model is sent its temperature) names its own cause;
+                one after the retries are spent names the last attempt's.
             ChatStoppedError: :meth:`stop_requested` answered true before a
                 retry; it was not sent, nor waited for.
         """
