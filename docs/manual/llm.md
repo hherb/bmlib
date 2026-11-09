@@ -281,12 +281,12 @@ Provider instances are created lazily on first use and cached for the lifetime o
 Model strings use the format `"provider:model_name"`:
 
 ```
-"anthropic:claude-sonnet-4-20250514"
+"anthropic:claude-sonnet-5-5"
 "openai:gpt-4o"
 "ollama:medgemma4B_it_q8"
 "deepseek:deepseek-chat"
 "mistral:mistral-large-latest"
-"gemini:gemini-2.0-flash"
+"gemini:gemini-flash-lite-latest"
 ```
 
 If no provider prefix is given, `default_provider` is used. If no model is specified at all, the provider's default model is used.
@@ -697,7 +697,7 @@ Support is gated by a provider-name allowlist in `bmlib.llm.client` (`anthropic`
 from bmlib.llm import supports_tools
 
 supports_tools("ollama")                              # True
-supports_tools("anthropic:claude-sonnet-4-20250514")  # full model strings work too
+supports_tools("anthropic:claude-sonnet-5-5")  # full model strings work too
 supports_tools("some_custom_provider")                # False
 ```
 
@@ -720,7 +720,7 @@ weather_tool = LLMToolDefinition(
 
 response = client.chat(
     messages=[LLMMessage(role="user", content="What's the weather in Oslo?")],
-    model="anthropic:claude-sonnet-4-20250514",
+    model="anthropic:claude-sonnet-5-5",
     tools=[weather_tool],
 )
 
@@ -756,7 +756,7 @@ messages = [LLMMessage(role="user", content="What is 17 plus 25?")]
 while True:
     response = client.chat(
         messages=messages,
-        model="anthropic:claude-sonnet-4-20250514",
+        model="anthropic:claude-sonnet-5-5",
         tools=[add_tool],
     )
 
@@ -1589,7 +1589,7 @@ def merge(parts: list[str]) -> str:
         messages=[
             LLMMessage(role="user", content="Merge these summaries:\n\n" + "\n".join(parts))
         ],
-        model="anthropic:claude-sonnet-4-20250514",
+        model="anthropic:claude-sonnet-5-5",
     ).content
 
 overall = process_with_map_reduce(long_document, summarise, merge)
@@ -1701,7 +1701,7 @@ The *Context* columns below are the models' listing metadata, which may be a fal
 | Property | Value |
 |----------|-------|
 | Provider name | `anthropic` |
-| Default model | `claude-sonnet-4-20250514` |
+| Default model | `claude-sonnet-5-5` |
 | API key env var | `ANTHROPIC_API_KEY` |
 | Base URL | `https://api.anthropic.com` |
 | Is local | No |
@@ -1720,6 +1720,8 @@ The *Context* columns below are the models' listing metadata, which may be a fal
 | `claude-sonnet-4-5-20250929` | $3.00 | $15.00 | 200k |
 | `claude-3-5-haiku-20241022` | $1.00 | $5.00 | 200k |
 | `claude-3-haiku-20240307` | $0.25 | $1.25 | 200k |
+
+The default model, `claude-sonnet-5-5`, is not in this table yet (#733), so its cost is the fallback estimate, $3.00 / $15.00 (logged once at WARNING).
 
 ### OpenAI
 
@@ -1795,7 +1797,7 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | Property | Value |
 |----------|-------|
 | Provider name | `gemini` |
-| Default model | `gemini-2.0-flash` |
+| Default model | `gemini-flash-lite-latest` |
 | API key env var | `GEMINI_API_KEY` |
 | Base URL | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | Is local | No |
@@ -1813,6 +1815,8 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | `gemini-2.0-flash-lite` | $0.00 | $0.00 | 1M |
 | `gemini-1.5-pro` | $1.25 | $5.00 | 2M |
 | `gemini-1.5-flash` | $0.075 | $0.30 | 1M |
+
+The default model, `gemini-flash-lite-latest`, is not in this table yet (#733), so its cost is the unlogged fallback estimate, $1.00 / $3.00 — likely well above its real price.
 
 ### Ollama
 

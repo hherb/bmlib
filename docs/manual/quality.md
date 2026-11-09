@@ -349,7 +349,7 @@ class QualityManager:
 |-----------|------|---------|-------------|
 | `llm` | `LLMClient` | *(required)* | LLM client for Tier 2, Tier 3 and Tier 4 assessments. |
 | `classifier_model` | `str` | *(required)* | Model string for Tier 2 classification (cheap/fast, e.g. `"anthropic:claude-3-haiku-20240307"`). |
-| `assessor_model` | `str` | *(required)* | Model string for Tier 3 deep assessment *and* Tier 4 Cochrane assessment (capable, e.g. `"anthropic:claude-sonnet-4-20250514"`). One model parameter serves both — a second buys nothing until someone needs the two to differ. |
+| `assessor_model` | `str` | *(required)* | Model string for Tier 3 deep assessment *and* Tier 4 Cochrane assessment (capable, e.g. `"anthropic:claude-sonnet-5-5"`). One model parameter serves both — a second buys nothing until someone needs the two to differ. |
 | `template_engine` | `TemplateEngine \| None` | `None` | Optional template engine for custom prompts. |
 
 ---
@@ -405,7 +405,7 @@ llm = LLMClient()
 manager = QualityManager(
     llm=llm,
     classifier_model="anthropic:claude-3-haiku-20240307",
-    assessor_model="anthropic:claude-sonnet-4-20250514",
+    assessor_model="anthropic:claude-sonnet-5-5",
 )
 
 # Tier 1 only (instant, free)
@@ -839,7 +839,7 @@ from bmlib.quality import CochraneAssessor, collapse_risk_of_bias
 
 assessor = CochraneAssessor(
     llm=get_llm_client(),
-    model="anthropic:claude-sonnet-4-20250514",
+    model="anthropic:claude-sonnet-5-5",
 )
 
 assessment = assessor.assess(
@@ -903,7 +903,7 @@ from bmlib.quality import QualityFilter, QualityManager
 manager = QualityManager(
     llm=get_llm_client(),
     classifier_model="anthropic:claude-haiku-4-5-20251001",
-    assessor_model="anthropic:claude-sonnet-4-20250514",
+    assessor_model="anthropic:claude-sonnet-5-5",
 )
 
 result = manager.assess(

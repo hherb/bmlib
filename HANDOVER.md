@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PRs #728 (#665) and this session's (#708) open; PRs #727 (#647), #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-10 (**the next release is being prepared — read *Release plan* below first**; this session's PR (item 4) open; PRs #729 (#708), #728 (#665), #727 (#647), #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719-#721, #724, #727._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719-#721, #724, #727-#729._
 
 ## Release plan: Python 0.13.0 / Rust crate 0.4.0 (agreed 2026-11-09)
 
@@ -16,7 +16,7 @@ carries breaking changes in both languages (e.g. Rust `sync()` now returns
 `Result<SyncReport, SyncError>` and takes a clock). Tick items off here as
 their PRs merge; open a PR per item and stop — the maintainer merges.
 
-**Done**: #708 (this session's PR) and #665 (PR #728), both awaiting review; #647 (PR #727), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
+**Done**: #708 (PR #729), #665 (PR #728), #647 (PR #727), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
 `keychain-interop`), #607 + #444 (PR #721), #707 and #710 (PRs #711, #713).
 
 **Fix before the release** — each is in a feature that 0.12.0 did not ship,
@@ -29,14 +29,14 @@ so it is free to fix now and costs a breaking change later:
 2. ~~**#647**~~ (PR #727, merged) — a PICO quote rejected as a contradiction
    keeps its reason; a reported part with no citation and at least one
    such quote is `CONTRADICTED`.
-3. ~~**#708**~~ (this session's PR) and ~~**#665**~~ (PR #728), both decided
+3. ~~**#708**~~ (PR #729, merged) and ~~**#665**~~ (PR #728, merged), both decided
    by the maintainer on 2026-11-09: a provider capability, and refuse the
    digest. **Next is item 4.**
-4. **Live probes**: one real Anthropic `think=` call (#707/#710 were fixed
-   and closed without a live call on record), and **#681** — probe Google's
-   OpenAI-compatible Gemini endpoint, then fix Rust's
-   `…/v1beta/openai/v1/chat/completions` if Google's documented
-   `…/v1beta/openai/chat/completions` is the one that answers.
+4. ~~**Live probes**~~ (this session's PR, 2026-11-10): `think=` works live
+   in both languages on Sonnet/Haiku/Opus 5.5 (no change); the Anthropic and
+   Gemini **default models were retired** and are replaced; #681's both
+   paths answer, Rust moved to the documented one. **Next is the release
+   housekeeping below** (or the optional items first).
 
 **Optional, if time allows**: #694 (bmlib-ffi forwards no log records since
 #693), #495 (Rust JATS reader aborts on deep nesting), #722 (Rust `sync()`
@@ -65,66 +65,50 @@ and `bmlib-rehearse-release-gates` memories):
   before the release PR, since `release.yml` checks them only after the
   version is burned. Never approve the PyPI gate.
 
-## This session: `chat_json` retries at temperature 0 where no temperature is sent (#708, PR open)
+## This session: live probes before 0.13.0 (release item 4, PR open)
 
-The maintainer chose (2026-11-09) a provider capability. Python:
-`BaseProvider.honours_temperature(model)` (`True`; `False` for Anthropic,
-and for an OpenAI-compatible reasoning model via `_is_reasoning_model`) and
-`LLMClient.honours_temperature(model)`; `chat_json` asks it only when its
-temperature-0 shortcut would fire. Rust: defaulted
-`ChatSource::honours_temperature`, and `LlmClient::honours_temperature(&ChatRequest)`
-read off the protocol, held by a test to the body `chat_body` builds.
-Found on the way: OpenAI's reasoning models were never sent a temperature
-either. Pre-existing and left alone: Python counts a reasoning model only on
-the `openai` provider (`o\d`), Rust on any OpenAI-protocol one (`o1`/`o3`/`o4`
-prefixes), filed as **#730**. This branch is stacked on PR #728's.
-PR #729's review added Rust tests for `ClientSource`'s override and the
-two wrong-shape sites no test reached, and filed **#731**: `deepseek-reasoner`
-is sent a temperature it ignores, so the fail-fast still fires there (loud;
-the decision is whether the capability means "sent" or "greedy").
+Probed with the maintainer's keys (exported in `~/.zshrc`, which loads only in
+an interactive shell: run `zsh -ic '…'`). Findings:
 
-## Earlier, 2026-11-09: a defect in one condensation batch refuses the digest (#665, PR #728)
+- **`think=`**: Python and Rust both fill `thinking` on `claude-sonnet-5-5`
+  (`True`, `"high"`), `claude-haiku-5-5` and `claude-opus-5-5` (`"low"`).
+  Sonnet 5.5 reports adaptive only (`enabled` and `disabled` unsupported) and
+  is sent `{"type": "adaptive", "display": "summarized"}`. A trivial prompt
+  (17×23) gets no thinking block at all: adaptive skips it. Do not read an
+  empty trace on an easy prompt as a defect.
+- **Dead defaults** (both languages, 0.12.0 too): `claude-sonnet-4-20250514`
+  → 404, `gemini-2.0-flash` → 404. Now `claude-sonnet-5-5` and
+  `gemini-flash-lite-latest` (the maintainer's choice). Not replaced: the
+  pricing rows and Gemini's `FALLBACK_MODELS` still name retired models, so
+  the new defaults are costed at the fallback estimate (**#733**; Gemini's
+  $1/$3 likely overstates Flash-Lite, unlogged); OpenAI/DeepSeek/Mistral
+  defaults were not probed (no keys). PR #732's review also filed **#734**
+  (Rust's DeepSeek chat path has a `/v1` Python's SDK does not send).
+- **#681**: Google answers `…/v1beta/openai/chat/completions` and
+  `…/v1beta/openai/v1/chat/completions` alike (200). Rust's `chat_url` now
+  sends the documented one (the maintainer's choice); a test pins every
+  provider's chat URL. `gemini-3.8-flash`, which Google's own 404 suggests,
+  timed out at 180 s; `gemini-flash-latest` answered 503 (load).
 
-The maintainer chose (2026-11-09) to refuse the digest. `condense_text`
-raises `CondensationRefusedError` chained to the worst cause whenever that
-cause is a defect or an `ImportError`, PARTIAL or TRUNCATED as well as
-FAILED, so `PicoAgent` re-raises it and the Cochrane assessor returns `None`.
-Python only. The issue's premise that the harness kept no per-batch
-exceptions was stale: `batch_exceptions` came with #616.
+## Earlier, 2026-11-09 (all merged; the CHANGELOG entries are the argument)
 
-## Earlier, 2026-11-09: a contradicted PICO quote keeps its reason (#647, PR #727, merged)
-
-The maintainer chose (2026-11-09) a parallel list plus a state of its own:
-
-- `PicoPart.quotes_contradicted`: `PicoContradictedQuote(quote,
-  contradiction)` for each quote `find_passage` rejected as a contradiction
-  (#632), never also in `quotes_not_found`. A reported part with no citation
-  and at least one such quote is `PicoPartState.CONTRADICTED` (Rust
-  `Contradicted`); a `NOT_REPORTED` or `VERIFIED` part may carry them too.
-  `__post_init__` holds the state to the list.
-- Wire: `to_dict()` writes `quotes_contradicted`; `from_dict()` reads a
-  record without it (0.12.0's) as empty, true since 0.12.0 rejected no quote
-  this way. `verify_quotes` / Rust `QuoteCheck` gain the list as their third
-  member (**breaking**, in both CHANGELOGs). Oracle case
-  `contradicted_quotes` (both copies of `pico_agent_cases.json`).
-- **For StudyAnalyzer**: show `CONTRADICTED` apart from *Unsure* ("the model
-  misreported <part>"), and add the arm to any exhaustive `match`.
-- PR #727's review: Python's `PicoPart` now refuses a quote in both lists and
-  a member that is not a `PicoContradictedQuote`, and `PicoContradictedQuote`
-  refuses a non-text quote (Rust's public fields enforce nothing, as before).
-  The state ladder and the counted confidence are in `docs/DECISIONS.md`;
-  whether a misreported part's confidence should lift `overall_confidence`
-  is the maintainer's to revisit.
-
-## Earlier, 2026-11-09: an HTML page's parse bounded by its memory (#723, PR #724, merged)
-
-- N distinct `<b id=k>` left open in a closed `<div>`, then N `<div>x</div>`,
-  make html5ever build ~N² elements (91 KB = 4.6 GB). Python parses in a child
-  killed past `HTML_PARSE_MAX_BYTES` (1 GiB, `HtmlParseMemoryError`) or 120 s;
-  Rust counts created elements (`HtmlError::TooManyElements`, `HtmlError` now
-  `#[non_exhaustive]`). Unmeasured against real pages; filed **#725** (RSS
-  misses swapped/compressed pages) and **#726** (Rust's budget refuses a 1.2 KB
-  page Python converts). **For StudyAnalyzer**: match `HtmlError` with `_`.
+- **#708** (PR #729): `chat_json` retries at temperature 0 where no
+  temperature is sent — `honours_temperature(model)` in both languages
+  (`False` for Anthropic and OpenAI reasoning models). Filed **#730** (the two
+  languages' reasoning-model rules differ) and **#731** (`deepseek-reasoner`).
+- **#665** (PR #728, Python): a defect or `ImportError` in any condensation
+  batch raises `CondensationRefusedError`; `PicoAgent` re-raises, the
+  Cochrane assessor returns `None`.
+- **#647** (PR #727): `PicoPart.quotes_contradicted` and
+  `PicoPartState.CONTRADICTED` (Rust `Contradicted`); `verify_quotes` /
+  `QuoteCheck` gain a third member (**breaking**). **For StudyAnalyzer**: show
+  `CONTRADICTED` apart from *Unsure*, add the `match` arm. Whether a
+  misreported part's confidence lifts `overall_confidence` is the
+  maintainer's to revisit (`docs/DECISIONS.md`).
+- **#723** (PR #724): an HTML parse bounded by memory (Python child killed past
+  `HTML_PARSE_MAX_BYTES`, `HtmlParseMemoryError`; Rust
+  `HtmlError::TooManyElements`, now `#[non_exhaustive]`). Filed **#725**,
+  **#726**. **For StudyAnalyzer**: match `HtmlError` with `_`.
 
 ## Earlier, 2026-11-06 to 2026-11-08 (all merged; the CHANGELOG entries are the argument)
 

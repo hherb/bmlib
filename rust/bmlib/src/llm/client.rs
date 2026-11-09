@@ -196,7 +196,7 @@ pub fn provider_specs() -> BTreeMap<&'static str, ProviderSpec> {
             name: "anthropic",
             protocol: Protocol::Anthropic,
             base_url: "https://api.anthropic.com",
-            default_model: "claude-sonnet-4-20250514",
+            default_model: "claude-sonnet-5-5",
             api_key_env: Some("ANTHROPIC_API_KEY"),
             is_local: false,
         },
@@ -231,7 +231,7 @@ pub fn provider_specs() -> BTreeMap<&'static str, ProviderSpec> {
             // shell `generativelanguage.googleapis.com` is the native one, and a
             // request there with OpenAI's body is a 400.
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
-            default_model: "gemini-2.0-flash",
+            default_model: "gemini-flash-lite-latest",
             api_key_env: Some("GEMINI_API_KEY"),
             is_local: false,
         },
@@ -712,7 +712,15 @@ fn record_usage(target: &Target, response: &LLMResponse) {
 /// Build the URL a chat call is posted to.
 #[must_use]
 pub fn chat_url(target: &Target) -> String {
-    format!("{}{}", target.base_url, target.protocol.chat_path())
+    // Gemini's base already names its version (`…/v1beta/openai`); Google
+    // documents `…/v1beta/openai/chat/completions`, which Python's SDK sends.
+    // It answered the `/v1/…` path too on 2026-11-10, undocumented (#681).
+    let path = if target.provider == "gemini" {
+        "/chat/completions"
+    } else {
+        target.protocol.chat_path()
+    };
+    format!("{}{}", target.base_url, path)
 }
 
 /// Build the headers a chat call carries.

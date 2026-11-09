@@ -176,7 +176,7 @@ class AnthropicProvider(BaseProvider):
     @property
     def default_model(self) -> str:
         """Default model to use when none is specified."""
-        return "claude-sonnet-4-20250514"
+        return "claude-sonnet-5-5"
 
     # --- Client ---
 
@@ -261,7 +261,7 @@ class AnthropicProvider(BaseProvider):
             messages: Conversation messages. Supports tool-result
                 messages (``role="tool"``) and assistant messages with
                 ``tool_calls`` for multi-turn tool conversations.
-            model: Model identifier (e.g. ``"claude-sonnet-4-20250514"``).
+            model: Model identifier (e.g. ``"claude-sonnet-5-5"``).
             temperature: Accepted for the common provider signature and
                 **not sent** (#705): anthropic >= 1.0's ``create()`` takes no
                 such keyword, API version ``2026-10-21``, which anthropic

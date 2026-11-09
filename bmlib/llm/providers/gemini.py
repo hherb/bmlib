@@ -50,7 +50,7 @@ class GeminiProvider(OpenAICompatibleProvider):
 
     API_KEY_ENV_VAR = "GEMINI_API_KEY"
     DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    DEFAULT_MODEL = "gemini-2.0-flash"
+    DEFAULT_MODEL = "gemini-flash-lite-latest"
 
     MODEL_PRICING = {
         "gemini-2.0-flash": ModelPricing(input_cost=0.10, output_cost=0.40),

@@ -480,6 +480,25 @@ class TestLLMClientSingletonThreadSafety:
         assert len({id(r) for r in results}) == 1
 
 
+class TestDefaultModelsAnswer:
+    """The defaults a bare provider name means (release item 4's live probes).
+
+    ``claude-sonnet-4-20250514`` and ``gemini-2.0-flash`` answered 404 on
+    2026-11-10, so ``model="anthropic"`` / ``"gemini"`` failed; Rust's
+    ``provider_specs`` names the same two, in ``tests/llm_client.rs``.
+    """
+
+    def test_anthropic(self):
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        assert AnthropicProvider(api_key="k").default_model == "claude-sonnet-5-5"
+
+    def test_gemini(self):
+        from bmlib.llm.providers.gemini import GeminiProvider
+
+        assert GeminiProvider(api_key="k").default_model == "gemini-flash-lite-latest"
+
+
 class TestAnthropicFallbackPricingWarning:
     """Estimated pricing for unknown models must be visible, not silent."""
 

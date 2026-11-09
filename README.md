@@ -157,7 +157,7 @@ print(response.content)
 Model strings take the form `"provider:model_name"`, for example
 `"anthropic:claude-sonnet-5-5"`, `"openai:gpt-4o"`, `"ollama:qwen3:8b"`,
 `"deepseek:deepseek-chat"`, `"mistral:mistral-large-latest"` or
-`"gemini:gemini-2.0-flash"`. `bmlib.llm.providers.list_providers()` lists
+`"gemini:gemini-flash-lite-latest"`. `bmlib.llm.providers.list_providers()` lists
 the providers whose SDK is installed.
 
 ### Streaming

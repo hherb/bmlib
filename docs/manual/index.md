@@ -100,7 +100,7 @@ llm = LLMClient()
 manager = QualityManager(
     llm=llm,
     classifier_model="anthropic:claude-3-haiku-20240307",
-    assessor_model="anthropic:claude-sonnet-4-20250514",
+    assessor_model="anthropic:claude-sonnet-5-5",
 )
 
 assessment = manager.assess(
