@@ -26,8 +26,10 @@ All notable changes to bmlib are documented here. The format is based on
 - **The Anthropic and Gemini default models are ones that still answer**
   (found by release item 4's live probes, 2026-11-10; both languages).
   `claude-sonnet-4-20250514` answered 404 `not_found_error` and
-  `gemini-2.0-flash` 404 *"no longer available"*, so a bare provider name
-  (`model="anthropic"`, `"gemini"`) failed in 0.12.0 too. The defaults are
+  `gemini-2.0-flash` 404 *"no longer available"*, so a call naming no model
+  failed in 0.12.0 too (Python `"anthropic:"`, `"gemini:"`, or `model=None`
+  on the default provider; Rust a bare `"anthropic"`, `"gemini"` — the two
+  read a bare name differently, #567). The defaults are
   now `claude-sonnet-5-5` and Google's alias `gemini-flash-lite-latest`
   (the maintainer's choice; `gemini-flash-latest` answered 503 under load).
   The pricing tables and Gemini's fallback list are unchanged, so the new
@@ -37,6 +39,11 @@ All notable changes to bmlib are documented here. The format is based on
   on Sonnet 5.5 (adaptive, and `"high"`), Haiku 5.5 and Opus 5.5 (`"low"`)
   in both languages — adaptive thinking leaves it empty on a prompt too easy
   to think about (17×23), which is the model's choice, not the request.
+  The OpenAI and DeepSeek defaults answer in both languages (Python `gpt-4o`,
+  Rust `gpt-4o-mini`; `deepseek-chat`). Mistral's could not be settled:
+  `mistral-large-latest` answered 403 *"not available in your subscription
+  tier"* on the key probed, every Mistral chat 429, and the model listing
+  names `mistral-large-4` but no `-latest` alias for it.
 
 - **`chat_json` retries at temperature 0 where the model is sent no
   temperature** (#708; both languages). A truncated or wrong-shape reply at
