@@ -40,9 +40,11 @@ All notable changes to bmlib are documented here. The format is based on
   `overall` is `None` (not assessed); a failed escalation leaves `overall` `None`
   with `escalation_error`. Only a stop or refused input ends a run
   (`Rob2RunError`). A paper over the window is condensed per domain, for that
-  domain's query, and flagged `condensed`. The 22 questions are bmlib's own
-  wording (`rob2_questions`; RoB 2's guidance is CC BY-NC-ND 4.0 and is not
-  copied). Contracts: `tests/fixtures/rob2_replies.json` and
+  domain's query, and flagged `condensed`. The 22 questions and the escalation
+  prompt are bmlib's own (`rob2_questions`; RoB 2's guidance is CC BY-NC-ND 4.0
+  and is neither copied nor paraphrased): each written afresh from what the
+  question asks, as the question, when it applies (else `NA`), what to look for,
+  and one line per answer saying what counts as Y, PY, PN, N and NI. Contracts: `tests/fixtures/rob2_replies.json` and
   `tests/fixtures/rob2_run.json`, written by `scripts/make_rob2_fixtures.py`.
 - **Primary outcomes and their results** (StudyAnalyzer evidence weight, piece 3).
   `OutcomeAgent` (`bmlib/quality/outcome_agent.py`,

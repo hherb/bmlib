@@ -23,12 +23,14 @@ et al., 22 August 2019), for an individually randomised parallel-group trial
 and the effect of *assignment* to the interventions.  The question numbers are
 RoB 2's and :mod:`bmlib.quality.rob2_algorithm` holds its decision rules.
 
-The guidance is licensed CC BY-NC-ND 4.0, so none of its sentences are copied
-or edited here.  Each question is bmlib's own plain-language wording, written
-for a language model: one self-contained question per id that says what counts
-as Y, PY, PN, N and NI in this trial, and, for a question asked only on some
-branches, when it applies (otherwise the model answers ``NA``).  No question
-refers to another by number.
+The guidance is licensed CC BY-NC-ND 4.0, so none of its text is copied,
+edited or paraphrased here.  Each question was written afresh from what it
+asks, in bmlib's own structure and with bmlib's own examples, for a language
+model reading only the paper: the question itself; when it applies (for a
+question asked only on some branches; otherwise the model answers ``NA``);
+what to look for in the paper; then one line each saying what counts as Y,
+PY, PN, N and NI in this trial.  Every question stands alone: none refers to
+another by number.
 
 Rust's ``rust/bmlib/src/quality/rob2_questions.rs`` holds the same strings;
 ``tests/fixtures/rob2_replies.json`` (its ``question_texts`` section) pins both.
@@ -56,291 +58,459 @@ ROB2_PROMPT_VERSION = 1
 # --- Domain 1: the randomisation process ---
 
 Q_1_1 = """\
-Was the order in which participants were allocated to the groups produced by \
-a genuinely random method? Answer Y if the paper describes a random method: \
-computer-generated random numbers, a table of random numbers, minimisation, \
-drawing lots, tossing a coin, or shuffling cards or envelopes. Answer N if \
-allocation followed a predictable or non-random rule, such as alternation, \
-date of birth or admission, record numbers, the choice of clinicians or \
-participants, or whichever intervention happened to be available. Answer PY \
-or PN when the paper does not say outright but its details clearly point one \
-way. Answer NI if the paper only says the trial was randomised without saying \
-how."""
+Is the sequence that decided each participant's group random?
+What to look for: the paper's account of how the order of group assignment \
+was produced, in the methods, a supplement or a cited protocol.
+Y: the paper names a method with a genuine element of chance, such as a \
+sequence produced by statistical software (simple, blocked or stratified), \
+or minimisation, which counts as random here.
+PY: the paper does not name the method, but what it does say (for example \
+that a statistician independent of recruitment prepared the sequence in \
+advance) makes a chance-based method very likely.
+PN: the paper's account hints that assignment followed a rule someone could \
+predict, without saying so.
+N: assignment followed a rule other than chance: taking turns, the weekday \
+or week someone attended, the ward or clinic they came through, an \
+identification number, or what a clinician or the participant preferred.
+NI: the paper only calls the trial randomised and says nothing about how the \
+sequence was produced."""
 
 Q_1_2 = """\
-Were the people enrolling participants unable to know or foresee which group \
-the next participant would join until that participant had been enrolled and \
-assigned? Answer Y if allocation was handled by someone independent of \
-enrolment (for example a central telephone or web-based randomisation \
-service, or an independent pharmacy), or by envelopes that were opaque, \
-sealed and numbered in sequence, or identical numbered drug containers, \
-opened only once the participant was irreversibly assigned. Answer N if the \
-people enrolling, or the participants themselves, could know or predict the \
-next assignment (for example from an open list, or envelopes that were not \
-sealed and opaque). Answer PY or PN when the paper gives only part of this \
-detail. Answer NI if the paper says nothing about how the allocation was kept \
-hidden."""
+Was each participant's group kept hidden from the people recruiting \
+participants until that participant had been enrolled and the assignment \
+could no longer be changed?
+What to look for: who held the allocation sequence, how a recruiter learned \
+a new participant's group, and whether that happened only after enrolment \
+was recorded.
+Y: the group was released only after enrolment, by a party or system the \
+recruiters could not influence, for example an automated remote service that \
+registered the participant first, or allocation materials prepared outside \
+the recruiting team that could not be read or reordered beforehand.
+PY: the paper describes such a safeguard but leaves out a detail, for \
+example it names a remote service without saying when the group was \
+released.
+PN: the description suggests recruiters could have seen or worked out the \
+next assignment, without saying so.
+N: recruiters or participants could see or predict upcoming assignments, for \
+example because the sequence was kept where recruiters could read it, \
+followed a visible pattern, or could be inspected before enrolment.
+NI: the paper says nothing about how the assignment was kept hidden."""
 
 Q_1_3 = """\
-Do differences between the groups at the start of the trial (baseline) \
-suggest that the randomisation went wrong? Judge this from the baseline data \
-alone, whatever the paper says about its randomisation methods. Answer N if \
-the groups look alike at baseline or differ only as much as chance would \
-produce; a few differences called statistically significant are expected by \
-chance. Answer Y if the group sizes differ far more than the planned \
-allocation ratio allows, if there are many more baseline differences than \
-chance explains, if an important prognostic factor or the baseline value of \
-the outcome differs between the groups by an amount very unlikely to be \
-chance and large enough to bias the result, or if the groups are more alike \
-than chance would allow. Answer PY or PN when the pattern leans one way \
-without being clear. Answer NI if the paper gives no usable baseline data for \
-the groups as randomised."""
+Judged only from the groups' characteristics at enrolment, does the \
+comparison between the groups suggest that the randomisation did not work as \
+it should?
+What to look for: the table of baseline characteristics and the numbers \
+randomised to each group. Here, set aside what the paper says about its \
+randomisation method and judge from the data.
+Y: the groups differ in a way chance is very unlikely to explain: group \
+sizes far from the planned ratio, many more baseline differences than chance \
+would give, an imbalance in a strong predictor of the outcome (or in the \
+outcome's own starting value) big enough to distort the result, or groups \
+that are more alike than chance would make them.
+PY: the baseline data lean towards such a problem without being conclusive.
+PN: the differences look like chance, but the baseline data reported are \
+incomplete.
+N: the groups are similar at baseline, or differ only as chance would make \
+them; a few statistically significant differences in a long table are \
+expected and are not a sign of a problem.
+NI: the paper reports no baseline characteristics by randomised group."""
 
 # --- Domain 2: deviations from the intended interventions (effect of assignment) ---
 
 Q_2_1 = """\
-During the trial, did the participants know which intervention they had been \
-assigned to? Answer N if participants were kept unaware, for example by a \
-placebo or sham that looked the same, and nothing gave the assignment away. \
-Answer Y if the trial was open-label for participants or the interventions \
-were obviously different to receive. Answer PY if side effects that \
-participants would recognise as typical of one intervention were common, or \
-if blinding is claimed but unlikely to have held. Answer PN when blinding of \
-participants is described and probably held, without full detail. Answer NI \
-if the paper does not say whether participants knew."""
+While the trial was running, did the participants know which intervention \
+they had been assigned?
+What to look for: whether the participants were blinded, and whether \
+anything about the interventions, how they were given or what they did could \
+have told participants their group.
+Y: participants knew, for example because the trial was open-label or the \
+interventions were plainly different to receive (an operation compared with \
+tablets, a supervised exercise class compared with usual care).
+PY: blinding is claimed, but something probably revealed the group to many \
+participants, such as a distinctive taste, a frequent effect that \
+participants would recognise, or a different schedule of treatment.
+PN: participants are described as blinded and nothing suggests the blinding \
+failed, but the paper gives few details of how it was achieved.
+N: participants were kept unaware by a placebo or sham they could not tell \
+apart from the active intervention, and nothing reported would have revealed \
+their group.
+NI: the paper does not say whether participants knew their assignment."""
 
 Q_2_2 = """\
-During the trial, did the people caring for the participants or delivering \
-the interventions (clinicians, nurses, therapists, carers) know which \
-intervention each participant had been assigned to? Answer N if they were \
-kept unaware, for example because the interventions looked identical and \
-nothing gave the assignment away. Answer Y if they knew, as in an open-label \
-trial or when they delivered visibly different interventions. Answer PY if \
-side effects that they would recognise as typical of one intervention were \
-common, or if the allocation was not kept hidden from them at enrolment. \
-Answer PN when their blinding is described and probably held, without full \
-detail. Answer NI if the paper does not say whether they knew."""
+While the trial was running, did the people looking after the participants \
+or giving the interventions (doctors, nurses, therapists, family carers) \
+know which intervention each participant had been assigned?
+What to look for: whether these people were blinded, and whether anything \
+about the interventions or their effects would have shown them a \
+participant's group.
+Y: they knew, for example because the trial was open-label or they had to \
+give interventions that look different.
+PY: their blinding is claimed but probably broke down (for example because \
+one intervention changes routine measurements in a recognisable way), or the \
+group was not kept hidden from them when participants were enrolled.
+PN: they are described as blinded and nothing suggests the blinding failed, \
+but details are thin.
+N: they were kept unaware, the interventions looked the same, and nothing \
+reported would have revealed a participant's group.
+NI: the paper does not say whether these people knew the assignment."""
 
 Q_2_3 = """\
-This question applies only if the participants or the people delivering the \
-interventions knew or probably knew the assignment, or the paper does not say \
-whether they knew; if both were clearly kept unaware, answer NA. Because they \
-were in a trial, did participants receive something other than what the \
-protocol set for their group? Examples: participants disappointed with their \
-assignment seeking out the experimental treatment or another remedy, or staff \
-departing from the protocol in ways that would not happen in normal care. \
-Answer Y or PY only if the paper shows, or gives strong reason to believe, \
-that the trial setting caused such departures from the protocol. Answer N or \
-PN if there were no such departures, if the departures are of the kind that \
-also happen in normal care (such as participants giving up a treatment), or \
-if the protocol allowed them (such as stopping a drug for toxicity or \
-treating its side effects). Answer NI if the paper does not report whether \
-such departures happened."""
+Did participants receive care that departed from the trial protocol for \
+their group because they were taking part in a trial, in a way that would \
+not happen in ordinary practice?
+When this applies: only when the participants, or the people looking after \
+them or giving the interventions, knew the assignment, probably knew it, or \
+may have known it because the paper does not say. If both were, or probably \
+were, kept unaware, answer NA.
+What to look for: reports of participants in one group getting the other \
+group's treatment or extra treatments on their own initiative because of \
+their assignment, or of staff giving one group extra attention, tests or \
+treatments because they knew the group.
+Y: the paper reports such trial-driven departures.
+PY: the paper does not state it, but what it reports gives strong grounds to \
+believe such departures happened.
+PN: the paper describes the care given in enough detail to make such \
+departures unlikely, without saying outright that there were none.
+N: there were no departures, or the only ones were of a kind that also \
+happens in everyday care (such as participants not taking a treatment, or \
+stopping it because of an adverse effect), or ones the protocol allowed for.
+NI: the paper does not report whether participants received anything other \
+than their assigned intervention."""
 
 Q_2_4 = """\
-This question applies only if participants received something other than \
-the protocol's intervention for their group because of the trial setting \
-(beyond what happens in normal care or what the protocol allows); if there \
-were no such departures, answer NA. Were these trial-induced departures \
-likely to have changed this outcome? Answer Y if they were frequent or large \
-enough, or of a kind, to affect this outcome. Answer N if they could not \
-plausibly have affected this outcome. Answer PY or PN when an effect is \
-likely or unlikely without being certain. Answer NI if the paper does not \
-give enough to judge."""
+Could the trial-driven departures from the intended interventions have \
+changed the result for this outcome?
+When this applies: only when participants received, or probably received, \
+care that departed from the protocol for their group because they were in a \
+trial, beyond ordinary practice and beyond what the protocol allowed. If \
+there were none, probably none, or the paper does not report any, answer NA.
+What to look for: how many participants were affected, in which groups, and \
+whether the different or extra care acts on this outcome.
+Y: the departures were common enough, large enough, or of a kind that acts \
+on this outcome, so that the result would plausibly be different without \
+them.
+PY: an effect on this outcome is likely but not certain.
+PN: an effect on this outcome is unlikely, though it cannot be ruled out.
+N: the departures could not plausibly have affected this outcome.
+NI: the paper does not describe the departures well enough to judge."""
 
 Q_2_5 = """\
-This question applies only if participants received something other than \
-the protocol's intervention for their group because of the trial setting, \
-and these departures did or may have affected this outcome; otherwise answer \
-NA. Were these departures similar in kind and frequency in the intervention \
-groups? Answer Y if they were balanced between the groups. Answer N if they \
-were more common in one group, or of a different kind. Answer PY or PN when \
-the paper's figures lean one way. Answer NI if the paper does not report them \
-by group."""
+Were the trial-driven departures from the intended interventions balanced \
+between the groups?
+When this applies: only when participants received, or probably received, \
+care that departed from the protocol because they were in a trial, and those \
+departures did, probably did, or may have affected this outcome. Otherwise \
+answer NA.
+What to look for: how often each kind of departure happened in each group.
+Y: the departures were of a similar kind and happened at a similar rate in \
+every group.
+PY: the figures reported suggest balance without showing it fully.
+PN: the figures reported suggest that one group had more of them, or \
+different ones.
+N: they were clearly more frequent in one group, or of a different kind in \
+different groups.
+NI: the paper does not report the departures separately for each group."""
 
 Q_2_6 = """\
 Was this outcome analysed in a way that estimates the effect of being \
-assigned to the interventions? Answer Y for an intention-to-treat analysis \
-(every randomised participant analysed in the group they were assigned to), \
-or a modified intention-to-treat analysis that leaves out only participants \
-with missing outcome data, or participants found after randomisation to be \
-ineligible when that finding could not have depended on their group. Answer \
-N for a per-protocol analysis that leaves out participants who did not \
-receive their assigned intervention, an as-treated analysis that groups \
-participants by what they actually received, or any analysis that leaves out \
-eligible randomised participants. Answer PY or PN when the description of the \
-analysis points one way without being explicit. Answer NI if the paper does \
-not say how participants were grouped and counted in the analysis."""
+assigned to the interventions, whatever the participants went on to receive?
+What to look for: which randomised participants were counted in this \
+outcome's analysis, and under which group.
+Y: an intention-to-treat analysis, in which participants are counted in the \
+group they were randomised to whether or not they received that \
+intervention; or a modified version of it that leaves out only participants \
+whose result for this outcome is missing, or participants found after \
+randomisation not to meet the entry criteria when that finding could not \
+have depended on their group.
+PY: the description of the analysis points to such an analysis without \
+stating it fully.
+PN: the description points to an analysis limited to, or grouped by, the \
+treatment actually received, without stating it fully.
+N: a per-protocol analysis (only participants who received their assigned \
+intervention as planned), an as-treated analysis (participants counted under \
+the treatment they actually received), or any other analysis that drops \
+eligible randomised participants for a reason other than a missing result.
+NI: the paper does not say which participants were included in this \
+outcome's analysis or how they were grouped."""
 
 Q_2_7 = """\
-This question applies only if this outcome was not, or may not have been, \
-analysed with all eligible randomised participants in the groups they were \
-assigned to (for example a per-protocol or as-treated analysis, or an \
-analysis the paper does not describe); if it clearly was, answer NA. Could \
-analysing participants outside the group they were randomised to, or leaving \
-randomised participants out, have changed the result substantially? Answer Y \
-if the number of such participants is large enough for this outcome to \
-matter; even under 5% of participants can matter when the outcome is rare or \
-those participants differ in prognosis. Answer N if the numbers are too small \
-to change the result. Answer PY or PN when the numbers lean one way. Answer \
-NI if the paper does not report how many participants were affected."""
+Could leaving randomised participants out of this outcome's analysis, or \
+counting them under a group other than their randomised one, have changed \
+the result materially?
+When this applies: only when this outcome was not, probably was not, or may \
+not have been analysed with every eligible randomised participant counted in \
+their randomised group, for example in a per-protocol or as-treated \
+analysis, or when the paper does not say how it was analysed. If it was, or \
+probably was, analysed that way, answer NA.
+What to look for: how many participants were left out or moved between \
+groups for this outcome, in each group, set against the number of events or \
+the size of the difference between the groups.
+Y: enough participants were left out or regrouped that the result could \
+change materially; when the outcome is rare, or those participants' \
+prospects differ from the others', even a small share can be enough.
+PY: the numbers suggest a material change is likely.
+PN: the numbers suggest any change would be small.
+N: so few participants were affected that the result could not change \
+materially.
+NI: the paper does not report how many participants were left out or \
+regrouped."""
 
 # --- Domain 3: missing outcome data ---
 
 Q_3_1 = """\
-Were data for this outcome available for all, or nearly all, randomised \
-participants? Nearly all means so few are missing that their results, \
-whatever they were, could not change the estimated effect in any important \
-way: for a continuous outcome, data from about 95% of participants is often \
-enough; for an event outcome, compare the number missing with the number of \
-events. Count imputed values as missing. Answer Y if data were available for \
-all or nearly all randomised participants. Answer N if more were missing than \
-that. Answer PY or PN when the figures lean one way. Answer NI only if the \
-paper does not report how many participants had data for this outcome."""
+For this outcome, were results available for every randomised participant, \
+or for so nearly every one that the missing results could not matter?
+What to look for: the number randomised and the number with a result for \
+this outcome in each group, often in a flow diagram or a results table. A \
+value filled in by imputation counts as missing.
+"Could not matter" means that whatever the missing participants' results \
+were, they could not shift the estimated effect meaningfully. A useful \
+check: if every missing participant had an extreme but plausible result, \
+would the conclusion change? For an outcome counted as events, compare the \
+number missing with the number of events: a number missing close to the \
+number of events is not negligible.
+Y: results were available for all participants, or the number missing is \
+negligible in this sense.
+PY: the figures suggest that a negligible amount is missing, without showing \
+it exactly.
+PN: the figures suggest that more than a negligible amount is missing.
+N: more than a negligible number of participants have no result for this \
+outcome.
+NI: the paper does not report how many participants had a result for this \
+outcome."""
 
 Q_3_2 = """\
-This question applies only if data for this outcome were missing for more \
-than a negligible number of randomised participants, or the paper does not \
-report how many; if data were complete or nearly complete, answer NA. Does \
-the paper show that the missing data did not bias the result? Answer Y if it \
-used an analysis that corrects for the bias missing data can cause, or \
-sensitivity analyses showing that the result hardly changes under a range of \
-plausible assumptions about the missing participants' outcomes. Answer N if \
-it did neither. Filling in the missing values (for example carrying the last \
-observation forward, or imputing them from the assigned group alone) does not \
-show this. Answer PY or PN when such evidence is only partly reported. NI is \
-not allowed for this question: when the paper offers no such evidence, answer \
-N."""
+Does the paper give evidence that the missing results for this outcome did \
+not bias it?
+When this applies: only when more than a negligible number of randomised \
+participants have, or probably have, no result for this outcome, or the \
+paper does not report how many. If results are, or probably are, complete or \
+nearly complete, answer NA.
+What to look for: an analysis method built to correct for the bias that \
+missing results can cause, or sensitivity analyses that try a range of \
+plausible values for the missing participants and show the result holding.
+Y: the paper reports such an analysis, or such sensitivity analyses, and the \
+result barely changes.
+PY: the paper reports evidence of this kind, but incompletely.
+PN: the paper's handling of the missing results gives little reassurance, \
+for example a single sensitivity analysis under one assumption.
+N: the paper gives no such evidence. Filling in the missing values, for \
+example by carrying a participant's last value forward or giving them their \
+group's average, is not such evidence on its own.
+NI: not allowed for this question. When the paper offers no evidence either \
+way, answer N."""
 
 Q_3_3 = """\
-This question applies only if data for this outcome were missing for more \
-than a negligible number of participants and the paper does not show that \
-the result was unbiased by it; otherwise answer NA. Could whether a \
-participant's outcome went missing have depended on what that outcome \
-actually was? Answer Y if dropping out, withdrawing or being lost to \
-follow-up could plausibly be linked to the participant's health or to the \
-outcome itself. Answer N if every missing value has a documented reason \
-unrelated to the outcome (for example a broken measuring device or a gap in \
-routine data collection). Answer PY or PN when the reasons lean one way. \
-Answer NI if the paper gives no reasons for the missing data. In a \
-time-to-event analysis, participants censored before the end of follow-up \
-count as having missing outcome data."""
+Could whether a participant's result for this outcome is missing depend on \
+what that result would have been?
+When this applies: only when more than a negligible number of participants \
+have no result for this outcome and the paper gives no convincing evidence \
+(none, or only weak evidence) that this did not bias the result. Otherwise \
+answer NA.
+What to look for: why participants dropped out, withdrew, were lost to \
+follow-up or were not measured. In an analysis of the time until an event, \
+participants whose follow-up was cut short (censored) count as having a \
+missing result.
+Y: the reasons are, or plausibly could be, connected to the participants' \
+health or to this outcome, for example people leaving because they felt \
+worse, felt better, or had an adverse effect.
+PY: the reasons are partly reported and some of them may be connected to the \
+outcome.
+PN: the reasons are partly reported and those given are unrelated to the \
+outcome.
+N: every missing result has a documented reason that has nothing to do with \
+the outcome, for example a sample lost in transit or an appointment the \
+study site cancelled.
+NI: the paper gives no reasons for the missing results."""
 
 Q_3_4 = """\
-This question applies only if whether this outcome went missing could have \
-depended on the participants' true outcome, or the paper gives too little to \
-rule that out; otherwise answer NA. Is it likely, not merely possible, that \
-the missingness depended on the true outcome? Answer Y if, for example, the \
-proportion of missing data differs between the groups, the reported reasons \
-for missing data point to the outcome itself, the reasons differ between the \
-groups, the clinical setting makes such a link likely (as when people whose \
-symptoms persist are the ones who leave the trial), or, in a time-to-event \
-analysis, follow-up \
-was censored when participants stopped or changed their assigned treatment. \
-Answer N if the analysis took account of participant characteristics that \
-explain the link between missingness and outcome. Answer PY or PN when the \
-evidence leans one way. Answer NI if the paper does not give enough to \
-judge."""
+Is it likely, and not just conceivable, that whether a result for this \
+outcome is missing depended on what that result would have been?
+When this applies: only when the missing results could, probably could, or \
+may depend on their true values because the paper gives too little to rule \
+that out. If the missing results have, or probably have, reasons unrelated \
+to the outcome, answer NA.
+What to look for: whether the share of missing results differs between the \
+groups, whether the stated reasons point to the outcome, whether the reasons \
+differ between the groups, and whether the clinical situation makes such a \
+link expected.
+Y: there is a concrete sign of the link, for example more missing results in \
+one group, reasons that point to the outcome or differ between the groups, a \
+condition in which getting worse itself stops people attending follow-up \
+(such as a relapse during treatment for addiction), or, in an analysis of \
+the time until an event, follow-up that was cut short when participants \
+stopped or switched their assigned treatment.
+PY: the signs lean towards such a link.
+PN: the signs lean against such a link.
+N: such a link is unlikely, for example because the missing results are \
+similar in number and reasons across the groups and nothing about the \
+condition suggests a link, or because the analysis adjusted for participant \
+characteristics that explain how missingness relates to the outcome.
+NI: the paper does not give enough information to judge."""
 
 # --- Domain 4: measurement of the outcome ---
 
 Q_4_1 = """\
-Was the way this outcome was measured unsuitable for it? Do not judge \
-whether the outcome itself was a sensible choice, only how it was measured. \
-Answer Y if the method or instrument could not detect a plausible effect of \
-the intervention (for example, important values fall outside what it can \
-measure) or is known to measure this outcome poorly. Answer N if the method \
-is a standard or validated way of measuring this outcome, as it usually is \
-for an outcome specified in advance. Answer PY or PN when the description \
-leans one way. Answer NI if the paper does not describe how the outcome was \
-measured."""
+Was the method used to measure this outcome unsuitable for it?
+This is about the measurement only, not about whether the outcome was a good \
+choice.
+What to look for: the instrument, test, scale or definition used, how well \
+it is known to perform, and whether it can register a change of the size the \
+intervention could cause.
+Y: the method could not pick up a plausible effect of the intervention (for \
+example a scale on which most participants already score the maximum at the \
+start), or it is known to perform poorly for this outcome.
+PY: the description suggests the method is a poor fit, without being clear.
+PN: the method seems reasonable, though the paper gives little detail.
+N: the method is an established or validated way of measuring this outcome.
+NI: the paper does not say how this outcome was measured."""
 
 Q_4_2 = """\
-Could this outcome have been measured or detected differently in the \
-intervention groups? Answer Y if the groups were measured with different \
-methods, thresholds or timing, or if one group had more contact with health \
-care (for example extra visits) that gave more chances for outcome events to \
-be found. Answer N if the same method, thresholds and timing were used in all \
-groups with similar contact. Answer PY or PN when the description leans one \
-way. Answer NI if the paper does not say."""
+Could this outcome have been measured or picked up differently in one group \
+than in another?
+What to look for: whether every group was assessed with the same method, \
+cut-offs and schedule, and whether one group had more contact with staff, \
+tests or monitoring that would make outcome events more likely to be \
+noticed.
+Y: the groups were assessed with different methods, cut-offs or timing, or \
+one group was seen, tested or monitored more often in a way that would \
+reveal more events (for example weekly visits in one group and a single \
+final visit in the other).
+PY: the description suggests such a difference, without stating it.
+PN: the description suggests the same approach in every group, without \
+stating it.
+N: the same method, cut-offs and schedule were used in every group, with \
+similar contact.
+NI: the paper does not say how or when this outcome was assessed in each \
+group."""
 
 Q_4_3 = """\
-This question applies only if the way this outcome was measured was not \
-clearly unsuitable and the outcome was not clearly measured differently \
-between the groups; otherwise answer NA. Did the people assessing this \
-outcome know which intervention each participant received? For an outcome \
-the participants report themselves (such as pain or quality of life), the \
-participants are the assessors. Answer N if the assessors were kept unaware \
-of the assignment. Answer Y if they knew, as when participants in an \
-open-label trial report their own outcome. Answer PY or PN when the paper's \
-description leans one way. Answer NI if the paper does not say whether the \
-assessors knew."""
+Did the people who assessed this outcome know which intervention each \
+participant had received?
+When this applies: only when the method of measuring this outcome was not \
+unsuitable and the outcome was not measured differently between the groups, \
+or the paper does not say. If the method was, or probably was, unsuitable, \
+or the outcome was, or probably was, measured differently between the \
+groups, answer NA.
+Who the assessors are: whoever produced the outcome value. For an outcome \
+participants report themselves (a symptom score, a questionnaire on daily \
+activities), the participants are the assessors; for the reading of a scan \
+or a clinical examination, the reader or the examiner is.
+Y: the assessors knew, for example participants in an open-label trial \
+rating their own symptoms, or investigators who knew the groups examining \
+the participants.
+PY: the description suggests they knew, without stating it.
+PN: the description suggests they were kept unaware, without full detail.
+N: the assessors were kept unaware of each participant's intervention.
+NI: the paper does not say whether the assessors knew."""
 
 Q_4_4 = """\
-This question applies only if the people assessing this outcome knew or \
-probably knew which intervention each participant received, or the paper \
-does not say; if they were clearly kept unaware, answer NA. Could knowing the \
-intervention have influenced how this outcome was assessed? Answer Y for an \
-outcome that involves judgement: one reported by participants (such as pain), \
-one recorded by an observer who has to judge, or one that is a decision by \
-the treating clinicians (such as admission to hospital). Answer N for an \
-outcome that involves no judgement, such as death from any cause or an \
-automated laboratory value. Answer PY or PN when the outcome involves little \
-judgement. Answer NI if the paper does not describe the outcome well enough \
-to judge."""
+Could knowing which intervention a participant received have affected how \
+this outcome was assessed?
+When this applies: only when the people who assessed this outcome knew the \
+intervention, probably knew it, or may have known it because the paper does \
+not say. If they were, or probably were, kept unaware, answer NA.
+What to look for: how much human judgement goes into producing the outcome \
+value.
+Y: the outcome rests on judgement: a participant's own rating of how they \
+feel, an observer's grading or interpretation, or a decision made by the \
+treating team (for example whether to discharge a patient early or to start \
+a rescue treatment).
+PY: the outcome involves some judgement.
+PN: the outcome involves very little judgement.
+N: the outcome involves no judgement, for example whether a participant is \
+alive according to a national death register.
+NI: the paper does not describe the outcome well enough to judge."""
 
 Q_4_5 = """\
-This question applies only if the people assessing this outcome knew, or may \
-have known, the intervention and that knowledge could have influenced the \
-assessment; otherwise answer NA. Is it likely, not merely possible, that \
-knowing the intervention did influence the assessment? Answer Y if those \
-assessing held strong beliefs about the intervention's benefit or harm (for \
-example participants who believe in the treatment they chose reporting their \
-own symptoms, or a therapist rating the recovery of the patients they \
-treated). Answer N if there is no particular reason to think the assessment \
-was swayed. Answer PY or PN when the circumstances lean one way. Answer NI if \
-the paper does not give enough to judge."""
+Is it likely, and not just conceivable, that knowing the intervention did \
+affect how this outcome was assessed?
+When this applies: only when the assessors knew, probably knew, or may have \
+known the intervention, and the outcome involves judgement that this \
+knowledge could, probably could, or may sway. Otherwise answer NA.
+What to look for: reasons the assessors would expect, want or believe in a \
+particular result.
+Y: the assessors had a clear stake in, or a strong expectation about, the \
+result, for example investigators who developed the new intervention grading \
+the outcome themselves, or participants who were told when they joined that \
+the new intervention was expected to work better rating their own \
+improvement.
+PY: such expectations are likely but not documented.
+PN: such expectations are possible but nothing points to them.
+N: there is no particular reason to think the assessment was swayed.
+NI: the paper does not give enough information to judge."""
 
 # --- Domain 5: selection of the reported result ---
 
 Q_5_1 = """\
-Was this result analysed according to an analysis plan that was fixed before \
-the investigators saw the unblinded outcome data (for example a registered \
-protocol or a statistical analysis plan finalised before unblinding)? Answer \
-Y if the paper cites such a plan, the outcome and analysis it reports match \
-it, and any changes were made before unblinding or for reasons unrelated to \
-the results. Answer N if the reported analysis departs from the plan without \
-a reason unrelated to the results, or the plan was written or changed after \
-the outcome data were seen. Answer PY or PN when the paper's account leans \
-one way. Answer NI if the paper refers to no plan fixed in advance, or gives \
-too little detail to compare with one."""
+Was this result analysed according to a plan that was fixed before the \
+investigators could see the outcome data by group?
+What to look for: a trial registration, published protocol or statistical \
+analysis plan; when it was fixed compared with when the outcome data by \
+group became available; and whether the outcome measure and analysis \
+reported match it.
+Y: the paper points to such a plan, and the reported outcome measure and \
+analysis follow it, or any changes were made before the data were seen or \
+for reasons the paper gives that have nothing to do with the results.
+PY: there is such a plan and the report appears to follow it, but the paper \
+does not allow a full comparison.
+PN: the report appears to depart from the plan, or it is doubtful that the \
+plan was fixed before the data were seen.
+N: the reported analysis departs from the plan without a reason unrelated to \
+the results, or the plan was written or changed after the outcome data were \
+seen.
+NI: the paper mentions no plan fixed in advance, or gives too little detail \
+to compare this result with one."""
 
 Q_5_2 = """\
-Is this result likely to have been chosen, because of what it showed, from \
-several eligible ways of measuring this outcome (for example different \
-scales, definitions or time points)? Answer Y if the paper or its \
-registration shows the outcome was measured in several eligible ways but only \
-one or some are fully reported, without explanation and apparently because of \
-the results; this includes a reported primary outcome that differs from the \
-one the paper says was registered or pre-specified. Answer N if the reported \
-measurements match all those planned, if there is only one way to measure \
-this outcome, or if differences between reports are explained by reasons \
-unrelated to the results. Answer PY or PN when the evidence leans one way. \
-Answer NI if there is no plan to compare with and the outcome could have been \
+Was this result likely picked, because of what it showed, from several ways \
+of measuring this outcome?
+"Ways of measuring this outcome" means alternatives that would each count as \
+a fair measurement of the same outcome as the paper defines it: another \
+scale or questionnaire for the same thing, another definition of the event, \
+or another time point. A measurement of a different outcome does not count.
+What to look for: the measures and time points that the registration, \
+protocol or methods name for this outcome, compared with the ones whose \
+results the paper reports in full.
+Y: the plan or the paper shows several such measurements, but only one or \
+some are reported in full, without explanation and in a way that looks \
+driven by the results. A reported primary outcome that differs from the one \
+the paper says was registered or pre-specified counts here.
+PY: there are signs of such selection, for example measurements named in the \
+methods but missing from the results, without clear evidence that the \
+results drove it.
+PN: a plan exists but is vague about how this outcome would be measured, and \
+what is reported is consistent with it.
+N: every planned measurement is reported, or there is only one way to \
+measure this outcome, or any differences from the plan have reasons \
+unrelated to the results.
+NI: there is no plan to compare with, and this outcome could have been \
 measured in more than one way."""
 
 Q_5_3 = """\
-Is this result likely to have been chosen, because of what it showed, from \
-several eligible analyses of the same measurement (for example adjusted and \
-unadjusted models, final values or change from baseline, different cut-points \
-for turning a scale into categories, different covariates, or different ways \
-of handling missing data)? Answer Y if the paper or its plan shows the \
-measurement was analysed in several eligible ways but only one or some are \
-fully reported, without explanation and apparently because of the results. \
-Answer N if the reported analysis matches the planned one, or there was only \
-one sensible way to analyse this measurement. Answer PY or PN when the \
-evidence leans one way. Answer NI if there is no plan to compare with and the \
-measurement could have been analysed in more than one way."""
+Was this result likely picked, because of what it showed, from several ways \
+of analysing the same measurement?
+"Ways of analysing" means alternatives that would each count as a fair \
+analysis of this measurement, for example a different statistical model or \
+set of adjustment variables, analysing the change rather than the end value, \
+a different cut-off for counting a participant as a responder, or setting \
+aside extreme values.
+What to look for: the analysis that the plan describes for this outcome, \
+compared with the analyses the paper reports, and any analyses mentioned but \
+not shown.
+Y: the plan or the paper shows several such analyses, but only one or some \
+are reported in full, without explanation and in a way that looks driven by \
+the results.
+PY: there are signs of such selection, for example an analysis different \
+from the planned one with no reason given, without clear evidence that the \
+results drove it.
+PN: a plan exists but is vague about how this outcome would be analysed, and \
+what is reported is consistent with it.
+N: the reported analysis matches the planned one, or there was only one \
+sensible way to analyse this measurement.
+NI: there is no plan to compare with, and this measurement could have been \
+analysed in more than one way."""
 
 #: Every question's wording by its RoB 2 id, in question order.
 QUESTION_TEXTS: dict[str, str] = {
@@ -434,23 +604,28 @@ reasoning and quote both statements."""
 #: together warrant an overall judgement of high risk of bias.  The outcome
 #: and the domain answers follow it.
 ESCALATION_PROMPT = """\
-All five domains of this risk-of-bias assessment have been judged: none is at \
-high risk of bias and at least two have some concerns. RoB 2 lets the \
-assessor raise the overall judgement to high risk of bias when concerns in \
-several domains, taken together, substantially lower confidence in the \
-result. Using the domain judgements and answers below, decide whether these \
-combined concerns warrant an overall judgement of high risk of bias for this \
-result.
+Every domain of this result's risk-of-bias assessment has now been judged. \
+None was judged at high risk of bias, but two or more raised some concerns. \
+In that situation the assessor decides whether the concerns, taken together, \
+are serious enough to rate the result at high risk of bias overall, or \
+whether "some concerns" remains the right overall rating.
 
-escalate: true if the combined concerns substantially lower confidence in \
-this result, false if the overall judgement should stay at some concerns.
+Weigh the domain judgements and answers below: how serious each concern is, \
+whether several of them could push the result in the same direction, and \
+whether together they leave real doubt that the result reflects the effect \
+of being assigned to the interventions. Minor concerns, or concerns that \
+would push the result in opposite directions, weigh less.
+
+escalate: true to rate this result at high risk of bias overall, false to \
+keep it at some concerns.
 reasoning: one or two sentences saying why.
 
 Respond with JSON in exactly this shape:
 
 {
     "escalate": false,
-    "reasoning": "The concerns are minor and point in different directions."
+    "reasoning": "Each concern is small and they would bias the result in \
+different directions."
 }"""
 
 

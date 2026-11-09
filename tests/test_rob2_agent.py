@@ -129,6 +129,16 @@ class TestTheQuestions:
         for text in texts:
             assert "NI" in text and "previous question" not in text
 
+    def test_every_question_says_what_each_answer_means_and_when_it_applies(self) -> None:
+        conditional = {"2.3", "2.4", "2.5", "2.7", "3.2", "3.3", "3.4", "4.3", "4.4", "4.5"}
+        for question in (q for d in Domain for q in questions(d)):
+            lines = question_text(question).split("\n")
+            for label in ("Y:", "PY:", "PN:", "N:", "NI:"):
+                assert sum(line.startswith(label) for line in lines) == 1, (question, label)
+            applies = [line for line in lines if line.startswith("When this applies:")]
+            assert len(applies) == (question in conditional), question
+            assert all("answer NA" in line for line in applies), question
+
     def test_an_unknown_id_is_refused(self) -> None:
         with pytest.raises(KeyError, match="2.9"):
             question_text("2.9")
