@@ -93,9 +93,9 @@ class ReportedResult:
     def validate(self) -> None:
         """Raise ``ValueError`` naming the field if the result is incoherent.
 
-        Both bounds or neither; the interval needs its level; all numbers
-        finite; ``ci_low <= estimate <= ci_high``; ratio values above 0;
-        ``0 < ci_level < 1``; ``n_analysed`` a whole number that fits a u32.
+        Both bounds or neither; all numbers finite; ``ci_low <= estimate <=
+        ci_high``; ratio values above 0; ``0 < ci_level < 1`` when stated (it is
+        optional); ``n_analysed`` a whole number that fits a u32.
         """
         if not isinstance(self.measure, str):
             raise ValueError("measure must be text")
@@ -114,8 +114,6 @@ class ReportedResult:
             raise ValueError("n_analysed must be a whole number that fits 32 bits")
         if (self.ci_low is None) != (self.ci_high is None):
             raise ValueError("ci_low and ci_high must be given together")
-        if self.ci_low is not None and self.ci_level is None:
-            raise ValueError("ci_level is required with an interval")
         if self.ci_level is not None and not 0 < self.ci_level < 1:
             raise ValueError("ci_level must be above 0 and below 1")
         if self.scale is EffectScale.RATIO:

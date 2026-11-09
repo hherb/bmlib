@@ -422,6 +422,50 @@
    }
   },
   {
+   "name": "interval without a stated level",
+   "start": "high",
+   "rob_overall": "some_concerns",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.8,
+    "ci_low": 0.6,
+    "ci_high": 1.02,
+    "ci_level": null,
+    "n_analysed": 1200
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "some_concerns"
+      },
+      "levels": 1
+     },
+     {
+      "reason": "crosses_no_effect",
+      "levels": 1
+     }
+    ],
+    "level": "low",
+    "weight": 0.4
+   }
+  },
+  {
    "name": "custom weight",
    "start": "high",
    "rob_overall": "some_concerns",
@@ -567,14 +611,14 @@
    }
   },
   {
-   "name": "interval without level",
+   "name": "level of zero",
    "result": {
     "measure": "risk ratio",
     "scale": "ratio",
     "estimate": 0.7,
     "ci_low": 0.5,
     "ci_high": 0.9,
-    "ci_level": null,
+    "ci_level": 0.0,
     "n_analysed": 10
    }
   }

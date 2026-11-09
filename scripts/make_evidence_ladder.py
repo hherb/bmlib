@@ -100,6 +100,12 @@ CASES: list[tuple[str, Judgement, ReportedResult | None, dict[str, Any]]] = [
         {"crosses_no_effect_steps": 2, "small_trial_steps": 2, "max_imprecision_steps": 1},
     ),
     (
+        "interval without a stated level",
+        Judgement.SOME_CONCERNS,
+        ReportedResult("risk ratio", _R, 0.8, 0.6, 1.02, None, 1200),
+        {},
+    ),
+    (
         "custom weight",
         Judgement.SOME_CONCERNS,
         ReportedResult("risk ratio", _R, 0.8, 0.6, 1.02, 0.95, 1200),
@@ -113,7 +119,7 @@ REFUSALS: list[tuple[str, ReportedResult]] = [
     ("ratio bound zero", ReportedResult("risk ratio", _R, 0.7, 0.0, 0.9, 0.95, 10)),
     ("estimate outside", ReportedResult("risk ratio", _R, 0.7, 0.8, 0.9, 0.95, 10)),
     ("level of one", ReportedResult("risk ratio", _R, 0.7, 0.5, 0.9, 1.0, 10)),
-    ("interval without level", ReportedResult("risk ratio", _R, 0.7, 0.5, 0.9, None, 10)),
+    ("level of zero", ReportedResult("risk ratio", _R, 0.7, 0.5, 0.9, 0.0, 10)),
 ]
 
 

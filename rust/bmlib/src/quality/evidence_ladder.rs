@@ -12,6 +12,8 @@
 // GNU Affero General Public License for more details.
 //
 // You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 //! The evidence ladder and the number: risk of bias and imprecision to a weight.
 //!
 //! A GRADE-style ladder for one primary outcome of a randomised trial. It
@@ -104,9 +106,9 @@ pub struct ReportedResult {
 impl ReportedResult {
     /// Refuse an incoherent result, naming the field.
     ///
-    /// Both bounds or neither; the interval needs its level; all numbers
+    /// Both bounds or neither; all numbers
     /// finite; `ci_low <= estimate <= ci_high`; ratio values above 0;
-    /// `0 < ci_level < 1`.
+    /// `0 < ci_level < 1` when the level is stated (it is optional).
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("estimate", Some(self.estimate)),
@@ -120,9 +122,6 @@ impl ReportedResult {
         }
         if self.ci_low.is_some() != self.ci_high.is_some() {
             return Err("ci_low and ci_high must be given together".into());
-        }
-        if self.ci_low.is_some() && self.ci_level.is_none() {
-            return Err("ci_level is required with an interval".into());
         }
         if self.ci_level.is_some_and(|l| !(l > 0.0 && l < 1.0)) {
             return Err("ci_level must be above 0 and below 1".into());

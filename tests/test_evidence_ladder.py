@@ -109,7 +109,7 @@ def test_validate_refusals() -> None:
         ReportedResult("r", EffectScale.RATIO, 0.7, 0.5, 0.9, 1.0, 10),  # level
         ReportedResult("r", EffectScale.RATIO, math.nan, None, None, None, 10),
         ReportedResult("r", EffectScale.RATIO, 0.7, 0.5, math.inf, 0.95, 10),
-        ReportedResult("r", EffectScale.RATIO, 0.7, 0.5, 0.9, None, 10),  # interval w/o level
+        ReportedResult("r", EffectScale.RATIO, 0.7, 0.5, 0.9, 0.0, 10),  # level 0
     ]
     for r in bad:
         with pytest.raises(ValueError):
@@ -158,3 +158,10 @@ def test_a_cap_larger_than_the_last_step_trims_earlier_steps_too() -> None:
     s = LadderSettings(crosses_no_effect_steps=2, small_trial_steps=2, max_imprecision_steps=1)
     lad = build_ladder(Level.HIGH, Judgement.LOW, _ratio(0.5, 0.9, 1.6, 80), s)
     assert [x.levels for x in lad.steps] == [0, 1, 0]
+
+
+def test_interval_without_a_stated_level_is_accepted_and_judged() -> None:
+    r = ReportedResult("risk ratio", EffectScale.RATIO, 0.8, 0.6, 1.02, None, 1200)
+    r.validate()
+    lad = build_ladder(Level.HIGH, Judgement.LOW, r, LadderSettings())
+    assert lad.steps[1].reason == LadderReason.crosses_no_effect()
