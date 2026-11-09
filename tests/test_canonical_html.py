@@ -27,6 +27,7 @@ import io
 import json
 import pickle
 import sys
+import time
 from typing import Any
 
 import markupever
@@ -463,24 +464,44 @@ class TestTheParseRunsInAChildHeldToItsMemory:
         page = rebuilding(2_000)
         limit = 150_000_000
         with pytest.raises(HtmlParseMemoryError, match="misnested formatting") as raised:
-            html_module._convert_in_child(page, limit)
+            html_module._convert_in_child(page, limit, 60)
         assert raised.value.held > limit
-        assert raised.value.length == len(page)
+        assert (raised.value.length, raised.value.limit) == (len(page), limit)
+        assert f"more than the {limit} allowed" in str(raised.value)
         assert isinstance(raised.value, ValueError)
         # A reading comes about one poll late, so not far past the limit.
         assert raised.value.held < 3 * limit
 
-    def test_the_killed_child_is_gone(self) -> None:
+    def test_the_child_is_killed_and_gone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A child that holds 300 MB and would then sleep a minute: only a kill
+        # ends it sooner.
+        before = {c.pid for c in psutil.Process().children()}
+        monkeypatch.setattr(
+            html_module, "_CHILD_CODE", "b = b'x' * 300_000_000; import time; time.sleep(60)"
+        )
+        started = time.monotonic()
         with pytest.raises(HtmlParseMemoryError):
-            html_module._convert_in_child(rebuilding(2_000), 150_000_000)
-        assert psutil.Process().children() == []
+            html_module._convert_in_child("<p>x</p>", 100_000_000, 60)
+        assert time.monotonic() - started < 10
+        assert {c.pid for c in psutil.Process().children()} <= before
+
+    def test_a_child_that_does_not_answer_is_killed_at_the_deadline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(html_module, "_CHILD_CODE", "import time; time.sleep(60)")
+        started = time.monotonic()
+        with pytest.raises(RuntimeError, match=r"did not answer within 0\.5 s"):
+            html_module._convert_in_child("<p>x</p>", 1 << 30, 0.5)
+        assert time.monotonic() - started < 10
 
     def test_the_public_function_holds_the_child_to_the_limit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(html_module, "HTML_PARSE_MAX_BYTES", 150_000_000)
-        with pytest.raises(HtmlParseMemoryError):
+        with pytest.raises(HtmlParseMemoryError) as raised:
             canonical_from_html(rebuilding(2_000))
+        assert raised.value.limit == 150_000_000
+        assert raised.value.held < 3 * 150_000_000
 
     @pytest.mark.parametrize(
         "page",
@@ -488,6 +509,20 @@ class TestTheParseRunsInAChildHeldToItsMemory:
     )
     def test_the_child_converts_as_this_process_does(self, page: str) -> None:
         assert canonical_from_html(page) == html_module._convert(page)
+
+    def test_the_current_directory_is_not_on_the_childs_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        # The child imports json before it sets its path: without -P, the
+        # current directory's json.py would be the one it ran.
+        (tmp_path / "json.py").write_text("raise SystemExit('planted json')\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "path", [p for p in sys.path if p not in ("", str(tmp_path))])
+        assert pieces(canonical_from_html("<p>x</p>")) == ["x"]
+
+    def test_a_child_importing_another_file_refuses(self, tmp_path: Any) -> None:
+        with pytest.raises(SystemExit, match="the HTML parse process imported"):
+            html_module._child_main(str(tmp_path / "html.py"))
 
     def test_the_child_reports_its_deadline_passing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def past(html: str) -> CanonicalText:
@@ -497,7 +532,7 @@ class TestTheParseRunsInAChildHeldToItsMemory:
         monkeypatch.setattr(html_module, "_convert", past)
         monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"<p>x</p>")))
         monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(out))
-        html_module._child_main()
+        html_module._child_main(html_module.__file__)
         assert json.loads(out.getvalue()) == {"timed_out": [10, 99]}
         with pytest.raises(HtmlParseTimeoutError) as raised:
             html_module._read_child_answer(0, out.getvalue(), b"")
@@ -505,10 +540,45 @@ class TestTheParseRunsInAChildHeldToItsMemory:
 
     def test_a_failed_child_is_a_runtime_error_naming_its_last_line(self) -> None:
         err = b"Traceback (most recent call last):\n  ...\nKeyError: 'x'\n"
-        with pytest.raises(RuntimeError, match=r"exit status 1\): KeyError: 'x'"):
+        with pytest.raises(RuntimeError, match=r"exit status 1\): KeyError: 'x'") as raised:
             html_module._read_child_answer(1, b"", err)
+        assert "standard error ended:\nTraceback" in str(raised.value)
         with pytest.raises(RuntimeError, match="it wrote nothing"):
+            html_module._read_child_answer(3, b"", b"")
+
+    def test_a_real_failing_child_carries_its_traceback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(html_module, "_CHILD_CODE", "raise KeyError('x')")
+        with pytest.raises(RuntimeError, match=r"exit status 1\): KeyError: 'x'") as raised:
+            canonical_from_html("<p>x</p>")
+        assert "Traceback" in str(raised.value)
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+    def test_a_child_killed_by_a_signal_names_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            html_module, "_CHILD_CODE", "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"
+        )
+        with pytest.raises(RuntimeError, match="killed by SIGTERM, which this process did not"):
+            canonical_from_html("<p>x</p>")
+        with pytest.raises(RuntimeError, match="SIGKILL.*out-of-memory killer"):
             html_module._read_child_answer(-9, b"", b"")
+
+    @pytest.mark.parametrize(
+        "out", [b"", b"x", b"{}", b"3", b"[]", b'{"text": 1}', b'{"timed_out": 5}', b"{} {}"]
+    )
+    def test_an_unreadable_answer_is_a_runtime_error_not_a_refusal(self, out: bytes) -> None:
+        with pytest.raises(RuntimeError, match="wrote no answer this process can read") as raised:
+            html_module._read_child_answer(0, out, b"a warning")
+        assert not isinstance(raised.value, ValueError)
+        assert "a warning" in str(raised.value)
+
+    def test_a_child_printing_past_its_answer_is_a_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(html_module, "_CHILD_CODE", "print('hello')")
+        with pytest.raises(RuntimeError, match="wrote no answer"):
+            canonical_from_html("<p>x</p>")
 
     def test_a_frozen_application_is_told_it_cannot_start_one(
         self, monkeypatch: pytest.MonkeyPatch
@@ -517,11 +587,26 @@ class TestTheParseRunsInAChildHeldToItsMemory:
         with pytest.raises(RuntimeError, match="child Python process"):
             canonical_from_html("<p>x</p>")
 
+    def test_an_interpreter_that_cannot_name_itself_is_told_so(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "executable", "")
+        with pytest.raises(RuntimeError, match="child Python process"):
+            canonical_from_html("<p>x</p>")
+
+    def test_a_child_that_cannot_be_started_is_an_os_error(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "no-python"))
+        with pytest.raises(OSError):
+            canonical_from_html("<p>x</p>")
+
     def test_the_memory_refusal_pickles(self) -> None:
-        error = pickle.loads(pickle.dumps(HtmlParseMemoryError(10, 99)))
-        assert (type(error), error.held, error.length, str(error)) == (
+        error = pickle.loads(pickle.dumps(HtmlParseMemoryError(10, 99, 7)))
+        assert (type(error), error.held, error.length, error.limit, str(error)) == (
             HtmlParseMemoryError,
             10,
             99,
-            str(HtmlParseMemoryError(10, 99)),
+            7,
+            str(HtmlParseMemoryError(10, 99, 7)),
         )

@@ -75,15 +75,22 @@ Decided with the maintainer, step by step (`docs/DECISIONS.md`, last entry):
   does not bound it. Filed **#723**; numbers posted on servo/html5ever#812
   (open upstream, time only).
 - **Python**: `canonical_from_html` checks in the parent, then `_convert` runs
-  in a child (`sys.executable -c`, the page via a temp file, JSON back),
-  killed past `HTML_PARSE_MAX_BYTES` (1 GiB) → `HtmlParseMemoryError`. psutil
+  in a child (`sys.executable -P -c` with the parent's `sys.path`, refusing
+  to run if it imported another `html.py`; the page via a temp file, JSON
+  back), killed past `HTML_PARSE_MAX_BYTES` (1 GiB) → `HtmlParseMemoryError`
+  (`held`, `length`, `limit`), or past 120 s → `RuntimeError`. A signal death
+  is named, an unreadable answer is a `RuntimeError` (never a `ValueError`),
+  and each failure carries the end of the child's stderr (PR #724's review). psutil
   joins the `html` extra, `types-psutil` the `dev` extra. The clock tests now
   call `_convert` in-process (monkeypatches cannot reach a child).
 - **Rust**: `CountingSink` wraps `HtmlTreeSink`; pieces of 64 code points;
   past `max_elements(length)` (= length + `HTML_ELEMENT_ALLOWANCE` 1,000) →
   `HtmlError::TooManyElements`. `HtmlError` is `#[non_exhaustive]` now.
 - **Unmeasured**: both limits against real pages (no HTML corpus on this
-  machine, #656's own gap). **For StudyAnalyzer**: match `HtmlError` with a
+  machine, #656's own gap). Filed from PR #724's review: **#725** (RSS misses
+  swapped and compressed pages, and a container limit under 1 GiB kills the
+  child first) and **#726** (Rust's element budget refuses a 1.2 KB page of
+  #723's shape that Python converts). **For StudyAnalyzer**: match `HtmlError` with a
   `_` arm.
 
 ## Earlier, 2026-11-06 to 2026-11-08 (all merged; the CHANGELOG entries are the argument)

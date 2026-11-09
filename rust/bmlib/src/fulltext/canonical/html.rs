@@ -28,9 +28,9 @@
 //! since one chunk's own time grows with the page's length, a page longer than
 //! [`HTML_MAX_CHARS`] is refused unparsed ([`HtmlError::TooLarge`]). A page
 //! whose parse creates more than [`max_elements`] of its length is refused
-//! part way ([`HtmlError::TooManyElements`]): html5ever rebuilds every open
-//! formatting element each time a block closes over them, so a page can make
-//! it create elements with the square of its length (#723).
+//! part way ([`HtmlError::TooManyElements`]): html5ever rebuilds every
+//! formatting element a closed block left open each time text follows, so a
+//! page can make it create elements with the square of its length (#723).
 //! The leading byte-order mark is discarded here rather than by html5ever,
 //! which discards one at the start of every chunk it is fed. In short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
 //! are dropped; the root is the fullest `<article>` if it holds at least
@@ -100,7 +100,8 @@ pub const HTML_ELEMENT_ALLOWANCE: usize = 1_000;
 /// Code points fed to html5ever between two readings of the elements created
 /// (#723). One rebuild creates as many elements as the page has formatting
 /// elements open, so the count can only be read often: between two readings a
-/// piece of 64 code points holds at most about five rebuilds. Measured on a
+/// piece of 64 code points holds about five rebuilds on #723's page (12 code
+/// points each, `<div>x</div>`) and about sixteen on `<p>x` (4 each). Measured on a
 /// 486 KB page shaped like an article, a release build: 5.6 ms in pieces of 64
 /// against 4.4 ms in pieces of 16,384 (and no difference at all on 40,000
 /// nested `<div>`, 3.0 s either way).
@@ -130,8 +131,9 @@ pub enum HtmlError {
         length: usize,
     },
     /// html5ever had created more than [`max_elements`] of the page's length
-    /// (#723): it rebuilds open formatting elements each time a block closes
-    /// over them, so a page can have it create elements without end.
+    /// (#723): it rebuilds every formatting element a closed block left open
+    /// each time text follows, so a page can have it create elements with the
+    /// square of its length.
     TooManyElements {
         /// The elements created when the parse was stopped.
         created: usize,
@@ -600,7 +602,8 @@ fn parse_counted(
             .nth(take)
             .map_or(rest.len(), |(at, _)| at);
         parser.process(StrTendril::from_slice(&rest[..cut]));
-        parsed += take;
+        // The last piece may be shorter than `take`.
+        parsed = (parsed + take).min(length);
         rest = &rest[cut..];
         if created.get() > max(length) {
             let created = created.get();
@@ -893,6 +896,20 @@ mod tests {
                 created: 5,
                 // The second <p> is created once its `>` is read.
                 parsed: 7,
+                length: 8
+            }
+        );
+    }
+
+    #[test]
+    fn a_refusal_in_the_last_short_piece_counts_what_was_fed() {
+        // Pieces "<p>", "a<p" and ">b": the second <p> is created in the last.
+        let error = parse_counted("<p>a<p>b", 3, 3, |_| 4, || false).expect_err("over");
+        assert_eq!(
+            error,
+            HtmlError::TooManyElements {
+                created: 5,
+                parsed: 8,
                 length: 8
             }
         );

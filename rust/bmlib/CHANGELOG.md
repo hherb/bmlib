@@ -372,8 +372,8 @@ The Python library is documented separately, in the repository's
 ### Changed — breaking
 
 - **`HtmlError` is `#[non_exhaustive]` and gains `TooManyElements`** (#723,
-  with the Python library). html5ever rebuilds every open formatting element
-  each time a block closes over them, so N distinct `<b id=k>` left open in a
+  with the Python library). html5ever rebuilds every formatting element a
+  closed block left open each time text follows, so N distinct `<b id=k>` left open in a
   closed `<div>` and then N `<div>x</div>` make it create about N² elements:
   91 KB of page held 2.8 GB (186 MB at a quarter of it), and the deadline,
   read between chunks, came only after an estimated 18 GB. The parse now runs
