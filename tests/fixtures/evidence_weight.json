@@ -613,7 +613,7 @@
     },
     "run": {
      "algorithm_version": "rob2-2019-08-22/assignment/parallel/1",
-     "prompt_version": 1,
+     "prompt_version": 2,
      "study": {
       "status": "assessed",
       "domain": "D1",

@@ -131,14 +131,20 @@ class TestTheQuestions:
             assert "NI" in text and "previous question" not in text
 
     def test_every_question_says_what_each_answer_means_and_when_it_applies(self) -> None:
-        conditional = {"2.3", "2.4", "2.5", "2.7", "3.2", "3.3", "3.4", "4.3", "4.4", "4.5"}
+        # 3.3 is asked on a branch too, but always answered (see the next test).
+        conditional = {"2.3", "2.4", "2.5", "2.7", "3.2", "3.4", "4.3", "4.4", "4.5"}
         for question in (q for d in Domain for q in questions(d)):
             lines = question_text(question).split("\n")
             for label in ("Y:", "PY:", "PN:", "N:", "NI:"):
                 assert sum(line.startswith(label) for line in lines) == 1, (question, label)
-            applies = [line for line in lines if line.startswith("When this applies:")]
+            applies = [line for line in lines if line.startswith("Applies only when:")]
             assert len(applies) == (question in conditional), question
             assert all("answer NA" in line for line in applies), question
+
+    def test_question_3_3_is_answered_even_when_the_amount_missing_is_unknown(self) -> None:
+        # Its branch can open on 3.1 NI, so the model must not steer itself to NA.
+        text = question_text("3.3")
+        assert "do not answer NA" in text and "does not say how many" in text
 
     def test_an_unknown_id_is_refused(self) -> None:
         with pytest.raises(KeyError, match="2.9"):
@@ -150,7 +156,7 @@ class TestTheQuestions:
         assert len({domain_title(d) for d in Domain}) == 5
 
     def test_the_constants(self) -> None:
-        assert ROB2_PROMPT_VERSION == 1
+        assert ROB2_PROMPT_VERSION == 2
         assert '"escalate"' in ESCALATION_PROMPT and "registered" in D5_OUTCOME_SWITCHING
 
 

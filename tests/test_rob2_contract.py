@@ -116,6 +116,9 @@ def test_the_contract_covers_the_review_focus() -> None:
     cases = {c["name"]: c for c in REPLIES["cases"]}
     assert "2.3" in cases["D2 NA for an applicable question"]["error"]
     assert "3.2" in cases["D3 NI where none is allowed"]["error"]
+    unreported = cases["D3 amount missing unreported, 3.3 still answered"]["expected"]
+    assert list(unreported["answers"]) == ["3.1", "3.2", "3.3", "3.4"]
+    assert unreported["judgement"] == "some_concerns"
     assert "error" in cases["answer outside the set"]
     assert cases["answer case and space tolerated"]["expected"]["answers"]["1.1"]["answer"] == "PY"
     assert cases["D2 answer to an unasked question is ignored"]["expected"]["ignored"] == ["2.7"]

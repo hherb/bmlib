@@ -195,6 +195,17 @@ CASES: list[tuple[str, Domain, Any]] = [
         ),
     ),
     (
+        "D3 amount missing unreported, 3.3 still answered",
+        Domain.D3,
+        _reply(
+            Domain.D3,
+            q3_1=_entry("NI"),
+            q3_2=_entry("N"),
+            q3_3=_entry("PY"),
+            q3_4=_entry("PN"),
+        ),
+    ),
+    (
         "D3 NI where none is allowed",
         Domain.D3,
         _reply(Domain.D3, q3_1=_entry("N"), q3_2=_entry("NI")),
