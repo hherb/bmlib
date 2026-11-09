@@ -67,6 +67,10 @@ use crate::quality::rob2_questions::{
 /// The answer that means "this question does not apply"; read as unanswered.
 pub const NOT_APPLICABLE: &str = "NA";
 
+/// Every spelling read as [`NOT_APPLICABLE`], once whitespace is removed and
+/// the label upper-cased ("n/a", "Not applicable").
+const NOT_APPLICABLE_FORMS: [&str; 3] = [NOT_APPLICABLE, "N/A", "NOTAPPLICABLE"];
+
 /// The answers a reply may give, as the refusal names them.
 const ALLOWED: &str = "Y, PY, PN, N, NI, NA";
 
@@ -653,18 +657,21 @@ fn judge(domain: Domain, answers: &Answers) -> Result<Judgement, String> {
 /// Read the model's answers for one domain and verify their quotes against
 /// `text` (the paper as passed, never a digest). Python's `read_domain_reply`.
 ///
-/// An answer of `NA` (any case, surrounding space ignored) counts as
-/// unanswered; an answer to a question that does not apply is left out and its
-/// id listed in `ignored`. `condensed` is false.
+/// An answer of `NA` (also `N/A` or `Not applicable`; any case, whitespace
+/// ignored) counts as unanswered; an answer to a question that does not apply,
+/// even one that cannot be read, is left out and its id listed in `ignored`.
+/// `condensed` is false.
 ///
 /// # Errors
 ///
 /// A message when `min_similarity` is outside (0, 1]; the reply is not an
 /// object; `answers` is not an object; an id is not one of the domain's
 /// questions; an entry is not an object; an answer is not text or not one of
-/// Y, PY, PN, N, NI, NA; reasoning is not text; an applicable question is
-/// unanswered (or `NA`); or an answer is not allowed for its question (3.2 has
-/// no NI). The message names the field (`answers.2.3.answer`).
+/// Y, PY, PN, N, NI, NA; reasoning is not text (each of these only for a
+/// question that applies, decided from the answers that can be read); an
+/// applicable question is unanswered (or `NA`); or an answer is not allowed for
+/// its question (3.2 has no NI). The message names the field
+/// (`answers.2.3.answer`).
 pub fn read_domain_reply(
     domain: Domain,
     data: &Value,
@@ -680,58 +687,42 @@ pub fn read_domain_reply(
     refuse_unknown(domain, raw)?;
 
     let mut parsed: Vec<(&'static str, MachineAnswer)> = Vec::new();
+    let mut unreadable: BTreeMap<&'static str, String> = BTreeMap::new();
     for &question in questions(domain) {
         let Some(item) = raw.get(question) else {
             continue;
         };
-        let path = format!("answers.{question}");
-        let item = item
-            .as_object()
-            .ok_or_else(|| format!("{path} is not an object"))?;
-        let label = item
-            .get("answer")
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("{path}.answer is not text"))?;
-        if label.trim().to_uppercase() == NOT_APPLICABLE {
-            continue;
+        match read_entry(item, &format!("answers.{question}"), text, min_similarity) {
+            Ok(Some(answer)) => parsed.push((question, answer)),
+            Ok(None) => {}
+            Err(message) => {
+                unreadable.insert(question, message);
+            }
         }
-        let answer = Answer::parse(label)
-            .map_err(|_| format!("{path}.answer \"{label}\" is not one of {ALLOWED}"))?;
-        let reasoning = match item.get("reasoning") {
-            None | Some(Value::Null) => String::new(),
-            Some(Value::String(reasoning)) => reasoning.clone(),
-            Some(_) => return Err(format!("{path}.reasoning is not text")),
-        };
-        let (citations, quotes_not_found, contradicted, quotes_dropped) =
-            verify_quotes(item.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
-        parsed.push((
-            question,
-            MachineAnswer {
-                answer,
-                citations,
-                quotes_not_found,
-                contradicted,
-                quotes_dropped,
-                reasoning,
-            },
-        ));
     }
 
     let given: Answers = parsed
         .iter()
         .map(|(q, a)| ((*q).to_string(), a.answer))
         .collect();
-    let judgement = judge(domain, &given)?;
     let applicable = applicable_questions(domain, &given);
-    let mut answers = BTreeMap::new();
-    let mut ignored = Vec::new();
-    for (question, answer) in parsed {
-        if applicable.contains(&question) {
-            answers.insert(question.to_string(), answer);
-        } else {
-            ignored.push(question.to_string());
-        }
+    if let Some(message) = applicable.iter().find_map(|q| unreadable.get(q)) {
+        return Err(message.clone());
     }
+    let judgement = judge(domain, &given)?;
+    let ignored = questions(domain)
+        .iter()
+        .filter(|q| {
+            (parsed.iter().any(|(p, _)| p == *q) || unreadable.contains_key(*q))
+                && !applicable.contains(q)
+        })
+        .map(|q| (*q).to_string())
+        .collect();
+    let answers = parsed
+        .into_iter()
+        .filter(|(q, _)| applicable.contains(q))
+        .map(|(q, a)| (q.to_string(), a))
+        .collect();
     Ok(DomainAssessment {
         domain,
         answers,
@@ -739,6 +730,52 @@ pub fn read_domain_reply(
         condensed: false,
         ignored,
     })
+}
+
+/// One question's entry as a [`MachineAnswer`], or `None` for `NA`. Python's
+/// `_read_entry`.
+///
+/// `NA`, `N/A` and `Not applicable` (any case, whitespace ignored) read as `NA`.
+///
+/// # Errors
+///
+/// A message naming the field under `path` when the entry is not an object,
+/// its answer is not text or not one of Y, PY, PN, N, NI, NA, or its reasoning
+/// is not text.
+fn read_entry(
+    item: &Value,
+    path: &str,
+    text: &str,
+    min_similarity: f64,
+) -> Result<Option<MachineAnswer>, String> {
+    let item = item
+        .as_object()
+        .ok_or_else(|| format!("{path} is not an object"))?;
+    let label = item
+        .get("answer")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{path}.answer is not text"))?;
+    let folded: String = label.chars().filter(|c| !c.is_whitespace()).collect();
+    if NOT_APPLICABLE_FORMS.contains(&folded.to_uppercase().as_str()) {
+        return Ok(None);
+    }
+    let answer = Answer::parse(label)
+        .map_err(|_| format!("{path}.answer \"{label}\" is not one of {ALLOWED}"))?;
+    let reasoning = match item.get("reasoning") {
+        None | Some(Value::Null) => String::new(),
+        Some(Value::String(reasoning)) => reasoning.clone(),
+        Some(_) => return Err(format!("{path}.reasoning is not text")),
+    };
+    let (citations, quotes_not_found, contradicted, quotes_dropped) =
+        verify_quotes(item.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
+    Ok(Some(MachineAnswer {
+        answer,
+        citations,
+        quotes_not_found,
+        contradicted,
+        quotes_dropped,
+        reasoning,
+    }))
 }
 
 /// Read the model's escalation answer. Python's `read_escalation_reply`.
@@ -1198,6 +1235,38 @@ pub(crate) mod tests {
             answers["1.1"]["quotes"] = json!([RANDOM]);
         }
         json!({ "answers": answers })
+    }
+
+    #[test]
+    fn every_spelling_of_not_applicable_reads_as_na() {
+        for label in ["NA", " na ", "N/A", "n/a", "n / a", "Not applicable"] {
+            let found =
+                read_domain_reply(Domain::D2, &reply(Domain::D2, &[("2.7", label)]), TEXT, SIM)
+                    .expect("read");
+            assert!(found.ignored.is_empty() && !found.answers.contains_key("2.7"));
+            let mut omitted = reply(Domain::D2, &[]);
+            omitted["answers"]["2.6"] = entry(label);
+            assert_eq!(
+                read_domain_reply(Domain::D2, &omitted, TEXT, SIM).expect_err(label),
+                "answers.2.6 is applicable but not answered"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unreadable_entry_on_a_question_that_does_not_apply_is_ignored() {
+        for item in [entry("Unclear"), json!({"answer": 3}), json!("Y")] {
+            let mut data = reply(Domain::D2, &[]);
+            data["answers"]["2.7"] = item;
+            let found = read_domain_reply(Domain::D2, &data, TEXT, SIM).expect("read");
+            assert_eq!(found.judgement, Judgement::Low);
+            assert_eq!(found.ignored, vec!["2.7".to_string()]);
+        }
+        let asked = reply(Domain::D2, &[("2.6", "N"), ("2.7", "Unclear")]);
+        assert_eq!(
+            read_domain_reply(Domain::D2, &asked, TEXT, SIM).expect_err("refused"),
+            "answers.2.7.answer \"Unclear\" is not one of Y, PY, PN, N, NI, NA"
+        );
     }
 
     pub(crate) fn low_run(outcomes: usize) -> Vec<Value> {

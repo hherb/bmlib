@@ -116,6 +116,10 @@ logger = logging.getLogger(__name__)
 #: The answer that means "this question does not apply"; read as unanswered.
 NOT_APPLICABLE = "NA"
 
+#: Every spelling read as :data:`NOT_APPLICABLE`, once whitespace is removed
+#: and the label upper-cased ("n/a", "Not applicable").
+_NOT_APPLICABLE_FORMS = frozenset({NOT_APPLICABLE, "N/A", "NOTAPPLICABLE"})
+
 #: The answers a reply may give, as the refusal names them.
 _ALLOWED = "Y, PY, PN, N, NI, NA"
 
@@ -620,20 +624,21 @@ def read_domain_reply(
         min_similarity: :func:`~bmlib.citations.find_passage`'s threshold.
 
     Returns:
-        The assessment, ``condensed`` false.  An answer of ``NA`` (any case,
-        surrounding space ignored) counts as unanswered; an answer to a
-        question that does not apply is left out and its id listed in
-        ``ignored``.
+        The assessment, ``condensed`` false.  An answer of ``NA`` (also
+        ``N/A`` or ``Not applicable``; any case, whitespace ignored) counts as
+        unanswered; an answer to a question that does not apply, even one that
+        cannot be read, is left out and its id listed in ``ignored``.
 
     Raises:
         ValueError: *min_similarity* is not a number in (0, 1].
         UnreadableReplyError: (a ``ValueError``) The reply is not an object;
             ``answers`` is not an object; an id is not one of the domain's
             questions; an entry is not an object; an answer is not text or not
-            one of Y, PY, PN, N, NI, NA; reasoning is not text; an applicable
-            question is unanswered (or ``NA``); or an answer is not allowed for
-            its question (3.2 has no NI).  The message names the field
-            (``answers.2.3.answer``).
+            one of Y, PY, PN, N, NI, NA; reasoning is not text (each of these
+            only for a question that applies, decided from the answers that
+            can be read); an applicable question is unanswered (or ``NA``); or
+            an answer is not allowed for its question (3.2 has no NI).  The
+            message names the field (``answers.2.3.answer``).
     """
     similarity = check_min_similarity(min_similarity)
     if not isinstance(data, dict):
@@ -644,46 +649,64 @@ def read_domain_reply(
     _refuse_unknown(domain, raw)
 
     parsed: dict[str, MachineAnswer] = {}
+    unreadable: dict[str, str] = {}
     for question in questions(domain):
         if question not in raw:
             continue
-        item = raw[question]
-        path = f"answers.{question}"
-        if not isinstance(item, dict):
-            raise UnreadableReplyError(f"{path} is not an object")
-        label = item.get("answer")
-        if not isinstance(label, str):
-            raise UnreadableReplyError(f"{path}.answer is not text")
-        if label.strip().upper() == NOT_APPLICABLE:
-            continue
         try:
-            answer = Answer.parse(label)
-        except Rob2Error:
-            raise UnreadableReplyError(
-                f'{path}.answer "{label}" is not one of {_ALLOWED}'
-            ) from None
-        reasoning = item.get("reasoning")
-        if reasoning is None:
-            reasoning = ""
-        elif not isinstance(reasoning, str):
-            raise UnreadableReplyError(f"{path}.reasoning is not text")
-        citations, not_found, contradicted, dropped = verify_quotes(
-            item.get("quotes"), text, similarity
-        )
-        parsed[question] = MachineAnswer(
-            answer, citations, not_found, contradicted, dropped, reasoning
-        )
+            entry = _read_entry(raw[question], f"answers.{question}", text, similarity)
+        except UnreadableReplyError as exc:
+            unreadable[question] = str(exc)
+            continue
+        if entry is not None:
+            parsed[question] = entry
 
     given = {q: a.answer for q, a in parsed.items()}
-    judgement = _judge(domain, given)
     applicable = applicable_questions(domain, given)
+    for question in applicable:
+        if question in unreadable:
+            raise UnreadableReplyError(unreadable[question])
+    judgement = _judge(domain, given)
     return DomainAssessment(
         domain,
         {q: parsed[q] for q in applicable if q in parsed},
         judgement,
         False,
-        [q for q in parsed if q not in applicable],
+        [q for q in questions(domain) if (q in parsed or q in unreadable) and q not in applicable],
     )
+
+
+def _read_entry(item: object, path: str, text: str, similarity: float) -> MachineAnswer | None:
+    """One question's entry as a :class:`MachineAnswer`, or ``None`` for ``NA``.
+
+    ``NA``, ``N/A`` and ``Not applicable`` (any case, whitespace ignored) read
+    as ``NA``.
+
+    Raises:
+        UnreadableReplyError: The entry is not an object, its answer is not
+            text or not one of Y, PY, PN, N, NI, NA, or its reasoning is not
+            text; the message names the field under *path*.
+    """
+    if not isinstance(item, dict):
+        raise UnreadableReplyError(f"{path} is not an object")
+    label = item.get("answer")
+    if not isinstance(label, str):
+        raise UnreadableReplyError(f"{path}.answer is not text")
+    if "".join(label.split()).upper() in _NOT_APPLICABLE_FORMS:
+        return None
+    try:
+        answer = Answer.parse(label)
+    except Rob2Error:
+        raise UnreadableReplyError(f'{path}.answer "{label}" is not one of {_ALLOWED}') from None
+    reasoning = item.get("reasoning")
+    if reasoning is None:
+        reasoning = ""
+    elif not isinstance(reasoning, str):
+        raise UnreadableReplyError(f"{path}.reasoning is not text")
+    citations, not_found, contradicted, dropped = verify_quotes(
+        item.get("quotes"), text, similarity
+    )
+    return MachineAnswer(answer, citations, not_found, contradicted, dropped, reasoning)
 
 
 def read_escalation_reply(data: dict[str, Any]) -> Escalation:

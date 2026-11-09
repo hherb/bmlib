@@ -155,6 +155,31 @@ CASES: list[tuple[str, Domain, Any]] = [
         ),
     ),
     ("D2 NA for an applicable question", Domain.D2, _reply(Domain.D2, q2_1=_entry("Y"))),
+    (
+        "D2 N/A and Not applicable read as NA",
+        Domain.D2,
+        _reply(Domain.D2, q2_3=_entry("n/a"), q2_7=_entry(" Not  Applicable ")),
+    ),
+    (
+        "D2 Not applicable for an applicable question",
+        Domain.D2,
+        _reply(Domain.D2, q2_6=_entry("Not applicable")),
+    ),
+    (
+        "D2 unreadable answer to an unasked question is ignored",
+        Domain.D2,
+        _reply(Domain.D2, q2_7=_entry("Unclear")),
+    ),
+    (
+        "D2 malformed entry for an unasked question is ignored",
+        Domain.D2,
+        _reply(Domain.D2, q2_4="Y", q2_5=_entry(None)),
+    ),
+    (
+        "D2 unreadable answer to an asked question",
+        Domain.D2,
+        _reply(Domain.D2, q2_6=_entry("N"), q2_7=_entry("Unclear")),
+    ),
     ("D2 applicable question omitted", Domain.D2, _reply(Domain.D2, q2_6=None)),
     ("D2 unknown id", Domain.D2, _reply(Domain.D2, q2_9=_entry("Y"))),
     ("D3 low", Domain.D3, _reply(Domain.D3)),

@@ -182,10 +182,35 @@ class TestReadingADomainReply:
         found = read(Domain.D1, reply(Domain.D1, q1_1=entry(" py ")))
         assert found.answers["1.1"].answer is Answer.PY
 
-    @pytest.mark.parametrize("label", ["Unclear", "yes", "", "N/A"])
+    @pytest.mark.parametrize("label", ["Unclear", "yes", "", "N.A.", "not app"])
     def test_an_answer_outside_the_set_fails(self, label: str) -> None:
         assert refused(Domain.D1, reply(Domain.D1, q1_1=entry(label))) == (
             f'answers.1.1.answer "{label}" is not one of Y, PY, PN, N, NI, NA'
+        )
+
+    @pytest.mark.parametrize("label", ["NA", " na ", "N/A", "n/a", "n / a", "Not applicable"])
+    def test_every_spelling_of_not_applicable_reads_as_na(self, label: str) -> None:
+        found = read(Domain.D2, reply(Domain.D2, q2_7=entry(label)))
+        assert found.ignored == [] and "2.7" not in found.answers
+        assert refused(Domain.D2, reply(Domain.D2, q2_6=entry(label))) == (
+            "answers.2.6 is applicable but not answered"
+        )
+
+    @pytest.mark.parametrize(
+        "item", [entry("Unclear"), entry(3), "Y", entry("Y", reasoning=3)], ids=str
+    )
+    def test_an_unreadable_entry_on_a_question_that_does_not_apply_is_ignored(
+        self, item: Any
+    ) -> None:
+        # 2.6 is Y in the low reply, so 2.7 is not asked.
+        found = read(Domain.D2, reply(Domain.D2, q2_7=item))
+        assert found.judgement is Judgement.LOW
+        assert found.ignored == ["2.7"] and "2.7" not in found.answers
+
+    def test_an_unreadable_entry_on_a_question_that_applies_still_fails(self) -> None:
+        bad = reply(Domain.D2, q2_6=entry("N"), q2_7=entry("Unclear"))
+        assert refused(Domain.D2, bad) == (
+            'answers.2.7.answer "Unclear" is not one of Y, PY, PN, N, NI, NA'
         )
 
     def test_an_answer_to_a_question_that_does_not_apply_is_listed_as_ignored(self) -> None:

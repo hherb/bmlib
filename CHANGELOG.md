@@ -33,9 +33,11 @@ All notable changes to bmlib are documented here. The format is based on
   D2-D5 once per primary outcome (`ProposedOutcome`'s name, timepoint and result
   in the prompt; the D5 prompt asks for the registered or pre-specified primary
   outcome to be compared with the reported one). `read_domain_reply` parses
-  `Y/PY/PN/N/NI` (case and space tolerated, `NA` read as unanswered), refuses an
-  applicable question left unanswered or an answer the question does not allow,
-  lists answers to questions that do not apply in `ignored`, derives the
+  `Y/PY/PN/N/NI` (case and space tolerated; `NA`, `N/A` and `Not applicable`
+  read as unanswered), decides which questions apply from the answers it can
+  read before refusing anything, refuses an applicable question left unanswered,
+  unreadable or answered outside what the question allows, lists answers to
+  questions that do not apply (readable or not) in `ignored`, derives the
   judgement with `rob2_algorithm`, and verifies every quote against the original
   text (`quotes_not_found`, `contradicted`, `quotes_dropped` as in the other
   agents). When no domain is high and two or more have some concerns, one more

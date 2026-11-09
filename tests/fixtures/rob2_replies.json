@@ -952,6 +952,283 @@
    "error": "answers.2.3 is applicable but not answered"
   },
   {
+   "name": "D2 N/A and Not applicable read as NA",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "n/a",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": " Not  Applicable ",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D2 Not applicable for an applicable question",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Not applicable",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.2.6 is applicable but not answered"
+  },
+  {
+   "name": "D2 unreadable answer to an unasked question is ignored",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "Unclear",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": [
+     "2.7"
+    ]
+   }
+  },
+  {
+   "name": "D2 malformed entry for an unasked question is ignored",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.4": "Y",
+     "2.5": {
+      "answer": null,
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": [
+     "2.4",
+     "2.5"
+    ]
+   }
+  },
+  {
+   "name": "D2 unreadable answer to an asked question",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "Unclear",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.2.7.answer \"Unclear\" is not one of Y, PY, PN, N, NI, NA"
+  },
+  {
    "name": "D2 applicable question omitted",
    "domain": "D2",
    "reply": {
