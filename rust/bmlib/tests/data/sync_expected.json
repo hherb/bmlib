@@ -558,5 +558,525 @@
       "2024-05-31",
       "2024-06-01"
     ]
+  },
+  {
+    "name": "peak/no-stored-row-starts-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 7,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/settling-empty-body-fails-and-keeps-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 105,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/exactly-half-completes-with-a-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 53 record(s) where an earlier fetch stored 105; recording the lower count"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/just-below-half-fails",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 52 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 105,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/one-record-to-none-fails",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch of this unfinished day stored 1 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 1,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/grew-raises-the-peak-without-a-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 110,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unchanged-carries-no-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/stored-empty-has-nothing-to-shrink-from",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 0,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/past-the-window-completes-with-a-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch stored 105; recording the lower count, the day being past its 120-day refusal window"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/window-ends-exactly-at-settle-plus-grace",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch stored 105; recording the lower count, the day being past its 120-day refusal window"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/one-second-before-the-window-ends-is-refused",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 105,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/grace-is-thirty-days-at-settle-zero",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch stored 100; recording the lower count, the day being past its 30-day refusal window"
+      ],
+      "peak_count": 100,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/one-second-before-the-thirty-days-end-is-refused",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/failed-row-is-not-final-however-late",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 105,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/status-outside-the-vocabulary-is-not-final",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/captured-before-it-was-over-is-not-final",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/recheck-of-a-final-day-notes-the-lower-count",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch stored 100; recording the lower count, the day being already final"
+      ],
+      "peak_count": 100,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/settle-period-makes-a-row-unfinished",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/failed-fetch-writes-and-keeps-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: 2 record(s) failed to store"
+      ],
+      "notes": [],
+      "peak_count": 105,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/failed-fetch-that-stored-more-raises-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 120,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/failed-fetch-with-no-row-starts-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 4,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/refusal-keeps-the-outcomes-errors",
+    "ok": true,
+    "value": {
+      "errors": [
+        "an earlier line",
+        "s/2024-06-10: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 105,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/completed-shrink-keeps-the-fetchers-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "own note",
+        "s/2024-06-10: stored 60 record(s) where an earlier fetch stored 105; recording the lower count"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/partial-recovery-after-a-refusal-is-noted-against-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 60 record(s) where an earlier fetch stored 105; recording the lower count"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/recorded-shrink-is-noted-once",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/note-below-the-floor-names-the-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch stored 105; recording the lower count, the day being already final"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/final-day-already-recorded-lower-carries-no-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/legacy-row-of-a-settling-source-is-held-to-nothing",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 0,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/legacy-row-settling-at-once-is-held-to-its-count",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/legacy-failed-row-settling-at-once-is-held-to-its-count",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/legacy-row-settling-at-once-that-grew-starts-its-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 150,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/final-legacy-row-records-the-lower-count-with-a-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch stored 100; recording the lower count, the day being already final"
+      ],
+      "peak_count": 100,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-legacy-text-count",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: the stored record_count 'abc' of a row with no peak_count cannot be read, so this fetch's 10 record(s) are not compared with it"
+      ],
+      "peak_count": 10,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-legacy-negative-count",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: the stored record_count -1 of a row with no peak_count cannot be read, so this fetch's 10 record(s) are not compared with it"
+      ],
+      "peak_count": 10,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-legacy-float-count",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: the stored record_count 1.5 of a row with no peak_count cannot be read, so this fetch's 10 record(s) are not compared with it"
+      ],
+      "peak_count": 10,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-text-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: the stored peak_count '12' cannot be read, so this fetch's 10 record(s) are not compared with it"
+      ],
+      "peak_count": 10,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-negative-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: the stored peak_count -5 cannot be read, so this fetch's 10 record(s) are not compared with it"
+      ],
+      "peak_count": 10,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-float-peak-of-a-settling-source",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: the stored peak_count 2.0 cannot be read, so this fetch's 10 record(s) are not compared with it"
+      ],
+      "peak_count": 10,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/unreadable-peak-on-a-failed-fetch-leaves-no-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "peak_count": 10,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/unreadable-latest-count-beside-a-readable-peak",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 60 record(s) where an earlier fetch stored 105; recording the lower count"
+      ],
+      "peak_count": 105,
+      "status": "completed"
+    }
+  },
+  {
+    "name": "peak/future-fetch-time-is-not-final",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/unreadable-fetch-time-is-not-final",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/absent-fetch-time-is-not-final",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/naive-fetch-time-is-not-final",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch of this unfinished day stored 100 — below the 50% floor, so the day is recorded as failed, for up to 30 days after it ended. Delete this day's download_days row if the day really shrank"
+      ],
+      "notes": [],
+      "peak_count": 100,
+      "status": "failed"
+    }
+  },
+  {
+    "name": "peak/fetch-time-within-the-skew-tolerance-is-believed",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-06-10: stored 10 record(s) where an earlier fetch stored 100; recording the lower count, the day being already final"
+      ],
+      "peak_count": 100,
+      "status": "completed"
+    }
   }
 ]

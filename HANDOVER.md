@@ -1,239 +1,83 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-08 (**this session's PR is on `fix/686-one-keychain-item`**; PRs #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-09 (**this session's PR is on `fix/607-444-rust-sync-parity`**; PRs #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719, #720 and this session's._
 
-## This session: one keychain item from both languages, on every platform (#686, PR #720, branch `fix/686-one-keychain-item`)
+## This session: Rust `sync()` follows Python's entry check, day lock and peak (#607, #444, branch `fix/607-444-rust-sync-parity`)
 
-**The maintainer's choices** (2026-11-08): Python matches Rust on Linux, both
-name the Windows credential by the service, and a live CI job checks it.
-The keychain feature (#634) is unreleased, so the CHANGELOG, ROADMAP and both
-manuals were rewritten in place rather than given a *Fixed* entry.
+The maintainer chose #607 + #444 together (2026-11-09). Rust only; the one
+Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
 
-- **Windows.** Rust builds its entry through `keyring-core` (a Windows-only
-  optional dependency, since `keyring` does not re-export it) with the
-  `target` modifier set to the service, then sets `UserName` to the account
-  (an entry named by `target` creates one with none). Python's
-  `KeyringVault` reads and writes that credential through `win32cred`
-  (`pywin32-ctypes`, installed with `keyring` there): `keyring.set_password`
-  first copies the old value to `api-keys@<service>`, so a deleted key stayed
-  in Credential Manager.
-- **Linux.** Python goes through `secretstorage` with Rust's rules: search
-  every collection for `{service, username}`; none creates one in the
-  default collection with just those two (label `keyring:<account>@<service>`,
-  Rust's); one is updated; two or more are `AMBIGUOUS_ITEM`, on a read or a
-  write, as in Rust. An item carrying `keyring`'s extra `application` is
-  still found.
-- **macOS** is unchanged (`keyring`). `bmlib.secrets._PLATFORM` picks the
-  path, so the tests can fake each store (`test_secrets.py`; six mutants,
-  all killed).
-- **Live check.** CI's new `keychain-interop` job (ubuntu with an unlocked
-  gnome-keyring, and windows) builds Rust's `keychain_vault` example and runs
-  `tests/test_secrets_interop.py`: each language writes first in turn, the
-  other reads, and exactly one item remains. It is in `ci-success`'s needs.
-  The Windows-only Rust code was type-checked and clippy-clean here for
-  `x86_64-pc-windows-gnu`; that job is the first to *run* it.
-- **PR #720's review.** Two reviewers found that on Windows both languages
-  took *any* credential named by the service as the item, so another
-  account's (`keyring.set_password(service, "db", …)` leaves it there) read
-  as unreadable, and `set`, the remedy that kind names, overwrote it. Both
-  now refuse a credential whose `UserName` is neither the account nor empty
-  (`STORE`, on a read or a write) and leave it; empty is Rust's state when
-  naming the account after its first write failed, which is now a WARNING
-  and not a failed write (the key list was saved; reporting it failed left
-  `KeyBundle`'s cache stale). The BSDs take the Secret Service path, as in
-  Rust, `secretstorage` named for them in the extra. The interop job sets
-  `BMLIB_REQUIRE_KEYCHAIN_INTEROP=1`, turning a skip into a failure, lints
-  the Windows-only Rust code, and checks live a non-ASCII key, Rust naming
-  the account itself, another account's credential refused (Windows) and
-  two items ambiguous in both languages (Linux).
-- **Not done.** A user's own `keyring` backend off macOS is no longer
-  consulted (Rust never did). Nothing migrates an item an earlier commit
-  wrote, since none has shipped. `KeyringVault` still reports any exception
-  a backend raises as `STORE` naming its type, a bmlib defect included, as
-  before this PR.
+- **Entry**: `sync()` calls `validate_window` first and returns
+  `Result<SyncReport, SyncError>` (`Window(WindowError)` / `Db(DbError)`,
+  `From<DbError>`). **Breaking**: `sync`/`sync_source` also take a clock
+  (`&Utc::now`) instead of an instant, re-read at each day's close — the
+  review's one finding: judged at the run's start, a row another sync had just
+  completed read as a future fetch and was overwritten `failed`. The finalcheck
+  review: rows and part checkpoints are now stamped at the write, as Python's
+  are (they carried the run's start); `sync_source`, public, refuses a window
+  too (`Result<(), SyncError>`); `SyncError::source` is the inner error's own.
+- **Lock**: `lock_day` opens every write transaction of a day (the part flush
+  and the close); the PostgreSQL key is Python's (`hashtext` + the day's
+  ordinal = `num_days_from_ce`), pinned live by `postgres_live.rs`
+  (`TestDb::another()` is new). A lock the close cannot have costs the day an
+  `errors` line, as Python's `_DayLockUnavailableError` does.
+- **Peak**: `judge_against_peak` (+ `read_stored_day`, `stored_row_is_final`,
+  `readable_count`, `settled_by`, `REFUSAL_GRACE_DAYS`) is Python's
+  `_judge_against_peak`, #446 and PR #445's recorded-baseline rule included;
+  `upsert_download_day` takes `peak_count`. **45 `judge_peak` cases** in
+  `sync_cases.json`; four mutants each fail them. The unreadable-parts path
+  now goes through the same close. `the_days_records_and_its_status_row_commit_together`
+  refuses the insert with a trigger, the view it used refusing the lock first.
+  The finalcheck review added the tests its mutants survived (settle period at
+  the close, unreadable checkpoints, the lock failure's fetch error and
+  totals, both stamps) and a live PostgreSQL test of a close waiting on another
+  session's lock (`TestDb::connector()`), which kills reading the row before
+  the lock.
+- **Filed from the review: #722**, Rust `sync()` logs none of the lines Python
+  logs beyond the peak, lock and unreadable-parts ones.
+- **For StudyAnalyzer**: if it calls `sync`, its error type changes; a
+  `peak_count` is now written on every row.
 
-## Earlier, 2026-11-08: an unparseable reply is retried with a correction (#717, PR #719, branch `feat/717-json-correction`)
+## Earlier, 2026-11-06 to 2026-11-08 (all merged; the CHANGELOG entries are the argument)
 
-The maintainer chose options 1, 2 and 4 of PR #715's discussion, holding 3
-(read `NaN` as `null`) until measured: **#718**. Both languages re-sent the
-identical request after an unparseable reply; the retries now carry
-`JSON_CORRECTION_NOTE` on the last user turn (`with_json_correction`, a user
-turn of its own when the last is not one): added once, after the first
-unparseable reply, and carried by every later attempt of the call; an empty,
-truncated or wrong-shape reply adds nothing. The
-four JSON system prompts ask for `null`, never `NaN` or `Infinity`.
-
-- **Options 1 and 2 became one rule.** A corrected retry is not the request
-  that failed, so it is worth sending at temperature 0 too; no "do not retry"
-  branch was needed.
-- **Why not echo the reply, and why one note for every cause**: the reply could
-  push the start of the prompt out of a fixed Ollama `num_ctx` unseen, and
-  serde_json reports a `NaN` as "expected value", so Rust cannot key a note on
-  the cause.
-- **Rust**: `ChatSource::correct_json` (defaulted, so a third-party source
-  re-sends as before); `ClientSource`, behind both `LlmChat` and
-  `LlmContextModel::complete_json` (the condenser), implements it. The PICO
-  oracle now compares every model call's messages (`ScriptedChat::sent`),
-  where it compared one deduplicated list per `chat_json` call; `sent` is
-  rebuilt in the harness from when `correct_json` was called, so the oracle
-  pins the timing and the helper, and
-  `llm_chat_retries_an_unparseable_reply_with_the_correction` pins what
-  `ClientSource` posts.
-- **The PR's review (finalcheck)**: the Tier 2, Tier 3 and Cochrane system
-  prompts were pinned across languages by no oracle (a pre-existing gap the
-  PR's prompt edits relied on a one-off script for); `cochrane_assessor_cases`
-  has a `system_prompts` case now, and a one-character mutant of the Rust
-  Cochrane prompt fails it. New tests pin the note's behaviour beside the
-  other reply kinds (a truncation or wrong shape adds none; a later empty,
-  truncated or wrong-shape reply keeps it; a tool turn keeps its fields), the
-  Python retry WARNING says `with the JSON correction note` when it was sent,
-  `bmlib.agents` re-exports `JSON_CORRECTION_NOTE` and `with_json_correction`
-  as Rust's `bmlib::agents` does, and `chat_json`'s rustdoc no longer promises
-  the note for a source keeping the default.
-- **For StudyAnalyzer**: nothing to change. A retry costs ~170 characters of
-  input more than before.
-
-## Earlier, 2026-11-08 (merged): a reply carrying a number JSON does not define is unparseable (#572, PR #715)
-
-**The maintainer's direction (2026-11-08): Python refuses.** Python's `json`
-read `NaN`, `Infinity`, `-Infinity`, `1e999` (as `inf`) and an integer up to
-`int()`'s 4,300 digits; Rust's `serde_json` 1.0.151 refuses all of them
-(measured: "number out of range" for an integer past binary64, `1e-999` →
-`0.0`, a 26-digit integer → the float `1e25`), and a lone surrogate escape and
-nesting past 127 levels. So one PICO reply gave a result in Python and
-`UnusableReply` in Rust. `bmlib.llm.utils.strict_json_loads` /
-`strict_json_decoder` (the hooks and the surrogate-and-depth walk in the
-private `bmlib/_strict_json.py`, which `retraction_status.py` now shares
-rather than keeping a second copy) decode every step of the `chat_json` path
-(`parse_json`, `extract_json`, `extract_and_repair_json`, `repair_json`) and
-the public helpers `safe_json_loads` and `salvage_json_fields`, raising
-`JSONDecodeError` so every existing `except` catches them. Thirteen
-`json_cases.json` and seven `pico_agent_cases.json` oracle cases; the first of
-them found a **Rust** divergence for any unrepairable input:
-`safe_json_loads(repair=true)` returned the repairer's error bare, now wrapped
-as Python's `Cannot parse JSON even after repair:`.
-
-- **The PR's review (finalcheck) found the refusal leaked**: `parse_json`'s
-  extraction and fragment stages read *another* span, so
-  `[{"a": 1}, {"b": NaN}]` came back as `{"a": 1}` (on `main` it was a
-  wrong-shape error) and `{"s": NaN} {"s": 0.5}` as `{"s": 0.5}`, where Rust
-  refuses both — the new `array_tail_nan` PICO case reproduced it. A refusal
-  is now final: `watch_refusals()` records each one, and `_parse_json_any`
-  raises once any decode in it refused, naming the refusal. The providers'
-  `json_mode` swap had the same leak (it rewrote the reply to the object
-  beside a refused value before `chat_json` saw it) and now goes through the
-  shared `json_mode_reply()`. Mutation: all eight new guards killed.
-- **Not changed**: an integer inside binary64 but past `u64` stays an exact
-  `int` in Python and a float in Rust; tool-call arguments still use plain
-  `json.loads`. `-0` and numbers just below `f64::MAX` still read differently
-  in the two languages: **#716**. The `OverflowError` guards in
-  `LLMChunkProcessor` and `quality/_json_fields.py` stay (a parsed dict can
-  still be handed to them); `LLMChunkProcessor` clamps a `NaN` handed to it
-  directly, which only a direct caller can reach now.
-- **For StudyAnalyzer**: nothing to change; a `NaN` reply is `UnusableReply`
-  in both languages now, whatever shape it arrives in.
-
-## Earlier, 2026-11-08 (merged): a cancelled stream gives its request up at the socket (#649, #652, PR #714); adaptive thinking returns its summary (#710, PR #713)
-
-**#649/#652** (the maintainer's choices: `ureq`'s `unversioned` transport API,
-a bmlib-owned interrupt): a cancelled stream's wait is cut into 50 ms slices
-(`CANCEL_POLL_SECONDS`), so once abandoned a read fails, nothing more is
-written, the connection closes, no SDK retry resends the prompt. Rust:
-`HttpClient::post_json_stream_with_cancel` (a wrapping client must forward it:
-StudyAnalyzer's `LimitedClient` once it pins this); Python: `bmlib/llm/give_up.py`
-(`install_give_up`, httpcore's private `_network_backend`). Contract
-`stream_give_up.json`. **Not given up**: Rust's Anthropic thinking lookup (a
-GET), and third-party Python providers not calling `install_give_up`.
-**#710**: every adaptive request sends `display: "summarized"`
-(`ADAPTIVE_THINKING_DISPLAY`), not probed live. Open beside it: #708.
-
-## Earlier, 2026-11-07/08 (merged): a non-streamed chat waits as a stream does (#702, PRs #706, #712); Anthropic thinking shape and sampling (#707, #705; PRs #711, #709)
-
-- **#702**: every Rust POST runs on `post_agent` (`timeout_seconds` per
-  sending step and for DNS, `stream_timeout_seconds` for the response headers
-  and body, the maintainer's choice: no new field); a GET keeps its 45 s; a
-  timeout names its limit. #706 merged before its finalcheck fixes, which PR
-  #712 carried. `model_limits`' `/api/show` may wait 600 s + 600 s on each of
-  three attempts (left as chosen). **For StudyAnalyzer**: `LimitedClient` must
-  clip `stream_timeout_seconds` too, and its `quote_threshold` test's 900 s
-  `timeout_seconds` needs `stream_timeout_seconds` raised.
-- **#707**: thinking takes the shape the Models API's `capabilities` report;
-  an `int` budget on an adaptive-only model is refused; fixture
-  `anthropic_thinking.json` (not probed live). **#705**: Anthropic is sent no
-  sampling parameters, both languages; filed #707 and #708.
-
-## Earlier, 2026-11-07 (Python LLM bodies, all merged; the CHANGELOG is the argument)
-
-- **#698** (PR #704): a 200 nested too deeply to decode is `ValueError("<provider>: the response is nested too deeply to decode")`, recognised by the SDK's decoder frames (`providers.base.too_deep_body`); `serde_json` refuses past 128 levels.
-- **#697** (PR #701): Ollama's `embed_batch` reports only a transport failure as `ConnectionError` (breaking); `model_limits` retries a 5xx the SDK could not read.
-- **Output limits** (PR #700): `read_output_limit` / `model_limits` beside the window, both languages (Gemini's and Anthropic's fields from their docs).
-- **#617** (PRs #692, #699): an Ollama 200 that is not a JSON object, or a refusal the SDK cannot read, is recognised by the SDK frame that raised; the extra needs `ollama>=0.5`.
-
-## Earlier, 2026-11-07: Rust warnings are `log` records (#688, #685, PR #693, merged)
-
-Every library `eprintln!` is a `log` record, `target:` the Python logger's
-name, Python's level; **a host with no logger sees nothing** (the manual's
-conventions say so). Tests capture through `tests/common/log_capture.rs`.
-Filed **#694** (`bmlib-ffi` installs no logger). **For StudyAnalyzer**:
-re-pin and drop `save_api_key`'s own damaged-item log line if
-tauri-plugin-log now shows bmlib's.
-
-## Earlier, 2026-11-07: CT.gov's 403 has lifted (#606, PR #691, merged)
-
-CT.gov's 2026-09-06 403 no longer reproduces; `clinicaltrials_gov_answers_a_default_client` (`BMLIB_LIVE_TESTS=1`) guards the edge.
-
-## Earlier, 2026-11-06: a `SecretError` says whether saving a key helps (#689, PR #690, merged)
-
-`SecretError.kind` / `SecretError::kind()`: `unreadable-item` (saving a key
-replaces it), `ambiguous-item` (not replaced, the maintainer's choice),
-`store`. **For StudyAnalyzer**: show "saving a key replaces the damaged item"
-only for `UnreadableItem`; `AmbiguousItem` asks the user to remove one item
-in the keychain.
-
-## Earlier, 2026-11-06: API keys in the OS keychain, both languages (#634, PR #687, merged)
-
-`bmlib/secrets.py` / `rust/bmlib/src/secrets.rs` (`KeyBundle`,
-`KeyringVault`, `MemorySecrets`; fixture `secret_key_list.json`). **Unverified
-live** beyond macOS until #686 (fixed on `fix/686-one-keychain-item`, with
-a live CI job); iOS needs the crate's `protected` store (StudyAnalyzer #74).
-
-## Earlier, 2026-11-06: Rust reads a closed-access record's full-text 500 as not served (#608, PR #683, merged)
-
-Rust follows Python's #457: a `fullTextXML` 500 for an `isOpenAccess: "N"`
-record is `NotServed`, the flag read only to interpret a 500. **Filed: #685**
-(no Rust test can assert a log line's level).
-
-## Earlier, 2026-11-06 (merged): Rust lists a provider's models (#680, PR #682); an OpenAlex abstract's tie (#583, PR #679)
-
-**#680**: `LlmClient::list_models(provider)` beside `context_window`; the pure
-`read_model_listing` in `llm/model_listing.rs` and Python's
-`bmlib/llm/model_listing.py`, held by `tests/fixtures/model_listing.json`
-(the cloud bodies from each provider's API reference, not live). Ids only,
-sorted, every page read; every failure an error in Rust (Python's
-`LLMClient.list_models` answers `[]`, unchanged). **Filed: #681** — Rust
-posts Gemini chats to `…/v1beta/openai/v1/chat/completions`; one live chat
-decides it. **#583**: Python's `_reconstruct_abstract` sorts `(position,
-word)` tuples, as Rust does; oracle case `abstract/tie-at-one-position`.
-
-## Earlier, 2026-11-06 (all merged; the CHANGELOG entries are the argument)
-
-- **#564** (PR #678): Rust's `normalise_pmc_id` and `EUROPEPMC_ACCESSION_RE`
-  read `[0-9]`, not Unicode `\d`. Of the crate's 22 `\d` uses only these two
-  port a Python `re.ASCII` pattern. **#471 keeps its other half** (Rust does
-  not send an NCT id in ASCII as `_nct_id` does, and the PMID shape guard).
-- **#624** (PR #677): Rust's `FetchedRecord.fulltext_sources` holds
-  `fulltext::FullTextSourceEntry` (breaking for JSON indexing); shared
-  fixture `fulltext_source_entry.json`. StudyAnalyzer drops its
-  `retrieval::source_entries` shortcut.
-- **#673** (PR #676): a split item's progress counts once, when the batch
-  holding its last piece is done. `skipped_items` can still list one item
-  twice (the count no longer reads it).
+- **#686** (PR #720): one keychain item from both languages on every platform;
+  Windows credentials named by the service, another account's refused; CI's
+  `keychain-interop` job checks it live (`BMLIB_REQUIRE_KEYCHAIN_INTEROP=1`).
+  A user's own `keyring` backend off macOS is no longer consulted.
+- **#717** (PR #719): a retry after an unparseable reply carries
+  `JSON_CORRECTION_NOTE`; the JSON system prompts ask for `null`. #718 (read
+  `NaN` as `null`) is held until measured.
+- **#572** (PR #715): `strict_json_loads` refuses what serde_json refuses
+  (`NaN`, `1e999`, lone surrogates, depth >127); a refusal is final. #716
+  (`-0`, numbers near `f64::MAX`) is open.
+- **#649/#652** (PR #714): a cancelled stream gives its request up at the
+  socket (`install_give_up`; Rust `post_json_stream_with_cancel`, which a
+  wrapping client must forward). **#710** (PR #713): adaptive thinking sends
+  `display: "summarized"`.
+- **#702** (PRs #706, #712): every Rust POST waits as a stream does. **For
+  StudyAnalyzer**: `LimitedClient` must clip `stream_timeout_seconds` too.
+  **#707/#705** (PRs #711, #709): thinking takes the model's reported shape;
+  Anthropic gets no sampling parameters. #708 open.
+- **#698, #697, #617, output limits** (PRs #704, #701, #699/#692, #700):
+  Python LLM body handling; `read_output_limit`/`model_limits`.
+- **#688** (PR #693): Rust warnings are `log` records; #694 (FFI forwards
+  none) open. **For StudyAnalyzer**: re-pin; drop its own damaged-item line if
+  tauri-plugin-log shows bmlib's.
+- **#606** (PR #691): CT.gov's 403 has lifted (live guard). **#689** (PR #690):
+  `SecretError.kind` — show "saving a key replaces the damaged item" only for
+  `UnreadableItem`. **#634** (PR #687): API keys in the OS keychain; iOS needs the crate's
+  `protected` store (StudyAnalyzer #74). **#608**
+  (PR #683): Rust reads a closed-access 500 as not served; #685 filed.
+  **#680** (PR #682): Rust model listing; #681 (Gemini chat URL) needs one
+  live chat. **#583** (PR #679), **#564** (PR #678; #471 keeps its other half),
+  **#624** (PR #677, typed full-text sources; StudyAnalyzer drops its
+  shortcut), **#673** (PR #676).
 
 ## Earlier, 2026-11-01 to 2026-11-05 (all merged): what StudyAnalyzer owes
 
@@ -295,7 +139,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): this session (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -322,8 +166,7 @@ Items 8 (PR #586, `bmlib.embed.store`, imported as that and not re-exported),
 5 (PRs #580/#584, `lookup_record`), 7 (PR #575, `PicoAgent`), 11 and 6
 (PRs #568/#562, context windows, streamed chat); the CHANGELOG entries are
 the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
-a vector.** Filed from their reviews and open: #581-#583, #585, #572 (fixed on `fix/572-nan-refused`; #577 and
-#618 fixed on `fix/577-618-pico-replies`), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
+a vector.** Filed from their reviews and open: #581, #582, #585, #577 (its point 3 left open by PR #696; #583, #572 and #618 since fixed), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
 - **Plan 2b**: `download_model`, then `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16,
@@ -392,8 +235,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 9,790 passing + 14 skipped with the PostgreSQL 18 DSN** (port 5532,
-  `BMLIB_REQUIRE_POSTGRESQL=1`) on `fix/572-nan-refused` (`uv run pytest tests/`, 2026-11-08; 9,639 + 165 without it; Rust 1,677 with `cargo test --workspace --all-features` on `fix/710-thinking-display`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 9,854 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
+  `BMLIB_REQUIRE_POSTGRESQL=1`) on `fix/607-444-rust-sync-parity` (`uv run pytest tests/`, 2026-11-09; Rust 1,700 with `cargo test --workspace --all-features` there, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -422,9 +265,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**117 open once this session's PR closes #572** (#716, filed from PR #715's review, is `-0` and numbers near `f64::MAX` reading differently in the two languages; #708, filed from #705, is `chat_json`'s greedy premise; #694, filed 2026-11-07, is bmlib-ffi forwarding the crate's log records to the foreign host; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
-2026-11-08); #665 is #616's residual; #651 is #632's residual; #647 the PICO path's newest; #556–#647 are not yet
-sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 on `fix/577-618-pico-replies`, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
+**116 open once this session's PR is merged (it settles both #607 and #444)** (#722, #718, #716, #708 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+2026-11-09); #665 is #616's residual; #651 is #632's residual; #647 the PICO path's newest; #556–#647 are not yet
+sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
 **#529** are PR #526's review's, both `find_passage` decisions: a superscript
@@ -433,7 +276,7 @@ whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI h
 spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
 deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures) and #436 (follow #172), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,

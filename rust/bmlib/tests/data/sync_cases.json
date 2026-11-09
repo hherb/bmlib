@@ -1040,5 +1040,772 @@
       "recheck_days": 0,
       "settle_days": 0
     }
+  },
+  {
+    "name": "peak/no-stored-row-starts-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 7,
+      "stored": null,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/settling-empty-body-fails-and-keeps-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90,
+      "notes": [
+        "own note"
+      ]
+    }
+  },
+  {
+    "name": "peak/exactly-half-completes-with-a-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 53,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/just-below-half-fails",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 52,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/one-record-to-none-fails",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 1,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 1
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/grew-raises-the-peak-without-a-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 110,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/unchanged-carries-no-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 105,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/stored-empty-has-nothing-to-shrink-from",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 0,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 0
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/past-the-window-completes-with-a-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-12-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/window-ends-exactly-at-settle-plus-grace",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-10-09T12:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/one-second-before-the-window-ends-is-refused",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-10-09T11:59:59+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/grace-is-thirty-days-at-settle-zero",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-07-11T12:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/one-second-before-the-thirty-days-end-is-refused",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-07-11T11:59:59+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/failed-row-is-not-final-however-late",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "failed",
+        "record_count": 0,
+        "downloaded_at": "2024-06-15T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/status-outside-the-vocabulary-is-not-final",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "done",
+        "record_count": 100,
+        "downloaded_at": "2024-06-12T00:00:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/captured-before-it-was-over-is-not-final",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/recheck-of-a-final-day-notes-the-lower-count",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-12T00:00:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/settle-period-makes-a-row-unfinished",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-12T00:00:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/failed-fetch-writes-and-keeps-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "failed",
+      "record_count": 3,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90,
+      "errors": [
+        "s/2024-06-10: 2 record(s) failed to store"
+      ]
+    }
+  },
+  {
+    "name": "peak/failed-fetch-that-stored-more-raises-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "failed",
+      "record_count": 120,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/failed-fetch-with-no-row-starts-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "failed",
+      "record_count": 4,
+      "stored": null,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/refusal-keeps-the-outcomes-errors",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90,
+      "errors": [
+        "an earlier line"
+      ]
+    }
+  },
+  {
+    "name": "peak/completed-shrink-keeps-the-fetchers-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 60,
+      "stored": {
+        "status": "completed",
+        "record_count": 105,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90,
+      "notes": [
+        "own note"
+      ]
+    }
+  },
+  {
+    "name": "peak/partial-recovery-after-a-refusal-is-noted-against-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 60,
+      "stored": {
+        "status": "failed",
+        "record_count": 0,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/recorded-shrink-is-noted-once",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 60,
+      "stored": {
+        "status": "completed",
+        "record_count": 60,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/note-below-the-floor-names-the-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 60,
+        "downloaded_at": "2024-06-12T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/final-day-already-recorded-lower-carries-no-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 10,
+        "downloaded_at": "2024-06-12T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/legacy-row-of-a-settling-source-is-held-to-nothing",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 0,
+      "stored": {
+        "status": "completed",
+        "record_count": 500,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/legacy-row-settling-at-once-is-held-to-its-count",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/legacy-failed-row-settling-at-once-is-held-to-its-count",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "failed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/legacy-row-settling-at-once-that-grew-starts-its-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 150,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/final-legacy-row-records-the-lower-count-with-a-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-12T00:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-legacy-text-count",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": "abc",
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-legacy-negative-count",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": -1,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-legacy-float-count",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 1.5,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": null
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-text-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": "12"
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-negative-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": -5
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-float-peak-of-a-settling-source",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 2.0
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/unreadable-peak-on-a-failed-fetch-leaves-no-note",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "failed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-10T09:00:00+00:00",
+        "peak_count": "x"
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-latest-count-beside-a-readable-peak",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-09-01T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 60,
+      "stored": {
+        "status": "completed",
+        "record_count": "x",
+        "downloaded_at": "2024-07-01T00:00:00+00:00",
+        "peak_count": 105
+      },
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "peak/future-fetch-time-is-not-final",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-20T00:06:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/unreadable-fetch-time-is-not-final",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "garbage",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/absent-fetch-time-is-not-final",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": null,
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/naive-fetch-time-is-not-final",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-12T00:00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "peak/fetch-time-within-the-skew-tolerance-is-believed",
+    "fn": "judge_peak",
+    "args": {
+      "now": "2024-06-20T00:00:00+00:00",
+      "day": "2024-06-10",
+      "status": "completed",
+      "record_count": 10,
+      "stored": {
+        "status": "completed",
+        "record_count": 100,
+        "downloaded_at": "2024-06-20T00:04:00+00:00",
+        "peak_count": 100
+      },
+      "settle_days": 0
+    }
   }
 ]

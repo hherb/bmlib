@@ -219,6 +219,7 @@ fn a_source_with_nothing_to_fetch_is_synced_without_fetching() {
         day(),
         "completed",
         5,
+        5,
         &now().to_rfc3339(),
     )
     .expect("seed");
@@ -233,7 +234,7 @@ fn a_source_with_nothing_to_fetch_is_synced_without_fetching() {
         "pubmed",
         &fetcher,
         &req,
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -256,7 +257,7 @@ fn a_fetched_day_is_stored_and_recorded() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -300,7 +301,7 @@ fn a_completed_day_is_not_fetched_again() {
             "pubmed",
             &fetcher,
             &request(&["pubmed"]),
-            now(),
+            &now,
             &mut report,
             0,
         )
@@ -327,7 +328,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -355,7 +356,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
         "pubmed",
         &retry,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut again,
         0,
     )
@@ -383,7 +384,7 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
         "openalex",
         &fetcher,
         &request(&["openalex"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -415,7 +416,7 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
 fn a_source_with_no_fetcher_is_not_synced() {
     let mut conn = db();
     let registry = Registry::new();
-    let outcome = sync(&mut *conn, &registry, &request(&["ghost"]), now()).expect("runs");
+    let outcome = sync(&mut *conn, &registry, &request(&["ghost"]), &now).expect("runs");
 
     assert!(outcome.sources_synced.is_empty());
     assert_eq!(
@@ -438,7 +439,7 @@ fn a_source_with_a_fetcher_is_named_in_the_source_list() {
         )
         .expect("a non-resumable source with no settle period registers");
 
-    let outcome = sync(&mut *conn, &registry, &request(&["scripted"]), now()).expect("runs");
+    let outcome = sync(&mut *conn, &registry, &request(&["scripted"]), &now).expect("runs");
 
     assert_eq!(
         outcome.sources_synced,
@@ -471,7 +472,7 @@ fn a_failed_day_reports_the_records_it_holds() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -514,17 +515,15 @@ fn a_failed_day_reports_the_records_it_holds() {
 #[test]
 fn the_days_records_and_its_status_row_commit_together() {
     let mut conn = db();
-    // Readable but not writable, so day selection works and the day's own row
-    // cannot be written.
-    execute(&mut *conn, "DROP TABLE download_days", &[]).expect("drop the table");
+    // Readable but refusing an insert, so day selection works, the day's lock (a
+    // no-op `UPDATE`) is taken, and the day's own row cannot be written.
     execute(
         &mut *conn,
-        "CREATE VIEW download_days AS SELECT \
-           '' AS source, '' AS date, '' AS status, 0 AS record_count, \
-           '' AS downloaded_at, '' AS last_verified_at WHERE 0",
+        "CREATE TRIGGER refuse_days BEFORE INSERT ON download_days \
+         BEGIN SELECT RAISE(ABORT, 'download_days refuses this row'); END",
         &[],
     )
-    .expect("a read-only stand-in");
+    .expect("a refusing trigger");
 
     let fetcher = ScriptedFetcher::records(3);
     let mut report = bmlib::publications::models::SyncReport::default();
@@ -533,7 +532,7 @@ fn the_days_records_and_its_status_row_commit_together() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -575,7 +574,7 @@ fn a_finished_part_is_checkpointed_and_a_later_run_skips_it() {
         "pubmed",
         &first,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -610,7 +609,7 @@ fn a_finished_part_is_checkpointed_and_a_later_run_skips_it() {
         "pubmed",
         &second,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -678,7 +677,7 @@ fn a_part_that_cannot_be_stored_fails_the_day() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -751,7 +750,7 @@ fn a_days_checkpoints_are_handed_to_the_fetcher() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -795,7 +794,7 @@ fn a_completed_day_clears_its_part_rows() {
         "pubmed",
         &fetcher,
         &request(&["pubmed"]),
-        now(),
+        &now,
         &mut report,
         0,
     )
@@ -842,7 +841,7 @@ fn the_value_error_shaped_failures_are_named_value_error() {
             "pubmed",
             &fetcher,
             &request(&["pubmed"]),
-            now(),
+            &now,
             &mut report,
             0,
         )
@@ -855,4 +854,435 @@ fn the_value_error_shaped_failures_are_named_value_error() {
             "the name is Python's exception class"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// The entry, the day's lock and the peak (#607, #444)
+// ---------------------------------------------------------------------------
+
+/// A `download_days` row as an earlier run might have left it.
+fn seed_day(db: &mut dyn Db, status: &str, record_count: i64, peak: Value) {
+    execute(
+        db,
+        "INSERT INTO download_days (source, date, status, record_count, downloaded_at, \
+         last_verified_at, peak_count) VALUES ('pubmed', '2024-06-10', ?, ?, \
+         '2024-06-11T12:30:00+00:00', '2024-06-11T12:30:00+00:00', ?)",
+        &[
+            Value::Text(status.to_string()),
+            Value::Int(record_count),
+            peak,
+        ],
+    )
+    .expect("seed the day");
+}
+
+fn stored_day(db: &mut dyn Db) -> (Option<String>, i64, i64) {
+    (
+        text(
+            db,
+            "SELECT status FROM download_days WHERE source = 'pubmed'",
+        ),
+        count(
+            db,
+            "SELECT record_count FROM download_days WHERE source = 'pubmed'",
+        ),
+        count(
+            db,
+            "SELECT peak_count FROM download_days WHERE source = 'pubmed'",
+        ),
+    )
+}
+
+/// **`sync()` refuses a window it cannot walk at its entry** (#607), as Python's
+/// does, rather than leaving the check to its caller: nothing is fetched and no
+/// row is written.
+#[test]
+fn sync_refuses_a_window_it_cannot_walk_before_fetching() {
+    let mut conn = db();
+    let mut registry = Registry::new();
+    registry
+        .register(
+            SourceDescriptor::new("scripted", "Scripted", "a stand-in"),
+            Box::new(ScriptedFetcher::records(2)),
+        )
+        .expect("register");
+    let mut bad = request(&["scripted"]);
+    bad.recheck_days = -1;
+
+    let error = sync(&mut *conn, &registry, &bad, &now).expect_err("refused");
+
+    assert!(
+        matches!(
+            error,
+            bmlib::publications::sync::SyncError::Window(
+                bmlib::publications::sync::WindowError::NegativeRecheck { got: -1 }
+            )
+        ),
+        "{error:?}"
+    );
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM download_days"), 0);
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM publications"), 0);
+}
+
+/// **A day's row carries its peak**, which is what the next fetch is held to; a
+/// row the port wrote before #444 carried none.
+#[test]
+fn a_fetched_day_records_its_peak() {
+    let mut conn = db();
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &ScriptedFetcher::records(3),
+        &request(&["pubmed"]),
+        &now,
+        &mut report,
+        0,
+    )
+    .expect("runs");
+
+    assert_eq!(stored_day(&mut *conn), (Some("completed".into()), 3, 3));
+}
+
+/// **A completed re-fetch storing under half the peak of an unfinished day is
+/// recorded failed** (#346 through `sync_source`), the peak kept so the next
+/// fetch is held to it too — the settling preprint day `/pubs`' quiet-day body
+/// would otherwise make durable at 0.
+///
+/// The run is half a day after the seeded fetch, which was itself after the day
+/// was over, so the row is unfinished only because the source settles over 90
+/// days: a close that dropped `settle_days` would read it final and complete.
+#[test]
+fn a_re_fetch_below_half_an_unfinished_days_peak_is_refused() {
+    let mut conn = db();
+    seed_day(&mut *conn, "completed", 105, Value::Int(105));
+    let later = || now() + chrono::Duration::hours(12);
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &ScriptedFetcher::records(0),
+        &request(&["pubmed"]),
+        &later,
+        &mut report,
+        90,
+    )
+    .expect("runs");
+
+    assert_eq!(stored_day(&mut *conn), (Some("failed".into()), 0, 105));
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].contains("an earlier fetch of this unfinished day stored 105"),
+        "{:?}",
+        report.errors
+    );
+}
+
+/// **A day whose lock cannot be had costs that day a line, not the run** (#447's
+/// review): the lock is the closing block's first statement, so nothing is
+/// written and the row stays as an earlier run left it.
+#[test]
+fn a_day_lock_that_cannot_be_had_costs_the_day_a_line() {
+    let mut conn = db();
+    seed_day(&mut *conn, "failed", 0, Value::Int(0));
+    // The lock is a no-op UPDATE of the day's row on SQLite; refusing it stands
+    // in for a busy timeout.
+    execute(
+        &mut *conn,
+        "CREATE TRIGGER busy BEFORE UPDATE ON download_days \
+         BEGIN SELECT RAISE(ABORT, 'database is locked'); END",
+        &[],
+    )
+    .expect("a refusing trigger");
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &ScriptedFetcher::records(2),
+        &request(&["pubmed"]),
+        &now,
+        &mut report,
+        0,
+    )
+    .expect("the run goes on");
+
+    assert_eq!(report.days_processed, 1);
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].starts_with("pubmed/2024-06-10: the day could not be locked")
+            && report.errors[0].contains("database is locked")
+            && report.errors[0].contains("its 2 unflushed record(s) were not stored"),
+        "{:?}",
+        report.errors
+    );
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM publications"), 0);
+    assert_eq!(stored_day(&mut *conn), (Some("failed".into()), 0, 0));
+}
+
+/// **A part's flush takes the day's lock too**, so a part that cannot have it is
+/// not stored and fails the day, as a part that cannot be stored does.
+#[test]
+fn a_parts_flush_takes_the_days_lock() {
+    let mut conn = db();
+    seed_day(&mut *conn, "failed", 0, Value::Int(0));
+    execute(
+        &mut *conn,
+        "CREATE TRIGGER busy BEFORE UPDATE ON download_days \
+         BEGIN SELECT RAISE(ABORT, 'database is locked'); END",
+        &[],
+    )
+    .expect("a refusing trigger");
+    let fetcher = ScriptedFetcher::scripted(
+        vec![FetchedRecord::new("Record", "pubmed")],
+        vec![PartEvent::Finished(Some(part("a", 1)), 1)],
+        Ok(FetchOutcome::completed(1)),
+    );
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &request(&["pubmed"]),
+        &now,
+        &mut report,
+        0,
+    )
+    .expect("the run goes on");
+
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM download_day_parts"),
+        0
+    );
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM publications"), 0);
+    // Two lines: the flush's own failure, which fails the day, and then the
+    // close's, which the same trigger refuses. A flush that took no lock would
+    // store the part and leave only the second.
+    assert_eq!(report.errors.len(), 2, "{:?}", report.errors);
+    assert!(
+        report.errors[0].starts_with("pubmed/2024-06-10: ")
+            && report.errors[0].contains("database is locked")
+            && !report.errors[0].contains("could not be locked"),
+        "{:?}",
+        report.errors
+    );
+    assert!(
+        report.errors[1].starts_with("pubmed/2024-06-10: the day could not be locked")
+            && report.errors[1].contains("its 1 unflushed record(s) were not stored"),
+        "{:?}",
+        report.errors
+    );
+}
+
+/// **A day's close judges the stored row at the time of the close** (#444's
+/// review). Another sync may complete the day during this one's fetch; read
+/// against this run's start its fresh timestamp is a fetch in the future, the row
+/// looks unfinished, and a lower count would overwrite the completed day as
+/// failed. Python reads the wall clock at the close.
+#[test]
+fn a_days_close_judges_the_stored_row_when_it_closes() {
+    let mut conn = db();
+    // Completed, peak 100, by a sync that finished 20 minutes into this run.
+    execute(
+        &mut *conn,
+        "INSERT INTO download_days (source, date, status, record_count, downloaded_at, \
+         last_verified_at, peak_count) VALUES ('pubmed', '2024-06-10', 'completed', 100, \
+         '2024-06-20T00:20:00+00:00', '2024-06-20T00:20:00+00:00', 100)",
+        &[],
+    )
+    .expect("seed");
+    let start = chrono::DateTime::parse_from_rfc3339("2024-06-20T00:00:00Z")
+        .expect("instant")
+        .with_timezone(&Utc);
+    let calls = std::cell::Cell::new(0);
+    // The run's start first, then 30 minutes later for every later reading.
+    let clock = || {
+        calls.set(calls.get() + 1);
+        if calls.get() == 1 {
+            start
+        } else {
+            start + chrono::Duration::minutes(30)
+        }
+    };
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &ScriptedFetcher::records(10),
+        &request(&["pubmed"]),
+        &clock,
+        &mut report,
+        0,
+    )
+    .expect("runs");
+
+    assert_eq!(
+        report.days_processed, 1,
+        "the row read as a future fetch at the start"
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(
+        report.notes,
+        [
+            "pubmed/2024-06-10: stored 10 record(s) where an earlier fetch stored 100; recording \
+          the lower count, the day being already final"
+        ]
+    );
+    assert_eq!(
+        text(&mut *conn, "SELECT status FROM download_days"),
+        Some("completed".into())
+    );
+    // Stamped when it was written, as Python's `_upsert_download_day` stamps it,
+    // and not with the run's start.
+    assert_eq!(
+        text(&mut *conn, "SELECT downloaded_at FROM download_days"),
+        Some("2024-06-20T00:30:00.000000+00:00".into())
+    );
+}
+
+/// **`sync_source` refuses a window it cannot walk**, as `sync()` does: it is
+/// public, and day selection does date arithmetic on `recheck_days`.
+#[test]
+fn sync_source_refuses_a_window_it_cannot_walk() {
+    let mut conn = db();
+    let fetcher = ScriptedFetcher::records(2);
+    let mut bad = request(&["pubmed"]);
+    bad.recheck_days = i64::MAX;
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    let error = bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &bad,
+        &now,
+        &mut report,
+        0,
+    )
+    .expect_err("refused");
+
+    assert!(
+        matches!(error, bmlib::publications::sync::SyncError::Window(_)),
+        "{error:?}"
+    );
+    assert_eq!(fetcher.calls(), 0);
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM download_days"), 0);
+}
+
+/// **A day whose checkpoints cannot be read is failed without fetching**, through
+/// the same close as any failed fetch: the row records `failed`, its peak is kept,
+/// and the line names the table. Fetching from scratch and recording `completed`
+/// would record success over an unknown.
+#[test]
+fn a_day_whose_checkpoints_cannot_be_read_fails_without_fetching() {
+    let mut conn = db();
+    seed_day(&mut *conn, "failed", 7, Value::Int(7));
+    execute(
+        &mut *conn,
+        "INSERT INTO download_day_parts (source, date, part_scheme, part_key, promised, \
+         record_count, completed_at) VALUES ('pubmed', '2024-06-10', 'edat-range', 'a', \
+         'many', 3, '2024-06-11T12:30:00+00:00')",
+        &[],
+    )
+    .expect("an unreadable checkpoint");
+    let fetcher = ScriptedFetcher::records(3);
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &request(&["pubmed"]),
+        &now,
+        &mut report,
+        0,
+    )
+    .expect("the day's own failure does not escape the run");
+
+    assert_eq!(fetcher.calls(), 0, "nothing is fetched over an unknown");
+    assert_eq!(stored_day(&mut *conn), (Some("failed".into()), 0, 7));
+    assert_eq!(report.days_processed, 1);
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].starts_with(
+            "pubmed/2024-06-10: could not read download_day_parts for pubmed/2024-06-10: "
+        ),
+        "{:?}",
+        report.errors
+    );
+}
+
+/// **A close that cannot be locked still reports the fetch's own failure and the
+/// records its parts already stored**: the lock line is added to what the day
+/// did, not substituted for it. The trigger lets the part's flush lock the day
+/// and refuses the close's.
+#[test]
+fn a_close_that_cannot_be_locked_keeps_the_fetch_error_and_the_flushed_totals() {
+    let mut conn = db();
+    seed_day(&mut *conn, "failed", 0, Value::Int(0));
+    // A lock is a no-op UPDATE of the day's row; each one is counted, and the
+    // second is refused. The refused one's insert goes with it, so the count is
+    // of the locks that were had.
+    execute(&mut *conn, "CREATE TABLE locks_had (n INTEGER)", &[]).expect("a counter");
+    execute(
+        &mut *conn,
+        "CREATE TRIGGER busy BEFORE UPDATE ON download_days BEGIN \
+           SELECT RAISE(ABORT, 'database is locked') \
+             WHERE (SELECT COUNT(*) FROM locks_had) >= 1; \
+           INSERT INTO locks_had VALUES (1); \
+         END",
+        &[],
+    )
+    .expect("a trigger refusing the second lock");
+    let fetcher = ScriptedFetcher::scripted(
+        (0..2)
+            .map(|i| FetchedRecord::new(format!("Record {i}"), "pubmed"))
+            .collect(),
+        vec![PartEvent::Finished(Some(part("a", 2)), 2)],
+        Err(FetchError::Transport("connection reset".to_string())),
+    );
+    // A minute later for every reading, so the checkpoint's stamp says which
+    // reading it was.
+    let readings = std::cell::Cell::new(0);
+    let clock = || {
+        readings.set(readings.get() + 1);
+        now() + chrono::Duration::minutes(readings.get() - 1)
+    };
+    let mut report = bmlib::publications::models::SyncReport::default();
+
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &request(&["pubmed"]),
+        &clock,
+        &mut report,
+        0,
+    )
+    .expect("the run goes on");
+
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM locks_had"), 1);
+    assert_eq!(report.days_processed, 1);
+    assert_eq!(report.records_added, 2, "the part's records were stored");
+    assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM publications"), 2);
+    assert_eq!(report.errors.len(), 2, "{:?}", report.errors);
+    assert_eq!(
+        report.errors[0],
+        "pubmed/2024-06-10: TransportError: connection reset"
+    );
+    assert!(
+        report.errors[1].starts_with("pubmed/2024-06-10: the day could not be locked")
+            && report.errors[1].contains("its 0 unflushed record(s) were not stored"),
+        "{:?}",
+        report.errors
+    );
+    assert_eq!(stored_day(&mut *conn), (Some("failed".into()), 0, 0));
+    // The checkpoint was stamped when the part was written (the second reading),
+    // as Python's `_record_day_part` stamps it.
+    assert_eq!(
+        text(&mut *conn, "SELECT completed_at FROM download_day_parts"),
+        Some("2024-06-11T12:01:00.000000+00:00".into())
+    );
 }

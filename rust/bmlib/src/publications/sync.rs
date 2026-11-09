@@ -44,11 +44,13 @@
 //! [`NaiveDate`] (or an explicit instant) so a test states the time it means.
 //! That is a real improvement in testability and a deliberate one — the rules
 //! are wall-clock-sensitive by nature, and a rule that reads a global clock is
-//! a rule whose tests are about the clock.
+//! a rule whose tests are about the clock. [`sync`] and [`sync_source`] take a
+//! clock function rather than an instant, because a day's close has to judge
+//! the stored row at the time of the close, not of the run's start.
 
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 
 use crate::db::operations::{execute, fetch_all};
 use crate::db::{Db, DbError, Row, Value};
@@ -90,6 +92,9 @@ pub const DAY_ENDS_EVERYWHERE_AT_UTC_HOUR: u32 = 12;
 /// permanently. Five minutes is generous against ordinary host skew and far
 /// tighter than any of the failures this guards.
 pub const CLOCK_SKEW_TOLERANCE_MINUTES: i64 = 5;
+
+/// The `log` target of this module's records: Python's logger name.
+const LOG_TARGET: &str = "bmlib.publications.sync";
 
 /// Why a sync argument was refused.
 ///
@@ -262,6 +267,20 @@ pub fn day_was_over_when_fetched(
     if fetched_at > now + Duration::minutes(CLOCK_SKEW_TOLERANCE_MINUTES) {
         return false;
     }
+    settled_by(day, fetched_at, settle_days)
+}
+
+/// Is `at` at least `settle_days` past the instant `day` ended everywhere?
+///
+/// Python's `_settled_by`, which both the durability rule and #346's refusal
+/// window ([`judge_against_peak`]) go through. `false` for a day whose end
+/// cannot be represented.
+#[must_use]
+pub fn settled_by<Tz: chrono::TimeZone>(
+    day: NaiveDate,
+    at: DateTime<Tz>,
+    settle_days: u32,
+) -> bool {
     let Some(boundary) = day_over_everywhere(day) else {
         return false;
     };
@@ -270,7 +289,7 @@ pub fn day_was_over_when_fetched(
     // end overflows there — outside every per-day handler, where it costs the
     // whole run its report rather than one day's. A difference of two instants is
     // always representable.
-    fetched_at.signed_duration_since(boundary) >= Duration::days(i64::from(settle_days))
+    at.with_timezone(&Utc).signed_duration_since(boundary) >= Duration::days(i64::from(settle_days))
 }
 
 /// The exact instant day `day` is over everywhere on earth.
@@ -668,6 +687,317 @@ pub fn resolve_day_status(
 }
 
 // ---------------------------------------------------------------------------
+// A re-fetch is held to the most the day has held (#346, #444)
+// ---------------------------------------------------------------------------
+
+/// How long past a day's settle period a re-fetch may still be refused (#346).
+///
+/// [`judge_against_peak`] refuses a completed re-fetch that stores fewer than
+/// half the most a day has held only while the day is within `settle_days` +
+/// this many days of ending. The window must outlast the fetch that settles a
+/// day, and it must end: a refused row is failed, and a failed row of a settle
+/// source is re-offered on every run, so a genuine shrink would otherwise be an
+/// error for the life of the installation. Thirty days is the maintainer's
+/// margin, measured against nothing.
+pub const REFUSAL_GRACE_DAYS: u32 = 30;
+
+/// The `download_days` row an earlier run stored for a day, as stored.
+///
+/// Every column is a raw [`Value`]: the row may have been written by anything,
+/// so each reader narrows the value it uses rather than trusting the column —
+/// Python's `Mapping[str, object]`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredDay {
+    /// `status`.
+    pub status: Value,
+    /// `record_count`, what the latest fetch stored.
+    pub record_count: Value,
+    /// `downloaded_at`.
+    pub downloaded_at: Value,
+    /// `peak_count`, the most any fetch stored; `NULL` on a row an earlier bmlib
+    /// wrote.
+    pub peak_count: Value,
+}
+
+/// What [`judge_against_peak`] decided to write for a day.
+///
+/// The record count is not part of it: the row stores what this fetch stored,
+/// whatever the decision, and the caller already holds that number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldDay {
+    /// The day's outcome, possibly turned `failed` or carrying a note.
+    pub outcome: DayOutcome,
+    /// What to write into `download_days.peak_count`.
+    pub peak_count: i64,
+}
+
+/// Take the lock every write transaction of `source`'s `day` holds (#447).
+///
+/// Called first inside each of them, before anything is read, so that what
+/// [`read_stored_day`] reads is what was last committed and stays so until the
+/// transaction commits. Unlocked, two syncs of one day each judged the row as it
+/// stood before either wrote, and the later one lowered the peak the other had
+/// just raised (PostgreSQL) or was refused the write lock (SQLite).
+///
+/// - **SQLite** has one write lock per database, so a no-op `UPDATE` takes it,
+///   even when it matches no row, waiting through the busy timeout.
+/// - **PostgreSQL** gets a transaction-scoped advisory lock keyed on the source
+///   and the day — Python's key exactly (`hashtext('bmlib.download_days:<source>')`
+///   and the day's proleptic ordinal, 0001-01-01 being 1), so a Python and a Rust
+///   sync of one database serialise against each other. Not `SELECT … FOR
+///   UPDATE`, which cannot lock a row that does not exist yet.
+///
+/// The lock is released by the commit or rollback that ends the transaction.
+///
+/// # Errors
+///
+/// The driver's, when the lock cannot be had.
+pub fn lock_day(db: &mut dyn Db, source: &str, day: NaiveDate) -> Result<(), DbError> {
+    match db.dialect() {
+        crate::db::Dialect::Sqlite => execute(
+            db,
+            "UPDATE download_days SET peak_count = peak_count WHERE source = ? AND date = ?",
+            &[
+                Value::Text(source.to_string()),
+                Value::Text(day.format("%Y-%m-%d").to_string()),
+            ],
+        )?,
+        crate::db::Dialect::Postgres => execute(
+            db,
+            "SELECT pg_advisory_xact_lock(hashtext(?), ?)",
+            &[
+                Value::Text(format!("bmlib.download_days:{source}")),
+                Value::Int(i64::from(day.num_days_from_ce())),
+            ],
+        )?,
+    };
+    Ok(())
+}
+
+/// The `download_days` row an earlier run stored for `day`, or `None`.
+///
+/// # Errors
+///
+/// The driver's.
+pub fn read_stored_day(
+    db: &mut dyn Db,
+    source: &str,
+    day: NaiveDate,
+) -> Result<Option<StoredDay>, DbError> {
+    let row = crate::db::operations::fetch_one(
+        db,
+        "SELECT status, record_count, downloaded_at, peak_count FROM download_days \
+         WHERE source = ? AND date = ?",
+        &[
+            Value::Text(source.to_string()),
+            Value::Text(day.format("%Y-%m-%d").to_string()),
+        ],
+    )?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    Ok(Some(StoredDay {
+        status: row.get("status")?.clone(),
+        record_count: row.get("record_count")?.clone(),
+        downloaded_at: row.get("downloaded_at")?.clone(),
+        peak_count: row.get("peak_count")?.clone(),
+    }))
+}
+
+/// Is the stored row one day selection would no longer offer, bar `recheck_days`?
+///
+/// The same test as [`day_was_over_when_fetched`], which logs nothing here
+/// either: status `completed` (an allowlist), a readable `downloaded_at` not
+/// past the clock tolerance, and past `settle_days` after the day ended.
+#[must_use]
+pub fn stored_row_is_final(
+    stored: &StoredDay,
+    day: NaiveDate,
+    settle_days: u32,
+    now: DateTime<Utc>,
+) -> bool {
+    stored.status == Value::Text("completed".to_string())
+        && day_was_over_when_fetched(day, text_value(&stored.downloaded_at), now, settle_days)
+}
+
+/// `value` as a count bmlib could have written, or `None` if it is not one.
+///
+/// bmlib writes only non-negative integers to `record_count` and `peak_count`,
+/// so anything else was written by something else, and comparing against it
+/// would invent a baseline.
+#[must_use]
+pub fn readable_count(value: &Value) -> Option<i64> {
+    match value {
+        Value::Int(n) if *n >= 0 => Some(*n),
+        _ => None,
+    }
+}
+
+fn text_value(value: &Value) -> Option<&str> {
+    match value {
+        Value::Text(text) => Some(text),
+        _ => None,
+    }
+}
+
+/// Python's `repr` of a stored column value, for a line naming one.
+///
+/// shortcut: a float prints Rust's `{:?}` (`1.5`, `2.0`), which is Python's
+/// repr except in exponent form (`1e20` against `1e+20`), and a blob every byte
+/// as `\xNN`; upgrade if a test ever pins either.
+fn stored_repr(value: &Value) -> String {
+    match value {
+        Value::Null => "None".to_string(),
+        Value::Int(n) => n.to_string(),
+        Value::Real(r) => format!("{r:?}"),
+        Value::Text(text) => repr_str(text),
+        Value::Blob(bytes) => {
+            let escaped: String = bytes.iter().map(|b| format!("\\x{b:02x}")).collect();
+            format!("b'{escaped}'")
+        }
+    }
+}
+
+/// Judge this fetch's count against the most an earlier fetch stored (#346).
+///
+/// Python's `_judge_against_peak`, held to it by the `judge_peak` cases of
+/// `tests/data/sync_cases.json`; the argument is in its docstring and
+/// `docs/DECISIONS.md`. In short:
+///
+/// - The baseline is `peak_count`, the most any fetch of the day stored. A row
+///   with no peak was written by an earlier bmlib: for a source declaring
+///   `settle_days` it is held to nothing (0.10.0's preprint counts are of
+///   `/details`), and for one settling at once to its `record_count` (#446). A
+///   value that cannot be read is named in a WARNING (and a note, on a completed
+///   fetch) and nothing is compared.
+/// - A failed fetch is written as it is; the peak rises only if it stored more.
+/// - A completed fetch storing fewer than [`SHORTFALL_FAILURE_RATIO`] of the peak
+///   **fails** the day (an ERROR and an `errors` line, the fetch's notes
+///   dropped) while the stored row is not final and the day is within
+///   `settle_days` + [`REFUSAL_GRACE_DAYS`] of ending.
+/// - Any other completed fetch below what the day was last *recorded* at — a
+///   completed row's own count, else the peak — completes with a WARNING and a
+///   `notes` line.
+///
+/// [`SHORTFALL_FAILURE_RATIO`]: crate::publications::fetchers::reconcile::SHORTFALL_FAILURE_RATIO
+#[must_use]
+pub fn judge_against_peak(
+    source: &str,
+    day: NaiveDate,
+    mut outcome: DayOutcome,
+    record_count: i64,
+    stored: Option<&StoredDay>,
+    settle_days: u32,
+    now: DateTime<Utc>,
+) -> HeldDay {
+    let Some(stored) = stored else {
+        return HeldDay {
+            outcome,
+            peak_count: record_count,
+        };
+    };
+    let ratio = crate::publications::fetchers::reconcile::SHORTFALL_FAILURE_RATIO;
+    let completed = |outcome: &DayOutcome| outcome.status == "completed";
+    let where_ = format!("{source}/{}", day.format("%Y-%m-%d"));
+
+    let mut peak = readable_count(&stored.peak_count);
+    let mut unreadable = None;
+    if peak.is_none() && stored.peak_count != Value::Null {
+        unreadable = Some(format!(
+            "the stored peak_count {}",
+            stored_repr(&stored.peak_count)
+        ));
+    } else if stored.peak_count == Value::Null && settle_days == 0 {
+        // A row an earlier bmlib wrote, of a source settling at once (#446).
+        peak = readable_count(&stored.record_count);
+        if peak.is_none() {
+            unreadable = Some(format!(
+                "the stored record_count {} of a row with no peak_count",
+                stored_repr(&stored.record_count)
+            ));
+        }
+    }
+    if let Some(unreadable) = unreadable {
+        let message = format!(
+            "{where_}: {unreadable} cannot be read, so this fetch's {record_count} record(s) \
+             are not compared with it"
+        );
+        log::warn!(target: LOG_TARGET, "{message}");
+        if completed(&outcome) {
+            outcome.notes.push(message);
+        }
+    }
+    let new_peak = peak.map_or(record_count, |p| p.max(record_count));
+    let Some(peak) = peak.filter(|_| completed(&outcome)) else {
+        return HeldDay {
+            outcome,
+            peak_count: new_peak,
+        };
+    };
+
+    let below_floor = (record_count as f64) < (peak as f64) * ratio;
+    let final_ = stored_row_is_final(stored, day, settle_days, now);
+    let window = settle_days + REFUSAL_GRACE_DAYS;
+    let floor = format!("{:.0}%", ratio * 100.0);
+    if below_floor && !final_ && !settled_by(day, now, window) {
+        let message = format!(
+            "{where_}: stored {record_count} record(s) where an earlier fetch of this unfinished \
+             day stored {peak} — below the {floor} floor, so the day is recorded as failed, for \
+             up to {window} days after it ended. Delete this day's download_days row if the day \
+             really shrank"
+        );
+        log::error!(target: LOG_TARGET, "{message}");
+        // The fetch's own notes are dropped with its status, as
+        // `resolve_day_status` drops a note on any failed day.
+        let mut errors = outcome.errors;
+        errors.push(message);
+        return HeldDay {
+            outcome: DayOutcome {
+                status: "failed".to_string(),
+                errors,
+                notes: Vec::new(),
+            },
+            peak_count: new_peak,
+        };
+    }
+
+    let recorded = if stored.status == Value::Text("completed".to_string()) {
+        readable_count(&stored.record_count)
+    } else {
+        None
+    };
+    let baseline = recorded.unwrap_or(peak);
+    if record_count >= baseline {
+        return HeldDay {
+            outcome,
+            peak_count: new_peak,
+        };
+    }
+    let note = if below_floor {
+        let reason = if final_ {
+            "already final".to_string()
+        } else {
+            format!("past its {window}-day refusal window")
+        };
+        format!(
+            "{where_}: stored {record_count} record(s) where an earlier fetch stored {peak}; \
+             recording the lower count, the day being {reason}"
+        )
+    } else {
+        format!(
+            "{where_}: stored {record_count} record(s) where an earlier fetch stored {baseline}; \
+             recording the lower count"
+        )
+    };
+    log::warn!(target: LOG_TARGET, "{note}");
+    outcome.notes.push(note);
+    HeldDay {
+        outcome,
+        peak_count: new_peak,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Storage helpers
 // ---------------------------------------------------------------------------
 
@@ -675,6 +1005,10 @@ pub fn resolve_day_status(
 ///
 /// Runs inside the caller's per-day transaction, so the day's status commits
 /// atomically with the day's records.
+///
+/// `peak_count` is required and overwrites the column: a `NULL` there is what
+/// [`judge_against_peak`] reads as a row an earlier bmlib wrote, so a caller
+/// that could leave it out would switch #346's protection off for that day.
 ///
 /// # Errors
 ///
@@ -685,17 +1019,19 @@ pub fn upsert_download_day(
     day: NaiveDate,
     status: &str,
     record_count: i64,
+    peak_count: i64,
     now: &str,
 ) -> Result<(), DbError> {
     execute(
         db,
         "INSERT INTO download_days (source, date, status, record_count, downloaded_at, \
-         last_verified_at) VALUES (?, ?, ?, ?, ?, ?) \
+         last_verified_at, peak_count) VALUES (?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT (source, date) DO UPDATE SET \
            status = excluded.status, \
            record_count = excluded.record_count, \
            downloaded_at = excluded.downloaded_at, \
-           last_verified_at = excluded.last_verified_at",
+           last_verified_at = excluded.last_verified_at, \
+           peak_count = excluded.peak_count",
         &[
             Value::Text(source.to_string()),
             Value::Text(day.format("%Y-%m-%d").to_string()),
@@ -703,6 +1039,7 @@ pub fn upsert_download_day(
             Value::Int(record_count),
             Value::Text(now.to_string()),
             Value::Text(now.to_string()),
+            Value::Int(peak_count),
         ],
     )?;
     Ok(())
@@ -1131,6 +1468,41 @@ pub struct SyncRequest<'a> {
     pub configs: &'a std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
 }
 
+/// Why [`sync`] returned no report.
+#[derive(Debug)]
+pub enum SyncError {
+    /// The window or `recheck_days` was refused at the entry; nothing was read.
+    Window(WindowError),
+    /// A database failure outside any one day.
+    Db(DbError),
+}
+
+impl From<DbError> for SyncError {
+    fn from(error: DbError) -> Self {
+        SyncError::Db(error)
+    }
+}
+
+impl std::fmt::Display for SyncError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SyncError::Window(e) => e.fmt(f),
+            SyncError::Db(e) => e.fmt(f),
+        }
+    }
+}
+
+// Transparent: `Display` is the inner error's, so `source` is the inner error's
+// own source, or a chain printer would print the same message twice.
+impl std::error::Error for SyncError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            SyncError::Window(e) => e.source(),
+            SyncError::Db(e) => e.source(),
+        }
+    }
+}
+
 /// Assemble the per-source configuration from the legacy parameters.
 ///
 /// `source_configs` supersedes `email` and `api_keys` **when provided**: a caller
@@ -1190,7 +1562,8 @@ struct DayBuffer<'a> {
     db: &'a mut dyn Db,
     source: &'a str,
     day: NaiveDate,
-    now: &'a str,
+    /// Read at each part's write, which is when Python stamps `completed_at`.
+    clock: &'a dyn Fn() -> DateTime<Utc>,
     buffered: Vec<FetchedRecord>,
     added: i64,
     merged: i64,
@@ -1217,12 +1590,17 @@ struct DayBufferState {
 
 impl<'a> DayBuffer<'a> {
     /// A buffer for one day's walk.
-    fn new(db: &'a mut dyn Db, source: &'a str, day: NaiveDate, now: &'a str) -> Self {
+    fn new(
+        db: &'a mut dyn Db,
+        source: &'a str,
+        day: NaiveDate,
+        clock: &'a dyn Fn() -> DateTime<Utc>,
+    ) -> Self {
         DayBuffer {
             db,
             source,
             day,
-            now,
+            clock,
             buffered: Vec::new(),
             added: 0,
             merged: 0,
@@ -1284,11 +1662,13 @@ impl<'a> DayBuffer<'a> {
         checkpoint: Option<&PartCheckpoint>,
     ) -> Result<(i64, i64, i64), DbError> {
         let mut tx = self.db.begin()?;
+        lock_day(&mut *tx, self.source, self.day)?;
         let counts = store_records(&mut *tx, self.source, records)?;
         // `counts.2` is the failed count: a part that lost a record is not
         // checkpointed even when the fetcher vouched for it.
         if let Some(checkpoint) = checkpoint.filter(|_| counts.2 == 0) {
-            record_day_part(&mut *tx, self.source, self.day, checkpoint, self.now)?;
+            let stamp = timestamp((self.clock)());
+            record_day_part(&mut *tx, self.source, self.day, checkpoint, &stamp)?;
         }
         tx.commit()?;
         Ok(counts)
@@ -1337,18 +1717,32 @@ impl FetchSink for DayBuffer<'_> {
 ///
 /// # Errors
 ///
-/// Only a failure that is **not** attributable to one day: the caller's own
-/// database. A day that fails is recorded as a failed day and the loop moves on,
-/// which is the whole point of the per-day transaction.
+/// [`SyncError::Window`] when the window cannot be walked, checked here as
+/// [`sync`] checks it, since this entry is public too and day selection does
+/// date arithmetic on `recheck_days`. Otherwise only a failure that is **not**
+/// attributable to one day: the caller's own database. A day that fails is
+/// recorded as a failed day and the loop moves on, which is the whole point of
+/// the per-day transaction.
 pub fn sync_source(
     db: &mut dyn Db,
     source: &str,
     fetcher: &dyn Fetcher,
     request: &SyncRequest<'_>,
-    now: DateTime<Utc>,
+    clock: &dyn Fn() -> DateTime<Utc>,
     report: &mut SyncReport,
     settle_days: u32,
-) -> Result<(), DbError> {
+) -> Result<(), SyncError> {
+    // Read here for day selection, and again at every write: each part's
+    // checkpoint, and each day's close, which judges the stored row as it stands
+    // *then* and stamps the row with that same reading. Another sync may have
+    // completed the day during this one's fetch, and its timestamp, read against
+    // this run's start, would look like a fetch in the future (#444's review);
+    // and a row stamped with the run's start can read as fetched before its day
+    // was over when the close came after it. Python reads `datetime.now()` at
+    // each of those writes.
+    let now = clock();
+    validate_window(request.date_to, request.recheck_days, now.date_naive())
+        .map_err(SyncError::Window)?;
     let rows = load_day_rows(db, source)?;
     let days = days_needing_fetch(
         &rows,
@@ -1365,12 +1759,6 @@ pub fn sync_source(
 
     for needed in days {
         let day = needed.day;
-        // Built once: it is the day row's `completed_at` and every part row's,
-        // and the parts are written from inside the walk now.
-        // Python's `isoformat()` shape (`…T…+00:00`): `read_aware_timestamp` reads
-        // RFC 3339 only, and chrono's `Display` (`… UTC`) is neither, so a day
-        // stored that way could never read as durable and was re-fetched forever.
-        let now_str = now.to_rfc3339_opts(chrono::SecondsFormat::Micros, false);
         // The totals the day's own store adds to; the parts' are the buffer's,
         // folded in once the walk returns.
         let mut day_added = 0i64;
@@ -1379,21 +1767,18 @@ pub fn sync_source(
 
         // Read this day's checkpoints before the fetch, guarded: anything raised
         // here would leave the caller without a report for every source, so it
-        // fails the **day** instead. Fetching from scratch would be correct, but
-        // recording the day `completed` on a run that could not read what an
-        // earlier run stored is recording success over an unknown — and
-        // `completed` is never re-offered.
-        let prior_parts = match load_day_parts(db, source, day) {
-            Ok(parts) => parts,
-            Err(e) => {
+        // fails the **day** instead, through the same close as any failed fetch
+        // (lock, peak, row). Fetching from scratch would be correct, but recording
+        // the day `completed` on a run that could not read what an earlier run
+        // stored is recording success over an unknown — and `completed` is never
+        // re-offered.
+        let (prior_parts, parts_error) = match load_day_parts(db, source, day) {
+            Ok(parts) => (parts, None),
+            Err(e) => (std::collections::BTreeMap::new(), {
                 let message = format!("could not read download_day_parts for {source}/{day}: {e}");
-                report
-                    .errors
-                    .push(day_error_line(source, &day.to_string(), &message));
-                upsert_download_day(db, source, day, "failed", 0, &now_str)?;
-                report.days_processed += 1;
-                continue;
-            }
+                log::error!(target: LOG_TARGET, "{message}");
+                Some(message)
+            }),
         };
 
         let mut fetch_request = FetchRequest::new(day);
@@ -1411,8 +1796,11 @@ pub fn sync_source(
         // part that finished is checkpointed in the same transaction as the
         // records it vouches for. Both are `DayBuffer`'s; see its doc for what
         // each of them used to be.
-        let mut buffer = DayBuffer::new(&mut *db, source, day, &now_str);
-        let outcome = fetcher.fetch(&fetch_request, &mut buffer);
+        let mut buffer = DayBuffer::new(&mut *db, source, day, clock);
+        let outcome = match &parts_error {
+            Some(_) => None,
+            None => Some(fetcher.fetch(&fetch_request, &mut buffer)),
+        };
         let DayBufferState {
             buffered,
             added,
@@ -1430,24 +1818,6 @@ pub fn sync_source(
         // double-count after the fold.
         let flushed = (day_added, day_merged, day_failed);
         let buffered_len = buffered.len();
-        // **One transaction for whatever the parts did not already put away**, so
-        // the records and the day's status row commit together — which is what the
-        // storage helpers' own docs mean by "the caller's per-day transaction",
-        // and what Python's `with transaction(conn)` wraps. Nothing opened it
-        // until now: each `store_publication` committed on its own, so a crash
-        // between the records and the status row left the day unrecorded (harmless
-        // — it is re-offered and merges — but not the atomicity the docs claimed).
-        //
-        // This runs on **every** path, including a walk that failed outright: the
-        // records the walk delivered before it failed are the day's delivery, and
-        // Python stores them in its closing block for the same reason.
-        let mut tx = db.begin()?;
-        let (added, merged, failed) = store_records(&mut *tx, source, &buffered)?;
-        day_added += added;
-        day_merged += merged;
-        day_failed += failed;
-
-        let carried = carried_credit(&prior_parts, &skipped_keys);
 
         // **Every path then resolves the day through one expression**, which is
         // Python's shape: its `except` builds a `FetchResult(status="failed")` and
@@ -1462,27 +1832,93 @@ pub fn sync_source(
         // in Python by raising out of `flush_part` into the handler. Its message is
         // not: `{type}: {message}` needs the driver's exception class, and a
         // `DbError` does not carry one (§9).
-        let fetch_result = match (flush_error, &outcome) {
-            (Some(error), _) => {
+        let fetch_result = match (parts_error, flush_error, &outcome) {
+            (Some(message), _, _) => {
+                failed_fetch_result(source, day, flushed, buffered_len, message)
+            }
+            (None, Some(error), _) => {
                 failed_fetch_result(source, day, flushed, buffered_len, error.to_string())
             }
-            (None, Err(error)) => failed_fetch_result(
+            (None, None, Some(Err(error))) => failed_fetch_result(
                 source,
                 day,
                 flushed,
                 buffered_len,
                 format!("{}: {error}", error_type_name(error)),
             ),
-            (None, Ok(fetch_outcome)) => fetch_outcome.to_fetch_result(source, day),
+            (None, None, Some(Ok(fetch_outcome))) => fetch_outcome.to_fetch_result(source, day),
+            (None, None, None) => unreachable!("the fetch runs unless the parts were unreadable"),
         };
 
+        // **One transaction for whatever the parts did not already put away**, so
+        // the records and the day's status row commit together — which is what the
+        // storage helpers' own docs mean by "the caller's per-day transaction",
+        // and what Python's `with transaction(conn)` wraps.
+        //
+        // This runs on **every** path, including a walk that failed outright: the
+        // records the walk delivered before it failed are the day's delivery, and
+        // Python stores them in its closing block for the same reason.
+        let mut tx = db.begin()?;
+        // First, so the stored row the peak judgement reads below is the last one
+        // committed and stays so until this commits (#447). It is the one failure
+        // caught here: nothing has been written when it fails, so it costs this
+        // day a line rather than costing every source the run's report. A day
+        // with no row, or a failed one, is offered again; a completed day being
+        // rechecked keeps the completion an earlier run recorded.
+        if let Err(e) = lock_day(&mut *tx, source, day) {
+            tx.rollback()?;
+            let line = format!(
+                "{source}/{day}: the day could not be locked to record this fetch ({e}), so its \
+                 {buffered_len} unflushed record(s) were not stored and its download_days row \
+                 is as an earlier run left it"
+            );
+            log::error!(target: LOG_TARGET, "{line}");
+            report.days_processed += 1;
+            report.records_added += day_added;
+            report.records_merged += day_merged;
+            report.records_failed += day_failed;
+            if let Some(error) = fetch_result.error.as_ref() {
+                report
+                    .errors
+                    .push(day_error_line(source, &day.to_string(), error));
+            }
+            report.errors.push(line);
+            continue;
+        }
+        let (added, merged, failed) = store_records(&mut *tx, source, &buffered)?;
+        day_added += added;
+        day_merged += merged;
+        day_failed += failed;
+
+        let carried = carried_credit(&prior_parts, &skipped_keys);
         let resolved = resolve_day_status(source, day, &fetch_result, day_failed);
         let count = day_record_count(day_added, day_merged, carried);
-        upsert_download_day(&mut *tx, source, day, &resolved.status, count, &now_str)?;
+        let stored = read_stored_day(&mut *tx, source, day)?;
+        let closed_at = clock();
+        let held = judge_against_peak(
+            source,
+            day,
+            resolved,
+            count,
+            stored.as_ref(),
+            settle_days,
+            closed_at,
+        );
+        let resolved = held.outcome;
+        upsert_download_day(
+            &mut *tx,
+            source,
+            day,
+            &resolved.status,
+            count,
+            held.peak_count,
+            &timestamp(closed_at),
+        )?;
         if resolved.is_completed() {
             // The day is complete, so its part rows go with it: the same
             // transaction that loses any checkpoint the day no longer needs is
-            // what makes a completed day never re-offered.
+            // what makes a completed day never re-offered. A refused day keeps
+            // them, being failed.
             clear_day_parts(&mut *tx, source, day)?;
         }
         tx.commit()?;
@@ -1518,14 +1954,21 @@ pub fn sync_source(
 ///
 /// # Errors
 ///
-/// Only a database failure outside a day. A day's own failure is recorded and
-/// the run continues.
+/// [`SyncError::Window`] when the window cannot be walked
+/// ([`validate_window`], with `now`'s UTC date as today), before anything is
+/// read; otherwise only [`SyncError::Db`], a database failure outside a day. A
+/// day's own failure is recorded and the run continues.
 pub fn sync(
     db: &mut dyn Db,
     registry: &crate::publications::fetchers::Registry,
     request: &SyncRequest<'_>,
-    now: DateTime<Utc>,
-) -> Result<SyncReport, DbError> {
+    clock: &dyn Fn() -> DateTime<Utc>,
+) -> Result<SyncReport, SyncError> {
+    let now = clock();
+    // At the entry, as Python's `sync()` does (#607): what is refused here would
+    // otherwise reach date arithmetic inside day selection.
+    validate_window(request.date_to, request.recheck_days, now.date_naive())
+        .map_err(SyncError::Window)?;
     let mut report = SyncReport::default();
 
     // The future-window note comes first, because it describes the whole run
@@ -1557,10 +2000,26 @@ pub fn sync(
             },
             Err(_) => 0,
         };
-        sync_source(db, source, fetcher, request, now, &mut report, settle_days)?;
+        sync_source(
+            db,
+            source,
+            fetcher,
+            request,
+            clock,
+            &mut report,
+            settle_days,
+        )?;
     }
 
     Ok(report)
+}
+
+/// A timestamp as this port stores it: Python's `isoformat()` shape
+/// (`…T…+00:00`). `read_aware_timestamp` reads RFC 3339 only, and chrono's
+/// `Display` (`… UTC`) is neither, so a day stored that way could never read as
+/// durable and was re-fetched forever.
+fn timestamp(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Micros, false)
 }
 
 /// The Python exception name a fetcher error corresponds to.
@@ -1616,6 +2075,13 @@ mod tests {
         NaiveDate::from_ymd_opt(2024, 6, 10).expect("date")
     }
 
+    /// The instant a buffer's part checkpoints are stamped with.
+    fn buffer_clock() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2024-06-11T12:00:00Z")
+            .expect("instant")
+            .with_timezone(&Utc)
+    }
+
     fn finish(key: Option<&str>, records: usize) -> Progress {
         Progress::PartFinished(PartDisposition::Completed {
             checkpoint: key.map(|key| checkpoint(key, records)),
@@ -1627,7 +2093,7 @@ mod tests {
     #[test]
     fn a_part_boundary_stores_the_buffer_and_empties_it() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
         buffer.record(record("Two"));
         assert_eq!(buffer.buffered.len(), 2, "buffered before the boundary");
@@ -1657,7 +2123,7 @@ mod tests {
     #[test]
     fn a_part_with_no_checkpoint_is_stored_but_not_checkpointed() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
 
         buffer.progress(finish(None, 1));
@@ -1685,7 +2151,7 @@ mod tests {
         // here. `download_day_parts` survives, so "was a checkpoint written?" is
         // answerable.
         execute(&mut *conn, "DROP TABLE publications", &[]).expect("drop the table");
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
 
         buffer.progress(finish(Some("a"), 1));
@@ -1705,7 +2171,7 @@ mod tests {
     #[test]
     fn a_skipped_part_is_remembered_and_stores_nothing() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.progress(Progress::PartFinished(PartDisposition::Skipped {
             part_key: "a".to_string(),
         }));
@@ -1723,7 +2189,7 @@ mod tests {
     #[test]
     fn the_tail_is_what_the_day_still_holds() {
         let mut conn = schema_db();
-        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), &buffer_clock);
         buffer.record(record("One"));
         buffer.record(record("Two"));
         buffer.progress(finish(Some("a"), 1));

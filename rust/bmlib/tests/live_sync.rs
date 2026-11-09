@@ -87,7 +87,7 @@ fn a_live_biorxiv_day_syncs_end_to_end() {
         configs: &configs,
     };
 
-    let outcome = sync(&mut db, &registry, &request, Utc::now()).expect("the sync runs");
+    let outcome = sync(&mut db, &registry, &request, &Utc::now).expect("the sync runs");
 
     assert!(
         outcome.errors.is_empty(),

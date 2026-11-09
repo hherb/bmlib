@@ -16,7 +16,7 @@
 
 //! Sync day rules — the oracle and the named tests.
 //!
-//! The corpus (75 cases) diffs every rule against Python at a **stated**
+//! The corpus (132 cases) diffs every rule against Python at a **stated**
 //! instant, which is the one structural difference from the Python module: its
 //! tests control the clock by monkeypatching, and this port takes the instant
 //! as a parameter. A rule that reads a global clock is a rule whose tests are
@@ -28,9 +28,10 @@
 
 use bmlib::publications::models::FetchResult;
 use bmlib::publications::sync::{
-    day_over_everywhere, day_was_over_when_fetched, days_needing_fetch, note_unreachable_days,
-    read_aware_timestamp, read_verification_date, resolve_day_status, validate_window, DayRow,
-    FetchReason, WindowError, CLOCK_SKEW_TOLERANCE_MINUTES, DAY_ENDS_EVERYWHERE_AT_UTC_HOUR,
+    day_over_everywhere, day_was_over_when_fetched, days_needing_fetch, judge_against_peak,
+    note_unreachable_days, read_aware_timestamp, read_verification_date, resolve_day_status,
+    validate_window, DayOutcome, DayRow, FetchReason, StoredDay, WindowError,
+    CLOCK_SKEW_TOLERANCE_MINUTES, DAY_ENDS_EVERYWHERE_AT_UTC_HOUR,
 };
 use chrono::{DateTime, FixedOffset, NaiveDate, SecondsFormat, Utc};
 use serde_json::Value;
@@ -172,7 +173,61 @@ fn run(case: &Value) -> Value {
                 .map(|d| d.day.format("%Y-%m-%d").to_string())
                 .collect::<Vec<_>>())
         }
+        "judge_peak" => {
+            let strings = |key: &str| -> Vec<String> {
+                args.get(key)
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let outcome = DayOutcome {
+                status: args["status"].as_str().unwrap_or_default().to_string(),
+                errors: strings("errors"),
+                notes: strings("notes"),
+            };
+            let stored = args
+                .get("stored")
+                .filter(|v| !v.is_null())
+                .map(|v| StoredDay {
+                    status: db_value(&v["status"]),
+                    record_count: db_value(&v["record_count"]),
+                    downloaded_at: db_value(&v["downloaded_at"]),
+                    peak_count: db_value(&v["peak_count"]),
+                });
+            let held = judge_against_peak(
+                "s",
+                day_of(args["day"].as_str().unwrap_or_default()),
+                outcome,
+                args["record_count"].as_i64().unwrap_or_default(),
+                stored.as_ref(),
+                settle_days_of(args),
+                now(),
+            );
+            serde_json::json!({
+                "status": held.outcome.status,
+                "errors": held.outcome.errors,
+                "notes": held.outcome.notes,
+                "peak_count": held.peak_count,
+            })
+        }
         other => panic!("unknown fn {other:?}"),
+    }
+}
+
+/// A case's stored column as the database value a row would carry.
+fn db_value(value: &Value) -> bmlib::db::Value {
+    match value {
+        Value::Null => bmlib::db::Value::Null,
+        Value::String(text) => bmlib::db::Value::Text(text.clone()),
+        Value::Number(n) if n.is_i64() => bmlib::db::Value::Int(n.as_i64().unwrap_or_default()),
+        Value::Number(n) => bmlib::db::Value::Real(n.as_f64().unwrap_or_default()),
+        other => panic!("no database value for {other}"),
     }
 }
 

@@ -456,3 +456,234 @@ fn vector_store_round_trip() {
         Err(StoreError::NotIndexed(_))
     ));
 }
+
+// ---------------------------------------------------------------------------
+// The day's lock (#447 in Rust, #607)
+// ---------------------------------------------------------------------------
+
+/// **A day's lock serialises two sessions, and its key is Python's**: the same
+/// `hashtext('bmlib.download_days:<source>')` and the day's proleptic ordinal
+/// (`date(2024, 6, 10).toordinal()` is 739047), so a Python and a Rust sync of
+/// one database wait for each other. Another day is not blocked, and the lock
+/// goes with the transaction holding it.
+#[test]
+fn a_days_lock_is_held_until_its_transaction_ends() {
+    use bmlib::publications::sync::lock_day;
+    let Some(mut t) = TestDb::new() else { return };
+    let mut other = t.another();
+    let day = chrono::NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
+    let next = day.succ_opt().expect("date");
+
+    let mut holder = t.db().begin().expect("begin");
+    lock_day(&mut *holder, "pubmed", day).expect("the first lock");
+    let ours = fetch_one(
+        &mut *holder,
+        "SELECT objid FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() \
+         AND classid = hashtext('bmlib.download_days:pubmed')::oid",
+        &[],
+    )
+    .expect("pg_locks")
+    .expect("the lock is listed");
+    assert_eq!(ours.get_i64("objid").expect("objid"), 739_047);
+
+    execute(&mut *other, "SET lock_timeout = '100ms'", &[]).expect("timeout");
+    {
+        let mut waiter = other.begin().expect("begin");
+        let refused = lock_day(&mut *waiter, "pubmed", day);
+        assert!(refused.is_err(), "the second session waits for the first");
+        waiter.rollback().expect("rollback");
+    }
+    {
+        let mut waiter = other.begin().expect("begin");
+        lock_day(&mut *waiter, "pubmed", next).expect("another day is not blocked");
+        lock_day(&mut *waiter, "biorxiv", day).expect("another source is not blocked");
+        waiter.commit().expect("commit");
+    }
+
+    holder.commit().expect("release");
+    let mut waiter = other.begin().expect("begin");
+    lock_day(&mut *waiter, "pubmed", day).expect("free once the holder commits");
+    waiter.commit().expect("commit");
+}
+
+/// **A sync on a real server writes the peak and refuses a shrink**, the lock
+/// and the stored-row read running inside the day's transaction.
+#[test]
+fn a_sync_on_postgres_records_and_holds_the_peak() {
+    use bmlib::publications::fetchers::{
+        FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher,
+    };
+    use bmlib::publications::models::{FetchedRecord, SyncReport};
+    use bmlib::publications::sync::{sync_source, SyncRequest};
+
+    struct Delivers(usize);
+    impl Fetcher for Delivers {
+        fn fetch(
+            &self,
+            _: &FetchRequest,
+            sink: &mut dyn FetchSink,
+        ) -> Result<FetchOutcome, FetchError> {
+            for i in 0..self.0 {
+                sink.record(FetchedRecord::new(format!("Record {i}"), "pubmed"));
+            }
+            Ok(FetchOutcome {
+                promised: Some(self.0 as i64),
+                ..FetchOutcome::completed(self.0 as i64)
+            })
+        }
+    }
+
+    let Some(mut t) = TestDb::new() else { return };
+    let db = t.db();
+    ensure_schema(db).expect("schema");
+    let day = chrono::NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
+    let configs = std::collections::BTreeMap::new();
+    let request = SyncRequest {
+        sources: vec!["pubmed".into()],
+        date_from: day,
+        date_to: day,
+        recheck_days: 0,
+        configs: &configs,
+    };
+    let now = chrono::DateTime::parse_from_rfc3339("2024-06-11T13:00:00Z")
+        .expect("instant")
+        .with_timezone(&chrono::Utc);
+
+    let mut report = SyncReport::default();
+    sync_source(
+        db,
+        "pubmed",
+        &Delivers(4),
+        &request,
+        &|| now,
+        &mut report,
+        90,
+    )
+    .expect("first");
+    // Settle 90 keeps the day unfinished, so it is offered again.
+    sync_source(
+        db,
+        "pubmed",
+        &Delivers(0),
+        &request,
+        &|| now,
+        &mut report,
+        90,
+    )
+    .expect("second");
+
+    let row = fetch_one(
+        db,
+        "SELECT status, record_count, peak_count FROM download_days WHERE source = 'pubmed'",
+        &[],
+    )
+    .expect("select")
+    .expect("a row");
+    assert_eq!(row.get_str("status").expect("status"), "failed");
+    assert_eq!(row.get_i64("record_count").expect("count"), 0);
+    assert_eq!(row.get_i64("peak_count").expect("peak"), 4);
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+}
+
+/// **A day's close waits for the lock and then judges the row the holder
+/// committed** (#447). Session B fetches the day while A, holding the day's
+/// lock, records it completed at a peak of 100. B's close must wait, read A's
+/// row, and keep its peak; a close that read the stored row before taking the
+/// lock would judge no row and write a peak of 10 over A's.
+#[test]
+fn a_days_close_waits_for_the_lock_and_judges_what_the_holder_committed() {
+    use bmlib::publications::fetchers::{
+        FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher,
+    };
+    use bmlib::publications::models::{FetchedRecord, SyncReport};
+    use bmlib::publications::sync::{lock_day, sync_source, upsert_download_day, SyncRequest};
+
+    /// Delivers its records once A holds the lock, so B's close is the one to wait.
+    struct AfterTheLock(std::sync::Mutex<std::sync::mpsc::Receiver<()>>);
+    impl Fetcher for AfterTheLock {
+        fn fetch(
+            &self,
+            _: &FetchRequest,
+            sink: &mut dyn FetchSink,
+        ) -> Result<FetchOutcome, FetchError> {
+            self.0
+                .lock()
+                .expect("lock")
+                .recv()
+                .expect("A holds the lock");
+            for i in 0..10 {
+                sink.record(FetchedRecord::new(format!("Record {i}"), "pubmed"));
+            }
+            Ok(FetchOutcome {
+                promised: Some(10),
+                ..FetchOutcome::completed(10)
+            })
+        }
+    }
+
+    let Some(mut t) = TestDb::new() else { return };
+    ensure_schema(t.db()).expect("schema");
+    let day = chrono::NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
+    let now = chrono::DateTime::parse_from_rfc3339("2024-06-11T13:00:00Z")
+        .expect("instant")
+        .with_timezone(&chrono::Utc);
+    let stamp = now.to_rfc3339_opts(chrono::SecondsFormat::Micros, false);
+
+    let connect = t.connector();
+    let (locked, wait_for_lock) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let mut a = connect();
+        let mut tx = a.begin().expect("begin");
+        lock_day(&mut *tx, "pubmed", day).expect("A's lock");
+        locked.send(()).expect("signal");
+        // Long enough for B's close to be waiting on the lock.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        upsert_download_day(&mut *tx, "pubmed", day, "completed", 100, 100, &stamp)
+            .expect("A's row");
+        tx.commit().expect("A commits");
+    });
+
+    let configs = std::collections::BTreeMap::new();
+    let request = SyncRequest {
+        sources: vec!["pubmed".into()],
+        date_from: day,
+        date_to: day,
+        recheck_days: 0,
+        configs: &configs,
+    };
+    let mut report = SyncReport::default();
+    sync_source(
+        t.db(),
+        "pubmed",
+        &AfterTheLock(std::sync::Mutex::new(wait_for_lock)),
+        &request,
+        &|| now,
+        &mut report,
+        0,
+    )
+    .expect("B");
+    holder.join().expect("A");
+
+    let row = fetch_one(
+        t.db(),
+        "SELECT status, record_count, peak_count FROM download_days WHERE source = 'pubmed'",
+        &[],
+    )
+    .expect("select")
+    .expect("a row");
+    assert_eq!(row.get_str("status").expect("status"), "completed");
+    assert_eq!(row.get_i64("record_count").expect("count"), 10);
+    assert_eq!(
+        row.get_i64("peak_count").expect("peak"),
+        100,
+        "A's peak is kept"
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(
+        report.notes,
+        [
+            "pubmed/2024-06-10: stored 10 record(s) where an earlier fetch stored 100; recording \
+          the lower count, the day being already final"
+        ]
+    );
+}
