@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.citations import PassageContradiction
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.data_models import RctLayout, StudyDesign
@@ -40,6 +41,7 @@ from bmlib.quality.design_agent import (
     ProposalErrorKind,
     read_design_reply,
 )
+from bmlib.quality.pico_models import PicoContradictedQuote
 
 TEXT = "Participants were randomly assigned 1:1 to metformin or placebo. Follow-up was 12 weeks."
 QUOTE = "Participants were randomly assigned 1:1 to metformin or placebo."
@@ -129,12 +131,21 @@ class TestReadingAReply:
         assert proposal.citations == []
         assert proposal.quotes_not_found == [lost]
 
-    def test_a_contradicted_quote_is_listed_not_dropped(self) -> None:
+    def test_a_contradicted_quote_keeps_its_reason_and_is_not_not_found(self) -> None:
         changed = "Participants were randomly assigned 1:2 to metformin or placebo."
         proposal = read_design_reply(reply(quotes=[changed]), TEXT, SIM)
 
         assert proposal.citations == []
-        assert proposal.quotes_not_found == [changed]
+        assert proposal.quotes_not_found == []
+        assert proposal.contradicted == [
+            PicoContradictedQuote(changed, PassageContradiction.NUMBER)
+        ]
+
+    def test_unusable_quote_members_are_counted(self) -> None:
+        proposal = read_design_reply(reply(quotes=[QUOTE, "  ", 7, None]), TEXT, SIM)
+
+        assert len(proposal.citations) == 1
+        assert proposal.quotes_dropped == 3
 
     def test_no_quote_at_all_is_kept(self) -> None:
         assert read_design_reply(reply(quotes=[]), TEXT, SIM).citations == []
@@ -156,7 +167,19 @@ class TestReadingAReply:
             read_design_reply(reply(), TEXT, bad)
 
     def test_the_proposal_round_trips(self) -> None:
-        proposal = read_design_reply(reply(quotes=[QUOTE, "lost words here"]), TEXT, SIM)
+        proposal = read_design_reply(
+            reply(
+                quotes=[
+                    QUOTE,
+                    "lost words here",
+                    "Participants were randomly assigned 1:2 to metformin or placebo.",
+                    " ",
+                ]
+            ),
+            TEXT,
+            SIM,
+        )
+        assert proposal.contradicted and proposal.quotes_dropped == 1
         assert DesignProposal.from_dict(proposal.to_dict()) == proposal
 
     def test_from_dict_refuses_the_wrong_types(self) -> None:
@@ -168,6 +191,9 @@ class TestReadingAReply:
             ("reasoning", 3),
             ("quotes_not_found", "x"),
             ("citations", {}),
+            ("contradicted", "x"),
+            ("quotes_dropped", -1),
+            ("quotes_dropped", True),
         ]:
             with pytest.raises(ValueError, match=key):
                 DesignProposal.from_dict({**good, key: bad})

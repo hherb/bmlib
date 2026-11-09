@@ -73,6 +73,7 @@ pub mod data_models;
 pub mod design_agent;
 pub mod evidence_ladder;
 pub mod extractors;
+pub mod full_text_agent;
 mod json_fields;
 pub mod llm_parsers;
 pub mod manager;

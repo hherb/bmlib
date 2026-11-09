@@ -29,6 +29,8 @@
           }
         ],
         "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
         "reasoning": "Individual randomisation.",
         "condensed": false
       }
@@ -56,6 +58,8 @@
           }
         ],
         "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
         "reasoning": "Individual randomisation.",
         "condensed": false
       }
@@ -77,6 +81,8 @@
         "quotes_not_found": [
           "Patients were allocated by minimisation."
         ],
+        "contradicted": [],
+        "quotes_dropped": 0,
         "reasoning": "Individual randomisation.",
         "condensed": false
       }
@@ -95,10 +101,47 @@
         "design": "rct",
         "rct_layout": "parallel",
         "citations": [],
-        "quotes_not_found": [
-          "Participants were randomly assigned 1:2 to metformin or placebo."
+        "quotes_not_found": [],
+        "contradicted": [
+          {
+            "quote": "Participants were randomly assigned 1:2 to metformin or placebo.",
+            "contradiction": "number"
+          }
         ],
+        "quotes_dropped": 0,
         "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "blank and non-text quote members are counted as dropped",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo.",
+          "  ",
+          7,
+          null
+        ],
+        "reasoning": "x"
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "parallel",
+        "citations": [
+          {
+            "start": 0,
+            "end": 64,
+            "text": "Participants were randomly assigned 1:1 to metformin or placebo.",
+            "similarity": 1.0,
+            "exact": true
+          }
+        ],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 3,
+        "reasoning": "x",
         "condensed": false
       }
     },
@@ -125,6 +168,8 @@
           }
         ],
         "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
         "reasoning": "Individual randomisation.",
         "condensed": false
       }
@@ -142,6 +187,8 @@
         "rct_layout": null,
         "citations": [],
         "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
         "reasoning": "Individual randomisation.",
         "condensed": false
       }
@@ -168,6 +215,8 @@
           }
         ],
         "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
         "reasoning": "",
         "condensed": false
       }

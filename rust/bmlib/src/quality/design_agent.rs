@@ -20,29 +20,23 @@
 //! `tests/fixtures/design_replies.json`.
 
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use serde_json::{json, Value};
 
-use crate::agents::ChatJsonError;
-use crate::context_processor::llm_processor::{ContextModel, PromptTemplates};
-use crate::context_processor::{ProcessingConfig, ProcessingResult};
-use crate::llm::LLMMessage;
+use crate::context_processor::ProcessingConfig;
 use crate::pyvalue::python_strip;
 use crate::quality::agent_chat::{JsonChat, STOPPED_MESSAGE};
 use crate::quality::cochrane_assessor::{
-    condense_checked, Condenser, LlmCondenser, DEFAULT_CONDENSE_THRESHOLD_CHARS,
-    DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
 };
 use crate::quality::data_models::{study_design_from_str, RctLayout, StudyDesign};
-use crate::quality::pico_agent::{
-    verify_quotes, PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT,
-    READ_ATTEMPTS,
+use crate::quality::full_text_agent::{
+    ask_until_readable, check_similarity, check_stop, condense_once, Failure, Sampling, LABEL_CHARS,
 };
-use crate::quality::pico_models::PicoCitation;
-
-/// How much of the title names the paper in a log line or a condensation label.
-const LABEL_CHARS: usize = 60;
+pub use crate::quality::full_text_agent::{LlmQueryCondenser, QueryCondenser};
+use crate::quality::pico_agent::verify_quotes;
+use crate::quality::pico_models::{PicoCitation, PicoContradictedQuote};
 
 /// What a condensation's note calls the call it is for.
 const CONDENSE_STAGE: &str = "the design proposal";
@@ -96,83 +90,6 @@ Respond with JSON in exactly this shape:
 /// What the condensation gathers when the paper does not fit the window.
 pub const DESIGN_CONDENSE_QUERY: &str = r##"Everything that shows the study's own design: how participants were recruited and allocated (randomisation method, unit of randomisation, crossover or cluster allocation), whether the study followed people forward or looked back, whether it compared groups, and how the authors themselves describe the study type."##;
 
-// --- The seam later pieces share ---
-
-/// Condenses an oversized text for one stated need.
-///
-/// [`Condenser`] with the query a parameter, so one condenser serves agents
-/// that gather different evidence. The *rules* applied to its result are
-/// `condense_checked`'s, as for every condenser.
-pub trait QueryCondenser {
-    /// Condense `text` (the paper named by `label`) for `query`, to the budget
-    /// in `config`.
-    fn condense(
-        &mut self,
-        query: &str,
-        text: &str,
-        label: &str,
-        config: &ProcessingConfig,
-    ) -> ProcessingResult;
-}
-
-/// The production [`QueryCondenser`]: [`LlmCondenser`] over the PICO
-/// verbatim-passage prompts, built afresh for each call's query.
-pub struct LlmQueryCondenser<'a> {
-    model: &'a dyn ContextModel,
-    temperature: f64,
-    max_tokens: i64,
-}
-
-impl<'a> LlmQueryCondenser<'a> {
-    /// Condense through `model`, sampling as the agent this serves would.
-    #[must_use]
-    pub fn new(model: &'a dyn ContextModel, temperature: f64, max_tokens: i64) -> Self {
-        LlmQueryCondenser {
-            model,
-            temperature,
-            max_tokens,
-        }
-    }
-}
-
-impl QueryCondenser for LlmQueryCondenser<'_> {
-    fn condense(
-        &mut self,
-        query: &str,
-        text: &str,
-        label: &str,
-        config: &ProcessingConfig,
-    ) -> ProcessingResult {
-        let templates = PromptTemplates {
-            extraction_prompt: PICO_CONDENSE_EXTRACTION_PROMPT.to_string(),
-            consolidation_prompt: PICO_CONDENSE_CONSOLIDATION_PROMPT.to_string(),
-        };
-        match LlmCondenser::with_prompts(
-            self.model,
-            templates,
-            query,
-            self.temperature,
-            self.max_tokens,
-        ) {
-            Ok(mut condenser) => condenser.condense(text, label, config),
-            Err(error) => ProcessingResult::failed(error),
-        }
-    }
-}
-
-/// A [`QueryCondenser`] pinned to one query, as the plain [`Condenser`]
-/// `condense_checked` takes.
-struct Bound<'c> {
-    inner: &'c mut dyn QueryCondenser,
-    query: &'c str,
-}
-
-impl Condenser for Bound<'_> {
-    fn condense(&mut self, text: &str, label: &str, config: &ProcessingConfig) -> ProcessingResult {
-        self.inner.condense(self.query, text, label, config)
-    }
-}
-
 // --- Errors ---
 
 /// Why a proposal (this one's, or a later piece's) could not be made.
@@ -211,6 +128,17 @@ impl fmt::Display for ProposalError {
 
 impl std::error::Error for ProposalError {}
 
+impl From<Failure> for ProposalError {
+    fn from(failure: Failure) -> Self {
+        match failure {
+            Failure::Stopped => ProposalError::Stopped,
+            Failure::CondensationFailed(m) => ProposalError::CondensationFailed(m),
+            Failure::RequestFailed(m) => ProposalError::RequestFailed(m),
+            Failure::Unreadable(m) => ProposalError::Unreadable(m),
+        }
+    }
+}
+
 // --- Reading a reply ---
 
 /// The model's reading of the paper's own design, backed by its passages.
@@ -222,8 +150,14 @@ pub struct DesignProposal {
     pub rct_layout: Option<RctLayout>,
     /// The paper's own spans for the quotes found, offsets in code points.
     pub citations: Vec<PicoCitation>,
-    /// The quotes not located, or contradicted by the paper, verbatim.
+    /// The quotes not located in the paper, verbatim.
     pub quotes_not_found: Vec<String>,
+    /// The quotes the paper contradicts (a changed number, negation or
+    /// direction), each with the reason; never also in `quotes_not_found`.
+    pub contradicted: Vec<PicoContradictedQuote>,
+    /// How many quote members were not usable text (blank, or not a string)
+    /// and so were never searched for.
+    pub quotes_dropped: usize,
     /// The model's explanation, `""` when absent.
     pub reasoning: String,
     /// Whether the model saw a digest instead of the whole paper.
@@ -239,6 +173,8 @@ impl DesignProposal {
             "rct_layout": self.rct_layout.map(RctLayout::as_str),
             "citations": self.citations.iter().map(PicoCitation::to_json).collect::<Vec<_>>(),
             "quotes_not_found": self.quotes_not_found,
+            "contradicted": self.contradicted.iter().map(PicoContradictedQuote::to_json).collect::<Vec<_>>(),
+            "quotes_dropped": self.quotes_dropped,
             "reasoning": self.reasoning,
             "condensed": self.condensed,
         })
@@ -269,7 +205,7 @@ impl DesignProposal {
             .as_array()
             .ok_or("citations is not a list")?
             .iter()
-            .map(citation_from_json)
+            .map(PicoCitation::from_json)
             .collect::<Result<Vec<_>, _>>()?;
         let quotes_not_found = field(value, "quotes_not_found")?
             .as_array()
@@ -278,11 +214,23 @@ impl DesignProposal {
             .map(|q| q.as_str().map(str::to_string))
             .collect::<Option<Vec<_>>>()
             .ok_or("quotes_not_found is not a list of text")?;
+        let contradicted = field(value, "contradicted")?
+            .as_array()
+            .ok_or("contradicted is not a list")?
+            .iter()
+            .map(PicoContradictedQuote::from_json)
+            .collect::<Result<Vec<_>, _>>()?;
+        let quotes_dropped = field(value, "quotes_dropped")?
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or("quotes_dropped is not a count")?;
         Ok(DesignProposal {
             design,
             rct_layout,
             citations,
             quotes_not_found,
+            contradicted,
+            quotes_dropped,
             reasoning: field(value, "reasoning")?
                 .as_str()
                 .ok_or("reasoning is not text")?
@@ -297,41 +245,6 @@ impl DesignProposal {
 /// `value[key]`, or a message naming the absent key.
 fn field<'v>(value: &'v Value, key: &str) -> Result<&'v Value, String> {
     value.get(key).ok_or_else(|| format!("{key} is missing"))
-}
-
-/// A [`PicoCitation`] from its `to_json` form.
-fn citation_from_json(value: &Value) -> Result<PicoCitation, String> {
-    let index = |key: &str| {
-        field(value, key)?
-            .as_u64()
-            .and_then(|n| usize::try_from(n).ok())
-            .ok_or_else(|| format!("citations.{key} is not a count"))
-    };
-    Ok(PicoCitation {
-        start: index("start")?,
-        end: index("end")?,
-        text: field(value, "text")?
-            .as_str()
-            .ok_or("citations.text is not text")?
-            .to_string(),
-        similarity: field(value, "similarity")?
-            .as_f64()
-            .ok_or("citations.similarity is not a number")?,
-        exact: field(value, "exact")?
-            .as_bool()
-            .ok_or("citations.exact is not a boolean")?,
-    })
-}
-
-/// Refuse a `min_similarity` outside (0, 1]; NaN fails both comparisons.
-fn check_similarity(min_similarity: f64) -> Result<(), String> {
-    if min_similarity > 0.0 && min_similarity <= 1.0 {
-        Ok(())
-    } else {
-        Err(format!(
-            "min_similarity must be a number in (0, 1], got {min_similarity}"
-        ))
-    }
 }
 
 /// Read the model's reply and verify its quotes against `text`. Python's
@@ -382,15 +295,15 @@ pub fn read_design_reply(
         Some(_) => return Err("reasoning is not text".to_string()),
     };
 
-    let (citations, mut quotes_not_found, contradicted, _dropped) =
+    let (citations, quotes_not_found, contradicted, quotes_dropped) =
         verify_quotes(data.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
-    // A quote the paper contradicts is not in the paper as stated: listed, not dropped.
-    quotes_not_found.extend(contradicted.into_iter().map(|c| c.quote));
     Ok(DesignProposal {
         design,
         rct_layout,
         citations,
         quotes_not_found,
+        contradicted,
+        quotes_dropped,
         reasoning,
         condensed: false,
     })
@@ -491,12 +404,23 @@ impl<'a> DesignAgent<'a> {
         if stripped.is_empty() {
             return Err(ProposalError::EmptyInput);
         }
-        self.check_stop()?;
+        check_stop(self.stop)?;
 
         let condensed = stripped.chars().count() > self.condense_config.max_context_chars;
         let digest;
         let sent = if condensed {
-            digest = self.condense(title, stripped)?;
+            digest = condense_once(
+                match self.condenser.as_mut() {
+                    Some(condenser) => Some(&mut **condenser),
+                    None => None,
+                },
+                DESIGN_CONDENSE_QUERY,
+                title,
+                stripped,
+                &self.condense_config,
+                CONDENSE_STAGE,
+                self.stop,
+            )?;
             digest.as_str()
         } else {
             stripped
@@ -507,110 +431,30 @@ impl<'a> DesignAgent<'a> {
             "design proposal of {}",
             crate::pyvalue::repr_str(&title.chars().take(LABEL_CHARS).collect::<String>())
         );
-        let mut proposal = self.ask(&prompt, text, min_similarity, &label)?;
+        let sampling = Sampling {
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            max_retries: self.max_retries,
+        };
+        let mut proposal = ask_until_readable(
+            &mut *self.chat,
+            DESIGN_SYSTEM_PROMPT,
+            &prompt,
+            sampling,
+            self.stop,
+            &label,
+            |data| read_design_reply(data, text, min_similarity),
+        )?;
         proposal.condensed = condensed;
         Ok(proposal)
     }
-
-    /// Condense `text` once with the design query.
-    fn condense(&mut self, title: &str, text: &str) -> Result<String, ProposalError> {
-        let label: String = title.chars().take(LABEL_CHARS).collect();
-        let stop = self.stop;
-        let Some(condenser) = self.condenser.as_mut() else {
-            return Err(ProposalError::CondensationFailed(
-                "no condenser configured".to_string(),
-            ));
-        };
-        let mut bound = Bound {
-            inner: &mut **condenser,
-            query: DESIGN_CONDENSE_QUERY,
-        };
-        let condensed = condense_checked(
-            &mut bound,
-            text,
-            &label,
-            &self.condense_config,
-            CONDENSE_STAGE,
-        );
-        // A run stopped part-way can end in a partial digest, which is no digest.
-        if stopped(stop) {
-            return Err(ProposalError::Stopped);
-        }
-        let (digest, _notes, _status) = condensed.map_err(|refusal| {
-            let message = format!(
-                "a {}-character text could not be condensed to fit {} characters: {}",
-                text.chars().count(),
-                self.condense_config.max_context_chars,
-                refusal.reason
-            );
-            match refusal.request {
-                Some(_) => ProposalError::RequestFailed(message),
-                None => ProposalError::CondensationFailed(message),
-            }
-        })?;
-        Ok(digest)
-    }
-
-    /// Send the question and read the reply, asking again once if it is unreadable.
-    fn ask(
-        &mut self,
-        prompt: &str,
-        original: &str,
-        min_similarity: f64,
-        label: &str,
-    ) -> Result<DesignProposal, ProposalError> {
-        let messages = vec![
-            LLMMessage::system(DESIGN_SYSTEM_PROMPT),
-            LLMMessage::user(prompt),
-        ];
-        let mut problem = String::new();
-        for _attempt in 0..READ_ATTEMPTS {
-            self.check_stop()?;
-            let data = match self.chat.chat_json(
-                &messages,
-                self.temperature,
-                self.max_tokens,
-                self.max_retries,
-                true,
-            ) {
-                Ok(outcome) => outcome.value,
-                // A stop set during the call wins over whatever it failed with.
-                Err(_) if stopped(self.stop) => return Err(ProposalError::Stopped),
-                Err(error @ ChatJsonError::Transport { .. }) => {
-                    return Err(ProposalError::RequestFailed(error.to_string()))
-                }
-                Err(error) => return Err(ProposalError::Unreadable(error.to_string())),
-            };
-            match read_design_reply(&data, original, min_similarity) {
-                Ok(proposal) => return Ok(proposal),
-                Err(message) => problem = message,
-            }
-        }
-        Err(ProposalError::Unreadable(format!(
-            "{label}: {READ_ATTEMPTS} replies could not be read: {problem}"
-        )))
-    }
-
-    /// [`ProposalError::Stopped`] once the stop is set.
-    fn check_stop(&self) -> Result<(), ProposalError> {
-        if stopped(self.stop) {
-            Err(ProposalError::Stopped)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-/// Whether an optional stop is set.
-fn stopped(stop: Option<&AtomicBool>) -> bool {
-    stop.is_some_and(|stop| stop.load(Ordering::SeqCst))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
-    use crate::context_processor::{ProcessingConfig, ProcessingResult};
+    use crate::context_processor::ProcessingResult;
     use crate::llm::LLMMessage;
     use crate::quality::agent_chat::JsonChat;
     use serde_json::json;
@@ -707,15 +551,23 @@ mod tests {
     }
 
     #[test]
-    fn lost_and_contradicted_quotes_are_listed() {
+    fn lost_contradicted_and_dropped_quotes_each_have_their_place() {
         let lost = "Patients were allocated by minimisation.";
         let changed = "Participants were randomly assigned 1:2 to metformin or placebo.";
-        let proposal =
-            read_design_reply(&reply(json!({"quotes": [lost, changed]})), TEXT, SIM).expect("read");
-        assert!(proposal.citations.is_empty());
-        assert_eq!(proposal.quotes_not_found, vec![lost, changed]);
+        let quotes = json!({"quotes": [lost, changed, QUOTE, "  ", 7, null]});
+        let proposal = read_design_reply(&reply(quotes), TEXT, SIM).expect("read");
+        assert_eq!(proposal.citations.len(), 1);
+        assert_eq!(proposal.quotes_not_found, vec![lost]);
+        assert_eq!(
+            proposal.contradicted,
+            vec![PicoContradictedQuote {
+                quote: changed.to_string(),
+                contradiction: crate::citations::PassageContradiction::Number,
+            }]
+        );
+        assert_eq!(proposal.quotes_dropped, 3);
         let none = read_design_reply(&reply(json!({"quotes": []})), TEXT, SIM).expect("read");
-        assert!(none.citations.is_empty());
+        assert!(none.citations.is_empty() && none.quotes_dropped == 0);
     }
 
     #[test]
@@ -740,11 +592,17 @@ mod tests {
     #[test]
     fn the_proposal_round_trips() {
         let proposal = read_design_reply(
-            &reply(json!({"quotes": [QUOTE, "lost words here"]})),
+            &reply(json!({"quotes": [
+                QUOTE,
+                "lost words here",
+                "Participants were randomly assigned 1:2 to metformin or placebo.",
+                " "
+            ]})),
             TEXT,
             SIM,
         )
         .expect("read");
+        assert!(!proposal.contradicted.is_empty() && proposal.quotes_dropped == 1);
         assert_eq!(DesignProposal::from_json(&proposal.to_json()), Ok(proposal));
         let good = read_design_reply(&reply(json!({})), TEXT, SIM)
             .expect("read")
@@ -756,6 +614,9 @@ mod tests {
             ("reasoning", json!(3)),
             ("quotes_not_found", json!("x")),
             ("citations", json!({})),
+            ("contradicted", json!("x")),
+            ("quotes_dropped", json!(-1)),
+            ("quotes_dropped", json!(true)),
         ] {
             let mut value = good.clone();
             value[key] = bad;

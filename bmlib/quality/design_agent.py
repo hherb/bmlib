@@ -38,35 +38,36 @@ The rule set and the replies are shared with Rust's
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any
 
-from bmlib.agents.base import (
-    BaseAgent,
-    ChatJsonError,
-    ChatJsonTruncatedError,
-    ChatStoppedError,
+from bmlib.quality._full_text_agent import (
+    LABEL_CHARS,
+    AgentFailure,
+    LlmQueryCondenser,
+    QueryCondenser,
+    UnreadableReplyError,
+    _FullTextAgent,
+    check_min_similarity,
 )
-from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProcessingStoppedError
-from bmlib.llm import LLMClient, LLMMessage, LLMResponse
-from bmlib.llm.providers.ollama import MAX_NUM_CTX
-from bmlib.llm.stream import Stop, stop_reader
-from bmlib.quality._condense import CondensationRefusedError, condense_text
-from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS
 from bmlib.quality.data_models import STUDY_DESIGN_MAPPING, RctLayout, StudyDesign
-from bmlib.quality.pico_agent import (
-    _NOT_A_REQUEST_FAILURE,
-    _READ_ATTEMPTS,
-    PICO_CONDENSE_CONSOLIDATION_PROMPT,
-    PICO_CONDENSE_EXTRACTION_PROMPT,
-    STOPPED_MESSAGE,
-    _check_similarity,
-    verify_quotes,
-)
-from bmlib.quality.pico_models import PicoCitation
-from bmlib.templates import TemplateEngine
+from bmlib.quality.pico_agent import verify_quotes
+from bmlib.quality.pico_models import PicoCitation, PicoContradictedQuote
+
+__all__ = [
+    "DESIGN_CONDENSE_QUERY",
+    "DESIGN_PROMPT_VERSION",
+    "DESIGN_SYSTEM_PROMPT",
+    "DESIGN_TASK_PROMPT",
+    "DesignAgent",
+    "DesignProposal",
+    "LlmQueryCondenser",
+    "ProposalError",
+    "ProposalErrorKind",
+    "QueryCondenser",
+    "read_design_reply",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +133,6 @@ DESIGN_CONDENSE_QUERY = (
     "themselves describe the study type."
 )
 
-#: How much of the title names the paper in a log line or a condensation label.
-_LABEL_CHARS = 60
-
 
 class ProposalErrorKind(Enum):
     """Why a proposal (this one's, or a later piece's) could not be made."""
@@ -161,49 +159,6 @@ class ProposalError(Exception):
         self.kind = kind
 
 
-class _UnreadableReplyError(ValueError):
-    """A reply that parsed but cannot be read; asking again may help."""
-
-
-class QueryCondenser(Protocol):
-    """Condenses an oversized text for one stated need; the seam later pieces share."""
-
-    def condense(
-        self, query: str, text: str, label: str, config: ProcessingConfig, *, stage: str
-    ) -> tuple[str, list[str], ProcessingStatus]:
-        """Return ``(digest, notes, status)`` or raise ``CondensationRefusedError``."""
-        ...
-
-
-class LlmQueryCondenser:
-    """The production :class:`QueryCondenser`: the PICO verbatim-passage map-reduce.
-
-    Args:
-        agent: The agent whose model, stop and ``num_ctx`` the requests use.
-        progress: Handed every progress report of the map-reduce.
-    """
-
-    def __init__(self, agent: BaseAgent, progress: Any = None) -> None:
-        self._agent = agent
-        self._progress = progress
-
-    def condense(
-        self, query: str, text: str, label: str, config: ProcessingConfig, *, stage: str
-    ) -> tuple[str, list[str], ProcessingStatus]:
-        """:func:`~bmlib.quality._condense.condense_text` over *query*."""
-        return condense_text(
-            self._agent,
-            text,
-            label,
-            config,
-            extraction_prompt=PICO_CONDENSE_EXTRACTION_PROMPT,
-            consolidation_prompt=PICO_CONDENSE_CONSOLIDATION_PROMPT,
-            query=query,
-            stage=stage,
-            progress_callback=self._progress,
-        )
-
-
 def _wire(data: dict[str, Any], key: str, kind: type, what: str) -> Any:
     """``data[key]`` if it is a *kind* (a ``bool`` is only a bool), else ``ValueError``."""
     value = data.get(key)
@@ -221,8 +176,12 @@ class DesignProposal:
         rct_layout: Set exactly when *design* is ``RCT``.
         citations: The paper's own spans for the quotes found, offsets in code
             points into the text passed.
-        quotes_not_found: The quotes not located, or contradicted by the paper,
-            verbatim.
+        quotes_not_found: The quotes not located in the paper, verbatim.
+        contradicted: The quotes the paper contradicts (a changed number,
+            negation or direction), each with the reason; never also in
+            ``quotes_not_found``.
+        quotes_dropped: How many quote members were not usable text (blank, or
+            not a string) and so were never searched for.
         reasoning: The model's explanation, ``""`` when absent.
         condensed: Whether the model saw a digest instead of the whole paper.
     """
@@ -231,6 +190,8 @@ class DesignProposal:
     rct_layout: RctLayout | None
     citations: list[PicoCitation] = field(default_factory=list)
     quotes_not_found: list[str] = field(default_factory=list)
+    contradicted: list[PicoContradictedQuote] = field(default_factory=list)
+    quotes_dropped: int = 0
     reasoning: str = ""
     condensed: bool = False
 
@@ -241,6 +202,8 @@ class DesignProposal:
             "rct_layout": None if self.rct_layout is None else self.rct_layout.value,
             "citations": [c.to_dict() for c in self.citations],
             "quotes_not_found": list(self.quotes_not_found),
+            "contradicted": [c.to_dict() for c in self.contradicted],
+            "quotes_dropped": self.quotes_dropped,
             "reasoning": self.reasoning,
             "condensed": self.condensed,
         }
@@ -260,6 +223,10 @@ class DesignProposal:
         not_found = _wire(data, "quotes_not_found", list, "a list")
         if not all(isinstance(q, str) for q in not_found):
             raise ValueError("quotes_not_found is not a list of text")
+        contradicted = _wire(data, "contradicted", list, "a list")
+        dropped = _wire(data, "quotes_dropped", int, "a count")
+        if dropped < 0:
+            raise ValueError("quotes_dropped is not a count")
         try:
             parsed_design = StudyDesign(design)
         except ValueError:
@@ -273,6 +240,8 @@ class DesignProposal:
             rct_layout=parsed_layout,
             citations=[PicoCitation.from_dict(c) for c in citations],
             quotes_not_found=list(not_found),
+            contradicted=[PicoContradictedQuote.from_dict(c) for c in contradicted],
+            quotes_dropped=dropped,
             reasoning=_wire(data, "reasoning", str, "text"),
             condensed=_wire(data, "condensed", bool, "a boolean"),
         )
@@ -291,108 +260,62 @@ def read_design_reply(data: dict[str, Any], text: str, min_similarity: float) ->
 
     Raises:
         ValueError: *min_similarity* is not a number in (0, 1].
-        _UnreadableReplyError: (a ``ValueError``) The reply is not an object,
+        UnreadableReplyError: (a ``ValueError``) The reply is not an object,
             the design is not a label the study-design lookup knows (or is
             ``unknown``), the layout is missing for an RCT, given for another
             design or not a layout, or ``reasoning`` is not text.
     """
-    similarity = _check_similarity(min_similarity)
+    similarity = check_min_similarity(min_similarity)
     if not isinstance(data, dict):
-        raise _UnreadableReplyError("expected an object")
+        raise UnreadableReplyError("expected an object")
 
     label = data.get("study_design")
     if not isinstance(label, str):
-        raise _UnreadableReplyError("study_design is not text")
+        raise UnreadableReplyError("study_design is not text")
     design = STUDY_DESIGN_MAPPING.get(label.lower().strip(), StudyDesign.UNKNOWN)
     if design is StudyDesign.UNKNOWN:
-        raise _UnreadableReplyError(f'study_design "{label}" is not a design label')
+        raise UnreadableReplyError(f'study_design "{label}" is not a design label')
 
     raw_layout = data.get("rct_layout")
     layout: RctLayout | None = None
     if design is not StudyDesign.RCT:
         if raw_layout is not None:
-            raise _UnreadableReplyError("rct_layout given for a non-RCT")
+            raise UnreadableReplyError("rct_layout given for a non-RCT")
     elif raw_layout is None:
-        raise _UnreadableReplyError("rct_layout missing")
+        raise UnreadableReplyError("rct_layout missing")
     else:
         if not isinstance(raw_layout, str):
-            raise _UnreadableReplyError("rct_layout is not text")
+            raise UnreadableReplyError("rct_layout is not text")
         try:
             layout = RctLayout(raw_layout.lower().strip())
         except ValueError:
-            raise _UnreadableReplyError(f'rct_layout "{raw_layout}" is not a layout') from None
+            raise UnreadableReplyError(f'rct_layout "{raw_layout}" is not a layout') from None
 
     reasoning = data.get("reasoning")
     if reasoning is None:
         reasoning = ""
     elif not isinstance(reasoning, str):
-        raise _UnreadableReplyError("reasoning is not text")
+        raise UnreadableReplyError("reasoning is not text")
 
-    citations, not_found, contradicted, _dropped = verify_quotes(
+    citations, not_found, contradicted, dropped = verify_quotes(
         data.get("quotes"), text, similarity
     )
-    # A quote the paper contradicts is not in the paper as stated: listed, not dropped.
-    not_found = [*not_found, *(c.quote for c in contradicted)]
-    return DesignProposal(design, layout, citations, not_found, reasoning, False)
+    return DesignProposal(
+        design, layout, citations, not_found, contradicted, dropped, reasoning, False
+    )
 
 
-class DesignAgent(BaseAgent):
+class DesignAgent(_FullTextAgent):
     """Proposes the paper's own study design, backed by passages of the paper.
 
-    Args:
-        llm: The client requests go through.
-        model: The ``"provider:model"`` string.
-        template_engine: Unused; accepted as every agent does.
-        temperature: Sampling temperature.
-        max_tokens: The reply's output ceiling.
-        condense_config: The budget beyond which text is condensed first.
-        num_ctx: The window sent with every request (Ollama); ``None`` sends none.
-        stop: Read before every request; once true no request is sent.
-        condense_progress: Handed every progress report of a condensation.
-        condenser: Condenses an oversized paper; defaults to
-            :class:`LlmQueryCondenser` over this agent.
+    Takes the arguments of :class:`~bmlib.quality._full_text_agent._FullTextAgent`:
+    the client, the model, sampling, the condensation budget, ``num_ctx``, a
+    ``stop`` and an optional :class:`QueryCondenser`.
     """
 
-    def __init__(
-        self,
-        llm: LLMClient,
-        model: str,
-        template_engine: TemplateEngine | None = None,
-        temperature: float = 0.1,
-        max_tokens: int = 4096,
-        condense_config: ProcessingConfig | None = None,
-        num_ctx: int | None = None,
-        stop: Stop | None = None,
-        condense_progress: Any = None,
-        condenser: QueryCondenser | None = None,
-    ) -> None:
-        if num_ctx is not None and (
-            isinstance(num_ctx, bool)
-            or not isinstance(num_ctx, int)
-            or not 0 < num_ctx <= MAX_NUM_CTX
-        ):
-            raise ValueError(f"num_ctx must be an int in 1..{MAX_NUM_CTX}, got {num_ctx!r}")
-        self._num_ctx = num_ctx
-        self._stop_requested = stop_reader(stop)
-        super().__init__(
-            llm=llm,
-            model=model,
-            template_engine=template_engine,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        self.condense_config = condense_config or ProcessingConfig(
-            max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS
-        )
-        self.condenser: QueryCondenser = condenser or LlmQueryCondenser(self, condense_progress)
-
-    def chat(self, messages: list[LLMMessage], **kwargs: Any) -> LLMResponse:
-        """:meth:`BaseAgent.chat` with ``num_ctx``, refused once stopped."""
-        if self._stop_requested():
-            raise ChatStoppedError(STOPPED_MESSAGE)
-        if self._num_ctx is not None:
-            kwargs["num_ctx"] = self._num_ctx
-        return super().chat(messages, **kwargs)
+    def _error(self, failure: AgentFailure, message: str) -> Exception:
+        """Name *failure* as this agent's :class:`ProposalError`."""
+        return ProposalError(ProposalErrorKind(failure.value), message)
 
     def propose(
         self, title: str | None, text: str | None, *, min_similarity: float
@@ -414,7 +337,7 @@ class DesignAgent(BaseAgent):
             ImportError: The provider's SDK is not installed.
         """
         try:
-            similarity = _check_similarity(min_similarity)
+            similarity = check_min_similarity(min_similarity)
         except ValueError as exc:
             raise ProposalError(ProposalErrorKind.INVALID_SIMILARITY, str(exc)) from exc
         original = text or ""
@@ -427,93 +350,18 @@ class DesignAgent(BaseAgent):
 
         sent, condensed = stripped, False
         if len(stripped) > self.condense_config.max_context_chars:
-            sent, condensed = self._condense(title, stripped), True
+            sent = self._condense_once(
+                title, stripped, DESIGN_CONDENSE_QUERY, "the design proposal"
+            )
+            condensed = True
 
         prompt = f"{DESIGN_TASK_PROMPT}\n\nPaper Title: {title}\n\nPaper Text:\n{sent}"
-        label = f"design proposal of {title[:_LABEL_CHARS]!r}"
-        proposal = self._ask(
-            prompt, lambda data: read_design_reply(data, original, similarity), label
+        label = f"design proposal of {title[:LABEL_CHARS]!r}"
+        proposal = self._ask_until_readable(
+            DESIGN_SYSTEM_PROMPT,
+            prompt,
+            lambda data: read_design_reply(data, original, similarity),
+            label,
         )
         proposal.condensed = condensed
         return proposal
-
-    def _condense(self, title: str, text: str) -> str:
-        """Condense *text* once, as the PICO agent does, with the design query."""
-        self._raise_if_stopped()
-        defect: BaseException | None = None
-        try:
-            digest, _notes, _status = self.condenser.condense(
-                DESIGN_CONDENSE_QUERY,
-                text,
-                title[:_LABEL_CHARS],
-                self.condense_config,
-                stage="the design proposal",
-            )
-        except ProcessingStoppedError as exc:
-            raise ProposalError(ProposalErrorKind.STOPPED, STOPPED_MESSAGE) from exc
-        except CondensationRefusedError as exc:
-            self._raise_if_stopped(exc)
-            cause = exc.__cause__
-            if isinstance(cause, _NOT_A_REQUEST_FAILURE):
-                defect = cause
-            else:
-                message = (
-                    f"a {len(text)}-character text could not be condensed to fit "
-                    f"{self.condense_config.max_context_chars} characters: {exc}"
-                )
-                kind = (
-                    ProposalErrorKind.CONDENSATION_FAILED
-                    if cause is None
-                    else ProposalErrorKind.REQUEST_FAILED
-                )
-                raise ProposalError(kind, message) from exc
-        if defect is not None:
-            raise defect
-        # A run stopped part-way can finish with a partial digest, which is no digest.
-        self._raise_if_stopped()
-        return digest
-
-    def _check_provider(self) -> None:
-        """Resolve the model's provider before any request (unknown provider, missing SDK)."""
-        provider = self.model.split(":", 1)[0] if ":" in self.model else self.llm.default_provider
-        self.llm._get_provider(provider or self.llm.default_provider)
-
-    def _ask(
-        self, prompt: str, read: Callable[[dict[str, Any]], DesignProposal], label: str
-    ) -> DesignProposal:
-        """Send the question and read the reply, asking again once if it is unreadable."""
-        messages = [self.system_msg(DESIGN_SYSTEM_PROMPT), self.user_msg(prompt)]
-        problem: _UnreadableReplyError | None = None
-        for attempt in range(_READ_ATTEMPTS):
-            self._raise_if_stopped()
-            try:
-                data = self.chat_json(messages, retry_context=label, require_dict=True)
-            except ChatStoppedError as exc:
-                raise ProposalError(ProposalErrorKind.STOPPED, STOPPED_MESSAGE) from exc
-            except _NOT_A_REQUEST_FAILURE:
-                raise
-            except Exception as exc:
-                self._raise_if_stopped(exc)
-                if isinstance(exc, ChatJsonTruncatedError | ChatJsonError):
-                    raise ProposalError(ProposalErrorKind.UNREADABLE, str(exc)) from exc
-                raise ProposalError(ProposalErrorKind.REQUEST_FAILED, str(exc)) from exc
-            try:
-                return read(data)
-            except _UnreadableReplyError as exc:
-                problem = exc
-                logger.warning(
-                    "Unusable reply for %s (attempt %d/%d): %s",
-                    label,
-                    attempt + 1,
-                    _READ_ATTEMPTS,
-                    exc,
-                )
-        raise ProposalError(
-            ProposalErrorKind.UNREADABLE,
-            f"{label}: {_READ_ATTEMPTS} replies could not be read: {problem}",
-        ) from problem
-
-    def _raise_if_stopped(self, cause: BaseException | None = None) -> None:
-        """Raise ``STOPPED`` when the stop is set, chained to *cause*."""
-        if self._stop_requested():
-            raise ProposalError(ProposalErrorKind.STOPPED, STOPPED_MESSAGE) from cause

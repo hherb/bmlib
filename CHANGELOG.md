@@ -18,7 +18,10 @@ All notable changes to bmlib are documented here. The format is based on
   guessed. A paper over the window is condensed once through the new
   `QueryCondenser` seam (`LlmQueryCondenser` reuses `LlmCondenser::with_prompts`,
   now taking the query as `&str`) and flagged `condensed`; quotes are verified
-  against the original text. Contract: `tests/fixtures/design_replies.json`.
+  against the original text. A quote the paper contradicts keeps its reason
+  (`contradicted`) and unusable quote members are counted (`quotes_dropped`).
+  The plumbing shared by full-text agents lives in `quality/_full_text_agent.py`
+  and `full_text_agent.rs`. Contract: `tests/fixtures/design_replies.json`.
 - **Evidence ladder and the number** (StudyAnalyzer evidence weight, piece 5).
   `build_ladder`, `start_level`, `paper_weight` in
   `bmlib/quality/evidence_ladder.py` and `rust/bmlib/src/quality/evidence_ladder.rs`:
