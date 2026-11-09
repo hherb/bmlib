@@ -35,7 +35,8 @@ use crate::quality::cochrane_assessor::{
     DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
 };
 use crate::quality::pico_models::{
-    PicoCitation, PicoError, PicoExtraction, PicoPart, PicoPartState, PicoPrepared, PicoSuitability,
+    PicoCitation, PicoContradictedQuote, PicoError, PicoExtraction, PicoPart, PicoPartState,
+    PicoPrepared, PicoSuitability,
 };
 
 /// How many times a question is asked when its reply parses but cannot be read
@@ -204,8 +205,14 @@ INSTRUCTIONS:
 
 Consolidated passages:"##;
 
-/// The quotes found, the quotes lost, and how many were not usable text.
-pub type QuoteCheck = (Vec<PicoCitation>, Vec<String>, usize);
+/// The quotes found, the quotes lost, the quotes the paper contradicts
+/// (#647), and how many were not usable text.
+pub type QuoteCheck = (
+    Vec<PicoCitation>,
+    Vec<String>,
+    Vec<PicoContradictedQuote>,
+    usize,
+);
 
 /// Locate the model's quotes in `text`. Python's `verify_quotes`.
 ///
@@ -218,7 +225,7 @@ pub fn verify_quotes(
     min_similarity: f64,
 ) -> Result<QuoteCheck, InvalidSimilarity> {
     let Some(quotes) = quotes.filter(|value| !value.is_null()) else {
-        return Ok((Vec::new(), Vec::new(), 0));
+        return Ok((Vec::new(), Vec::new(), Vec::new(), 0));
     };
     // A bare string reads as a list of one (#577).
     let one;
@@ -228,11 +235,12 @@ pub fn verify_quotes(
     } else if let Some(quotes) = quotes.as_array() {
         quotes
     } else {
-        return Ok((Vec::new(), Vec::new(), 1));
+        return Ok((Vec::new(), Vec::new(), Vec::new(), 1));
     };
 
     let mut citations: Vec<PicoCitation> = Vec::new();
     let mut not_found: Vec<String> = Vec::new();
+    let mut contradicted: Vec<PicoContradictedQuote> = Vec::new();
     let mut dropped = 0usize;
     for quote in quotes {
         let Some(quote) = quote.as_str().filter(|q| !python_strip(q).is_empty()) else {
@@ -240,6 +248,13 @@ pub fn verify_quotes(
             continue;
         };
         let found = find_passage(quote, text, min_similarity)?;
+        if let Some(contradiction) = found.contradiction {
+            contradicted.push(PicoContradictedQuote {
+                quote: quote.to_string(),
+                contradiction,
+            });
+            continue;
+        }
         let Some(span) = found.span else {
             not_found.push(quote.to_string());
             continue;
@@ -259,14 +274,14 @@ pub fn verify_quotes(
             exact: found.exact,
         });
     }
-    Ok((citations, not_found, dropped))
+    Ok((citations, not_found, contradicted, dropped))
 }
 
 /// Read one PICO part and verify its quotes. Python's `read_part`.
 ///
 /// Quotes given beside `reported: false` are verified too (#577): one the
 /// paper holds makes the part reported, and the rest stay on the part as not
-/// found or dropped. A part that stays not reported may have a blank or
+/// found, contradicted or dropped. A part that stays not reported may have a blank or
 /// absent description, read as `""` when absent (#618); a reported part may
 /// not.
 ///
@@ -285,7 +300,7 @@ pub fn read_part(
             value.map_or("NoneType", crate::agents::json_type_name)
         ));
     };
-    let (citations, quotes_not_found, quotes_dropped) =
+    let (citations, quotes_not_found, quotes_contradicted, quotes_dropped) =
         verify_quotes(object.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
     // Only an explicit `false` is an absence: a garbled flag must not hide a
     // part the model described.
@@ -308,10 +323,12 @@ pub fn read_part(
     let confidence = clamped_confidence(object.get("confidence"));
     let state = if !reported {
         PicoPartState::NotReported
-    } else if citations.is_empty() {
-        PicoPartState::Unverified
-    } else {
+    } else if !citations.is_empty() {
         PicoPartState::Verified
+    } else if !quotes_contradicted.is_empty() {
+        PicoPartState::Contradicted
+    } else {
+        PicoPartState::Unverified
     };
     Ok(PicoPart {
         description,
@@ -319,6 +336,7 @@ pub fn read_part(
         confidence,
         citations,
         quotes_not_found,
+        quotes_contradicted,
         quotes_dropped,
     })
 }
@@ -906,6 +924,40 @@ mod tests {
         assert_eq!(lost.state, PicoPartState::NotReported);
         assert_eq!(lost.quotes_not_found, ["insulin"]);
         assert_eq!(lost.quotes_dropped, 1);
+    }
+
+    #[test]
+    fn a_quote_the_paper_contradicts_keeps_its_reason() {
+        // #647: a changed number clears the threshold but is refused (#632).
+        let quote = "Adults aged 40-60 were randomised to metformin or placebo.";
+        let result = read_part(
+            Some(&part(json!({"quotes": ["insulin", quote]}))),
+            TEXT,
+            SIM,
+        )
+        .expect("a part");
+        assert_eq!(result.state, PicoPartState::Contradicted);
+        assert_eq!(result.quotes_not_found, ["insulin"]);
+        assert_eq!(
+            result.quotes_contradicted,
+            [PicoContradictedQuote {
+                quote: quote.to_string(),
+                contradiction: crate::citations::PassageContradiction::Number,
+            }]
+        );
+        assert_eq!(
+            result.to_json()["quotes_contradicted"],
+            json!([{"quote": quote, "contradiction": "number"}])
+        );
+
+        let found = read_part(
+            Some(&part(json!({"quotes": [quote, "placebo"]}))),
+            TEXT,
+            SIM,
+        )
+        .expect("a part");
+        assert_eq!(found.state, PicoPartState::Verified);
+        assert_eq!(found.quotes_contradicted.len(), 1);
     }
 
     #[test]

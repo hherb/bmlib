@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bmlib.agents import ChatJsonUnparseableError, ChatJsonWrongShapeError
-from bmlib.citations import find_passage
+from bmlib.citations import PassageContradiction, find_passage
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProgressInfo
 from bmlib.context_processor.llm_processor import _RETRIED_STATUSES, CONTEXT_MODEL_ATTEMPTS
 from bmlib.llm import LLMClient
@@ -50,6 +50,7 @@ from bmlib.quality.pico_agent import (
     verify_quotes,
 )
 from bmlib.quality.pico_models import (
+    PicoContradictedQuote,
     PicoError,
     PicoErrorKind,
     PicoExtraction,
@@ -61,6 +62,9 @@ from bmlib.quality.pico_models import (
 
 TEXT = "Adults aged 40-65 were randomised to metformin or placebo."
 SIM = 0.9
+#: ``TEXT`` with a number changed: close enough to clear ``SIM``, so
+#: ``find_passage`` rejects it as a contradiction (#632, #647).
+CONTRADICTED_QUOTE = "Adults aged 40-60 were randomised to metformin or placebo."
 
 
 def part(**overrides: Any) -> dict[str, Any]:
@@ -107,17 +111,60 @@ class TestReadingAReply:
         assert result.description == "Adults aged 40 to 65"
         assert result.citations == []
 
-    def test_a_quote_changing_a_number_is_not_found(self) -> None:
+    def test_a_quote_changing_a_number_is_contradicted(self) -> None:
         # Close enough to clear the threshold, but find_passage's guard (#632)
-        # refuses a changed number; the part keeps no span (why: #647).
+        # refuses a changed number; the part keeps the reason (#647).
         quote = "Adults aged 40-60 were randomised to metformin or placebo."
         assert find_passage(quote, TEXT, SIM).similarity >= SIM
 
         result = read_part(part(quotes=[quote]), TEXT, SIM)
 
-        assert result.state is PicoPartState.UNVERIFIED
-        assert result.quotes_not_found == [quote]
+        assert result.state is PicoPartState.CONTRADICTED
+        assert result.quotes_contradicted == [
+            PicoContradictedQuote(quote, PassageContradiction.NUMBER)
+        ]
+        assert result.quotes_not_found == []
         assert result.citations == []
+
+    def test_a_contradicted_quote_beside_a_lost_one_is_contradicted(self) -> None:
+        quote = "Adults aged 40-65 were not randomised to metformin or placebo."
+        lost = "middle-aged people took a drug"
+
+        result = read_part(part(quotes=[lost, quote]), TEXT, SIM)
+
+        assert result.state is PicoPartState.CONTRADICTED
+        assert result.quotes_not_found == [lost]
+        assert result.quotes_contradicted == [
+            PicoContradictedQuote(quote, PassageContradiction.NEGATION)
+        ]
+
+    def test_a_found_quote_outranks_a_contradicted_one(self) -> None:
+        quote = "Adults aged 40-60 were randomised to metformin or placebo."
+
+        result = read_part(part(quotes=[quote, "placebo"]), TEXT, SIM)
+
+        assert result.state is PicoPartState.VERIFIED
+        assert [c.text for c in result.citations] == ["placebo"]
+        assert [q.quote for q in result.quotes_contradicted] == [quote]
+
+    def test_contradicted_quotes_keep_their_order_and_repeats(self) -> None:
+        negated = "Adults aged 40-65 were not randomised to metformin or placebo."
+
+        result = read_part(part(quotes=[negated, CONTRADICTED_QUOTE, negated]), TEXT, SIM)
+
+        assert result.quotes_contradicted == [
+            PicoContradictedQuote(negated, PassageContradiction.NEGATION),
+            PicoContradictedQuote(CONTRADICTED_QUOTE, PassageContradiction.NUMBER),
+            PicoContradictedQuote(negated, PassageContradiction.NEGATION),
+        ]
+
+    def test_not_reported_keeps_a_contradicted_quote_and_its_state(self) -> None:
+        quote = "Adults aged 40-60 were randomised to metformin or placebo."
+
+        result = read_part(part(reported=False, quotes=[quote]), TEXT, SIM)
+
+        assert result.state is PicoPartState.NOT_REPORTED
+        assert [q.quote for q in result.quotes_contradicted] == [quote]
 
     def test_a_quote_dropping_a_citation_marker_is_found(self) -> None:
         text = "Adults aged 40-65 [12] were randomised to metformin or placebo."
@@ -307,17 +354,21 @@ class TestReadingAReply:
 
 
 class TestVerifyQuotes:
-    def test_it_returns_citations_lost_quotes_and_the_dropped_count(self) -> None:
-        citations, lost, dropped = verify_quotes(
-            ["placebo", "unrelated words here", None], TEXT, SIM
+    def test_it_returns_citations_lost_and_contradicted_quotes_and_the_dropped_count(
+        self,
+    ) -> None:
+        contradicted = "Adults aged 40-60 were randomised to metformin or placebo."
+        citations, lost, refuted, dropped = verify_quotes(
+            ["placebo", "unrelated words here", None, contradicted], TEXT, SIM
         )
 
         assert [c.text for c in citations] == ["placebo"]
         assert lost == ["unrelated words here"]
+        assert refuted == [PicoContradictedQuote(contradicted, PassageContradiction.NUMBER)]
         assert dropped == 1
 
     def test_absent_quotes_are_none_and_drop_nothing(self) -> None:
-        assert verify_quotes(None, TEXT, SIM) == ([], [], 0)
+        assert verify_quotes(None, TEXT, SIM) == ([], [], [], 0)
 
 
 # --- The agent ---
@@ -905,6 +956,14 @@ class TestWhatAReplyGives:
         assert extraction.outcome.state is PicoPartState.UNVERIFIED
         assert extraction.overall_confidence == pytest.approx((0.9 * 3 + 0.5) / 4)
 
+    def test_a_contradicted_part_counts_in_the_mean(self) -> None:
+        # As an unverified one does: only NOT_REPORTED is kept out.
+        extraction = read_extraction(
+            reply(outcome=part(confidence=0.5, quotes=[CONTRADICTED_QUOTE])), TEXT, SIM
+        )
+        assert extraction.outcome.state is PicoPartState.CONTRADICTED
+        assert extraction.overall_confidence == pytest.approx((0.9 * 3 + 0.5) / 4)
+
     def test_a_not_reported_part_keeps_its_confidence_out_of_the_mean(self) -> None:
         extraction = read_extraction(
             reply(comparison=part(reported=False, confidence=0.2, quotes=[])), TEXT, SIM
@@ -975,6 +1034,7 @@ class TestStoredResults:
         extraction = read_extraction(
             reply(
                 population=part(quotes=[FUZZY_QUOTE, 7, "  "]),
+                intervention=part(quotes=[CONTRADICTED_QUOTE]),
                 comparison=part(reported=False, quotes=[]),
                 outcome=part(quotes=["lost words"]),
             ),
@@ -985,6 +1045,42 @@ class TestStoredResults:
         extraction.condensation_status = "partial"
         extraction.notes = ["a note"]
         return extraction
+
+    def test_a_contradicted_part_survives_json(self) -> None:
+        extraction = self._extraction()
+        assert extraction.intervention.state is PicoPartState.CONTRADICTED
+        assert extraction.intervention.to_dict()["quotes_contradicted"] == [
+            {"quote": CONTRADICTED_QUOTE, "contradiction": "number"}
+        ]
+        assert PicoExtraction.from_dict(extraction.to_dict()) == extraction
+
+    def test_a_record_from_before_647_holds_no_contradicted_quote(self) -> None:
+        data = self._extraction().to_dict()
+        del data["outcome"]["quotes_contradicted"]
+
+        assert PicoExtraction.from_dict(data).outcome.quotes_contradicted == []
+
+    def test_a_part_cannot_be_built_contradicted_without_a_contradicted_quote(self) -> None:
+        with pytest.raises(ValueError, match="carries 0 contradicted quote"):
+            PicoPart("d", PicoPartState.CONTRADICTED, 0.5)
+
+    @pytest.mark.parametrize(
+        ("quote", "contradiction", "match"),
+        [
+            # A StrEnum member equals its string, which must still be refused.
+            ("q", "number", "must be a PassageContradiction"),
+            (1, PassageContradiction.NUMBER, "quote must be text"),
+        ],
+    )
+    def test_a_contradicted_quote_is_refused_on_construction(
+        self, quote: Any, contradiction: Any, match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            PicoContradictedQuote(quote, contradiction)
+
+    def test_a_part_refuses_a_contradicted_quote_that_is_not_one(self) -> None:
+        with pytest.raises(ValueError, match="not a PicoContradictedQuote"):
+            PicoPart("d", PicoPartState.CONTRADICTED, 0.5, quotes_contradicted=[{"quote": "q"}])
 
     def test_every_field_survives_json(self) -> None:
         extraction = self._extraction()
@@ -1019,6 +1115,20 @@ class TestStoredResults:
             (("population", "confidence"), 3, "number in \\[0, 1\\]"),
             (("population", "quotes_not_found"), "abc", "'quotes_not_found' is a str"),
             (("population", "quotes_dropped"), -1, "must not be negative"),
+            (("intervention", "quotes_contradicted"), "abc", "'quotes_contradicted' is a str"),
+            (
+                ("intervention", "quotes_contradicted"),
+                None,
+                "'quotes_contradicted' is a NoneType",
+            ),
+            (
+                ("intervention", "quotes_not_found"),
+                [CONTRADICTED_QUOTE],
+                "both not found and contradicted",
+            ),
+            (("intervention", "state"), "unverified", "carries 1 contradicted quote"),
+            (("intervention", "quotes_contradicted", 0, "contradiction"), "sideways", "sideways"),
+            (("intervention", "quotes_contradicted", 0, "quote"), None, "'quote' is a NoneType"),
             (("population", "citations"), None, "'citations' is a NoneType"),
             (("population", "description"), None, "'description' is a NoneType"),
             (("notes",), "hi", "'notes' is a str"),

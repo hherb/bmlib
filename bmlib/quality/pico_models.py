@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from bmlib.citations import PassageMatch
+from bmlib.citations import PassageContradiction, PassageMatch
 
 
 class PicoPartState(Enum):
@@ -40,8 +40,14 @@ class PicoPartState(Enum):
     #: At least one of the model's quotes was found in the paper.
     VERIFIED = "verified"
     #: The model described the part, but none of its quotes was found (or it
-    #: gave none).  The description is kept for a reader to judge.
+    #: gave none) and none was contradicted.  The description is kept for a
+    #: reader to judge.
     UNVERIFIED = "unverified"
+    #: The model described the part, none of its quotes was found, and at
+    #: least one is a near-verbatim copy of the paper with a number, a
+    #: negation or a direction changed (#647): the model misreported the
+    #: paper rather than failing to quote it.
+    CONTRADICTED = "contradicted"
     #: The model says the paper does not state this part.  An honest absence,
     #: which needs no quote.
     NOT_REPORTED = "not_reported"
@@ -215,12 +221,58 @@ class PicoCitation:
 
 
 @dataclass(frozen=True)
+class PicoContradictedQuote:
+    """A quote of the model's that the paper contradicts (#647).
+
+    Its best window in the paper reached the similarity threshold but differs
+    in a number, a negation or a direction, so
+    :func:`~bmlib.citations.find_passage` rejected it.
+
+    Raises:
+        ValueError: On construction, when ``quote`` is not text or
+            ``contradiction`` is not a
+            :class:`~bmlib.citations.PassageContradiction` (a bare string is
+            refused though it compares equal to a member).
+    """
+
+    quote: str
+    contradiction: PassageContradiction
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.quote, str):
+            raise ValueError(f"quote must be text, got {type(self.quote).__name__}")
+        if not isinstance(self.contradiction, PassageContradiction):
+            raise ValueError(
+                f"contradiction must be a PassageContradiction, got {self.contradiction!r}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-ready dict."""
+        return {"quote": self.quote, "contradiction": self.contradiction.value}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PicoContradictedQuote:
+        """Rebuild from :meth:`to_dict` output.
+
+        Raises:
+            ValueError: A field is absent or of the wrong type, naming it, or
+                the contradiction is not one :class:`PassageContradiction` names.
+        """
+        return cls(
+            quote=_read(data, "quote", str),
+            contradiction=PassageContradiction(_read(data, "contradiction", str)),
+        )
+
+
+@dataclass(frozen=True)
 class PicoPart:
     """One of the four PICO parts.
 
     The state agrees with the quotes: a part is ``VERIFIED`` exactly when it
-    carries a citation.  A ``NOT_REPORTED`` part may still carry the quotes the
-    model gave beside ``reported: false`` that were not found (#577).
+    carries a citation, and a reported part without one is ``CONTRADICTED``
+    exactly when it carries a contradicted quote.  A ``NOT_REPORTED`` part may
+    still carry the quotes the model gave beside ``reported: false`` that were
+    not found or contradicted (#577).
 
     Attributes:
         description: The model's description, kept whatever the state.
@@ -229,6 +281,8 @@ class PicoPart:
             gave none it could be read as.
         citations: The quotes found in the paper, as the paper's spans.
         quotes_not_found: The model's quotes that were not found, verbatim.
+        quotes_contradicted: The model's quotes the paper contradicts, each
+            with the reason; never also in ``quotes_not_found`` (#647).
         quotes_dropped: Quotes that were not usable text at all (not a
             string, blank, or a ``quotes`` value that was not a list).
     """
@@ -239,14 +293,17 @@ class PicoPart:
     citations: list[PicoCitation] = field(default_factory=list)
     quotes_not_found: list[str] = field(default_factory=list)
     quotes_dropped: int = 0
+    quotes_contradicted: list[PicoContradictedQuote] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Refuse a part no reader produces.
 
         Raises:
             ValueError: The state is not a :class:`PicoPartState`, disagrees
-                with the citations, the confidence is not ``None`` or a number
-                in [0, 1], or ``quotes_dropped`` is negative.
+                with the citations or the contradicted quotes, a contradicted
+                quote is not a :class:`PicoContradictedQuote` or is also in
+                ``quotes_not_found``, the confidence is not ``None`` or a
+                number in [0, 1], or ``quotes_dropped`` is negative.
         """
         if not isinstance(self.state, PicoPartState):
             raise ValueError(f"state must be a PicoPartState, got {self.state!r}")
@@ -254,6 +311,25 @@ class PicoPart:
             raise ValueError(
                 f"a {self.state.value} part carries {len(self.citations)} citation(s): "
                 "a part is verified exactly when one of its quotes was found"
+            )
+        contradicted = bool(self.quotes_contradicted)
+        if (self.state is PicoPartState.CONTRADICTED and not contradicted) or (
+            self.state is PicoPartState.UNVERIFIED and contradicted
+        ):
+            raise ValueError(
+                f"a {self.state.value} part carries {len(self.quotes_contradicted)} "
+                "contradicted quote(s): a reported part without a citation is "
+                "contradicted exactly when one of its quotes was"
+            )
+        if not all(isinstance(q, PicoContradictedQuote) for q in self.quotes_contradicted):
+            raise ValueError(
+                "quotes_contradicted holds a member that is not a PicoContradictedQuote"
+            )
+        both = {q.quote for q in self.quotes_contradicted}.intersection(self.quotes_not_found)
+        if both:
+            raise ValueError(
+                f"{sorted(both)!r} both not found and contradicted: find_passage gives a quote "
+                "one answer"
             )
         _check_confidence(self.confidence, "a part's")
         if self.quotes_dropped < 0:
@@ -267,6 +343,7 @@ class PicoPart:
             "confidence": self.confidence,
             "citations": [citation.to_dict() for citation in self.citations],
             "quotes_not_found": list(self.quotes_not_found),
+            "quotes_contradicted": [quote.to_dict() for quote in self.quotes_contradicted],
             "quotes_dropped": self.quotes_dropped,
         }
 
@@ -274,11 +351,18 @@ class PicoPart:
     def from_dict(cls, data: dict[str, Any]) -> PicoPart:
         """Rebuild from :meth:`to_dict` output.
 
+        A record without ``quotes_contradicted`` reads it as empty: one
+        written by 0.12.0, whose ``find_passage`` rejected no quote as a
+        contradiction, so it held none.
+
         Raises:
             ValueError: A field is absent or of the wrong type, naming it, or
                 the part breaks a rule above.
         """
         confidence = _read(data, "confidence", (int, float), nullable=True)
+        contradicted = (
+            _read(data, "quotes_contradicted", list) if "quotes_contradicted" in data else []
+        )
         return cls(
             description=_read(data, "description", str),
             state=PicoPartState(_read(data, "state", str)),
@@ -286,6 +370,7 @@ class PicoPart:
             citations=[PicoCitation.from_dict(c) for c in _read(data, "citations", list)],
             quotes_not_found=_read_text_list(data, "quotes_not_found"),
             quotes_dropped=_read(data, "quotes_dropped", int),
+            quotes_contradicted=[PicoContradictedQuote.from_dict(q) for q in contradicted],
         )
 
 

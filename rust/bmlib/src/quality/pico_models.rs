@@ -27,6 +27,7 @@
 
 use serde_json::{json, Value};
 
+use crate::citations::PassageContradiction;
 use crate::pyvalue::{python_strip, repr_str};
 
 /// What the paper was found to say about one PICO part.
@@ -35,8 +36,14 @@ pub enum PicoPartState {
     /// At least one of the model's quotes was found in the paper.
     Verified,
     /// The model described the part, but none of its quotes was found (or it
-    /// gave none). The description is kept for a reader to judge.
+    /// gave none) and none was contradicted. The description is kept for a
+    /// reader to judge.
     Unverified,
+    /// The model described the part, none of its quotes was found, and at
+    /// least one is a near-verbatim copy of the paper with a number, a
+    /// negation or a direction changed (#647): the model misreported the
+    /// paper rather than failing to quote it.
+    Contradicted,
     /// The model says the paper does not state this part. An honest absence,
     /// which needs no quote.
     NotReported,
@@ -49,6 +56,7 @@ impl PicoPartState {
         match self {
             PicoPartState::Verified => "verified",
             PicoPartState::Unverified => "unverified",
+            PicoPartState::Contradicted => "contradicted",
             PicoPartState::NotReported => "not_reported",
         }
     }
@@ -207,7 +215,31 @@ impl PicoCitation {
     }
 }
 
+/// A quote of the model's that the paper contradicts (#647): its best window
+/// reached the similarity threshold but differs in a number, a negation or a
+/// direction, so [`crate::citations::find_passage`] rejected it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PicoContradictedQuote {
+    /// The model's quote, verbatim.
+    pub quote: String,
+    /// Why the paper's passage contradicts it.
+    pub contradiction: PassageContradiction,
+}
+
+impl PicoContradictedQuote {
+    /// Python's `to_dict()`.
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        json!({"quote": self.quote, "contradiction": self.contradiction.as_str()})
+    }
+}
+
 /// One of the four PICO parts.
+///
+/// As [`crate::quality::read_part`] builds it, a part is `Verified` exactly
+/// when it carries a citation, and a reported part without one is
+/// `Contradicted` exactly when it carries a contradicted quote. The fields are
+/// public, so nothing enforces this on a part built by hand.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PicoPart {
     /// The model's description, kept whatever the state.
@@ -220,6 +252,9 @@ pub struct PicoPart {
     pub citations: Vec<PicoCitation>,
     /// The model's quotes that were not found, verbatim.
     pub quotes_not_found: Vec<String>,
+    /// The model's quotes the paper contradicts, each with the reason; never
+    /// also in `quotes_not_found` (#647).
+    pub quotes_contradicted: Vec<PicoContradictedQuote>,
     /// Quotes that were not usable text at all.
     pub quotes_dropped: usize,
 }
@@ -234,6 +269,11 @@ impl PicoPart {
             "confidence": self.confidence,
             "citations": self.citations.iter().map(PicoCitation::to_json).collect::<Vec<_>>(),
             "quotes_not_found": self.quotes_not_found,
+            "quotes_contradicted": self
+                .quotes_contradicted
+                .iter()
+                .map(PicoContradictedQuote::to_json)
+                .collect::<Vec<_>>(),
             "quotes_dropped": self.quotes_dropped,
         })
     }

@@ -9,6 +9,17 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — breaking
+
+- **A PICO quote the paper contradicts keeps its reason** (#647, with
+  Python): `PicoPart::quotes_contradicted` holds each quote
+  `find_passage` rejected as a contradiction as a `PicoContradictedQuote {
+  quote, contradiction }` (no longer in `quotes_not_found`), and a reported
+  part with no citation and at least one is the new
+  `PicoPartState::Contradicted`. `QuoteCheck` is `(citations, not_found,
+  contradicted, dropped)`. An exhaustive `match` on `PicoPartState` needs the
+  new arm.
+
 ### Added
 
 - **`model-download` feature and `embed::download_verified`**: the pinned,

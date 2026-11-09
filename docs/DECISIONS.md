@@ -6300,6 +6300,28 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   and Rust's `a_blank_description_is_refused_as_null_is`. Whether the prompt
   should ask for a description on a part not reported is #618.
 
+## quality — a contradicted PICO quote and the part's state (#647)
+
+- **A parallel list and a state of its own**, the maintainer's choice on
+  2026-11-09: a quote `find_passage` rejects as a contradiction (#632) is a
+  `PicoContradictedQuote` in `PicoPart.quotes_contradicted`, never also in
+  `quotes_not_found`, and a reported part with no citation and at least one
+  is `CONTRADICTED`.
+- **A found quote outranks a contradicted one, and `reported: false` stands
+  beside one.** The state ladder is `NOT_REPORTED`, then `VERIFIED`, then
+  `CONTRADICTED`, then `UNVERIFIED`, so a `VERIFIED` or `NOT_REPORTED` part
+  may carry contradicted quotes, read from the list and not the state. A
+  found quote makes a `reported: false` part reported (#577) where a
+  contradicted one does not: the paper holds the first and refutes the
+  second. Do not "fix" either by reading the state alone. Tests:
+  `tests/test_pico_agent.py::TestReadingAReply::test_a_found_quote_outranks_a_contradicted_one`,
+  `test_not_reported_keeps_a_contradicted_quote_and_its_state`, and the
+  oracle case `contradicted_quotes`.
+- **A `CONTRADICTED` part's confidence counts in `overall_confidence`**, as an
+  `UNVERIFIED` one's does: only `NOT_REPORTED` is kept out. This follows the
+  existing rule and was not decided separately. Test:
+  `TestWhatAReplyGives::test_a_contradicted_part_counts_in_the_mean`.
+
 ## fulltext — an HTML page's parse bounded by memory, not by a model of html5ever (#723)
 
 html5ever rebuilds every formatting element a closed block left open each

@@ -34,9 +34,10 @@ Unlike upstream, every part carries the passages that back it.  The model
 copies quotes from the paper; each is located by
 :func:`bmlib.citations.find_passage` in the text the caller passed, and the
 **paper's** span is kept.  A part none of whose quotes is found is
-:attr:`~PicoPartState.UNVERIFIED`, its description kept for a reader to judge;
-a part the paper does not state is :attr:`~PicoPartState.NOT_REPORTED`, which
-needs no quote.
+:attr:`~PicoPartState.UNVERIFIED`, its description kept for a reader to judge,
+or :attr:`~PicoPartState.CONTRADICTED` when a quote is the paper's passage with
+a number, a negation or a direction changed (#647); a part the paper does not
+state is :attr:`~PicoPartState.NOT_REPORTED`, which needs no quote.
 
 Nothing is truncated: text too long for one context is condensed first by the
 Cochrane assessor's map-reduce, and the quotes are still verified against the
@@ -74,6 +75,7 @@ from bmlib.quality._json_fields import as_bool, as_text
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS, clamped_confidence
 from bmlib.quality.pico_models import (
     PicoCitation,
+    PicoContradictedQuote,
     PicoError,
     PicoErrorKind,
     PicoExtraction,
@@ -330,7 +332,7 @@ Consolidated passages:"""
 
 def verify_quotes(
     quotes: object, text: str, min_similarity: float
-) -> tuple[list[PicoCitation], list[str], int]:
+) -> tuple[list[PicoCitation], list[str], list[PicoContradictedQuote], int]:
     """Locate the model's quotes in *text*.
 
     Args:
@@ -339,30 +341,36 @@ def verify_quotes(
         min_similarity: :func:`~bmlib.citations.find_passage`'s threshold.
 
     Returns:
-        ``(citations, not_found, dropped)``: the paper's spans for the quotes
-        found, in the order the quotes came and each span once; the quotes not
-        found, verbatim; and how many were not usable text at all.  An absent
+        ``(citations, not_found, contradicted, dropped)``: the paper's spans
+        for the quotes found, in the order the quotes came and each span once;
+        the quotes not found, verbatim; the quotes the paper contradicts, each
+        with :func:`~bmlib.citations.find_passage`'s reason (#647); and how
+        many were not usable text at all.  An absent
         ``quotes`` (``None``) drops nothing, and a bare string reads as a list
         of one (#577); any other value that is not a list counts as one
         dropped, as does a member that is not a string or is blank.
     """
     if quotes is None:
-        return [], [], 0
+        return [], [], [], 0
     if isinstance(quotes, str):
         quotes = [quotes]
     if not isinstance(quotes, list):
         logger.debug("Reading quotes as none: the answer was a %s", type(quotes).__name__)
-        return [], [], 1
+        return [], [], [], 1
 
     citations: list[PicoCitation] = []
     seen: set[tuple[int, int]] = set()
     not_found: list[str] = []
+    contradicted: list[PicoContradictedQuote] = []
     dropped = 0
     for quote in quotes:
         if not isinstance(quote, str) or not quote.strip():
             dropped += 1
             continue
         match = find_passage(quote, text, min_similarity)
+        if match.contradiction is not None:
+            contradicted.append(PicoContradictedQuote(quote, match.contradiction))
+            continue
         if match.start is None or match.end is None or match.text is None:
             not_found.append(quote)
             continue
@@ -378,7 +386,7 @@ def verify_quotes(
                 exact=match.exact,
             )
         )
-    return citations, not_found, dropped
+    return citations, not_found, contradicted, dropped
 
 
 def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
@@ -386,7 +394,7 @@ def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
 
     Quotes given beside ``reported: false`` are verified too (#577): one the
     paper holds makes the part reported, and the rest stay on the part as not
-    found or dropped.  A part that stays not reported may have a blank or
+    found, contradicted or dropped.  A part that stays not reported may have a blank or
     absent description, read as ``""`` when absent (#618); a reported part
     may not.
 
@@ -398,7 +406,9 @@ def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
     if not isinstance(value, dict):
         raise _UnreadableReplyError(f"expected an object, got {type(value).__name__}")
     description = value.get("description")
-    citations, not_found, dropped = verify_quotes(value.get("quotes"), text, min_similarity)
+    citations, not_found, contradicted, dropped = verify_quotes(
+        value.get("quotes"), text, min_similarity
+    )
     # Only an explicit ``false`` is an absence: ``bool("no")`` is ``True``, and
     # a flag the model garbled must not hide a part it described.
     reported = as_bool(value.get("reported"), "reported") is not False or bool(citations)
@@ -415,9 +425,11 @@ def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
         state = PicoPartState.NOT_REPORTED
     elif citations:
         state = PicoPartState.VERIFIED
+    elif contradicted:
+        state = PicoPartState.CONTRADICTED
     else:
         state = PicoPartState.UNVERIFIED
-    return PicoPart(description, state, confidence, citations, not_found, dropped)
+    return PicoPart(description, state, confidence, citations, not_found, dropped, contradicted)
 
 
 def read_extraction(data: dict[str, Any], text: str, min_similarity: float) -> PicoExtraction:

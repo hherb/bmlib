@@ -373,7 +373,7 @@ if agent.check_suitability(title, abstract).is_suitable:
     pico = agent.extract(title, full_text, min_similarity=0.9)
     for name in ("population", "intervention", "comparison", "outcome"):
         part = getattr(pico, name)
-        flag = " (unverified)" if part.state is PicoPartState.UNVERIFIED else ""
+        flag = "" if part.state is PicoPartState.VERIFIED else f" ({part.state.value})"
         print(f"{name}{flag}: {part.description}", [(c.start, c.end) for c in part.citations])
 ```
 
