@@ -210,3 +210,32 @@ def test_every_walk_gets_a_judgement() -> None:
         assert walks
         for answers in walks:
             domain_judgement(domain, answers)
+
+
+def test_leftover_answers_do_not_open_later_questions() -> None:
+    leftover = {
+        k: Answer.parse(v) for k, v in {"4.1": "N", "4.2": "NI", "4.3": "N", "4.4": "Y"}.items()
+    }
+    assert applicable_questions(Domain.D4, leftover) == ["4.1", "4.2", "4.3"]
+    assert (
+        judge("D4", {"4.1": "N", "4.2": "NI", "4.3": "N", "4.4": "Y", "4.5": "Y"})
+        == "some_concerns"
+    )
+    assert judge("D2", {"2.1": "Y", "2.2": "N", "2.3": "N", "2.4": "Y", "2.6": "Y"}) == "low"
+    assert judge("D3", {"3.1": "Y", "3.2": "N", "3.3": "Y"}) == "low"
+
+
+def test_raw_strings_are_not_answers() -> None:
+    with pytest.raises(Rob2Error) as caught:
+        domain_judgement(Domain.D1, {"1.1": "Y", "1.2": "Y", "1.3": "N"})  # type: ignore[dict-item]
+    assert caught.value.kind == "UnreadableAnswer"
+
+
+def test_domain_lists_must_be_five_judgements() -> None:
+    for call in (overall_judgement, needs_escalation_decision):
+        with pytest.raises(ValueError):
+            call([])
+        with pytest.raises(ValueError):
+            call([L] * 6)
+        with pytest.raises(TypeError):
+            call(["low"] * 5)  # type: ignore[list-item]

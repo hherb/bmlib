@@ -356,6 +356,61 @@
     "5.3": "Y"
    },
    "expected": "high"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "N",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.4": "Y",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 10",
+   "domain": "D3",
+   "answers": {
+    "3.1": "Y",
+    "3.2": "N",
+    "3.3": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "Y",
+    "4.2": "N",
+    "4.3": "Y"
+   },
+   "expected": "high"
   }
  ],
  "exhaustive": [
@@ -7985,6 +8040,20 @@
     "2.2",
     "2.6",
     "2.7"
+   ]
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "N",
+    "4.4": "Y"
+   },
+   "expected": [
+    "4.1",
+    "4.2",
+    "4.3"
    ]
   }
  ],

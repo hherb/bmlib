@@ -108,6 +108,17 @@ OFFICIAL: list[tuple[str, str, dict[str, str], str]] = [
     ("Table 14", "D5", {"5.1": "Y", "5.2": "NI", "5.3": "NI"}, "some_concerns"),
     ("Table 14", "D5", {"5.1": "Y", "5.2": "PY", "5.3": "N"}, "high"),
     ("Table 14", "D5", {"5.1": "N", "5.2": "N", "5.3": "Y"}, "high"),
+    # Leftover answers to questions that are not asked are ignored.
+    (
+        "Table 12",
+        "D4",
+        {"4.1": "N", "4.2": "NI", "4.3": "N", "4.4": "Y", "4.5": "Y"},
+        "some_concerns",
+    ),
+    ("Table 6", "D2", {"2.1": "Y", "2.2": "N", "2.3": "N", "2.4": "Y", "2.6": "Y"}, "low"),
+    ("Table 6", "D2", {"2.1": "N", "2.2": "N", "2.3": "Y", "2.6": "Y"}, "low"),
+    ("Table 10", "D3", {"3.1": "Y", "3.2": "N", "3.3": "Y"}, "low"),
+    ("Table 12", "D4", {"4.1": "Y", "4.2": "N", "4.3": "Y"}, "high"),
 ]
 
 # (name, domain, answers, error kind, question)
@@ -122,6 +133,12 @@ REFUSALS: list[tuple[str, str, dict[str, str], str, str]] = [
         "UnknownQuestion",
         "9.9",
     ),
+]
+
+APPLICABLE: list[tuple[str, dict[str, str]]] = [
+    ("D2", {"2.1": "N", "2.2": "N"}),
+    ("D2", {"2.1": "N", "2.2": "N", "2.6": "NI"}),
+    ("D4", {"4.1": "N", "4.2": "NI", "4.3": "N", "4.4": "Y"}),  # 4.4 and 4.5 are not asked
 ]
 
 # (value, expected wire value or None for a refusal)
@@ -181,11 +198,11 @@ def build_contract() -> dict[str, Any]:
     ]
     contract["applicable"] = [
         {
-            "domain": "D2",
+            "domain": d,
             "answers": a,
-            "expected": applicable_questions(Domain.D2, {q: Answer(v) for q, v in a.items()}),
+            "expected": applicable_questions(Domain(d), {q: Answer(v) for q, v in a.items()}),
         }
-        for a in ({"2.1": "N", "2.2": "N"}, {"2.1": "N", "2.2": "N", "2.6": "NI"})
+        for d, a in APPLICABLE
     ]
     contract["parse"] = [{"value": v, "expected": e} for v, e in PARSES]
     contract["refusals"] = []

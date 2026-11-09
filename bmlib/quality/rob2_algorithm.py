@@ -161,9 +161,20 @@ def questions(domain: Domain) -> tuple[str, ...]:
 def applicable_questions(domain: Domain, answers: Answers) -> list[str]:
     """The questions to ask given the answers so far, in order.
 
-    A question whose prerequisite is not yet answered is not listed.
+    Each condition reads only the answers to questions already found
+    applicable (every prerequisite precedes its dependant), so a leftover
+    answer to a question that is not asked never opens a later one. A question
+    whose prerequisite is not yet answered is not listed.
     """
-    return [q for q in _QUESTIONS[domain] if q not in _CONDITIONS or _CONDITIONS[q](answers)]
+    asked: list[str] = []
+    seen: dict[str, Answer] = {}
+    for question in _QUESTIONS[domain]:
+        if question in _CONDITIONS and not _CONDITIONS[question](seen):
+            continue
+        asked.append(question)
+        if question in answers:
+            seen[question] = answers[question]
+    return asked
 
 
 def _checked(domain: Domain, answers: Answers) -> dict[str, str]:
@@ -176,6 +187,8 @@ def _checked(domain: Domain, answers: Answers) -> dict[str, str]:
         answer = answers.get(question)
         if answer is None:
             raise Rob2Error("MissingAnswer", question=question)
+        if not isinstance(answer, Answer):
+            raise Rob2Error("UnreadableAnswer", question=question, value=repr(answer))
         if answer is Answer.NI and question in _NO_NI_QUESTIONS:
             raise Rob2Error("NotAllowed", question=question, answer=answer)
         collapsed[question] = "Y" if answer in _YES else "N" if answer in _NO else "NI"
@@ -254,11 +267,20 @@ def domain_judgement(domain: Domain, answers: Answers) -> Judgement:
     return _RULES[domain](_checked(domain, answers))
 
 
+def _check_domains(domains: Sequence[Judgement]) -> None:
+    """Refuse anything but five ``Judgement`` values (Rust's ``[Judgement; 5]``)."""
+    if len(domains) != len(Domain):
+        raise ValueError(f"expected {len(Domain)} domain judgements, got {len(domains)}")
+    if not all(isinstance(d, Judgement) for d in domains):
+        raise TypeError("domain judgements must be Judgement values")
+
+
 def needs_escalation_decision(domains: Sequence[Judgement]) -> bool:
     """True when the guidance leaves the overall judgement to the assessor.
 
     That is: no domain is High and at least two have some concerns.
     """
+    _check_domains(domains)
     return Judgement.HIGH not in domains and (
         sum(d is Judgement.SOME_CONCERNS for d in domains) >= 2
     )
@@ -270,6 +292,7 @@ def overall_judgement(domains: Sequence[Judgement], escalate: bool | None = None
     ``escalate`` matters only when ``needs_escalation_decision`` is true; then
     ``None`` raises ``Rob2Error`` of kind ``EscalationUndecided``.
     """
+    _check_domains(domains)
     if Judgement.HIGH in domains:
         return Judgement.HIGH
     if needs_escalation_decision(domains):

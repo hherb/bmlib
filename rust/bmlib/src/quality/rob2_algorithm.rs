@@ -239,13 +239,23 @@ fn is_asked(question: &str, answers: &Answers) -> bool {
 
 /// The questions to ask given the answers so far, in order.
 ///
-/// A question whose prerequisite is not yet answered is not listed.
+/// Each condition reads only the answers to questions already found
+/// applicable (every prerequisite precedes its dependant), so a leftover
+/// answer to a question that is not asked never opens a later one. A question
+/// whose prerequisite is not yet answered is not listed.
 pub fn applicable_questions(domain: Domain, answers: &Answers) -> Vec<&'static str> {
-    questions(domain)
-        .iter()
-        .copied()
-        .filter(|q| is_asked(q, answers))
-        .collect()
+    let mut asked = Vec::new();
+    let mut seen = Answers::new();
+    for &question in questions(domain) {
+        if !is_asked(question, &seen) {
+            continue;
+        }
+        asked.push(question);
+        if let Some(answer) = answers.get(question) {
+            seen.insert(question.to_string(), *answer);
+        }
+    }
+    asked
 }
 
 /// The applicable answers of a domain, validated and collapsed.
