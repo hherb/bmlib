@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PRs #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; #723's PR open; PRs #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
@@ -16,16 +16,16 @@ carries breaking changes in both languages (e.g. Rust `sync()` now returns
 `Result<SyncReport, SyncError>` and takes a clock). Tick items off here as
 their PRs merge; open a PR per item and stop — the maintainer merges.
 
-**Done**: #686 (PR #720, one keychain item on every platform, live CI job
+**Done**: #723 (PR open, awaiting review), #686 (PR #720, one keychain item on every platform, live CI job
 `keychain-interop`), #607 + #444 (PR #721), #707 and #710 (PRs #711, #713).
 
 **Fix before the release** — each is in a feature that 0.12.0 did not ship,
 so it is free to fix now and costs a breaking change later:
 
-1. **#656** — `canonical_from_html`'s 2M code-point cap refuses pages that
-   parse cheaply (inline `data:` URIs), a completeness regression against
-   0.12.0. Decision-shaped: cap the parse *cost* rather than the page
-   length? Put the options to the maintainer before coding.
+1. ~~#656~~ → **#723** (this session's PR, open): checking #656's remedy found
+   a 91 KB page that makes html5ever build gigabytes (both languages, in
+   0.12.0 too). Fixed by bounding what is built (see *This session*). **#656
+   stays open past the release** (the maintainer's choice: keep the 2M cap).
 2. **#647** — `PicoAgent` records a quote rejected as a contradiction as
    "not found", dropping the reason. Both languages.
 3. **Decisions for the maintainer**, then implement: **#708** (`chat_json`'s
@@ -65,43 +65,36 @@ and `bmlib-rehearse-release-gates` memories):
   before the release PR, since `release.yml` checks them only after the
   version is burned. Never approve the PyPI gate.
 
-## Previous session: Rust `sync()` follows Python's entry check, day lock and peak (#607, #444, merged as PR #721)
+## This session: an HTML page's parse bounded by its memory (#723, PR open)
 
-The maintainer chose #607 + #444 together (2026-11-09). Rust only; the one
-Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
+Decided with the maintainer, step by step (`docs/DECISIONS.md`, last entry):
 
-- **Entry**: `sync()` calls `validate_window` first and returns
-  `Result<SyncReport, SyncError>` (`Window(WindowError)` / `Db(DbError)`,
-  `From<DbError>`). **Breaking**: `sync`/`sync_source` also take a clock
-  (`&Utc::now`) instead of an instant, re-read at each day's close — the
-  review's one finding: judged at the run's start, a row another sync had just
-  completed read as a future fetch and was overwritten `failed`. The finalcheck
-  review: rows and part checkpoints are now stamped at the write, as Python's
-  are (they carried the run's start); `sync_source`, public, refuses a window
-  too (`Result<(), SyncError>`); `SyncError::source` is the inner error's own.
-- **Lock**: `lock_day` opens every write transaction of a day (the part flush
-  and the close); the PostgreSQL key is Python's (`hashtext` + the day's
-  ordinal = `num_days_from_ce`), pinned live by `postgres_live.rs`
-  (`TestDb::another()` is new). A lock the close cannot have costs the day an
-  `errors` line, as Python's `_DayLockUnavailableError` does.
-- **Peak**: `judge_against_peak` (+ `read_stored_day`, `stored_row_is_final`,
-  `readable_count`, `settled_by`, `REFUSAL_GRACE_DAYS`) is Python's
-  `_judge_against_peak`, #446 and PR #445's recorded-baseline rule included;
-  `upsert_download_day` takes `peak_count`. **45 `judge_peak` cases** in
-  `sync_cases.json`; four mutants each fail them. The unreadable-parts path
-  now goes through the same close. `the_days_records_and_its_status_row_commit_together`
-  refuses the insert with a trigger, the view it used refusing the lock first.
-  The finalcheck review added the tests its mutants survived (settle period at
-  the close, unreadable checkpoints, the lock failure's fetch error and
-  totals, both stamps) and a live PostgreSQL test of a close waiting on another
-  session's lock (`TestDb::connector()`), which kills reading the row before
-  the lock.
-- **Filed from the review: #722**, Rust `sync()` logs none of the lines Python
-  logs beyond the peak, lock and unreadable-parts ones.
-- **For StudyAnalyzer**: if it calls `sync`, its error type changes; a
-  `peak_count` is now written on every row.
+- **Found**: N distinct `<b id=k>` left open in a closed `<div>`, then N
+  `<div>x</div>`, make html5ever create ~N² elements. 91 KB = 4.6 GB
+  (Python), 2.8 GB (Rust); the 2M cap admits 20× that. #656's `<`-count cap
+  does not bound it. Filed **#723**; numbers posted on servo/html5ever#812
+  (open upstream, time only).
+- **Python**: `canonical_from_html` checks in the parent, then `_convert` runs
+  in a child (`sys.executable -c`, the page via a temp file, JSON back),
+  killed past `HTML_PARSE_MAX_BYTES` (1 GiB) → `HtmlParseMemoryError`. psutil
+  joins the `html` extra, `types-psutil` the `dev` extra. The clock tests now
+  call `_convert` in-process (monkeypatches cannot reach a child).
+- **Rust**: `CountingSink` wraps `HtmlTreeSink`; pieces of 64 code points;
+  past `max_elements(length)` (= length + `HTML_ELEMENT_ALLOWANCE` 1,000) →
+  `HtmlError::TooManyElements`. `HtmlError` is `#[non_exhaustive]` now.
+- **Unmeasured**: both limits against real pages (no HTML corpus on this
+  machine, #656's own gap). **For StudyAnalyzer**: match `HtmlError` with a
+  `_` arm.
 
 ## Earlier, 2026-11-06 to 2026-11-08 (all merged; the CHANGELOG entries are the argument)
+
+- **#607 + #444** (PR #721, Rust only): `sync()` validates its window first and
+  returns `Result<SyncReport, SyncError>`; **breaking**, it takes a clock
+  (`&Utc::now`) re-read at each day's close, rows stamped at the write.
+  `lock_day` opens every day's write transaction (Python's PostgreSQL key);
+  `judge_against_peak` is Python's `_judge_against_peak` (45 oracle cases);
+  `upsert_download_day` takes `peak_count`. Filed **#722** (Rust logs few of
+  Python's lines). **For StudyAnalyzer**: `sync`'s error type changes.
 
 - **#686** (PR #720): one keychain item from both languages on every platform;
   Windows credentials named by the service, another account's refused; CI's

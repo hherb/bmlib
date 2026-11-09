@@ -2866,7 +2866,16 @@ doc.converter_version                     # "jats-1"
   many real pages are longer is unmeasured; a page saved with its images
   inline as `data:` URIs can be (#656). The clock is wall time, so a loaded machine
   can refuse a page an idle one accepts, and a timeout is worth retrying
-  elsewhere; a page too large is not.
+  elsewhere; a page too large is not. html5ever also rebuilds every open
+  formatting element each time a block closes over them, so a page of 91 KB
+  can have it build elements with the square of its length, gigabytes of them
+  (#723). Python therefore parses in a child process (`sys.executable`; a
+  frozen application gets a `RuntimeError`), killed once it holds more than
+  `HTML_PARSE_MAX_BYTES` (1 GiB) with `HtmlParseMemoryError` (a `ValueError`),
+  which needs `psutil`, in the `html` extra. Rust counts the elements it
+  creates and stops past one per code point plus `HTML_ELEMENT_ALLOWANCE`
+  (`HtmlError::TooManyElements`; `HtmlError` is `#[non_exhaustive]`)
+  *(unreleased)*. Neither is worth retrying.
   A page with neither `<article>` nor `<main>` may contribute its site name as
   the title.
 - **Is it the whole paper?** A publisher's abstract page converts as cleanly as

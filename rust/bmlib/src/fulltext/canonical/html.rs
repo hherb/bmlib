@@ -26,7 +26,11 @@
 //! fed to it [`HTML_PARSE_CHUNK`] code points at a time, and a page still being
 //! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlError::TimedOut`]);
 //! since one chunk's own time grows with the page's length, a page longer than
-//! [`HTML_MAX_CHARS`] is refused unparsed ([`HtmlError::TooLarge`]).
+//! [`HTML_MAX_CHARS`] is refused unparsed ([`HtmlError::TooLarge`]). A page
+//! whose parse creates more than [`max_elements`] of its length is refused
+//! part way ([`HtmlError::TooManyElements`]): html5ever rebuilds every open
+//! formatting element each time a block closes over them, so a page can make
+//! it create elements with the square of its length (#723).
 //! The leading byte-order mark is discarded here rather than by html5ever,
 //! which discards one at the start of every chunk it is fed. In short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
 //! are dropped; the root is the fullest `<article>` if it holds at least
@@ -36,13 +40,18 @@
 //! start sections; a [`BLOCKS`] element ends the running paragraph; a `<tr>` is
 //! a table row. Behind the `html` feature.
 
+use std::borrow::Cow;
+use std::cell::Cell;
 use std::fmt;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use ego_tree::iter::Edge;
 use html5ever::driver::{self, ParseOpts};
 use html5ever::tendril::{StrTendril, TendrilSink};
 use html5ever::tokenizer::TokenizerOpts;
+use html5ever::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
+use html5ever::{Attribute, QualName};
 use scraper::{ElementRef, Html, HtmlTreeSink, Node};
 
 use crate::fulltext::canonical::model::{
@@ -79,8 +88,34 @@ pub const HTML_MAX_CHARS: usize = 2_000_000;
 /// measurement: smaller chunks made markupever slower on the same page).
 pub const HTML_PARSE_CHUNK: usize = 16_384;
 
+/// The elements a page's parse may create beyond one per code point of the
+/// page (#723); past [`max_elements`] it is refused. An element's own start tag
+/// takes at least three code points, and the elements html5ever implies
+/// (`<html>`, `<head>`, `<body>`, a table's `<tbody>` and `<tr>`) are a few per
+/// tag, so only a page that has html5ever rebuild the same formatting elements
+/// over and over creates more. Unmeasured on real pages, which no draw has
+/// sized: a starting point, like [`MIN_ARTICLE_SHARE`].
+pub const HTML_ELEMENT_ALLOWANCE: usize = 1_000;
+
+/// Code points fed to html5ever between two readings of the elements created
+/// (#723). One rebuild creates as many elements as the page has formatting
+/// elements open, so the count can only be read often: between two readings a
+/// piece of 64 code points holds at most about five rebuilds. Measured on a
+/// 486 KB page shaped like an article, a release build: 5.6 ms in pieces of 64
+/// against 4.4 ms in pieces of 16,384 (and no difference at all on 40,000
+/// nested `<div>`, 3.0 s either way).
+const ELEMENT_COUNT_PIECE: usize = 64;
+
+/// The most elements the parse of a page of `length` code points may create:
+/// one per code point and [`HTML_ELEMENT_ALLOWANCE`] (#723).
+#[must_use]
+pub fn max_elements(length: usize) -> usize {
+    length.saturating_add(HTML_ELEMENT_ALLOWANCE)
+}
+
 /// A page [`canonical_from_html`] refuses. Lengths are in code points.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HtmlError {
     /// The page is longer than [`HTML_MAX_CHARS`], and was not parsed.
     TooLarge {
@@ -89,6 +124,17 @@ pub enum HtmlError {
     },
     /// html5ever was still parsing the page after [`HTML_PARSE_SECONDS`].
     TimedOut {
+        /// The code points fed to the parser before it was stopped.
+        parsed: usize,
+        /// The page's length after its leading byte-order mark is dropped.
+        length: usize,
+    },
+    /// html5ever had created more than [`max_elements`] of the page's length
+    /// (#723): it rebuilds open formatting elements each time a block closes
+    /// over them, so a page can have it create elements without end.
+    TooManyElements {
+        /// The elements created when the parse was stopped.
+        created: usize,
         /// The code points fed to the parser before it was stopped.
         parsed: usize,
         /// The page's length after its leading byte-order mark is dropped.
@@ -108,6 +154,17 @@ impl fmt::Display for HtmlError {
                 f,
                 "the page took longer than {HTML_PARSE_SECONDS} s to parse (stopped after \
                  {parsed} of {length} characters); it may be nested too deeply"
+            ),
+            Self::TooManyElements {
+                created,
+                parsed,
+                length,
+            } => write!(
+                f,
+                "the page made the parser create {created} elements, more than the {} its \
+                 {length} characters allow (stopped after {parsed}); it may repeat misnested \
+                 formatting elements",
+                max_elements(*length)
             ),
         }
     }
@@ -464,7 +521,8 @@ impl Walk {
 /// [`HtmlError::TooLarge`] if the page is longer than [`HTML_MAX_CHARS`];
 /// [`HtmlError::TimedOut`] if parsing it takes longer than
 /// [`HTML_PARSE_SECONDS`]. The clock is wall time, so the same page may parse
-/// on a less loaded machine.
+/// on a less loaded machine. [`HtmlError::TooManyElements`] if the parse
+/// creates more than [`max_elements`] of the page's length.
 pub fn canonical_from_html(html: &str) -> Result<CanonicalText, HtmlError> {
     convert_within(html, Duration::from_secs(HTML_PARSE_SECONDS))
 }
@@ -490,11 +548,27 @@ fn refuse_longer_than(html: &str, max: usize) -> Result<(), HtmlError> {
     Ok(())
 }
 
-/// Parse `html`, fed `chunk` code points at a time; before each chunk after the
-/// first, `past_deadline` is asked, and `true` stops the parse.
-fn parse(
+/// Parse `html`, read `chunk` code points at a time; before each chunk after
+/// the first, `past_deadline` is asked, and `true` stops the parse. Each chunk
+/// is fed in pieces of [`ELEMENT_COUNT_PIECE`], and after each the elements
+/// created are counted: past [`max_elements`] the parse stops.
+fn parse(html: &str, chunk: usize, past_deadline: impl FnMut() -> bool) -> Result<Html, HtmlError> {
+    parse_counted(
+        html,
+        chunk,
+        ELEMENT_COUNT_PIECE,
+        max_elements,
+        past_deadline,
+    )
+}
+
+/// [`parse`], fed `piece` code points at a time, refusing more elements than
+/// `max` of the page's length.
+fn parse_counted(
     html: &str,
     chunk: usize,
+    piece: usize,
+    max: fn(usize) -> usize,
     mut past_deadline: impl FnMut() -> bool,
 ) -> Result<Html, HtmlError> {
     // html5ever discards a U+FEFF at the start of every chunk, so it is told to
@@ -507,22 +581,160 @@ fn parse(
         },
         ..ParseOpts::default()
     };
-    let mut parser = driver::parse_document(HtmlTreeSink::new(Html::new_document()), opts);
+    let created = Rc::new(Cell::new(0));
+    let sink = CountingSink {
+        inner: HtmlTreeSink::new(Html::new_document()),
+        created: Rc::clone(&created),
+    };
+    let mut parser = driver::parse_document(sink, opts);
+    let length = html.chars().count();
     let (mut rest, mut parsed) = (html, 0);
     while !rest.is_empty() {
-        if parsed > 0 && past_deadline() {
-            let length = html.chars().count();
+        if parsed > 0 && parsed % chunk == 0 && past_deadline() {
             return Err(HtmlError::TimedOut { parsed, length });
         }
+        // A piece never crosses a chunk's end, so the clock is read where it was.
+        let take = piece.min(chunk - parsed % chunk);
         let cut = rest
             .char_indices()
-            .nth(chunk)
+            .nth(take)
             .map_or(rest.len(), |(at, _)| at);
         parser.process(StrTendril::from_slice(&rest[..cut]));
-        parsed += chunk;
+        parsed += take;
         rest = &rest[cut..];
+        if created.get() > max(length) {
+            let created = created.get();
+            return Err(HtmlError::TooManyElements {
+                created,
+                parsed,
+                length,
+            });
+        }
     }
     Ok(parser.finish())
+}
+
+/// scraper's tree sink, counting the elements html5ever creates (#723).
+/// Every other call goes to scraper's sink as it is.
+struct CountingSink {
+    inner: HtmlTreeSink,
+    created: Rc<Cell<usize>>,
+}
+
+impl TreeSink for CountingSink {
+    type Handle = <HtmlTreeSink as TreeSink>::Handle;
+    type Output = <HtmlTreeSink as TreeSink>::Output;
+    type ElemName<'a>
+        = <HtmlTreeSink as TreeSink>::ElemName<'a>
+    where
+        Self: 'a;
+
+    fn finish(self) -> Self::Output {
+        self.inner.finish()
+    }
+    fn parse_error(&self, msg: Cow<'static, str>) {
+        self.inner.parse_error(msg);
+    }
+    fn get_document(&self) -> Self::Handle {
+        self.inner.get_document()
+    }
+    fn elem_name<'a>(&'a self, target: &'a Self::Handle) -> Self::ElemName<'a> {
+        self.inner.elem_name(target)
+    }
+    fn create_element(
+        &self,
+        name: QualName,
+        attrs: Vec<Attribute>,
+        flags: ElementFlags,
+    ) -> Self::Handle {
+        self.created.set(self.created.get() + 1);
+        self.inner.create_element(name, attrs, flags)
+    }
+    fn create_comment(&self, text: StrTendril) -> Self::Handle {
+        self.inner.create_comment(text)
+    }
+    fn create_pi(&self, target: StrTendril, data: StrTendril) -> Self::Handle {
+        self.inner.create_pi(target, data)
+    }
+    fn append(&self, parent: &Self::Handle, child: NodeOrText<Self::Handle>) {
+        self.inner.append(parent, child);
+    }
+    fn append_based_on_parent_node(
+        &self,
+        element: &Self::Handle,
+        prev_element: &Self::Handle,
+        child: NodeOrText<Self::Handle>,
+    ) {
+        self.inner
+            .append_based_on_parent_node(element, prev_element, child);
+    }
+    fn append_doctype_to_document(
+        &self,
+        name: StrTendril,
+        public_id: StrTendril,
+        system_id: StrTendril,
+    ) {
+        self.inner
+            .append_doctype_to_document(name, public_id, system_id);
+    }
+    fn mark_script_already_started(&self, node: &Self::Handle) {
+        self.inner.mark_script_already_started(node);
+    }
+    fn pop(&self, node: &Self::Handle) {
+        self.inner.pop(node);
+    }
+    fn get_template_contents(&self, target: &Self::Handle) -> Self::Handle {
+        self.inner.get_template_contents(target)
+    }
+    fn same_node(&self, x: &Self::Handle, y: &Self::Handle) -> bool {
+        self.inner.same_node(x, y)
+    }
+    fn set_quirks_mode(&self, mode: QuirksMode) {
+        self.inner.set_quirks_mode(mode);
+    }
+    fn append_before_sibling(&self, sibling: &Self::Handle, new_node: NodeOrText<Self::Handle>) {
+        self.inner.append_before_sibling(sibling, new_node);
+    }
+    fn add_attrs_if_missing(&self, target: &Self::Handle, attrs: Vec<Attribute>) {
+        self.inner.add_attrs_if_missing(target, attrs);
+    }
+    fn associate_with_form(
+        &self,
+        target: &Self::Handle,
+        form: &Self::Handle,
+        nodes: (&Self::Handle, Option<&Self::Handle>),
+    ) {
+        self.inner.associate_with_form(target, form, nodes);
+    }
+    fn remove_from_parent(&self, target: &Self::Handle) {
+        self.inner.remove_from_parent(target);
+    }
+    fn reparent_children(&self, node: &Self::Handle, new_parent: &Self::Handle) {
+        self.inner.reparent_children(node, new_parent);
+    }
+    fn is_mathml_annotation_xml_integration_point(&self, handle: &Self::Handle) -> bool {
+        self.inner
+            .is_mathml_annotation_xml_integration_point(handle)
+    }
+    fn set_current_line(&self, line_number: u64) {
+        self.inner.set_current_line(line_number);
+    }
+    fn allow_declarative_shadow_roots(&self, intended_parent: &Self::Handle) -> bool {
+        self.inner.allow_declarative_shadow_roots(intended_parent)
+    }
+    fn attach_declarative_shadow(
+        &self,
+        location: &Self::Handle,
+        template: &Self::Handle,
+        attrs: &[Attribute],
+    ) -> bool {
+        self.inner
+            .attach_declarative_shadow(location, template, attrs)
+    }
+    fn maybe_clone_an_option_into_selectedcontent(&self, option: &Self::Handle) {
+        self.inner
+            .maybe_clone_an_option_into_selectedcontent(option);
+    }
 }
 
 /// The canonical text of a parsed page.
@@ -626,6 +838,96 @@ mod tests {
             panic!("{error:?}");
         };
         assert!(parsed > 0 && parsed < length, "{parsed} of {length}");
+    }
+
+    /// #723's page: `n` formatting elements, each with its own attribute so
+    /// html5ever's Noah's Ark clause matches none, left open in a block that
+    /// closes; then `n` blocks, each of whose text has all `n` rebuilt.
+    fn rebuilding(n: usize) -> String {
+        let mut page = String::from("<div>");
+        for k in 0..n {
+            page.push_str(&format!("<b id={k}>"));
+        }
+        page.push_str("</div>");
+        page.push_str(&"<div>x</div>".repeat(n));
+        page
+    }
+
+    #[test]
+    fn a_page_rebuilding_its_formatting_elements_is_stopped_by_its_count() {
+        // Whole, this page creates about 16 million elements (2.8 GB) from 91 KB.
+        let page = rebuilding(4_000);
+        let error = convert_within(&page, Duration::from_secs(3600)).expect_err("refused");
+        let HtmlError::TooManyElements {
+            created,
+            parsed,
+            length,
+        } = error
+        else {
+            panic!("{error:?}");
+        };
+        assert_eq!(length, page.chars().count());
+        assert!(parsed < length, "{parsed} of {length}");
+        // The count is read after every piece, and a piece of 64 code points
+        // holds about five rebuilds of 4,000 elements each.
+        let max = max_elements(length);
+        assert!(
+            created > max && created <= max + 6 * 4_000,
+            "{created} of {max}"
+        );
+        assert!(
+            error.to_string().contains("misnested formatting"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_element_count_refuses_one_past_the_budget() {
+        // <html>, <head>, <body> and two <p>.
+        const FIVE: &str = "<p>a<p>b";
+        assert!(parse_counted(FIVE, 3, 1, |_| 5, || false).is_ok());
+        let error = parse_counted(FIVE, 3, 1, |_| 4, || false).expect_err("over");
+        assert_eq!(
+            error,
+            HtmlError::TooManyElements {
+                created: 5,
+                // The second <p> is created once its `>` is read.
+                parsed: 7,
+                length: 8
+            }
+        );
+    }
+
+    #[test]
+    fn a_page_fed_in_any_pieces_parses_as_one() {
+        let whole = convert(PAGE);
+        for piece in [1, 2, 3, 7, 64] {
+            let document =
+                parse_counted(PAGE, HTML_PARSE_CHUNK, piece, max_elements, || false).expect("ok");
+            assert_eq!(read(&document), whole, "piece {piece}");
+        }
+    }
+
+    #[test]
+    fn the_clock_is_read_at_each_chunks_end_and_not_between_pieces() {
+        let length = PAGE.trim_start_matches('\u{feff}').chars().count();
+        let mut asked = 0;
+        parse_counted(PAGE, 10, 3, max_elements, || {
+            asked += 1;
+            false
+        })
+        .expect("no deadline");
+        assert_eq!(asked, length.div_ceil(10) - 1);
+    }
+
+    #[test]
+    fn the_element_budget_is_the_length_and_the_allowance() {
+        assert_eq!(max_elements(0), HTML_ELEMENT_ALLOWANCE);
+        assert_eq!(
+            max_elements(HTML_MAX_CHARS),
+            HTML_MAX_CHARS + HTML_ELEMENT_ALLOWANCE
+        );
+        assert_eq!(max_elements(usize::MAX), usize::MAX);
     }
 
     /// The text of every block, in order.

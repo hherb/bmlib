@@ -23,17 +23,21 @@ The byte-exact layouts are in the shared contract
 from __future__ import annotations
 
 import builtins
+import io
+import json
 import pickle
 import sys
 from typing import Any
 
 import markupever
+import psutil
 import pytest
 
 from bmlib.fulltext.canonical import (
     BlockKind,
     CanonicalText,
     HtmlPageTooLargeError,
+    HtmlParseMemoryError,
     HtmlParseTimeoutError,
     SourceFormat,
     canonical_from_html,
@@ -259,7 +263,11 @@ def test_deep_nesting_is_walked_without_recursion() -> None:
 
 
 class TestParseDeadline:
-    """The page is parsed in chunks against a deadline (#563)."""
+    """The page is parsed in chunks against a deadline (#563).
+
+    In this process (``_convert``), the child's own work: the monkeypatches
+    do not reach a child process.
+    """
 
     # A leading byte-order mark, which is dropped, and one inside a paragraph,
     # which is text: html5ever discards one at the start of every chunk it is fed.
@@ -272,11 +280,11 @@ class TestParseDeadline:
     def test_a_page_split_into_tiny_chunks_parses_as_one(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        whole = canonical_from_html(self.PAGE)
+        whole = html_module._convert(self.PAGE)
         assert whole.text.count("\ufeff") == 1
         for chunk in (1, 2, 3, 7):
             monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", chunk)
-            assert canonical_from_html(self.PAGE).to_dict() == whole.to_dict(), chunk
+            assert html_module._convert(self.PAGE).to_dict() == whole.to_dict(), chunk
 
     def test_a_parse_past_the_deadline_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # The clock reads 0 when the parse starts, then past the deadline.
@@ -284,7 +292,7 @@ class TestParseDeadline:
         monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
         monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
         with pytest.raises(HtmlParseTimeoutError, match="longer than 30 s") as raised:
-            canonical_from_html(self.PAGE)
+            html_module._convert(self.PAGE)
         assert (raised.value.parsed, raised.value.length) == (10, len(self.PAGE) - 1)
         assert isinstance(raised.value, ValueError)
 
@@ -311,7 +319,7 @@ class TestParseDeadline:
         monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
         monkeypatch.setattr(html_module, "HTML_PARSE_SECONDS", 1.5)
         with pytest.raises(HtmlParseTimeoutError) as raised:
-            canonical_from_html(self.PAGE)
+            html_module._convert(self.PAGE)
         assert raised.value.parsed == 20
 
     def test_a_page_fed_whole_within_the_budget_is_not_refused(
@@ -323,7 +331,7 @@ class TestParseDeadline:
         readings = iter([0.0] * (1 + checks) + [HTML_PARSE_SECONDS + 1] * 10)
         monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
         monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
-        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
+        assert pieces(html_module._convert(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
 
     def test_the_refusal_pickles(self) -> None:
         error = pickle.loads(pickle.dumps(HtmlParseTimeoutError(10, 99)))
@@ -338,7 +346,7 @@ class TestParseDeadline:
         readings = iter([0.0] + [HTML_PARSE_SECONDS] * len(self.PAGE))
         monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
         monkeypatch.setattr(html_module, "HTML_PARSE_CHUNK", 10)
-        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
+        assert pieces(html_module._convert(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
 
     def test_a_deeply_nested_page_is_stopped_by_the_real_clock(
         self, monkeypatch: pytest.MonkeyPatch
@@ -349,7 +357,7 @@ class TestParseDeadline:
         depth = 40_000
         page = "<div>" * depth + "x" + "</div>" * depth
         with pytest.raises(HtmlParseTimeoutError, match="longer than 0.05 s") as raised:
-            canonical_from_html(page)
+            html_module._convert(page)
         assert 0 < raised.value.parsed < len(page)
 
     def test_a_page_at_the_length_cap_is_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -360,10 +368,10 @@ class TestParseDeadline:
     def test_a_page_past_the_length_cap_is_refused_unparsed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def no_parser(options: Any) -> None:
+        def no_parser(*args: Any) -> None:
             raise AssertionError("parsed")
 
-        monkeypatch.setattr(markupever, "Parser", no_parser)
+        monkeypatch.setattr(html_module, "_convert_in_child", no_parser)
         monkeypatch.setattr(html_module, "HTML_MAX_CHARS", len(self.PAGE) - 1)
         refused = f"is {len(self.PAGE)} characters"
         with pytest.raises(HtmlPageTooLargeError, match=refused) as raised:
@@ -384,7 +392,7 @@ class TestParseDeadline:
     ) -> None:
         readings = iter([0.0])
         monkeypatch.setattr(html_module, "monotonic", lambda: next(readings))
-        assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
+        assert pieces(html_module._convert(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
 
 
 def test_the_version_and_format_are_stamped() -> None:
@@ -421,3 +429,99 @@ def test_a_missing_markupever_is_an_import_error_naming_the_extra(
     monkeypatch.setattr(builtins, "__import__", refuse)
     with pytest.raises(ImportError, match=r"bmlib\[html\]"):
         canonical_from_html("<p>x</p>")
+    with pytest.raises(ImportError, match=r"bmlib\[html\]"):
+        html_module._convert("<p>x</p>")
+
+
+def test_a_missing_psutil_is_an_import_error_naming_the_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_import = builtins.__import__
+
+    def refuse(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "psutil":
+            raise ImportError("no psutil")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", refuse)
+    with pytest.raises(ImportError, match=r"no psutil.*bmlib\[html\]"):
+        canonical_from_html("<p>x</p>")
+
+
+def rebuilding(n: int) -> str:
+    """#723's page: ``n`` formatting elements, each with its own attribute so
+    html5ever's Noah's Ark clause matches none, left open in a block that
+    closes; then ``n`` blocks, each of whose text has all ``n`` rebuilt."""
+    return "<div>" + "".join(f"<b id={k}>" for k in range(n)) + "</div>" + "<div>x</div>" * n
+
+
+class TestTheParseRunsInAChildHeldToItsMemory:
+    """The parse runs in a child process, killed past its memory limit (#723)."""
+
+    def test_a_page_rebuilding_its_formatting_elements_is_killed_at_the_limit(self) -> None:
+        # Parsed whole, this page holds about 1.2 GB.
+        page = rebuilding(2_000)
+        limit = 150_000_000
+        with pytest.raises(HtmlParseMemoryError, match="misnested formatting") as raised:
+            html_module._convert_in_child(page, limit)
+        assert raised.value.held > limit
+        assert raised.value.length == len(page)
+        assert isinstance(raised.value, ValueError)
+        # A reading comes about one poll late, so not far past the limit.
+        assert raised.value.held < 3 * limit
+
+    def test_the_killed_child_is_gone(self) -> None:
+        with pytest.raises(HtmlParseMemoryError):
+            html_module._convert_in_child(rebuilding(2_000), 150_000_000)
+        assert psutil.Process().children() == []
+
+    def test_the_public_function_holds_the_child_to_the_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(html_module, "HTML_PARSE_MAX_BYTES", 150_000_000)
+        with pytest.raises(HtmlParseMemoryError):
+            canonical_from_html(rebuilding(2_000))
+
+    @pytest.mark.parametrize(
+        "page",
+        ["", "<p>x</p>", TestParseDeadline.PAGE, "<h1>T</h1><table><tr><td>a<td>b</table>"],
+    )
+    def test_the_child_converts_as_this_process_does(self, page: str) -> None:
+        assert canonical_from_html(page) == html_module._convert(page)
+
+    def test_the_child_reports_its_deadline_passing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def past(html: str) -> CanonicalText:
+            raise HtmlParseTimeoutError(10, 99)
+
+        out = io.BytesIO()
+        monkeypatch.setattr(html_module, "_convert", past)
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"<p>x</p>")))
+        monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(out))
+        html_module._child_main()
+        assert json.loads(out.getvalue()) == {"timed_out": [10, 99]}
+        with pytest.raises(HtmlParseTimeoutError) as raised:
+            html_module._read_child_answer(0, out.getvalue(), b"")
+        assert (raised.value.parsed, raised.value.length) == (10, 99)
+
+    def test_a_failed_child_is_a_runtime_error_naming_its_last_line(self) -> None:
+        err = b"Traceback (most recent call last):\n  ...\nKeyError: 'x'\n"
+        with pytest.raises(RuntimeError, match=r"exit status 1\): KeyError: 'x'"):
+            html_module._read_child_answer(1, b"", err)
+        with pytest.raises(RuntimeError, match="it wrote nothing"):
+            html_module._read_child_answer(-9, b"", b"")
+
+    def test_a_frozen_application_is_told_it_cannot_start_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        with pytest.raises(RuntimeError, match="child Python process"):
+            canonical_from_html("<p>x</p>")
+
+    def test_the_memory_refusal_pickles(self) -> None:
+        error = pickle.loads(pickle.dumps(HtmlParseMemoryError(10, 99)))
+        assert (type(error), error.held, error.length, str(error)) == (
+            HtmlParseMemoryError,
+            10,
+            99,
+            str(HtmlParseMemoryError(10, 99)),
+        )

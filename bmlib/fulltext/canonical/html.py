@@ -26,7 +26,12 @@ nesting depth (#563), so the page is fed to it :data:`HTML_PARSE_CHUNK` code
 points at a time, and a page still being parsed after
 :data:`HTML_PARSE_SECONDS` is refused with :class:`HtmlParseTimeoutError`;
 since one chunk's own time grows with the page's length, a page longer than
-:data:`HTML_MAX_CHARS` is refused unparsed (:class:`HtmlPageTooLargeError`). The
+:data:`HTML_MAX_CHARS` is refused unparsed (:class:`HtmlPageTooLargeError`).
+html5ever rebuilds every open formatting element each time a block closes over
+them, so a page can have it build elements with the square of its length
+(#723), and markupever holds the GIL while it parses: the parse therefore runs
+in a child Python process, which is killed once its memory passes
+:data:`HTML_PARSE_MAX_BYTES` (:class:`HtmlParseMemoryError`). The
 leading byte-order mark is discarded here rather than by html5ever, which
 discards one at the start of every chunk it is fed. Then, by fixed rules rather
 than a score:
@@ -58,7 +63,12 @@ page's bytes is the caller's: this takes text, and refuses bytes.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+import tempfile
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
@@ -108,6 +118,21 @@ HTML_MAX_CHARS = 2_000_000
 #: at 16,384 chunking costs nothing measurable (1.77 s fed in chunks and 1.77 s
 #: in one piece, one later run), and the slowest chunk of that page takes 0.3 s.
 HTML_PARSE_CHUNK = 16_384
+
+#: The most memory the child process a page is parsed in may hold, in bytes of
+#: resident set size, before it is killed (#723). html5ever can build elements
+#: with the square of a page's length: 4,000 formatting elements left open, then
+#: 4,000 blocks closing over them, is 91 KB of page and 4.6 GB parsed whole;
+#: here it is refused in about a second. The densest pages
+#: :data:`HTML_MAX_CHARS` admits peaked at 181 MB (``<x>`` nested 660,000 deep,
+#: #654's), 175 MB (666,000 sibling ``<p>``) and 69 MB (2 MB shaped like an
+#: article), one run each, so the limit is about six times the most a page the
+#: cap admits was measured to need. Unmeasured on real pages.
+HTML_PARSE_MAX_BYTES = 1 << 30
+
+#: Seconds between two readings of the child's memory. At the fastest rate
+#: measured (about 2.3 GB/s, #723's page) a reading comes about 23 MB late.
+_MEMORY_POLL_SECONDS = 0.01
 
 #: The least share of the body's text the fullest ``<article>`` must hold to be
 #: the root, as a fraction (``numerator / denominator``) so both languages
@@ -233,8 +258,37 @@ class HtmlParseTimeoutError(ValueError):
         return type(self), (self.parsed, self.length), self.__dict__
 
 
+class HtmlParseMemoryError(ValueError):
+    """A page whose parse held more than :data:`HTML_PARSE_MAX_BYTES` (#723).
+
+    The parse runs in a child process, killed once its resident memory passes
+    the limit; html5ever rebuilds open formatting elements each time a block
+    closes over them, so a page can have it build elements without end.
+
+    Attributes:
+        held: the child's resident memory, in bytes, when it was killed.
+        length: the page's length in code points as passed.
+    """
+
+    def __init__(self, held: int, length: int) -> None:
+        super().__init__(
+            f"parsing the page held {held} bytes, more than the {HTML_PARSE_MAX_BYTES} "
+            f"allowed (a page of {length} characters); it may repeat misnested "
+            "formatting elements"
+        )
+        self.held = held
+        self.length = length
+
+    def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the fields
+        return type(self), (self.held, self.length), self.__dict__
+
+
 def canonical_from_html(html: str) -> CanonicalText:
     """Convert an HTML page to its canonical text (see the module docstring).
+
+    The page is parsed and read in a child Python process (the interpreter
+    running this one, ``sys.executable``), so a frozen application, which has
+    none to start, cannot convert one.
 
     Raises:
         TypeError: if *html* is not a ``str`` (decode the page's bytes first).
@@ -244,7 +298,12 @@ def canonical_from_html(html: str) -> CanonicalText:
         HtmlParseTimeoutError: (a ``ValueError``, so catch it first) if parsing
             the page takes longer than :data:`HTML_PARSE_SECONDS`. The clock is
             wall time, so the same page may parse on a less loaded machine.
-        ImportError: if markupever, the ``html`` extra, is not installed.
+        HtmlParseMemoryError: (a ``ValueError``) if the parse holds more than
+            :data:`HTML_PARSE_MAX_BYTES`.
+        ImportError: if markupever or psutil, the ``html`` extra, is not
+            installed.
+        RuntimeError: if the child process fails in any other way, or cannot
+            be started.
     """
     if not isinstance(html, str):
         raise TypeError(f"canonical_from_html takes text, not {type(html).__name__}")
@@ -254,6 +313,93 @@ def canonical_from_html(html: str) -> CanonicalText:
         html.encode("utf-8")
     except UnicodeEncodeError as e:
         raise ValueError(f"the page holds a lone surrogate at index {e.start}") from e
+    return _convert_in_child(html, HTML_PARSE_MAX_BYTES)
+
+
+def _convert_in_child(html: str, max_bytes: int) -> CanonicalText:
+    """:func:`_convert` *html* in a child process held to *max_bytes* of memory.
+
+    The child reads the page as UTF-8 on its standard input and writes one JSON
+    object on its standard output: the canonical text, or the refusal it raised.
+    """
+    try:
+        import markupever  # noqa: F401  (the child imports it; fail here first)
+        import psutil
+    except ImportError as e:
+        raise ImportError(
+            f"markupever and psutil are required for HTML conversion ({e}). "
+            "Install with: pip install bmlib[html]"
+        ) from e
+    if getattr(sys, "frozen", False) or not sys.executable:
+        raise RuntimeError("HTML is parsed in a child Python process, and none can be started")
+    # The child imports the bmlib this one is, wherever sys.path would find another.
+    root = str(Path(__file__).resolve().parents[3])
+    command = [sys.executable, "-c", _CHILD_CODE, root]
+    # A file, not a pipe: communicate() writes its input only on the call that
+    # passes it, so a retry after a timeout would leave the child waiting.
+    with tempfile.TemporaryFile() as page:
+        page.write(html.encode("utf-8"))
+        page.seek(0)
+        proc = subprocess.Popen(command, stdin=page, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        child = psutil.Process(proc.pid)
+        while True:
+            try:
+                out, err = proc.communicate(timeout=_MEMORY_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                held = child.memory_info().rss
+            except psutil.NoSuchProcess:
+                continue  # it has exited, and the next communicate() says how
+            if held > max_bytes:
+                raise HtmlParseMemoryError(held, len(html))
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+    return _read_child_answer(proc.returncode, out, err)
+
+
+#: What the child runs: the bmlib at ``sys.argv[1]``, its :func:`_child_main`.
+_CHILD_CODE = (
+    "import sys; sys.path.insert(0, sys.argv[1]); "
+    "from bmlib.fulltext.canonical.html import _child_main; _child_main()"
+)
+
+
+def _child_main() -> None:
+    """The child's side: a page on standard input, its answer on standard output."""
+    html = sys.stdin.buffer.read().decode("utf-8")
+    try:
+        answer: dict[str, Any] = {"text": _convert(html).to_dict()}
+    except HtmlParseTimeoutError as e:
+        answer = {"timed_out": [e.parsed, e.length]}
+    sys.stdout.buffer.write(json.dumps(answer).encode("ascii"))
+
+
+def _read_child_answer(returncode: int, out: bytes, err: bytes) -> CanonicalText:
+    """The canonical text the child wrote, or the refusal it reported.
+
+    Raises:
+        HtmlParseTimeoutError: if the child reported its deadline passed.
+        RuntimeError: if the child failed, its last line of standard error named.
+    """
+    if returncode != 0:
+        lines = err.decode("utf-8", "replace").strip().splitlines()
+        raise RuntimeError(
+            f"the HTML parse process failed (exit status {returncode}): "
+            f"{lines[-1] if lines else 'it wrote nothing'}"
+        )
+    answer = json.loads(out)
+    if "timed_out" in answer:
+        raise HtmlParseTimeoutError(*answer["timed_out"])
+    return CanonicalText.from_dict(answer["text"])
+
+
+def _convert(html: str) -> CanonicalText:
+    """Convert *html*, already checked by :func:`canonical_from_html`, in this process."""
     document = _parse(html)
     body = _first(document, lambda e: _name(e) == "body")
     walk = _Walk()

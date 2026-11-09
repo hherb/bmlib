@@ -371,6 +371,20 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`HtmlError` is `#[non_exhaustive]` and gains `TooManyElements`** (#723,
+  with the Python library). html5ever rebuilds every open formatting element
+  each time a block closes over them, so N distinct `<b id=k>` left open in a
+  closed `<div>` and then N `<div>x</div>` make it create about N² elements:
+  91 KB of page held 2.8 GB (186 MB at a quarter of it), and the deadline,
+  read between chunks, came only after an estimated 18 GB. The parse now runs
+  through a sink wrapping scraper's that counts the elements created, the
+  page is fed in pieces of 64 code points (the clock still read every
+  `HTML_PARSE_CHUNK`), and past `max_elements(length)`, one per code point
+  and `HTML_ELEMENT_ALLOWANCE` (1,000, unmeasured on real pages), the parse
+  stops with `HtmlError::TooManyElements { created, parsed, length }`: that
+  page is refused in 0.4 s at 28 MB. Pieces of 64 cost 5.6 ms against 4.4 ms
+  on a 486 KB article-shaped page and nothing on 40,000 nested `<div>`. A
+  page that converts converts exactly as before.
 - **`chat_body` no longer carries an Anthropic `thinking`** (#707): its shape
   needs the model's metadata, which `LlmClient` fetches and adds (see
   *Changed*), so a caller building a body with `chat_body` and sending it
