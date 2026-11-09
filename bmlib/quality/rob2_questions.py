@@ -23,11 +23,11 @@ et al., 22 August 2019), for an individually randomised parallel-group trial
 and the effect of *assignment* to the interventions.  The question numbers are
 RoB 2's and :mod:`bmlib.quality.rob2_algorithm` holds its decision rules.
 
-The guidance is licensed CC BY-NC-ND 4.0, so none of its text is copied,
-edited or paraphrased here.  Each question is written afresh in bmlib's own
-words from the decision it feeds in :mod:`bmlib.quality.rob2_algorithm` (what
-makes the answer Y rather than N on its branch); the guidance's text,
-examples and list order are not reused.  Each is laid out for a language
+The guidance is licensed CC BY-NC-ND 4.0, so its text is not copied here.
+Each question is written afresh in bmlib's own words from the decision it
+feeds in :mod:`bmlib.quality.rob2_algorithm` (what makes the answer Y rather
+than N on its branch).  RoB 2's criteria necessarily show through, but its
+wording, examples and list order are not reused.  Each is laid out for a language
 model reading only the paper: the question itself; for a question asked only
 on some branches, an "Applies only when:" line (when the condition clearly
 fails, the model answers ``NA``); where in the paper to look; then one line
@@ -69,13 +69,14 @@ protocol the paper cites.
 Y: the paper names a chance mechanism, for example permuted blocks from \
 statistical software or a randomisation website. Minimisation also counts as \
 chance here.
-PY: the paper names no mechanism, but the set-up makes a proper one the \
-likely choice, for example a trials unit or an independent statistician ran \
-the allocation.
+PY: the paper names no mechanism, but what it does say makes a proper one \
+the likely choice, for example the list was drawn up in advance by a \
+statistician with no part in recruitment.
 PN: details in the paper hint that the order could be foreseen, without \
 saying so.
-N: something other than chance set the group: a fixed pattern (alternating \
-patients, odd and even numbers, the day of the week) or a person's decision.
+N: the group followed something other than chance that someone could know in \
+advance and so predict or steer, for example the room a participant was \
+admitted to.
 NI: the paper says the trial was randomised and nothing about how."""
 
 Q_1_2 = """\
@@ -237,9 +238,9 @@ Look in: the flow diagram and the results tables, for how many were left out \
 or moved in each group. Set that beside the number of events, or beside the \
 size of the difference between the groups.
 Ask: if those participants were put back in their randomised groups, could \
-the difference between the groups change materially? Even a few can matter \
-when there are few events, or when those participants were in better or \
-worse health than the rest.
+the difference between the groups change materially? Even a few can matter: \
+when those participants were sicker or healthier than the rest, or when \
+there are so few events that each one counts.
 Y: yes, the change could be material.
 PY: the numbers suggest a material change is likely.
 PN: the numbers suggest any change would be small.
@@ -287,8 +288,9 @@ PY: such checks are reported, but only in part, for example the paper says \
 the result held without showing the numbers.
 PN: the checks give little comfort, for example one alternative analysis \
 resting on a single guess.
-N: the paper reports no such checks. Filling the gaps (with the last value \
-seen, or a group mean) and analysing as if complete is not a check.
+N: the paper reports no such checks. An analysis that puts a value into each \
+gap and then treats the data as complete shows nothing about whether the \
+gaps distort the result.
 NI: not allowed for this question. If the paper is silent, answer N."""
 
 Q_3_3 = """\
@@ -324,29 +326,31 @@ Look for signs in three places:
 - the flow diagram: do the groups lose different shares of participants, or \
 lose them for different reasons?
 - the stated reasons: do they point to the outcome itself, for example \
-"withdrew because symptoms worsened"?
-- the condition and the follow-up: do people with this condition who are \
-doing badly tend to stop attending, or, in a time-to-event analysis, did \
-follow-up end when participants came off or changed their assigned \
-treatment?
+"withdrew because symptoms worsened"? In a time-to-event analysis, a \
+participant whose follow-up stopped because of their treatment (it was not \
+working, or they could not tolerate it) has a reason of this kind.
+- the condition: would someone doing badly with it be less likely to come \
+back to be assessed?
 Y: at least one such sign is present.
 PY: the signs lean that way, without being clear.
 PN: the signs lean the other way.
-N: none of these signs is present, or the analysis already adjusted for what \
-links dropping out to the outcome (for example severity at the start).
+N: none of these signs is present; or the authors show that, once \
+participants' starting characteristics are taken into account, who went \
+missing tells nothing more about the outcome.
 NI: the paper gives too little to look for these signs."""
 
 # --- Domain 4: measurement of the outcome ---
 
 Q_4_1 = """\
 Was this outcome measured with a method that is unfit for it?
-Judge the measuring only, not whether the outcome itself was a wise choice.
+Only the measuring is in question here, so an outcome you think poorly \
+chosen can still be answered N.
 Look in: the methods for the instrument, test, scale or definition and any \
 reference to its validation, and the results for scores bunched at the top \
 or bottom of the scale.
-Y: the method could not register a change of the size the intervention might \
-plausibly cause (for example most participants already at the top of the \
-scale at the start), or it is known not to measure what it claims to.
+Y: the method fails at its job: it is known to give misleading readings for \
+this outcome, or most participants already sit at the edge of its range, so \
+a real change could not show.
 PY: the description suggests a poor fit, without being clear.
 PN: the method looks reasonable, though the paper says little about it.
 N: the method is an accepted or validated way to measure this outcome.
@@ -355,17 +359,15 @@ NI: the paper does not say how this outcome was measured."""
 Q_4_2 = """\
 Could this outcome have been measured, or its events found, differently in \
 one group than in another?
-Look in: the methods and the schedule of visits. Was each group assessed \
-with the same instrument, the same cut-off and at the same times? Did one \
-group see staff or get tested more often, so that more of its events would \
-come to light?
-Y: the groups were assessed differently in any of these ways, for example \
-one group had monthly scans and the other only a final one.
+Look in: the methods and the schedule of visits. Ask whether anything about \
+how the outcome was recorded differed by group: the tool or rule used to \
+record it, or how closely each group was watched.
+Y: something about how the outcome was recorded differed by group, for \
+example one group had monthly scans and the other only a final one.
 PY: the description suggests such a difference without stating it.
 PN: the description suggests the same approach in every group without \
 stating it.
-N: every group was assessed the same way, on the same schedule, with similar \
-contact.
+N: nothing about how the outcome was recorded differed by group.
 NI: the paper does not say how or when this outcome was assessed in each \
 group."""
 
@@ -445,10 +447,12 @@ compare."""
 Q_5_2 = """\
 Was the result reported for this outcome chosen, because of what it showed, \
 from among several measurements of it?
-What counts as several measurements: the paper, or the registration or \
-protocol it cites, shows this outcome measured in more than one way: on more \
-than one scale or questionnaire, under more than one definition, or at more \
-than one time point. A measurement of a different outcome does not count.
+What counts as several measurements: more than one version of this outcome's \
+result could have been reported, and the paper, or the registration or \
+protocol it cites, shows them, for example the same symptom rated on two \
+questionnaires, or one score read at 6 and at 12 months. A measurement of a \
+different outcome does not count. If this outcome has only one sensible \
+version, there was nothing to choose from: answer N.
 Look in: the outcome list in the registration or protocol and in the \
 methods, then the results. Which of those measurements have their results \
 given in full?
@@ -460,10 +464,8 @@ PY: some measurements named in the methods have no results, but it is not \
 clear the results guided which were shown.
 PN: a plan exists but says little about how this outcome would be measured, \
 and what is reported fits it.
-N: every measurement the plan or the paper shows has its result given; or \
-there was no choice to make, because the outcome has a single measure and \
-time point; or the authors explain any gap with a reason unrelated to the \
-results.
+N: the results include every version the plan or the paper names, or the \
+authors give a reason unrelated to the results for any that is missing.
 NI: the paper does not say what was planned (no registration, protocol or \
 analysis plan is cited or described), and this outcome is of a kind commonly \
 measured in several ways."""
@@ -472,9 +474,9 @@ Q_5_3 = """\
 Was the result reported for this outcome chosen, because of what it showed, \
 from among several analyses of the same measurement?
 What counts as several analyses: the paper, or the plan it cites, shows the \
-same measurement analysed in more than one way, for example with or without \
-outliers, with a different threshold for calling a participant a responder, \
-or with a different set of adjustment variables.
+same measurement analysed in more than one way, for example with and without \
+outliers, or with two different statistical tests. If the measurement has \
+only one sensible analysis, there was nothing to choose from: answer N.
 Look in: the analysis the plan describes, the analyses the methods mention, \
 and the ones the results show. Note any analysis mentioned but not shown, \
 and any result labelled post hoc.
@@ -485,9 +487,8 @@ PY: the reported analysis differs from the planned one with no reason given, \
 but it is not clear the results guided the choice.
 PN: a plan exists but says little about how this outcome would be analysed, \
 and what is reported fits it.
-N: the reported analysis is the planned one; or the measurement left no real \
-choice of analysis; or the authors explain any difference with a reason \
-unrelated to the results.
+N: the reported analysis is the planned one, or the authors give a reason \
+unrelated to the results for any difference.
 NI: the paper does not say what analysis was planned, and this measurement \
 is of a kind that can reasonably be analysed in several ways."""
 
