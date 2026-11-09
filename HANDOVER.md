@@ -81,9 +81,16 @@ an interactive shell: run `zsh -ic '…'`). Findings:
   `gemini-flash-lite-latest` (the maintainer's choice). Not replaced: the
   pricing rows and Gemini's `FALLBACK_MODELS` still name retired models, so
   the new defaults are costed at the fallback estimate (**#733**; Gemini's
-  $1/$3 likely overstates Flash-Lite, unlogged); OpenAI/DeepSeek/Mistral
-  defaults were not probed (no keys). PR #732's review also filed **#734**
-  (Rust's DeepSeek chat path has a `/v1` Python's SDK does not send).
+  $1/$3 likely overstates Flash-Lite, unlogged). "No model" is `"anthropic:"` (or `model=None`) in
+  Python and a bare `"anthropic"` in Rust (#567). PR #732's review also
+  filed **#734** (Rust's DeepSeek chat path has a `/v1` Python's SDK does not
+  send; both answered 200 live on 2026-11-10).
+- **OpenAI, DeepSeek** defaults answer in both languages (Python `gpt-4o`,
+  Rust `gpt-4o-mini`, a divergence, both live; `deepseek-chat`). **Mistral is
+  unsettled**: on this key `mistral-large-latest` answered 403
+  `tier_not_allowed`, every chat answered 429 even after a pause, and
+  `/v1/models` lists `mistral-large-4`/`-4-0` but no `mistral-large-latest`.
+  Re-probe with a paid-tier key before trusting the default.
 - **#681**: Google answers `…/v1beta/openai/chat/completions` and
   `…/v1beta/openai/v1/chat/completions` alike (200). Rust's `chat_url` now
   sends the documented one (the maintainer's choice); a test pins every
