@@ -8,6 +8,19 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Primary outcomes and their results** (StudyAnalyzer evidence weight, piece 3).
+  `OutcomeAgent` (`bmlib/quality/outcome_agent.py`,
+  `rust/bmlib/src/quality/outcome_agent.rs`) asks the model for the outcomes the
+  paper itself calls primary (co-primary allowed; an empty list is valid), each
+  with its timepoint, quotes located in the paper and the reported
+  `ReportedResult`. A result that reads but is incoherent (bounds the wrong way
+  round, a ratio at or below 0, a level outside (0, 1)) is kept out with its
+  reason in `result_error`; a scale outside `ratio`/`difference` or a value that
+  is not a finite number refuses the reply (`ProposalError`). Papers over the
+  window are condensed once and flagged `condensed`; quotes are verified against
+  the original text, with contradicted and unusable quotes kept as in the design
+  proposal. Contract: `tests/fixtures/outcome_replies.json`, written by
+  `scripts/make_outcome_replies.py`.
 - **Trial layout and the design proposal** (StudyAnalyzer evidence weight,
   pieces 1 and 2). `RctLayout` (`parallel`, `cluster`, `crossover`, `other`;
   only `parallel` is covered), beside an unchanged `StudyDesign`. `DesignAgent`

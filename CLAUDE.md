@@ -147,6 +147,7 @@ bmlib/
 │   ├── rob2_algorithm.py    # RoB 2 decision rules (2019 guidance tables), pure; Rust rob2_algorithm.rs, contract fixtures/rob2_algorithm.json
 │   ├── evidence_ladder.py   # Evidence ladder (RoB + imprecision to a level and weight), pure; Rust evidence_ladder.rs, contract fixtures/evidence_ladder.json
 │   ├── design_agent.py      # Design proposal (study design + RCT layout, quotes verified), QueryCondenser seam; Rust design_agent.rs, contract fixtures/design_replies.json
+│   ├── outcome_agent.py     # Primary-outcome proposal (outcomes the paper calls primary + reported result, quotes verified); Rust outcome_agent.rs, contract fixtures/outcome_replies.json (scripts/make_outcome_replies.py)
 │   ├── _full_text_agent.py  # Shared base of the full-text agents (stop, num_ctx, condense-once, ask-until-readable, QueryCondenser); Rust full_text_agent.rs
 │   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
 │   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models

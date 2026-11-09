@@ -78,6 +78,7 @@ mod json_fields;
 pub mod llm_parsers;
 pub mod manager;
 pub mod metadata_filter;
+pub mod outcome_agent;
 pub mod pico_agent;
 pub mod pico_models;
 pub mod quality_agent;
@@ -134,6 +135,10 @@ pub use extractors::{
     DEFAULT_STUDY_TYPE_KEYWORDS, DENIAL_LOOKAROUND, EXCLUSION_CONTEXT_WINDOW,
     POWER_CALCULATION_KEYWORDS, POWER_CALCULATION_PATTERNS, SAMPLE_SIZE_PATTERNS,
     SINGULAR_ONLY_STUDY_TYPES, STUDY_TYPE_EXCLUSIONS, STUDY_TYPE_PATTERNS, STUDY_TYPE_PRIORITY,
+};
+pub use outcome_agent::{
+    read_outcome_reply, OutcomeAgent, OutcomeProposal, ProposedOutcome, OUTCOME_CONDENSE_QUERY,
+    OUTCOME_PROMPT_VERSION, OUTCOME_SYSTEM_PROMPT, OUTCOME_TASK_PROMPT,
 };
 pub use pico_agent::{
     read_extraction, read_part, read_suitability, verify_quotes, PicoAgent, QuoteCheck,
