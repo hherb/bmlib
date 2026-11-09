@@ -223,22 +223,17 @@ def _read_result(raw: object, path: str) -> tuple[ReportedResult | None, str | N
     return result, None
 
 
-def _read_reply_result(raw: object, path: str) -> tuple[ReportedResult | None, str | None]:
+def _read_reply_result(raw: object) -> tuple[ReportedResult | None, str | None]:
     """Read the ``result`` of one outcome in a model's reply into ``(result, result_error)``.
 
     ``ci_level`` is read as printed: a value in (1, 100) is a percentage and is
     divided by :data:`PERCENT`; a value in (0, 1) is a fraction.  Any field
     that cannot be read (a number that is text, null or not finite, a scale
-    other than ``ratio``/``difference``, a level that is neither) refuses this
-    outcome's result only, as ``(None, reason)`` naming the field; the outcome
-    itself stays.
-
-    Raises:
-        UnreadableReplyError: *raw* is neither null nor an object.
+    other than ``ratio``/``difference``, a level that is neither), and a
+    ``result`` that is not an object at all, refuses this outcome's result
+    only, as ``(None, reason)`` naming the field; the outcome itself stays.
     """
-    if raw is not None and not isinstance(raw, dict):
-        raise UnreadableReplyError(f"{path}result is not an object")
-    if raw is not None:
+    if isinstance(raw, dict):
         level = raw.get("ci_level")
         if isinstance(level, (int, float)) and not isinstance(level, bool):
             if 1 < level < PERCENT:
@@ -412,11 +407,11 @@ def read_outcome_reply(data: dict[str, Any], text: str, min_similarity: float) -
         ValueError: *min_similarity* is not a number in (0, 1].
         UnreadableReplyError: (a ``ValueError``) The reply is not an object,
             ``primary_outcomes`` is not a list, an outcome is not an object
-            or has no name, a timepoint is not text, or a result is present
-            but not an object.  The message names the outcome
-            (``primary_outcomes[1].``) and the field.  A field inside a result
-            that cannot be read refuses that outcome's result only (its
-            ``result_error``).
+            or has no name, a timepoint is not text, or its ``result`` key is
+            missing.  The message names the outcome (``primary_outcomes[1].``)
+            and the field.  A ``result`` that is not an object, or a field
+            inside one that cannot be read, refuses that outcome's result only
+            (its ``result_error``).
     """
     similarity = check_min_similarity(min_similarity)
     if not isinstance(data, dict):
@@ -438,7 +433,7 @@ def read_outcome_reply(data: dict[str, Any], text: str, min_similarity: float) -
             raise UnreadableReplyError(f"{path}timepoint is not text")
         if "result" not in item:
             raise UnreadableReplyError(f"{path}result is missing")
-        result, result_error = _read_reply_result(item["result"], path)
+        result, result_error = _read_reply_result(item["result"])
         citations, not_found, contradicted, dropped = verify_quotes(
             item.get("quotes"), text, similarity
         )

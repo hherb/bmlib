@@ -135,32 +135,22 @@ const CI_LEVEL_RANGE: &str =
 /// `ci_level` is read as printed: a value in (1, 100) is a percentage and is
 /// divided by [`PERCENT`]; a value in (0, 1) is a fraction. Any field that
 /// cannot be read (a number that is text, null or not finite, a scale other
-/// than `ratio`/`difference`, a level that is neither) refuses this outcome's
-/// result only, as `(None, Some(reason))` naming the field; the outcome
-/// itself stays.
-///
-/// # Errors
-///
-/// A message when `raw` is neither null nor an object.
-fn read_reply_result(
-    raw: &Value,
-    path: &str,
-) -> Result<(Option<ReportedResult>, Option<String>), String> {
+/// than `ratio`/`difference`, a level that is neither), and a `result` that
+/// is not an object at all, refuses this outcome's result only, as
+/// `(None, Some(reason))` naming the field; the outcome itself stays.
+fn read_reply_result(raw: &Value) -> (Option<ReportedResult>, Option<String>) {
     let Some(object) = raw.as_object() else {
-        if raw.is_null() {
-            return Ok((None, None));
-        }
-        return Err(format!("{path}result is not an object"));
+        return read_result(raw, "").unwrap_or_else(|reason| (None, Some(reason)));
     };
     let mut object = object.clone();
     if let Some(level) = object.get("ci_level").and_then(Value::as_f64) {
         if 1.0 < level && level < PERCENT {
             object.insert("ci_level".to_string(), json!(level / PERCENT));
         } else if !(0.0 < level && level < 1.0) {
-            return Ok((None, Some(format!("result.{CI_LEVEL_RANGE}"))));
+            return (None, Some(format!("result.{CI_LEVEL_RANGE}")));
         }
     }
-    Ok(read_result(&Value::Object(object), "").unwrap_or_else(|reason| (None, Some(reason))))
+    read_result(&Value::Object(object), "").unwrap_or_else(|reason| (None, Some(reason)))
 }
 
 /// Read a `result` in its wire form (`ci_level` a fraction) into
@@ -388,10 +378,10 @@ impl OutcomeProposal {
 ///
 /// A message when `min_similarity` is outside (0, 1], the reply is not an
 /// object, `primary_outcomes` is not a list, an outcome is not an object or
-/// has no name, a timepoint is not text, or a result is present but not an
-/// object. The message names the outcome (`primary_outcomes[1].`) and the
-/// field. A field inside a result that cannot be read refuses that outcome's
-/// result only (its `result_error`).
+/// has no name, a timepoint is not text, or its `result` key is missing. The
+/// message names the outcome (`primary_outcomes[1].`) and the field. A
+/// `result` that is not an object, or a field inside one that cannot be read,
+/// refuses that outcome's result only (its `result_error`).
 pub fn read_outcome_reply(
     data: &Value,
     text: &str,
@@ -424,7 +414,7 @@ pub fn read_outcome_reply(
         let raw = item
             .get("result")
             .ok_or_else(|| format!("{path}result is missing"))?;
-        let (result, result_error) = read_reply_result(raw, &path)?;
+        let (result, result_error) = read_reply_result(raw);
         let (citations, quotes_not_found, contradicted, quotes_dropped) =
             verify_quotes(item.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
         outcomes.push(ProposedOutcome {
@@ -781,11 +771,20 @@ mod tests {
     }
 
     #[test]
-    fn a_result_that_is_not_an_object_refuses_the_reply() {
-        assert_eq!(
-            err_of(&reply(vec![outcome(json!({"result": "risk ratio 0.7"}))])),
-            "primary_outcomes[0].result is not an object"
-        );
+    fn a_result_that_is_not_an_object_refuses_only_that_outcomes_result() {
+        let second = outcome(json!({"name": "Hospitalisation"}));
+        let proposal = read_outcome_reply(
+            &reply(vec![outcome(json!({"result": "risk ratio 0.7"})), second]),
+            TEXT,
+            SIM,
+        )
+        .expect("the reply reads");
+        let [bad, good] = proposal.outcomes.as_slice() else {
+            panic!("two outcomes");
+        };
+        assert_eq!(bad.result, None);
+        assert_eq!(bad.result_error.as_deref(), Some("result is not an object"));
+        assert!(good.result.is_some() && good.result_error.is_none());
     }
 
     #[test]
@@ -1058,11 +1057,11 @@ mod tests {
 
     #[test]
     fn an_unreadable_reply_is_asked_twice_then_refused() {
-        let bad = reply(vec![outcome(json!({"result": "risk ratio 0.7"}))]);
+        let bad = reply(vec![json!("mortality")]);
         let mut chat = Canned::of(bad);
         let result = OutcomeAgent::new(&mut chat).propose("A trial", TEXT, SIM);
         assert!(
-            matches!(&result, Err(ProposalError::Unreadable(m)) if m.contains("result is not an object"))
+            matches!(&result, Err(ProposalError::Unreadable(m)) if m.contains("primary_outcomes[0] is not an object"))
         );
         assert_eq!(chat.sent.len(), 2);
     }

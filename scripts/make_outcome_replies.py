@@ -136,7 +136,13 @@ CASES: list[tuple[str, Any]] = [
     ("estimate text", _reply(_outcome(result=_result(estimate="0.7")))),
     ("bound text", _reply(_outcome(result=_result(ci_low="low")))),
     ("sample a float", _reply(_outcome(result=_result(n_analysed=1200.5)))),
-    ("result text", _reply(_outcome(result="risk ratio 0.7"))),
+    (
+        "result text",
+        _reply(
+            _outcome(result="risk ratio 0.7"),
+            _outcome(name="Hospital admission", quotes=[ADMISSION]),
+        ),
+    ),
     ("result missing", _reply({"name": "x", "quotes": []})),
     ("name blank", _reply(_outcome(name="  "))),
     ("name missing", _reply(_outcome(name=None))),

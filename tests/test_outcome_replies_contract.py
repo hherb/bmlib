@@ -80,7 +80,10 @@ def test_the_contract_covers_each_kind_of_outcome() -> None:
         cases["level as printed, a percentage"]["expected"]["outcomes"][0]["result"]["ci_level"]
         == 0.95
     )
-    assert "error" in cases["result text"]
+    text_result, beside = cases["result text"]["expected"]["outcomes"]
+    assert text_result["result"] is None
+    assert text_result["result_error"] == "result is not an object"
+    assert beside["result"] is not None
 
 
 def test_the_generator_still_builds_the_fixture() -> None:

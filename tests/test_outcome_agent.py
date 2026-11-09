@@ -166,10 +166,14 @@ class TestReadingAReply:
         assert [c.text for c in bad.citations] == [QUOTE]  # the outcome itself stands
         assert good.result is not None and good.result_error is None
 
-    def test_a_result_that_is_not_an_object_refuses_the_reply(self) -> None:
-        with pytest.raises(ValueError) as raised:
-            read_outcome_reply(reply(outcome(result="risk ratio 0.7")), TEXT, SIM)
-        assert str(raised.value) == "primary_outcomes[0].result is not an object"
+    def test_a_result_that_is_not_an_object_refuses_only_that_outcomes_result(self) -> None:
+        second = outcome(name="Hospitalisation")
+        bad, good = read_outcome_reply(
+            reply(outcome(result="risk ratio 0.7"), second), TEXT, SIM
+        ).outcomes
+
+        assert bad.result is None and bad.result_error == "result is not an object"
+        assert good.result is not None and good.result_error is None
 
     @pytest.mark.parametrize(("printed", "level"), [(95, 0.95), (90.0, 0.9), (0.95, 0.95)])
     def test_the_level_is_read_as_printed(self, printed: float, level: float) -> None:
@@ -363,11 +367,11 @@ class TestTheAgent:
         agent.llm.chat.assert_not_called()
 
     def test_an_unreadable_reply_is_asked_twice_then_refused(self) -> None:
-        agent = make_agent(reply(outcome(result="risk ratio 0.7")))
+        agent = make_agent(reply("mortality"))  # type: ignore[arg-type]
         with pytest.raises(ProposalError) as raised:
             agent.propose("A trial", TEXT, min_similarity=SIM)
         assert raised.value.kind is ProposalErrorKind.UNREADABLE
-        assert "result is not an object" in str(raised.value)
+        assert "primary_outcomes[0] is not an object" in str(raised.value)
         assert agent.llm.chat.call_count == 2
 
     def test_a_reply_holding_a_non_finite_number_is_unreadable(self) -> None:

@@ -1437,10 +1437,75 @@
        "The primary outcome was all-cause mortality at 28 days."
       ],
       "result": "risk ratio 0.7"
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": "28 days",
+      "quotes": [
+       "A co-primary outcome was hospital admission."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
      }
     ]
    },
-   "error": "primary_outcomes[0].result is not an object"
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result is not an object",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 111,
+        "end": 155,
+        "text": "A co-primary outcome was hospital admission.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
   },
   {
    "name": "result missing",
