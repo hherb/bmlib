@@ -1,14 +1,71 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-09 (**this session's PR is on `fix/607-444-rust-sync-parity`**; PRs #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PRs #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719, #720 and this session's._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719-#721._
 
-## This session: Rust `sync()` follows Python's entry check, day lock and peak (#607, #444, branch `fix/607-444-rust-sync-parity`)
+## Release plan: Python 0.13.0 / Rust crate 0.4.0 (agreed 2026-11-09)
+
+The maintainer asked what to fix before the next release; this is the agreed
+list, in order. Both version numbers are minor bumps because `[Unreleased]`
+carries breaking changes in both languages (e.g. Rust `sync()` now returns
+`Result<SyncReport, SyncError>` and takes a clock). Tick items off here as
+their PRs merge; open a PR per item and stop — the maintainer merges.
+
+**Done**: #686 (PR #720, one keychain item on every platform, live CI job
+`keychain-interop`), #607 + #444 (PR #721), #707 and #710 (PRs #711, #713).
+
+**Fix before the release** — each is in a feature that 0.12.0 did not ship,
+so it is free to fix now and costs a breaking change later:
+
+1. **#656** — `canonical_from_html`'s 2M code-point cap refuses pages that
+   parse cheaply (inline `data:` URIs), a completeness regression against
+   0.12.0. Decision-shaped: cap the parse *cost* rather than the page
+   length? Put the options to the maintainer before coding.
+2. **#647** — `PicoAgent` records a quote rejected as a contradiction as
+   "not found", dropping the reason. Both languages.
+3. **Decisions for the maintainer**, then implement: **#708** (`chat_json`'s
+   no-retry-at-temperature-0 rule assumes greedy sampling, false for
+   Anthropic since #705) and **#665** (a bmlib defect in one batch of a
+   PARTIAL condensation run is only a note).
+4. **Live probes**: one real Anthropic `think=` call (#707/#710 were fixed
+   and closed without a live call on record), and **#681** — probe Google's
+   OpenAI-compatible Gemini endpoint, then fix Rust's
+   `…/v1beta/openai/v1/chat/completions` if Google's documented
+   `…/v1beta/openai/chat/completions` is the one that answers.
+
+**Optional, if time allows**: #694 (bmlib-ffi forwards no log records since
+#693), #495 (Rust JATS reader aborts on deep nesting), #722 (Rust `sync()`
+logs few of Python's lines).
+
+**Release housekeeping** (after the fixes; follow the `bmlib-release-process`
+and `bmlib-rehearse-release-gates` memories):
+
+- `CHANGELOG.md` `[Unreleased]` repeats its sub-headings (*Added* at three
+  places, *Changed* at two, *Fixed* at three): merge them, write the
+  `[0.13.0]` summary and gather a *Changed — breaking* section.
+  `rust/bmlib/CHANGELOG.md` likewise (*Added* ×3, *Fixed* ×3, one *Changed*
+  beside *Changed — breaking*) for `[0.4.0]`.
+- Versions: 0.13.0 in the five Python places (*Current state* below), the
+  Rust workspace to 0.4.0, `BMLIB_VERSION`, then
+  `uv run python scripts/rerun_rust_oracle.py --write`.
+- Promote the `unreleased` markers in `docs/manual/` and `ROADMAP.md`
+  (grep case-insensitively; see *Current state*).
+- Downstream note for StudyAnalyzer: its `LimitedClient` must forward
+  `post_json_stream_with_cancel` and clip `stream_timeout_seconds`; Rust
+  `sync`'s error type and signature change (PR #721); the keychain item is
+  now the same one in both languages (PR #720).
+- Bring `HANDOVER_RUST.md`'s header up to date (it still describes 0.3.0's
+  release) and trim this file's merged-session sections.
+- Rehearse the release gates locally (build, `twine check`, `py.typed`)
+  before the release PR, since `release.yml` checks them only after the
+  version is burned. Never approve the PyPI gate.
+
+## Previous session: Rust `sync()` follows Python's entry check, day lock and peak (#607, #444, merged as PR #721)
 
 The maintainer chose #607 + #444 together (2026-11-09). Rust only; the one
 Python file touched is the oracle dumper `rust/oracle/dump_sync.py`.
