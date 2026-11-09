@@ -46,6 +46,9 @@ RATIO_NO_EFFECT = 1.0
 DIFFERENCE_NO_EFFECT = 0.0
 """The value of a difference measure that means no effect."""
 
+U8_MAX = 2**8 - 1
+"""Largest step count Rust's ``u8`` holds."""
+
 U32_MAX = 2**32 - 1
 """Largest sample size Rust's ``u32`` holds; Python refuses more."""
 
@@ -196,6 +199,31 @@ class LadderReason:
             return {self.kind: {"n": self.n, "threshold": self.threshold}}
         return self.kind
 
+    @staticmethod
+    def from_wire(raw: object) -> LadderReason:
+        """Rebuild from :meth:`to_wire` output.
+
+        Raises:
+            ValueError: *raw* is not a reason serde would write.
+        """
+        if isinstance(raw, str) and raw in _UNIT_REASONS:
+            return LadderReason(raw)
+        if isinstance(raw, dict) and len(raw) == 1:
+            ((kind, body),) = raw.items()
+            if kind == "risk_of_bias":
+                return LadderReason.risk_of_bias(Judgement(body))
+            if kind == "small_trial" and isinstance(body, dict) and set(body) == {"n", "threshold"}:
+                n, threshold = body["n"], body["threshold"]
+                if all(
+                    isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= U32_MAX
+                    for v in (n, threshold)
+                ):
+                    return LadderReason.small_trial(n, threshold)
+        raise ValueError(f"{raw!r} is not a ladder reason")
+
+
+_UNIT_REASONS = ("crosses_no_effect", "no_interval", "sample_size_unknown")
+
 
 @dataclass(frozen=True)
 class LadderStep:
@@ -222,6 +250,38 @@ class EvidenceLadder:
             "level": self.level.value,
             "weight": self.weight,
         }
+
+    @staticmethod
+    def from_wire(raw: object) -> EvidenceLadder:
+        """Rebuild from :meth:`to_wire` output (the steps are not re-derived).
+
+        Raises:
+            ValueError: A field is absent or of the wrong type or value, naming it.
+        """
+        if not isinstance(raw, dict):
+            raise ValueError("the ladder is not an object")
+        steps = raw.get("steps")
+        weight = raw.get("weight")
+        if not isinstance(steps, list):
+            raise ValueError("steps is not a list")
+        if (
+            isinstance(weight, bool)
+            or not isinstance(weight, int | float)
+            or not math.isfinite(weight)
+        ):
+            raise ValueError("weight is not a finite number")
+        parsed = []
+        for step in steps:
+            levels = step.get("levels") if isinstance(step, dict) else None
+            if isinstance(levels, bool) or not isinstance(levels, int) or not 0 <= levels <= U8_MAX:
+                raise ValueError("a step's levels is not a whole number that fits 8 bits")
+            parsed.append(LadderStep(LadderReason.from_wire(step.get("reason")), levels))
+        try:
+            return EvidenceLadder(
+                Level(raw.get("start")), tuple(parsed), Level(raw.get("level")), float(weight)
+            )
+        except ValueError:
+            raise ValueError("start or level is not a level") from None
 
 
 def settings_to_wire(settings: LadderSettings) -> dict[str, Any]:

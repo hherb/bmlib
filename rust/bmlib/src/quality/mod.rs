@@ -34,6 +34,7 @@
 //! | `quality/cochrane_assessor.py` | [`cochrane_assessor`] | ported (Tier 4) |
 //! | `quality/rob2_questions.py` | [`rob2_questions`] | ported (evidence weight, piece 4) |
 //! | `quality/rob2_agent.py` | [`rob2_agent`] | ported (evidence weight, piece 4) |
+//! | `quality/evidence_weight.py` | [`evidence_weight`] | ported (evidence weight, piece 6) |
 //!
 //! The three LLM tiers do not own a client. Each takes a
 //! [`agent_chat::JsonChat`] — the message-carrying form of
@@ -74,6 +75,7 @@ pub mod cochrane_models;
 pub mod data_models;
 pub mod design_agent;
 pub mod evidence_ladder;
+pub mod evidence_weight;
 pub mod extractors;
 pub mod full_text_agent;
 mod json_fields;
@@ -129,6 +131,9 @@ pub use design_agent::{
 pub use evidence_ladder::{
     build_ladder, paper_weight, start_level, EffectScale, EvidenceLadder, LadderReason,
     LadderSettings, LadderStep, Level, ReportedResult, LADDER_VERSION,
+};
+pub use evidence_weight::{
+    assess_unattended, AssessedOutcome, EvidenceWeight, EvidenceWeightError,
 };
 pub use extractors::{
     calculate_sample_size_score, extract_sample_size_dimension, extract_study_type,

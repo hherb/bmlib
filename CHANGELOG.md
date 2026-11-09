@@ -8,6 +8,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The unattended evidence-weight pipeline** (StudyAnalyzer evidence weight,
+  piece 6). `assess_unattended` (`bmlib/quality/evidence_weight.py`,
+  `rust/bmlib/src/quality/evidence_weight.rs`) chains the design proposal, the
+  primary-outcome proposal, RoB 2 over all outcomes, the ladder per outcome and
+  the paper's weight, accepting the machine's proposals as they come. A design
+  that is not a parallel-group RCT ends as `NotCovered` after one request; a
+  trial with no primary outcome as `NoPrimaryOutcome`; otherwise `Assessed`
+  holds one `AssessedOutcome` per outcome, whose `ladder` is `None` with a
+  `ladder_error` when its risk of bias was not assessed, its result was refused
+  or its result cannot be laddered, and the paper's weight is the largest ladder
+  built. `condensed` is true if any step was. `EvidenceWeightError` wraps the
+  step's own `ProposalError` / `Rob2RunError`. The result has `to_dict` /
+  `to_json` and a checked `evidence_weight_from_dict` / `EvidenceWeight::from_json`;
+  Python gains `EvidenceLadder.from_wire` for it.
+
 - **The RoB 2 assessor** (StudyAnalyzer evidence weight, piece 4).
   `Rob2Agent` (`bmlib/quality/rob2_agent.py`, `rust/bmlib/src/quality/rob2_agent.rs`)
   asks RoB 2's signalling questions one domain per call: D1 once for the trial,

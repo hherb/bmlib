@@ -121,14 +121,14 @@ fn wire_name(value: impl Serialize) -> String {
 }
 
 /// `value` as an object, or a message naming `what`.
-fn object<'v>(value: &'v Value, what: &str) -> Result<&'v Map<String, Value>, String> {
+pub(crate) fn object<'v>(value: &'v Value, what: &str) -> Result<&'v Map<String, Value>, String> {
     value
         .as_object()
         .ok_or_else(|| format!("{what} is not an object"))
 }
 
 /// `data[key]` as text.
-fn text<'v>(data: &'v Map<String, Value>, key: &str) -> Result<&'v str, String> {
+pub(crate) fn text<'v>(data: &'v Map<String, Value>, key: &str) -> Result<&'v str, String> {
     data.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("{key} is not text"))
@@ -151,7 +151,7 @@ fn boolean(data: &Map<String, Value>, key: &str, what: &str) -> Result<bool, Str
 }
 
 /// `data[key]` as a list.
-fn list<'v>(data: &'v Map<String, Value>, key: &str) -> Result<&'v Vec<Value>, String> {
+pub(crate) fn list<'v>(data: &'v Map<String, Value>, key: &str) -> Result<&'v Vec<Value>, String> {
     data.get(key)
         .and_then(Value::as_array)
         .ok_or_else(|| format!("{key} is not a list"))
@@ -1164,7 +1164,7 @@ struct Paper<'p> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::context_processor::{ProcessingResult, ProcessingStatus};
@@ -1174,15 +1174,15 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     const RANDOM: &str = "Participants were randomly assigned using a computer-generated list.";
-    const TEXT: &str = "Participants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Outcome data were available for 98% of participants.";
-    const SIM: f64 = 0.9;
+    pub(crate) const TEXT: &str = "Participants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Outcome data were available for 98% of participants.";
+    pub(crate) const SIM: f64 = 0.9;
 
     fn entry(answer: &str) -> Value {
         json!({"answer": answer, "quotes": [], "reasoning": "Because."})
     }
 
     /// The answers that make `domain` low, with `changes` applied.
-    fn reply(domain: Domain, changes: &[(&str, &str)]) -> Value {
+    pub(crate) fn reply(domain: Domain, changes: &[(&str, &str)]) -> Value {
         let mut answers: Map<String, Value> = match domain {
             Domain::D1 => [("1.1", "Y"), ("1.2", "Y"), ("1.3", "N")].as_slice(),
             Domain::D2 => [("2.1", "N"), ("2.2", "N"), ("2.6", "Y")].as_slice(),
@@ -1200,7 +1200,7 @@ mod tests {
         json!({ "answers": answers })
     }
 
-    fn low_run(outcomes: usize) -> Vec<Value> {
+    pub(crate) fn low_run(outcomes: usize) -> Vec<Value> {
         let mut replies = vec![reply(Domain::D1, &[])];
         for _ in 0..outcomes {
             replies.extend(Domain::ALL[1..].iter().map(|d| reply(*d, &[])));
@@ -1459,7 +1459,7 @@ mod tests {
     }
 
     /// A condenser returning a fixed digest and recording its queries.
-    struct Condenser(Vec<String>);
+    pub(crate) struct Condenser(pub(crate) Vec<String>);
 
     impl QueryCondenser for Condenser {
         fn condense(
