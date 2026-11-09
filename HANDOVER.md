@@ -77,7 +77,7 @@ read off the protocol, held by a test to the body `chat_body` builds.
 Found on the way: OpenAI's reasoning models were never sent a temperature
 either. Pre-existing and left alone: Python counts a reasoning model only on
 the `openai` provider (`o\d`), Rust on any OpenAI-protocol one (`o1`/`o3`/`o4`
-prefixes). This branch is stacked on PR #728's.
+prefixes), filed as **#730**. This branch is stacked on PR #728's.
 
 ## Earlier, 2026-11-09: a defect in one condensation batch refuses the digest (#665, PR #728)
 
