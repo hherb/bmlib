@@ -144,6 +144,40 @@ fn truncation_at_zero_temperature_does_not_retry() {
     }
 }
 
+/// A source sent no temperature (Anthropic, an OpenAI reasoning model) is not
+/// greedy at 0, so truncation and a wrong shape are retried there (#708).
+#[test]
+fn at_zero_a_source_sent_no_temperature_retries() {
+    struct NoTemperature(Script);
+    impl ChatSource for NoTemperature {
+        fn chat(&mut self, attempt: usize) -> Result<LLMResponse, String> {
+            self.0.chat(attempt)
+        }
+        fn backoff(&mut self, attempt: usize) {
+            self.0.backoff(attempt);
+        }
+        fn honours_temperature(&self) -> bool {
+            false
+        }
+    }
+
+    let mut source = NoTemperature(Script::new(vec![
+        Ok(response(r#"{"n": 12"#, Some("max_tokens"))),
+        Ok(response(r#"{"n": 3}"#, Some("stop"))),
+    ]));
+    let value = chat_json(&mut source, 3, 0.0, Some(100), 4096, false).expect("retried");
+    assert_eq!(value.value, json!({"n": 3}));
+    assert_eq!(source.0.calls, 2);
+
+    let mut source = NoTemperature(Script::new(vec![
+        Ok(response("[1]", Some("stop"))),
+        Ok(response(r#"{"a": 1}"#, Some("stop"))),
+    ]));
+    let value = chat_json(&mut source, 3, 0.0, Some(100), 4096, true).expect("retried");
+    assert_eq!(value.value, json!({"a": 1}));
+    assert_eq!(source.0.calls, 2);
+}
+
 /// Above zero a retry may sample a shorter completion that fits, so truncation
 /// **is** retried — and the backoff is 1s, 2s, … by attempt number.
 #[test]

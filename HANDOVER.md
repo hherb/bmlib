@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; this session's PR (#665) open; PRs #727 (#647), #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PRs #728 (#665) and this session's (#708) open; PRs #727 (#647), #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
@@ -16,7 +16,7 @@ carries breaking changes in both languages (e.g. Rust `sync()` now returns
 `Result<SyncReport, SyncError>` and takes a clock). Tick items off here as
 their PRs merge; open a PR per item and stop — the maintainer merges.
 
-**Done**: #665 (this session's PR, awaiting review), #647 (PR #727), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
+**Done**: #708 (this session's PR) and #665 (PR #728), both awaiting review; #647 (PR #727), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
 `keychain-interop`), #607 + #444 (PR #721), #707 and #710 (PRs #711, #713).
 
 **Fix before the release** — each is in a feature that 0.12.0 did not ship,
@@ -29,11 +29,9 @@ so it is free to fix now and costs a breaking change later:
 2. ~~**#647**~~ (PR #727, merged) — a PICO quote rejected as a contradiction
    keeps its reason; a reported part with no citation and at least one
    such quote is `CONTRADICTED`.
-3. Decided 2026-11-09, then implement: **#708** — *a provider capability*:
-   each provider says whether it honours `temperature` (Anthropic does not,
-   since #705), and `chat_json` skips its no-retry-at-temperature-0 shortcut
-   for one that does not, both languages (**next**, its own PR); ~~**#665**~~
-   — *refuse the digest* (this session's PR).
+3. ~~**#708**~~ (this session's PR) and ~~**#665**~~ (PR #728), both decided
+   by the maintainer on 2026-11-09: a provider capability, and refuse the
+   digest. **Next is item 4.**
 4. **Live probes**: one real Anthropic `think=` call (#707/#710 were fixed
    and closed without a live call on record), and **#681** — probe Google's
    OpenAI-compatible Gemini endpoint, then fix Rust's
@@ -67,7 +65,21 @@ and `bmlib-rehearse-release-gates` memories):
   before the release PR, since `release.yml` checks them only after the
   version is burned. Never approve the PyPI gate.
 
-## This session: a defect in one condensation batch refuses the digest (#665, PR open)
+## This session: `chat_json` retries at temperature 0 where no temperature is sent (#708, PR open)
+
+The maintainer chose (2026-11-09) a provider capability. Python:
+`BaseProvider.honours_temperature(model)` (`True`; `False` for Anthropic,
+and for an OpenAI-compatible reasoning model via `_is_reasoning_model`) and
+`LLMClient.honours_temperature(model)`; `chat_json` asks it only when its
+temperature-0 shortcut would fire. Rust: defaulted
+`ChatSource::honours_temperature`, and `LlmClient::honours_temperature(&ChatRequest)`
+read off the protocol, held by a test to the body `chat_body` builds.
+Found on the way: OpenAI's reasoning models were never sent a temperature
+either. Pre-existing and left alone: Python counts a reasoning model only on
+the `openai` provider (`o\d`), Rust on any OpenAI-protocol one (`o1`/`o3`/`o4`
+prefixes). This branch is stacked on PR #728's.
+
+## Earlier, 2026-11-09: a defect in one condensation batch refuses the digest (#665, PR #728)
 
 The maintainer chose (2026-11-09) to refuse the digest. `condense_text`
 raises `CondensationRefusedError` chained to the worst cause whenever that
@@ -137,7 +149,7 @@ The maintainer chose (2026-11-09) a parallel list plus a state of its own:
 - **#702** (PRs #706, #712): every Rust POST waits as a stream does. **For
   StudyAnalyzer**: `LimitedClient` must clip `stream_timeout_seconds` too.
   **#707/#705** (PRs #711, #709): thinking takes the model's reported shape;
-  Anthropic gets no sampling parameters. #708 open.
+  Anthropic gets no sampling parameters (#708 followed).
 - **#698, #697, #617, output limits** (PRs #704, #701, #699/#692, #700):
   Python LLM body handling; `read_output_limit`/`model_limits`.
 - **#688** (PR #693): Rust warnings are `log` records; #694 (FFI forwards
@@ -334,7 +346,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**116 open once this session's PR is merged (it settles #665)** (#726, #725, #722, #718, #716, #708 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**115 open once PR #728 and this session's are merged (they settle #665 and #708)** (#726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-09); #651 is #632's residual; #556–#726 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

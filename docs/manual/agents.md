@@ -199,11 +199,13 @@ The truncation check runs **first on every attempt** — before the empty-conten
 | Outcome | Condition | Behaviour |
 |---------|-----------|-----------|
 | **Complete despite truncation** | `stop_reason` is a truncation reason, but the content is complete JSON **as written** — it parses directly or as a whole span (stages 1–2 of [`parse_json()`](#baseagentparse_json)), with no repair and no fragment | The parsed value is **returned as-is**. A truncation `stop_reason` is not automatically a failure. |
-| **Truncated at temperature 0** | Content is not complete as written and the effective temperature is exactly `0.0` | Raises `ValueError` (*(0.12.0)* `ChatJsonTruncatedError`) **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. *(unreleased)* An Anthropic call is not greedy at temperature 0, since that provider sends no `temperature` (#705); whether it should retry is #708. |
+| **Truncated at temperature 0** | Content is not complete as written and the effective temperature is exactly `0.0` | Raises `ValueError` (*(0.12.0)* `ChatJsonTruncatedError`) **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. *(unreleased, #708)* Not where the model is sent no `temperature` — see below. |
 | **Truncated above temperature 0** | Content is not complete as written and the effective temperature is `> 0` | Logged at ERROR with the full response, then falls into the normal retry path — a resample may produce a shorter completion that fits. The truncation message is kept as `last_error`, so the final exhaustion error names truncation as the real cause. |
 | **Exhaustion** | All `max_retries` attempts consumed | Raises `ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")`, where `context` is `" for <retry_context>"`, or empty — *(0.12.0)* the `ChatJson*Error` subclass naming the last attempt's cause; see [Which failure it was](#which-failure-it-was-0120). |
 
 The effective temperature is `temperature if temperature is not None else self.temperature` — an agent constructed with `temperature=0.0` gets the no-retry policy even when the call site passes nothing.
+
+*(unreleased, #708)* **Only where the model is sent its temperature.** Anthropic is sent none (#705), nor is an OpenAI reasoning model (o1/o3/o4), so each samples at its API's default and is not greedy at 0: there a truncation or a wrong shape at temperature 0 takes the normal retries, as above 0. `chat_json()` asks `LLMClient.honours_temperature(model)` (`BaseProvider.honours_temperature`, `True` unless a provider overrides it); Rust's `ChatSource::honours_temperature`, which `LlmClient::honours_temperature` answers from the body `chat_body` builds.
 
 **"Complete as written" is not "parses".** `parse_json()` repairs — it closes the brackets and strings the model never closed — so a response that stopped mid-value parses into a complete-looking object: `{"summary": "The study found that metformin` becomes a whole string field, and `{"n": 12` a number the stream never finished. Until *(0.11.0)* the shortcut asked only whether the content parsed and returned exactly those (#300); a response that parses only after repair, or yields only a nested fragment, is now the truncation it is. A response that stopped *normally* is still repaired and returned, with `parse_json()`'s WARNING.
 
@@ -261,7 +263,7 @@ A wrong shape is not a parse failure, and the two are reported separately: `chat
 | Effective temperature | Behaviour on a wrong shape |
 |---|---|
 | `> 0` | Logged at ERROR, then the normal backoff retry — a resample may answer with the object that was asked for. The final exhaustion error names the shape. |
-| exactly `0.0` | Raises `ValueError` (*(0.12.0)* `ChatJsonWrongShapeError`) **immediately — no retry**. Greedy sampling returns the same array from the same messages, exactly as it reproduces a truncation. |
+| exactly `0.0` | Raises `ValueError` (*(0.12.0)* `ChatJsonWrongShapeError`) **immediately — no retry**. Greedy sampling returns the same array from the same messages, exactly as it reproduces a truncation. *(unreleased, #708)* Retried as above 0 where the model is sent no `temperature`. |
 
 This mirrors the truncation policy deliberately: two adjacent branches in one method must not sit on opposite rules for the same reason. It matters for a caller pinning temperature 0 for reproducibility — which is exactly the caller most likely to want `require_dict`.
 

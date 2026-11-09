@@ -1130,6 +1130,27 @@ impl LlmClient {
             .any(|prefix| bare.starts_with(prefix.as_str()))
     }
 
+    /// Whether a chat with `request` is sent its `temperature` (#708):
+    /// `false` for Anthropic (#705) and for a reasoning model, the two
+    /// [`chat_body`] sends none. A request that routes nowhere is `true`,
+    /// since it is never sent.
+    #[must_use]
+    pub fn honours_temperature(&self, request: &ChatRequest) -> bool {
+        match resolve_target(
+            request,
+            &self.default_provider,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+        ) {
+            Ok(target) => match target.protocol {
+                Protocol::Anthropic => false,
+                Protocol::OpenAi => !self.is_reasoning_model(&target.model),
+                Protocol::Ollama => true,
+            },
+            Err(_) => true,
+        }
+    }
+
     /// Run a chat call.
     ///
     /// # Errors

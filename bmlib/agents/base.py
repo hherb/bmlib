@@ -278,8 +278,10 @@ class BaseAgent:
         repair is truncation all the same: repair closes the brackets and
         strings the model never closed, so it cannot vouch for completeness.
         At temperature 0 the retry is provably futile (greedy sampling
-        reproduces the identical truncation), so it raises immediately
-        (not so on Anthropic, which is sent no temperature, #705; see #708);
+        reproduces the identical truncation), so it raises immediately —
+        unless the provider sends the model no temperature (Anthropic since
+        #705, an OpenAI reasoning model), whose sampling is not greedy, so it
+        retries as above zero (#708, ``LLMClient.honours_temperature``);
         at temperature > 0 a retry may sample a shorter completion that
         fits, so truncation still gets the normal retries, but the
         final error names the real cause.
@@ -333,6 +335,14 @@ class BaseAgent:
         effective_temperature = temperature if temperature is not None else self.temperature
         sent = messages
 
+        def greedy() -> bool:
+            """Whether the same request returns the same reply, so a retry is futile.
+
+            Asked only once a reply has come back, so the provider exists.  A
+            model sent no ``temperature`` samples at its API's default (#708).
+            """
+            return effective_temperature == 0.0 and self.llm.honours_temperature(self.model)
+
         def reject_shape(parsed: dict | list, attempt: int) -> str:
             """Name the wrong shape; raise when a retry is provably futile.
 
@@ -352,7 +362,7 @@ class BaseAgent:
                 context,
                 type(parsed).__name__,
             )
-            if effective_temperature == 0.0:
+            if greedy():
                 # Greedy sampling returns the same array from the same
                 # messages, exactly as it reproduces a truncation.
                 raise ChatJsonWrongShapeError(message) from None
@@ -411,7 +421,7 @@ class BaseAgent:
                     context,
                     content,
                 )
-                if effective_temperature == 0.0:
+                if greedy():
                     # Greedy sampling reproduces the identical truncation;
                     # retrying only pays for it again.
                     raise ChatJsonTruncatedError(truncated) from None

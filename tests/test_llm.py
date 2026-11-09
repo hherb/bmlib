@@ -2403,6 +2403,8 @@ class TestAnthropicSendsNoSamplingParameters:
         assert "temperature" not in bodies[0]
         assert "top_p" not in bodies[0]
         assert bodies[0]["max_tokens"] == 4096
+        # So chat_json's temperature-0 shortcut does not apply (#708).
+        assert provider.honours_temperature("m") is False
 
     def test_thinking_reaches_the_wire_as_the_model_reports(self):
         # #707: GET /v1/models/{id} first, then adaptive thinking and the effort
@@ -2440,6 +2442,36 @@ class TestAnthropicSendsNoSamplingParameters:
         assert sent["thinking"] == {"type": "adaptive", "display": "summarized"}
         assert sent["output_config"] == {"effort": "xhigh"}
         assert "budget_tokens" not in json.dumps(sent)
+
+
+class TestTheClientSaysWhichModelsAreSentATemperature:
+    """``LLMClient.honours_temperature`` routes as ``chat`` does (#708)."""
+
+    @pytest.mark.parametrize(
+        ("model", "expected"),
+        [
+            ("anthropic:claude-opus-4-7", False),
+            ("Anthropic:claude-opus-4-7", False),
+            ("openai:o3-mini", False),
+            ("openai:gpt-4o", True),
+            ("ollama:llama3", True),
+            ("deepseek:deepseek-chat", True),
+        ],
+    )
+    def test_by_provider_and_model(self, model: str, expected: bool) -> None:
+        sdk = {"anthropic": "anthropic", "ollama": "ollama"}.get(model.split(":")[0].lower())
+        pytest.importorskip(sdk or "openai")
+        from bmlib.llm.client import LLMClient
+
+        assert LLMClient().honours_temperature(model) is expected
+
+    def test_a_bare_name_takes_the_default_provider(self) -> None:
+        pytest.importorskip("anthropic")
+        pytest.importorskip("ollama")
+        from bmlib.llm.client import LLMClient
+
+        assert LLMClient(default_provider="anthropic").honours_temperature("claude-x") is False
+        assert LLMClient(default_provider="ollama").honours_temperature("llama3") is True
 
 
 class TestABodyNestedTooDeeplyIsTheServers:

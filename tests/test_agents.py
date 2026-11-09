@@ -180,8 +180,10 @@ def _make_response(content: str) -> LLMResponse:
     return LLMResponse(content=content, model="test", input_tokens=0, output_tokens=0)
 
 
-def _make_agent() -> BaseAgent:
+def _make_agent(*, honours_temperature: bool = True) -> BaseAgent:
     mock_llm = MagicMock()
+    # Said outright: a bare MagicMock's answer is a truthy mock (#708).
+    mock_llm.honours_temperature.return_value = honours_temperature
     return BaseAgent(llm=mock_llm, model="test:model")
 
 
@@ -404,6 +406,29 @@ class TestChatJson:
 
         assert agent.llm.chat.call_count == 1
         mock_sleep.assert_not_called()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_truncated_at_temperature_zero_retries_where_no_temperature_is_sent(self, mock_sleep):
+        # A model sent no temperature (Anthropic, an OpenAI reasoning model)
+        # does not sample greedily, so a retry may fit (#708).
+        agent = _make_agent(honours_temperature=False)
+        agent.llm.chat.return_value = _truncated('{"cases": [{"claim": "truncated mid-obj')
+
+        with pytest.raises(ChatJsonTruncatedError, match="truncated at max_tokens=4096"):
+            agent.chat_json([agent.user_msg("test")], temperature=0.0)
+
+        assert agent.llm.chat.call_count == 3
+        agent.llm.honours_temperature.assert_called_with("test:model")
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_list_at_temperature_zero_retries_where_no_temperature_is_sent(self, mock_sleep):
+        agent = _make_agent(honours_temperature=False)
+        agent.llm.chat.side_effect = [_make_response('[{"a": 1}]'), _make_response('{"a": 1}')]
+
+        result = agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert result == {"a": 1}
+        assert agent.llm.chat.call_count == 2
 
     @patch("bmlib.agents.base.time.sleep")
     def test_truncated_at_nonzero_temperature_retries_then_names_cause(self, mock_sleep):

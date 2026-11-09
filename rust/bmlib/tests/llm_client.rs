@@ -289,6 +289,28 @@ fn a_reasoning_model_drops_temperature_and_renames_the_cap() {
     assert_eq!(body["temperature"], json!(0.7));
 }
 
+/// `honours_temperature` is what the body sends (#708): `chat_json`'s
+/// no-retry-at-0 rule holds only where the model is sent the temperature.
+#[test]
+fn honours_temperature_is_what_the_body_sends() {
+    let client = client(ScriptedClient::ok(json!({})));
+    for (model, expected) in [
+        ("anthropic:m", false),
+        ("openai:o3-mini", false),
+        ("openai:gpt-4o", true),
+        ("ollama:llama3", true),
+        ("deepseek:deepseek-chat", true),
+    ] {
+        let request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model(model);
+        let target = resolve_target(&request, "openai", None, Some("k")).expect("resolves");
+        let body = chat_body(&request, &target, client.is_reasoning_model(&target.model));
+        let sent =
+            body.get("temperature").is_some() || body.pointer("/options/temperature").is_some();
+        assert_eq!(sent, expected, "{model}: {body:?}");
+        assert_eq!(client.honours_temperature(&request), expected, "{model}");
+    }
+}
+
 /// Anthropic is **never sent `temperature` or `top_p`** (#705), thinking or
 /// not: API version `2026-10-21` refuses them on every model and Claude Opus
 /// 4.7+ refuses them on `2023-06-01` too.
