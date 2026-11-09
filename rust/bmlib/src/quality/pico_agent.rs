@@ -41,7 +41,7 @@ use crate::quality::pico_models::{
 
 /// How many times a question is asked when its reply parses but cannot be read
 /// (so it is asked once more) — the Cochrane assessor's `ASSESSMENT_ATTEMPTS`.
-const READ_ATTEMPTS: usize = 2;
+pub(crate) const READ_ATTEMPTS: usize = 2;
 
 /// The four parts, in the order they are read, reported and averaged.
 pub const PICO_PARTS: [&str; 4] = ["population", "intervention", "comparison", "outcome"];

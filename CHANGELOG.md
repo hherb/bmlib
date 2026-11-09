@@ -8,6 +8,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Trial layout and the design proposal** (StudyAnalyzer evidence weight,
+  pieces 1 and 2). `RctLayout` (`parallel`, `cluster`, `crossover`, `other`;
+  only `parallel` is covered), beside an unchanged `StudyDesign`. `DesignAgent`
+  (`bmlib/quality/design_agent.py`, `rust/bmlib/src/quality/design_agent.rs`)
+  asks the model for the paper's own design with quotes located in the paper;
+  a label outside the study-design lookup (or `unknown`), a missing layout for
+  an RCT, or a layout on another design is refused (`ProposalError`), never
+  guessed. A paper over the window is condensed once through the new
+  `QueryCondenser` seam (`LlmQueryCondenser` reuses `LlmCondenser::with_prompts`,
+  now taking the query as `&str`) and flagged `condensed`; quotes are verified
+  against the original text. Contract: `tests/fixtures/design_replies.json`.
 - **Evidence ladder and the number** (StudyAnalyzer evidence weight, piece 5).
   `build_ladder`, `start_level`, `paper_weight` in
   `bmlib/quality/evidence_ladder.py` and `rust/bmlib/src/quality/evidence_ladder.rs`:

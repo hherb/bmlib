@@ -84,6 +84,24 @@ STUDY_DESIGN_MAPPING: dict[str, StudyDesign] = {
 }
 
 
+class RctLayout(Enum):
+    """How a randomised trial allocates participants.
+
+    Kept apart from :class:`StudyDesign` so that enum's wire values and every
+    tier built on it stay as they were.  Only a parallel-group trial is
+    covered by the RoB 2 core questions; the others have variants of their own.
+    """
+
+    PARALLEL = "parallel"
+    CLUSTER = "cluster"
+    CROSSOVER = "crossover"
+    OTHER = "other"
+
+    def is_covered(self) -> bool:
+        """Whether the standard (parallel-group) RoB 2 questions apply."""
+        return self is RctLayout.PARALLEL
+
+
 # ---------------------------------------------------------------------------
 # Quality tiers (Oxford CEBM–inspired)
 # ---------------------------------------------------------------------------

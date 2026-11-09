@@ -1,0 +1,267 @@
+{
+  "prompt_version": 1,
+  "system_prompt": "You are an expert in clinical research methodology and evidence-based medicine.\n\nCRITICAL RULES:\n1. Base everything ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume, or fabricate any information\n3. Classify THIS study's own design, not the designs of studies it cites or reviews\n4. Return ONLY valid JSON, no explanation",
+  "task_prompt": "Classify the study design of the research paper below.\n\nGive the design of the study THIS paper reports. A paper that cites randomised trials, cohort studies or other designs is not itself one of them, unless it is a systematic review or meta-analysis of them.\n\nstudy_design must be exactly one of:\n- \"systematic_review\", \"meta_analysis\"\n- \"rct\" (a randomised controlled trial)\n- \"cohort_prospective\", \"cohort_retrospective\", \"case_control\", \"cross_sectional\"\n- \"case_series\", \"case_report\"\n- \"guideline\", \"editorial\", \"letter\", \"comment\"\n- \"other\" (a design not listed)\n\nrct_layout: required when study_design is \"rct\", and null for every other design. Exactly one of:\n- \"parallel\": participants are randomised individually to parallel groups\n- \"cluster\": groups of participants (clinics, schools, villages) are randomised\n- \"crossover\": each participant receives the arms in turn\n- \"other\": any other randomised layout\n\nquotes: 1-3 passages copied VERBATIM from the paper that show the design (for example the sentence describing how participants were allocated). Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n\nreasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"study_design\": \"rct\",\n    \"rct_layout\": \"parallel\",\n    \"quotes\": [\"Participants were randomly assigned 1:1 to metformin or placebo.\"],\n    \"reasoning\": \"The authors randomised individual participants to two parallel arms.\"\n}",
+  "condense_query": "Everything that shows the study's own design: how participants were recruited and allocated (randomisation method, unit of randomisation, crossover or cluster allocation), whether the study followed people forward or looked back, whether it compared groups, and how the authors themselves describe the study type.",
+  "text": "Participants were randomly assigned 1:1 to metformin or placebo. Follow-up was 12 weeks. Café visits were weekly.",
+  "min_similarity": 0.9,
+  "cases": [
+    {
+      "name": "parallel rct, quote found",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "parallel",
+        "citations": [
+          {
+            "start": 0,
+            "end": 64,
+            "text": "Participants were randomly assigned 1:1 to metformin or placebo.",
+            "similarity": 1.0,
+            "exact": true
+          }
+        ],
+        "quotes_not_found": [],
+        "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "cluster rct, tolerant label and layout",
+      "reply": {
+        "study_design": "Randomised Controlled Trial",
+        "rct_layout": " Cluster ",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "cluster",
+        "citations": [
+          {
+            "start": 0,
+            "end": 64,
+            "text": "Participants were randomly assigned 1:1 to metformin or placebo.",
+            "similarity": 1.0,
+            "exact": true
+          }
+        ],
+        "quotes_not_found": [],
+        "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "quote absent is listed",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Patients were allocated by minimisation."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "parallel",
+        "citations": [],
+        "quotes_not_found": [
+          "Patients were allocated by minimisation."
+        ],
+        "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "quote with a changed number is listed",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:2 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "parallel",
+        "citations": [],
+        "quotes_not_found": [
+          "Participants were randomly assigned 1:2 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "quote after a non-ASCII letter keeps code-point offsets",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Café visits were weekly."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "parallel",
+        "citations": [
+          {
+            "start": 89,
+            "end": 113,
+            "text": "Café visits were weekly.",
+            "similarity": 1.0,
+            "exact": true
+          }
+        ],
+        "quotes_not_found": [],
+        "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "cohort without a layout",
+      "reply": {
+        "study_design": "cohort_prospective",
+        "rct_layout": null,
+        "quotes": [],
+        "reasoning": "Individual randomisation."
+      },
+      "expected": {
+        "design": "cohort_prospective",
+        "rct_layout": null,
+        "citations": [],
+        "quotes_not_found": [],
+        "reasoning": "Individual randomisation.",
+        "condensed": false
+      }
+    },
+    {
+      "name": "absent reasoning reads empty",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ]
+      },
+      "expected": {
+        "design": "rct",
+        "rct_layout": "parallel",
+        "citations": [
+          {
+            "start": 0,
+            "end": 64,
+            "text": "Participants were randomly assigned 1:1 to metformin or placebo.",
+            "similarity": 1.0,
+            "exact": true
+          }
+        ],
+        "quotes_not_found": [],
+        "reasoning": "",
+        "condensed": false
+      }
+    },
+    {
+      "name": "rct without a layout",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": null,
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "error": "rct_layout missing"
+    },
+    {
+      "name": "layout on a non-rct",
+      "reply": {
+        "study_design": "case_control",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "error": "rct_layout given for a non-RCT"
+    },
+    {
+      "name": "unknown label",
+      "reply": {
+        "study_design": "banana",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "error": "study_design \"banana\" is not a design label"
+    },
+    {
+      "name": "unknown is not an answer",
+      "reply": {
+        "study_design": "unknown",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "error": "study_design \"unknown\" is not a design label"
+    },
+    {
+      "name": "unknown layout",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "banana",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "error": "rct_layout \"banana\" is not a layout"
+    },
+    {
+      "name": "design not text",
+      "reply": {
+        "study_design": 3,
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": "Individual randomisation."
+      },
+      "error": "study_design is not text"
+    },
+    {
+      "name": "reasoning not text",
+      "reply": {
+        "study_design": "rct",
+        "rct_layout": "parallel",
+        "quotes": [
+          "Participants were randomly assigned 1:1 to metformin or placebo."
+        ],
+        "reasoning": 5
+      },
+      "error": "reasoning is not text"
+    },
+    {
+      "name": "reply not an object",
+      "reply": [
+        "rct"
+      ],
+      "error": "expected an object"
+    }
+  ]
+}

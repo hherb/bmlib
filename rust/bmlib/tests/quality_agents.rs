@@ -1687,6 +1687,30 @@ fn llm_condenser_with_prompts_uses_its_own_query() {
     assert!(prompts.iter().all(|p| p.contains("the PICO query")));
 }
 
+/// One `LlmQueryCondenser` serves a different query on each call, over the
+/// PICO verbatim-passage prompts.
+#[test]
+fn llm_query_condenser_takes_the_query_per_call() {
+    use bmlib::quality::design_agent::{LlmQueryCondenser, QueryCondenser};
+
+    let model = MapReduceModel::new(&"M".repeat(100), "SHORT");
+    let mut condenser = LlmQueryCondenser::new(&model, 0.1, 4096);
+    let config = ProcessingConfig::default().with_max_context_chars(200);
+
+    for query in ["first need", "second need"] {
+        let result = condenser.condense(query, &"x".repeat(1_000), "a study", &config);
+        assert!(result.final_result.content.contains("SHORT"));
+    }
+
+    let prompts = model.prompts();
+    assert!(prompts
+        .iter()
+        .any(|p| p.starts_with("Extract VERBATIM") && p.contains("Needed: first need")));
+    assert!(prompts
+        .iter()
+        .any(|p| p.starts_with("Extract VERBATIM") && p.contains("Needed: second need")));
+}
+
 #[test]
 fn llm_condenser_with_prompts_refuses_a_template_without_its_placeholders() {
     let model = MapReduceModel::new("d", "d");
