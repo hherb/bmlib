@@ -59,8 +59,9 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install package with all extras
-        # `[all,dev]`, not mypy alone: every extra but psycopg2 ships its own
-        # `py.typed` (and `types-psycopg2`, in `dev`, covers that one), so
+        # `[all,dev]`, not mypy alone: every extra but psycopg2 and psutil
+        # ships its own `py.typed` (`types-psycopg2` and `types-psutil`, in
+        # `dev`, cover those two), so
         # mypy resolves real types only in an environment that actually has
         # them. Run against a bare interpreter it reports the optional
         # imports — and `jinja2`, a *core* dependency — as missing stubs,

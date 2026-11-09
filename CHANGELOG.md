@@ -23,6 +23,10 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`canonical_from_html` cannot run in a frozen application** (#723): it
+  parses in a child Python process, which an application with no interpreter
+  to start cannot have, so it raises `RuntimeError` there; and the `html`
+  extra needs `psutil`. See *Fixed*.
 - **An unparseable reply is retried with a correction, not re-sent** (#717,
   the maintainer's choice after PR #715's review). Both languages re-sent the
   identical request, so at temperature 0 a retry usually repeated the reply it
@@ -150,6 +154,36 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`canonical_from_html` no longer lets a 91 KB page take gigabytes** (#723,
+  found checking #656's remedy; both languages). html5ever rebuilds every
+  formatting element a closed block left open each time text follows, and elements with
+  distinct attributes escape the Noah's Ark clause, so N `<b id=k>` left open
+  in a closed `<div>` and then N `<div>x</div>` make it create about N²
+  elements: 91 KB of page was 4.6 GB in Python and 2.8 GB in Rust parsed
+  whole, the length cap admitting pages twenty times that and the 30 s
+  deadline, read between chunks, coming only after an estimated 70 GB.
+  markupever holds the GIL while it parses and exposes no tree sink, so
+  **Python now parses in a child process** (`sys.executable`, about 60 ms per
+  page; the page goes in through a temporary file and the canonical text
+  comes back as JSON), **killed once its resident memory passes
+  `HTML_PARSE_MAX_BYTES` (1 GiB)** with the new **`HtmlParseMemoryError`** (a
+  `ValueError`; `held` and `limit` in bytes, and `length`; it pickles). That page is now
+  refused in about a second. The densest pages the cap admits peaked at 69,
+  175 and 181 MB (an article, 666,000 sibling `<p>`, #654's nesting), one run
+  each. **`psutil` joins the `html` extra** (and `types-psutil` the `dev`
+  extra) to read the child's memory. The child is started with `-P` and this
+  process's `sys.path`, so a module in the caller's current directory is not
+  imported in its place, and it refuses to run if it imported another
+  checkout's `html.py`. A frozen application, which has no interpreter to
+  start, now gets a `RuntimeError`, as does a child that fails, is killed by a
+  signal (named, with a hint at an out-of-memory killer for `SIGKILL`), writes
+  no answer this process can read (never a `ValueError`, which reads as a
+  page refusal), or does not answer within four times `HTML_PARSE_SECONDS`
+  (120 s; the slowest page measured at the cap took 13.1 s), each carrying the
+  end of its standard error; an `OSError` starting it is raised as it is. A page that converts
+  converts exactly as before (`HTML_CANONICAL_VERSION` stays 1). #656 (the
+  cap's own cost) stays open; the `<`-count cap it weighed does not bound this
+  page, which has 12,002 `<`.
 - **A cancelled stream gives its request up at the socket** (#649, #652; both
   languages). A cancel returned at once but left the worker blocked in its
   socket read until the server answered, so a local server went on reading

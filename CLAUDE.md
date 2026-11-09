@@ -33,10 +33,10 @@ uv pip install -e ".[all,dev]"
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
 | fulltext       | httpx>=0.25           | `FullTextService` retrieval; nothing else in `fulltext/` needs it |
 | pdf            | pymupdf>=1.28.2       | PDF → text conversion in `fulltext/`   |
-| html           | markupever>=0.4.0     | `canonical_from_html` (html5ever, the parser the Rust port's scraper uses) |
+| html           | markupever>=0.4.0, psutil>=5.9 | `canonical_from_html` (html5ever, the parser the Rust port's scraper uses; psutil watches the child process it parses in, #723) |
 | embed          | llama-cpp-python>=0.3.36 | `bmlib.embed.Embedder` (arctic-embed-l-v2.0 GGUF, in process); compiles llama.cpp, so not in `all` |
 | secrets        | keyring>=25           | `bmlib.secrets.KeyringVault`, API keys in the OS keychain |
-| dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2 | Development and testing tools  |
+| dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2, types-psutil | Development and testing tools  |
 | all            | All runtime extras but `embed` | Everything except `dev` and `embed` (ask for `.[all,embed]`) |
 
 ## Architecture
@@ -81,7 +81,7 @@ bmlib/
 │   │   ├── markdown.py      # A hand-written Markdown subset → canonical text
 │   │   ├── plain.py         # Plain text → canonical text
 │   │   ├── pdf.py           # The segmenter's SegmentedDocument → canonical text (a line-end soft hyphen joined)
-│   │   ├── html.py          # An HTML page's main content → canonical text (html5ever via markupever, extra `html`)
+│   │   ├── html.py          # An HTML page's main content → canonical text (html5ever via markupever, extra `html`), parsed in a child process held to `HTML_PARSE_MAX_BYTES` (#723); Rust counts the elements it creates
 │   │   ├── chunk.py         # Sentence-aware retrieval chunks of a canonical text
 │   │   └── assess.py        # Does a canonical text look like a whole paper? (heuristic, unmeasured)
 │   ├── _parse_audit.py      # Did the JATS parse unwind cleanly? (private, stdlib only)
@@ -789,8 +789,8 @@ guarantee `py.typed` makes to downstreams. It is pinned in the `dev` extra
 for the reason ruff is pinned in `ci.yml`.
 
 **Run it in the dev venv, never against a bare interpreter.** Every extra
-except psycopg2 ships its own `py.typed` — psycopg2 is covered by
-`types-psycopg2` in the `dev` extra — so mypy resolves real types only
+except psycopg2 and psutil ships its own `py.typed` — those two are covered
+by `types-psycopg2` and `types-psutil` in the `dev` extra — so mypy resolves real types only
 where the packages are installed. Run without them — which `uv run mypy`
 did before mypy was a declared dependency, silently resolving an isolated
 environment — and it reports the optional imports *and `jinja2`, a core

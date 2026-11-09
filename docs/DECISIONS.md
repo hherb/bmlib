@@ -6299,3 +6299,42 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   `reported` `TestReadingAReply::test_a_blank_description_raises_as_null_does`
   and Rust's `a_blank_description_is_refused_as_null_is`. Whether the prompt
   should ask for a description on a part not reported is #618.
+
+## fulltext — an HTML page's parse bounded by memory, not by a model of html5ever (#723)
+
+html5ever rebuilds every formatting element a closed block left open each
+time text follows, so a page can have it create elements with the square of its
+length (91 KB: 4.6 GB in Python, 2.8 GB in Rust). Each language bounds what is
+*built*, because nothing read from the page bounds it: #656's `<`-count cap
+admits that page (12,002 `<`), and a pre-scan cannot know the list of active
+formatting elements without being the tree builder. Decided by the maintainer
+(2026-11-09), each against its alternative:
+
+- **Python parses in a child process, killed past `HTML_PARSE_MAX_BYTES`**,
+  not in-process. markupever holds the GIL for a whole `process()` call (a
+  watchdog thread ticked twice in 1.2 s) and exposes no tree sink, so nothing
+  in this process can run while the memory grows. Do not "simplify" it back
+  in-process. Its memory is read with **psutil** (the `html` extra), over
+  hand-written per-OS calls. The page goes in **through a temporary file, not
+  a pipe**: `Popen.communicate()` writes its input only on the call that
+  passes it, so retried after a timeout it left the child waiting for the
+  rest of its page for ever. The child is started with `-P` and this
+  process's `sys.path`, and refuses to run if it imported another `html.py`
+  than the parent's (PR #724's review: with `-c` alone a `json.py` in the
+  caller's current directory ran in it). Cost: about 60 ms per page, and a frozen
+  application cannot convert HTML (a `RuntimeError`). Tests:
+  `tests/test_canonical_html.py::TestTheParseRunsInAChildHeldToItsMemory`.
+- **Rust counts the elements its sink creates and feeds the page in pieces of
+  64 code points**, not a panic out of the sink caught by `catch_unwind`.
+  Read only between 16,384-code-point chunks the count would come about 5.5
+  million elements (about 1 GB) late on #723's page, one chunk holding about
+  1,365 of its rebuilds; a piece of 64 holds about five of them, and about
+  sixteen on `<p>x` (4 code points a rebuild). Small
+  pieces cost 5.6 ms against 4.4 ms on a 486 KB page. Tests:
+  `a_page_rebuilding_its_formatting_elements_is_stopped_by_its_count` and
+  `the_element_count_refuses_one_past_the_budget` in
+  `rust/bmlib/src/fulltext/canonical/html.rs`.
+- **The two languages refuse by different measures** (bytes held against
+  elements created), so the shared `html_parse` contract holds neither limit.
+- **`HTML_MAX_CHARS` stays**: #656, the completeness cost of the length cap,
+  is still open.
