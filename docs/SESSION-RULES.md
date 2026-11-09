@@ -8,7 +8,7 @@ section's opening paragraph, which the one below replaces; rules PR #280 added
 beside the moved ones are additions, each naming the issue or review that
 earned it._
 
-**Each rule is argued in full in [`CLAUDE.md`](../CLAUDE.md), in
+**Each rule is argued in full in [`ARCHITECTURE.md`](ARCHITECTURE.md), in
 [`docs/DECISIONS.md`](DECISIONS.md) and at its call site; only the
 shortest form is kept here**, because these are what a session gets wrong again
 rather than what it can look up. Several are now enforced by a test rather than

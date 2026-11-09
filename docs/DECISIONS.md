@@ -735,7 +735,7 @@ must not be re-done.
 
 - **PostgreSQL transaction nesting is detected from bmlib's own open-block
   count, not psycopg2's status**, keyed by *(thread, `id(conn)`)* — see
-  CLAUDE.md for why both parts are load-bearing.
+  docs/ARCHITECTURE.md for why both parts are load-bearing.
 - **`transaction()` refuses an autocommit connection rather than adapting to
   it** (#449, option 1 chosen by the maintainer 2026-10-08). It does this for
   psycopg2 `autocommit = True` and for Python 3.12+ `sqlite3`'s
@@ -3231,7 +3231,7 @@ with a real one. Pinned by
 
 ## fulltext — importable on a core install (#64, PR #66)
 
-**CLAUDE.md argues this one in full**, under "Optional dependencies guarded
+**docs/ARCHITECTURE.md argues this one in full**, under "Optional dependencies guarded
 at the call site". What it omits:
 
 - **Both halves of the fix stay, and the reason is counter-intuitive — read
@@ -4116,7 +4116,7 @@ for fidelity's sake.**
 
 ## publications — PubMed metadata graft (PR #59)
 
-**CLAUDE.md argues most of this port in full — read it there, and do not
+**docs/ARCHITECTURE.md argues most of this port in full — read it there, and do not
 re-derive any of it.** "Replace-per-source child rows" settles the `source`
 column and scoped delete, `_stamp_source()`, the `ValueError` on an unnamed
 row, the absent UNIQUE constraint, the empty guard and `_consolidate_rows()`;
@@ -4160,7 +4160,7 @@ test on both backends, several verified by mutation. Only what it omits:
 
 ## publications — a completed day is a durable claim (#88–#91, PR #93)
 
-**CLAUDE.md's "A completed day is a durable claim" argues this in full — read
+**docs/ARCHITECTURE.md's "A completed day is a durable claim" argues this in full — read
 it there.** It settles the two-rules-of-different-kinds split, why the
 shortfall rule is a floor rather than strict inequality, why PubMed counts
 delivered elements, why each envelope is checked rather than defaulted, and
