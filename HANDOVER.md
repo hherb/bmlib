@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PR #PRNUM (#647) open; PRs #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PR #727 (#647) open; PRs #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
@@ -16,7 +16,7 @@ carries breaking changes in both languages (e.g. Rust `sync()` now returns
 `Result<SyncReport, SyncError>` and takes a clock). Tick items off here as
 their PRs merge; open a PR per item and stop — the maintainer merges.
 
-**Done**: #647 (PR #PRNUM, awaiting review), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
+**Done**: #647 (PR #727, awaiting review), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
 `keychain-interop`), #607 + #444 (PR #721), #707 and #710 (PRs #711, #713).
 
 **Fix before the release** — each is in a feature that 0.12.0 did not ship,
@@ -26,7 +26,7 @@ so it is free to fix now and costs a breaking change later:
    a 91 KB page that makes html5ever build gigabytes (both languages, in
    0.12.0 too). Fixed by bounding what is built (see *Earlier*). **#656
    stays open past the release** (the maintainer's choice: keep the 2M cap).
-2. ~~**#647**~~ (PR #PRNUM, open) — a PICO quote rejected as a contradiction
+2. ~~**#647**~~ (PR #727, open) — a PICO quote rejected as a contradiction
    keeps its reason; a part holding only such quotes is `CONTRADICTED`.
 3. **Decisions for the maintainer**, then implement: **#708** (`chat_json`'s
    no-retry-at-temperature-0 rule assumes greedy sampling, false for
@@ -65,7 +65,7 @@ and `bmlib-rehearse-release-gates` memories):
   before the release PR, since `release.yml` checks them only after the
   version is burned. Never approve the PyPI gate.
 
-## This session: a contradicted PICO quote keeps its reason (#647, PR #PRNUM open)
+## This session: a contradicted PICO quote keeps its reason (#647, PR #727 open)
 
 The maintainer chose (2026-11-09) a parallel list plus a state of its own:
 
