@@ -1721,6 +1721,8 @@ The *Context* columns below are the models' listing metadata, which may be a fal
 | `claude-3-5-haiku-20241022` | $1.00 | $5.00 | 200k |
 | `claude-3-haiku-20240307` | $0.25 | $1.25 | 200k |
 
+The default model, `claude-sonnet-5-5`, is not in this table yet (#733), so its cost is the fallback estimate, $3.00 / $15.00 (logged once at WARNING).
+
 ### OpenAI
 
 | Property | Value |
@@ -1813,6 +1815,8 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | `gemini-2.0-flash-lite` | $0.00 | $0.00 | 1M |
 | `gemini-1.5-pro` | $1.25 | $5.00 | 2M |
 | `gemini-1.5-flash` | $0.075 | $0.30 | 1M |
+
+The default model, `gemini-flash-lite-latest`, is not in this table yet (#733), so its cost is the unlogged fallback estimate, $1.00 / $3.00 — likely well above its real price.
 
 ### Ollama
 

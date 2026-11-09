@@ -35,7 +35,8 @@ use serde_json::{json, Map, Value};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Protocol {
     /// `/v1/chat/completions` — OpenAI, DeepSeek, Mistral, Gemini's
-    /// compatibility endpoint, and every local server that imitates them.
+    /// compatibility endpoint (which takes no `/v1`, since its base already names
+    /// its version: see `chat_url`, #681), and every local server that imitates them.
     #[default]
     OpenAi,
     /// `/v1/messages` — Anthropic.

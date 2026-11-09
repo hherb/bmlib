@@ -31,7 +31,8 @@ All notable changes to bmlib are documented here. The format is based on
   now `claude-sonnet-5-5` and Google's alias `gemini-flash-lite-latest`
   (the maintainer's choice; `gemini-flash-latest` answered 503 under load).
   The pricing tables and Gemini's fallback list are unchanged, so the new
-  defaults carry no price. The manual's examples name the new defaults.
+  defaults are costed at the provider's fallback estimate ($3/$15 per
+  million tokens for Anthropic, $1/$3 for Gemini; #733). The manual's examples name the new defaults.
   Also probed, with no change needed: `think=` fills `LLMResponse.thinking`
   on Sonnet 5.5 (adaptive, and `"high"`), Haiku 5.5 and Opus 5.5 (`"low"`)
   in both languages — adaptive thinking leaves it empty on a prompt too easy

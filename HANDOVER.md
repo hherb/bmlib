@@ -80,8 +80,10 @@ an interactive shell: run `zsh -ic '…'`). Findings:
   → 404, `gemini-2.0-flash` → 404. Now `claude-sonnet-5-5` and
   `gemini-flash-lite-latest` (the maintainer's choice). Not replaced: the
   pricing rows and Gemini's `FALLBACK_MODELS` still name retired models, so
-  the new defaults have no price; OpenAI/DeepSeek/Mistral defaults were not
-  probed (no keys).
+  the new defaults are costed at the fallback estimate (**#733**; Gemini's
+  $1/$3 likely overstates Flash-Lite, unlogged); OpenAI/DeepSeek/Mistral
+  defaults were not probed (no keys). PR #732's review also filed **#734**
+  (Rust's DeepSeek chat path has a `/v1` Python's SDK does not send).
 - **#681**: Google answers `…/v1beta/openai/chat/completions` and
   `…/v1beta/openai/v1/chat/completions` alike (200). Rust's `chat_url` now
   sends the documented one (the maintainer's choice); a test pins every
