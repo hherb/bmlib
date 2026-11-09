@@ -6268,8 +6268,10 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   (`ProcessingResult.batch_exceptions`), and the worst decides — a defect or
   the key error raised anywhere in the run propagates, then a request no retry
   cures and then one a retry may are `REQUEST_FAILED`, never the last batch's
-  merely for being last (PR #666's review). A defect in a condensation that
-  still produced a digest is only noted (#665). A missing
+  merely for being last (PR #666's review). A defect raised in a
+  condensation that still produced a digest from its other batches (PARTIAL)
+  refuses that digest and propagates too (#665): a defect may depend on one
+  batch's content, so the others succeeding proves nothing about it. A missing
   Anthropic key raises `TypeError` from the SDK and so propagates too: a
   configuration error, not a bmlib defect, but no retry cures it either. The
   readers raise a private `_UnreadableReplyError`, and only that is re-asked,

@@ -680,6 +680,25 @@ class TestTheExtraction:
         ):
             agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
 
+    def test_a_defect_in_one_batch_of_a_partial_run_propagates(self) -> None:
+        """Other batches succeeding does not turn a defect into a note (#665)."""
+        agent = make_agent(condense_config=ProcessingConfig(max_context_chars=100))
+        calls = itertools.count()
+
+        def chat(*args: Any, **kwargs: Any) -> LLMResponse:
+            if next(calls) == 0:
+                raise AttributeError("the defect")
+            return _response("a digest")
+
+        agent.llm.chat = MagicMock(side_effect=chat)
+
+        with pytest.raises(AttributeError, match="the defect") as caught:
+            agent.extract("A trial", "Filler sentence. " * 40, min_similarity=SIM)
+
+        assert caught.value.__cause__ is None
+        # Later batches were asked and answered, so the run was partial, not failed.
+        assert agent.llm.chat.call_count > 1
+
     @pytest.mark.parametrize("later", ["503", "truncated"])
     def test_a_refusal_is_not_hidden_by_a_later_failure(self, later: str) -> None:
         """A refused key outranks an outage a retry may cure, and a truncated

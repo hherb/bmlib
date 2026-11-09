@@ -136,8 +136,10 @@ def condense_text(
 
     Raises:
         CondensationRefusedError: The run failed (a provider failure during the
-            map-reduce included, chained to what was raised), produced
-            nothing to judge, or produced a digest that still does not fit
+            map-reduce included, chained to what was raised), had any batch
+            raise a bmlib defect or an ``ImportError`` (chained to it, even
+            when other batches succeeded, #665), produced nothing to judge,
+            or produced a digest that still does not fit
             ``config.max_context_chars``.
         ProcessingStoppedError: The agent's stop was set; the run ended there.
     """
@@ -154,6 +156,15 @@ def condense_text(
         reason = f"the map-reduce failed: {result.error_message}"
         logger.warning("Could not condense the text of %s: %s", label, reason)
         raise CondensationRefusedError(reason) from _failure_cause(result)
+
+    cause = _failure_cause(result)
+    if isinstance(cause, _NOT_A_REQUEST_FAILURE):
+        # A defect in one batch is refused as in a failed run (#665): it may
+        # depend on the batch's content, so the batches that succeeded prove
+        # nothing about it, and a note would leave it as text alone.
+        reason = f"a batch raised {type(cause).__name__} (status: {result.status.value}): {cause}"
+        logger.warning("Could not condense the text of %s: %s", label, reason)
+        raise CondensationRefusedError(reason) from cause
 
     digest = result.final_result.content.strip()
     if not digest:
