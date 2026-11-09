@@ -23,6 +23,20 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **The Anthropic and Gemini default models are ones that still answer**
+  (found by release item 4's live probes, 2026-11-10; both languages).
+  `claude-sonnet-4-20250514` answered 404 `not_found_error` and
+  `gemini-2.0-flash` 404 *"no longer available"*, so a bare provider name
+  (`model="anthropic"`, `"gemini"`) failed in 0.12.0 too. The defaults are
+  now `claude-sonnet-5-5` and Google's alias `gemini-flash-lite-latest`
+  (the maintainer's choice; `gemini-flash-latest` answered 503 under load).
+  The pricing tables and Gemini's fallback list are unchanged, so the new
+  defaults carry no price. The manual's examples name the new defaults.
+  Also probed, with no change needed: `think=` fills `LLMResponse.thinking`
+  on Sonnet 5.5 (adaptive, and `"high"`), Haiku 5.5 and Opus 5.5 (`"low"`)
+  in both languages — adaptive thinking leaves it empty on a prompt too easy
+  to think about (17×23), which is the model's choice, not the request.
+
 - **`chat_json` retries at temperature 0 where the model is sent no
   temperature** (#708; both languages). A truncated or wrong-shape reply at
   temperature 0 raised at once, since greedy sampling repeats it; but

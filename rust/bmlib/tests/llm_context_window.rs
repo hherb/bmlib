@@ -347,7 +347,7 @@ fn ollama_posts_show_with_the_model_in_the_body() {
 fn a_bare_provider_name_means_its_default_model() {
     let t = Scripted::ok(json!({"max_input_tokens": 1000}));
     client(t.clone()).context_window("anthropic").unwrap();
-    assert!(t.last().1.ends_with("/v1/models/claude-sonnet-4-20250514"));
+    assert!(t.last().1.ends_with("/v1/models/claude-sonnet-5-5"));
 }
 
 #[test]

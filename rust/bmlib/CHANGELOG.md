@@ -41,6 +41,15 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **Gemini chats go to Google's documented URL** (#681, the maintainer's
+  choice): `chat_url` posts to `…/v1beta/openai/chat/completions`, as
+  Python's SDK does, where it appended the OpenAI protocol's
+  `/v1/chat/completions`. Google answered both with 200 on 2026-11-10, so the
+  old path worked undocumented; a test pins every provider's chat URL.
+- **The Anthropic and Gemini default models answer again** (with the Python
+  package): `claude-sonnet-5-5` and `gemini-flash-lite-latest`, where
+  `claude-sonnet-4-20250514` and `gemini-2.0-flash` answer 404.
+
 - **`chat_json` retries at temperature 0 where the request is sent no
   temperature** (#708, with the Python package). New defaulted
   `ChatSource::honours_temperature` (`true`) and

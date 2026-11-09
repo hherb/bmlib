@@ -200,13 +200,36 @@ fn tools_are_gated_by_the_allowlist() {
     resolve_target(&request, "anthropic", None, Some("k")).expect("anthropic supports tools");
 }
 
+/// Every provider's chat URL, at its default base (#681: Gemini's base already
+/// names its version, so it takes no `/v1`).
+#[test]
+fn each_providers_chat_url_is_pinned() {
+    let expected = [
+        ("anthropic", "https://api.anthropic.com/v1/messages"),
+        ("openai", "https://api.openai.com/v1/chat/completions"),
+        ("deepseek", "https://api.deepseek.com/v1/chat/completions"),
+        ("mistral", "https://api.mistral.ai/v1/chat/completions"),
+        (
+            "gemini",
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        ),
+        ("ollama", "http://localhost:11434/api/chat"),
+    ];
+    assert_eq!(bmlib::llm::provider_specs().len(), expected.len());
+    for (provider, url) in expected {
+        let request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model(provider);
+        let target = resolve_target(&request, provider, None, Some("k")).expect("resolves");
+        assert_eq!(chat_url(&target), url, "{provider}");
+    }
+}
+
 /// An empty model name falls back to the provider's default, and a base URL
 /// override is stripped of a trailing slash so the path does not double up.
 #[test]
 fn defaults_and_base_url_overrides_are_applied() {
     let request = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("anthropic");
     let target = resolve_target(&request, "anthropic", None, Some("k")).expect("resolves");
-    assert_eq!(target.model, "claude-sonnet-4-20250514");
+    assert_eq!(target.model, "claude-sonnet-5-5");
 
     let target = resolve_target(
         &request,

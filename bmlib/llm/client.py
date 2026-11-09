@@ -616,7 +616,7 @@ def supports_tools(provider_name: str) -> bool:
     result means passing *tools* to that provider will not raise
     :class:`NotImplementedError`. Accepts a bare provider name
     (``"anthropic"``) or a full ``"provider:model"`` string
-    (``"anthropic:claude-sonnet-4-20250514"``), case-insensitively.
+    (``"anthropic:claude-sonnet-5-5"``), case-insensitively.
 
     A static allowlist rather than a per-model capability query: some
     providers (e.g. Ollama) report capabilities per model, and querying
