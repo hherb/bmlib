@@ -51,10 +51,16 @@ All notable changes to bmlib are documented here. The format is based on
   `rust/bmlib/src/quality/outcome_agent.rs`) asks the model for the outcomes the
   paper itself calls primary (co-primary allowed; an empty list is valid), each
   with its timepoint, quotes located in the paper and the reported
-  `ReportedResult`. A result that reads but is incoherent (bounds the wrong way
-  round, a ratio at or below 0, a level outside (0, 1)) is kept out with its
-  reason in `result_error`; a scale outside `ratio`/`difference` or a value that
-  is not a finite number refuses the reply (`ProposalError`). Papers over the
+  `ReportedResult`. The model copies the interval's level as printed (`95`
+  for "95% CI"); code reads a value in (1, 100) as a percentage (divided by
+  `PERCENT`) and one in (0, 1) as a fraction. A result with a field that cannot
+  be read (a bound printed as "NR", a null estimate, a scale outside
+  `ratio`/`difference`, a level that is neither) or that reads but is incoherent
+  (bounds the wrong way round, a ratio at or below 0) is kept out with its
+  reason, naming the field, in that outcome's `result_error`; the outcome stays.
+  Only a structural problem (the reply or an outcome not an object,
+  `primary_outcomes` not a list, a missing name or `result` key, a `result` that
+  is not an object) refuses the reply (`ProposalError`). Papers over the
   window are condensed once and flagged `condensed`; quotes are verified against
   the original text, with contradicted and unusable quotes kept as in the design
   proposal. Contract: `tests/fixtures/outcome_replies.json`, written by

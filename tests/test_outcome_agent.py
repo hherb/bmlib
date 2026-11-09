@@ -112,7 +112,6 @@ class TestReadingAReply:
             ({"ci_low": 0.0, "estimate": 0.4}, "ci_low must be above 0 on the ratio scale"),
             ({"ci_high": None}, "ci_low and ci_high must be given together"),
             ({"estimate": 0.2}, "ci_low <= estimate <= ci_high does not hold"),
-            ({"ci_level": 95.0}, "ci_level must be above 0 and below 1"),
             ({"n_analysed": -3}, "n_analysed must be a whole number that fits 32 bits"),
             ({"n_analysed": 2**32}, "n_analysed must be a whole number that fits 32 bits"),
         ],
@@ -141,9 +140,9 @@ class TestReadingAReply:
     @pytest.mark.parametrize(
         ("raw", "message"),
         [
-            (result(scale="percent"), 'primary_outcomes[0].result.scale "percent" is not a scale'),
-            (result(scale=1), "primary_outcomes[0].result.scale is not text"),
-            (result(measure=None), "primary_outcomes[0].result.measure is not text"),
+            (result(scale="percent"), 'result.scale "percent" is not a scale'),
+            (result(scale=1), "result.scale is not text"),
+            (result(measure=None), "result.measure is not text"),
             (result(estimate=math.inf), "result.estimate is not a finite number"),
             (result(estimate=math.nan), "result.estimate is not a finite number"),
             (result(estimate=None), "result.estimate is not a finite number"),
@@ -151,16 +150,52 @@ class TestReadingAReply:
             (result(estimate="0.7"), "result.estimate is not a finite number"),
             (result(estimate=10**400), "result.estimate is not a finite number"),
             (result(ci_low=math.inf), "result.ci_low is not a finite number"),
+            (result(ci_low="NR"), "result.ci_low is not a finite number"),
             (result(ci_level="high"), "result.ci_level is not a finite number"),
             (result(n_analysed=1200.0), "result.n_analysed is not a whole number"),
             (result(n_analysed=True), "result.n_analysed is not a whole number"),
-            ("risk ratio 0.7", "primary_outcomes[0].result is not an object"),
         ],
     )
-    def test_an_unreadable_result_refuses_the_reply(self, raw: Any, message: str) -> None:
+    def test_an_unreadable_field_refuses_only_that_outcomes_result(
+        self, raw: Any, message: str
+    ) -> None:
+        second = outcome(name="Hospitalisation")
+        bad, good = read_outcome_reply(reply(outcome(result=raw), second), TEXT, SIM).outcomes
+
+        assert bad.result is None and bad.result_error == message
+        assert [c.text for c in bad.citations] == [QUOTE]  # the outcome itself stands
+        assert good.result is not None and good.result_error is None
+
+    def test_a_result_that_is_not_an_object_refuses_the_reply(self) -> None:
         with pytest.raises(ValueError) as raised:
-            read_outcome_reply(reply(outcome(result=raw)), TEXT, SIM)
-        assert message in str(raised.value)
+            read_outcome_reply(reply(outcome(result="risk ratio 0.7")), TEXT, SIM)
+        assert str(raised.value) == "primary_outcomes[0].result is not an object"
+
+    @pytest.mark.parametrize(("printed", "level"), [(95, 0.95), (90.0, 0.9), (0.95, 0.95)])
+    def test_the_level_is_read_as_printed(self, printed: float, level: float) -> None:
+        [found] = read_outcome_reply(
+            reply(outcome(result=result(ci_level=printed))), TEXT, SIM
+        ).outcomes
+        assert found.result is not None and found.result.ci_level == level
+
+    @pytest.mark.parametrize("printed", [0, 1, 100, 150, -95, math.inf])
+    def test_a_level_neither_percentage_nor_fraction_is_refused_naming_it(
+        self, printed: float
+    ) -> None:
+        [found] = read_outcome_reply(
+            reply(outcome(result=result(ci_level=printed))), TEXT, SIM
+        ).outcomes
+        assert found.result is None
+        assert found.result_error == (
+            "result.ci_level is neither a percentage in (1, 100) nor a fraction in (0, 1)"
+        )
+
+    def test_a_stored_level_is_a_fraction_and_is_not_converted(self) -> None:
+        [found] = read_outcome_reply(reply(outcome()), TEXT, SIM).outcomes
+        stored = found.to_dict()
+        stored["result"]["ci_level"] = 95
+        with pytest.raises(ValueError, match="ci_level must be above 0 and below 1"):
+            ProposedOutcome.from_dict(stored)
 
     @pytest.mark.parametrize(
         ("bad", "message"),
@@ -328,11 +363,11 @@ class TestTheAgent:
         agent.llm.chat.assert_not_called()
 
     def test_an_unreadable_reply_is_asked_twice_then_refused(self) -> None:
-        agent = make_agent(reply(outcome(result=result(scale="percent"))))
+        agent = make_agent(reply(outcome(result="risk ratio 0.7")))
         with pytest.raises(ProposalError) as raised:
             agent.propose("A trial", TEXT, min_similarity=SIM)
         assert raised.value.kind is ProposalErrorKind.UNREADABLE
-        assert "scale" in str(raised.value)
+        assert "result is not an object" in str(raised.value)
         assert agent.llm.chat.call_count == 2
 
     def test_a_reply_holding_a_non_finite_number_is_unreadable(self) -> None:

@@ -80,6 +80,12 @@ OUTCOME_PROMPT_VERSION = 1
 #: same words as :meth:`ReportedResult.validate`).
 _N_ANALYSED_RANGE = "n_analysed must be a whole number that fits 32 bits"
 
+#: A level printed as a percentage (``95`` for "95% CI") is divided by this.
+PERCENT = 100
+
+#: Message for a ``ci_level`` that is neither a percentage nor a fraction.
+_CI_LEVEL_RANGE = "ci_level is neither a percentage in (1, 100) nor a fraction in (0, 1)"
+
 #: The result's number fields that may be null, in reading order.
 _OPTIONAL_NUMBERS = ("ci_low", "ci_high", "ci_level")
 
@@ -118,8 +124,8 @@ outcome, or null if the paper reports no effect estimate for it:
 "difference" for a difference (mean difference, risk difference)
   - estimate: the point estimate, as a number
   - ci_low, ci_high: the confidence interval bounds, or null if not reported
-  - ci_level: the interval's level as a fraction (0.95 for a 95% interval), \
-or null if not stated
+  - ci_level: the interval's level as printed (95 for a 95% interval), or \
+null if not stated
   - n_analysed: the number of participants analysed for this result, or null \
 if not reported
 Copy numbers exactly as printed; do not calculate, convert or round.
@@ -138,7 +144,7 @@ Respond with JSON in exactly this shape:
                 "estimate": -4.2,
                 "ci_low": -6.1,
                 "ci_high": -2.3,
-                "ci_level": 0.95,
+                "ci_level": 95,
                 "n_analysed": 412
             }
         }
@@ -176,7 +182,10 @@ def _number(value: object, name: str, path: str) -> float:
 
 
 def _read_result(raw: object, path: str) -> tuple[ReportedResult | None, str | None]:
-    """Read a reply's ``result`` into ``(result, result_error)``.
+    """Read a ``result`` in its wire form (``ci_level`` a fraction) into ``(result, result_error)``.
+
+    The strict reader behind :meth:`ProposedOutcome.from_dict`, and behind
+    :func:`_read_reply_result` once the level is a fraction.
 
     Raises:
         UnreadableReplyError: *raw* is neither null nor an object, the measure
@@ -212,6 +221,34 @@ def _read_result(raw: object, path: str) -> tuple[ReportedResult | None, str | N
     except ValueError as exc:
         return None, str(exc)
     return result, None
+
+
+def _read_reply_result(raw: object, path: str) -> tuple[ReportedResult | None, str | None]:
+    """Read the ``result`` of one outcome in a model's reply into ``(result, result_error)``.
+
+    ``ci_level`` is read as printed: a value in (1, 100) is a percentage and is
+    divided by :data:`PERCENT`; a value in (0, 1) is a fraction.  Any field
+    that cannot be read (a number that is text, null or not finite, a scale
+    other than ``ratio``/``difference``, a level that is neither) refuses this
+    outcome's result only, as ``(None, reason)`` naming the field; the outcome
+    itself stays.
+
+    Raises:
+        UnreadableReplyError: *raw* is neither null nor an object.
+    """
+    if raw is not None and not isinstance(raw, dict):
+        raise UnreadableReplyError(f"{path}result is not an object")
+    if raw is not None:
+        level = raw.get("ci_level")
+        if isinstance(level, (int, float)) and not isinstance(level, bool):
+            if 1 < level < PERCENT:
+                raw = {**raw, "ci_level": level / PERCENT}
+            elif not 0 < level < 1:
+                return None, f"result.{_CI_LEVEL_RANGE}"
+    try:
+        return _read_result(raw, "")
+    except UnreadableReplyError as exc:
+        return None, str(exc)
 
 
 def _result_to_wire(result: ReportedResult | None) -> dict[str, Any] | None:
@@ -368,9 +405,11 @@ def read_outcome_reply(data: dict[str, Any], text: str, min_similarity: float) -
         ValueError: *min_similarity* is not a number in (0, 1].
         UnreadableReplyError: (a ``ValueError``) The reply is not an object,
             ``primary_outcomes`` is not a list, an outcome is not an object
-            or has no name, a timepoint is not text, or a result is not
-            readable (see :func:`_read_result`).  The message names the
-            outcome (``primary_outcomes[1].``) and the field.
+            or has no name, a timepoint is not text, or a result is present
+            but not an object.  The message names the outcome
+            (``primary_outcomes[1].``) and the field.  A field inside a result
+            that cannot be read refuses that outcome's result only (its
+            ``result_error``).
     """
     similarity = check_min_similarity(min_similarity)
     if not isinstance(data, dict):
@@ -392,7 +431,7 @@ def read_outcome_reply(data: dict[str, Any], text: str, min_similarity: float) -
             raise UnreadableReplyError(f"{path}timepoint is not text")
         if "result" not in item:
             raise UnreadableReplyError(f"{path}result is missing")
-        result, result_error = _read_result(item["result"], path)
+        result, result_error = _read_reply_result(item["result"], path)
         citations, not_found, contradicted, dropped = verify_quotes(
             item.get("quotes"), text, similarity
         )

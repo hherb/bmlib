@@ -72,7 +72,15 @@ def test_the_contract_covers_each_kind_of_outcome() -> None:
     assert cases["none named"]["expected"]["outcomes"] == []
     refused = cases["bounds the wrong way round"]["expected"]["outcomes"][0]
     assert refused["result"] is None and refused["result_error"]
-    assert "error" in cases["scale percent"]
+    percent = cases["scale percent"]["expected"]["outcomes"][0]
+    assert percent["result"] is None and "scale" in percent["result_error"]
+    mixed = cases["an unreadable result beside a good one"]["expected"]["outcomes"]
+    assert mixed[0]["result_error"] and mixed[1]["result"] is not None
+    assert (
+        cases["level as printed, a percentage"]["expected"]["outcomes"][0]["result"]["ci_level"]
+        == 0.95
+    )
+    assert "error" in cases["result text"]
 
 
 def test_the_generator_still_builds_the_fixture() -> None:

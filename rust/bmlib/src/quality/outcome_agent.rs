@@ -74,7 +74,7 @@ For each primary outcome give:
   - scale: "ratio" for a ratio (risk ratio, odds ratio, hazard ratio), "difference" for a difference (mean difference, risk difference)
   - estimate: the point estimate, as a number
   - ci_low, ci_high: the confidence interval bounds, or null if not reported
-  - ci_level: the interval's level as a fraction (0.95 for a 95% interval), or null if not stated
+  - ci_level: the interval's level as printed (95 for a 95% interval), or null if not stated
   - n_analysed: the number of participants analysed for this result, or null if not reported
 Copy numbers exactly as printed; do not calculate, convert or round.
 
@@ -92,7 +92,7 @@ Respond with JSON in exactly this shape:
                 "estimate": -4.2,
                 "ci_low": -6.1,
                 "ci_high": -2.3,
-                "ci_level": 0.95,
+                "ci_level": 95,
                 "n_analysed": 412
             }
         }
@@ -120,8 +120,52 @@ fn number(value: Option<&Value>, name: &str, path: &str) -> Result<f64, String> 
         .ok_or_else(|| format!("{path}{name} is not a finite number"))
 }
 
-/// Read a reply's `result` into `(result, result_error)`. Python's
-/// `_read_result`.
+/// A level printed as a percentage (`95` for "95% CI") is divided by this.
+/// Python's `PERCENT`.
+pub const PERCENT: f64 = 100.0;
+
+/// Message for a `ci_level` that is neither a percentage nor a fraction.
+const CI_LEVEL_RANGE: &str =
+    "ci_level is neither a percentage in (1, 100) nor a fraction in (0, 1)";
+
+/// Read the `result` of one outcome in a model's reply into
+/// `(result, result_error)`. Python's `_read_reply_result`.
+///
+/// `ci_level` is read as printed: a value in (1, 100) is a percentage and is
+/// divided by [`PERCENT`]; a value in (0, 1) is a fraction. Any field that
+/// cannot be read (a number that is text, null or not finite, a scale other
+/// than `ratio`/`difference`, a level that is neither) refuses this outcome's
+/// result only, as `(None, Some(reason))` naming the field; the outcome
+/// itself stays.
+///
+/// # Errors
+///
+/// A message when `raw` is neither null nor an object.
+fn read_reply_result(
+    raw: &Value,
+    path: &str,
+) -> Result<(Option<ReportedResult>, Option<String>), String> {
+    let Some(object) = raw.as_object() else {
+        if raw.is_null() {
+            return Ok((None, None));
+        }
+        return Err(format!("{path}result is not an object"));
+    };
+    let mut object = object.clone();
+    if let Some(level) = object.get("ci_level").and_then(Value::as_f64) {
+        if 1.0 < level && level < PERCENT {
+            object.insert("ci_level".to_string(), json!(level / PERCENT));
+        } else if !(0.0 < level && level < 1.0) {
+            return Ok((None, Some(format!("result.{CI_LEVEL_RANGE}"))));
+        }
+    }
+    Ok(read_result(&Value::Object(object), "").unwrap_or_else(|reason| (None, Some(reason))))
+}
+
+/// Read a `result` in its wire form (`ci_level` a fraction) into
+/// `(result, result_error)`: the strict reader behind
+/// [`ProposedOutcome::from_json`], and behind `read_reply_result` once the
+/// level is a fraction. Python's `_read_result`.
 ///
 /// # Errors
 ///
@@ -339,8 +383,10 @@ impl OutcomeProposal {
 ///
 /// A message when `min_similarity` is outside (0, 1], the reply is not an
 /// object, `primary_outcomes` is not a list, an outcome is not an object or
-/// has no name, a timepoint is not text, or a result is not readable. The
-/// message names the outcome (`primary_outcomes[1].`) and the field.
+/// has no name, a timepoint is not text, or a result is present but not an
+/// object. The message names the outcome (`primary_outcomes[1].`) and the
+/// field. A field inside a result that cannot be read refuses that outcome's
+/// result only (its `result_error`).
 pub fn read_outcome_reply(
     data: &Value,
     text: &str,
@@ -373,7 +419,7 @@ pub fn read_outcome_reply(
         let raw = item
             .get("result")
             .ok_or_else(|| format!("{path}result is missing"))?;
-        let (result, result_error) = read_result(raw, &path)?;
+        let (result, result_error) = read_reply_result(raw, &path)?;
         let (citations, quotes_not_found, contradicted, quotes_dropped) =
             verify_quotes(item.get("quotes"), text, min_similarity).map_err(|e| e.to_string())?;
         outcomes.push(ProposedOutcome {
@@ -644,10 +690,6 @@ mod tests {
                 json!({"ci_high": null}),
                 "ci_low and ci_high must be given together",
             ),
-            (
-                json!({"ci_level": 95.0}),
-                "ci_level must be above 0 and below 1",
-            ),
             (json!({"n_analysed": -3}), N_ANALYSED_RANGE),
             (json!({"n_analysed": 4_294_967_296_u64}), N_ANALYSED_RANGE),
         ] {
@@ -673,58 +715,106 @@ mod tests {
     }
 
     #[test]
-    fn an_unreadable_result_refuses_the_reply() {
+    fn an_unreadable_field_refuses_only_that_outcomes_result() {
         for (raw, message) in [
             (
                 result(json!({"scale": "percent"})),
-                "primary_outcomes[0].result.scale \"percent\" is not a scale",
+                "result.scale \"percent\" is not a scale",
             ),
-            (
-                result(json!({"scale": 1})),
-                "primary_outcomes[0].result.scale is not text",
-            ),
+            (result(json!({"scale": 1})), "result.scale is not text"),
             (
                 result(json!({"measure": null})),
-                "primary_outcomes[0].result.measure is not text",
+                "result.measure is not text",
             ),
             (
                 result(json!({"estimate": null})),
-                "primary_outcomes[0].result.estimate is not a finite number",
+                "result.estimate is not a finite number",
             ),
             (
                 result(json!({"estimate": true})),
-                "primary_outcomes[0].result.estimate is not a finite number",
+                "result.estimate is not a finite number",
             ),
             (
                 result(json!({"estimate": "0.7"})),
-                "primary_outcomes[0].result.estimate is not a finite number",
+                "result.estimate is not a finite number",
             ),
             (
                 result(json!({"ci_low": "low"})),
-                "primary_outcomes[0].result.ci_low is not a finite number",
+                "result.ci_low is not a finite number",
             ),
             (
                 result(json!({"n_analysed": 1200.5})),
-                "primary_outcomes[0].result.n_analysed is not a whole number",
+                "result.n_analysed is not a whole number",
             ),
             (
                 result(json!({"n_analysed": 1200.0})),
-                "primary_outcomes[0].result.n_analysed is not a whole number",
+                "result.n_analysed is not a whole number",
             ),
             (
                 result(json!({"n_analysed": true})),
-                "primary_outcomes[0].result.n_analysed is not a whole number",
+                "result.n_analysed is not a whole number",
             ),
             (
-                json!("risk ratio 0.7"),
-                "primary_outcomes[0].result is not an object",
+                result(json!({"ci_low": "NR"})),
+                "result.ci_low is not a finite number",
             ),
         ] {
+            let second = outcome(json!({"name": "Hospitalisation"}));
+            let proposal = read_outcome_reply(
+                &reply(vec![outcome(json!({"result": raw})), second]),
+                TEXT,
+                SIM,
+            )
+            .expect("read");
+            let (bad, good) = (&proposal.outcomes[0], &proposal.outcomes[1]);
+            assert_eq!(bad.result, None);
+            assert_eq!(bad.result_error.as_deref(), Some(message));
+            assert_eq!(bad.citations.len(), 1, "the outcome itself stands");
+            assert!(good.result.is_some() && good.result_error.is_none());
+        }
+    }
+
+    #[test]
+    fn a_result_that_is_not_an_object_refuses_the_reply() {
+        assert_eq!(
+            err_of(&reply(vec![outcome(json!({"result": "risk ratio 0.7"}))])),
+            "primary_outcomes[0].result is not an object"
+        );
+    }
+
+    #[test]
+    fn the_level_is_read_as_printed() {
+        for (printed, level) in [(json!(95), 0.95), (json!(90.0), 0.9), (json!(0.95), 0.95)] {
+            let found = only(&reply(vec![outcome(
+                json!({"result": result(json!({"ci_level": printed}))}),
+            )]));
+            assert_eq!(found.result.expect("a result").ci_level, Some(level));
+        }
+    }
+
+    #[test]
+    fn a_level_neither_percentage_nor_fraction_is_refused_naming_it() {
+        for printed in [json!(0), json!(1), json!(100), json!(150), json!(-95)] {
+            let found = only(&reply(vec![outcome(
+                json!({"result": result(json!({"ci_level": printed}))}),
+            )]));
+            assert_eq!(found.result, None);
             assert_eq!(
-                err_of(&reply(vec![outcome(json!({"result": raw}))])),
-                message
+                found.result_error.as_deref(),
+                Some(&*format!("result.{CI_LEVEL_RANGE}"))
             );
         }
+    }
+
+    #[test]
+    fn a_stored_level_is_a_fraction_and_is_not_converted() {
+        let mut stored = only(&reply(vec![outcome(json!({}))])).to_json();
+        stored["result"]["ci_level"] = json!(95);
+        let refused = ProposedOutcome::from_json(&stored).expect_err("refused");
+        assert!(
+            refused.contains("ci_level must be above 0 and below 1"),
+            "{refused}"
+        );
     }
 
     #[test]
@@ -962,12 +1052,12 @@ mod tests {
 
     #[test]
     fn an_unreadable_reply_is_asked_twice_then_refused() {
-        let bad = reply(vec![outcome(
-            json!({"result": result(json!({"scale": "percent"}))}),
-        )]);
+        let bad = reply(vec![outcome(json!({"result": "risk ratio 0.7"}))]);
         let mut chat = Canned::of(bad);
         let result = OutcomeAgent::new(&mut chat).propose("A trial", TEXT, SIM);
-        assert!(matches!(&result, Err(ProposalError::Unreadable(m)) if m.contains("scale")));
+        assert!(
+            matches!(&result, Err(ProposalError::Unreadable(m)) if m.contains("result is not an object"))
+        );
         assert_eq!(chat.sent.len(), 2);
     }
 
