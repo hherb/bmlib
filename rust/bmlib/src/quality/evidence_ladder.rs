@@ -24,6 +24,7 @@
 //! `tests/fixtures/evidence_ladder.json` holds both to them.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::data_models::StudyDesign;
 use super::rob2_algorithm::Judgement;
@@ -36,6 +37,15 @@ pub const RATIO_NO_EFFECT: f64 = 1.0;
 
 /// The value of a difference measure that means no effect.
 pub const DIFFERENCE_NO_EFFECT: f64 = 0.0;
+
+/// The smallest table weight a setting may give.
+pub const WEIGHT_MIN: f64 = 0.0;
+
+/// The largest table weight a setting may give.
+pub const WEIGHT_MAX: f64 = 1.0;
+
+/// Message for weights that increase down the ladder.
+const WEIGHT_ORDER: &str = "the weights must not increase from weight_high to weight_very_low";
 
 /// Certainty of the evidence, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,8 +157,12 @@ impl ReportedResult {
 }
 
 /// Every number the ladder uses; the defaults are the shipped rules.
+///
+/// Deserialising refuses an unknown field and anything
+/// [`LadderSettings::validate`] refuses, in Python's words; an absent field
+/// takes its default (Python's `settings_from_wire`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(try_from = "Value")]
 pub struct LadderSettings {
     /// Levels lost to "some concerns" overall risk of bias.
     pub some_concerns_steps: u8,
@@ -193,7 +207,108 @@ impl Default for LadderSettings {
     }
 }
 
+/// Refuse `weight` for the setting `name` unless it is a finite number from 0 to 1.
+fn check_weight(name: &str, weight: f64) -> Result<f64, String> {
+    if weight.is_finite() && (WEIGHT_MIN..=WEIGHT_MAX).contains(&weight) {
+        Ok(weight)
+    } else {
+        Err(format!("{name} must be a finite number from 0 to 1"))
+    }
+}
+
+impl TryFrom<Value> for LadderSettings {
+    type Error = String;
+
+    /// Read settings field by field, in declaration order, as Python's
+    /// `settings_from_wire` does, then [`LadderSettings::validate`].
+    fn try_from(raw: Value) -> Result<Self, String> {
+        const FIELDS: [&str; 11] = [
+            "some_concerns_steps",
+            "high_steps",
+            "crosses_no_effect_steps",
+            "small_trial_n",
+            "small_trial_steps",
+            "no_interval_steps",
+            "max_imprecision_steps",
+            "weight_high",
+            "weight_moderate",
+            "weight_low",
+            "weight_very_low",
+        ];
+        let Value::Object(map) = raw else {
+            return Err("the ladder settings are not an object".to_string());
+        };
+        let mut keys: Vec<&String> = map.keys().collect();
+        keys.sort();
+        if let Some(unknown) = keys.into_iter().find(|k| !FIELDS.contains(&k.as_str())) {
+            return Err(format!("\"{unknown}\" is not a ladder setting"));
+        }
+        let steps = |name: &str, default: u8| -> Result<u8, String> {
+            map.get(name).map_or(Ok(default), |v| {
+                v.as_u64()
+                    .and_then(|n| u8::try_from(n).ok())
+                    .ok_or_else(|| format!("{name} must be a whole number that fits 8 bits"))
+            })
+        };
+        let weight = |name: &str, default: f64| -> Result<f64, String> {
+            map.get(name).map_or(Ok(default), |v| {
+                v.as_f64()
+                    .ok_or_else(|| format!("{name} must be a finite number from 0 to 1"))
+                    .and_then(|w| check_weight(name, w))
+            })
+        };
+        let d = LadderSettings::default();
+        let settings = LadderSettings {
+            some_concerns_steps: steps(FIELDS[0], d.some_concerns_steps)?,
+            high_steps: steps(FIELDS[1], d.high_steps)?,
+            crosses_no_effect_steps: steps(FIELDS[2], d.crosses_no_effect_steps)?,
+            small_trial_n: map.get(FIELDS[3]).map_or(Ok(d.small_trial_n), |v| {
+                v.as_u64()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or_else(|| {
+                        format!("{} must be a whole number that fits 32 bits", FIELDS[3])
+                    })
+            })?,
+            small_trial_steps: steps(FIELDS[4], d.small_trial_steps)?,
+            no_interval_steps: steps(FIELDS[5], d.no_interval_steps)?,
+            max_imprecision_steps: steps(FIELDS[6], d.max_imprecision_steps)?,
+            weight_high: weight(FIELDS[7], d.weight_high)?,
+            weight_moderate: weight(FIELDS[8], d.weight_moderate)?,
+            weight_low: weight(FIELDS[9], d.weight_low)?,
+            weight_very_low: weight(FIELDS[10], d.weight_very_low)?,
+        };
+        settings.validate()?;
+        Ok(settings)
+    }
+}
+
 impl LadderSettings {
+    /// Refuse settings the ladder cannot use (Python's `__post_init__`).
+    ///
+    /// Each weight must be a finite number from 0 to 1 (checked in field
+    /// order), and the weights must not increase from `weight_high` to
+    /// `weight_very_low`. The step counts and `small_trial_n` are whole
+    /// numbers by type.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the first weight refused, or the order.
+    pub fn validate(&self) -> Result<(), String> {
+        let weights = [
+            ("weight_high", self.weight_high),
+            ("weight_moderate", self.weight_moderate),
+            ("weight_low", self.weight_low),
+            ("weight_very_low", self.weight_very_low),
+        ];
+        for (name, weight) in weights {
+            check_weight(name, weight)?;
+        }
+        if weights.windows(2).any(|pair| pair[0].1 < pair[1].1) {
+            return Err(WEIGHT_ORDER.to_string());
+        }
+        Ok(())
+    }
+
     /// The table weight of a level.
     pub fn weight(&self, level: Level) -> f64 {
         match level {
@@ -257,14 +372,16 @@ pub fn start_level(design: StudyDesign) -> Option<Level> {
 ///
 /// A risk-of-bias step always appears (0 levels for Low). Imprecision steps are
 /// summed, capped at `max_imprecision_steps` (the cap trims from the last step
-/// back), and the level never drops below `VeryLow`. `Err` only for a result
-/// that fails [`ReportedResult::validate`].
+/// back), and the level never drops below `VeryLow`. `Err` only for settings
+/// that fail [`LadderSettings::validate`] or a result that fails
+/// [`ReportedResult::validate`].
 pub fn build_ladder(
     start: Level,
     rob_overall: Judgement,
     result: Option<&ReportedResult>,
     settings: &LadderSettings,
 ) -> Result<EvidenceLadder, String> {
+    settings.validate()?;
     if let Some(result) = result {
         result.validate()?;
     }

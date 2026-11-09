@@ -622,5 +622,189 @@
     "n_analysed": 10
    }
   }
+ ],
+ "settings_refusals": [
+  {
+   "name": "not an object",
+   "settings": [
+    1,
+    2
+   ],
+   "error": "the ladder settings are not an object"
+  },
+  {
+   "name": "unknown field",
+   "settings": {
+    "weight_high": 1.0,
+    "extra_steps": 1,
+    "another": 2
+   },
+   "error": "\"another\" is not a ladder setting"
+  },
+  {
+   "name": "negative step count",
+   "settings": {
+    "some_concerns_steps": -1
+   },
+   "error": "some_concerns_steps must be a whole number that fits 8 bits"
+  },
+  {
+   "name": "step count over 8 bits",
+   "settings": {
+    "high_steps": 256
+   },
+   "error": "high_steps must be a whole number that fits 8 bits"
+  },
+  {
+   "name": "step count a float",
+   "settings": {
+    "no_interval_steps": 1.0
+   },
+   "error": "no_interval_steps must be a whole number that fits 8 bits"
+  },
+  {
+   "name": "step count a bool",
+   "settings": {
+    "max_imprecision_steps": true
+   },
+   "error": "max_imprecision_steps must be a whole number that fits 8 bits"
+  },
+  {
+   "name": "step count null",
+   "settings": {
+    "small_trial_steps": null
+   },
+   "error": "small_trial_steps must be a whole number that fits 8 bits"
+  },
+  {
+   "name": "small trial over 32 bits",
+   "settings": {
+    "small_trial_n": 4294967296
+   },
+   "error": "small_trial_n must be a whole number that fits 32 bits"
+  },
+  {
+   "name": "small trial negative",
+   "settings": {
+    "small_trial_n": -400
+   },
+   "error": "small_trial_n must be a whole number that fits 32 bits"
+  },
+  {
+   "name": "weight above 1",
+   "settings": {
+    "weight_high": 1.5
+   },
+   "error": "weight_high must be a finite number from 0 to 1"
+  },
+  {
+   "name": "weight below 0",
+   "settings": {
+    "weight_very_low": -0.1
+   },
+   "error": "weight_very_low must be a finite number from 0 to 1"
+  },
+  {
+   "name": "weight text",
+   "settings": {
+    "weight_low": "0.4"
+   },
+   "error": "weight_low must be a finite number from 0 to 1"
+  },
+  {
+   "name": "first refused field wins",
+   "settings": {
+    "weight_low": 2.0,
+    "high_steps": -1
+   },
+   "error": "high_steps must be a whole number that fits 8 bits"
+  },
+  {
+   "name": "weights increase",
+   "settings": {
+    "weight_moderate": 0.3,
+    "weight_low": 0.4
+   },
+   "error": "the weights must not increase from weight_high to weight_very_low"
+  }
+ ],
+ "settings_read": [
+  {
+   "name": "empty is the defaults",
+   "settings": {},
+   "expected": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   }
+  },
+  {
+   "name": "one field given",
+   "settings": {
+    "small_trial_n": 100
+   },
+   "expected": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 100,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   }
+  },
+  {
+   "name": "equal weights allowed",
+   "settings": {
+    "weight_moderate": 1.0,
+    "weight_low": 0.0,
+    "weight_very_low": 0.0
+   },
+   "expected": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 1.0,
+    "weight_low": 0.0,
+    "weight_very_low": 0.0
+   }
+  },
+  {
+   "name": "integer weights",
+   "settings": {
+    "weight_high": 1,
+    "weight_very_low": 0
+   },
+   "expected": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.0
+   }
+  }
  ]
 }

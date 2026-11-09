@@ -104,6 +104,56 @@ fn every_refusal_is_refused() {
 }
 
 #[test]
+fn every_settings_refusal_names_its_field() {
+    let fixture = fixture();
+    let refusals = fixture["settings_refusals"].as_array().expect("cases");
+    assert!(!refusals.is_empty());
+    for case in refusals {
+        let error = serde_json::from_value::<LadderSettings>(case["settings"].clone())
+            .expect_err("refused")
+            .to_string();
+        assert_eq!(error, case["error"].as_str().expect("text"), "{}", case["name"]);
+    }
+}
+
+#[test]
+fn settings_read_from_the_wire_take_defaults_for_what_is_absent() {
+    let fixture = fixture();
+    let cases = fixture["settings_read"].as_array().expect("cases");
+    assert!(!cases.is_empty());
+    for case in cases {
+        let settings: LadderSettings = wire(&case["settings"]);
+        assert_eq!(to_value(&settings), case["expected"], "{}", case["name"]);
+    }
+}
+
+#[test]
+fn build_ladder_refuses_settings_that_do_not_validate() {
+    let settings = LadderSettings {
+        weight_low: 0.9,
+        ..LadderSettings::default()
+    };
+    let refused = build_ladder(
+        bmlib::quality::evidence_ladder::Level::High,
+        bmlib::quality::rob2_algorithm::Judgement::Low,
+        None,
+        &settings,
+    );
+    assert_eq!(
+        refused,
+        Err("the weights must not increase from weight_high to weight_very_low".to_string())
+    );
+    let nan = LadderSettings {
+        weight_high: f64::NAN,
+        ..LadderSettings::default()
+    };
+    assert_eq!(
+        nan.validate(),
+        Err("weight_high must be a finite number from 0 to 1".to_string())
+    );
+}
+
+#[test]
 fn paper_weights() {
     for case in fixture()["paper_weights"].as_array().expect("cases") {
         let ladders: Vec<EvidenceLadder> = wire(&case["ladders"]);

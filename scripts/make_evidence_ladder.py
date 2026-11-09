@@ -43,6 +43,7 @@ from bmlib.quality.evidence_ladder import (
     ReportedResult,
     build_ladder,
     paper_weight,
+    settings_from_wire,
     settings_to_wire,
     start_level,
 )
@@ -138,6 +139,33 @@ def _result_wire(result: ReportedResult | None) -> dict[str, Any] | None:
     }
 
 
+# (name, settings as JSON); each is refused by ``settings_from_wire``.
+SETTINGS_REFUSALS: list[tuple[str, Any]] = [
+    ("not an object", [1, 2]),
+    ("unknown field", {"weight_high": 1.0, "extra_steps": 1, "another": 2}),
+    ("negative step count", {"some_concerns_steps": -1}),
+    ("step count over 8 bits", {"high_steps": 256}),
+    ("step count a float", {"no_interval_steps": 1.0}),
+    ("step count a bool", {"max_imprecision_steps": True}),
+    ("step count null", {"small_trial_steps": None}),
+    ("small trial over 32 bits", {"small_trial_n": 2**32}),
+    ("small trial negative", {"small_trial_n": -400}),
+    ("weight above 1", {"weight_high": 1.5}),
+    ("weight below 0", {"weight_very_low": -0.1}),
+    ("weight text", {"weight_low": "0.4"}),
+    ("first refused field wins", {"weight_low": 2.0, "high_steps": -1}),
+    ("weights increase", {"weight_moderate": 0.3, "weight_low": 0.4}),
+]
+
+# (name, settings as JSON); each is read, absent fields taking their defaults.
+SETTINGS_READ: list[tuple[str, Any]] = [
+    ("empty is the defaults", {}),
+    ("one field given", {"small_trial_n": 100}),
+    ("equal weights allowed", {"weight_moderate": 1.0, "weight_low": 0.0, "weight_very_low": 0.0}),
+    ("integer weights", {"weight_high": 1, "weight_very_low": 0}),
+]
+
+
 def build_contract() -> dict[str, Any]:
     """Build the whole contract from the Python implementation."""
     cases = []
@@ -163,6 +191,18 @@ def build_contract() -> dict[str, Any]:
         else:
             raise AssertionError(f"{name} was accepted")
         refusals.append({"name": name, "result": _result_wire(result)})
+    settings_refusals = []
+    for name, wire in SETTINGS_REFUSALS:
+        try:
+            settings_from_wire(wire)
+        except ValueError as exc:
+            settings_refusals.append({"name": name, "settings": wire, "error": str(exc)})
+        else:
+            raise AssertionError(f"{name} was accepted")
+    settings_read = [
+        {"name": name, "settings": wire, "expected": settings_to_wire(settings_from_wire(wire))}
+        for name, wire in SETTINGS_READ
+    ]
     low = build_ladder(Level.HIGH, Judgement.HIGH, None, LadderSettings())
     high = build_ladder(
         Level.HIGH,
@@ -183,6 +223,8 @@ def build_contract() -> dict[str, Any]:
             {"ladders": [], "expected": None},
         ],
         "refusals": refusals,
+        "settings_refusals": settings_refusals,
+        "settings_read": settings_read,
     }
 
 

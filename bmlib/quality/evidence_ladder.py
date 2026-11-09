@@ -30,7 +30,7 @@ refused here too, never coerced.
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from enum import Enum
 from typing import Any
 
@@ -51,6 +51,14 @@ U8_MAX = 2**8 - 1
 
 U32_MAX = 2**32 - 1
 """Largest sample size Rust's ``u32`` holds; Python refuses more."""
+
+WEIGHT_MIN = 0.0
+"""The smallest table weight a setting may give."""
+
+WEIGHT_MAX = 1.0
+"""The largest table weight a setting may give."""
+
+_WEIGHT_ORDER = "the weights must not increase from weight_high to weight_very_low"
 
 
 class Level(Enum):
@@ -145,6 +153,27 @@ class LadderSettings:
     weight_moderate: float = 0.7
     weight_low: float = 0.4
     weight_very_low: float = 0.1
+
+    def __post_init__(self) -> None:
+        """Refuse settings Rust's types or ``LadderSettings::validate`` refuse.
+
+        Field by field in order: a step count is a whole number that fits 8
+        bits, ``small_trial_n`` one that fits 32 bits (a bool is neither),
+        each weight a finite number from 0 to 1 (kept as a float); then the
+        weights must not increase from ``weight_high`` to ``weight_very_low``.
+
+        Raises:
+            ValueError: Naming the first field refused, in Rust's words.
+        """
+        for item in fields(self):
+            value = getattr(self, item.name)
+            _check_setting(item.name, value)
+            if item.name.startswith("weight_"):
+                # A weight of ``1`` is the float Rust holds, so the wire forms agree.
+                object.__setattr__(self, item.name, float(value))
+        weights = [self.weight_high, self.weight_moderate, self.weight_low, self.weight_very_low]
+        if any(a < b for a, b in zip(weights, weights[1:], strict=False)):
+            raise ValueError(_WEIGHT_ORDER)
 
     def weight(self, level: Level) -> float:
         """The table weight of a level."""
@@ -284,9 +313,38 @@ class EvidenceLadder:
             raise ValueError("start or level is not a level") from None
 
 
+def _check_setting(name: str, value: object) -> None:
+    """Refuse *value* for the setting *name* as Rust's ``LadderSettings`` would."""
+    if name.startswith("weight_"):
+        if not _is_number(value) or not WEIGHT_MIN <= value <= WEIGHT_MAX:  # type: ignore[operator]
+            raise ValueError(f"{name} must be a finite number from 0 to 1")
+        return
+    bits, largest = (32, U32_MAX) if name == "small_trial_n" else (8, U8_MAX)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= largest:
+        raise ValueError(f"{name} must be a whole number that fits {bits} bits")
+
+
 def settings_to_wire(settings: LadderSettings) -> dict[str, Any]:
     """The JSON form of settings, field for field."""
     return asdict(settings)
+
+
+def settings_from_wire(raw: object) -> LadderSettings:
+    """Rebuild settings from :func:`settings_to_wire` output; Rust's deserialisation.
+
+    An absent field takes its default; an unknown one is refused.
+
+    Raises:
+        ValueError: *raw* is not an object, names a field that is not a
+            setting (the first in sorted order), or a value is refused (see
+            :meth:`LadderSettings.__post_init__`).
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("the ladder settings are not an object")
+    unknown = sorted(set(raw) - {item.name for item in fields(LadderSettings)})
+    if unknown:
+        raise ValueError(f'"{unknown[0]}" is not a ladder setting')
+    return LadderSettings(**raw)
 
 
 def start_level(design: StudyDesign) -> Level | None:

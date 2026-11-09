@@ -39,6 +39,7 @@ from bmlib.quality.evidence_ladder import (
     Level,
     ReportedResult,
     build_ladder,
+    settings_from_wire,
     settings_to_wire,
     start_level,
 )
@@ -86,6 +87,20 @@ def test_every_refusal_is_refused() -> None:
     for c in CONTRACT["refusals"]:
         with pytest.raises(ValueError):
             _result(c["result"]).validate()  # type: ignore[union-attr]
+
+
+def test_every_settings_refusal_names_its_field() -> None:
+    assert CONTRACT["settings_refusals"]
+    for c in CONTRACT["settings_refusals"]:
+        with pytest.raises(ValueError) as raised:
+            settings_from_wire(c["settings"])
+        assert str(raised.value) == c["error"], c["name"]
+
+
+def test_settings_read_from_the_wire_take_defaults_for_what_is_absent() -> None:
+    assert CONTRACT["settings_read"]
+    for c in CONTRACT["settings_read"]:
+        assert settings_to_wire(settings_from_wire(c["settings"])) == c["expected"], c["name"]
 
 
 def test_the_generator_still_builds_the_fixture() -> None:

@@ -165,3 +165,28 @@ def test_interval_without_a_stated_level_is_accepted_and_judged() -> None:
     r.validate()
     lad = build_ladder(Level.HIGH, Judgement.LOW, r, LadderSettings())
     assert lad.steps[1].reason == LadderReason.crosses_no_effect()
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {"some_concerns_steps": -1},
+            "some_concerns_steps must be a whole number that fits 8 bits",
+        ),
+        ({"high_steps": True}, "high_steps must be a whole number that fits 8 bits"),
+        ({"small_trial_n": 2**32}, "small_trial_n must be a whole number that fits 32 bits"),
+        ({"weight_high": math.nan}, "weight_high must be a finite number from 0 to 1"),
+        ({"weight_low": math.inf}, "weight_low must be a finite number from 0 to 1"),
+        ({"weight_low": 0.8}, "the weights must not increase from weight_high to weight_very_low"),
+    ],
+)
+def test_settings_the_ladder_cannot_use_are_refused(overrides: dict, message: str) -> None:
+    # A negative step once wrapped the level index round to the far end of the ladder.
+    with pytest.raises(ValueError) as raised:
+        LadderSettings(**overrides)
+    assert str(raised.value) == message
+
+
+def test_a_whole_number_weight_is_kept_as_a_float() -> None:
+    assert isinstance(LadderSettings(weight_high=1).weight_high, float)

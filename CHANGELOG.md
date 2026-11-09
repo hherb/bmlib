@@ -85,7 +85,13 @@ All notable changes to bmlib are documented here. The format is based on
   a trial starts at `high`, loses levels for RoB 2 overall judgement and for
   imprecision (interval includes no effect, small trial, no interval; capped),
   and ends at a level whose table weight (`LadderSettings`) is the number. An
-  incoherent `ReportedResult` is refused, never repaired. Contract:
+  incoherent `ReportedResult` is refused, never repaired. `LadderSettings` is
+  validated in both languages, with the same messages: step counts fit 8 bits,
+  `small_trial_n` 32 bits, each weight is finite and from 0 to 1, and the
+  weights do not increase down the ladder (Python on construction; Rust in
+  `LadderSettings::validate`, which `build_ladder` and deserialisation use).
+  `settings_from_wire` / Rust's deserialisation refuse an unknown field and
+  default an absent one. Contract:
   `tests/fixtures/evidence_ladder.json`, written by `scripts/make_evidence_ladder.py`.
 - **RoB 2 decision rules** (StudyAnalyzer evidence weight, piece 4a). The
   official mapping tables of the 2019 guidance (Tables 1, 3-4, 6, 10, 12, 14)
