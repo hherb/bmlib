@@ -27,7 +27,8 @@ so it is free to fix now and costs a breaking change later:
    0.12.0 too). Fixed by bounding what is built (see *Earlier*). **#656
    stays open past the release** (the maintainer's choice: keep the 2M cap).
 2. ~~**#647**~~ (PR #727, open) — a PICO quote rejected as a contradiction
-   keeps its reason; a part holding only such quotes is `CONTRADICTED`.
+   keeps its reason; a reported part with no citation and at least one
+   such quote is `CONTRADICTED`.
 3. **Decisions for the maintainer**, then implement: **#708** (`chat_json`'s
    no-retry-at-temperature-0 rule assumes greedy sampling, false for
    Anthropic since #705) and **#665** (a bmlib defect in one batch of a
@@ -82,6 +83,12 @@ The maintainer chose (2026-11-09) a parallel list plus a state of its own:
   `contradicted_quotes` (both copies of `pico_agent_cases.json`).
 - **For StudyAnalyzer**: show `CONTRADICTED` apart from *Unsure* ("the model
   misreported <part>"), and add the arm to any exhaustive `match`.
+- PR #727's review: Python's `PicoPart` now refuses a quote in both lists and
+  a member that is not a `PicoContradictedQuote`, and `PicoContradictedQuote`
+  refuses a non-text quote (Rust's public fields enforce nothing, as before).
+  The state ladder and the counted confidence are in `docs/DECISIONS.md`;
+  whether a misreported part's confidence should lift `overall_confidence`
+  is the maintainer's to revisit.
 
 ## Earlier, 2026-11-09: an HTML page's parse bounded by its memory (#723, PR #724, merged)
 

@@ -36,7 +36,8 @@ pub enum PicoPartState {
     /// At least one of the model's quotes was found in the paper.
     Verified,
     /// The model described the part, but none of its quotes was found (or it
-    /// gave none). The description is kept for a reader to judge.
+    /// gave none) and none was contradicted. The description is kept for a
+    /// reader to judge.
     Unverified,
     /// The model described the part, none of its quotes was found, and at
     /// least one is a near-verbatim copy of the paper with a number, a
@@ -235,9 +236,10 @@ impl PicoContradictedQuote {
 
 /// One of the four PICO parts.
 ///
-/// A part is `Verified` exactly when it carries a citation, and a reported
-/// part without one is `Contradicted` exactly when it carries a contradicted
-/// quote.
+/// As [`crate::quality::read_part`] builds it, a part is `Verified` exactly
+/// when it carries a citation, and a reported part without one is
+/// `Contradicted` exactly when it carries a contradicted quote. The fields are
+/// public, so nothing enforces this on a part built by hand.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PicoPart {
     /// The model's description, kept whatever the state.

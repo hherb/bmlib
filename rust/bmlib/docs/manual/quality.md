@@ -385,7 +385,8 @@ assert_eq!(pico.outcome.state, PicoPartState::NotReported);
 
 A quote that `find_passage` rejected as a contradiction (a number, a negation
 or a direction changed) is kept in `quotes_contradicted` with its reason, and a
-reported part holding only such quotes is `PicoPartState::Contradicted`: the
+reported part with no citation and at least one such quote is
+`PicoPartState::Contradicted`: the
 model misreported the paper *(unreleased, #647)*.
 
 Citation offsets are `char` indices into `text` exactly as passed. Quotes are

@@ -27,8 +27,9 @@ All notable changes to bmlib are documented here. The format is based on
   parses in a child Python process, which an application with no interpreter
   to start cannot have, so it raises `RuntimeError` there; and the `html`
   extra needs `psutil`. See *Fixed*.
-- **A PICO quote the paper contradicts keeps its reason, and a part holding
-  only such quotes is `CONTRADICTED`** (#647; both languages; **breaking**).
+- **A PICO quote the paper contradicts keeps its reason, and a reported part
+  with no citation and at least one such quote is `CONTRADICTED`** (#647;
+  both languages; **breaking**).
   Since #632 `find_passage` rejects a near-verbatim quote whose best window
   changes a number, a negation or a direction; the PICO agent used to file
   it in `quotes_not_found` beside quotes that matched nothing, so the reason
@@ -38,7 +39,8 @@ All notable changes to bmlib are documented here. The format is based on
   reported part with no citation and at least one such quote is the new
   `PicoPartState.CONTRADICTED`: the model misreported the paper.
   `to_dict()` writes `quotes_contradicted`; `from_dict()` reads a record
-  without it as empty, which is true of every record written before #647.
+  without it as empty, which is true of every record 0.12.0 wrote (its
+  `find_passage` rejected no quote as a contradiction).
   `verify_quotes` returns `(citations, not_found, contradicted, dropped)`
   (Rust's `QuoteCheck` likewise). A caller matching on `PicoPartState` needs
   the new member; `pico_agent_cases.json` gains `contradicted_quotes`.
@@ -153,7 +155,8 @@ All notable changes to bmlib are documented here. The format is based on
   counted as one dropped quote and the part read `UNVERIFIED`. Quotes given
   beside `reported: false` are checked rather than discarded uncounted: one
   the paper holds makes the part `VERIFIED` (its confidence then counts in
-  the mean), and the rest stay in `quotes_not_found` and `quotes_dropped`,
+  the mean), and the rest stay in `quotes_not_found`, `quotes_dropped` and
+  (#647) `quotes_contradicted`,
   so `PicoPart` no longer refuses a `NOT_REPORTED` part that carries them. A
   part that stays not reported may have a blank description (`null` or
   absent reads as `""`), where `{"description": "", "reported": false}` was
@@ -735,8 +738,9 @@ All notable changes to bmlib are documented here. The format is based on
   **`CONTRADICTION_RULES_VERSION`** (1), which a test pins to a digest of
   the guard's code and data. Only the best window is checked, and
   an exact match never. **What moves**: a quote `PicoAgent` used to verify by
-  such a window is now `not_found`, so a part whose only quote it was becomes
-  `UNVERIFIED`, and why is not recorded (#647). Three hand-written contract
+  such a window is now rejected, and since #647 (same release) it is kept
+  in `quotes_contradicted` with its reason, a part with no citation then
+  reading `CONTRADICTED`. Three hand-written contract
   cases had pinned harmful accepts (`effective` for `ineffective`, `=` for `≠`
   twice) and now expect the rejection; of the oracle's 144 fuzzy-accepted
   cases, 56 are rejected (50 synthetic random edits and 6 hand-written: the

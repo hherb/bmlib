@@ -394,7 +394,7 @@ def read_part(value: object, text: str, min_similarity: float) -> PicoPart:
 
     Quotes given beside ``reported: false`` are verified too (#577): one the
     paper holds makes the part reported, and the rest stay on the part as not
-    found or dropped.  A part that stays not reported may have a blank or
+    found, contradicted or dropped.  A part that stays not reported may have a blank or
     absent description, read as ``""`` when absent (#618); a reported part
     may not.
 
