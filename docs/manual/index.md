@@ -31,7 +31,7 @@ pip install -e ".[all,dev]"
 | `html`           | `pip install bmlib[html]`          | `canonical_from_html()` — an HTML page's main content as canonical text (markupever, html5ever) *(0.12.0)* |
 | `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`) *(0.12.0)* |
 | `secrets`        | `pip install bmlib[secrets]`       | `bmlib.secrets.KeyringVault`, API keys in the OS keychain (keyring) *(0.13.0)* |
-| `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
+| `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2, types-psutil |
 | `all`            | `pip install bmlib[all]`           | Every runtime extra above but `embed` (**not** `dev`)  |
 
 ## Module Overview

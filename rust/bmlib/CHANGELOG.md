@@ -32,7 +32,10 @@ created (#563, #654, #723), and the PDF segmenter reaches pdf-7 with Python
 A minor bump because public APIs break, gathered under *Changed — breaking*;
 each entry carries the argument. The data answer is the Python CHANGELOG's
 `[0.13.0]`: stored PDF and Markdown canonical texts are stale
-(`PDF_CANONICAL_VERSION` 7, `MARKDOWN_VERSION` 2), nothing else stored moves.
+(`PDF_CANONICAL_VERSION` 7, `MARKDOWN_VERSION` 2). Two more are the crate's
+own: a re-run stores a closed-access 500's `full_text_status` as `NotServed`,
+with its provenance line (#608), and `record_to_fulltext_sources` no longer
+stores a source whose `url` is empty (#624). Nothing else stored moves.
 
 These Rust changes are written up once, in the repository's
 [`CHANGELOG.md`](../../CHANGELOG.md) under `[0.13.0]`, which carries the

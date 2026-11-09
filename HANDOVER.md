@@ -27,7 +27,7 @@ is done; this session did the housekeeping on `release/0.13.0`:
   (`Cargo.lock`, the FFI README, `bmlib_version()`'s doc, the crate manual's
   header), `BMLIB_VERSION` `"0.13.0"`, `rerun_rust_oracle.py --write` (the
   analyzer's `User-Agent` alone moved; 44 of 44 clean after).
-- **Markers**: 162 `unreleased` promoted (docs/manual and `ROADMAP.md` to
+- **Markers**: 206 `unreleased` promoted (docs/manual and `ROADMAP.md` to
   0.13.0, the crate manual's to 0.4.0); README's *Upgrading to 0.13*; the
   release's ROADMAP row.
 - **Gates rehearsed**: `uv build`, `twine check --strict` (both pass),

@@ -14,7 +14,8 @@ The LLM layer speaks to today's models: Anthropic thinking takes the shape
 each model reports (#707, #710) and Anthropic is sent no sampling parameters
 (#705); the retired Anthropic and Gemini default models are replaced;
 `chat_json` retries an unparseable reply with a correction note (#717),
-reads JSON as the Rust port's `serde_json` does (#572), and retries at
+reads JSON as the Rust port's `serde_json` does (#572; `-0` and numbers
+just below `f64::MAX` still differ, #716), and retries at
 temperature 0 where no temperature is sent (#708); a model's output limit is
 read beside its window; a cancelled stream gives its request up at the
 socket (#635, #649); and a malformed body from any provider is a

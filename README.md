@@ -80,10 +80,10 @@ models and `SectionSegmenter` all import on a core install.
 | `publications` | `pip install bmlib[publications]` | Publication sync and record lookup (httpx) |
 | `fulltext` | `pip install bmlib[fulltext]` | `FullTextService` retrieval (httpx) |
 | `pdf` | `pip install bmlib[pdf]` | PDF → text (PyMuPDF) |
-| `html` | `pip install bmlib[html]` | `canonical_from_html`: an HTML page's main content as canonical text (markupever, a binding to the html5ever parser) |
+| `html` | `pip install bmlib[html]` | `canonical_from_html`: an HTML page's main content as canonical text (markupever, a binding to the html5ever parser, run in a child process that psutil watches) |
 | `embed` | `pip install bmlib[embed]` | `bmlib.embed.Embedder` (llama-cpp-python). It compiles llama.cpp, so it is not in `all` |
 | `secrets` | `pip install bmlib[secrets]` | `bmlib.secrets.KeyringVault`: API keys in the OS keychain (keyring) |
-| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
+| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2, types-psutil |
 | `all` | `pip install bmlib[all]` | Every runtime extra except `embed` (and **not** `dev`). Use `.[all,embed]` for both |
 
 ### Upgrading to 0.13
@@ -123,7 +123,7 @@ the Python manual. The Rust manual has a page for each module too.
 | [**fulltext**](docs/manual/fulltext.md) | Tiered retrieval (your own sources → Europe PMC XML/PDF → Unpaywall → DOI), a JATS parser that reports what it drops, PDF → text, section segmentation and a disk cache. **`fulltext.canonical`** gives one canonical text per paper from JATS, Markdown, plain text, a PDF or HTML, with every piece a code-point span, plus sentence-aware chunks and a check of whether the text is a whole paper |
 | [**embed**](docs/manual/embeddings.md) | snowflake-arctic-embed-l-v2.0 run in process from pinned, checksum-verified GGUF files. `embed.store` keeps a paper's chunks and vectors in the database and ranks them by cosine similarity, and refuses a vector set that is stale |
 | [**citations**](docs/manual/citations.md) | `[@id:N:Label]` citation markers, Vancouver/APA/Harvard/Chicago formatting, reference lists, and **`find_passage`**, which finds an LLM's near-verbatim quote in its source and returns the source's own wording. Pure stdlib |
-| [**secrets**](docs/manual/secrets.md) | API keys by provider in one OS keychain item, read once and cached. On macOS it is the same item as the Rust crate's *(unreleased)* |
+| [**secrets**](docs/manual/secrets.md) | API keys by provider in one OS keychain item, read once and cached. It is the same item as the Rust crate's *(0.13.0)* |
 
 ## Quick Start
 

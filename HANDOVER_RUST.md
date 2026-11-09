@@ -5,7 +5,7 @@ _Last updated: 2026-11-10. **0.4.0 is being released** with Python's 0.13.0 (bra
 the manual's header), `BMLIB_VERSION` is `"0.13.0"` with the analyzer oracle regenerated, and
 `bmlib/CHANGELOG.md` has its `[0.4.0]` section (repeated sub-headings merged, the breaks recorded
 under other headings pointed at, and the Rust changes the Python CHANGELOG carries alone listed
-under *Recorded in the Python CHANGELOG*). The 162 `unreleased` markers are promoted, the crate's
+in the paragraph above *Changed — breaking*). The 206 `unreleased` markers are promoted, the crate's
 manual to 0.4.0. Publish from a clean worktree of the merge commit, per *Publishing to crates.io*
 below, and remove the token link afterwards. **0.3.0 is on crates.io** from `d2ee803`, the merge
 of PR #611._
