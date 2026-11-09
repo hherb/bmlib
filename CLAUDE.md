@@ -148,6 +148,8 @@ bmlib/
 │   ├── evidence_ladder.py   # Evidence ladder (RoB + imprecision to a level and weight), pure; Rust evidence_ladder.rs, contract fixtures/evidence_ladder.json
 │   ├── design_agent.py      # Design proposal (study design + RCT layout, quotes verified), QueryCondenser seam; Rust design_agent.rs, contract fixtures/design_replies.json
 │   ├── outcome_agent.py     # Primary-outcome proposal (outcomes the paper calls primary + reported result, quotes verified); Rust outcome_agent.rs, contract fixtures/outcome_replies.json (scripts/make_outcome_replies.py)
+│   ├── rob2_questions.py    # RoB 2 questions in bmlib's own wording (22 ids), per-domain condense queries, escalation question; Rust rob2_questions.rs
+│   ├── rob2_agent.py        # RoB 2 assessor (one call per domain, D1 per trial, D2-D5 per outcome, quotes verified, escalation); Rust rob2_agent.rs, contracts fixtures/rob2_replies.json + rob2_run.json (scripts/make_rob2_fixtures.py)
 │   ├── _full_text_agent.py  # Shared base of the full-text agents (stop, num_ctx, condense-once, ask-until-readable, QueryCondenser); Rust full_text_agent.rs
 │   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
 │   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models

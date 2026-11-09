@@ -8,6 +8,27 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The RoB 2 assessor** (StudyAnalyzer evidence weight, piece 4).
+  `Rob2Agent` (`bmlib/quality/rob2_agent.py`, `rust/bmlib/src/quality/rob2_agent.rs`)
+  asks RoB 2's signalling questions one domain per call: D1 once for the trial,
+  D2-D5 once per primary outcome (`ProposedOutcome`'s name, timepoint and result
+  in the prompt; the D5 prompt asks for the registered or pre-specified primary
+  outcome to be compared with the reported one). `read_domain_reply` parses
+  `Y/PY/PN/N/NI` (case and space tolerated, `NA` read as unanswered), refuses an
+  applicable question left unanswered or an answer the question does not allow,
+  lists answers to questions that do not apply in `ignored`, derives the
+  judgement with `rob2_algorithm`, and verifies every quote against the original
+  text (`quotes_not_found`, `contradicted`, `quotes_dropped` as in the other
+  agents). When no domain is high and two or more have some concerns, one more
+  call asks whether to escalate. A domain whose reply stays unreadable or whose
+  request fails is `DomainResult::Failed` with its reason and the outcome's
+  `overall` is `None` (not assessed); a failed escalation leaves `overall` `None`
+  with `escalation_error`. Only a stop or refused input ends a run
+  (`Rob2RunError`). A paper over the window is condensed per domain, for that
+  domain's query, and flagged `condensed`. The 22 questions are bmlib's own
+  wording (`rob2_questions`; RoB 2's guidance is CC BY-NC-ND 4.0 and is not
+  copied). Contracts: `tests/fixtures/rob2_replies.json` and
+  `tests/fixtures/rob2_run.json`, written by `scripts/make_rob2_fixtures.py`.
 - **Primary outcomes and their results** (StudyAnalyzer evidence weight, piece 3).
   `OutcomeAgent` (`bmlib/quality/outcome_agent.py`,
   `rust/bmlib/src/quality/outcome_agent.rs`) asks the model for the outcomes the

@@ -1,0 +1,428 @@
+{
+ "algorithm_version": "rob2-2019-08-22/assignment/parallel/1",
+ "prompt_version": 1,
+ "study": {
+  "status": "assessed",
+  "domain": "D1",
+  "answers": {
+   "1.1": {
+    "answer": "Y",
+    "citations": [
+     {
+      "start": 0,
+      "end": 68,
+      "text": "Participants were randomly assigned using a computer-generated list.",
+      "similarity": 1.0,
+      "exact": true
+     }
+    ],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0,
+    "reasoning": "Because."
+   },
+   "1.2": {
+    "answer": "NI",
+    "citations": [],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0,
+    "reasoning": "Not described."
+   },
+   "1.3": {
+    "answer": "N",
+    "citations": [],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0,
+    "reasoning": "Because."
+   }
+  },
+  "judgement": "some_concerns",
+  "condensed": true,
+  "ignored": []
+ },
+ "outcomes": [
+  {
+   "outcome": "Systolic blood pressure",
+   "domains": [
+    {
+     "status": "assessed",
+     "domain": "D2",
+     "answers": {
+      "2.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.6": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D3",
+     "answers": {
+      "3.1": {
+       "answer": "Y",
+       "citations": [
+        {
+         "start": 248,
+         "end": 300,
+         "text": "Outcome data were available for 98% of participants.",
+         "similarity": 1.0,
+         "exact": true
+        }
+       ],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D4",
+     "answers": {
+      "4.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D5",
+     "answers": {
+      "5.1": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "5.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "5.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "some_concerns",
+     "condensed": false,
+     "ignored": []
+    }
+   ],
+   "escalation": {
+    "escalate": true,
+    "reasoning": "Concerns about concealment and the plan compound."
+   },
+   "escalation_error": null,
+   "overall": "high"
+  },
+  {
+   "outcome": "Diastolic blood pressure",
+   "domains": [
+    {
+     "status": "assessed",
+     "domain": "D2",
+     "answers": {
+      "2.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.6": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": [
+      "2.7"
+     ]
+    },
+    {
+     "status": "failed",
+     "domain": "D3",
+     "reason": "RoB 2 D3: 2 replies could not be read: answers.3.1 is missing"
+    },
+    {
+     "status": "assessed",
+     "domain": "D4",
+     "answers": {
+      "4.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D5",
+     "answers": {
+      "5.1": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "5.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "5.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    }
+   ],
+   "escalation": null,
+   "escalation_error": null,
+   "overall": null
+  },
+  {
+   "outcome": "Heart rate",
+   "domains": [
+    {
+     "status": "assessed",
+     "domain": "D2",
+     "answers": {
+      "2.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.6": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D3",
+     "answers": {
+      "3.1": {
+       "answer": "Y",
+       "citations": [
+        {
+         "start": 248,
+         "end": 300,
+         "text": "Outcome data were available for 98% of participants.",
+         "similarity": 1.0,
+         "exact": true
+        }
+       ],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D4",
+     "answers": {
+      "4.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D5",
+     "answers": {
+      "5.1": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "5.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "5.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "some_concerns",
+     "condensed": false,
+     "ignored": []
+    }
+   ],
+   "escalation": null,
+   "escalation_error": "RoB 2 escalation: down",
+   "overall": null
+  }
+ ]
+}

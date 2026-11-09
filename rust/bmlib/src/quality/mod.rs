@@ -32,6 +32,8 @@
 //! | `quality/study_classifier.py` | [`study_classifier`] | ported (Tier 2) |
 //! | `quality/quality_agent.py` | [`quality_agent`] | ported (Tier 3) |
 //! | `quality/cochrane_assessor.py` | [`cochrane_assessor`] | ported (Tier 4) |
+//! | `quality/rob2_questions.py` | [`rob2_questions`] | ported (evidence weight, piece 4) |
+//! | `quality/rob2_agent.py` | [`rob2_agent`] | ported (evidence weight, piece 4) |
 //!
 //! The three LLM tiers do not own a client. Each takes a
 //! [`agent_chat::JsonChat`] — the message-carrying form of
@@ -82,7 +84,9 @@ pub mod outcome_agent;
 pub mod pico_agent;
 pub mod pico_models;
 pub mod quality_agent;
+pub mod rob2_agent;
 pub mod rob2_algorithm;
+pub mod rob2_questions;
 pub mod scoring_models;
 pub mod study_classifier;
 
@@ -151,6 +155,11 @@ pub use pico_models::{
     PicoPrepared, PicoSuitability,
 };
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
+pub use rob2_agent::{
+    domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, rob2_overall,
+    DomainAssessment, DomainResult, Escalation, MachineAnswer, OutcomeRob2, Rob2Agent, Rob2Run,
+    Rob2RunError, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
+};
 pub use rob2_algorithm::{
     applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,
     questions, Answer, Answers, Domain, Judgement, Rob2Error, Scope, ROB2_ALGORITHM_VERSION,

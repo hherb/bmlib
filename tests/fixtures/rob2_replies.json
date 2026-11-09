@@ -1,0 +1,1589 @@
+{
+ "prompt_version": 1,
+ "system_prompt": "You are an expert in clinical research methodology and in assessing the risk of bias of randomised trials.\n\nCRITICAL RULES:\n1. Base every answer ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume or fabricate any information\n3. When the paper gives nothing to go on, answer NI (no information) rather than guess\n4. Return ONLY valid JSON, no explanation",
+ "domain_prompt": "Assess one domain of the risk of bias of the randomised trial in the research paper below, for the effect of assignment to the interventions (as an intention-to-treat analysis estimates it).\n\nAnswer every question listed below. For each give:\n- answer: \"Y\" (yes), \"PY\" (probably yes), \"PN\" (probably no), \"N\" (no) or \"NI\" (no information), as the question describes; \"NA\" (not applicable) only for a question that says it applies only under a condition, when that condition clearly does not hold\n- quotes: 1-3 passages copied VERBATIM from the paper that support the answer, or an empty list when the paper says nothing on it. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n- reasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape, one entry per question id:\n\n{\n    \"answers\": {\n        \"1.1\": {\n            \"answer\": \"PY\",\n            \"quotes\": [\"Participants were randomly assigned using a computer-generated list.\"],\n            \"reasoning\": \"A computer-generated list is a random sequence.\"\n        }\n    }\n}",
+ "d5_outcome_switching": "Compare the primary outcome this paper reports with the registered or pre-specified primary outcome the paper states (in its protocol, trial registration or statistical analysis plan). If they differ, say so in your reasoning and quote both statements.",
+ "escalation_prompt": "All five domains of this risk-of-bias assessment have been judged: none is at high risk of bias and at least two have some concerns. RoB 2 lets the assessor raise the overall judgement to high risk of bias when concerns in several domains, taken together, substantially lower confidence in the result. Using the domain judgements and answers below, decide whether these combined concerns warrant an overall judgement of high risk of bias for this result.\n\nescalate: true if the combined concerns substantially lower confidence in this result, false if the overall judgement should stay at some concerns.\nreasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"escalate\": false,\n    \"reasoning\": \"The concerns are minor and point in different directions.\"\n}",
+ "question_texts": {
+  "1.1": "Was the order in which participants were allocated to the groups produced by a genuinely random method? Answer Y if the paper describes a random method: computer-generated random numbers, a table of random numbers, minimisation, drawing lots, tossing a coin, or shuffling cards or envelopes. Answer N if allocation followed a predictable or non-random rule, such as alternation, date of birth or admission, record numbers, the choice of clinicians or participants, or whichever intervention happened to be available. Answer PY or PN when the paper does not say outright but its details clearly point one way. Answer NI if the paper only says the trial was randomised without saying how.",
+  "1.2": "Were the people enrolling participants unable to know or foresee which group the next participant would join until that participant had been enrolled and assigned? Answer Y if allocation was handled by someone independent of enrolment (for example a central telephone or web-based randomisation service, or an independent pharmacy), or by envelopes that were opaque, sealed and numbered in sequence, or identical numbered drug containers, opened only once the participant was irreversibly assigned. Answer N if the people enrolling, or the participants themselves, could know or predict the next assignment (for example from an open list, or envelopes that were not sealed and opaque). Answer PY or PN when the paper gives only part of this detail. Answer NI if the paper says nothing about how the allocation was kept hidden.",
+  "1.3": "Do differences between the groups at the start of the trial (baseline) suggest that the randomisation went wrong? Judge this from the baseline data alone, whatever the paper says about its randomisation methods. Answer N if the groups look alike at baseline or differ only as much as chance would produce; a few differences called statistically significant are expected by chance. Answer Y if the group sizes differ far more than the planned allocation ratio allows, if there are many more baseline differences than chance explains, if an important prognostic factor or the baseline value of the outcome differs between the groups by an amount very unlikely to be chance and large enough to bias the result, or if the groups are more alike than chance would allow. Answer PY or PN when the pattern leans one way without being clear. Answer NI if the paper gives no usable baseline data for the groups as randomised.",
+  "2.1": "During the trial, did the participants know which intervention they had been assigned to? Answer N if participants were kept unaware, for example by a placebo or sham that looked the same, and nothing gave the assignment away. Answer Y if the trial was open-label for participants or the interventions were obviously different to receive. Answer PY if side effects that participants would recognise as typical of one intervention were common, or if blinding is claimed but unlikely to have held. Answer PN when blinding of participants is described and probably held, without full detail. Answer NI if the paper does not say whether participants knew.",
+  "2.2": "During the trial, did the people caring for the participants or delivering the interventions (clinicians, nurses, therapists, carers) know which intervention each participant had been assigned to? Answer N if they were kept unaware, for example because the interventions looked identical and nothing gave the assignment away. Answer Y if they knew, as in an open-label trial or when they delivered visibly different interventions. Answer PY if side effects that they would recognise as typical of one intervention were common, or if the allocation was not kept hidden from them at enrolment. Answer PN when their blinding is described and probably held, without full detail. Answer NI if the paper does not say whether they knew.",
+  "2.3": "This question applies only if the participants or the people delivering the interventions knew or probably knew the assignment, or the paper does not say whether they knew; if both were clearly kept unaware, answer NA. Because they were in a trial, did participants receive something other than what the protocol set for their group? Examples: participants disappointed with their assignment seeking out the experimental treatment or another remedy, or staff departing from the protocol in ways that would not happen in normal care. Answer Y or PY only if the paper shows, or gives strong reason to believe, that the trial setting caused such departures from the protocol. Answer N or PN if there were no such departures, if the departures are of the kind that also happen in normal care (such as participants giving up a treatment), or if the protocol allowed them (such as stopping a drug for toxicity or treating its side effects). Answer NI if the paper does not report whether such departures happened.",
+  "2.4": "This question applies only if participants received something other than the protocol's intervention for their group because of the trial setting (beyond what happens in normal care or what the protocol allows); if there were no such departures, answer NA. Were these trial-induced departures likely to have changed this outcome? Answer Y if they were frequent or large enough, or of a kind, to affect this outcome. Answer N if they could not plausibly have affected this outcome. Answer PY or PN when an effect is likely or unlikely without being certain. Answer NI if the paper does not give enough to judge.",
+  "2.5": "This question applies only if participants received something other than the protocol's intervention for their group because of the trial setting, and these departures did or may have affected this outcome; otherwise answer NA. Were these departures similar in kind and frequency in the intervention groups? Answer Y if they were balanced between the groups. Answer N if they were more common in one group, or of a different kind. Answer PY or PN when the paper's figures lean one way. Answer NI if the paper does not report them by group.",
+  "2.6": "Was this outcome analysed in a way that estimates the effect of being assigned to the interventions? Answer Y for an intention-to-treat analysis (every randomised participant analysed in the group they were assigned to), or a modified intention-to-treat analysis that leaves out only participants with missing outcome data, or participants found after randomisation to be ineligible when that finding could not have depended on their group. Answer N for a per-protocol analysis that leaves out participants who did not receive their assigned intervention, an as-treated analysis that groups participants by what they actually received, or any analysis that leaves out eligible randomised participants. Answer PY or PN when the description of the analysis points one way without being explicit. Answer NI if the paper does not say how participants were grouped and counted in the analysis.",
+  "2.7": "This question applies only if this outcome was not, or may not have been, analysed with all eligible randomised participants in the groups they were assigned to (for example a per-protocol or as-treated analysis, or an analysis the paper does not describe); if it clearly was, answer NA. Could analysing participants outside the group they were randomised to, or leaving randomised participants out, have changed the result substantially? Answer Y if the number of such participants is large enough for this outcome to matter; even under 5% of participants can matter when the outcome is rare or those participants differ in prognosis. Answer N if the numbers are too small to change the result. Answer PY or PN when the numbers lean one way. Answer NI if the paper does not report how many participants were affected.",
+  "3.1": "Were data for this outcome available for all, or nearly all, randomised participants? Nearly all means so few are missing that their results, whatever they were, could not change the estimated effect in any important way: for a continuous outcome, data from about 95% of participants is often enough; for an event outcome, compare the number missing with the number of events. Count imputed values as missing. Answer Y if data were available for all or nearly all randomised participants. Answer N if more were missing than that. Answer PY or PN when the figures lean one way. Answer NI only if the paper does not report how many participants had data for this outcome.",
+  "3.2": "This question applies only if data for this outcome were missing for more than a negligible number of randomised participants, or the paper does not report how many; if data were complete or nearly complete, answer NA. Does the paper show that the missing data did not bias the result? Answer Y if it used an analysis that corrects for the bias missing data can cause, or sensitivity analyses showing that the result hardly changes under a range of plausible assumptions about the missing participants' outcomes. Answer N if it did neither. Filling in the missing values (for example carrying the last observation forward, or imputing them from the assigned group alone) does not show this. Answer PY or PN when such evidence is only partly reported. NI is not allowed for this question: when the paper offers no such evidence, answer N.",
+  "3.3": "This question applies only if data for this outcome were missing for more than a negligible number of participants and the paper does not show that the result was unbiased by it; otherwise answer NA. Could whether a participant's outcome went missing have depended on what that outcome actually was? Answer Y if dropping out, withdrawing or being lost to follow-up could plausibly be linked to the participant's health or to the outcome itself. Answer N if every missing value has a documented reason unrelated to the outcome (for example a broken measuring device or a gap in routine data collection). Answer PY or PN when the reasons lean one way. Answer NI if the paper gives no reasons for the missing data. In a time-to-event analysis, participants censored before the end of follow-up count as having missing outcome data.",
+  "3.4": "This question applies only if whether this outcome went missing could have depended on the participants' true outcome, or the paper gives too little to rule that out; otherwise answer NA. Is it likely, not merely possible, that the missingness depended on the true outcome? Answer Y if, for example, the proportion of missing data differs between the groups, the reported reasons for missing data point to the outcome itself, the reasons differ between the groups, the clinical setting makes such a link likely (as when people whose symptoms persist are the ones who leave the trial), or, in a time-to-event analysis, follow-up was censored when participants stopped or changed their assigned treatment. Answer N if the analysis took account of participant characteristics that explain the link between missingness and outcome. Answer PY or PN when the evidence leans one way. Answer NI if the paper does not give enough to judge.",
+  "4.1": "Was the way this outcome was measured unsuitable for it? Do not judge whether the outcome itself was a sensible choice, only how it was measured. Answer Y if the method or instrument could not detect a plausible effect of the intervention (for example, important values fall outside what it can measure) or is known to measure this outcome poorly. Answer N if the method is a standard or validated way of measuring this outcome, as it usually is for an outcome specified in advance. Answer PY or PN when the description leans one way. Answer NI if the paper does not describe how the outcome was measured.",
+  "4.2": "Could this outcome have been measured or detected differently in the intervention groups? Answer Y if the groups were measured with different methods, thresholds or timing, or if one group had more contact with health care (for example extra visits) that gave more chances for outcome events to be found. Answer N if the same method, thresholds and timing were used in all groups with similar contact. Answer PY or PN when the description leans one way. Answer NI if the paper does not say.",
+  "4.3": "This question applies only if the way this outcome was measured was not clearly unsuitable and the outcome was not clearly measured differently between the groups; otherwise answer NA. Did the people assessing this outcome know which intervention each participant received? For an outcome the participants report themselves (such as pain or quality of life), the participants are the assessors. Answer N if the assessors were kept unaware of the assignment. Answer Y if they knew, as when participants in an open-label trial report their own outcome. Answer PY or PN when the paper's description leans one way. Answer NI if the paper does not say whether the assessors knew.",
+  "4.4": "This question applies only if the people assessing this outcome knew or probably knew which intervention each participant received, or the paper does not say; if they were clearly kept unaware, answer NA. Could knowing the intervention have influenced how this outcome was assessed? Answer Y for an outcome that involves judgement: one reported by participants (such as pain), one recorded by an observer who has to judge, or one that is a decision by the treating clinicians (such as admission to hospital). Answer N for an outcome that involves no judgement, such as death from any cause or an automated laboratory value. Answer PY or PN when the outcome involves little judgement. Answer NI if the paper does not describe the outcome well enough to judge.",
+  "4.5": "This question applies only if the people assessing this outcome knew, or may have known, the intervention and that knowledge could have influenced the assessment; otherwise answer NA. Is it likely, not merely possible, that knowing the intervention did influence the assessment? Answer Y if those assessing held strong beliefs about the intervention's benefit or harm (for example participants who believe in the treatment they chose reporting their own symptoms, or a therapist rating the recovery of the patients they treated). Answer N if there is no particular reason to think the assessment was swayed. Answer PY or PN when the circumstances lean one way. Answer NI if the paper does not give enough to judge.",
+  "5.1": "Was this result analysed according to an analysis plan that was fixed before the investigators saw the unblinded outcome data (for example a registered protocol or a statistical analysis plan finalised before unblinding)? Answer Y if the paper cites such a plan, the outcome and analysis it reports match it, and any changes were made before unblinding or for reasons unrelated to the results. Answer N if the reported analysis departs from the plan without a reason unrelated to the results, or the plan was written or changed after the outcome data were seen. Answer PY or PN when the paper's account leans one way. Answer NI if the paper refers to no plan fixed in advance, or gives too little detail to compare with one.",
+  "5.2": "Is this result likely to have been chosen, because of what it showed, from several eligible ways of measuring this outcome (for example different scales, definitions or time points)? Answer Y if the paper or its registration shows the outcome was measured in several eligible ways but only one or some are fully reported, without explanation and apparently because of the results; this includes a reported primary outcome that differs from the one the paper says was registered or pre-specified. Answer N if the reported measurements match all those planned, if there is only one way to measure this outcome, or if differences between reports are explained by reasons unrelated to the results. Answer PY or PN when the evidence leans one way. Answer NI if there is no plan to compare with and the outcome could have been measured in more than one way.",
+  "5.3": "Is this result likely to have been chosen, because of what it showed, from several eligible analyses of the same measurement (for example adjusted and unadjusted models, final values or change from baseline, different cut-points for turning a scale into categories, different covariates, or different ways of handling missing data)? Answer Y if the paper or its plan shows the measurement was analysed in several eligible ways but only one or some are fully reported, without explanation and apparently because of the results. Answer N if the reported analysis matches the planned one, or there was only one sensible way to analyse this measurement. Answer PY or PN when the evidence leans one way. Answer NI if there is no plan to compare with and the measurement could have been analysed in more than one way."
+ },
+ "domain_titles": {
+  "D1": "Domain D1: bias arising from the randomisation process (judged once for the trial)",
+  "D2": "Domain D2: bias due to deviations from the intended interventions (the effect of assignment to the interventions)",
+  "D3": "Domain D3: bias due to missing outcome data",
+  "D4": "Domain D4: bias in measurement of the outcome",
+  "D5": "Domain D5: bias in selection of the reported result"
+ },
+ "condense_queries": [
+  [
+   "D1",
+   "Everything about how participants were allocated to the groups: how the random sequence was generated, how the allocation was kept hidden from those enrolling participants, the planned and actual group sizes, and the participants' baseline characteristics by group."
+  ],
+  [
+   "D2",
+   "Everything about whether participants and the people delivering the interventions knew the assigned group (blinding, placebo or sham, open-label design, side effects that reveal the group), departures from the assigned interventions and their reasons, adherence, crossover or contamination between groups, and how participants were grouped and counted in the analysis (intention-to-treat, modified intention-to-treat, per-protocol or as-treated, exclusions after randomisation)."
+  ],
+  [
+   "D3",
+   "Everything about missing outcome data: how many participants were randomised and how many were analysed for each outcome, by group; losses to follow-up, withdrawals and censoring with their reasons; and how missing data were handled (imputation, sensitivity analyses)."
+  ],
+  [
+   "D4",
+   "Everything about how the outcomes were measured: the methods, instruments, definitions, thresholds and timing in each group, who assessed the outcomes, and whether the assessors or the participants knew the assigned intervention."
+  ],
+  [
+   "D5",
+   "Everything about the plan fixed in advance and the reported results: the trial registration, protocol or statistical analysis plan and when it was finalised, the registered or pre-specified primary and secondary outcomes, changes to outcomes or analyses, and every way each outcome was measured, analysed and reported."
+  ]
+ ],
+ "title": "A trial of a blood pressure drug",
+ "text": "Participants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Baseline characteristics were similar between groups. Participants and clinicians were blinded with an identical placebo. Outcome data were available for 98% of participants. The analysis followed the registered protocol, NCT00000000, at 12 weeks.",
+ "min_similarity": 0.9,
+ "outcome": {
+  "name": "Systolic blood pressure",
+  "timepoint": "12 weeks",
+  "result": {
+   "measure": "mean difference",
+   "scale": "difference",
+   "estimate": -4.2,
+   "ci_low": -6.1,
+   "ci_high": -2.3,
+   "ci_level": 0.95,
+   "n_analysed": 412
+  },
+  "result_error": null,
+  "citations": [],
+  "quotes_not_found": [],
+  "contradicted": [],
+  "quotes_dropped": 0
+ },
+ "outcome_without_result": {
+  "name": "Diastolic blood pressure",
+  "timepoint": null,
+  "result": null,
+  "result_error": null,
+  "citations": [],
+  "quotes_not_found": [],
+  "contradicted": [],
+  "quotes_dropped": 0
+ },
+ "rendered": {
+  "D1": "Assess one domain of the risk of bias of the randomised trial in the research paper below, for the effect of assignment to the interventions (as an intention-to-treat analysis estimates it).\n\nAnswer every question listed below. For each give:\n- answer: \"Y\" (yes), \"PY\" (probably yes), \"PN\" (probably no), \"N\" (no) or \"NI\" (no information), as the question describes; \"NA\" (not applicable) only for a question that says it applies only under a condition, when that condition clearly does not hold\n- quotes: 1-3 passages copied VERBATIM from the paper that support the answer, or an empty list when the paper says nothing on it. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n- reasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape, one entry per question id:\n\n{\n    \"answers\": {\n        \"1.1\": {\n            \"answer\": \"PY\",\n            \"quotes\": [\"Participants were randomly assigned using a computer-generated list.\"],\n            \"reasoning\": \"A computer-generated list is a random sequence.\"\n        }\n    }\n}\n\nDomain D1: bias arising from the randomisation process (judged once for the trial)\n\nQuestions:\n\n1.1: Was the order in which participants were allocated to the groups produced by a genuinely random method? Answer Y if the paper describes a random method: computer-generated random numbers, a table of random numbers, minimisation, drawing lots, tossing a coin, or shuffling cards or envelopes. Answer N if allocation followed a predictable or non-random rule, such as alternation, date of birth or admission, record numbers, the choice of clinicians or participants, or whichever intervention happened to be available. Answer PY or PN when the paper does not say outright but its details clearly point one way. Answer NI if the paper only says the trial was randomised without saying how.\n\n1.2: Were the people enrolling participants unable to know or foresee which group the next participant would join until that participant had been enrolled and assigned? Answer Y if allocation was handled by someone independent of enrolment (for example a central telephone or web-based randomisation service, or an independent pharmacy), or by envelopes that were opaque, sealed and numbered in sequence, or identical numbered drug containers, opened only once the participant was irreversibly assigned. Answer N if the people enrolling, or the participants themselves, could know or predict the next assignment (for example from an open list, or envelopes that were not sealed and opaque). Answer PY or PN when the paper gives only part of this detail. Answer NI if the paper says nothing about how the allocation was kept hidden.\n\n1.3: Do differences between the groups at the start of the trial (baseline) suggest that the randomisation went wrong? Judge this from the baseline data alone, whatever the paper says about its randomisation methods. Answer N if the groups look alike at baseline or differ only as much as chance would produce; a few differences called statistically significant are expected by chance. Answer Y if the group sizes differ far more than the planned allocation ratio allows, if there are many more baseline differences than chance explains, if an important prognostic factor or the baseline value of the outcome differs between the groups by an amount very unlikely to be chance and large enough to bias the result, or if the groups are more alike than chance would allow. Answer PY or PN when the pattern leans one way without being clear. Answer NI if the paper gives no usable baseline data for the groups as randomised.\n\nPaper Title: A trial of a blood pressure drug\n\nPaper Text:\nParticipants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Baseline characteristics were similar between groups. Participants and clinicians were blinded with an identical placebo. Outcome data were available for 98% of participants. The analysis followed the registered protocol, NCT00000000, at 12 weeks.",
+  "D2 without a result": "Assess one domain of the risk of bias of the randomised trial in the research paper below, for the effect of assignment to the interventions (as an intention-to-treat analysis estimates it).\n\nAnswer every question listed below. For each give:\n- answer: \"Y\" (yes), \"PY\" (probably yes), \"PN\" (probably no), \"N\" (no) or \"NI\" (no information), as the question describes; \"NA\" (not applicable) only for a question that says it applies only under a condition, when that condition clearly does not hold\n- quotes: 1-3 passages copied VERBATIM from the paper that support the answer, or an empty list when the paper says nothing on it. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n- reasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape, one entry per question id:\n\n{\n    \"answers\": {\n        \"1.1\": {\n            \"answer\": \"PY\",\n            \"quotes\": [\"Participants were randomly assigned using a computer-generated list.\"],\n            \"reasoning\": \"A computer-generated list is a random sequence.\"\n        }\n    }\n}\n\nDomain D2: bias due to deviations from the intended interventions (the effect of assignment to the interventions)\n\nOutcome assessed: Diastolic blood pressure\nTimepoint: not stated\nReported result: none extracted\n\nQuestions:\n\n2.1: During the trial, did the participants know which intervention they had been assigned to? Answer N if participants were kept unaware, for example by a placebo or sham that looked the same, and nothing gave the assignment away. Answer Y if the trial was open-label for participants or the interventions were obviously different to receive. Answer PY if side effects that participants would recognise as typical of one intervention were common, or if blinding is claimed but unlikely to have held. Answer PN when blinding of participants is described and probably held, without full detail. Answer NI if the paper does not say whether participants knew.\n\n2.2: During the trial, did the people caring for the participants or delivering the interventions (clinicians, nurses, therapists, carers) know which intervention each participant had been assigned to? Answer N if they were kept unaware, for example because the interventions looked identical and nothing gave the assignment away. Answer Y if they knew, as in an open-label trial or when they delivered visibly different interventions. Answer PY if side effects that they would recognise as typical of one intervention were common, or if the allocation was not kept hidden from them at enrolment. Answer PN when their blinding is described and probably held, without full detail. Answer NI if the paper does not say whether they knew.\n\n2.3: This question applies only if the participants or the people delivering the interventions knew or probably knew the assignment, or the paper does not say whether they knew; if both were clearly kept unaware, answer NA. Because they were in a trial, did participants receive something other than what the protocol set for their group? Examples: participants disappointed with their assignment seeking out the experimental treatment or another remedy, or staff departing from the protocol in ways that would not happen in normal care. Answer Y or PY only if the paper shows, or gives strong reason to believe, that the trial setting caused such departures from the protocol. Answer N or PN if there were no such departures, if the departures are of the kind that also happen in normal care (such as participants giving up a treatment), or if the protocol allowed them (such as stopping a drug for toxicity or treating its side effects). Answer NI if the paper does not report whether such departures happened.\n\n2.4: This question applies only if participants received something other than the protocol's intervention for their group because of the trial setting (beyond what happens in normal care or what the protocol allows); if there were no such departures, answer NA. Were these trial-induced departures likely to have changed this outcome? Answer Y if they were frequent or large enough, or of a kind, to affect this outcome. Answer N if they could not plausibly have affected this outcome. Answer PY or PN when an effect is likely or unlikely without being certain. Answer NI if the paper does not give enough to judge.\n\n2.5: This question applies only if participants received something other than the protocol's intervention for their group because of the trial setting, and these departures did or may have affected this outcome; otherwise answer NA. Were these departures similar in kind and frequency in the intervention groups? Answer Y if they were balanced between the groups. Answer N if they were more common in one group, or of a different kind. Answer PY or PN when the paper's figures lean one way. Answer NI if the paper does not report them by group.\n\n2.6: Was this outcome analysed in a way that estimates the effect of being assigned to the interventions? Answer Y for an intention-to-treat analysis (every randomised participant analysed in the group they were assigned to), or a modified intention-to-treat analysis that leaves out only participants with missing outcome data, or participants found after randomisation to be ineligible when that finding could not have depended on their group. Answer N for a per-protocol analysis that leaves out participants who did not receive their assigned intervention, an as-treated analysis that groups participants by what they actually received, or any analysis that leaves out eligible randomised participants. Answer PY or PN when the description of the analysis points one way without being explicit. Answer NI if the paper does not say how participants were grouped and counted in the analysis.\n\n2.7: This question applies only if this outcome was not, or may not have been, analysed with all eligible randomised participants in the groups they were assigned to (for example a per-protocol or as-treated analysis, or an analysis the paper does not describe); if it clearly was, answer NA. Could analysing participants outside the group they were randomised to, or leaving randomised participants out, have changed the result substantially? Answer Y if the number of such participants is large enough for this outcome to matter; even under 5% of participants can matter when the outcome is rare or those participants differ in prognosis. Answer N if the numbers are too small to change the result. Answer PY or PN when the numbers lean one way. Answer NI if the paper does not report how many participants were affected.\n\nPaper Title: A trial of a blood pressure drug\n\nPaper Text:\nParticipants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Baseline characteristics were similar between groups. Participants and clinicians were blinded with an identical placebo. Outcome data were available for 98% of participants. The analysis followed the registered protocol, NCT00000000, at 12 weeks.",
+  "D5": "Assess one domain of the risk of bias of the randomised trial in the research paper below, for the effect of assignment to the interventions (as an intention-to-treat analysis estimates it).\n\nAnswer every question listed below. For each give:\n- answer: \"Y\" (yes), \"PY\" (probably yes), \"PN\" (probably no), \"N\" (no) or \"NI\" (no information), as the question describes; \"NA\" (not applicable) only for a question that says it applies only under a condition, when that condition clearly does not hold\n- quotes: 1-3 passages copied VERBATIM from the paper that support the answer, or an empty list when the paper says nothing on it. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n- reasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape, one entry per question id:\n\n{\n    \"answers\": {\n        \"1.1\": {\n            \"answer\": \"PY\",\n            \"quotes\": [\"Participants were randomly assigned using a computer-generated list.\"],\n            \"reasoning\": \"A computer-generated list is a random sequence.\"\n        }\n    }\n}\n\nDomain D5: bias in selection of the reported result\n\nOutcome assessed: Systolic blood pressure\nTimepoint: 12 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-4.2,\"ci_low\":-6.1,\"ci_high\":-2.3,\"ci_level\":0.95,\"n_analysed\":412}\n\nCompare the primary outcome this paper reports with the registered or pre-specified primary outcome the paper states (in its protocol, trial registration or statistical analysis plan). If they differ, say so in your reasoning and quote both statements.\n\nQuestions:\n\n5.1: Was this result analysed according to an analysis plan that was fixed before the investigators saw the unblinded outcome data (for example a registered protocol or a statistical analysis plan finalised before unblinding)? Answer Y if the paper cites such a plan, the outcome and analysis it reports match it, and any changes were made before unblinding or for reasons unrelated to the results. Answer N if the reported analysis departs from the plan without a reason unrelated to the results, or the plan was written or changed after the outcome data were seen. Answer PY or PN when the paper's account leans one way. Answer NI if the paper refers to no plan fixed in advance, or gives too little detail to compare with one.\n\n5.2: Is this result likely to have been chosen, because of what it showed, from several eligible ways of measuring this outcome (for example different scales, definitions or time points)? Answer Y if the paper or its registration shows the outcome was measured in several eligible ways but only one or some are fully reported, without explanation and apparently because of the results; this includes a reported primary outcome that differs from the one the paper says was registered or pre-specified. Answer N if the reported measurements match all those planned, if there is only one way to measure this outcome, or if differences between reports are explained by reasons unrelated to the results. Answer PY or PN when the evidence leans one way. Answer NI if there is no plan to compare with and the outcome could have been measured in more than one way.\n\n5.3: Is this result likely to have been chosen, because of what it showed, from several eligible analyses of the same measurement (for example adjusted and unadjusted models, final values or change from baseline, different cut-points for turning a scale into categories, different covariates, or different ways of handling missing data)? Answer Y if the paper or its plan shows the measurement was analysed in several eligible ways but only one or some are fully reported, without explanation and apparently because of the results. Answer N if the reported analysis matches the planned one, or there was only one sensible way to analyse this measurement. Answer PY or PN when the evidence leans one way. Answer NI if there is no plan to compare with and the measurement could have been analysed in more than one way.\n\nPaper Title: A trial of a blood pressure drug\n\nPaper Text:\nParticipants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Baseline characteristics were similar between groups. Participants and clinicians were blinded with an identical placebo. Outcome data were available for 98% of participants. The analysis followed the registered protocol, NCT00000000, at 12 weeks.",
+  "escalation_study": {
+   "status": "assessed",
+   "domain": "D1",
+   "answers": {
+    "1.1": {
+     "answer": "Y",
+     "citations": [
+      {
+       "start": 0,
+       "end": 68,
+       "text": "Participants were randomly assigned using a computer-generated list.",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "reasoning": "Because."
+    },
+    "1.2": {
+     "answer": "NI",
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "reasoning": "Not described."
+    },
+    "1.3": {
+     "answer": "N",
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "reasoning": "Because."
+    }
+   },
+   "judgement": "some_concerns",
+   "condensed": false,
+   "ignored": []
+  },
+  "escalation_domains": [
+   {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   },
+   {
+    "status": "assessed",
+    "domain": "D3",
+    "answers": {
+     "3.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 248,
+        "end": 300,
+        "text": "Outcome data were available for 98% of participants.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   },
+   {
+    "status": "assessed",
+    "domain": "D4",
+    "answers": {
+     "4.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   },
+   {
+    "status": "assessed",
+    "domain": "D5",
+    "answers": {
+     "5.1": {
+      "answer": "NI",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "5.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "5.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "some_concerns",
+    "condensed": false,
+    "ignored": []
+   }
+  ],
+  "escalation": "All five domains of this risk-of-bias assessment have been judged: none is at high risk of bias and at least two have some concerns. RoB 2 lets the assessor raise the overall judgement to high risk of bias when concerns in several domains, taken together, substantially lower confidence in the result. Using the domain judgements and answers below, decide whether these combined concerns warrant an overall judgement of high risk of bias for this result.\n\nescalate: true if the combined concerns substantially lower confidence in this result, false if the overall judgement should stay at some concerns.\nreasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"escalate\": false,\n    \"reasoning\": \"The concerns are minor and point in different directions.\"\n}\n\nOutcome assessed: Systolic blood pressure\nTimepoint: 12 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-4.2,\"ci_low\":-6.1,\"ci_high\":-2.3,\"ci_level\":0.95,\"n_analysed\":412}\n\nDomain D1: bias arising from the randomisation process (judged once for the trial): some_concerns\n1.1: Y - Because.\n1.2: NI - Not described.\n1.3: N - Because.\n\nDomain D2: bias due to deviations from the intended interventions (the effect of assignment to the interventions): low\n2.1: N - Because.\n2.2: N - Because.\n2.6: Y - Because.\n\nDomain D3: bias due to missing outcome data: low\n3.1: Y - Because.\n\nDomain D4: bias in measurement of the outcome: low\n4.1: N - Because.\n4.2: N - Because.\n4.3: N - Because.\n\nDomain D5: bias in selection of the reported result: some_concerns\n5.1: NI - Because.\n5.2: N - Because.\n5.3: N - Because."
+ },
+ "cases": [
+  {
+   "name": "D1 complete, low",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "quotes": [
+       "Participants were randomly assigned using a computer-generated list."
+      ],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D1",
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 0,
+        "end": 68,
+        "text": "Participants were randomly assigned using a computer-generated list.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 69,
+        "end": 125,
+        "text": "Allocation was concealed by a central web-based service.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D1 NI without quotes is kept",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "quotes": [
+       "Participants were randomly assigned using a computer-generated list."
+      ],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "NI",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D1",
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 0,
+        "end": 68,
+        "text": "Participants were randomly assigned using a computer-generated list.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "NI",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "some_concerns",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D1 high",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "quotes": [
+       "Participants were randomly assigned using a computer-generated list."
+      ],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D1",
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 0,
+        "end": 68,
+        "text": "Participants were randomly assigned using a computer-generated list.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "high",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "answer case and space tolerated",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": " py ",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D1",
+    "answers": {
+     "1.1": {
+      "answer": "PY",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 69,
+        "end": 125,
+        "text": "Allocation was concealed by a central web-based service.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "reasoning absent",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "quotes": [
+       "Participants were randomly assigned using a computer-generated list."
+      ],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N"
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D1",
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 0,
+        "end": 68,
+        "text": "Participants were randomly assigned using a computer-generated list.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 69,
+        "end": 125,
+        "text": "Allocation was concealed by a central web-based service.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": ""
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "quotes a bare string",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "quotes": "Participants were randomly assigned using a computer-generated list."
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D1",
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 0,
+        "end": 68,
+        "text": "Participants were randomly assigned using a computer-generated list.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": ""
+     },
+     "1.2": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 69,
+        "end": 125,
+        "text": "Allocation was concealed by a central web-based service.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D2 low, NA where it does not apply",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D2 answer to an unasked question is ignored",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": [
+     "2.7"
+    ]
+   }
+  },
+  {
+   "name": "D2 deviations unbalanced, high",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "PY",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.4": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.5": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D2",
+    "answers": {
+     "2.1": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "PY",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.4": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.5": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "high",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D2 NA for an applicable question",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.2.3 is applicable but not answered"
+  },
+  {
+   "name": "D2 applicable question omitted",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.2.6 is applicable but not answered"
+  },
+  {
+   "name": "D2 unknown id",
+   "domain": "D2",
+   "reply": {
+    "answers": {
+     "2.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.3": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.6": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.7": {
+      "answer": "NA",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "2.9": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.2.9 is not a question of D2"
+  },
+  {
+   "name": "D3 low",
+   "domain": "D3",
+   "reply": {
+    "answers": {
+     "3.1": {
+      "answer": "Y",
+      "quotes": [
+       "Outcome data were available for 98% of participants."
+      ],
+      "reasoning": "Because."
+     },
+     "3.2": {
+      "answer": "na",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D3",
+    "answers": {
+     "3.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 248,
+        "end": 300,
+        "text": "Outcome data were available for 98% of participants.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D3 missingness likely depends on the outcome, high",
+   "domain": "D3",
+   "reply": {
+    "answers": {
+     "3.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "3.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "3.3": {
+      "answer": "PY",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "3.4": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D3",
+    "answers": {
+     "3.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "3.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "3.3": {
+      "answer": "PY",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "3.4": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "high",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D3 NI where none is allowed",
+   "domain": "D3",
+   "reply": {
+    "answers": {
+     "3.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "3.2": {
+      "answer": "NI",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.3.2.answer NI is not allowed for this question"
+  },
+  {
+   "name": "D3 quotes lost, contradicted and unusable",
+   "domain": "D3",
+   "reply": {
+    "answers": {
+     "3.1": {
+      "answer": "Y",
+      "quotes": [
+       "Participants were followed for a year.",
+       "Outcome data were available for 90% of participants.",
+       "Outcome data were available for 98% of participants.",
+       "  ",
+       7
+      ],
+      "reasoning": "Because."
+     },
+     "3.2": {
+      "answer": "na",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D3",
+    "answers": {
+     "3.1": {
+      "answer": "Y",
+      "citations": [
+       {
+        "start": 248,
+        "end": 300,
+        "text": "Outcome data were available for 98% of participants.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [
+       "Participants were followed for a year."
+      ],
+      "contradicted": [
+       {
+        "quote": "Outcome data were available for 90% of participants.",
+        "contradiction": "number"
+       }
+      ],
+      "quotes_dropped": 2,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D4 low",
+   "domain": "D4",
+   "reply": {
+    "answers": {
+     "4.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "4.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "4.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D4",
+    "answers": {
+     "4.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "low",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D4 assessors aware, some concerns",
+   "domain": "D4",
+   "reply": {
+    "answers": {
+     "4.1": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "4.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "4.3": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "4.4": {
+      "answer": "PY",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "4.5": {
+      "answer": "PN",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D4",
+    "answers": {
+     "4.1": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.3": {
+      "answer": "Y",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.4": {
+      "answer": "PY",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "4.5": {
+      "answer": "PN",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "some_concerns",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "D5 some concerns",
+   "domain": "D5",
+   "reply": {
+    "answers": {
+     "5.1": {
+      "answer": "NI",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "5.2": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "5.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "expected": {
+    "status": "assessed",
+    "domain": "D5",
+    "answers": {
+     "5.1": {
+      "answer": "NI",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "5.2": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     },
+     "5.3": {
+      "answer": "N",
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "reasoning": "Because."
+     }
+    },
+    "judgement": "some_concerns",
+    "condensed": false,
+    "ignored": []
+   }
+  },
+  {
+   "name": "answer outside the set",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Unclear",
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.1.1.answer \"Unclear\" is not one of Y, PY, PN, N, NI, NA"
+  },
+  {
+   "name": "answer not text",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": 1,
+      "quotes": [],
+      "reasoning": "Because."
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.1.1.answer is not text"
+  },
+  {
+   "name": "entry not an object",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": "Y",
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.1.1 is not an object"
+  },
+  {
+   "name": "reasoning not text",
+   "domain": "D1",
+   "reply": {
+    "answers": {
+     "1.1": {
+      "answer": "Y",
+      "quotes": [],
+      "reasoning": 3
+     },
+     "1.2": {
+      "answer": "Y",
+      "quotes": [
+       "Allocation was concealed by a central web-based service."
+      ],
+      "reasoning": "Because."
+     },
+     "1.3": {
+      "answer": "N",
+      "quotes": [],
+      "reasoning": "Because."
+     }
+    }
+   },
+   "error": "answers.1.1.reasoning is not text"
+  },
+  {
+   "name": "answers not an object",
+   "domain": "D1",
+   "reply": {
+    "answers": [
+     "Y"
+    ]
+   },
+   "error": "answers is not an object"
+  },
+  {
+   "name": "answers missing",
+   "domain": "D1",
+   "reply": {},
+   "error": "answers is not an object"
+  },
+  {
+   "name": "reply not an object",
+   "domain": "D1",
+   "reply": [
+    "Y"
+   ],
+   "error": "expected an object"
+  }
+ ],
+ "escalation_cases": [
+  {
+   "name": "escalate",
+   "reply": {
+    "escalate": true,
+    "reasoning": "Several concerns compound."
+   },
+   "expected": {
+    "escalate": true,
+    "reasoning": "Several concerns compound."
+   }
+  },
+  {
+   "name": "stay, reasoning absent",
+   "reply": {
+    "escalate": false
+   },
+   "expected": {
+    "escalate": false,
+    "reasoning": ""
+   }
+  },
+  {
+   "name": "escalate as text",
+   "reply": {
+    "escalate": "true"
+   },
+   "error": "escalate is not true or false"
+  },
+  {
+   "name": "escalate as a number",
+   "reply": {
+    "escalate": 1
+   },
+   "error": "escalate is not true or false"
+  },
+  {
+   "name": "escalate missing",
+   "reply": {
+    "reasoning": "x"
+   },
+   "error": "escalate is not true or false"
+  },
+  {
+   "name": "reasoning not text",
+   "reply": {
+    "escalate": true,
+    "reasoning": 2
+   },
+   "error": "reasoning is not text"
+  },
+  {
+   "name": "reply not an object",
+   "reply": [
+    true
+   ],
+   "error": "expected an object"
+  }
+ ]
+}
