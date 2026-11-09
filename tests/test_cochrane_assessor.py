@@ -459,6 +459,18 @@ class TestBothCondensationDegradationBranchesReachTheAssessment:
             assert assessor._condense("x " * 400, "a study") is None
             assert assessor.assess("T", "x " * 400) is None
 
+    def test_a_partial_condensation_with_a_defect_means_no_assessment(self) -> None:
+        """A batch's defect refuses the digest even beside batches that succeeded (#665)."""
+        assessor = make_assessor(
+            json.dumps(_full_response()), condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        partial = self._stub_result(ProcessingStatus.PARTIAL)
+        partial.batch_exceptions = [KeyError("the defect")]
+
+        with patch.object(LLMChunkProcessor, "process", return_value=partial):
+            assert assessor._condense("x " * 400, "a study") is None
+            assert assessor.assess("T", "x " * 400) is None
+
     def test_a_partial_condensation_still_returns_an_assessment_carrying_the_note(self) -> None:
         assessor = make_assessor(
             json.dumps(_full_response()), condense_config=ProcessingConfig(max_context_chars=200)

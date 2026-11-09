@@ -23,6 +23,15 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **A bmlib defect in one batch of a condensation refuses the digest** (#665;
+  Python only, since Rust has no defect class). A long paper's map-reduce
+  whose failed batches include a defect (`TypeError`, `AttributeError`,
+  `NameError`, `KeyError`, `IndexError`) or an `ImportError` used to finish
+  PARTIAL when another batch succeeded, and the defect reached the caller
+  only as text in the digest's note. `condense_text` now refuses that digest,
+  chained to the defect, as it does for a FAILED run since #616: `PicoAgent`
+  re-raises the defect, and the Cochrane assessor returns `None` where it
+  returned a partial assessment.
 - **`canonical_from_html` cannot run in a frozen application** (#723): it
   parses in a child Python process, which an application with no interpreter
   to start cannot have, so it raises `RuntimeError` there; and the `html`
@@ -619,8 +628,7 @@ All notable changes to bmlib are documented here. The format is based on
   every consolidation batch failed has no result, and is FAILED (`No batch
   produced a result at level 1: …`) where it was PARTIAL with an empty
   result, which hid the consolidation's cause behind "an empty digest". A
-  PARTIAL run is otherwise unchanged: its note names the causes (#658), and a
-  defect in it is #665. The Cochrane assessor still returns `None` for any
+  PARTIAL run is otherwise unchanged: its note names the causes (#658). The Cochrane assessor still returns `None` for any
   refusal. The shared `tests/fixtures/pico_stop_num_ctx.json` gains
   `status_from_request`, `malformed_from_request` and six cases (every
   condensation request refused with 401 or 404, answered 503, failing in

@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; PR #727 (#647) open; PRs #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
+_Last updated: 2026-11-09 (**the next release is being prepared — read *Release plan* below first**; this session's PR (#665) open; PRs #727 (#647), #724 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649, #652), #713 (#710), #712 (#706's review), #711 (#707), #709 (#705), #706 (#702), #704 (#698), #703 (llama-free model download), #701 (#697), #700 (output limit), #699 and #692 (#617), #696 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #684 (finalcheck skill), #683 (#608), #682 (#680) and #679 (#583) merged). **0.12.0 is on PyPI** (tag `v0.12.0`
 on `d2ee803`, the merge of #611) and **the Rust crate 0.3.0 is on
 crates.io** from the same commit; the CHANGELOG's `[0.12.0]` summary and
 *Changed — breaking* are the release notes; see `HANDOVER_RUST.md` for the
 crate's publish. Unreleased: PRs #613-#615, #620-#622, #625-#627, #629-#631,
 #637, #639, #643, #644, #648, #650, #653, #655, #657, #660, #661, #663, #666,
-#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719-#721, #724._
+#668-#672, #674-#679, #682-#684, #687, #690-#693, #696, #699-#701, #703, #704, #706, #709, #711-#715, #719-#721, #724, #727._
 
 ## Release plan: Python 0.13.0 / Rust crate 0.4.0 (agreed 2026-11-09)
 
@@ -16,7 +16,7 @@ carries breaking changes in both languages (e.g. Rust `sync()` now returns
 `Result<SyncReport, SyncError>` and takes a clock). Tick items off here as
 their PRs merge; open a PR per item and stop — the maintainer merges.
 
-**Done**: #647 (PR #727, awaiting review), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
+**Done**: #665 (this session's PR, awaiting review), #647 (PR #727), #723 (PR #724), #686 (PR #720, one keychain item on every platform, live CI job
 `keychain-interop`), #607 + #444 (PR #721), #707 and #710 (PRs #711, #713).
 
 **Fix before the release** — each is in a feature that 0.12.0 did not ship,
@@ -26,13 +26,14 @@ so it is free to fix now and costs a breaking change later:
    a 91 KB page that makes html5ever build gigabytes (both languages, in
    0.12.0 too). Fixed by bounding what is built (see *Earlier*). **#656
    stays open past the release** (the maintainer's choice: keep the 2M cap).
-2. ~~**#647**~~ (PR #727, open) — a PICO quote rejected as a contradiction
+2. ~~**#647**~~ (PR #727, merged) — a PICO quote rejected as a contradiction
    keeps its reason; a reported part with no citation and at least one
    such quote is `CONTRADICTED`.
-3. **Decisions for the maintainer**, then implement: **#708** (`chat_json`'s
-   no-retry-at-temperature-0 rule assumes greedy sampling, false for
-   Anthropic since #705) and **#665** (a bmlib defect in one batch of a
-   PARTIAL condensation run is only a note).
+3. Decided 2026-11-09, then implement: **#708** — *a provider capability*:
+   each provider says whether it honours `temperature` (Anthropic does not,
+   since #705), and `chat_json` skips its no-retry-at-temperature-0 shortcut
+   for one that does not, both languages (**next**, its own PR); ~~**#665**~~
+   — *refuse the digest* (this session's PR).
 4. **Live probes**: one real Anthropic `think=` call (#707/#710 were fixed
    and closed without a live call on record), and **#681** — probe Google's
    OpenAI-compatible Gemini endpoint, then fix Rust's
@@ -66,7 +67,16 @@ and `bmlib-rehearse-release-gates` memories):
   before the release PR, since `release.yml` checks them only after the
   version is burned. Never approve the PyPI gate.
 
-## This session: a contradicted PICO quote keeps its reason (#647, PR #727 open)
+## This session: a defect in one condensation batch refuses the digest (#665, PR open)
+
+The maintainer chose (2026-11-09) to refuse the digest. `condense_text`
+raises `CondensationRefusedError` chained to the worst cause whenever that
+cause is a defect or an `ImportError`, PARTIAL or TRUNCATED as well as
+FAILED, so `PicoAgent` re-raises it and the Cochrane assessor returns `None`.
+Python only. The issue's premise that the harness kept no per-batch
+exceptions was stale: `batch_exceptions` came with #616.
+
+## Earlier, 2026-11-09: a contradicted PICO quote keeps its reason (#647, PR #727, merged)
 
 The maintainer chose (2026-11-09) a parallel list plus a state of its own:
 
@@ -324,8 +334,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**117 open once this session's PR is merged (it settles #647)** (#726, #725, #722, #718, #716, #708 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
-2026-11-09); #665 is #616's residual; #651 is #632's residual; #556–#726 are not yet
+**116 open once this session's PR is merged (it settles #665)** (#726, #725, #722, #718, #716, #708 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+2026-11-09); #651 is #632's residual; #556–#726 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s
 remaining causes are the PDF path's open work. **#528** and
