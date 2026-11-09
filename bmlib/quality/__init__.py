@@ -66,6 +66,18 @@ from bmlib.quality.pico_models import (
     PicoPrepared,
     PicoSuitability,
 )
+from bmlib.quality.rob2_algorithm import (
+    ROB2_ALGORITHM_VERSION,
+    Answer,
+    Domain,
+    Judgement,
+    Rob2Error,
+    Scope,
+    applicable_questions,
+    domain_judgement,
+    needs_escalation_decision,
+    overall_judgement,
+)
 from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
 
 __all__ = [
@@ -109,4 +121,15 @@ __all__ = [
     "PicoPrepared",
     "PicoSuitability",
     "verify_quotes",
+    # The RoB 2 decision rules
+    "ROB2_ALGORITHM_VERSION",
+    "Answer",
+    "Domain",
+    "Judgement",
+    "Rob2Error",
+    "Scope",
+    "applicable_questions",
+    "domain_judgement",
+    "needs_escalation_decision",
+    "overall_judgement",
 ]

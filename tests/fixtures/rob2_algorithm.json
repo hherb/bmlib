@@ -1,0 +1,8159 @@
+{
+ "algorithm_version": "rob2-2019-08-22/assignment/parallel/1",
+ "official": [
+  {
+   "source": "Table 4",
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "Y",
+    "1.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 4",
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "PY",
+    "1.3": "NI"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 4",
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "Y",
+    "1.3": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 3",
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "Y",
+    "1.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 4",
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "NI",
+    "1.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 4",
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "NI",
+    "1.3": "PY"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 4",
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "N",
+    "1.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "PN",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 6",
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 10",
+   "domain": "D3",
+   "answers": {
+    "3.1": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 10",
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 10",
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 10",
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "PN",
+    "3.3": "NI",
+    "3.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 10",
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "PN",
+    "3.3": "NI",
+    "3.4": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "PY"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "Y",
+    "4.2": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 12",
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "PY"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 14",
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "N",
+    "5.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "source": "Table 14",
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "N",
+    "5.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 14",
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "N",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 14",
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "NI",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "source": "Table 14",
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "PY",
+    "5.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "source": "Table 14",
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "N",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  }
+ ],
+ "exhaustive": [
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "N",
+    "1.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "N",
+    "1.3": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "N",
+    "1.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "NI",
+    "1.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "NI",
+    "1.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "NI",
+    "1.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "Y",
+    "1.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "Y",
+    "1.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "N",
+    "1.2": "Y",
+    "1.3": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "N",
+    "1.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "N",
+    "1.3": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "N",
+    "1.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "NI",
+    "1.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "NI",
+    "1.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "NI",
+    "1.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "Y",
+    "1.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "Y",
+    "1.3": "NI"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "NI",
+    "1.2": "Y",
+    "1.3": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "N",
+    "1.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "N",
+    "1.3": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "N",
+    "1.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "NI",
+    "1.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "NI",
+    "1.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "NI",
+    "1.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "Y",
+    "1.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "Y",
+    "1.3": "NI"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "Y",
+    "1.3": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "NI",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "NI",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "N",
+    "2.6": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "NI",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "N",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "NI",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "N",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "NI",
+    "2.6": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "N",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "NI",
+    "2.7": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "Y",
+    "2.3": "Y",
+    "2.4": "Y",
+    "2.5": "Y",
+    "2.6": "Y"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "NI",
+    "3.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "NI",
+    "3.4": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "NI",
+    "3.4": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "Y",
+    "3.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "Y",
+    "3.4": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "N",
+    "3.3": "Y",
+    "3.4": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "NI",
+    "3.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "NI",
+    "3.4": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "NI",
+    "3.4": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "Y",
+    "3.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "Y",
+    "3.4": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "N",
+    "3.3": "Y",
+    "3.4": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "NI",
+    "3.2": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D3",
+   "answers": {
+    "3.1": "Y"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "N",
+    "4.2": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "N",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "NI",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "NI",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "NI",
+    "4.3": "Y",
+    "4.4": "Y",
+    "4.5": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "NI",
+    "4.2": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "Y",
+    "4.2": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "Y",
+    "4.2": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D4",
+   "answers": {
+    "4.1": "Y",
+    "4.2": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "N",
+    "5.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "N",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "N",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "NI",
+    "5.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "NI",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "NI",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "Y",
+    "5.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "Y",
+    "5.3": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "N",
+    "5.2": "Y",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "N",
+    "5.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "N",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "N",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "NI",
+    "5.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "NI",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "NI",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "Y",
+    "5.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "Y",
+    "5.3": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "NI",
+    "5.2": "Y",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "N",
+    "5.3": "N"
+   },
+   "expected": "low"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "N",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "N",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "NI",
+    "5.3": "N"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "NI",
+    "5.3": "NI"
+   },
+   "expected": "some_concerns"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "NI",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "Y",
+    "5.3": "N"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "Y",
+    "5.3": "NI"
+   },
+   "expected": "high"
+  },
+  {
+   "domain": "D5",
+   "answers": {
+    "5.1": "Y",
+    "5.2": "Y",
+    "5.3": "Y"
+   },
+   "expected": "high"
+  }
+ ],
+ "applicable": [
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N"
+   },
+   "expected": [
+    "2.1",
+    "2.2",
+    "2.6"
+   ]
+  },
+  {
+   "domain": "D2",
+   "answers": {
+    "2.1": "N",
+    "2.2": "N",
+    "2.6": "NI"
+   },
+   "expected": [
+    "2.1",
+    "2.2",
+    "2.6",
+    "2.7"
+   ]
+  }
+ ],
+ "parse": [
+  {
+   "value": " py ",
+   "expected": "PY"
+  },
+  {
+   "value": "n",
+   "expected": "N"
+  },
+  {
+   "value": "NI",
+   "expected": "NI"
+  },
+  {
+   "value": "NA",
+   "expected": null
+  },
+  {
+   "value": "Unclear",
+   "expected": null
+  },
+  {
+   "value": "",
+   "expected": null
+  }
+ ],
+ "refusals": [
+  {
+   "name": "3.2 does not allow NI",
+   "domain": "D3",
+   "answers": {
+    "3.1": "N",
+    "3.2": "NI"
+   },
+   "kind": "NotAllowed",
+   "question": "3.2"
+  },
+  {
+   "name": "2.3 is applicable",
+   "domain": "D2",
+   "answers": {
+    "2.1": "Y",
+    "2.2": "N",
+    "2.6": "Y"
+   },
+   "kind": "MissingAnswer",
+   "question": "2.3"
+  },
+  {
+   "name": "4.2 is always asked",
+   "domain": "D4",
+   "answers": {
+    "4.1": "Y"
+   },
+   "kind": "MissingAnswer",
+   "question": "4.2"
+  },
+  {
+   "name": "9.9 is not in D1",
+   "domain": "D1",
+   "answers": {
+    "1.1": "Y",
+    "1.2": "Y",
+    "1.3": "N",
+    "9.9": "Y"
+   },
+   "kind": "UnknownQuestion",
+   "question": "9.9"
+  }
+ ],
+ "overall": [
+  {
+   "domains": [
+    "low",
+    "low",
+    "low",
+    "low",
+    "low"
+   ],
+   "escalate": null,
+   "needs_escalation_decision": false,
+   "expected": "low"
+  },
+  {
+   "domains": [
+    "low",
+    "low",
+    "some_concerns",
+    "low",
+    "low"
+   ],
+   "escalate": null,
+   "needs_escalation_decision": false,
+   "expected": "some_concerns"
+  },
+  {
+   "domains": [
+    "low",
+    "some_concerns",
+    "some_concerns",
+    "low",
+    "low"
+   ],
+   "escalate": null,
+   "needs_escalation_decision": true,
+   "error": "EscalationUndecided"
+  },
+  {
+   "domains": [
+    "low",
+    "some_concerns",
+    "some_concerns",
+    "low",
+    "low"
+   ],
+   "escalate": false,
+   "needs_escalation_decision": true,
+   "expected": "some_concerns"
+  },
+  {
+   "domains": [
+    "low",
+    "some_concerns",
+    "some_concerns",
+    "low",
+    "low"
+   ],
+   "escalate": true,
+   "needs_escalation_decision": true,
+   "expected": "high"
+  },
+  {
+   "domains": [
+    "low",
+    "some_concerns",
+    "high",
+    "some_concerns",
+    "low"
+   ],
+   "escalate": null,
+   "needs_escalation_decision": false,
+   "expected": "high"
+  },
+  {
+   "domains": [
+    "some_concerns",
+    "some_concerns",
+    "high",
+    "low",
+    "low"
+   ],
+   "escalate": false,
+   "needs_escalation_decision": false,
+   "expected": "high"
+  },
+  {
+   "domains": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high"
+   ],
+   "escalate": true,
+   "needs_escalation_decision": false,
+   "expected": "high"
+  }
+ ]
+}

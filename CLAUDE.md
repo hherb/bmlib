@@ -144,6 +144,7 @@ bmlib/
 │   ├── _condense.py         # condense_text — the Cochrane map-reduce over any prompts (private)
 │   ├── pico_models.py       # PicoExtraction, PicoPart, PicoSuitability, PicoPrepared, PicoError, part states
 │   ├── pico_agent.py        # PicoAgent — suitability check and PICO extraction, quotes verified by find_passage
+│   ├── rob2_algorithm.py    # RoB 2 decision rules (2019 guidance tables), pure; Rust rob2_algorithm.rs, contract fixtures/rob2_algorithm.json
 │   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
 │   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models
 ├── secrets.py               # API keys by provider in one OS keychain item (KeyBundle, KeyringVault — keyring on macOS, win32cred / secretstorage on Windows / Linux, extra `secrets`); Rust's twin by tests/fixtures/secret_key_list.json

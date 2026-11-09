@@ -78,6 +78,7 @@ pub mod metadata_filter;
 pub mod pico_agent;
 pub mod pico_models;
 pub mod quality_agent;
+pub mod rob2_algorithm;
 pub mod scoring_models;
 pub mod study_classifier;
 
@@ -132,6 +133,10 @@ pub use pico_models::{
     PicoPrepared, PicoSuitability,
 };
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
+pub use rob2_algorithm::{
+    applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,
+    questions, Answer, Answers, Domain, Judgement, Rob2Error, Scope, ROB2_ALGORITHM_VERSION,
+};
 pub use scoring_models::{
     AssessmentDetail, DimensionScore, ALL_DIMENSIONS, DIMENSION_METHODOLOGICAL_QUALITY,
     DIMENSION_REPLICATION_STATUS, DIMENSION_RISK_OF_BIAS, DIMENSION_SAMPLE_SIZE,

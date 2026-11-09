@@ -6,6 +6,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **RoB 2 decision rules** (StudyAnalyzer evidence weight, piece 4a). The
+  official mapping tables of the 2019 guidance (Tables 1, 3-4, 6, 10, 12, 14)
+  as pure functions in `bmlib/quality/rob2_algorithm.py` and
+  `rust/bmlib/src/quality/rob2_algorithm.rs`: `applicable_questions`,
+  `domain_judgement`, `needs_escalation_decision`, `overall_judgement`. A
+  missing, disallowed or unreadable answer is refused (`Rob2Error`), never
+  defaulted. Contract: `tests/fixtures/rob2_algorithm.json`, written by
+  `scripts/make_rob2_algorithm.py` (hand-listed `official` cases plus every
+  walk of every domain).
+
 ## [0.13.0] — 2026-11-10
 
 **The hardening release: what 0.12.0's StudyAnalyzer pieces met on current
