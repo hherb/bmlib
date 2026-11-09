@@ -1,6 +1,6 @@
 # bmlib.secrets — API keys in the OS keychain
 
-*(unreleased, #634)* An app's API keys, by provider name, in **one** OS
+*(0.13.0, #634)* An app's API keys, by provider name, in **one** OS
 keychain item: a JSON object `{provider: key}`. The item is read once for
 every `get` and cached, because macOS asks the user on every item read, so one
 item means one prompt, not one per provider; a `set` or `delete` reads it again

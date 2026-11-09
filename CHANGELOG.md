@@ -6,6 +6,139 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-10
+
+**The hardening release: what 0.12.0's StudyAnalyzer pieces met on current
+models, real servers and real papers, in Python and in the Rust port alike.**
+The LLM layer speaks to today's models: Anthropic thinking takes the shape
+each model reports (#707, #710) and Anthropic is sent no sampling parameters
+(#705); the retired Anthropic and Gemini default models are replaced;
+`chat_json` retries an unparseable reply with a correction note (#717),
+reads JSON as the Rust port's `serde_json` does (#572), and retries at
+temperature 0 where no temperature is sent (#708); a model's output limit is
+read beside its window; a cancelled stream gives its request up at the
+socket (#635, #649); and a malformed body from any provider is a
+`ValueError` naming it, not a bare `TypeError` or `RecursionError` (#617,
+#697, #698). **API keys live in the OS keychain** (`bmlib.secrets`, the new
+`secrets` extra), one item shared with the Rust crate on every platform
+(#634, #686). **A PICO or condensation failure says what it was**: whether a
+retry may cure it and the HTTP status (#659, #662, #616), a quote the paper
+contradicts (#647), a stop (#640, #642), progress (#609), the batches' causes
+(#658), and a bmlib defect raised rather than reported as an outage (#573,
+#665). `find_passage` rejects a near-verbatim match that changes a number, a
+negation or a direction (#632). `canonical_from_html` is bounded in time
+(#563), length (#654) and memory (#723, now in a child process). The PDF
+segmenter reads Elsevier's, Frontiers' and Advent 3B2's headings and keeps
+an unnamed numbered parent (#628, #636), and what MuPDF read past is
+reported (#599, #619); `FullTextResult` says which tiers failed before it
+(#603) and why a PDF did not extract (#604).
+
+**This is a minor bump because public APIs break**; every break is gathered
+under *Changed — breaking* below, and the argument stays in the entries under
+*Added*, *Changed* and *Fixed*. The Rust crate is released beside it as
+**0.4.0**, from the same merge commit; its notes are in
+`rust/bmlib/CHANGELOG.md`.
+
+**The data answer, which the number cannot give:**
+
+- **Cached full text does not re-render**: `RENDERER_VERSION` stays 7.
+- **A stored PDF canonical text is stale**: `PDF_CANONICAL_VERSION` is 7 (3
+  in 0.12.0), each step measured over 1,114 local journal PDFs in its entry.
+  `bmlib.embed.store` compares the converter version, so every chunk set
+  embedded from a PDF reads `Stale`: re-convert, then re-index.
+- **A stored Markdown canonical text is stale**: `MARKDOWN_VERSION` is 2;
+  only a document with a quoted fence or a backtick in a backtick fence's
+  info string reads differently, but every stored set is told stale.
+- **Unchanged**: the JATS, plain-text and HTML canonical versions, the
+  chunker, `EMBEDDING_RECIPE_VERSION`, `ensure_schema()`, the extractors'
+  output, and every stored publication, retraction and transparency value
+  (OpenAlex's abstract tie, #583, moves no well-formed record: an argument,
+  not a measurement).
+- **A stored PICO extraction reads as before** (`quotes_contradicted` empty,
+  true of every 0.12.0 record), but a re-run may differ: a quote verified by a
+  window that contradicts it is now rejected (#632, #647). A `Section` stored
+  with the new `"other"` type cannot be read by 0.12.0.
+
+### Changed — breaking
+
+Each entry names what a caller sees change; the argument is in the entry
+cited.
+
+**`llm`**
+
+- **The default models move** to `claude-sonnet-5-5` and
+  `gemini-flash-lite-latest` (the old ones answer 404), costed at the
+  provider's fallback estimate until #733.
+- **Anthropic is sent no `temperature` or `top_p`** (#705), so a lowered
+  temperature no longer takes effect on Claude.
+- **Anthropic `think=` follows the model's reported thinking types** (#707):
+  Opus 4.6 and Sonnet 4.6 move from a budget to adaptive for `True` and an
+  effort level, an `int` budget for an adaptive-only model and an effort the
+  model cannot take raise `ThinkingRefusedError` (a `ValueError`) before the
+  chat, and a thinking chat costs one `models.retrieve` per model.
+- **A reply carrying `NaN`, `Infinity`, `1e999` or an integer past binary64
+  is unparseable** (#572) on the `chat_json` path and in `safe_json_loads`,
+  `salvage_json_fields`, `extract_json` and `repair_json`, where Python's
+  `json` read it; a refused value is final, never answered with the object
+  beside it.
+- **Ollama's `embed` / `embed_batch` raise `ConnectionError` only for a
+  transport failure** (#697): a refusal is the `ollama.ResponseError`, a
+  non-object 200 a `ValueError`.
+- **The `ollama` extra requires `ollama>=0.5`** (was `>=0.3`; #617), and
+  the `html` extra adds `psutil>=5.9` (#723).
+
+**`quality`**
+
+- **`PicoAgent` raises what no retry cures** (#573, #665): a bmlib defect,
+  an unknown provider, a missing SDK or key, now also out of a condensation,
+  propagate unwrapped where they were `REQUEST_FAILED`; a caller catching
+  only `PicoError` now sees them. The Cochrane assessor returns `None` for a
+  condensation with a defect in any batch.
+- **`PicoPartState.CONTRADICTED` and `PicoErrorKind.STOPPED` are new
+  members** (#647, #642), and a quote rejected as a contradiction moves from
+  `quotes_not_found` to `quotes_contradicted`; `verify_quotes` returns
+  `(citations, not_found, contradicted, dropped)`.
+- **`PicoError` refuses a `retryable` or `status` for any kind but
+  `REQUEST_FAILED`** (#659, #662).
+
+**`citations`**
+
+- **A fuzzy `find_passage` match that changes a number, a negation or a
+  direction is rejected** (#632), keeping its similarity, so a similarity at
+  or above the threshold no longer implies `matched`.
+
+**`context_processor`**
+
+- **The last level decides a run's status** (#616): a run whose every
+  consolidation batch failed is `FAILED`, where it was `PARTIAL` with an
+  empty result.
+- **`ProgressInfo.current_item` counts items, not pieces** (#673).
+
+**`fulltext`**
+
+- **`canonical_from_html` parses in a child process** (#723): a frozen
+  application gets `RuntimeError`, and a page over `HTML_MAX_CHARS`, past
+  `HTML_PARSE_SECONDS` or past `HTML_PARSE_MAX_BYTES` raises
+  `HtmlPageTooLargeError`, `HtmlParseTimeoutError` or `HtmlParseMemoryError`
+  (each a `ValueError`; #654, #563).
+- **`SectionType.OTHER` is a new member** (#628), and the segmenter's
+  sections move wherever a heading is now found (pdf-4 to pdf-7).
+
+**`embed`**
+
+- **A download body ending short of its `Content-Length` is a
+  `ModelTransportError`** (#633), where it was `SizeMismatchError`; both
+  new errors are still `OSError`s.
+
+**Rust crate** (0.4.0, published beside this; see its CHANGELOG): `sync()`
+returns `Result<SyncReport, SyncError>` and takes a clock (#607, #444); a
+PICO request failure is `RequestFailed { message, retryable, status }`
+(#659, #662); `ChatError::Http` carries an HTTP error status (#646);
+`canonical_from_html` returns `Result<_, HtmlError>` (#563, #654, #723);
+`ContextWindowError::Transport` gains `status` (#664); `PicoPartState`,
+`SectionType` and `FullTextError` gain variants; several structs gain fields
+a literal must name.
+
 ### Added
 
 - **A model's output limit beside its window** (StudyAnalyzer's PICO run on
@@ -20,6 +153,282 @@ All notable changes to bmlib are documented here. The format is based on
   `BaseProvider.context_window` is now its `window`. Rust has the same
   (`LlmClient::model_limits`); the contract is the new `output_limits`
   section of `tests/fixtures/context_window.json`.
+
+- **API keys in the OS keychain, in both languages** (#634, moved here from
+  StudyAnalyzer, where phase 2b built it). `bmlib.secrets` and Rust's
+  `bmlib::secrets` keep an app's keys, by provider, in **one** keychain item
+  (service: the app's bundle id; account `API_KEYS_ACCOUNT`, `"api-keys"`)
+  holding a JSON object `{provider: key}`, read once for every `get` and
+  cached by `KeyBundle`, since macOS asks the user on every item read; a
+  `set` or `delete` reads it again first, so another writer's key is kept. A `SecretStore`
+  (`get`, `set`, `delete`) over a `Vault` (`read`, `write`, the only part
+  that touches the OS); `MemorySecrets` for tests. `set` over an item that is
+  not a key list (or not UTF-8) replaces it (logged), `get` and `delete`
+  report it; a failed write leaves the cache; a `SecretError` never holds a
+  key, nor, in Python, chains an exception that could. Its `kind`
+  (`SecretErrorKind`, #689) says whether saving a key will help:
+  `unreadable-item` (it replaces the item), `ambiguous-item` (two keychain
+  items match; bmlib's own `KeyringVault` reports it on Linux, in both languages; `set` refuses rather than writing over
+  one it cannot see) or `store` (locked, denied, no keychain), so an app
+  offers "save a key to replace the damaged item" only when it is true. The OS keychain
+  is `KeyringVault`: Python's through the `keyring` package (new extra
+  `secrets`, in `all`) on macOS and the platform libraries it installs on
+  Windows (`win32cred`) and Linux (`secretstorage`), Rust's over the `keyring` crate's v1 stores (new
+  feature `keyring`, off by default, so a mobile build brings its own
+  `Vault`). The item's text is read and written by `read_key_list` /
+  `write_key_list`, held together with `KeyBundle`'s behaviour by
+  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 14 store
+  scenarios, each failure by kind). Both languages address one item on
+  macOS, Windows, Linux and the BSDs (#686, the maintainer's choices): on
+  Windows the credential named by the service alone, its `UserName` the
+  account (Rust through the `target` modifier; Python writes it in place,
+  where `keyring.set_password` first copies the old value to
+  `account@service`, keeping a deleted key), and one of that name another
+  account holds refused as `store` rather than overwritten; on Linux and the
+  BSDs the Secret Service item carrying just `service` and `username`
+  (Python no longer adds `keyring`'s `application` attribute, which made a
+  second item beside Rust's), two of them `ambiguous-item` in both
+  languages. CI's new `keychain-interop` job checks Windows and Linux live,
+  each language reading what the other wrote and refusing what it must.
+
+- **Rust lists a provider's models** (#680, filed by StudyAnalyzer, whose
+  Settings offer the models to pick from). `LlmClient::list_models(provider)`
+  answers the provider's model ids, sorted and without duplicates, reading
+  every page (Anthropic's at `limit=1000`, followed by `last_id` while
+  `has_more`, at most `MAX_LISTING_PAGES`) and filtering nothing. Unlike
+  Python's `LLMClient.list_models`, which answers `[]` for any failure, every
+  failure is a `ListModelsError`: `UnknownProvider` and `MissingApiKey` before
+  any request, `Transport { message, status }` (a 401 or 403 is a refused
+  key), `Malformed`. Each page is read by the pure
+  `read_model_listing(provider, body)`, in **both languages**
+  (`bmlib.llm.model_listing.read_model_listing` in Python, raising
+  `ModelListingError`), held together by `tests/fixtures/model_listing.json`
+  (23 cases): Ollama's `models[].model`, every other provider's `data[].id`,
+  a leading `models/` dropped from a Gemini id. Python's providers keep
+  their own listing (the SDKs', Ollama's raw `/api/tags`) and do not call the
+  reader. Rust's port had no `list_models` (HANDOVER_RUST.md §1 lists it
+  among the deliberately absent calls) until a Rust caller needed it.
+
+- **A long text's condensation reports its progress** (#609, filed by
+  StudyAnalyzer, with the Rust crate). The PICO and Cochrane agents' map-reduce
+  ran with no progress callback, so an app condensing a long paper could show
+  nothing for minutes. **Python**: `PicoAgent` and `CochraneAssessor` take
+  `condense_progress`, handed every `ProgressInfo`; `condense_text` passes it
+  to `LLMChunkProcessor`. **Rust**: `LlmCondenser::with_progress(callback)`
+  (both agents) and `LlmChunkProcessor::with_progress(ProgressCallback)`,
+  which `new` had built with none. A callback that panics is now logged, as
+  Python logs one that raises. The shared `tests/fixtures/pico_stop_num_ctx.json`
+  states `expected.progress` on every case: stage, batch and level, in order.
+
+- **A failed context-window lookup carries the HTTP status** (#664, filed by
+  StudyAnalyzer's review, with the Rust crate). `ContextWindowError` gains
+  `status`: the HTTP status the provider answered with, `None` where no HTTP
+  answer came. An app reads the window before its first call to a model, so
+  a wrong key met there looked like an outage. It is read from the SDK
+  exception's `status_code` (from an `httpx.HTTPStatusError`'s response for
+  Gemini's retried statuses); Gemini's and Ollama's own refusals pass theirs.
+  The helper that reads it moves from the condenser to
+  `bmlib.llm.utils.http_status` (the condenser and the PICO agent import it
+  there). The shared `tests/fixtures/context_window.json` gains `refusals`:
+  each provider's own SDK client over an `httpx.MockTransport`.
+
+- **A PICO request failure carries the HTTP status** (#662, filed by
+  StudyAnalyzer's review, with the Rust crate). `PicoError` gains `status`:
+  the HTTP status the server answered a `REQUEST_FAILED` request with, `None`
+  where no HTTP answer came (a connection failure, a timeout), the answer was
+  unreadable, and for every other kind. #659's `retryable` said whether to
+  retry and not why it failed, so an app could not tell a refused key (401,
+  403) from no such model (404) without parsing the message.
+  `PicoError(kind, message, retryable=False, status=None)`; pickling keeps it.
+  A `retryable` or `status` given for any other kind raises `ValueError`,
+  as Rust's `PicoError` holds both on `RequestFailed` alone (PR #663's review).
+  It is read from the SDK exception's `status_code`, the field the
+  condenser's refusal rule already reads (`_http_status`, beside
+  `_is_refusal`). The shared `tests/fixtures/pico_stop_num_ctx.json` states
+  `expected.status` on every `request_failed` case.
+
+- **A streamed chat can be cancelled while it waits** (#635, filed by
+  StudyAnalyzer). `chat_stream` could be stopped only from `on_delta`, which
+  runs once text arrives, and a local server reads the whole prompt first: a
+  paper on a 27–31B model takes minutes, during which a user's Stop did
+  nothing. `LLMClient.chat_stream(..., cancel=)` takes an `Event` or a
+  callable (the `Stop` type, moved to `bmlib.llm.stream` from
+  `bmlib.quality.pico_agent`, which still imports it; `stop_reader` with it).
+  Given one, the request is sent and read on a worker thread while the
+  caller's thread looks at the cancel every 50 ms, so it returns at once with
+  what arrived and `stop_reason` `"cancelled"`, its usage recorded as for a
+  stop; a cancel already set sends nothing and records no usage. The request
+  was **abandoned, not interrupted** until #649 (see *Fixed*: it is now given
+  up at the socket). A failure the cancel overtook is logged
+  at DEBUG. Without
+  a cancel nothing changes. The built-in providers take `cancel` through the
+  new `bmlib.llm.stream.read_stream`; `run_stream` takes `cancelled=`; a
+  third-party provider whose `chat_stream` declares no `cancel` is refused one
+  (`NotImplementedError`) rather than passing it to its SDK. Rust has
+  `LlmClient::chat_stream_with_cancel` (see its CHANGELOG). The shared
+  `tests/fixtures/chat_stream.json` gains five `cancel_after` cases (29).
+
+- **The PICO agent sends `num_ctx` and can be stopped** (#640, #642, from
+  StudyAnalyzer's plan 2c). `PicoAgent(..., num_ctx=None, stop=None)`:
+  `num_ctx` reaches every request the agent makes, the condenser's included,
+  so Ollama no longer loads the model with its own small window and drops the
+  start of a paper; a bad value raises `ValueError` at construction, and
+  `agent.num_ctx` is read-only. `stop` (a
+  `threading.Event` or a zero-argument callable) is read before every request
+  through the agent's `chat()`, which raises the new
+  `bmlib.agents.ChatStoppedError` in place of sending; once it is set the call
+  under way raises `PicoError` with the new kind `STOPPED` (`"stopped"`),
+  whatever else failed (a bmlib defect or a missing SDK still propagates), and a condensation that finished while it was set
+  (its digest possibly partial) is `STOPPED` too. A request already sent runs
+  to its end, and a call whose request succeeded returns its result. A stop
+  during the map-reduce ends it with the new
+  `bmlib.context_processor.ProcessingStoppedError`, which `process()` lets
+  propagate, logging nothing, rather than failing each batch left at ERROR;
+  the new `BaseAgent.stop_requested()` (false unless a subclass reads a stop)
+  lets `chat_json` and the processor skip the backoff before a retry the stop
+  would refuse. The Rust port has `LlmChat::with_num_ctx`/`with_stop` and
+  `PicoAgent::with_stop`, and the shared fixture
+  `tests/fixtures/pico_stop_num_ctx.json` (16 cases over a fake Ollama HTTP
+  transport — ollama-python over an `httpx.MockTransport` in Python — the real
+  client and map-reduce included) holds both languages to the same
+  requests, each one's `num_ctx`, and the same outcome.
+- **`LLMChunkProcessor` retries a failed model request with backoff** (#641,
+  rule 7): up to `CONTEXT_MODEL_ATTEMPTS` (3) tries, waiting
+  `CONTEXT_MODEL_RETRY_BASE_DELAY` (1 s) and doubling, so one dropped request
+  no longer costs a long paper's condensation a batch (ollama-python retries nothing;
+  the Anthropic and OpenAI SDKs' own retries come first). A `ValueError`
+  (every `ChatJsonError` among them), a missing SDK, `NotImplementedError`, a
+  bmlib defect, `ChatStoppedError` and an HTTP refusal no retry changes are
+  not retried: an exception carrying a `status_code` outside 408, 429, 500,
+  502, 503, 504 and 529 (#646, the statuses Rust retries, held to agreeing by
+  `pico_stop_num_ctx.json`), so a bad key, a missing model or a bad
+  request costs one request and no backoff; everything else is. Only the request is
+  retried, never the reading of its reply, and a `confidence` too large for a
+  float reads as the default rather than failing the batch. This reaches the
+  Cochrane assessor's condensation too. Rust's new `LlmContextModel` makes the
+  same attempts with the same backoff and retries the same statuses, and of
+  other failures only a transport one.
+- **`PicoAgent.prepare` condenses a long paper once for both PICO calls**
+  (#638, from StudyAnalyzer's plan 2c review). `check_suitability` and
+  `extract` each condensed their own text, so a paper checked and extracted
+  from one long text ran the map-reduce twice, and an `extract` retried after
+  `REQUEST_FAILED` ran it again before the one request that had failed.
+  `prepare(title, text)` returns a `PicoPrepared` (the stripped title, the
+  text as passed, the digest or `None`, its status and notes), which
+  `check_suitability_prepared` and `extract_prepared` take; quotes are still
+  verified against the text, never the digest. It is frozen (its notes a
+  tuple), checked on construction and stored with `to_dict`/`from_dict`,
+  which refuses a title that is not stripped, an empty paper, a status or
+  notes without a digest, a blank digest, a digest of an empty text and a
+  digest whose status is absent or not one a digest finishes with (any
+  `ProcessingStatus` but `"failed"`). One prepared for another budget — sending
+  more than the agent's own, or condensed though the agent would send its text
+  whole — raises `ValueError` before any request. A prepared paper's
+  note says it was *condensed before the suitability check and extraction*;
+  the direct calls, now routed through the same code, keep their own wording
+  and send what they sent. The Rust port has the same three methods and
+  `PicoPrepared` (fields behind accessors, `to_json`/`from_json` refusing
+  word for word what Python refuses) and two new `PicoError` variants,
+  `PreparedOverBudget` and `PreparedUnderBudget` (`"prepared_over_budget"`,
+  `"prepared_under_budget"`; the enum is `#[non_exhaustive]`); the PICO oracle
+  gains 23 cases, one condensing a padded text once for a check and two
+  extractions after a store and reload.
+
+- **`SectionType.OTHER`** (`"other"`, #628): a heading that names no section,
+  kept because numbered subsections number from it (see *Fixed*). A bmlib
+  before this release reading a stored `"other"` raises `ValueError` from
+  `SectionType(...)` and `Section.from_dict`.
+
+- **An exhausted chain raises `FullTextExhaustedError`** (#565, the raise-path
+  half of #603, from hherb/StudyAnalyzer). `fetch_fulltext` with no link to
+  degrade to raised a bare `FullTextError` whether its sources failed or all
+  had nothing, so a caller told "something failed" from "nothing failed" by
+  parsing the message. The subclass carries `faults` (the fault type names,
+  in order, as `tier_faults` carries them) and `absences`; empty `faults`
+  means nothing the chain asked failed, so a retry now would get the same
+  answers (`absences` is 0 where nothing could be asked), and a refused
+  identifier is not a fault. The message is unchanged, and
+  `except FullTextError` still catches it; `"No identifiers provided"` stays
+  a plain `FullTextError`. Rust's `FullTextError::Exhausted { message, faults,
+  absences }` is the same, with each language's fault names (a transport
+  failure is httpx's class in Python, `TransportError` in Rust), held by six
+  new cases in `tests/fixtures/fulltext_source.json`.
+
+- **`FullTextResult.tier_faults` carries the faults the chain swallowed
+  before it** (#603, from hherb/StudyAnalyzer PR #23). A tier returns as soon
+  as it has a result — a PDF tier as soon as it has a URL, whether or not the
+  download worked — and the "No full text found … N attempts failed (…)"
+  WARNING is logged only on the empty-handed exits, so a PDF returned while
+  Europe PMC's and NCBI's JATS both answered 503 looked like the best a retry
+  could do, the outage being at DEBUG alone. The field lists the fault type
+  names that WARNING lists, in order (`["FullTextError", "FullTextError"]`
+  for the two 503s), on every result the chain returns: full text, a PDF,
+  an abstract, a link. A source answering that it has nothing is not a fault
+  and is not listed, nor is a caller's PMID, DOI or PMC ID refused before any
+  request, which the WARNING still counts and no retry changes; a cache hit has none, since no chain ran, while in Python
+  a stale rendering served over a re-fetch that came back with less carries
+  the re-fetch's faults. Rust's
+  `FullTextResult` has the same field, `Vec<String>`; the names agree where
+  the two languages name a fault alike (a non-200 is `FullTextError` in both,
+  a transport failure `ConnectError` and the like in Python and
+  `TransportError` in Rust). Held by four new cases of the shared
+  `tests/fixtures/fulltext_source.json`, every existing case now asserting an
+  empty list. Nothing stored moves; `test_renderer_version.py`'s three
+  digests are re-pinned for the `models.py` edit, no version bumped.
+
+- **`PDFBlocks.metadata_title` is the PDF's own `/Title`** (same report).
+  `extract_blocks_with_warnings()` returned no metadata, so a caller
+  segmenting its blocks had no title to offer and the largest line on page 1
+  won: on a journal's first page, its masthead. Verbatim and unjudged, `None`
+  when absent; a title that cannot be read adds a warning (read through
+  MuPDF's own lookup, since PyMuPDF's `doc.metadata` reads a failed lookup as
+  no title). Rust's `PdfBlocks` has the same field.
+
+- **`FullTextResult.pdf_extraction_failure` says which side a failed PDF
+  extraction is on** (#604). `ConversionResult.error_kind` (#598) stopped at
+  the converter: `FullTextService` logged the message and dropped the kind, so
+  a service caller could not tell *this PDF is damaged, look for another copy*
+  from *the engine failed, retry*. The field holds the `PDFErrorKind` value of
+  a failed conversion (`"encrypted"`, `"unreadable"`, `"engine"`,
+  `"cancelled"`, `"timed-out"`), beside `pdf_download_failure` (#594). A
+  failure the converter did not place, and any exception while converting or
+  rendering (a vanished cache file included), is `"engine"`, the rule #598 made for an unplaced cause. `None` when the text
+  extracted, when no extraction was tried (no backend included), and for a
+  scan yielding no text, which is not a failure. The maintainer's choice of
+  shape. The Rust port carries the same field.
+
+- **What MuPDF reads past is reported** (#599, found reviewing
+  hherb/StudyAnalyzer#21). MuPDF repairs a broken xref, and stops reading a
+  page's content stream after too many syntax errors (#605's case:
+  `too many syntax errors; ignoring rest of page`), with only a message. bmlib
+  never read PyMuPDF's store of those messages, so a damaged PDF converted
+  whole with text missing and nothing said. `PyMuPDFConverter.extract_blocks_with_warnings()`
+  returns a `PDFBlocks` — the blocks `extract_blocks()` returns, and MuPDF's
+  messages, warnings and the errors it reads past alike, as MuPDF words them,
+  the path replaced by "the file". `convert()` ends `ConversionResult.warnings`
+  with them. Both, and `extract_blocks()`, log them as one WARNING per read
+  (the count, then every message; a page cut short gives a hundred), on a
+  failure too, and empty PyMuPDF's process-wide store before and after, so a
+  caller reading it finds it empty. A repeated warning arrives once, then as
+  `... repeated N times...`, N counting the first; reading starts with a flush,
+  since a warning MuPDF left counted would otherwise swallow the next read's
+  first identical one (a plain `TOOLS.reset_mupdf_warnings()` keeps the count,
+  measured). `is_about_the_file()` sets aside MuPDF's store race
+  (`found duplicate fz_icc_link in the store`, two threads caching one item),
+  which costs no text. **PyMuPDF's store is one per process**, so two PDFs read
+  at once on two threads can get each other's messages (a `shortcut:` at the
+  site). The Rust crate reports the same; the shared contract is
+  `tests/fixtures/pdf_warnings.json` (a repaired xref, a page cut short, and
+  #590's sound PDF reporting nothing), written by
+  `scripts/make_pdf_warnings_fixture.py`. **Measured** over 128 journal PDFs
+  held locally (no list is committed, so the figures cannot be re-derived from
+  the repo), with PyMuPDF 1.28.5: 15 report anything in Python (20 messages, mostly `bogus font ...
+  ascent/descent values`, but `premature end of data in flate filter` and
+  `ActualText with no position. Text may be lost or mispositioned.` too). The
+  canonical text does not move, so `PDF_CANONICAL_VERSION` stays 3 (re-pinned).
+  `FullTextService`'s line for a PDF yielding no text no longer says *likely a
+  scan*: a page cut short yields nothing too, and the converter's own line
+  says which.
 
 ### Changed
 
@@ -210,6 +619,44 @@ All notable changes to bmlib are documented here. The format is based on
   same logger names and levels as this library, so a Rust host's logger
   receives the warnings Python's `logging` already carries. Rust only; the
   detail is in its CHANGELOG.
+
+- **`download_model` says whether a failed download is worth a retry** (#633,
+  with the Rust crate). A refused request and a network fault were both a bare
+  `urllib` `OSError`, a body that broke off was a `SizeMismatchError`, and a
+  caller retrying with backoff retried a 404 like a dropped connection. They
+  are now **`ModelStatusError`** (`.status`, `.message`; the server answered
+  with a non-success status) and **`ModelTransportError`** (no connection, a
+  timeout, a read that failed, or a body ending short of its
+  `Content-Length`), both a **`ModelDownloadError`**, whose **`.retryable`**
+  is `True` for a transport fault and for a 408, 429 or 5xx. Both are still
+  `OSError`s, so an `except OSError` keeps catching them; a file-system
+  failure stays a plain `OSError`, apart from them. One thing moves: a body
+  ending short of its declared length was a `SizeMismatchError` and is now a
+  `ModelTransportError` (a short body that declared that length is still a
+  `SizeMismatchError`). The rule is held by a new `download_errors` section
+  of the shared `tests/fixtures/embedding_contract.json`, which the Rust suite
+  reads too.
+
+- **`PicoAgent` no longer reports what no retry cures as `REQUEST_FAILED`**
+  (#573). Every exception the request raised that was not a `ChatJsonError`
+  was `REQUEST_FAILED`, which an app retries as an outage: a bmlib
+  `TypeError` or `AttributeError`, an unknown provider (`ValueError`), and a
+  missing Anthropic key (the SDK's `TypeError`) included. Those now propagate
+  unwrapped, as does a provider SDK not installed (`ImportError`); the
+  provider is resolved before any request, so an unknown one or a missing SDK
+  raises whatever the text's length, while a `ValueError` the request raises
+  (an SDK reading a 200 body that is not JSON) stays `REQUEST_FAILED`; a
+  `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` is
+  read as bmlib's own defect, the deny-list `transparency` and `fulltext` use.
+  Likewise a `ValueError` raised by bmlib's own code while reading a reply
+  propagates, where it was re-requested and reported as `UNUSABLE_REPLY`
+  ("another model may do better"): the readers raise a private subclass, and
+  only that is re-asked. **This changes the "result or `PicoError`"
+  contract**: a caller catching only `PicoError` now sees those exceptions.
+  The maintainer's choice, over logging at ERROR and over a new kind. Since
+  #616 the same holds on a text condensed first, when the defect or the
+  missing key fails the condensation. The Rust port keeps
+  every `ChatError` as `RequestFailed` (see `docs/DECISIONS.md`).
 
 ### Fixed
 
@@ -453,124 +900,6 @@ All notable changes to bmlib are documented here. The format is based on
   (`"pdf-7"`). Rust agrees with Python on the 36 papers carrying a variant
   name (the segmenter oracle run once over their blocks); eleven oracle cases
   hold both languages to the table.
-
-### Added
-
-- **API keys in the OS keychain, in both languages** (#634, moved here from
-  StudyAnalyzer, where phase 2b built it). `bmlib.secrets` and Rust's
-  `bmlib::secrets` keep an app's keys, by provider, in **one** keychain item
-  (service: the app's bundle id; account `API_KEYS_ACCOUNT`, `"api-keys"`)
-  holding a JSON object `{provider: key}`, read once for every `get` and
-  cached by `KeyBundle`, since macOS asks the user on every item read; a
-  `set` or `delete` reads it again first, so another writer's key is kept. A `SecretStore`
-  (`get`, `set`, `delete`) over a `Vault` (`read`, `write`, the only part
-  that touches the OS); `MemorySecrets` for tests. `set` over an item that is
-  not a key list (or not UTF-8) replaces it (logged), `get` and `delete`
-  report it; a failed write leaves the cache; a `SecretError` never holds a
-  key, nor, in Python, chains an exception that could. Its `kind`
-  (`SecretErrorKind`, #689) says whether saving a key will help:
-  `unreadable-item` (it replaces the item), `ambiguous-item` (two keychain
-  items match; bmlib's own `KeyringVault` reports it on Linux, in both languages; `set` refuses rather than writing over
-  one it cannot see) or `store` (locked, denied, no keychain), so an app
-  offers "save a key to replace the damaged item" only when it is true. The OS keychain
-  is `KeyringVault`: Python's through the `keyring` package (new extra
-  `secrets`, in `all`) on macOS and the platform libraries it installs on
-  Windows (`win32cred`) and Linux (`secretstorage`), Rust's over the `keyring` crate's v1 stores (new
-  feature `keyring`, off by default, so a mobile build brings its own
-  `Vault`). The item's text is read and written by `read_key_list` /
-  `write_key_list`, held together with `KeyBundle`'s behaviour by
-  `tests/fixtures/secret_key_list.json` (26 reads, 8 writes, 14 store
-  scenarios, each failure by kind). Both languages address one item on
-  macOS, Windows, Linux and the BSDs (#686, the maintainer's choices): on
-  Windows the credential named by the service alone, its `UserName` the
-  account (Rust through the `target` modifier; Python writes it in place,
-  where `keyring.set_password` first copies the old value to
-  `account@service`, keeping a deleted key), and one of that name another
-  account holds refused as `store` rather than overwritten; on Linux and the
-  BSDs the Secret Service item carrying just `service` and `username`
-  (Python no longer adds `keyring`'s `application` attribute, which made a
-  second item beside Rust's), two of them `ambiguous-item` in both
-  languages. CI's new `keychain-interop` job checks Windows and Linux live,
-  each language reading what the other wrote and refusing what it must.
-
-- **Rust lists a provider's models** (#680, filed by StudyAnalyzer, whose
-  Settings offer the models to pick from). `LlmClient::list_models(provider)`
-  answers the provider's model ids, sorted and without duplicates, reading
-  every page (Anthropic's at `limit=1000`, followed by `last_id` while
-  `has_more`, at most `MAX_LISTING_PAGES`) and filtering nothing. Unlike
-  Python's `LLMClient.list_models`, which answers `[]` for any failure, every
-  failure is a `ListModelsError`: `UnknownProvider` and `MissingApiKey` before
-  any request, `Transport { message, status }` (a 401 or 403 is a refused
-  key), `Malformed`. Each page is read by the pure
-  `read_model_listing(provider, body)`, in **both languages**
-  (`bmlib.llm.model_listing.read_model_listing` in Python, raising
-  `ModelListingError`), held together by `tests/fixtures/model_listing.json`
-  (23 cases): Ollama's `models[].model`, every other provider's `data[].id`,
-  a leading `models/` dropped from a Gemini id. Python's providers keep
-  their own listing (the SDKs', Ollama's raw `/api/tags`) and do not call the
-  reader. Rust's port had no `list_models` (HANDOVER_RUST.md §1 lists it
-  among the deliberately absent calls) until a Rust caller needed it.
-
-- **A long text's condensation reports its progress** (#609, filed by
-  StudyAnalyzer, with the Rust crate). The PICO and Cochrane agents' map-reduce
-  ran with no progress callback, so an app condensing a long paper could show
-  nothing for minutes. **Python**: `PicoAgent` and `CochraneAssessor` take
-  `condense_progress`, handed every `ProgressInfo`; `condense_text` passes it
-  to `LLMChunkProcessor`. **Rust**: `LlmCondenser::with_progress(callback)`
-  (both agents) and `LlmChunkProcessor::with_progress(ProgressCallback)`,
-  which `new` had built with none. A callback that panics is now logged, as
-  Python logs one that raises. The shared `tests/fixtures/pico_stop_num_ctx.json`
-  states `expected.progress` on every case: stage, batch and level, in order.
-
-- **A failed context-window lookup carries the HTTP status** (#664, filed by
-  StudyAnalyzer's review, with the Rust crate). `ContextWindowError` gains
-  `status`: the HTTP status the provider answered with, `None` where no HTTP
-  answer came. An app reads the window before its first call to a model, so
-  a wrong key met there looked like an outage. It is read from the SDK
-  exception's `status_code` (from an `httpx.HTTPStatusError`'s response for
-  Gemini's retried statuses); Gemini's and Ollama's own refusals pass theirs.
-  The helper that reads it moves from the condenser to
-  `bmlib.llm.utils.http_status` (the condenser and the PICO agent import it
-  there). The shared `tests/fixtures/context_window.json` gains `refusals`:
-  each provider's own SDK client over an `httpx.MockTransport`.
-
-- **A PICO request failure carries the HTTP status** (#662, filed by
-  StudyAnalyzer's review, with the Rust crate). `PicoError` gains `status`:
-  the HTTP status the server answered a `REQUEST_FAILED` request with, `None`
-  where no HTTP answer came (a connection failure, a timeout), the answer was
-  unreadable, and for every other kind. #659's `retryable` said whether to
-  retry and not why it failed, so an app could not tell a refused key (401,
-  403) from no such model (404) without parsing the message.
-  `PicoError(kind, message, retryable=False, status=None)`; pickling keeps it.
-  A `retryable` or `status` given for any other kind raises `ValueError`,
-  as Rust's `PicoError` holds both on `RequestFailed` alone (PR #663's review).
-  It is read from the SDK exception's `status_code`, the field the
-  condenser's refusal rule already reads (`_http_status`, beside
-  `_is_refusal`). The shared `tests/fixtures/pico_stop_num_ctx.json` states
-  `expected.status` on every `request_failed` case.
-
-- **A streamed chat can be cancelled while it waits** (#635, filed by
-  StudyAnalyzer). `chat_stream` could be stopped only from `on_delta`, which
-  runs once text arrives, and a local server reads the whole prompt first: a
-  paper on a 27–31B model takes minutes, during which a user's Stop did
-  nothing. `LLMClient.chat_stream(..., cancel=)` takes an `Event` or a
-  callable (the `Stop` type, moved to `bmlib.llm.stream` from
-  `bmlib.quality.pico_agent`, which still imports it; `stop_reader` with it).
-  Given one, the request is sent and read on a worker thread while the
-  caller's thread looks at the cancel every 50 ms, so it returns at once with
-  what arrived and `stop_reason` `"cancelled"`, its usage recorded as for a
-  stop; a cancel already set sends nothing and records no usage. The request
-  was **abandoned, not interrupted** until #649 (see *Fixed*: it is now given
-  up at the socket). A failure the cancel overtook is logged
-  at DEBUG. Without
-  a cancel nothing changes. The built-in providers take `cancel` through the
-  new `bmlib.llm.stream.read_stream`; `run_stream` takes `cancelled=`; a
-  third-party provider whose `chat_stream` declares no `cancel` is refused one
-  (`NotImplementedError`) rather than passing it to its SDK. Rust has
-  `LlmClient::chat_stream_with_cancel` (see its CHANGELOG). The shared
-  `tests/fixtures/chat_stream.json` gains five `cancel_after` cases (29).
-
-### Fixed
 
 - **A split item's progress counts once** (#673, found while pinning #609's
   progress, with the Rust crate). `ProgressInfo.current_item` added a batch's
@@ -981,212 +1310,6 @@ All notable changes to bmlib are documented here. The format is based on
   Python and Rust alike, held by the oracle corpora, and by the extraction
   contract's PDF for the title, the accents (one typed as an apostrophe), the
   wrapped numbered heading and the indent.
-
-### Added
-
-- **The PICO agent sends `num_ctx` and can be stopped** (#640, #642, from
-  StudyAnalyzer's plan 2c). `PicoAgent(..., num_ctx=None, stop=None)`:
-  `num_ctx` reaches every request the agent makes, the condenser's included,
-  so Ollama no longer loads the model with its own small window and drops the
-  start of a paper; a bad value raises `ValueError` at construction, and
-  `agent.num_ctx` is read-only. `stop` (a
-  `threading.Event` or a zero-argument callable) is read before every request
-  through the agent's `chat()`, which raises the new
-  `bmlib.agents.ChatStoppedError` in place of sending; once it is set the call
-  under way raises `PicoError` with the new kind `STOPPED` (`"stopped"`),
-  whatever else failed (a bmlib defect or a missing SDK still propagates), and a condensation that finished while it was set
-  (its digest possibly partial) is `STOPPED` too. A request already sent runs
-  to its end, and a call whose request succeeded returns its result. A stop
-  during the map-reduce ends it with the new
-  `bmlib.context_processor.ProcessingStoppedError`, which `process()` lets
-  propagate, logging nothing, rather than failing each batch left at ERROR;
-  the new `BaseAgent.stop_requested()` (false unless a subclass reads a stop)
-  lets `chat_json` and the processor skip the backoff before a retry the stop
-  would refuse. The Rust port has `LlmChat::with_num_ctx`/`with_stop` and
-  `PicoAgent::with_stop`, and the shared fixture
-  `tests/fixtures/pico_stop_num_ctx.json` (16 cases over a fake Ollama HTTP
-  transport — ollama-python over an `httpx.MockTransport` in Python — the real
-  client and map-reduce included) holds both languages to the same
-  requests, each one's `num_ctx`, and the same outcome.
-- **`LLMChunkProcessor` retries a failed model request with backoff** (#641,
-  rule 7): up to `CONTEXT_MODEL_ATTEMPTS` (3) tries, waiting
-  `CONTEXT_MODEL_RETRY_BASE_DELAY` (1 s) and doubling, so one dropped request
-  no longer costs a long paper's condensation a batch (ollama-python retries nothing;
-  the Anthropic and OpenAI SDKs' own retries come first). A `ValueError`
-  (every `ChatJsonError` among them), a missing SDK, `NotImplementedError`, a
-  bmlib defect, `ChatStoppedError` and an HTTP refusal no retry changes are
-  not retried: an exception carrying a `status_code` outside 408, 429, 500,
-  502, 503, 504 and 529 (#646, the statuses Rust retries, held to agreeing by
-  `pico_stop_num_ctx.json`), so a bad key, a missing model or a bad
-  request costs one request and no backoff; everything else is. Only the request is
-  retried, never the reading of its reply, and a `confidence` too large for a
-  float reads as the default rather than failing the batch. This reaches the
-  Cochrane assessor's condensation too. Rust's new `LlmContextModel` makes the
-  same attempts with the same backoff and retries the same statuses, and of
-  other failures only a transport one.
-- **`PicoAgent.prepare` condenses a long paper once for both PICO calls**
-  (#638, from StudyAnalyzer's plan 2c review). `check_suitability` and
-  `extract` each condensed their own text, so a paper checked and extracted
-  from one long text ran the map-reduce twice, and an `extract` retried after
-  `REQUEST_FAILED` ran it again before the one request that had failed.
-  `prepare(title, text)` returns a `PicoPrepared` (the stripped title, the
-  text as passed, the digest or `None`, its status and notes), which
-  `check_suitability_prepared` and `extract_prepared` take; quotes are still
-  verified against the text, never the digest. It is frozen (its notes a
-  tuple), checked on construction and stored with `to_dict`/`from_dict`,
-  which refuses a title that is not stripped, an empty paper, a status or
-  notes without a digest, a blank digest, a digest of an empty text and a
-  digest whose status is absent or not one a digest finishes with (any
-  `ProcessingStatus` but `"failed"`). One prepared for another budget — sending
-  more than the agent's own, or condensed though the agent would send its text
-  whole — raises `ValueError` before any request. A prepared paper's
-  note says it was *condensed before the suitability check and extraction*;
-  the direct calls, now routed through the same code, keep their own wording
-  and send what they sent. The Rust port has the same three methods and
-  `PicoPrepared` (fields behind accessors, `to_json`/`from_json` refusing
-  word for word what Python refuses) and two new `PicoError` variants,
-  `PreparedOverBudget` and `PreparedUnderBudget` (`"prepared_over_budget"`,
-  `"prepared_under_budget"`; the enum is `#[non_exhaustive]`); the PICO oracle
-  gains 23 cases, one condensing a padded text once for a check and two
-  extractions after a store and reload.
-
-- **`SectionType.OTHER`** (`"other"`, #628): a heading that names no section,
-  kept because numbered subsections number from it (see *Fixed*). A bmlib
-  before this release reading a stored `"other"` raises `ValueError` from
-  `SectionType(...)` and `Section.from_dict`.
-
-- **An exhausted chain raises `FullTextExhaustedError`** (#565, the raise-path
-  half of #603, from hherb/StudyAnalyzer). `fetch_fulltext` with no link to
-  degrade to raised a bare `FullTextError` whether its sources failed or all
-  had nothing, so a caller told "something failed" from "nothing failed" by
-  parsing the message. The subclass carries `faults` (the fault type names,
-  in order, as `tier_faults` carries them) and `absences`; empty `faults`
-  means nothing the chain asked failed, so a retry now would get the same
-  answers (`absences` is 0 where nothing could be asked), and a refused
-  identifier is not a fault. The message is unchanged, and
-  `except FullTextError` still catches it; `"No identifiers provided"` stays
-  a plain `FullTextError`. Rust's `FullTextError::Exhausted { message, faults,
-  absences }` is the same, with each language's fault names (a transport
-  failure is httpx's class in Python, `TransportError` in Rust), held by six
-  new cases in `tests/fixtures/fulltext_source.json`.
-
-- **`FullTextResult.tier_faults` carries the faults the chain swallowed
-  before it** (#603, from hherb/StudyAnalyzer PR #23). A tier returns as soon
-  as it has a result — a PDF tier as soon as it has a URL, whether or not the
-  download worked — and the "No full text found … N attempts failed (…)"
-  WARNING is logged only on the empty-handed exits, so a PDF returned while
-  Europe PMC's and NCBI's JATS both answered 503 looked like the best a retry
-  could do, the outage being at DEBUG alone. The field lists the fault type
-  names that WARNING lists, in order (`["FullTextError", "FullTextError"]`
-  for the two 503s), on every result the chain returns: full text, a PDF,
-  an abstract, a link. A source answering that it has nothing is not a fault
-  and is not listed, nor is a caller's PMID, DOI or PMC ID refused before any
-  request, which the WARNING still counts and no retry changes; a cache hit has none, since no chain ran, while in Python
-  a stale rendering served over a re-fetch that came back with less carries
-  the re-fetch's faults. Rust's
-  `FullTextResult` has the same field, `Vec<String>`; the names agree where
-  the two languages name a fault alike (a non-200 is `FullTextError` in both,
-  a transport failure `ConnectError` and the like in Python and
-  `TransportError` in Rust). Held by four new cases of the shared
-  `tests/fixtures/fulltext_source.json`, every existing case now asserting an
-  empty list. Nothing stored moves; `test_renderer_version.py`'s three
-  digests are re-pinned for the `models.py` edit, no version bumped.
-
-- **`PDFBlocks.metadata_title` is the PDF's own `/Title`** (same report).
-  `extract_blocks_with_warnings()` returned no metadata, so a caller
-  segmenting its blocks had no title to offer and the largest line on page 1
-  won: on a journal's first page, its masthead. Verbatim and unjudged, `None`
-  when absent; a title that cannot be read adds a warning (read through
-  MuPDF's own lookup, since PyMuPDF's `doc.metadata` reads a failed lookup as
-  no title). Rust's `PdfBlocks` has the same field.
-
-- **`FullTextResult.pdf_extraction_failure` says which side a failed PDF
-  extraction is on** (#604). `ConversionResult.error_kind` (#598) stopped at
-  the converter: `FullTextService` logged the message and dropped the kind, so
-  a service caller could not tell *this PDF is damaged, look for another copy*
-  from *the engine failed, retry*. The field holds the `PDFErrorKind` value of
-  a failed conversion (`"encrypted"`, `"unreadable"`, `"engine"`,
-  `"cancelled"`, `"timed-out"`), beside `pdf_download_failure` (#594). A
-  failure the converter did not place, and any exception while converting or
-  rendering (a vanished cache file included), is `"engine"`, the rule #598 made for an unplaced cause. `None` when the text
-  extracted, when no extraction was tried (no backend included), and for a
-  scan yielding no text, which is not a failure. The maintainer's choice of
-  shape. The Rust port carries the same field.
-
-- **What MuPDF reads past is reported** (#599, found reviewing
-  hherb/StudyAnalyzer#21). MuPDF repairs a broken xref, and stops reading a
-  page's content stream after too many syntax errors (#605's case:
-  `too many syntax errors; ignoring rest of page`), with only a message. bmlib
-  never read PyMuPDF's store of those messages, so a damaged PDF converted
-  whole with text missing and nothing said. `PyMuPDFConverter.extract_blocks_with_warnings()`
-  returns a `PDFBlocks` — the blocks `extract_blocks()` returns, and MuPDF's
-  messages, warnings and the errors it reads past alike, as MuPDF words them,
-  the path replaced by "the file". `convert()` ends `ConversionResult.warnings`
-  with them. Both, and `extract_blocks()`, log them as one WARNING per read
-  (the count, then every message; a page cut short gives a hundred), on a
-  failure too, and empty PyMuPDF's process-wide store before and after, so a
-  caller reading it finds it empty. A repeated warning arrives once, then as
-  `... repeated N times...`, N counting the first; reading starts with a flush,
-  since a warning MuPDF left counted would otherwise swallow the next read's
-  first identical one (a plain `TOOLS.reset_mupdf_warnings()` keeps the count,
-  measured). `is_about_the_file()` sets aside MuPDF's store race
-  (`found duplicate fz_icc_link in the store`, two threads caching one item),
-  which costs no text. **PyMuPDF's store is one per process**, so two PDFs read
-  at once on two threads can get each other's messages (a `shortcut:` at the
-  site). The Rust crate reports the same; the shared contract is
-  `tests/fixtures/pdf_warnings.json` (a repaired xref, a page cut short, and
-  #590's sound PDF reporting nothing), written by
-  `scripts/make_pdf_warnings_fixture.py`. **Measured** over 128 journal PDFs
-  held locally (no list is committed, so the figures cannot be re-derived from
-  the repo), with PyMuPDF 1.28.5: 15 report anything in Python (20 messages, mostly `bogus font ...
-  ascent/descent values`, but `premature end of data in flate filter` and
-  `ActualText with no position. Text may be lost or mispositioned.` too). The
-  canonical text does not move, so `PDF_CANONICAL_VERSION` stays 3 (re-pinned).
-  `FullTextService`'s line for a PDF yielding no text no longer says *likely a
-  scan*: a page cut short yields nothing too, and the converter's own line
-  says which.
-
-### Changed
-
-- **`download_model` says whether a failed download is worth a retry** (#633,
-  with the Rust crate). A refused request and a network fault were both a bare
-  `urllib` `OSError`, a body that broke off was a `SizeMismatchError`, and a
-  caller retrying with backoff retried a 404 like a dropped connection. They
-  are now **`ModelStatusError`** (`.status`, `.message`; the server answered
-  with a non-success status) and **`ModelTransportError`** (no connection, a
-  timeout, a read that failed, or a body ending short of its
-  `Content-Length`), both a **`ModelDownloadError`**, whose **`.retryable`**
-  is `True` for a transport fault and for a 408, 429 or 5xx. Both are still
-  `OSError`s, so an `except OSError` keeps catching them; a file-system
-  failure stays a plain `OSError`, apart from them. One thing moves: a body
-  ending short of its declared length was a `SizeMismatchError` and is now a
-  `ModelTransportError` (a short body that declared that length is still a
-  `SizeMismatchError`). The rule is held by a new `download_errors` section
-  of the shared `tests/fixtures/embedding_contract.json`, which the Rust suite
-  reads too.
-
-- **`PicoAgent` no longer reports what no retry cures as `REQUEST_FAILED`**
-  (#573). Every exception the request raised that was not a `ChatJsonError`
-  was `REQUEST_FAILED`, which an app retries as an outage: a bmlib
-  `TypeError` or `AttributeError`, an unknown provider (`ValueError`), and a
-  missing Anthropic key (the SDK's `TypeError`) included. Those now propagate
-  unwrapped, as does a provider SDK not installed (`ImportError`); the
-  provider is resolved before any request, so an unknown one or a missing SDK
-  raises whatever the text's length, while a `ValueError` the request raises
-  (an SDK reading a 200 body that is not JSON) stays `REQUEST_FAILED`; a
-  `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` is
-  read as bmlib's own defect, the deny-list `transparency` and `fulltext` use.
-  Likewise a `ValueError` raised by bmlib's own code while reading a reply
-  propagates, where it was re-requested and reported as `UNUSABLE_REPLY`
-  ("another model may do better"): the readers raise a private subclass, and
-  only that is re-asked. **This changes the "result or `PicoError`"
-  contract**: a caller catching only `PicoError` now sees those exceptions.
-  The maintainer's choice, over logging at ERROR and over a new kind. Since
-  #616 the same holds on a text condensed first, when the defect or the
-  missing key fails the condensation. The Rust port keeps
-  every `ChatError` as `RequestFailed` (see `docs/DECISIONS.md`).
-
-### Fixed
 
 - **The Rust port reads the Retraction Watch export in linear time, and
   names a skipped row's last line as Python does.** `csv::Reader` recounted

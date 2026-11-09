@@ -1,10 +1,14 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-10-31. **0.3.0 is being released** with Python's 0.12.0 (PR #610): the
-version is bumped, `bmlib/CHANGELOG.md` has its `[0.3.0]` section (with the Rust changes the
-Python CHANGELOG had carried alone gathered under *Recorded in the Python CHANGELOG*), and every
-module has a manual page. Publish from a clean worktree of the merge commit, per *Publishing to
-crates.io* below, and remove the token link afterwards._
+_Last updated: 2026-11-10. **0.4.0 is being released** with Python's 0.13.0 (branch
+`release/0.13.0`): the workspace version is bumped (and `bmlib_version()`'s doc, the FFI README,
+the manual's header), `BMLIB_VERSION` is `"0.13.0"` with the analyzer oracle regenerated, and
+`bmlib/CHANGELOG.md` has its `[0.4.0]` section (repeated sub-headings merged, the breaks recorded
+under other headings pointed at, and the Rust changes the Python CHANGELOG carries alone listed
+under *Recorded in the Python CHANGELOG*). The 162 `unreleased` markers are promoted, the crate's
+manual to 0.4.0. Publish from a clean worktree of the merge commit, per *Publishing to crates.io*
+below, and remove the token link afterwards. **0.3.0 is on crates.io** from `d2ee803`, the merge
+of PR #611._
 
 _Last updated: 2026-09-29 (round 69). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
 `0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 66 unified the corpora's declared-divergence

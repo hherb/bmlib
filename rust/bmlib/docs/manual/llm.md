@@ -102,7 +102,7 @@ callers may hold clients with different keys or transports.
 What a call can refuse is a `ChatError`: `UnknownProvider`, `MissingApiKey {
 provider, env_var }` (before any request), `Transport` (no HTTP answer),
 `Http { status, message }` (a non-2xx status, quoting the server's
-`error.message` when it gave one; *unreleased, #646*, until then a
+`error.message` when it gave one; *0.4.0, #646*, until then a
 `Transport`), `Malformed` (a body the protocol cannot read, including an `error` object at
 HTTP 200), `ToolsUnsupported` (tools for a provider not in
 `TOOL_CAPABLE_PROVIDERS`, which every built-in provider is today), and for
@@ -249,7 +249,7 @@ assert_eq!(known_context_window("openai", "gpt-4o-mini-2024-07-18"), None);
 DeepSeek, and from Ollama only when its `error` says "not found"). Any other
 failed request is `Transport { message, status }`, where `status` is the HTTP
 status of the answer (a 401 or 403 is a refused key), or `None` where none
-came (*unreleased, #664*). Unlike
+came (*0.4.0, #664*). Unlike
 Python's `context_window(model, provider=None)`, a bare provider name asks
 about that provider's default model.
 
@@ -263,7 +263,7 @@ silently drops the start of a long prompt. The other protocols ignore it.
 `client.list_models("ollama")` answers the provider's model ids, sorted and
 without duplicates, every page read (Anthropic's listing pages) and nothing
 filtered out, so an embedding or speech model is listed too
-(*unreleased, #680*). Each page is read by `read_model_listing`, which Python
+(*0.4.0, #680*). Each page is read by `read_model_listing`, which Python
 shares through `tests/fixtures/model_listing.json`.
 
 ```rust

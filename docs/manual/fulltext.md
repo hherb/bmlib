@@ -21,7 +21,7 @@ Only `FullTextService` needs `httpx`, and it is resolved on first access, so `im
 | `jats_parser` | `JATSParser` | Yes — used by the service to render XML |
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
 | `models` | `FullTextResult`, `ContentKind`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
-| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PDFErrorKind`, `PDFExtractionError`, `PDFLimit` *(these three new in 0.12.0)*, `PDFBlocks`, `is_about_the_file()` *(these two unreleased, #599)*, `LayoutExtractor`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
+| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PDFErrorKind`, `PDFExtractionError`, `PDFLimit` *(these three new in 0.12.0)*, `PDFBlocks`, `is_about_the_file()` *(these two new in 0.13.0, #599)*, `LayoutExtractor`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
 | `segmenter` | `SectionSegmenter`, heading-detection patterns, `match_section_type()` *(public since 0.12.0)*, `page_furniture()` / `drop_page_furniture()` *(0.12.0)* | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()`; `assess_full_text()` classifies headings with `match_section_type()` |
 | `canonical` *(0.12.0)* | `CanonicalText`, `canonical_from_jats()`, `canonical_from_markdown()`, `canonical_from_plain_text()`, `canonical_from_segmented()`, `canonical_from_html()`, `assess_full_text()`, `chunk_canonical()`, `assemble()` | Standalone — see [Canonical text](#canonical-text-0120) |
 
@@ -222,7 +222,7 @@ All arguments are **keyword-only**.
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
 
-**Raises:** `FullTextError`, in exactly two cases, both needing no usable `doi` and no usable `pmid`; the second is its subclass `FullTextExhaustedError` *(unreleased — #565)*:
+**Raises:** `FullTextError`, in exactly two cases, both needing no usable `doi` and no usable `pmid`; the second is its subclass `FullTextExhaustedError` *(0.13.0 — #565)*:
 
 - `"No identifiers provided"` — `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty, a blank or whitespace-only `pmid` or `doi` being empty *(`doi` since 0.11.0 — #475)*, whatever `identifier` says *(an unusable one raised `TypeError` before #485)*. Raised before any request, and before the warning below, since nothing was asked of any source.
 - `FullTextExhaustedError`, `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — its `faults` (the fault type names the tiers swallowed, in order, as `tier_faults` carries them on a returned result) and `absences` (how many sources answered and had nothing) say what the summary does, less the refused identifiers it counts as failed attempts, so a caller need not parse it: **empty `faults` means nothing the chain asked failed, and a retry now would get the same answers** — every source asked had nothing (`absences > 0`), or none could be asked (`absences == 0`); a non-empty one means a retry may succeed, though a malformed remote answer or a bmlib defect (`TypeError`) is a fault a retry will not cure. A refused identifier is not a fault (#603), so a refused `pmid` given alone raises with both empty, while the summary reads `1 attempt failed (FullTextError)`. A `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'` — a blank or unusable `identifier` is not named, the call not using it *(0.12.0 — #485)*), since on a call that succeeds by another identifier it is the refusal's only trace *(0.11.0 — #478, #475)*.
@@ -244,7 +244,7 @@ The chain is longer than three tiers. In order:
 | Tier 3 | A Tier 0 `html` entry was held *(0.12.0 — #579)* | Return its URL | `entry.source` |
 | Tier 3′ | A usable `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(0.11.0 — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
-| — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise `FullTextExhaustedError`, a message naming the missing fallback and summarising the failures, with its `faults` and `absences` *(unreleased — #565)* | — |
+| — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise `FullTextExhaustedError`, a message naming the missing fallback and summarising the failures, with its `faults` and `absences` *(0.13.0 — #565)* | — |
 
 Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(0.12.0 — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
 
@@ -342,11 +342,11 @@ class FullTextResult:
     content_kind: ContentKind = "none"   # what `html` actually is
     jats_xml: bytes | None = None  # the JATS `html` was rendered from *(0.12.0)*
     pdf_download_failure: str | None = None  # why a PDF tier left no file *(0.12.0)*
-    pdf_extraction_failure: str | None = None  # why its text did not extract *(unreleased)*
-    tier_faults: list[str] = []    # faults the chain swallowed before it *(unreleased)*
+    pdf_extraction_failure: str | None = None  # why its text did not extract *(0.13.0)*
+    tier_faults: list[str] = []    # faults the chain swallowed before it *(0.13.0)*
 ```
 
-### `tier_faults` *(unreleased)*
+### `tier_faults` *(0.13.0)*
 
 The type names of the faults the tier chain swallowed before this result, in
 the order they happened (#603) — the names the *No full text found* WARNING
@@ -385,7 +385,7 @@ no cache, or no `identifier` to key one by — which, like every non-PDF tier,
 leaves `pdf_url` alone on the result as before. Rust's `FullTextResult` has
 the same field, `Option<String>`, with the same values.
 
-### `pdf_extraction_failure` *(unreleased)*
+### `pdf_extraction_failure` *(0.13.0)*
 
 Why extracting the text of the cached PDF failed (#604), as a
 [`PDFErrorKind`](#pdf-conversion) value, so a caller can tell *this PDF is
@@ -2211,7 +2211,7 @@ class ConversionResult:
     page_texts: list[str] = field(default_factory=list)
     title: str | None = None       # 0.9.1
     error_kind: PDFErrorKind | None = None  # 0.12.0
-    engine_messages: list[str] = field(default_factory=list)  # unreleased, #619
+    engine_messages: list[str] = field(default_factory=list)  # 0.13.0, #619
 
     @property
     def is_complete(self) -> bool: ...
@@ -2445,10 +2445,10 @@ median by the configured factor (`font_size_threshold`, default 1.2) — or
 fails that but is bold or italic — and it is short (≤100 characters) and
 contains at least one letter. A line's font must also reach the floor
 `min_heading_size` (a constructor parameter, default 10.0), **capped at the
-body's median size** *(unreleased, `"pdf-4"`)*: a journal set in 8 pt sets its
+body's median size** *(0.13.0, `"pdf-4"`)*: a journal set in 8 pt sets its
 headings in 8 pt bold, which the plain 10 pt floor refused, so such a paper
 had no headings at all. **A line naming a section exactly** ("Results",
-"INTRODUCTION", "2. Methods") needs less *(unreleased, `"pdf-5"`, #628)*: any
+"INTRODUCTION", "2. Methods") needs less *(0.13.0, `"pdf-5"`, #628)*: any
 size above the body's, or bold or italic down to 0.9 of it
 (`_EXACT_HEADING_FLOOR_RATIO`). Cell sets its headings unbolded at 8.97 pt over
 an 8 pt body (1.12×), and others set bold 9.5 pt headings under a 10 pt body;
@@ -2458,7 +2458,7 @@ section became a heading. Candidate headings are classified against an
 anchored, case-insensitive pattern table (`"3.  Results"` matches: leading
 numbering and trailing punctuation are stripped first). A heading no
 anchored pattern claims is tried against a few less common names, as the
-whole heading only and at 0.7 *(unreleased, `"pdf-7"`, #636)*: "Method",
+whole heading only and at 0.7 *(0.13.0, `"pdf-7"`, #636)*: "Method",
 "Result", "Discussions", "Experimental" and "Experimental Section"
 (`SectionSegmenter.VARIANT_PATTERNS`). They are never searched within a line,
 since `"result"` is a common word, and they get no relaxed size test, since
@@ -2472,7 +2472,7 @@ confidence (`"Supplementary materials online"` → `SUPPLEMENTARY`), but only
 when it is heading-sized or numbered: a body-sized line set apart only by
 bold or italic must match exactly or carry a section number, since the
 partial pass reads a bold credit line ("Methodology. A. Smith: ...") as
-Methods. The median counts each line by its characters *(unreleased,
+Methods. The median counts each line by its characters *(0.13.0,
 `"pdf-5"`)*: a table set small, one short cell per line, can outnumber the
 body's lines while holding a fraction of its text, and a median over lines
 then took the table's size for the body's, so every body line was
@@ -2486,7 +2486,7 @@ longer headings, 482 headings are found that were not (most of them a plain
 sample reads as genuine about half the time — mostly a numbered subsection
 ("3.3.1 Nitroimidazole") set at body size, which only a partial match names.
 
-**A line in the paper's own heading face counts as bold** *(unreleased,
+**A line in the paper's own heading face counts as bold** *(0.13.0,
 `"pdf-5"`, #628)*. MuPDF flags bold and italic from the font's own flags,
 and some journals set headings in a face of their own that is flagged
 neither and whose name says nothing either (Frontiers' numbered subsections,
@@ -2503,7 +2503,7 @@ line of prose included (#623). What it does not reach: a heading run in
 with its first sentence on one line, and bold back matter set under 0.9 of
 the body.
 
-**A face named bold or italic is read as one** *(unreleased, `"pdf-5"`,
+**A face named bold or italic is read as one** *(0.13.0, `"pdf-5"`,
 #628)*. MuPDF leaves some faces unflagged that their names call bold or
 italic: Advent 3B2's `AdvOT….B`, `.I` and `.BI` (Elsevier and others),
 `Heavy`, `Black`, `Extrabold` and `Demi` weights, and an italic suffix run
@@ -2531,7 +2531,7 @@ flags 814, and 347 italic, of which it flags 248; the rule keeps only the
 words that add a face the flags miss. None of the 9 papers whose body face
 the name calls bold segments differently.
 
-**Numbered headings nest** *(unreleased)*. A heading opening with a section
+**Numbered headings nest** *(0.13.0)*. A heading opening with a section
 number (`"2."`, `"2.1."`, `"2.1.3"`, each part one or two digits, the first
 not starting with 0, then a letter) sits at that number's depth; an
 unnumbered one is top level. A heading goes into the `subsections` of the
@@ -2543,7 +2543,7 @@ an unnamed `"3. Metformin lowers glucose"` set as body text, a
 `"3.1. Fasting glucose"` is text of `"2. Materials and methods"` rather than a
 Methods subsection. **A numbered top-level heading that names none is kept
 as an `OTHER` section when the next heading found numbers from it**
-*(unreleased, `"pdf-6"`, #628)*, and its unnamed subsections take `OTHER`
+*(0.13.0, `"pdf-6"`, #628)*, and its unnamed subsections take `OTHER`
 from it — so where `"3. Metformin lowers glucose"` is set as a heading
 itself, it is an `OTHER` section with `"3.1. Fasting glucose"` as its
 subsection. Before, the parent was dropped and every subsection numbered from
@@ -2586,11 +2586,11 @@ Sections are the text between consecutive headings. Four rules:
 |---|---|
 | Text before the first heading | A `FRONT_MATTER` section, confidence 0.5 |
 | No headings detected at all | One `UNKNOWN` section titled "Full Text", confidence 0.5 |
-| A numbered top-level heading naming no section, a subsection numbered from it next | An `OTHER` section, confidence 0.0 *(unreleased)* |
+| A numbered top-level heading naming no section, a subsection numbered from it next | An `OTHER` section, confidence 0.0 *(0.13.0)* |
 | A heading directly followed by another | Reported with `content == ""`, not dropped |
 
 A section's content is its lines joined by `"\n"`, with a blank line at each
-paragraph boundary: a vertical gap over 1.5× the line's height, or *(unreleased)*
+paragraph boundary: a vertical gap over 1.5× the line's height, or *(0.13.0)*
 a **first-line indent** — a line set in from the line above by ½ to 4 ems,
 the line above ending short of its right edge as a paragraph's last line
 does, and the line after it back at the left edge — which journals set
@@ -2608,10 +2608,10 @@ attributes (`font_size`, `font_name`, `is_bold`, `is_italic`) are those of
 the line's *dominant* span — the one contributing the most non-whitespace
 characters — so a superscript reference marker cannot restyle its line;
 `is_bold` and `is_italic` are its flags or its font's name (see above,
-*unreleased*).
+*0.13.0*).
 A spacing accent drawn as a glyph of its own over the letter after it, as TeX
 sets them (`"Nicol´as"`), is joined to the letter (`"Nicolás"`) where Unicode
-has the pair as one character (`join_spacing_accents()`, *unreleased*). The
+has the pair as one character (`join_spacing_accents()`, *0.13.0*). The
 letter must start left of the accent's middle, read from each character's
 box (the blocks come from `get_text("rawdict")`), so a `´` typed as an
 apostrophe (`"Alzheimer´s"`), a backtick quoting code and a ring used as a
@@ -2787,7 +2787,7 @@ doc.converter_version                     # "jats-1"
   inside a quote its `>` markers are stripped and it ends at a line carrying
   fewer of them, and a line opening a backtick fence whose info string holds
   a backtick is read as inline text instead,
-  as in CommonMark — *(unreleased)*, `"markdown-2"`, #548),
+  as in CommonMark — *(0.13.0)*, `"markdown-2"`, #548),
   pipe tables (rows; the delimiter row after a table's first row is dropped)
   and thematic breaks (dropped). A link's target may hold balanced
   parentheses, as a Lancet DOI's `(20)` does, but whitespace only as
@@ -2801,7 +2801,7 @@ doc.converter_version                     # "jats-1"
   symbols such as `Ⓐ`, so emphasis next to one may be read differently).
   HTML is kept as text. A paragraph of unclosed openers (`(_a `, `[a `,
   `<http://a` or backtick runs of growing length, repeated) no longer costs
-  quadratic time *(unreleased, #549)*; 80 kB of the first took about a minute
+  quadratic time *(0.13.0, #549)*; 80 kB of the first took about a minute
   before.
 - **Plain text**: one untitled section, paragraphs separated by blank lines
   (`split_paragraphs`); the title, if known, is passed in.
@@ -2861,7 +2861,7 @@ doc.converter_version                     # "jats-1"
   depth open before it, which a page can build one element per three
   characters, so a page longer than `HTML_MAX_CHARS` (2,000,000 code points)
   is refused unparsed with `HtmlPageTooLargeError` (also a `ValueError`; Rust
-  `HtmlError::TooLarge`) *(unreleased)*. At that length the worst page
+  `HtmlError::TooLarge`) *(0.13.0)*. At that length the worst page
   measured is converted or refused within about twice the budget (#654). How
   many real pages are longer is unmeasured; a page saved with its images
   inline as `data:` URIs can be (#656). The clock is wall time, so a loaded machine
@@ -2875,7 +2875,7 @@ doc.converter_version                     # "jats-1"
   which needs `psutil`, in the `html` extra. Rust counts the elements it
   creates and stops past one per code point plus `HTML_ELEMENT_ALLOWANCE`
   (`HtmlError::TooManyElements`; `HtmlError` is `#[non_exhaustive]`)
-  *(unreleased)*. Neither is worth retrying.
+  *(0.13.0)*. Neither is worth retrying.
   A page with neither `<article>` nor `<main>` may contribute its site name as
   the title.
 - **Is it the whole paper?** A publisher's abstract page converts as cleanly as
@@ -2896,11 +2896,11 @@ doc.converter_version                     # "jats-1"
   page furniture aside, *0.12.0*; `"pdf-4"` caps the heading floor at the
   body size, takes italic as well as bold, refuses a partial match at body
   size, nests numbered headings, wraps headings, joins spacing accents and
-  breaks paragraphs at first-line indents, *unreleased*; `"pdf-5"` measures
-  the body size by characters, not lines, *unreleased*; `"pdf-6"` keeps an
+  breaks paragraphs at first-line indents, *0.13.0*; `"pdf-5"` measures
+  the body size by characters, not lines, *0.13.0*; `"pdf-6"` keeps an
   unnamed numbered top-level heading its subsections number from, as
-  `OTHER`, *unreleased*; `"pdf-7"` names "Method", "Result", "Discussions"
-  and "Experimental" headings, *unreleased*) and
+  `OTHER`, *0.13.0*; `"pdf-7"` names "Method", "Result", "Discussions"
+  and "Experimental" headings, *0.13.0*) and
   `HTML_CANONICAL_VERSION`. A
   stored canonical text whose version is older than the current one may be
   laid out differently now; what to do about that is the caller's call.
@@ -3035,7 +3035,7 @@ All three are defined in `bmlib.fulltext.service` and exported from `bmlib.fullt
 
 `FullTextUnavailableError` is the subclass raised where a source *answered* and had nothing: any 404 from Europe PMC, NCBI, Unpaywall or a fetcher-supplied URL, an Unpaywall record with no OA location, an NCBI reply carrying no article at all. It is an **internal signal and never escapes** — every tier swallows it, and neither of `fetch_fulltext()`'s own raises is one. It exists so the exhaustion summary can separate "this paper is paywalled" from "this source is down", which one type could not do (`Unpaywall HTTP 503` and `DOI not found in Unpaywall` were both plain `FullTextError`). Nothing that catches `FullTextError` is affected by the split.
 
-`FullTextExhaustedError` *(unreleased — #565)* is the subclass `fetch_fulltext()` raises for an exhausted chain with no link to degrade to. Read `faults` rather than the message: empty means nothing the chain asked failed (a refused identifier is not a fault, #603), so a retry now would get the same answers; non-empty means a retry may succeed. It pickles with its fields and anything added to it (a note). Rust's `FullTextError::Exhausted { message, faults, absences }` is the same, with the fault names `tier_faults` uses in each language: a non-200 is `FullTextError` in both, while a transport failure is httpx's class name in Python (`ConnectError`) and `TransportError` in Rust — so branch on whether `faults` is empty, not on the names.
+`FullTextExhaustedError` *(0.13.0 — #565)* is the subclass `fetch_fulltext()` raises for an exhausted chain with no link to degrade to. Read `faults` rather than the message: empty means nothing the chain asked failed (a refused identifier is not a fault, #603), so a retry now would get the same answers; non-empty means a retry may succeed. It pickles with its fields and anything added to it (a note). Rust's `FullTextError::Exhausted { message, faults, absences }` is the same, with the fault names `tier_faults` uses in each language: a non-200 is `FullTextError` in both, while a transport failure is httpx's class name in Python (`ConnectError`) and `TransportError` in Rust — so branch on whether `faults` is empty, not on the names.
 
 Helpers called directly (e.g. `JATSParser`) may raise their own exceptions unchanged.
 

@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "bmlib"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "bmlib-ffi"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bmlib",
  "serde",

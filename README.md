@@ -26,7 +26,7 @@ It covers the plumbing such a tool would otherwise rewrite:
 
 | | Python package `bmlib` | Rust crate `bmlib` |
 |---|---|---|
-| **Version** | 0.12.0 | 0.3.0 (released with Python 0.12.0) |
+| **Version** | 0.13.0 | 0.4.0 (released with Python 0.13.0) |
 | **Requires** | Python ≥ 3.11 | Rust ≥ 1.85 (edition 2021) |
 | **Install** | `pip install bmlib` | `cargo add bmlib` |
 | **Source** | [`bmlib/`](bmlib/) | [`rust/bmlib/`](rust/bmlib/) |
@@ -86,24 +86,24 @@ models and `SectionSegmenter` all import on a core install.
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all` | `pip install bmlib[all]` | Every runtime extra except `embed` (and **not** `dev`). Use `.[all,embed]` for both |
 
-### Upgrading to 0.12
+### Upgrading to 0.13
 
-0.12.0 breaks public APIs in `fulltext`, `llm`, `context_processor`,
-`publications` and `quality`. Each break is listed under
+0.13.0 breaks public APIs in `llm`, `quality`, `citations`,
+`context_processor`, `fulltext` and `embed`. Each break is listed under
 [*Changed — breaking*](CHANGELOG.md#changed--breaking) in the CHANGELOG.
 
 It also changes some stored data:
 
-- bmlib's full-text cache re-fetches every entry an earlier version rendered.
-- An OpenAlex sync now stores `pmcid`.
-- To store a notice's own PMID without zero padding, re-import the Retraction
-  Watch export.
-- Stored `extract_study_type` output changes for some reviews.
+- A stored PDF or Markdown canonical text is stale (`PDF_CANONICAL_VERSION` 7,
+  `MARKDOWN_VERSION` 2), so `bmlib.embed.store` reads its chunk set as
+  `Stale`: re-convert, then re-index.
+- bmlib's full-text cache is kept (`RENDERER_VERSION` stays 7).
 
-`ensure_schema()` is unchanged. The CHANGELOG's 0.12.0 summary says what each
-of these changes costs. If you are upgrading from 0.10 or earlier, read the
-0.11.0 summary as well. The [unreleased](CHANGELOG.md#unreleased) section
-covers what is on `main` since then, such as `bmlib.secrets`.
+`ensure_schema()` is unchanged. The CHANGELOG's 0.13.0 summary says what each
+of these changes costs. If you are upgrading from 0.11 or earlier, read the
+0.12.0 summary as well (and 0.11.0's from 0.10 or earlier). The
+[unreleased](CHANGELOG.md#unreleased) section covers what is on `main` since
+then.
 
 ## Modules
 
