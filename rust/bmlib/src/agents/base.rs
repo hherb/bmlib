@@ -313,6 +313,16 @@ pub trait ChatSource {
     /// re-sends it unchanged, as every source did before.
     fn correct_json(&mut self) {}
 
+    /// Whether the request is sent its `temperature` (#708). One sent none
+    /// (Anthropic since #705, a reasoning model on the OpenAI protocol)
+    /// samples at the API's default, so at temperature 0 [`chat_json`] retries
+    /// as above zero rather than calling a retry futile.
+    ///
+    /// The default, `true`, keeps a source that cannot tell on the greedy rule.
+    fn honours_temperature(&self) -> bool {
+        true
+    }
+
     /// Sleep before a retry.
     ///
     /// Injected so a test does not spend the backoff: the schedule is 1s, 2s,
@@ -328,8 +338,10 @@ pub trait ChatSource {
 /// * **Truncated** — the model hit the ceiling. At `temperature == 0.0` greedy
 ///   sampling reproduces the identical truncation, so retrying pays for it again
 ///   and the call fails at once; above zero a retry may sample a shorter
-///   completion that fits, so it is retried. (Not so on Anthropic, which is
-///   sent no `temperature` (#705); see #708.)
+///   completion that fits, so it is retried. So is a source that sends no
+///   `temperature` ([`honours_temperature`](ChatSource::honours_temperature)
+///   false: Anthropic since #705, a reasoning model on the OpenAI protocol),
+///   whose sampling is not greedy (#708).
 /// * **Wrong shape under `require_dict`** — the same argument: the same messages
 ///   at temperature 0 return the same array.
 /// * **Empty** or **unparseable** — always retried: both can be sampling noise.
@@ -357,6 +369,8 @@ pub fn chat_json(
     let mut attempts = 0usize;
     let mut last: Option<ChatJsonError> = None;
     let mut corrected = false;
+    // Whether the same request returns the same reply, so a retry is futile.
+    let greedy = temperature == 0.0 && source.honours_temperature();
 
     for attempt in 0..attempts_allowed {
         if attempt > 0 {
@@ -395,7 +409,7 @@ pub fn chat_json(
                         got: json_type_name(&parsed).to_string(),
                         attempts,
                     };
-                    if temperature == 0.0 {
+                    if greedy {
                         return Err(error);
                     }
                     last = Some(error);
@@ -416,7 +430,7 @@ pub fn chat_json(
                         budget,
                         attempts,
                     };
-                    if temperature == 0.0 {
+                    if greedy {
                         return Err(error);
                     }
                     last = Some(error);
@@ -444,7 +458,7 @@ pub fn chat_json(
                         got: json_type_name(&parsed).to_string(),
                         attempts,
                     };
-                    if temperature == 0.0 {
+                    if greedy {
                         return Err(error);
                     }
                     last = Some(error);
@@ -468,7 +482,7 @@ pub fn chat_json(
                         got: json_type_name(&parsed).to_string(),
                         attempts,
                     };
-                    if temperature == 0.0 {
+                    if greedy {
                         return Err(error);
                     }
                     last = Some(error);

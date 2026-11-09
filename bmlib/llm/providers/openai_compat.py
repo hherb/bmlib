@@ -155,6 +155,10 @@ class OpenAICompatibleProvider(BaseProvider):
         """
         return False
 
+    def honours_temperature(self, model: str) -> bool:
+        """``False`` for a reasoning model, which is sent no ``temperature`` (#708)."""
+        return not self._is_reasoning_model(model)
+
     def chat(
         self,
         messages: list[LLMMessage],

@@ -1354,6 +1354,31 @@ fn llm_chat_retries_an_unparseable_reply_with_the_correction() {
         .all(|body| body["messages"][0]["content"] == json!("sys")));
 }
 
+/// The adapter asks the client whether the request is sent its temperature
+/// (#708): a reasoning model, sent none, retries a truncation at 0, where a
+/// model sent one fails at once.
+#[test]
+fn llm_chat_retries_a_truncation_at_zero_only_where_no_temperature_is_sent() {
+    use bmlib::llm::LLMMessage;
+    use bmlib::quality::agent_chat::JsonChat;
+
+    for (model, posts) in [("openai:o3-mini", 2), ("openai:gpt-4o", 1)] {
+        let transport = RecordingHttp::answering(json!({
+            "choices": [{"message": {"content": "{\"a\": 1"}, "finish_reason": "length"}]
+        }));
+        let client = llm_client(transport.clone());
+        let mut chat = bmlib::quality::agent_chat::LlmChat::new(&client, model);
+        let messages = [LLMMessage::system("sys"), LLMMessage::user("task")];
+        chat.chat_json(&messages, 0.0, 64, 2, true)
+            .expect_err("truncated every time");
+        assert_eq!(
+            transport.posted.lock().expect("lock").len(),
+            posts,
+            "{model}"
+        );
+    }
+}
+
 /// A failing request through the same adapter degrades the paper rather than
 /// raising — the `except Exception` at the far end of the real transport.
 #[test]

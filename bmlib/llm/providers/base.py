@@ -127,6 +127,16 @@ class BaseProvider(ABC):
     @abstractmethod
     def default_model(self) -> str: ...
 
+    def honours_temperature(self, model: str) -> bool:
+        """Whether a chat with *model* is sent the caller's ``temperature``.
+
+        ``BaseAgent.chat_json`` gives up at once on a truncated or wrong-shape
+        reply at temperature 0, since greedy sampling repeats it; a model sent
+        no temperature samples at its API's default, so a retry may succeed
+        there (#708).  ``True`` unless a provider overrides it.
+        """
+        return True
+
     # --- Core operations ---
 
     @abstractmethod

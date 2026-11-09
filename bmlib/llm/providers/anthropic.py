@@ -243,6 +243,10 @@ class AnthropicProvider(BaseProvider):
             self._model_bodies[model] = body
         return body
 
+    def honours_temperature(self, model: str) -> bool:
+        """``False``: the Anthropic API is sent no ``temperature`` (#705, #708)."""
+        return False
+
     def chat(
         self,
         messages: list[LLMMessage],

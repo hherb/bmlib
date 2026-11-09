@@ -96,6 +96,9 @@ class TestChat:
 
         call_kwargs = mock_client.chat.completions.create.call_args
         assert call_kwargs.kwargs["model"] == "stub-model"
+        # What chat_json's temperature-0 shortcut asks matches the request (#708).
+        assert "temperature" in call_kwargs.kwargs
+        assert p.honours_temperature("stub-model") is True
 
     def test_reasoning_model_uses_max_completion_tokens(self, StubProvider):
         from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
@@ -122,6 +125,7 @@ class TestChat:
         assert kwargs["max_completion_tokens"] == 99
         assert "max_tokens" not in kwargs
         assert "temperature" not in kwargs
+        assert p.honours_temperature("any") is False  # #708
 
     def test_openai_provider_detects_reasoning_models(self):
         from bmlib.llm.providers.openai_provider import OpenAIProvider

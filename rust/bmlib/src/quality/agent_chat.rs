@@ -225,6 +225,10 @@ impl ChatSource for ClientSource<'_> {
         self.request.messages = with_json_correction(&self.request.messages);
     }
 
+    fn honours_temperature(&self) -> bool {
+        self.client.honours_temperature(&self.request)
+    }
+
     fn backoff(&mut self, attempt: usize) {
         // The next attempt is refused anyway; waiting for it gains nothing.
         if is_set(self.stop) {

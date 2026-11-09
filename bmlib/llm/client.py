@@ -121,6 +121,15 @@ class LLMClient:
         model_name = model or provider_instance.default_model
         return provider, model_name
 
+    def honours_temperature(self, model: str | None = None) -> bool:
+        """Whether a chat with *model* is sent the caller's ``temperature`` (#708).
+
+        ``"provider:model_name"`` or a bare name for the default provider, as
+        :meth:`chat` takes it; see :meth:`BaseProvider.honours_temperature`.
+        """
+        provider_name, model_name = self._parse_model_string(model)
+        return self._get_provider(provider_name).honours_temperature(model_name)
+
     def chat(
         self,
         messages: list[LLMMessage],

@@ -41,6 +41,13 @@ The Python library is documented separately, in the repository's
 
 ### Changed
 
+- **`chat_json` retries at temperature 0 where the request is sent no
+  temperature** (#708, with the Python package). New defaulted
+  `ChatSource::honours_temperature` (`true`) and
+  `LlmClient::honours_temperature(&ChatRequest)`, `false` for the Anthropic
+  protocol and a reasoning model, the two `chat_body` sends none; the
+  quality agents' and the condenser's source asks it. A truncation or a
+  wrong shape at temperature 0 from such a source takes the normal retries.
 - **`sync()` validates its window, locks each day and holds a re-fetch to the
   day's peak** (#607, #444, as Python's #99, #447, #346, #446). **Breaking**:
   `sync()` returns `Result<SyncReport, SyncError>` (`Window(WindowError)`,
