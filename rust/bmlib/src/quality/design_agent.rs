@@ -162,6 +162,24 @@ pub struct DesignProposal {
     pub reasoning: String,
     /// Whether the model saw a digest instead of the whole paper.
     pub condensed: bool,
+    /// The wording that asked for it ([`DESIGN_PROMPT_VERSION`]).
+    pub prompt_version: u32,
+}
+
+/// `value["prompt_version"]` if it is a whole number that fits 32 bits.
+/// Python's `_prompt_version`.
+///
+/// # Errors
+///
+/// A message naming `prompt_version` when it is absent or not such a number.
+pub(crate) fn prompt_version(value: &Value) -> Result<u32, String> {
+    match value.get("prompt_version") {
+        Some(Value::Number(n)) if n.is_u64() || n.is_i64() => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| "prompt_version is not a whole number that fits 32 bits".to_string()),
+        _ => Err("prompt_version is not a whole number".to_string()),
+    }
 }
 
 impl DesignProposal {
@@ -177,6 +195,7 @@ impl DesignProposal {
             "quotes_dropped": self.quotes_dropped,
             "reasoning": self.reasoning,
             "condensed": self.condensed,
+            "prompt_version": self.prompt_version,
         })
     }
 
@@ -238,6 +257,7 @@ impl DesignProposal {
             condensed: field(value, "condensed")?
                 .as_bool()
                 .ok_or("condensed is not a boolean")?,
+            prompt_version: prompt_version(value)?,
         })
     }
 }
@@ -306,6 +326,7 @@ pub fn read_design_reply(
         quotes_dropped,
         reasoning,
         condensed: false,
+        prompt_version: DESIGN_PROMPT_VERSION,
     })
 }
 

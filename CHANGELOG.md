@@ -18,7 +18,11 @@ All notable changes to bmlib are documented here. The format is based on
   holds one `AssessedOutcome` per outcome, whose `ladder` is `None` with a
   `ladder_error` when its risk of bias was not assessed, its result was refused
   or its result cannot be laddered, and the paper's weight is the largest ladder
-  built. `condensed` is true if any step was. `EvidenceWeightError` wraps the
+  built. `condensed` is true if any step was. `Assessed` records the
+  `ladder_version` and the `LadderSettings` it was built with, and
+  `DesignProposal` / `OutcomeProposal` their `prompt_version`, so a stored
+  result says which rules and wording made it; reading one back refuses another
+  ladder version or settings that do not validate. `EvidenceWeightError` wraps the
   step's own `ProposalError` / `Rob2RunError`. The result has `to_dict` /
   `to_json` and a checked `evidence_weight_from_dict` / `EvidenceWeight::from_json`;
   Python gains `EvidenceLadder.from_wire` for it.

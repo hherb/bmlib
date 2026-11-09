@@ -40,7 +40,7 @@ use crate::quality::cochrane_assessor::{
 };
 use crate::quality::design_agent::{DesignAgent, DesignProposal, ProposalError, QueryCondenser};
 use crate::quality::evidence_ladder::{
-    build_ladder, paper_weight, start_level, EvidenceLadder, LadderSettings,
+    build_ladder, paper_weight, start_level, EvidenceLadder, LadderSettings, LADDER_VERSION,
 };
 use crate::quality::outcome_agent::{OutcomeAgent, OutcomeProposal, ProposedOutcome};
 use crate::quality::rob2_agent::{
@@ -204,6 +204,10 @@ pub enum EvidenceWeight {
         paper_weight: Option<f64>,
         /// Whether the model saw a digest in any step.
         condensed: bool,
+        /// The ladder rules that built the ladders ([`LADDER_VERSION`]).
+        ladder_version: String,
+        /// The ladder's numbers they were built with.
+        settings: LadderSettings,
     },
 }
 
@@ -227,6 +231,8 @@ impl EvidenceWeight {
                 assessed,
                 paper_weight,
                 condensed,
+                ladder_version,
+                settings,
             } => json!({
                 "status": STATUS_ASSESSED,
                 "design": design.to_json(),
@@ -235,6 +241,8 @@ impl EvidenceWeight {
                 "assessed": assessed.iter().map(AssessedOutcome::to_json).collect::<Vec<_>>(),
                 "paper_weight": paper_weight,
                 "condensed": condensed,
+                "ladder_version": ladder_version,
+                "settings": settings,
             }),
         }
     }
@@ -264,6 +272,14 @@ impl EvidenceWeight {
                 "status \"{status}\" is not {STATUS_NOT_COVERED}, {STATUS_NO_PRIMARY_OUTCOME} or {STATUS_ASSESSED}"
             ));
         }
+        let ladder_version = text(data, "ladder_version")?;
+        if ladder_version != LADDER_VERSION {
+            return Err(format!(
+                "ladder_version {ladder_version} is not {LADDER_VERSION}"
+            ));
+        }
+        let settings = serde_json::from_value::<LadderSettings>(part("settings").clone())
+            .map_err(|e| e.to_string())?;
         let run = Rob2Run::from_json(part("run"))?;
         let assessed = list(data, "assessed")?
             .iter()
@@ -304,6 +320,8 @@ impl EvidenceWeight {
                 .get("condensed")
                 .and_then(Value::as_bool)
                 .ok_or("condensed is not a boolean")?,
+            ladder_version: ladder_version.to_string(),
+            settings,
         })
     }
 }
@@ -461,6 +479,8 @@ pub fn assess_unattended(
         assessed,
         paper_weight,
         condensed,
+        ladder_version: LADDER_VERSION.to_string(),
+        settings: settings.clone(),
     })
 }
 
@@ -666,6 +686,32 @@ mod tests {
         assert_eq!(weight, Some(ladder.weight));
         assert_eq!(weight, Some(LadderSettings::default().weight_high));
         assert!(!condensed);
+    }
+
+    #[test]
+    fn the_result_says_which_rules_and_wording_made_it() {
+        let mut chat = Scripted::new(one_outcome_replies());
+        match run(&mut chat, &text()).expect("result") {
+            EvidenceWeight::Assessed {
+                design,
+                outcomes,
+                ladder_version,
+                settings,
+                ..
+            } => {
+                assert_eq!(ladder_version, LADDER_VERSION);
+                assert_eq!(settings, LadderSettings::default());
+                assert_eq!(
+                    design.prompt_version,
+                    crate::quality::design_agent::DESIGN_PROMPT_VERSION
+                );
+                assert_eq!(
+                    outcomes.prompt_version,
+                    crate::quality::outcome_agent::OUTCOME_PROMPT_VERSION
+                );
+            }
+            other => panic!("not assessed: {other:?}"),
+        }
     }
 
     #[test]
@@ -882,8 +928,35 @@ mod tests {
     #[test]
     fn what_does_not_add_up_is_refused() {
         type Change = fn(&mut Value);
-        let cases: [(Change, &str); 6] = [
+        let cases: [(Change, &str); 11] = [
             (|w| w["status"] = json!("maybe"), "status \"maybe\""),
+            (
+                |w| w["ladder_version"] = json!("ladder/0"),
+                "ladder_version ladder/0 is not",
+            ),
+            (
+                |w| w["settings"]["high_steps"] = json!(-1),
+                "high_steps must be a whole",
+            ),
+            (
+                |w| drop(w.as_object_mut().unwrap().remove("settings")),
+                "the ladder settings are not an object",
+            ),
+            (
+                |w| w["design"]["prompt_version"] = json!(-1),
+                "fits 32 bits",
+            ),
+            (
+                |w| {
+                    drop(
+                        w["outcomes"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("prompt_version"),
+                    )
+                },
+                "prompt_version is not a whole",
+            ),
             (|w| w["paper_weight"] = json!(0.1), "paper_weight"),
             (
                 |w| drop(w["assessed"].as_array_mut().unwrap().pop()),

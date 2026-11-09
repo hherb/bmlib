@@ -30,6 +30,7 @@ use crate::quality::agent_chat::JsonChat;
 use crate::quality::cochrane_assessor::{
     DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
 };
+use crate::quality::design_agent::prompt_version;
 pub use crate::quality::design_agent::ProposalError;
 use crate::quality::evidence_ladder::{EffectScale, ReportedResult};
 use crate::quality::full_text_agent::{
@@ -344,6 +345,8 @@ pub struct OutcomeProposal {
     pub outcomes: Vec<ProposedOutcome>,
     /// Whether the model saw a digest instead of the whole paper.
     pub condensed: bool,
+    /// The wording that asked for them ([`OUTCOME_PROMPT_VERSION`]).
+    pub prompt_version: u32,
 }
 
 impl OutcomeProposal {
@@ -353,6 +356,7 @@ impl OutcomeProposal {
         json!({
             "outcomes": self.outcomes.iter().map(ProposedOutcome::to_json).collect::<Vec<_>>(),
             "condensed": self.condensed,
+            "prompt_version": self.prompt_version,
         })
     }
 
@@ -372,6 +376,7 @@ impl OutcomeProposal {
             condensed: field(value, "condensed")?
                 .as_bool()
                 .ok_or("condensed is not a boolean")?,
+            prompt_version: prompt_version(value)?,
         })
     }
 }
@@ -436,6 +441,7 @@ pub fn read_outcome_reply(
     Ok(OutcomeProposal {
         outcomes,
         condensed: false,
+        prompt_version: OUTCOME_PROMPT_VERSION,
     })
 }
 

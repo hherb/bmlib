@@ -112,7 +112,12 @@ fn every_settings_refusal_names_its_field() {
         let error = serde_json::from_value::<LadderSettings>(case["settings"].clone())
             .expect_err("refused")
             .to_string();
-        assert_eq!(error, case["error"].as_str().expect("text"), "{}", case["name"]);
+        assert_eq!(
+            error,
+            case["error"].as_str().expect("text"),
+            "{}",
+            case["name"]
+        );
     }
 }
 

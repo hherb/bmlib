@@ -27,8 +27,8 @@ import pytest
 from bmlib.agents.base import BaseAgent
 from bmlib.context_processor import ProcessingConfig
 from bmlib.llm.data_types import LLMResponse
-from bmlib.quality.design_agent import ProposalError, ProposalErrorKind
-from bmlib.quality.evidence_ladder import EvidenceLadder, LadderSettings, Level
+from bmlib.quality.design_agent import DESIGN_PROMPT_VERSION, ProposalError, ProposalErrorKind
+from bmlib.quality.evidence_ladder import LADDER_VERSION, EvidenceLadder, LadderSettings, Level
 from bmlib.quality.evidence_weight import (
     Assessed,
     AssessedOutcome,
@@ -39,7 +39,7 @@ from bmlib.quality.evidence_weight import (
     assess_unattended,
     evidence_weight_from_dict,
 )
-from bmlib.quality.outcome_agent import OutcomeProposal
+from bmlib.quality.outcome_agent import OUTCOME_PROMPT_VERSION, OutcomeProposal
 from bmlib.quality.rob2_agent import DomainAssessment, Rob2RunError
 from bmlib.quality.rob2_algorithm import Domain, Judgement
 from tests.test_rob2_agent import SIM, ScriptedCondenser, reply
@@ -167,6 +167,9 @@ class TestAssessed:
         assert only.ladder.level is Level.HIGH
         assert result.paper_weight == only.ladder.weight == SETTINGS.weight_high
         assert result.condensed is False
+        assert result.ladder_version == LADDER_VERSION and result.settings == SETTINGS
+        assert result.design.prompt_version == DESIGN_PROMPT_VERSION
+        assert result.outcomes.prompt_version == OUTCOME_PROMPT_VERSION
 
     def test_a_refused_result_has_no_ladder_and_the_other_outcome_sets_the_weight(self) -> None:
         refused = outcome("Hospitalisation", ci_low=0.9, ci_high=0.5)
@@ -314,6 +317,11 @@ class TestTheWireForm:
         ("change", "message"),
         [
             (lambda w: w.update(status="maybe"), 'status "maybe"'),
+            (lambda w: w.update(ladder_version="ladder/0"), "ladder_version ladder/0 is not"),
+            (lambda w: w["settings"].update(high_steps=-1), "high_steps must be a whole"),
+            (lambda w: w.pop("settings"), "the ladder settings are not an object"),
+            (lambda w: w["design"].update(prompt_version=-1), "fits 32 bits"),
+            (lambda w: w["outcomes"].pop("prompt_version"), "prompt_version is not a whole"),
             (lambda w: w.update(paper_weight=0.1), "paper_weight"),
             (lambda w: w["assessed"].pop(), "same length"),
             (lambda w: w["assessed"].reverse(), r"assessed\[0\] is not outcome 0"),

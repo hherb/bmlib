@@ -47,10 +47,13 @@ from bmlib.quality._full_text_agent import (
 )
 from bmlib.quality.design_agent import DesignAgent, DesignProposal, ProposalError, _wire
 from bmlib.quality.evidence_ladder import (
+    LADDER_VERSION,
     EvidenceLadder,
     LadderSettings,
     build_ladder,
     paper_weight,
+    settings_from_wire,
+    settings_to_wire,
     start_level,
 )
 from bmlib.quality.outcome_agent import OutcomeAgent, OutcomeProposal, ProposedOutcome
@@ -182,6 +185,8 @@ class Assessed:
         assessed: One entry per outcome, in order.
         paper_weight: The largest ladder weight, ``None`` when no ladder was built.
         condensed: Whether the model saw a digest in any step.
+        ladder_version: The ladder rules that built the ladders (:data:`LADDER_VERSION`).
+        settings: The ladder's numbers they were built with.
     """
 
     design: DesignProposal
@@ -190,6 +195,8 @@ class Assessed:
     assessed: list[AssessedOutcome] = field(default_factory=list)
     paper_weight: float | None = None
     condensed: bool = False
+    ladder_version: str = LADDER_VERSION
+    settings: LadderSettings = field(default_factory=LadderSettings)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-ready dict, tagged ``"status": "assessed"``."""
@@ -201,6 +208,8 @@ class Assessed:
             "assessed": [a.to_dict() for a in self.assessed],
             "paper_weight": self.paper_weight,
             "condensed": self.condensed,
+            "ladder_version": self.ladder_version,
+            "settings": settings_to_wire(self.settings),
         }
 
 
@@ -212,8 +221,9 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
     """Rebuild any :data:`EvidenceWeight` from its ``to_dict`` output, by ``status``.
 
     Raises:
-        ValueError: ``status`` is unknown, a field is absent or of the wrong
-            type or value, or the parts disagree (a different number of
+        ValueError: ``status`` is unknown, ``ladder_version`` is not
+            :data:`LADDER_VERSION`, the settings are refused, a field is absent
+            or of the wrong type or value, or the parts disagree (a different number of
             outcomes, RoB 2 results or assessed outcomes; a ``paper_weight``
             that is not the largest ladder weight).
     """
@@ -230,6 +240,10 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
             f'status "{status}" is not {STATUS_NOT_COVERED}, '
             f"{STATUS_NO_PRIMARY_OUTCOME} or {STATUS_ASSESSED}"
         )
+    version = _wire(data, "ladder_version", str, "text")
+    if version != LADDER_VERSION:
+        raise ValueError(f"ladder_version {version} is not {LADDER_VERSION}")
+    settings = settings_from_wire(data.get("settings"))
     run = Rob2Run.from_dict(_object(data.get("run"), "run"))
     assessed = [AssessedOutcome.from_dict(a) for a in _wire(data, "assessed", list, "a list")]
     weight = data.get("paper_weight")
@@ -250,6 +264,8 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
         assessed,
         expected,
         _wire(data, "condensed", bool, "a boolean"),
+        version,
+        settings,
     )
 
 
@@ -370,4 +386,5 @@ def assess_unattended(
                 error = str(exc)
         assessed.append(AssessedOutcome(proposed, rob2, ladder, error))
     weight = paper_weight([a.ladder for a in assessed if a.ladder is not None])
-    return Assessed(design, outcomes, run, assessed, weight, _any_condensed(design, outcomes, run))
+    condensed = _any_condensed(design, outcomes, run)
+    return Assessed(design, outcomes, run, assessed, weight, condensed, LADDER_VERSION, settings)

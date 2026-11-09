@@ -54,7 +54,7 @@ from bmlib.quality._full_text_agent import (
     _FullTextAgent,
     check_min_similarity,
 )
-from bmlib.quality.design_agent import ProposalError, ProposalErrorKind
+from bmlib.quality.design_agent import ProposalError, ProposalErrorKind, _prompt_version
 from bmlib.quality.evidence_ladder import U32_MAX, EffectScale, ReportedResult
 from bmlib.quality.pico_agent import verify_quotes
 from bmlib.quality.pico_models import PicoCitation, PicoContradictedQuote
@@ -367,14 +367,20 @@ class OutcomeProposal:
     Attributes:
         outcomes: The proposed outcomes, in the order the model gave them.
         condensed: Whether the model saw a digest instead of the whole paper.
+        prompt_version: The wording that asked for them (:data:`OUTCOME_PROMPT_VERSION`).
     """
 
     outcomes: list[ProposedOutcome] = field(default_factory=list)
     condensed: bool = False
+    prompt_version: int = OUTCOME_PROMPT_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-ready dict (Rust's wire form)."""
-        return {"outcomes": [o.to_dict() for o in self.outcomes], "condensed": self.condensed}
+        return {
+            "outcomes": [o.to_dict() for o in self.outcomes],
+            "condensed": self.condensed,
+            "prompt_version": self.prompt_version,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OutcomeProposal:
@@ -387,6 +393,7 @@ class OutcomeProposal:
         return cls(
             outcomes=[ProposedOutcome.from_dict(o) for o in outcomes],
             condensed=_wire(data, "condensed", bool, "a boolean"),
+            prompt_version=_prompt_version(data),
         )
 
 

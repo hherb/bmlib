@@ -52,6 +52,7 @@ from bmlib.quality._full_text_agent import (
     check_min_similarity,
 )
 from bmlib.quality.data_models import STUDY_DESIGN_MAPPING, RctLayout, StudyDesign
+from bmlib.quality.evidence_ladder import U32_MAX
 from bmlib.quality.pico_agent import verify_quotes
 from bmlib.quality.pico_models import PicoCitation, PicoContradictedQuote
 
@@ -167,6 +168,14 @@ def _wire(data: dict[str, Any], key: str, kind: type, what: str) -> Any:
     return value
 
 
+def _prompt_version(data: dict[str, Any]) -> int:
+    """``data["prompt_version"]`` if it is a whole number that fits 32 bits, else ``ValueError``."""
+    version = _wire(data, "prompt_version", int, "a whole number")
+    if not 0 <= version <= U32_MAX:
+        raise ValueError("prompt_version is not a whole number that fits 32 bits")
+    return int(version)
+
+
 @dataclass
 class DesignProposal:
     """The model's reading of the paper's own design, backed by its passages.
@@ -184,6 +193,7 @@ class DesignProposal:
             not a string) and so were never searched for.
         reasoning: The model's explanation, ``""`` when absent.
         condensed: Whether the model saw a digest instead of the whole paper.
+        prompt_version: The wording that asked for it (:data:`DESIGN_PROMPT_VERSION`).
     """
 
     design: StudyDesign
@@ -194,6 +204,7 @@ class DesignProposal:
     quotes_dropped: int = 0
     reasoning: str = ""
     condensed: bool = False
+    prompt_version: int = DESIGN_PROMPT_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-ready dict (Rust's wire form)."""
@@ -206,6 +217,7 @@ class DesignProposal:
             "quotes_dropped": self.quotes_dropped,
             "reasoning": self.reasoning,
             "condensed": self.condensed,
+            "prompt_version": self.prompt_version,
         }
 
     @classmethod
@@ -244,6 +256,7 @@ class DesignProposal:
             quotes_dropped=dropped,
             reasoning=_wire(data, "reasoning", str, "text"),
             condensed=_wire(data, "condensed", bool, "a boolean"),
+            prompt_version=_prompt_version(data),
         )
 
 
