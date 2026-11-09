@@ -1,0 +1,582 @@
+{
+ "ladder_version": "ladder/1",
+ "default_settings": {
+  "some_concerns_steps": 1,
+  "high_steps": 2,
+  "crosses_no_effect_steps": 1,
+  "small_trial_n": 400,
+  "small_trial_steps": 1,
+  "no_interval_steps": 1,
+  "max_imprecision_steps": 2,
+  "weight_high": 1.0,
+  "weight_moderate": 0.7,
+  "weight_low": 0.4,
+  "weight_very_low": 0.1
+ },
+ "cases": [
+  {
+   "name": "clean",
+   "start": "high",
+   "rob_overall": "low",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.55,
+    "ci_high": 0.88,
+    "ci_level": 0.95,
+    "n_analysed": 1200
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     }
+    ],
+    "level": "high",
+    "weight": 1.0
+   }
+  },
+  {
+   "name": "some concerns, crossing",
+   "start": "high",
+   "rob_overall": "some_concerns",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.8,
+    "ci_low": 0.6,
+    "ci_high": 1.02,
+    "ci_level": 0.95,
+    "n_analysed": 1200
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "some_concerns"
+      },
+      "levels": 1
+     },
+     {
+      "reason": "crosses_no_effect",
+      "levels": 1
+     }
+    ],
+    "level": "low",
+    "weight": 0.4
+   }
+  },
+  {
+   "name": "high, crossing, small (floor)",
+   "start": "high",
+   "rob_overall": "high",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.9,
+    "ci_low": 0.5,
+    "ci_high": 1.6,
+    "ci_level": 0.95,
+    "n_analysed": 80
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "high"
+      },
+      "levels": 2
+     },
+     {
+      "reason": "crosses_no_effect",
+      "levels": 1
+     },
+     {
+      "reason": {
+       "small_trial": {
+        "n": 80,
+        "threshold": 400
+       }
+      },
+      "levels": 1
+     }
+    ],
+    "level": "very_low",
+    "weight": 0.1
+   }
+  },
+  {
+   "name": "difference, not crossing",
+   "start": "high",
+   "rob_overall": "low",
+   "result": {
+    "measure": "mean difference",
+    "scale": "difference",
+    "estimate": -2.0,
+    "ci_low": -3.1,
+    "ci_high": -0.9,
+    "ci_level": 0.95,
+    "n_analysed": 500
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     }
+    ],
+    "level": "high",
+    "weight": 1.0
+   }
+  },
+  {
+   "name": "touching no effect",
+   "start": "high",
+   "rob_overall": "low",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.9,
+    "ci_low": 0.8,
+    "ci_high": 1.0,
+    "ci_level": 0.95,
+    "n_analysed": 500
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     },
+     {
+      "reason": "crosses_no_effect",
+      "levels": 1
+     }
+    ],
+    "level": "moderate",
+    "weight": 0.7
+   }
+  },
+  {
+   "name": "no result",
+   "start": "high",
+   "rob_overall": "low",
+   "result": null,
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     },
+     {
+      "reason": "no_interval",
+      "levels": 1
+     }
+    ],
+    "level": "moderate",
+    "weight": 0.7
+   }
+  },
+  {
+   "name": "no interval, small",
+   "start": "high",
+   "rob_overall": "low",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.9,
+    "ci_low": null,
+    "ci_high": null,
+    "ci_level": null,
+    "n_analysed": 80
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     },
+     {
+      "reason": "no_interval",
+      "levels": 1
+     },
+     {
+      "reason": {
+       "small_trial": {
+        "n": 80,
+        "threshold": 400
+       }
+      },
+      "levels": 1
+     }
+    ],
+    "level": "low",
+    "weight": 0.4
+   }
+  },
+  {
+   "name": "sample size unknown",
+   "start": "high",
+   "rob_overall": "low",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.5,
+    "ci_high": 0.9,
+    "ci_level": 0.95,
+    "n_analysed": null
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     },
+     {
+      "reason": "sample_size_unknown",
+      "levels": 0
+     }
+    ],
+    "level": "high",
+    "weight": 1.0
+   }
+  },
+  {
+   "name": "cap trims two steps",
+   "start": "high",
+   "rob_overall": "low",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.9,
+    "ci_low": 0.5,
+    "ci_high": 1.6,
+    "ci_level": 0.95,
+    "n_analysed": 80
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 2,
+    "small_trial_n": 400,
+    "small_trial_steps": 2,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 1,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.4,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "low"
+      },
+      "levels": 0
+     },
+     {
+      "reason": "crosses_no_effect",
+      "levels": 1
+     },
+     {
+      "reason": {
+       "small_trial": {
+        "n": 80,
+        "threshold": 400
+       }
+      },
+      "levels": 0
+     }
+    ],
+    "level": "moderate",
+    "weight": 0.7
+   }
+  },
+  {
+   "name": "custom weight",
+   "start": "high",
+   "rob_overall": "some_concerns",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.8,
+    "ci_low": 0.6,
+    "ci_high": 1.02,
+    "ci_level": 0.95,
+    "n_analysed": 1200
+   },
+   "settings": {
+    "some_concerns_steps": 1,
+    "high_steps": 2,
+    "crosses_no_effect_steps": 1,
+    "small_trial_n": 400,
+    "small_trial_steps": 1,
+    "no_interval_steps": 1,
+    "max_imprecision_steps": 2,
+    "weight_high": 1.0,
+    "weight_moderate": 0.7,
+    "weight_low": 0.5,
+    "weight_very_low": 0.1
+   },
+   "expected": {
+    "start": "high",
+    "steps": [
+     {
+      "reason": {
+       "risk_of_bias": "some_concerns"
+      },
+      "levels": 1
+     },
+     {
+      "reason": "crosses_no_effect",
+      "levels": 1
+     }
+    ],
+    "level": "low",
+    "weight": 0.5
+   }
+  }
+ ],
+ "start_levels": [
+  {
+   "design": "rct",
+   "expected": "high"
+  },
+  {
+   "design": "cohort_prospective",
+   "expected": null
+  }
+ ],
+ "paper_weights": [
+  {
+   "ladders": [
+    {
+     "start": "high",
+     "steps": [
+      {
+       "reason": {
+        "risk_of_bias": "high"
+       },
+       "levels": 2
+      },
+      {
+       "reason": "no_interval",
+       "levels": 1
+      }
+     ],
+     "level": "very_low",
+     "weight": 0.1
+    },
+    {
+     "start": "high",
+     "steps": [
+      {
+       "reason": {
+        "risk_of_bias": "low"
+       },
+       "levels": 0
+      }
+     ],
+     "level": "high",
+     "weight": 1.0
+    }
+   ],
+   "expected": 1.0
+  },
+  {
+   "ladders": [],
+   "expected": null
+  }
+ ],
+ "refusals": [
+  {
+   "name": "one bound only",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.5,
+    "ci_high": null,
+    "ci_level": 0.95,
+    "n_analysed": 10
+   }
+  },
+  {
+   "name": "ratio bound zero",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.0,
+    "ci_high": 0.9,
+    "ci_level": 0.95,
+    "n_analysed": 10
+   }
+  },
+  {
+   "name": "estimate outside",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.8,
+    "ci_high": 0.9,
+    "ci_level": 0.95,
+    "n_analysed": 10
+   }
+  },
+  {
+   "name": "level of one",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.5,
+    "ci_high": 0.9,
+    "ci_level": 1.0,
+    "n_analysed": 10
+   }
+  },
+  {
+   "name": "interval without level",
+   "result": {
+    "measure": "risk ratio",
+    "scale": "ratio",
+    "estimate": 0.7,
+    "ci_low": 0.5,
+    "ci_high": 0.9,
+    "ci_level": null,
+    "n_analysed": 10
+   }
+  }
+ ]
+}

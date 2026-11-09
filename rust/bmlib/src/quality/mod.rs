@@ -70,6 +70,7 @@ pub mod cochrane_assessor;
 pub mod cochrane_formatter;
 pub mod cochrane_models;
 pub mod data_models;
+pub mod evidence_ladder;
 pub mod extractors;
 mod json_fields;
 pub mod llm_parsers;
@@ -111,6 +112,10 @@ pub use cochrane_models::{
 pub use data_models::{
     design_to_randomized, design_to_score, design_to_tier, designs_per_tier, study_design_from_str,
     BiasRisk, QualityAssessment, QualityFilter, QualityTier, StudyDesign, VALID_BIAS_VALUES,
+};
+pub use evidence_ladder::{
+    build_ladder, paper_weight, start_level, EffectScale, EvidenceLadder, LadderReason,
+    LadderSettings, LadderStep, Level, ReportedResult, LADDER_VERSION,
 };
 pub use extractors::{
     calculate_sample_size_score, extract_sample_size_dimension, extract_study_type,

@@ -145,6 +145,7 @@ bmlib/
 │   ├── pico_models.py       # PicoExtraction, PicoPart, PicoSuitability, PicoPrepared, PicoError, part states
 │   ├── pico_agent.py        # PicoAgent — suitability check and PICO extraction, quotes verified by find_passage
 │   ├── rob2_algorithm.py    # RoB 2 decision rules (2019 guidance tables), pure; Rust rob2_algorithm.rs, contract fixtures/rob2_algorithm.json
+│   ├── evidence_ladder.py   # Evidence ladder (RoB + imprecision to a level and weight), pure; Rust evidence_ladder.rs, contract fixtures/evidence_ladder.json
 │   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
 │   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models
 ├── secrets.py               # API keys by provider in one OS keychain item (KeyBundle, KeyringVault — keyring on macOS, win32cred / secretstorage on Windows / Linux, extra `secrets`); Rust's twin by tests/fixtures/secret_key_list.json

@@ -8,6 +8,14 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Evidence ladder and the number** (StudyAnalyzer evidence weight, piece 5).
+  `build_ladder`, `start_level`, `paper_weight` in
+  `bmlib/quality/evidence_ladder.py` and `rust/bmlib/src/quality/evidence_ladder.rs`:
+  a trial starts at `high`, loses levels for RoB 2 overall judgement and for
+  imprecision (interval includes no effect, small trial, no interval; capped),
+  and ends at a level whose table weight (`LadderSettings`) is the number. An
+  incoherent `ReportedResult` is refused, never repaired. Contract:
+  `tests/fixtures/evidence_ladder.json`, written by `scripts/make_evidence_ladder.py`.
 - **RoB 2 decision rules** (StudyAnalyzer evidence weight, piece 4a). The
   official mapping tables of the 2019 guidance (Tables 1, 3-4, 6, 10, 12, 14)
   as pure functions in `bmlib/quality/rob2_algorithm.py` and
