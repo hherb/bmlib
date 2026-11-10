@@ -392,6 +392,16 @@ class TestTheAgent:
         with pytest.raises(ProposalError) as raised:
             agent.propose("A trial", TEXT, min_similarity=SIM)
         assert raised.value.kind is ProposalErrorKind.REQUEST_FAILED
+        assert (raised.value.retryable, raised.value.status) == (True, None)
+
+    def test_a_refused_key_is_not_retryable_and_carries_its_status(self) -> None:
+        refused = ConnectionError("HTTP 401")
+        refused.status_code = 401  # type: ignore[attr-defined]
+        agent = make_agent(reply())
+        agent.llm.chat = MagicMock(side_effect=refused)
+        with pytest.raises(ProposalError) as raised:
+            agent.propose("A trial", TEXT, min_similarity=SIM)
+        assert (raised.value.retryable, raised.value.status) == (False, 401)
 
     def test_a_paper_over_the_window_is_condensed_and_verified_against_the_original(self) -> None:
         text = TEXT + " " + "Filler sentence about nothing. " * 20

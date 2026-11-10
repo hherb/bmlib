@@ -26,7 +26,15 @@ All notable changes to bmlib are documented here. The format is based on
   `DesignProposal` / `OutcomeProposal` their `prompt_version`, so a stored
   result says which rules and wording made it; reading one back refuses another
   ladder version or settings that do not validate. `EvidenceWeightError` wraps the
-  step's own `ProposalError` / `Rob2RunError`. The result has `to_dict` /
+  step's own `ProposalError` / `Rob2RunError`. A failed request carries
+  `retryable` and `status`, derived as PICO's `PicoError` does: `ProposalError`
+  (Rust `RequestFailed { message, retryable, status }`; Python only a
+  `request_failed` one may carry them) and `DomainFailed` (Rust
+  `DomainResult::Failed`), whose wire form gains `retryable` and `status_code`
+  (`status` is already the assessed/failed tag), read back checked, so a 401
+  is `retryable` false with `status` 401 and a transport failure `retryable`
+  true with no `status`; a request that failed a condensation carries its
+  refusal's own. Retry only when `retryable`; 401 and 403 mean the key. The result has `to_dict` /
   `to_json` and a checked `evidence_weight_from_dict` / `EvidenceWeight::from_json`;
   Python gains `EvidenceLadder.from_wire` for it. Contract:
   `tests/fixtures/evidence_weight.json`, written by `scripts/make_evidence_weight.py`:

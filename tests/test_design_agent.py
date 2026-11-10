@@ -222,6 +222,13 @@ class ScriptedCondenser:
         return self.digest, [], ProcessingStatus.COMPLETED
 
 
+def _status_error(status: int) -> ConnectionError:
+    """A provider failure answered with HTTP *status*."""
+    error = ConnectionError(f"HTTP {status}")
+    error.status_code = status  # type: ignore[attr-defined]
+    return error
+
+
 def make_agent(*replies: Any, **kwargs: Any) -> DesignAgent:
     llm = MagicMock()
     responses = [_response(r if isinstance(r, str) else json.dumps(r)) for r in replies]
@@ -301,6 +308,55 @@ class TestTheAgent:
             agent.propose("A trial", TEXT, min_similarity=SIM)
 
         assert raised.value.kind is ProposalErrorKind.REQUEST_FAILED
+
+    @pytest.mark.parametrize(
+        ("failure", "retryable", "status"),
+        [
+            (_status_error(401), False, 401),
+            (_status_error(503), True, 503),
+            (ConnectionError("down"), True, None),
+        ],
+    )
+    def test_a_failed_request_says_whether_to_retry_and_the_status(
+        self, failure: Exception, retryable: bool, status: int | None
+    ) -> None:
+        agent = make_agent(reply())
+        agent.llm.chat = MagicMock(side_effect=failure)
+
+        with (
+            patch("bmlib.agents.base.time.sleep"),
+            pytest.raises(ProposalError) as raised,
+        ):
+            agent.propose("A trial", TEXT, min_similarity=SIM)
+
+        assert raised.value.kind is ProposalErrorKind.REQUEST_FAILED
+        assert (raised.value.retryable, raised.value.status) == (retryable, status)
+
+    def test_a_request_that_failed_the_condensation_carries_the_refusals_status(self) -> None:
+        from bmlib.quality._condense import CondensationRefusedError
+
+        class Refusing:
+            def condense(self, *args: Any, **kwargs: Any) -> Any:
+                raise CondensationRefusedError("the map-reduce failed") from _status_error(401)
+
+        agent = make_agent(
+            reply(),
+            condenser=Refusing(),
+            condense_config=ProcessingConfig(max_context_chars=50),
+        )
+
+        with pytest.raises(ProposalError) as raised:
+            agent.propose("A trial", TEXT, min_similarity=SIM)
+
+        assert raised.value.kind is ProposalErrorKind.REQUEST_FAILED
+        assert (raised.value.retryable, raised.value.status) == (False, 401)
+
+    def test_only_a_request_failure_carries_retryable_or_status(self) -> None:
+        assert ProposalError(ProposalErrorKind.UNREADABLE, "x").retryable is False
+        with pytest.raises(ValueError, match="request_failed"):
+            ProposalError(ProposalErrorKind.UNREADABLE, "x", status=401)
+        with pytest.raises(ValueError, match="request_failed"):
+            ProposalError(ProposalErrorKind.STOPPED, "x", retryable=True)
 
     def test_a_paper_over_the_window_is_condensed_and_verified_against_the_original(self) -> None:
         text = TEXT + " " + "Filler sentence about nothing. " * 20

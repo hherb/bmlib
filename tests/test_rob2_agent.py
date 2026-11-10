@@ -446,6 +446,67 @@ class TestTheAgent:
         assert only.overall is None
         assert assessed(only.domains[3]).judgement is Judgement.LOW
 
+    @pytest.mark.parametrize(
+        ("code", "retryable", "status"), [(401, False, 401), (503, True, 503), (None, True, None)]
+    )
+    def test_a_failed_domain_says_whether_to_retry_and_the_status(
+        self, code: int | None, retryable: bool, status: int | None
+    ) -> None:
+        failure = ConnectionError("down")
+        if code is not None:
+            failure.status_code = code  # type: ignore[attr-defined]
+        agent = make_agent(*low_run())
+        responses = list(agent.llm.chat.side_effect)
+        agent.llm.chat.side_effect = [responses[0], failure, *responses[2:]]
+
+        with patch("bmlib.agents.base.time.sleep"):
+            run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+
+        failed = run.outcomes[0].domains[0]
+        assert isinstance(failed, DomainFailed)
+        assert (failed.retryable, failed.status) == (retryable, status)
+
+    def test_an_unreadable_domain_is_not_retryable(self) -> None:
+        bad = {"answers": {}}
+        agent = make_agent(bad, bad, *[reply(d) for d in list(Domain)[1:]])
+        run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        assert isinstance(run.study, DomainFailed)
+        assert (run.study.retryable, run.study.status) == (False, None)
+
+    def test_a_request_that_failed_the_condensation_carries_the_refusals_status(self) -> None:
+        refused = ConnectionError("HTTP 401")
+        refused.status_code = 401  # type: ignore[attr-defined]
+
+        class Refusing(ScriptedCondenser):
+            def condense(self, query: str, *args: Any, **kwargs: Any) -> Any:
+                raise CondensationRefusedError("the map-reduce failed") from refused
+
+        text = TEXT + " " + "Filler sentence about nothing. " * 20
+        agent = make_agent(
+            condenser=Refusing("unused"), condense_config=ProcessingConfig(max_context_chars=200)
+        )
+
+        run = agent.assess("A trial", text, [OUTCOME], min_similarity=SIM)
+
+        domains = [run.study] + [d for o in run.outcomes for d in o.domains]
+        assert all(isinstance(d, DomainFailed) for d in domains)
+        assert {(d.retryable, d.status) for d in domains if isinstance(d, DomainFailed)} == {
+            (False, 401)
+        }
+
+    @pytest.mark.parametrize("bad", ["401", 99, 600, True, 4.5])
+    def test_a_stored_failure_with_a_bad_status_is_refused(self, bad: Any) -> None:
+        stored = DomainFailed(Domain.D2, "x", False, 401).to_dict()
+        stored["status_code"] = bad
+        with pytest.raises(ValueError, match="status_code"):
+            DomainFailed.from_dict(stored)
+
+    def test_a_stored_failure_without_retryable_is_refused(self) -> None:
+        stored = DomainFailed(Domain.D2, "x").to_dict()
+        del stored["retryable"]
+        with pytest.raises(ValueError, match="retryable"):
+            DomainFailed.from_dict(stored)
+
     def test_a_failed_study_domain_leaves_every_outcome_not_assessed(self) -> None:
         bad = {"answers": {}}
         agent = make_agent(bad, bad, *[reply(d) for d in list(Domain)[1:]])
@@ -550,6 +611,8 @@ class TestTheWireForm:
             "status": "failed",
             "domain": "D3",
             "reason": data["outcomes"][1]["domains"][1]["reason"],
+            "retryable": False,
+            "status_code": None,
         }
 
     @pytest.mark.parametrize(

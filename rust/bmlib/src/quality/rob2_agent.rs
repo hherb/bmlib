@@ -352,6 +352,13 @@ pub enum DomainResult {
         domain: Domain,
         /// Why: the unreadable field, the failed request or condensation.
         reason: String,
+        /// Whether sending the failed request again may succeed; `false`
+        /// where the failure was not a request.
+        retryable: bool,
+        /// The HTTP status the failed request was answered with (401 or 403
+        /// is a refused key); `None` where no HTTP answer came or the failure
+        /// was not a request.
+        status: Option<u16>,
     },
 }
 
@@ -370,9 +377,18 @@ impl DomainResult {
     pub fn to_json(&self) -> Value {
         match self {
             DomainResult::Assessed(assessment) => assessment.to_json(),
-            DomainResult::Failed { domain, reason } => {
-                json!({"status": FAILED, "domain": domain, "reason": reason})
-            }
+            DomainResult::Failed {
+                domain,
+                reason,
+                retryable,
+                status,
+            } => json!({
+                "status": FAILED,
+                "domain": domain,
+                "reason": reason,
+                "retryable": retryable,
+                "status_code": status,
+            }),
         }
     }
 
@@ -389,6 +405,16 @@ impl DomainResult {
             FAILED => Ok(DomainResult::Failed {
                 domain: wire_enum(data.get("domain"), "domain", DOMAINS)?,
                 reason: text(data, "reason")?.to_string(),
+                retryable: boolean(data, "retryable", "a boolean")?,
+                status: match data.get("status_code") {
+                    None | Some(Value::Null) => None,
+                    Some(code) => Some(
+                        code.as_u64()
+                            .filter(|code| (100..=599).contains(code))
+                            .and_then(|code| u16::try_from(code).ok())
+                            .ok_or("status_code is not null or an HTTP status")?,
+                    ),
+                },
             }),
             other => Err(format!("status \"{other}\" is not {ASSESSED} or {FAILED}")),
         }
@@ -928,12 +954,15 @@ impl std::error::Error for Rob2RunError {}
 
 /// A call's failure: a stop ends the run, anything else is the reason its
 /// domain (or escalation) failed.
-fn split(failure: Failure) -> Result<String, Rob2RunError> {
+fn split(failure: Failure) -> Result<(String, bool, Option<u16>), Rob2RunError> {
     match failure {
         Failure::Stopped => Err(Rob2RunError::Stopped),
-        Failure::CondensationFailed(m) | Failure::RequestFailed(m) | Failure::Unreadable(m) => {
-            Ok(m)
-        }
+        Failure::CondensationFailed(m) | Failure::Unreadable(m) => Ok((m, false, None)),
+        Failure::RequestFailed {
+            message,
+            retryable,
+            status,
+        } => Ok((message, retryable, status)),
     }
 }
 
@@ -1114,7 +1143,12 @@ impl<'a> Rob2Agent<'a> {
         outcome: Option<&ProposedOutcome>,
         papers: &mut Papers,
     ) -> Result<DomainResult, Rob2RunError> {
-        let failed = |reason| DomainResult::Failed { domain, reason };
+        let failed = |(reason, retryable, status)| DomainResult::Failed {
+            domain,
+            reason,
+            retryable,
+            status,
+        };
         let (sent, condensed) = match self.paper_for(domain, paper, papers) {
             Ok(sent) => sent,
             Err(failure) => return split(failure).map(failed),
@@ -1178,7 +1212,7 @@ impl<'a> Rob2Agent<'a> {
                 read_escalation_reply,
             ) {
                 Ok(answer) => escalation = Some(answer),
-                Err(failure) => escalation_error = Some(split(failure)?),
+                Err(failure) => escalation_error = Some(split(failure)?.0),
             }
         }
         let overall = rob2_overall(study, &domains, escalation.as_ref());
@@ -1353,7 +1387,7 @@ pub(crate) mod tests {
     fn assessed(result: &DomainResult) -> &DomainAssessment {
         match result {
             DomainResult::Assessed(assessment) => assessment,
-            DomainResult::Failed { domain, reason } => panic!("{domain:?} failed: {reason}"),
+            DomainResult::Failed { domain, reason, .. } => panic!("{domain:?} failed: {reason}"),
         }
     }
 
@@ -1459,10 +1493,17 @@ pub(crate) mod tests {
             .expect("run");
         assert_eq!(chat.sent.len(), 6);
         let only = &run.outcomes[0];
-        let DomainResult::Failed { domain, reason } = &only.domains[1] else {
+        let DomainResult::Failed {
+            domain,
+            reason,
+            retryable,
+            status,
+        } = &only.domains[1]
+        else {
             panic!("D3 should fail")
         };
         assert_eq!(*domain, Domain::D3);
+        assert_eq!((*retryable, *status), (false, None));
         assert!(
             reason.contains("answers.3.1.answer \"Unclear\""),
             "{reason}"
@@ -1471,6 +1512,49 @@ pub(crate) mod tests {
             assessed(&only.domains[index]);
         }
         assert_eq!((only.overall, only.escalation.clone()), (None, None));
+    }
+
+    #[test]
+    fn a_failed_domain_says_whether_to_retry_and_the_status() {
+        for (retryable, status) in [(false, Some(401)), (true, Some(503)), (true, None)] {
+            let mut chat = Scripted::new(low_run(1));
+            chat.replies[1] = Err(ChatJsonError::Transport {
+                message: "down".into(),
+                attempts: 1,
+                retryable,
+                status,
+            });
+            let run = Rob2Agent::new(&mut chat)
+                .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+                .expect("run");
+            assert!(matches!(
+                &run.outcomes[0].domains[0],
+                DomainResult::Failed { retryable: r, status: s, .. }
+                    if *r == retryable && *s == status
+            ));
+        }
+    }
+
+    #[test]
+    fn a_stored_failure_with_a_bad_status_or_no_retryable_is_refused() {
+        let good = DomainResult::Failed {
+            domain: Domain::D2,
+            reason: "x".into(),
+            retryable: false,
+            status: Some(401),
+        };
+        assert_eq!(DomainResult::from_json(&good.to_json()), Ok(good.clone()));
+        for bad in [json!("401"), json!(99), json!(600), json!(true), json!(4.5)] {
+            let mut stored = good.to_json();
+            stored["status_code"] = bad;
+            let error = DomainResult::from_json(&stored).expect_err("refused");
+            assert!(error.contains("status_code"), "{error}");
+        }
+        let mut stored = good.to_json();
+        stored.as_object_mut().expect("object").remove("retryable");
+        assert!(DomainResult::from_json(&stored)
+            .expect_err("refused")
+            .contains("retryable"));
     }
 
     #[test]
@@ -1487,7 +1571,7 @@ pub(crate) mod tests {
             .expect("run");
         let only = &run.outcomes[0];
         assert!(
-            matches!(&only.domains[0], DomainResult::Failed { domain: Domain::D2, reason } if reason.contains("down"))
+            matches!(&only.domains[0], DomainResult::Failed { domain: Domain::D2, reason, .. } if reason.contains("down"))
         );
         assert_eq!(only.overall, None);
         assert_eq!(assessed(&only.domains[3]).judgement, Judgement::Low);
@@ -1677,7 +1761,7 @@ pub(crate) mod tests {
         }
         let study = assessed(&Rob2Run::from_json(&good).expect("run").study).clone();
         let mut lone = good["outcomes"][0].clone();
-        lone["domains"][1] = json!({"status": "failed", "domain": "D3", "reason": "r"});
+        lone["domains"][1] = json!({"status": "failed", "domain": "D3", "reason": "r", "retryable": false, "status_code": null});
         let failed = OutcomeRob2::from_json(&lone).expect("reads alone");
         assert!(check_overall(&DomainResult::Assessed(study), &failed)
             .expect_err("an escalation with a failed domain")

@@ -127,7 +127,16 @@ pub enum Failure {
     /// The paper did not fit and could not be condensed to fit.
     CondensationFailed(String),
     /// The provider failed or refused a request.
-    RequestFailed(String),
+    RequestFailed {
+        /// What failed, in the transport's or the server's words.
+        message: String,
+        /// Whether sending the request again may succeed
+        /// ([`crate::llm::ChatError::is_retryable`]); a 401 is `false`.
+        retryable: bool,
+        /// The HTTP status the server answered with (401 or 403 is a refused
+        /// key); `None` where no HTTP answer came.
+        status: Option<u16>,
+    },
     /// Every reply was unusable or cut off, or named something outside the
     /// allowed set.
     Unreadable(String),
@@ -217,7 +226,11 @@ pub fn condense_once(
             refusal.reason
         );
         match refusal.request {
-            Some(_) => Failure::RequestFailed(message),
+            Some(request) => Failure::RequestFailed {
+                message,
+                retryable: request.retryable,
+                status: request.status,
+            },
             None => Failure::CondensationFailed(message),
         }
     })?;
@@ -256,8 +269,16 @@ pub fn ask_until_readable<T>(
         ) {
             Ok(outcome) => outcome.value,
             Err(_) if stopped(stop) => return Err(Failure::Stopped),
-            Err(error @ ChatJsonError::Transport { .. }) => {
-                return Err(Failure::RequestFailed(error.to_string()))
+            Err(
+                error @ ChatJsonError::Transport {
+                    retryable, status, ..
+                },
+            ) => {
+                return Err(Failure::RequestFailed {
+                    message: error.to_string(),
+                    retryable,
+                    status,
+                })
             }
             Err(error) => return Err(Failure::Unreadable(error.to_string())),
         };
@@ -337,8 +358,26 @@ mod tests {
         let mut chat = Canned(vec![Err(down.clone())], 0);
         assert!(matches!(
             ask(&mut chat, None),
-            Err(Failure::RequestFailed(_))
+            Err(Failure::RequestFailed {
+                retryable: true,
+                status: None,
+                ..
+            })
         ));
+        for (status, retryable) in [(401, false), (503, true)] {
+            let answered = ChatJsonError::Transport {
+                message: format!("HTTP {status}"),
+                attempts: 1,
+                retryable,
+                status: Some(status),
+            };
+            let mut chat = Canned(vec![Err(answered)], 0);
+            assert!(matches!(
+                ask(&mut chat, None),
+                Err(Failure::RequestFailed { retryable: r, status: Some(s), .. })
+                    if r == retryable && s == status
+            ));
+        }
         let cut = ChatJsonError::Truncated {
             stop_reason: "length".into(),
             budget: 1,
@@ -351,6 +390,39 @@ mod tests {
         let mut chat = Canned(vec![Ok(json!({"n": 1}))], 0);
         assert_eq!(ask(&mut chat, Some(&stop)), Err(Failure::Stopped));
         assert_eq!(chat.1, 0);
+    }
+
+    #[test]
+    fn a_request_that_failed_the_condensation_carries_its_status() {
+        use crate::context_processor::llm_processor::{ModelCallError, RequestFailure};
+
+        struct Refused(RequestFailure);
+        impl QueryCondenser for Refused {
+            fn condense(
+                &mut self,
+                _q: &str,
+                _t: &str,
+                _l: &str,
+                _c: &ProcessingConfig,
+            ) -> ProcessingResult {
+                let mut result = ProcessingResult::failed("boom");
+                result.error = Some(std::sync::Arc::new(ModelCallError {
+                    message: "boom".to_string(),
+                    request: self.0,
+                }));
+                result
+            }
+        }
+        let config = ProcessingConfig::default().with_max_context_chars(10);
+        for (retryable, status) in [(false, Some(401)), (true, Some(503)), (true, None)] {
+            let mut refused = Refused(RequestFailure { retryable, status });
+            let failure = condense_once(Some(&mut refused), "q", "t", "text", &config, "s", None);
+            assert!(matches!(
+                failure,
+                Err(Failure::RequestFailed { retryable: r, status: s, .. })
+                    if r == retryable && s == status
+            ));
+        }
     }
 
     #[test]

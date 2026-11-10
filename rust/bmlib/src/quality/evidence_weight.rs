@@ -339,7 +339,7 @@ fn not_assessed(study: &DomainResult, rob2: &OutcomeRob2) -> String {
     let mut failed: Vec<String> = std::iter::once(study)
         .chain(&rob2.domains)
         .filter_map(|d| match d {
-            DomainResult::Failed { domain, reason } => {
+            DomainResult::Failed { domain, reason, .. } => {
                 Some(format!("{domain:?} failed ({reason})"))
             }
             DomainResult::Assessed(_) => None,

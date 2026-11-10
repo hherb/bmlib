@@ -153,11 +153,39 @@ class ProposalErrorKind(Enum):
 
 
 class ProposalError(Exception):
-    """A proposal that could not be made; ``kind`` says why, the message says more."""
+    """A proposal that could not be made; ``kind`` says why, the message says more.
 
-    def __init__(self, kind: ProposalErrorKind, message: str) -> None:
+    Attributes:
+        kind: Why, as a :class:`ProposalErrorKind`.
+        retryable: Whether sending the request again may succeed: a
+            ``REQUEST_FAILED`` whose cause was a connection failure, a timeout
+            or an HTTP status a retry may cure (as
+            :attr:`~bmlib.quality.pico_models.PicoError.retryable`).  ``False``
+            for every other kind.
+        status: The HTTP status a ``REQUEST_FAILED`` request was answered with
+            (401 or 403 is a refused key), ``None`` where no HTTP answer came
+            and for every other kind.
+
+    Raises:
+        ValueError: ``retryable`` or ``status`` given for a kind other than
+            ``REQUEST_FAILED``.
+    """
+
+    def __init__(
+        self,
+        kind: ProposalErrorKind,
+        message: str,
+        retryable: bool = False,
+        status: int | None = None,
+    ) -> None:
+        if kind is not ProposalErrorKind.REQUEST_FAILED and (retryable or status is not None):
+            raise ValueError(
+                f"only a request_failed ProposalError carries retryable or status, not {kind.value}"
+            )
         super().__init__(message)
         self.kind = kind
+        self.retryable = retryable
+        self.status = status
 
 
 def _wire(data: dict[str, Any], key: str, kind: type, what: str) -> Any:
@@ -326,9 +354,15 @@ class DesignAgent(_FullTextAgent):
     ``stop`` and an optional :class:`QueryCondenser`.
     """
 
-    def _error(self, failure: AgentFailure, message: str) -> Exception:
+    def _error(
+        self,
+        failure: AgentFailure,
+        message: str,
+        retryable: bool = False,
+        status: int | None = None,
+    ) -> Exception:
         """Name *failure* as this agent's :class:`ProposalError`."""
-        return ProposalError(ProposalErrorKind(failure.value), message)
+        return ProposalError(ProposalErrorKind(failure.value), message, retryable, status)
 
     def propose(
         self, title: str | None, text: str | None, *, min_similarity: float

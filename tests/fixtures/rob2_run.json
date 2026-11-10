@@ -219,73 +219,23 @@
     {
      "status": "failed",
      "domain": "D3",
-     "reason": "RoB 2 D3: 2 replies could not be read: answers.3.1 is missing"
+     "reason": "connection refused",
+     "retryable": true,
+     "status_code": null
     },
     {
-     "status": "assessed",
+     "status": "failed",
      "domain": "D4",
-     "answers": {
-      "4.1": {
-       "answer": "N",
-       "citations": [],
-       "quotes_not_found": [],
-       "contradicted": [],
-       "quotes_dropped": 0,
-       "reasoning": "Because."
-      },
-      "4.2": {
-       "answer": "N",
-       "citations": [],
-       "quotes_not_found": [],
-       "contradicted": [],
-       "quotes_dropped": 0,
-       "reasoning": "Because."
-      },
-      "4.3": {
-       "answer": "N",
-       "citations": [],
-       "quotes_not_found": [],
-       "contradicted": [],
-       "quotes_dropped": 0,
-       "reasoning": "Because."
-      }
-     },
-     "judgement": "low",
-     "condensed": false,
-     "ignored": []
+     "reason": "HTTP 401: invalid x-api-key",
+     "retryable": false,
+     "status_code": 401
     },
     {
-     "status": "assessed",
+     "status": "failed",
      "domain": "D5",
-     "answers": {
-      "5.1": {
-       "answer": "Y",
-       "citations": [],
-       "quotes_not_found": [],
-       "contradicted": [],
-       "quotes_dropped": 0,
-       "reasoning": "Because."
-      },
-      "5.2": {
-       "answer": "N",
-       "citations": [],
-       "quotes_not_found": [],
-       "contradicted": [],
-       "quotes_dropped": 0,
-       "reasoning": "Because."
-      },
-      "5.3": {
-       "answer": "N",
-       "citations": [],
-       "quotes_not_found": [],
-       "contradicted": [],
-       "quotes_dropped": 0,
-       "reasoning": "Because."
-      }
-     },
-     "judgement": "low",
-     "condensed": false,
-     "ignored": []
+     "reason": "HTTP 503: overloaded",
+     "retryable": true,
+     "status_code": 503
     }
    ],
    "escalation": null,

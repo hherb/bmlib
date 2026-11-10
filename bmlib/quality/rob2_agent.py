@@ -343,14 +343,28 @@ class DomainFailed:
     Attributes:
         domain: The domain.
         reason: Why: the unreadable field, the failed request or condensation.
+        retryable: Whether sending the failed request again may succeed (as
+            :attr:`~bmlib.quality.pico_models.PicoError.retryable`); ``False``
+            where the failure was not a request.
+        status: The HTTP status the failed request was answered with (401 or
+            403 is a refused key); ``None`` where no HTTP answer came or the
+            failure was not a request.
     """
 
     domain: Domain
     reason: str
+    retryable: bool = False
+    status: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-ready dict, tagged ``"status": "failed"``."""
-        return {"status": _FAILED, "domain": self.domain.value, "reason": self.reason}
+        return {
+            "status": _FAILED,
+            "domain": self.domain.value,
+            "reason": self.reason,
+            "retryable": self.retryable,
+            "status_code": self.status,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DomainFailed:
@@ -360,7 +374,17 @@ class DomainFailed:
             ValueError: A field is absent or of the wrong type or value, naming it.
         """
         data = _object(data, "the domain")
-        return cls(_enum(Domain, data.get("domain"), "domain"), _wire(data, "reason", str, "text"))
+        status = data.get("status_code")
+        if status is not None and (
+            isinstance(status, bool) or not isinstance(status, int) or not 100 <= status <= 599
+        ):
+            raise ValueError("status_code is not null or an HTTP status")
+        return cls(
+            _enum(Domain, data.get("domain"), "domain"),
+            _wire(data, "reason", str, "text"),
+            _wire(data, "retryable", bool, "a boolean"),
+            status,
+        )
 
 
 #: A domain's result: assessed, or failed with its reason (Rust's ``DomainResult``).
@@ -818,7 +842,16 @@ class Rob2RunError(Exception):
 
 
 class _CallFailedError(Exception):
-    """One call failed (request, condensation or unreadable reply); its domain is failed."""
+    """One call failed (request, condensation or unreadable reply); its domain is failed.
+
+    ``retryable`` and ``status`` are those of a failed request, else ``False``
+    and ``None``.
+    """
+
+    def __init__(self, message: str, retryable: bool = False, status: int | None = None) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+        self.status = status
 
 
 class Rob2Agent(_FullTextAgent):
@@ -829,11 +862,17 @@ class Rob2Agent(_FullTextAgent):
     ``stop`` and an optional :class:`~bmlib.quality._full_text_agent.QueryCondenser`.
     """
 
-    def _error(self, failure: AgentFailure, message: str) -> Exception:
+    def _error(
+        self,
+        failure: AgentFailure,
+        message: str,
+        retryable: bool = False,
+        status: int | None = None,
+    ) -> Exception:
         """A stop ends the run; every other failure fails the call's domain only."""
         if failure is AgentFailure.STOPPED:
             return Rob2RunError(Rob2RunErrorKind.STOPPED, message)
-        return _CallFailedError(message)
+        return _CallFailedError(message, retryable, status)
 
     def assess(
         self,
@@ -906,7 +945,7 @@ class Rob2Agent(_FullTextAgent):
                 papers[domain] = exc
         paper = papers[domain]
         if isinstance(paper, _CallFailedError):
-            raise _CallFailedError(str(paper))
+            raise _CallFailedError(str(paper), paper.retryable, paper.status)
         return paper, True
 
     def _domain(
@@ -931,7 +970,7 @@ class Rob2Agent(_FullTextAgent):
             )
         except _CallFailedError as exc:
             logger.warning("%s not assessed: %s", label, exc)
-            return DomainFailed(domain, str(exc))
+            return DomainFailed(domain, str(exc), exc.retryable, exc.status)
         assessment.condensed = condensed
         return assessment
 

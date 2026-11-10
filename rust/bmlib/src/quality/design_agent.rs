@@ -101,7 +101,16 @@ pub enum ProposalError {
     /// The paper did not fit and could not be condensed to fit.
     CondensationFailed(String),
     /// The provider failed or refused a request.
-    RequestFailed(String),
+    RequestFailed {
+        /// What failed, in the transport's or the server's words.
+        message: String,
+        /// Whether sending the request again may succeed; a 401 is `false`
+        /// (as [`PicoError::RequestFailed`](super::PicoError::RequestFailed)).
+        retryable: bool,
+        /// The HTTP status the server answered with (401 or 403 is a refused
+        /// key); `None` where no HTTP answer came.
+        status: Option<u16>,
+    },
     /// Every reply was unusable or cut off, or named something outside the
     /// allowed set.
     Unreadable(String),
@@ -116,7 +125,7 @@ impl fmt::Display for ProposalError {
         match self {
             ProposalError::EmptyInput => f.write_str("the paper's text is empty"),
             ProposalError::CondensationFailed(m)
-            | ProposalError::RequestFailed(m)
+            | ProposalError::RequestFailed { message: m, .. }
             | ProposalError::Unreadable(m) => f.write_str(m),
             ProposalError::Stopped => f.write_str(STOPPED_MESSAGE),
             ProposalError::InvalidSimilarity => {
@@ -133,7 +142,15 @@ impl From<Failure> for ProposalError {
         match failure {
             Failure::Stopped => ProposalError::Stopped,
             Failure::CondensationFailed(m) => ProposalError::CondensationFailed(m),
-            Failure::RequestFailed(m) => ProposalError::RequestFailed(m),
+            Failure::RequestFailed {
+                message,
+                retryable,
+                status,
+            } => ProposalError::RequestFailed {
+                message,
+                retryable,
+                status,
+            },
             Failure::Unreadable(m) => ProposalError::Unreadable(m),
         }
     }
@@ -764,10 +781,29 @@ mod tests {
             retryable: true,
             status: None,
         };
+        let refused = ChatJsonError::Transport {
+            message: "HTTP 401".into(),
+            attempts: 1,
+            retryable: false,
+            status: Some(401),
+        };
+        let mut chat = Canned::new(vec![Err(refused)]);
+        assert!(matches!(
+            DesignAgent::new(&mut chat).propose("A trial", TEXT, SIM),
+            Err(ProposalError::RequestFailed {
+                retryable: false,
+                status: Some(401),
+                ..
+            })
+        ));
         let mut chat = Canned::new(vec![Err(down)]);
         assert!(matches!(
             DesignAgent::new(&mut chat).propose("A trial", TEXT, SIM),
-            Err(ProposalError::RequestFailed(_))
+            Err(ProposalError::RequestFailed {
+                retryable: true,
+                status: None,
+                ..
+            })
         ));
         let cut = ChatJsonError::Truncated {
             stop_reason: "length".into(),

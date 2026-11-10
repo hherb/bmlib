@@ -39,7 +39,8 @@ from bmlib.context_processor import ProcessingConfig, ProcessingStatus, Processi
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
 from bmlib.llm.stream import Stop, stop_reader
-from bmlib.quality._condense import CondensationRefusedError, condense_text
+from bmlib.llm.utils import http_status
+from bmlib.quality._condense import CondensationRefusedError, condense_text, is_retryable_request
 from bmlib.quality.cochrane_assessor import DEFAULT_CONDENSE_THRESHOLD_CHARS
 from bmlib.quality.pico_agent import (
     _NOT_A_REQUEST_FAILURE,
@@ -193,8 +194,18 @@ class _FullTextAgent(BaseAgent):
         )
         self.condenser: QueryCondenser = condenser or LlmQueryCondenser(self, condense_progress)
 
-    def _error(self, failure: AgentFailure, message: str) -> Exception:
-        """The exception this agent raises for *failure*; each agent says which."""
+    def _error(
+        self,
+        failure: AgentFailure,
+        message: str,
+        retryable: bool = False,
+        status: int | None = None,
+    ) -> Exception:
+        """The exception this agent raises for *failure*; each agent says which.
+
+        *retryable* and *status* are set for ``REQUEST_FAILED`` only, derived as
+        :class:`~bmlib.quality.pico_agent.PicoAgent` derives them.
+        """
         raise NotImplementedError
 
     def chat(self, messages: list[LLMMessage], **kwargs: Any) -> LLMResponse:
@@ -243,12 +254,14 @@ class _FullTextAgent(BaseAgent):
                     f"a {len(text)}-character text could not be condensed to fit "
                     f"{self.condense_config.max_context_chars} characters: {exc}"
                 )
-                failure = (
-                    AgentFailure.CONDENSATION_FAILED
-                    if cause is None
-                    else AgentFailure.REQUEST_FAILED
-                )
-                raise self._error(failure, message) from exc
+                if cause is None:
+                    raise self._error(AgentFailure.CONDENSATION_FAILED, message) from exc
+                raise self._error(
+                    AgentFailure.REQUEST_FAILED,
+                    message,
+                    is_retryable_request(cause),
+                    http_status(cause),
+                ) from exc
         if defect is not None:
             raise defect
         # A run stopped part-way can finish with a partial digest, which is no digest.
@@ -285,7 +298,12 @@ class _FullTextAgent(BaseAgent):
                 self._raise_if_stopped(exc)
                 if isinstance(exc, ChatJsonTruncatedError | ChatJsonError):
                     raise self._error(AgentFailure.UNREADABLE, str(exc)) from exc
-                raise self._error(AgentFailure.REQUEST_FAILED, str(exc)) from exc
+                raise self._error(
+                    AgentFailure.REQUEST_FAILED,
+                    str(exc),
+                    is_retryable_request(exc),
+                    http_status(exc),
+                ) from exc
             try:
                 return read(data)
             except UnreadableReplyError as exc:

@@ -1074,10 +1074,29 @@ mod tests {
             retryable: true,
             status: None,
         };
+        let refused = ChatJsonError::Transport {
+            message: "HTTP 401".into(),
+            attempts: 1,
+            retryable: false,
+            status: Some(401),
+        };
+        let mut chat = Canned::new(vec![Err(refused)]);
+        assert!(matches!(
+            OutcomeAgent::new(&mut chat).propose("A trial", TEXT, SIM),
+            Err(ProposalError::RequestFailed {
+                retryable: false,
+                status: Some(401),
+                ..
+            })
+        ));
         let mut chat = Canned::new(vec![Err(down)]);
         assert!(matches!(
             OutcomeAgent::new(&mut chat).propose("A trial", TEXT, SIM),
-            Err(ProposalError::RequestFailed(_))
+            Err(ProposalError::RequestFailed {
+                retryable: true,
+                status: None,
+                ..
+            })
         ));
         let cut = ChatJsonError::Truncated {
             stop_reason: "length".into(),

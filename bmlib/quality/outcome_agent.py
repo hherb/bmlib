@@ -460,9 +460,15 @@ class OutcomeAgent(_FullTextAgent):
     ``stop`` and an optional :class:`~bmlib.quality.design_agent.QueryCondenser`.
     """
 
-    def _error(self, failure: AgentFailure, message: str) -> Exception:
+    def _error(
+        self,
+        failure: AgentFailure,
+        message: str,
+        retryable: bool = False,
+        status: int | None = None,
+    ) -> Exception:
         """Name *failure* as the shared :class:`ProposalError`."""
-        return ProposalError(ProposalErrorKind(failure.value), message)
+        return ProposalError(ProposalErrorKind(failure.value), message, retryable, status)
 
     def propose(
         self, title: str | None, text: str | None, *, min_similarity: float

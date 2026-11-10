@@ -310,9 +310,9 @@ def build_run() -> dict[str, Any]:
     )
     second_domains: list[DomainAssessment | DomainFailed] = [
         _read(Domain.D2, _reply(Domain.D2, q2_7=_entry("Y"))),
-        DomainFailed(Domain.D3, "RoB 2 D3: 2 replies could not be read: answers.3.1 is missing"),
-        _read(Domain.D4, _reply(Domain.D4)),
-        _read(Domain.D5, _reply(Domain.D5)),
+        DomainFailed(Domain.D3, "connection refused", True, None),
+        DomainFailed(Domain.D4, "HTTP 401: invalid x-api-key", False, 401),
+        DomainFailed(Domain.D5, "HTTP 503: overloaded", True, 503),
     ]
     second = OutcomeRob2(
         SECOND.name, second_domains, None, rob2_overall(study, second_domains, None)
