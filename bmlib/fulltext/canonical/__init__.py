@@ -37,7 +37,7 @@ from bmlib.fulltext.canonical.chunk import (
 )
 from bmlib.fulltext.canonical.html import (
     HTML_CANONICAL_VERSION,
-    HTML_MAX_CHARS,
+    HTML_MAX_TAGS,
     HTML_PARSE_CHUNK,
     HTML_PARSE_MAX_BYTES,
     HTML_PARSE_SECONDS,
@@ -92,7 +92,7 @@ __all__ = [
     "DEFAULT_MAX_CHARS",
     "DEFAULT_OVERLAP_CHARS",
     "HTML_CANONICAL_VERSION",
-    "HTML_MAX_CHARS",
+    "HTML_MAX_TAGS",
     "HTML_PARSE_CHUNK",
     "HTML_PARSE_MAX_BYTES",
     "HTML_PARSE_SECONDS",

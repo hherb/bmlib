@@ -16,12 +16,13 @@
 
 """Measure real article pages against ``canonical_from_html``'s limits (#726).
 
-The HTML converter refuses a page by three limits no real page had sized: the
-Rust port's element budget (``max_elements(length)``, one element per code
-point plus ``HTML_ELEMENT_ALLOWANCE``, #723/#726), the length cap
-``HTML_MAX_CHARS`` (#656, with the ``<`` count #656 proposes in its place), and
-Python's ``HTML_PARSE_MAX_BYTES`` held to the parse child's memory (#725). For
-each page this reports the numbers those limits are read against:
+The HTML converter refuses a page by three limits: the Rust port's element
+budget (``max_elements(tags)``, ``ELEMENTS_PER_TAG`` per ``<`` plus
+``HTML_ELEMENT_ALLOWANCE``, #723/#726/#656), the ``<`` cap ``HTML_MAX_TAGS``
+(#656, which replaced #654's length cap of 2,000,000 code points, still
+reported here as ``over_length_cap``), and Python's ``HTML_PARSE_MAX_BYTES``
+held to the parse child's memory (#725). For each page this reports the
+numbers those limits are read against:
 
 * ``code_points`` (a leading byte-order mark dropped) and ``lt``, its ``<``s;
 * ``elements``, the elements in markupever's tree. That is the number the Rust
@@ -30,10 +31,17 @@ each page this reports the numbers those limits are read against:
   this script does not need the Rust port. It does not import ``max_elements``
   either: a sampler does not import the judgement it measures;
 * ``python``, what ``canonical_from_html`` answered (``ok`` or the error's
-  type), its ``text_chars``, and ``child_peak_rss``, the most resident memory
+  type), its ``text_chars``, ``seconds`` (the call's wall time, the child's
+  start included), and ``child_peak_rss``, the most resident memory
   any child of the one process that converted the page held, which is
   bmlib's parse child (``getrusage(RUSAGE_CHILDREN)``; bytes on macOS,
-  kilobytes on Linux, converted to bytes here).
+  kilobytes on Linux, converted to bytes here);
+* ``data_uri_chars``, the code points in base64 ``data:`` URIs (#656: a saved
+  page carries its images and fonts that way, and they hold no ``<``);
+* ``uncapped``, for a page refused by ``HTML_MAX_TAGS``: what the parse
+  beneath the cap answered, under the child's own memory and time limits. That
+  is the parse a lifted cap would run (#656 measured #654's length cap this
+  way), and its text, elements, time and peak are the row's.
 
 **The population is pages served to a plain HTTP client**, which is what an
 app fetching a ``web_url`` gets. Three strata: a PubMed record's DOI landing
@@ -63,6 +71,19 @@ Run (the pages are cached in ``--pages-dir`` and never committed)::
     uv run python scripts/sample_html_pages.py --pages-dir /tmp/html-pages \\
         --out tests/data/html_page_shapes.json
 
+**Saved pages** (#656) are measured from a directory of pages a browser saved
+with their resources inline, one per DOI target of a fetched corpus, named as
+``fetch`` names a page (``<stratum>-<id>.html``). The saving is done outside
+this script, by SingleFile (the format Zotero's snapshots use), and
+``--saved-how`` records how; a target with no saved file is a probe not made.
+A browser's save does not say what the server answered, so no saved page is
+``not_served``, and an error or challenge page falls below
+``ARTICLE_TEXT_CHARS``::
+
+    uv run python scripts/sample_html_pages.py --saved-dir /tmp/saved \\
+        --saved-how "single-file-cli 2.19.0, Chrome 157, defaults" \\
+        --out tests/data/html_saved_page_shapes.json
+
 The draw is seeded (``--seed``), but the population moves (PubMed grows, a
 publisher changes its page), so a re-run re-measures rather than reproduces.
 """
@@ -73,12 +94,14 @@ import argparse
 import json
 import platform
 import random
+import re
 import resource
 import subprocess
 import sys
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from _sampling import (
@@ -109,11 +132,15 @@ ESEARCH_MAX_START = 9999
 #: Canonical-text characters from which a page reads as an article rather than
 #: an interstitial or a challenge page. A reporting split, not a rule bmlib uses.
 ARTICLE_TEXT_CHARS = 2000
-#: The converter's length cap and #656's proposed ``<`` cap, each reported as
+#: #654's length cap and the ``<`` cap #656 put in its place, each reported as
 #: how many pages exceed it (restated, not imported: the sampler measures them).
 LENGTH_CAP = 2_000_000
 LT_CAP = LENGTH_CAP // 3
 THROTTLED = (429, 503)
+#: A base64 ``data:`` URI, as a saved page carries an image or a font.
+DATA_URI = re.compile(r"data:[\w/+.-]*(?:;[\w=-]+)*;base64,[A-Za-z0-9+/=]*")
+#: The fetched corpus whose DOI targets a saved-page run measures.
+FETCHED_CORPUS = Path("tests/data/html_page_shapes.json")
 USER_AGENT = "bmlib HTML page sampler (issue 726; +https://github.com/hherb/bmlib)"
 
 
@@ -203,21 +230,43 @@ def measure_text(text: str) -> dict[str, Any]:
     """The numbers one page is read against, in this process.
 
     Converted first with ``canonical_from_html``, whose limits bound the
-    memory; the tree is counted only for a page it accepted.
+    memory; the tree is counted only for a page it, or for a page refused by
+    its ``<`` cap the parse beneath that cap, accepted.
     """
-    from bmlib.fulltext.canonical import canonical_from_html
+    from bmlib.fulltext.canonical import HtmlPageTooLargeError, canonical_from_html
+
+    # The parse a lifted length cap would run, with the limits it would run under.
+    from bmlib.fulltext.canonical.html import (
+        _CHILD_SECONDS,
+        HTML_PARSE_MAX_BYTES,
+        _convert_in_child,
+    )
 
     page = text.removeprefix("﻿")
-    row: dict[str, Any] = {"code_points": len(page), "lt": page.count("<")}
+    row: dict[str, Any] = {
+        "code_points": len(page),
+        "lt": page.count("<"),
+        "data_uri_chars": sum(len(m) for m in DATA_URI.findall(page)),
+    }
+    started = perf_counter()
     try:
         canonical = canonical_from_html(text)
+        row["python"] = "ok"
+    except HtmlPageTooLargeError:
+        row["python"] = "HtmlPageTooLargeError"
+        try:
+            canonical = _convert_in_child(text, HTML_PARSE_MAX_BYTES, _CHILD_SECONDS)
+        except Exception as exc:  # noqa: BLE001 - the refusal is the measurement
+            return row | {"uncapped": type(exc).__name__, "elements": None, "text_chars": None}
+        row["uncapped"] = "ok"
     except Exception as exc:  # noqa: BLE001 - the refusal is the measurement
         return row | {"python": type(exc).__name__, "elements": None, "text_chars": None}
+    row["seconds"] = round(perf_counter() - started, 3)
     import markupever
 
     tree = markupever.parse(page, markupever.HtmlOptions())
     elements = sum(1 for n in tree.root().descendants() if isinstance(n, markupever.dom.Element))
-    return row | {"python": "ok", "elements": elements, "text_chars": len(canonical.text)}
+    return row | {"elements": elements, "text_chars": len(canonical.text)}
 
 
 def _peak_child_rss() -> int:
@@ -263,6 +312,16 @@ def _figures(pages: list[dict[str, Any]]) -> dict[str, Any]:
             "most_elements_beyond_lt": max(p["elements"] - p["lt"] for p in parsed),
             "child_peak_rss_mb": max(p["child_peak_rss"] for p in parsed) / 2**20,
         }
+    # Figures over fields a row carries since #656; a corpus measured before has none.
+    if pages and all("data_uri_chars" in p for p in pages):
+        figures["refused_uncapped"] = sum(
+            p["python"] != "ok" and p.get("uncapped") != "ok" for p in pages
+        )
+        figures["data_uri_share"] = [
+            round(x, 4) for x in _quantiles([p["data_uri_chars"] / p["code_points"] for p in pages])
+        ]
+    if parsed and all("seconds" in p for p in parsed):
+        figures["seconds"] = _quantiles([p["seconds"] for p in parsed])
     return figures
 
 
@@ -298,7 +357,10 @@ def main(argv: list[str] | None = None) -> int:
     """Draw, fetch, measure and write the corpus; non-zero if any stratum is ERROR."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--pages-dir", type=Path)
-    parser.add_argument("--out", type=Path, default=Path("tests/data/html_page_shapes.json"))
+    parser.add_argument("--saved-dir", type=Path, help="measure saved pages instead (#656)")
+    parser.add_argument("--saved-how", help="how the saved pages were saved, recorded verbatim")
+    parser.add_argument("--targets", type=Path, default=FETCHED_CORPUS)
+    parser.add_argument("--out", type=Path, default=FETCHED_CORPUS)
     parser.add_argument("--per-stratum", type=int, default=20)
     parser.add_argument("--seed", type=int, default=726)
     parser.add_argument("--measure-one", type=Path, help=argparse.SUPPRESS)
@@ -307,6 +369,10 @@ def main(argv: list[str] | None = None) -> int:
         row = measure_text(args.measure_one.read_text(encoding="utf-8"))
         print(json.dumps(row | {"child_peak_rss": _peak_child_rss()}))
         return 0
+    if args.saved_dir is not None:
+        if not args.saved_how or args.out == FETCHED_CORPUS:
+            parser.error("--saved-dir needs --saved-how and an --out of its own")
+        return measure_saved(args.saved_dir, args.targets, args.out, args.saved_how)
     if args.pages_dir is None:
         parser.error("--pages-dir is required")
     import httpx
@@ -353,16 +419,59 @@ def main(argv: list[str] | None = None) -> int:
                 row |= {"outcome": "unmeasured", "error": exc.stderr[-500:]}
         rows.append(row)
         print(row["outcome"], row.get("status"), row["url"][:80], file=sys.stderr)
+    how = (
+        "uv run python scripts/sample_html_pages.py --pages-dir DIR "
+        f"--per-stratum {args.per_stratum} --seed {args.seed}"
+    )
+    return write_corpus(rows, failed, how, args.out)
+
+
+def saved_rows(saved_dir: Path, targets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Measure each DOI target's saved page; a target with none saved is unmeasured.
+
+    The archived strata are left out: saved today, their pages would ask for
+    their images from hosts that no longer serve them.
+    """
+    rows = []
+    for target in targets:
+        if target["stratum"].startswith("legacy-"):
+            continue
+        row: dict[str, Any] = {k: target[k] for k in ("stratum", "id", "url")}
+        name = f"{target['stratum']}-{target['id']}.html".replace("/", "_")
+        if not (saved_dir / name).is_file():
+            rows.append(row | {"outcome": "unmeasured", "error": "no saved page"})
+            continue
+        try:
+            row |= {"outcome": "page", "file": name} | measure_file(saved_dir / name)
+        except subprocess.CalledProcessError as exc:  # one page must not cost the run
+            row |= {"outcome": "unmeasured", "error": exc.stderr[-500:]}
+        rows.append(row)
+        print(row["outcome"], row.get("code_points"), row["url"][:80], file=sys.stderr)
+    return rows
+
+
+def measure_saved(saved_dir: Path, targets_path: Path, out: Path, how: str) -> int:
+    """Measure the saved pages of *targets_path*'s DOI targets and write the corpus."""
+    targets = json.loads(targets_path.read_text(encoding="utf-8"))["rows"]
+    rows = saved_rows(saved_dir, targets)
+    how = (
+        f"saved: {how}; then uv run python scripts/sample_html_pages.py --saved-dir DIR "
+        f"--targets {targets_path}"
+    )
+    return write_corpus(rows, {}, how, out)
+
+
+def write_corpus(rows: list[dict[str, Any]], failed: dict[str, str], how: str, out: Path) -> int:
+    """Summarise *rows*, write the corpus to *out*, print it; non-zero if any stratum is ERROR."""
     summary = summarise(rows, failed)
     corpus = {
         "measured": date.today().isoformat(),
-        "how": "uv run python scripts/sample_html_pages.py --pages-dir DIR "
-        f"--per-stratum {args.per_stratum} --seed {args.seed}",
+        "how": how,
         "platform": f"{platform.system()} {platform.machine()}, Python {platform.python_version()}",
         "summary": summary,
         "rows": rows,
     }
-    args.out.write_text(json.dumps(corpus, indent=1) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(corpus, indent=1) + "\n", encoding="utf-8")
     errors = {k: v for k, v in summary["strata"].items() if v["status"] == "ERROR"}
     for name, entry in sorted(summary["strata"].items()):
         rest = {k: v for k, v in entry.items() if k != "status"}
@@ -370,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
     print("all pages:", json.dumps(summary["all_pages"]))
     print("article pages:", json.dumps(summary["article_pages"]))
     if errors:
-        unreportable = args.out.with_suffix(".unreportable.json")
+        unreportable = out.with_suffix(".unreportable.json")
         unreportable.write_text(json.dumps(errors, indent=1) + "\n", encoding="utf-8")
         print(
             f"ERROR: {len(errors)} strata unreportable, written to {unreportable}", file=sys.stderr
