@@ -1,16 +1,16 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-10 (**the 0.13.0 release PR is open — read *Release
-0.13.0* below first**). Every item of the agreed release plan is merged: PRs
+_Last updated: 2026-11-10 (**0.13.0 is released — *Release 0.13.0* below says what
+it costs a downstream**). Every item of the agreed release plan is merged: PRs
 #735 and #732 (live probes), #729 (#708), #728 (#665), #727 (#647), #724
 (#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649,
 #652), #713 (#710), #711-#712 (#707, #706's review), #709 (#705), #706
 (#702), #704 (#698), #703, #701 (#697), #700, #699 and #692 (#617), #696
 (#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #683 (#608),
-#682 (#680), #679 (#583) and earlier. **0.12.0 is on PyPI** (tag `v0.12.0` on
-`d2ee803`) and **the Rust crate 0.3.0 on crates.io** from the same commit._
+#682 (#680), #679 (#583) and earlier. **0.13.0 is on PyPI** (tag `v0.13.0` on
+`161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit._
 
-## Release 0.13.0 / Rust crate 0.4.0 (this session, PR open)
+## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
 The maintainer's plan of 2026-11-09 (#723, #647, #708, #665, the live probes)
 is done; this session did the housekeeping on `release/0.13.0`:
@@ -34,12 +34,15 @@ is done; this session did the housekeeping on `release/0.13.0`:
   `bmlib/py.typed` in the wheel, 102 of 102 modules importable one fresh
   interpreter each in a venv holding only jinja2.
 
-**After the merge** (the maintainer merges): tag `main`'s tip with the recipe
-under *Conventions* (`v0.13.0`), create the GitHub release, and **hand the
-`pypi` gate over** — never approve it. Then publish the crate from a clean
-worktree of the merge commit (`HANDOVER_RUST.md`, *Publishing to crates.io*),
-re-mark the ROADMAP row *Done* with the tag, and drop the "being released"
-notes here and in `HANDOVER_RUST.md`.
+**Released 2026-11-10** (UTC). PR #736 merged as `161849c0`, tagged `v0.13.0`
+(annotated) at `main`'s tip; the GitHub release at 02:31Z ran `release.yml`,
+and the maintainer approved the `pypi` gate: the wheel and sdist are on PyPI
+(02:39Z, with provenance), and a fresh-venv `pip install bmlib==0.13.0`
+imports with `py.typed`. The Rust crate 0.4.0 is on crates.io (02:37Z) from a
+clean worktree of the same commit (`.cargo_vcs_info.json` names it, no
+`dirty` flag), the token link removed after, and consumed from the registry
+(`bmlib = "=0.4.0"`, no default features, `sanitize_identifier` byte for
+byte with Python).
 
 **Left open past the release**: #656 (the HTML length cap's own cost, the
 maintainer's choice), #694 (bmlib-ffi forwards no log records), #495 (Rust
@@ -210,7 +213,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.13.0 on `release/0.13.0`** (0.12.0 released 2026-10-31, on PyPI). The version lives
+- **Version 0.13.0, released 2026-11-10** (on PyPI; 0.12.0 released 2026-10-31). The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
