@@ -66,7 +66,8 @@ DEFAULT_TEMPERATURE = 0.1
 #: A reasoning model's thinking counts against ``max_tokens``: one RoB 2 domain
 #: took 8,651 output tokens, mostly thinking, so 4096 or even 8192 cut replies
 #: short.  It is a ceiling, not a cost: a model stops when its reply is done.
-#: A caller whose model allows less clips it to ``LLMClient.model_limits``.
+#: A caller whose model allows less clips it to ``LLMClient.model_limits``, where
+#: the provider states a limit (OpenAI and Mistral state none).
 DEFAULT_MAX_TOKENS = 16384
 
 #: ``chat_json``'s attempts per question (Rust's ``DEFAULT_MAX_RETRIES``).

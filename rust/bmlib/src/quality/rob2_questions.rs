@@ -73,8 +73,8 @@ Look in: the baseline table (characteristics by group) and the flow diagram's co
 Y: something chance can hardly explain. In the baseline table: a strong predictor of this kind of outcome, or the outcome's own starting value, is unequal enough between groups to sway the result; many more rows differ than chance would give; or nearly every row matches too closely. In the flow diagram: group sizes far from the planned split.
 PY: there are signs of this kind, but they are not clear-cut.
 PN: nothing stands out, but the evidence is thin: the baseline table is short or leaves out characteristics that matter for this outcome, or the paper gives no numbers by group and only states in its text that the groups were alike at the start.
-N: the baseline numbers show the groups alike at the start, or differing only as much as random allocation would be expected to make them. One or two rows with a p-value under 0.05 in a long table are what chance alone produces.
-NI: the paper says nothing about what the randomised groups were like at the start: no numbers by group and no statement comparing them."##;
+N: the baseline numbers for the randomised groups show them alike at the start, or differing only as much as random allocation would be expected to make them. One or two rows with a p-value under 0.05 in a long table are what chance alone produces.
+NI: the paper says nothing about what the randomised groups were like at the start: no numbers by group and no statement comparing them. A table of only the participants who stayed to the end is not baseline numbers for the randomised groups."##;
 
 /// Question 2.1's wording.
 pub const Q_2_1: &str = r##"Did the participants know which intervention they were getting while the trial ran?
@@ -252,9 +252,9 @@ What counts as several measurements: more than one version of this outcome's res
 Look in: the outcome list and the date of the registration, protocol or analysis plan the paper cites, then the methods and the results. Which of the planned measurements have their results given in full?
 Y: you can point to a measurement that the plan or the methods name whose result is missing or only summarised, while the one given in full is the more favourable, and the paper does not explain the choice. A primary outcome swapped for the registered one counts here.
 PY: some measurements named in the plan or the methods have no results, but it is not clear the results guided which were shown.
-PN: such a plan names this outcome and what is reported fits it, but the plan leaves part of the measurement open, for example it names the questionnaire but not the time point.
-N: such a plan says how this outcome would be measured and the results include every version it names, or the authors give a reason unrelated to the results for any that is missing; or this outcome can be measured in only one way, for example death from any cause at the trial's single follow-up, so there was nothing to choose from.
-NI: no such plan is available to compare against (none is cited or described, or it gives too little detail), and this outcome could have been measured in more than one way. Answer NI, not N, even when the paper itself shows only one version."##;
+PN: the paper sets out such a plan in full, fixing everything this result could have been chosen on (the scale, its definition, the time point), and the report matches it, but it cites no registration or protocol where the plan can be found. A plan that leaves any of these open, where the open part could have given a different result, is NI, not PN.
+N: a registration, protocol or analysis plan the paper cites sets out how this outcome would be measured, and the results include every version it names, or the authors give a reason unrelated to the results for any that is missing; or this outcome can be measured in only one way, for example death from any cause at the trial's single follow-up, so there was nothing to choose from.
+NI: there is no such plan to hold the report against, or the plan leaves open something this result could have been chosen on, and this outcome leaves room for more than one version. Answer NI, not N, even when the paper itself shows only one version."##;
 
 /// Question 5.3's wording.
 pub const Q_5_3: &str = r##"Was the result reported for this outcome chosen, because of what it showed, from among several analyses of the same measurement?
@@ -262,9 +262,9 @@ What counts as several analyses: the same measurement could have been analysed i
 Look in: the analysis the plan describes and the plan's date, the analyses the methods mention, and the ones the results show. Note any analysis mentioned but not shown, and any result labelled post hoc.
 Y: you can point to an analysis that was planned or mentioned whose result is missing or played down, while the one given prominence is the more favourable, and the paper does not explain the choice.
 PY: the reported analysis differs from the planned one with no reason given, but it is not clear the results guided the choice.
-PN: such a plan says how this outcome would be analysed and what is reported fits it, but the plan leaves some choices open, so the match cannot be fully checked.
-N: such a plan describes the analysis and the reported analysis is that one, or the authors give a reason unrelated to the results for any difference; or this measurement can be analysed in only one way, so there was nothing to choose from.
-NI: no such plan is available to compare against (none is cited or described, or it gives too little detail), and this measurement could have been analysed in more than one way. Answer NI, not N, even when the paper itself shows only one analysis."##;
+PN: the paper describes such a plan, fixing everything this result could have been chosen on (the model, the covariates, the handling of missing results), and the reported analysis matches it, but the plan's date or source is not given, so its timing rests on the paper's word. A plan that leaves any of these open, where the open part could have given a different result, is NI, not PN.
+N: a protocol or statistical analysis plan the paper cites describes the analysis and the reported analysis is that one, or the authors give a reason unrelated to the results for any difference; or this measurement can be analysed in only one way, so there was nothing to choose from. That is rare: adjusting or not, the effect measure and the handling of missing results are each a choice.
+NI: there is no such plan to hold the report against, or the plan leaves open something this result could have been chosen on, and this measurement leaves room for more than one analysis. Answer NI, not N, even when the paper itself shows only one analysis."##;
 
 /// The wording of RoB 2 question `id` (such as `"2.3"`).
 ///

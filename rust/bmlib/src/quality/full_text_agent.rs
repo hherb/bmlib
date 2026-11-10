@@ -48,7 +48,8 @@ pub const LABEL_CHARS: usize = 60;
 /// A reasoning model's thinking counts against `max_tokens`: one RoB 2 domain
 /// took 8,651 output tokens, mostly thinking, so 4096 or even 8192 cut replies
 /// short. It is a ceiling, not a cost: a model stops when its reply is done. A
-/// caller whose model allows less clips it to `LlmClient::model_limits`.
+/// caller whose model allows less clips it to `LlmClient::model_limits`, where
+/// the provider states a limit (OpenAI and Mistral state none).
 /// [`PicoAgent`](crate::quality::pico_agent::PicoAgent) keeps the Cochrane
 /// assessor's 4096.
 pub const DEFAULT_MAX_TOKENS: i64 = 16384;

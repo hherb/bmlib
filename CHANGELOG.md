@@ -83,8 +83,9 @@ All notable changes to bmlib are documented here. The format is based on
   paper to look, and one line per answer saying what counts as Y, PY, PN, N
   and NI. Version 3 makes four answers rest on published evidence only (from a
   smoke test on 10 RCTs): 5.2 and 5.3 answer N/PN only against a plan fixed
-  before the data by group were seen, or when only one measurement or analysis
-  was possible, and NI otherwise (a paper showing one analysis is not N); 1.3
+  before the data by group were seen that leaves nothing open the result could
+  have been chosen on, or when only one measurement or analysis was possible,
+  and NI otherwise (a paper showing one analysis is not N); 1.3
   answers PN when only the text says the groups were alike at baseline, NI only
   when the paper says nothing about them; 3.3 answers Y/PY when dropping out
   could plausibly follow participants' health, with unreported reasons no ground
