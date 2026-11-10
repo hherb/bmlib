@@ -47,7 +47,7 @@ use crate::quality::rob2_algorithm::Domain;
 /// Bumped whenever any wording in this module or the agent's prompts changes,
 /// so a stored run says which wording produced it. Python's
 /// `ROB2_PROMPT_VERSION`.
-pub const ROB2_PROMPT_VERSION: u32 = 3;
+pub const ROB2_PROMPT_VERSION: u32 = 4;
 
 /// Question 1.1's wording.
 pub const Q_1_1: &str = r##"Did chance alone decide which group each participant joined?
@@ -239,12 +239,12 @@ NI: the paper gives too little to judge."##;
 
 /// Question 5.1's wording.
 pub const Q_5_1: &str = r##"Did this result come from an analysis that was planned, and written down, before anyone could see the outcome data split by group?
-Look in: the trial registration, the protocol or statistical analysis plan the paper cites, and the dates it gives for them. Compare their outcome measure and analysis with the ones reported.
-Y: such a plan exists, the reported measure and analysis follow it, and any change was made before the data were seen or for a stated reason that has nothing to do with the results.
-PY: such a plan exists and the report seems to follow it, but the paper does not allow a full comparison.
-PN: the report seems to depart from the plan, or the plan seems to have been settled late.
+Look in: the trial registration, the protocol or statistical analysis plan the paper cites, and the dates it gives for them. Compare their outcome measure and analysis with the ones reported. A paper that only calls an outcome or analysis "prespecified", or cites a plan without saying what it fixes for this outcome, gives you nothing to compare.
+Y: the paper cites such a plan, with a date that places it before the data by group were seen, and the plan fixes this outcome's measure and analysis; the report follows it, and any change was made before the data were seen or for a stated reason that has nothing to do with the results.
+PY: the paper describes what the plan fixes for this outcome (its measure and analysis) closely enough to compare, and the report follows it, but only the paper's word places the plan before the data by group were seen: it cites no registration, protocol or analysis plan for it, or cites one without a date that does.
+PN: the report seems to depart from the plan, or there are signs that the plan was changed after the data by group could be seen.
 N: the report departs from the plan without a reason unrelated to the results, or the plan was written or changed after the outcome data were seen.
-NI: the paper names no plan settled in advance, or gives too little of it to compare."##;
+NI: the paper names no plan settled in advance; or it names one but gives too little of what the plan fixes for this outcome to compare, even when it calls the outcome or analysis "prespecified"; or the plan's only date places it after the data by group were seen, such as a registration made late."##;
 
 /// Question 5.2's wording.
 pub const Q_5_2: &str = r##"Was the result reported for this outcome chosen, because of what it showed, from among several measurements of it?

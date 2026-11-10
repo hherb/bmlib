@@ -73,7 +73,7 @@ All notable changes to bmlib are documented here. The format is based on
   with `escalation_error`. Only a stop or refused input ends a run
   (`Rob2RunError`). A paper over the window is condensed per domain, for that
   domain's query, and flagged `condensed`. The 22 questions and the escalation
-  prompt are bmlib's own (`rob2_questions`, `ROB2_PROMPT_VERSION` 3; RoB 2's
+  prompt are bmlib's own (`rob2_questions`, `ROB2_PROMPT_VERSION` 4; RoB 2's
   guidance is CC BY-NC-ND 4.0 and its text is not copied): written afresh in
   bmlib's own words from the decision each question feeds; RoB 2's criteria
   necessarily show through, but its wording, examples and list order are not
@@ -89,7 +89,12 @@ All notable changes to bmlib are documented here. The format is based on
   answers PN when only the text says the groups were alike at baseline, NI only
   when the paper says nothing about them; 3.3 answers Y/PY when dropping out
   could plausibly follow participants' health, with unreported reasons no ground
-  for NI. Contracts: `tests/fixtures/rob2_replies.json` and
+  for NI. Version 4 holds 5.1 to the same evidence: Y only for a cited plan,
+  dated before the data by group were seen, that fixes the outcome's measure and
+  analysis; PY when the paper shows what the plan fixes but only its own word
+  dates it; NI for a bare "prespecified", a plan cited without its content, or a
+  late registration (on DeepSeek, PY under version 3 in 6 of 20 runs, 1 under
+  version 4). Contracts: `tests/fixtures/rob2_replies.json` and
   `tests/fixtures/rob2_run.json`, written by `scripts/make_rob2_fixtures.py`.
 - **Primary outcomes and their results** (StudyAnalyzer evidence weight, piece 3).
   `OutcomeAgent` (`bmlib/quality/outcome_agent.py`,
