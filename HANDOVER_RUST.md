@@ -1,14 +1,14 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-11-10. **0.4.0 is being released** with Python's 0.13.0 (branch
-`release/0.13.0`): the workspace version is bumped (and `bmlib_version()`'s doc, the FFI README,
+_Last updated: 2026-11-10. **0.4.0 is on crates.io** (2026-11-10T02:37Z) with Python's 0.13.0,
+from `161849c0`, the merge of PR #736: the workspace version is bumped (and `bmlib_version()`'s doc, the FFI README,
 the manual's header), `BMLIB_VERSION` is `"0.13.0"` with the analyzer oracle regenerated, and
 `bmlib/CHANGELOG.md` has its `[0.4.0]` section (repeated sub-headings merged, the breaks recorded
 under other headings pointed at, and the Rust changes the Python CHANGELOG carries alone listed
 in the paragraph above *Changed — breaking*). The 206 `unreleased` markers are promoted, the crate's
-manual to 0.4.0. Publish from a clean worktree of the merge commit, per *Publishing to crates.io*
-below, and remove the token link afterwards. **0.3.0 is on crates.io** from `d2ee803`, the merge
-of PR #611._
+manual to 0.4.0. Published from a clean worktree of the merge commit, per *Publishing to
+crates.io* below, and the token link removed afterwards. 0.3.0 was published from `d2ee803`, the
+merge of PR #611._
 
 _Last updated: 2026-09-29 (round 69). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
 `0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 66 unified the corpora's declared-divergence
@@ -97,6 +97,11 @@ same way and needs no `--test-threads=1`, because each test creates its own
 database.
 
 ## Publishing to crates.io
+
+**`bmlib` 0.4.0 is published** (2026-11-10T02:37Z) from `161849c0`, the merge of PR #736 and
+the commit tagged `v0.13.0` for the Python library; `.cargo_vcs_info.json` records it and no
+`dirty` flag. Consumed as 0.3.0 was: a throwaway crate depending on `bmlib = "=0.4.0"` (no
+default features) called `sanitize_identifier` and printed the same two identifiers below.
 
 **`bmlib` 0.3.0 is published** (2026-10-31T07:26Z) from `d2ee803`, the merge of PR #611 and
 the commit tagged `v0.12.0` for the Python library; `.cargo_vcs_info.json` records it and no
