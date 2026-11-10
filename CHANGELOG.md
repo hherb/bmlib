@@ -15,7 +15,13 @@ All notable changes to bmlib are documented here. The format is based on
   the paper's weight, accepting the machine's proposals as they come. Every
   step gets the same temperature, `max_tokens`, `max_retries` and condensation
   budget (Rust `AgentOptions`, whose `Default` is the agents' own; Python keyword
-  arguments, `num_ctx` among them; Rust's `num_ctx` is the chat's). A design
+  arguments, `num_ctx` among them; Rust's `num_ctx` is the chat's). The full-text
+  agents' (design, outcome, RoB 2) default `max_tokens` is 16384
+  (`DEFAULT_MAX_TOKENS` in `_full_text_agent.py` and `full_text_agent.rs`), since
+  a reasoning model's thinking counts against it: one RoB 2 domain on
+  `deepseek-flash` took 8,651 output tokens and was cut at 8192. It is a ceiling,
+  not a cost; a caller clips it to `model_limits` for a model that allows less.
+  `PicoAgent` and the Cochrane assessor keep 4096. A design
   that is not a parallel-group RCT ends as `NotCovered` after one request; a
   trial with no primary outcome as `NoPrimaryOutcome`; otherwise `Assessed`
   holds one `AssessedOutcome` per outcome, whose `ladder` is `None` with a
@@ -67,7 +73,7 @@ All notable changes to bmlib are documented here. The format is based on
   with `escalation_error`. Only a stop or refused input ends a run
   (`Rob2RunError`). A paper over the window is condensed per domain, for that
   domain's query, and flagged `condensed`. The 22 questions and the escalation
-  prompt are bmlib's own (`rob2_questions`, `ROB2_PROMPT_VERSION` 2; RoB 2's
+  prompt are bmlib's own (`rob2_questions`, `ROB2_PROMPT_VERSION` 3; RoB 2's
   guidance is CC BY-NC-ND 4.0 and its text is not copied): written afresh in
   bmlib's own words from the decision each question feeds; RoB 2's criteria
   necessarily show through, but its wording, examples and list order are not
@@ -75,7 +81,14 @@ All notable changes to bmlib are documented here. The format is based on
   question, when it applies (else `NA`; 3.3 is always answered, since its
   branch opens when the paper does not say how much is missing), where in the
   paper to look, and one line per answer saying what counts as Y, PY, PN, N
-  and NI. Contracts: `tests/fixtures/rob2_replies.json` and
+  and NI. Version 3 makes four answers rest on published evidence only (from a
+  smoke test on 10 RCTs): 5.2 and 5.3 answer N/PN only against a plan fixed
+  before the data by group were seen, or when only one measurement or analysis
+  was possible, and NI otherwise (a paper showing one analysis is not N); 1.3
+  answers PN when only the text says the groups were alike at baseline, NI only
+  when the paper says nothing about them; 3.3 answers Y/PY when dropping out
+  could plausibly follow participants' health, with unreported reasons no ground
+  for NI. Contracts: `tests/fixtures/rob2_replies.json` and
   `tests/fixtures/rob2_run.json`, written by `scripts/make_rob2_fixtures.py`.
 - **Primary outcomes and their results** (StudyAnalyzer evidence weight, piece 3).
   `OutcomeAgent` (`bmlib/quality/outcome_agent.py`,

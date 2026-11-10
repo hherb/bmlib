@@ -28,11 +28,12 @@ use crate::context_processor::ProcessingConfig;
 use crate::pyvalue::python_strip;
 use crate::quality::agent_chat::JsonChat;
 use crate::quality::cochrane_assessor::{
-    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_TEMPERATURE,
 };
 use crate::quality::design_agent::prompt_version;
 pub use crate::quality::design_agent::ProposalError;
 use crate::quality::evidence_ladder::{EffectScale, ReportedResult};
+use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::full_text_agent::{
     ask_until_readable, check_similarity, check_stop, condense_once, Sampling, LABEL_CHARS,
 };

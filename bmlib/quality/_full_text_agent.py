@@ -62,8 +62,12 @@ LABEL_CHARS = 60
 #: Sampling temperature of every full-text agent (Rust's ``DEFAULT_TEMPERATURE``).
 DEFAULT_TEMPERATURE = 0.1
 
-#: The reply's output ceiling (Rust's ``DEFAULT_MAX_TOKENS``).
-DEFAULT_MAX_TOKENS = 4096
+#: The reply's output ceiling (Rust's ``full_text_agent::DEFAULT_MAX_TOKENS``).
+#: A reasoning model's thinking counts against ``max_tokens``: one RoB 2 domain
+#: took 8,651 output tokens, mostly thinking, so 4096 or even 8192 cut replies
+#: short.  It is a ceiling, not a cost: a model stops when its reply is done.
+#: A caller whose model allows less clips it to ``LLMClient.model_limits``.
+DEFAULT_MAX_TOKENS = 16384
 
 #: ``chat_json``'s attempts per question (Rust's ``DEFAULT_MAX_RETRIES``).
 DEFAULT_MAX_RETRIES = 3

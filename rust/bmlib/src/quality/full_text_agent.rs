@@ -42,6 +42,17 @@ use crate::quality::pico_agent::{
 /// How much of the title names the paper in a log line or a condensation label.
 pub const LABEL_CHARS: usize = 60;
 
+/// The reply's output ceiling for every full-text agent (design, outcome, RoB 2
+/// and the unattended pipeline). Python's `_full_text_agent.DEFAULT_MAX_TOKENS`.
+///
+/// A reasoning model's thinking counts against `max_tokens`: one RoB 2 domain
+/// took 8,651 output tokens, mostly thinking, so 4096 or even 8192 cut replies
+/// short. It is a ceiling, not a cost: a model stops when its reply is done. A
+/// caller whose model allows less clips it to `LlmClient::model_limits`.
+/// [`PicoAgent`](crate::quality::pico_agent::PicoAgent) keeps the Cochrane
+/// assessor's 4096.
+pub const DEFAULT_MAX_TOKENS: i64 = 16384;
+
 /// Condenses an oversized text for one stated need.
 ///
 /// [`Condenser`] with the query a parameter, so one condenser serves agents

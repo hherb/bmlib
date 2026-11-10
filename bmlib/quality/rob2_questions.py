@@ -58,7 +58,7 @@ __all__ = [
 
 #: Bumped whenever any wording in this module or the agent's prompts changes,
 #: so a stored run says which wording produced it.
-ROB2_PROMPT_VERSION = 2
+ROB2_PROMPT_VERSION = 3
 
 # --- Domain 1: the randomisation process ---
 
@@ -102,20 +102,25 @@ Q_1_3 = """\
 Do the groups, as they stood at the start, look different in a way that \
 hints the randomisation went wrong?
 Look in: the baseline table (characteristics by group) and the flow \
-diagram's count randomised to each group. Judge from these numbers, not from \
-the paper's account of its method.
+diagram's count randomised to each group; failing those, any sentence in the \
+paper comparing the groups at the start. Judge from what is reported about \
+the groups, not from the paper's account of how it randomised.
 Y: something chance can hardly explain. In the baseline table: a strong \
 predictor of this kind of outcome, or the outcome's own starting value, is \
 unequal enough between groups to sway the result; many more rows differ than \
 chance would give; or nearly every row matches too closely. In the flow \
 diagram: group sizes far from the planned split.
 PY: there are signs of this kind, but they are not clear-cut.
-PN: nothing stands out, but the baseline table is short or leaves out \
-characteristics that matter for this outcome.
-N: the groups look alike at the start, or differ only as much as random \
-allocation would be expected to make them. One or two rows with a p-value \
-under 0.05 in a long table are what chance alone produces.
-NI: the paper gives no baseline characteristics for each randomised group."""
+PN: nothing stands out, but the evidence is thin: the baseline table is \
+short or leaves out characteristics that matter for this outcome, or the \
+paper gives no numbers by group and only states in its text that the groups \
+were alike at the start.
+N: the baseline numbers show the groups alike at the start, or differing \
+only as much as random allocation would be expected to make them. One or two \
+rows with a p-value under 0.05 in a long table are what chance alone \
+produces.
+NI: the paper says nothing about what the randomised groups were like at the \
+start: no numbers by group and no statement comparing them."""
 
 # --- Domain 2: deviations from the intended interventions (effect of assignment) ---
 
@@ -297,23 +302,28 @@ Q_3_3 = """\
 Could a participant's chance of having no result for this outcome be tied to \
 what that result would have been?
 Answer this question in every case; do not answer NA. When the paper does \
-not say how many results are missing, judge from whatever it says about why \
-participants dropped out or were not measured, and answer NI if it says \
-nothing about that either.
+not say how many results are missing, or why, judge from the outcome and the \
+condition: could being unwell, or getting better, keep someone from being \
+assessed?
 Look in: the flow diagram and the text on withdrawals, losses to follow-up \
 and missed visits, for the reasons given. In a time-to-event analysis, a \
 participant who left follow-up early counts as missing.
-Y: the reasons are, or could well be, tied to how participants were doing, \
-for example they stopped coming because they got worse, got better, or had a \
-side effect.
-PY: reasons are given for some participants, and some of those could be tied \
-to how they were doing.
-PN: reasons are given for some participants, and none of those is tied to \
-how they were doing.
+Y: the reasons given are, or could well be, tied to how participants were \
+doing, for example they stopped coming because they got worse, got better, \
+or had a side effect.
+PY: the paper gives no reasons, or reasons for only some participants, and \
+for this outcome how a participant was doing could plausibly decide whether \
+they were assessed, as it can for most clinical outcomes. Reasons left \
+unreported are not a ground for NI.
+PN: reasons are given for every missing result and make a tie to how \
+participants were doing unlikely without ruling it out, for example "moved \
+away" with nothing more said.
 N: every missing result has a stated reason that cannot be tied to how the \
 participant was doing, for example a blood sample spoiled in the laboratory \
 or a data file lost.
-NI: the paper gives no reasons for the missing results."""
+NI: the paper gives no reasons, and nothing about this outcome or the \
+condition lets you judge whether a participant's health could affect whether \
+they were assessed. This should be rare."""
 
 Q_3_4 = """\
 Is there a concrete sign, beyond mere possibility, that whether results went \
@@ -448,49 +458,62 @@ Q_5_2 = """\
 Was the result reported for this outcome chosen, because of what it showed, \
 from among several measurements of it?
 What counts as several measurements: more than one version of this outcome's \
-result could have been reported, and the paper, or the registration or \
-protocol it cites, shows them, for example the same symptom rated on two \
+result could have been reported, for example the same symptom rated on two \
 questionnaires, or one score read at 6 and at 12 months. A measurement of a \
-different outcome does not count. If this outcome has only one sensible \
-version, there was nothing to choose from: answer N.
-Look in: the outcome list in the registration or protocol and in the \
-methods, then the results. Which of those measurements have their results \
-given in full?
+different outcome does not count. Only a plan written down before anyone \
+could see the outcome data split by group (a registration, protocol or \
+analysis plan) shows which versions were intended: a paper that reports a \
+single version is not, by itself, evidence that only one was taken.
+Look in: the outcome list and the date of the registration, protocol or \
+analysis plan the paper cites, then the methods and the results. Which of \
+the planned measurements have their results given in full?
 Y: you can point to a measurement that the plan or the methods name whose \
 result is missing or only summarised, while the one given in full is the \
 more favourable, and the paper does not explain the choice. A primary \
 outcome swapped for the registered one counts here.
-PY: some measurements named in the methods have no results, but it is not \
-clear the results guided which were shown.
-PN: a plan exists but says little about how this outcome would be measured, \
-and what is reported fits it.
-N: the results include every version the plan or the paper names, or the \
-authors give a reason unrelated to the results for any that is missing.
-NI: the paper does not say what was planned (no registration, protocol or \
-analysis plan is cited or described), and this outcome is of a kind commonly \
-measured in several ways."""
+PY: some measurements named in the plan or the methods have no results, but \
+it is not clear the results guided which were shown.
+PN: such a plan names this outcome and what is reported fits it, but the \
+plan leaves part of the measurement open, for example it names the \
+questionnaire but not the time point.
+N: such a plan says how this outcome would be measured and the results \
+include every version it names, or the authors give a reason unrelated to \
+the results for any that is missing; or this outcome can be measured in only \
+one way, for example death from any cause at the trial's single follow-up, \
+so there was nothing to choose from.
+NI: no such plan is available to compare against (none is cited or \
+described, or it gives too little detail), and this outcome could have been \
+measured in more than one way. Answer NI, not N, even when the paper itself \
+shows only one version."""
 
 Q_5_3 = """\
 Was the result reported for this outcome chosen, because of what it showed, \
 from among several analyses of the same measurement?
-What counts as several analyses: the paper, or the plan it cites, shows the \
-same measurement analysed in more than one way, for example with and without \
-outliers, or with two different statistical tests. If the measurement has \
-only one sensible analysis, there was nothing to choose from: answer N.
-Look in: the analysis the plan describes, the analyses the methods mention, \
-and the ones the results show. Note any analysis mentioned but not shown, \
-and any result labelled post hoc.
+What counts as several analyses: the same measurement could have been \
+analysed in more than one way, for example with and without outliers, or \
+with two different statistical tests. Only a plan written down before anyone \
+could see the outcome data split by group (a registration, protocol or \
+statistical analysis plan) shows which analysis was intended: a paper that \
+shows a single analysis is not, by itself, evidence that only one was run.
+Look in: the analysis the plan describes and the plan's date, the analyses \
+the methods mention, and the ones the results show. Note any analysis \
+mentioned but not shown, and any result labelled post hoc.
 Y: you can point to an analysis that was planned or mentioned whose result \
 is missing or played down, while the one given prominence is the more \
 favourable, and the paper does not explain the choice.
 PY: the reported analysis differs from the planned one with no reason given, \
 but it is not clear the results guided the choice.
-PN: a plan exists but says little about how this outcome would be analysed, \
-and what is reported fits it.
-N: the reported analysis is the planned one, or the authors give a reason \
-unrelated to the results for any difference.
-NI: the paper does not say what analysis was planned, and this measurement \
-is of a kind that can reasonably be analysed in several ways."""
+PN: such a plan says how this outcome would be analysed and what is reported \
+fits it, but the plan leaves some choices open, so the match cannot be fully \
+checked.
+N: such a plan describes the analysis and the reported analysis is that one, \
+or the authors give a reason unrelated to the results for any difference; or \
+this measurement can be analysed in only one way, so there was nothing to \
+choose from.
+NI: no such plan is available to compare against (none is cited or \
+described, or it gives too little detail), and this measurement could have \
+been analysed in more than one way. Answer NI, not N, even when the paper \
+itself shows only one analysis."""
 
 #: Every question's wording by its RoB 2 id, in question order.
 QUESTION_TEXTS: dict[str, str] = {

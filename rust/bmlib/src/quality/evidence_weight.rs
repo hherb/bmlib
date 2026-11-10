@@ -36,12 +36,13 @@ use serde_json::{json, Value};
 use crate::context_processor::ProcessingConfig;
 use crate::quality::agent_chat::JsonChat;
 use crate::quality::cochrane_assessor::{
-    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_TEMPERATURE,
 };
 use crate::quality::design_agent::{DesignAgent, DesignProposal, ProposalError, QueryCondenser};
 use crate::quality::evidence_ladder::{
     build_ladder, paper_weight, start_level, EvidenceLadder, LadderSettings, LADDER_VERSION,
 };
+use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::outcome_agent::{OutcomeAgent, OutcomeProposal, ProposedOutcome};
 use crate::quality::rob2_agent::{
     list, object, text, DomainResult, OutcomeRob2, Rob2Agent, Rob2Run, Rob2RunError,

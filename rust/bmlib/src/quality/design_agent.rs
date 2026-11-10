@@ -28,9 +28,10 @@ use crate::context_processor::ProcessingConfig;
 use crate::pyvalue::python_strip;
 use crate::quality::agent_chat::{JsonChat, STOPPED_MESSAGE};
 use crate::quality::cochrane_assessor::{
-    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+    DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_TEMPERATURE,
 };
 use crate::quality::data_models::{study_design_from_str, RctLayout, StudyDesign};
+use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::full_text_agent::{
     ask_until_readable, check_similarity, check_stop, condense_once, Failure, Sampling, LABEL_CHARS,
 };

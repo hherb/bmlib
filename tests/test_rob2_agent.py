@@ -156,7 +156,7 @@ class TestTheQuestions:
         assert len({domain_title(d) for d in Domain}) == 5
 
     def test_the_constants(self) -> None:
-        assert ROB2_PROMPT_VERSION == 2
+        assert ROB2_PROMPT_VERSION == 3
         assert '"escalate"' in ESCALATION_PROMPT and "registered" in D5_OUTCOME_SWITCHING
 
 
