@@ -2862,9 +2862,10 @@ doc.converter_version                     # "jats-1"
   characters, so a page longer than `HTML_MAX_CHARS` (2,000,000 code points)
   is refused unparsed with `HtmlPageTooLargeError` (also a `ValueError`; Rust
   `HtmlError::TooLarge`) *(0.13.0)*. At that length the worst page
-  measured is converted or refused within about twice the budget (#654). How
-  many real pages are longer is unmeasured; a page saved with its images
-  inline as `data:` URIs can be (#656). The clock is wall time, so a loaded machine
+  measured is converted or refused within about twice the budget (#654). None
+  of 142 real pages measured was longer (the longest 929,565 code points,
+  #726), but they were fetched, and a page saved with its images inline as
+  `data:` URIs can be (#656). The clock is wall time, so a loaded machine
   can refuse a page an idle one accepts, and a timeout is worth retrying
   elsewhere; a page too large is not. html5ever also rebuilds every
   formatting element a closed block left open each time text follows, so a page of 91 KB
@@ -2875,7 +2876,10 @@ doc.converter_version                     # "jats-1"
   which needs `psutil`, in the `html` extra. Rust counts the elements it
   creates and stops past one per code point plus `HTML_ELEMENT_ALLOWANCE`
   (`HtmlError::TooManyElements`; `HtmlError` is `#[non_exhaustive]`)
-  *(0.13.0)*. Neither is worth retrying.
+  *(0.13.0)*. On 142 real pages the most created was 0.0365 per code point and
+  the child's peak 35 MB, so neither limit decided one; a small page shaped
+  like #723's can still be refused by Rust and converted by Python
+  *(unreleased)*. Neither is worth retrying.
   A page with neither `<article>` nor `<main>` may contribute its site name as
   the title.
 - **Is it the whole paper?** A publisher's abstract page converts as cleanly as

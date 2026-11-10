@@ -1,19 +1,42 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-10 (**0.13.0 is released — *Release 0.13.0* below says what
-it costs a downstream**). Every item of the agreed release plan is merged: PRs
-#735 and #732 (live probes), #729 (#708), #728 (#665), #727 (#647), #724
-(#723), #721 (#607, #444), #720 (#686), #719 (#717), #715 (#572), #714 (#649,
-#652), #713 (#710), #711-#712 (#707, #706's review), #709 (#705), #706
-(#702), #704 (#698), #703, #701 (#697), #700, #699 and #692 (#617), #696
-(#577, #618), #693 (#688), #691 (#606), #690 (#689), #687 (#634), #683 (#608),
-#682 (#680), #679 (#583) and earlier. **0.13.0 is on PyPI** (tag `v0.13.0` on
-`161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit._
+_Last updated: 2026-11-10 (**#726 measured, PR open — read *This session*
+first**). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of
+#736) and **the Rust crate 0.4.0 on crates.io** from the same commit._
+
+## This session: the HTML limits measured on real pages (#726, PR open)
+
+The maintainer chose #725/#726. `scripts/sample_html_pages.py` (new; tests
+`tests/test_html_page_sampler.py`) and its corpus
+`tests/data/html_page_shapes.json` cover 142 pages served to a plain client,
+73 of them article-like, from PubMed DOI landing pages (5 years, plus 4
+`free full text` years) and archived 1998-2007 HighWire/BMC pages. Both
+languages accepted every page. The most any page built was **0.0365 elements
+per code point**, about 27× under Rust's budget, and no page built more
+elements than its `<` count. The longest page was 929,565 code points, so
+none is over either #656 cap, and the child peaked at **35 MB**. No constant
+moved; the figures are in the constants' docs, the manual, DECISIONS (#723's
+entry) and the CHANGELOG. Two exploratory draws (187 pages) found markupever's
+tree count equal to the Rust sink's created count on every page, which is why
+the sampler needs no Rust.
+
+- **#726**: answered by the measurement. Whether to close it is the
+  maintainer's call; the comment on it has the figures.
+- **#656**: real fetched pages are far under both caps, but `data:`-image
+  pages (its actual case) are still unmeasured, so it stays open.
+- **#725**: still unmeasured. This machine has 128 GB of RAM, and real memory
+  pressure was not induced. Docker is installed but its daemon was not
+  running, so the cgroup case was not tried either.
+- **The sampler's blind spots**: about half the DOI targets are refused to a
+  plain client (SAGE, Wiley, OUP, ACS, LWW; recorded `not_served`), PMC
+  served reCAPTCHA pages, and the Wayback index failed the NEJM and JCB
+  strata (ERROR in the corpus, exit 1). Re-run before changing any of the
+  three limits.
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
 The maintainer's plan of 2026-11-09 (#723, #647, #708, #665, the live probes)
-is done; this session did the housekeeping on `release/0.13.0`:
+is done; the release session did the housekeeping on `release/0.13.0`:
 
 - **CHANGELOGs**: `[Unreleased]` promoted to `[0.13.0]` (Python) and `[0.4.0]`
   (Rust), dated 2026-11-10 (re-date if the merge slips). Repeated
@@ -51,7 +74,7 @@ lines), #733 (pricing rows name retired models, so the new defaults cost the
 fallback estimate), #734 (Rust's DeepSeek `/v1`; both paths answered 200),
 **Mistral's default** (`mistral-large-latest` 403 `tier_not_allowed` on the
 probed key; re-probe with a paid-tier key), #730/#731 (reasoning-model rules),
-#716, #718, #725, #726.
+#716, #718, #725 (#726 measured this session).
 
 ## What 0.13.0 costs StudyAnalyzer (and any downstream)
 
@@ -133,7 +156,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): this session (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): this session (#726, the HTML limits measured), PR #736 (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
