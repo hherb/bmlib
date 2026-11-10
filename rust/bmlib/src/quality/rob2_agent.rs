@@ -147,6 +147,23 @@ fn optional_text(data: &Map<String, Value>, key: &str) -> Result<Option<String>,
     }
 }
 
+/// The lowest and highest HTTP status a stored `status_code` may hold.
+const HTTP_STATUS_RANGE: std::ops::RangeInclusive<u64> = 100..=599;
+
+/// `data[key]`: required, an HTTP status or null.
+fn status_code(data: &Map<String, Value>, key: &str) -> Result<Option<u16>, String> {
+    match data.get(key) {
+        None => Err(format!("{key} is absent")),
+        Some(Value::Null) => Ok(None),
+        Some(code) => code
+            .as_u64()
+            .filter(|code| HTTP_STATUS_RANGE.contains(code))
+            .and_then(|code| u16::try_from(code).ok())
+            .map(Some)
+            .ok_or_else(|| format!("{key} is not null or an HTTP status")),
+    }
+}
+
 /// `data[key]` as a boolean, the message saying it is not `what`.
 fn boolean(data: &Map<String, Value>, key: &str, what: &str) -> Result<bool, String> {
     data.get(key)
@@ -372,7 +389,8 @@ impl DomainResult {
         }
     }
 
-    /// Python's `to_dict()` of either class, tagged by `status`.
+    /// Python's `to_dict()` of either class, tagged by `status`; a failed
+    /// domain's `status` is written as `status_code`.
     #[must_use]
     pub fn to_json(&self) -> Value {
         match self {
@@ -406,15 +424,7 @@ impl DomainResult {
                 domain: wire_enum(data.get("domain"), "domain", DOMAINS)?,
                 reason: text(data, "reason")?.to_string(),
                 retryable: boolean(data, "retryable", "a boolean")?,
-                status: match data.get("status_code") {
-                    None | Some(Value::Null) => None,
-                    Some(code) => Some(
-                        code.as_u64()
-                            .filter(|code| (100..=599).contains(code))
-                            .and_then(|code| u16::try_from(code).ok())
-                            .ok_or("status_code is not null or an HTTP status")?,
-                    ),
-                },
+                status: status_code(data, "status_code")?,
             }),
             other => Err(format!("status \"{other}\" is not {ASSESSED} or {FAILED}")),
         }
@@ -463,6 +473,13 @@ pub struct OutcomeRob2 {
     pub escalation: Option<Escalation>,
     /// Why a needed escalation could not be had; `None` otherwise.
     pub escalation_error: Option<String>,
+    /// Whether sending the failed escalation request again may succeed;
+    /// `false` unless `escalation_error` came from a request.
+    pub escalation_retryable: bool,
+    /// The HTTP status that request was answered with; `None` where no HTTP
+    /// answer came or `escalation_error` is not from a request. Written as
+    /// `escalation_status_code`.
+    pub escalation_status: Option<u16>,
     /// The overall judgement; `None` ("not assessed") when any of D1-D5 failed
     /// or a needed escalation could not be had. Never a guessed judgement.
     pub overall: Option<Judgement>,
@@ -477,6 +494,8 @@ impl OutcomeRob2 {
             "domains": self.domains.iter().map(DomainResult::to_json).collect::<Vec<_>>(),
             "escalation": self.escalation.as_ref().map(Escalation::to_json),
             "escalation_error": self.escalation_error,
+            "escalation_retryable": self.escalation_retryable,
+            "escalation_status_code": self.escalation_status,
             "overall": self.overall,
         })
     }
@@ -510,6 +529,13 @@ impl OutcomeRob2 {
         if escalation.is_some() && escalation_error.is_some() {
             return Err("escalation and escalation_error are both set".to_string());
         }
+        let escalation_retryable = boolean(data, "escalation_retryable", "a boolean")?;
+        let escalation_status = status_code(data, "escalation_status_code")?;
+        if escalation_error.is_none() && (escalation_retryable || escalation_status.is_some()) {
+            return Err(
+                "escalation_retryable or escalation_status_code given without an error".to_string(),
+            );
+        }
         let outcome = text(data, "outcome")?.to_string();
         let overall = match data.get("overall") {
             None | Some(Value::Null) => None,
@@ -520,6 +546,8 @@ impl OutcomeRob2 {
             domains,
             escalation,
             escalation_error,
+            escalation_retryable,
+            escalation_status,
             overall,
         })
     }
@@ -1188,6 +1216,7 @@ impl<'a> Rob2Agent<'a> {
     ) -> Result<OutcomeRob2, Rob2RunError> {
         let mut escalation = None;
         let mut escalation_error = None;
+        let (mut escalation_retryable, mut escalation_status) = (false, None);
         let needed = judgements(study, &domains).is_some_and(|j| needs_escalation_decision(&j));
         if let (true, DomainResult::Assessed(first)) = (needed, study) {
             let assessed: Vec<DomainAssessment> = domains
@@ -1212,7 +1241,11 @@ impl<'a> Rob2Agent<'a> {
                 read_escalation_reply,
             ) {
                 Ok(answer) => escalation = Some(answer),
-                Err(failure) => escalation_error = Some(split(failure)?.0),
+                Err(failure) => {
+                    let (message, retryable, status) = split(failure)?;
+                    (escalation_error, escalation_retryable, escalation_status) =
+                        (Some(message), retryable, status);
+                }
             }
         }
         let overall = rob2_overall(study, &domains, escalation.as_ref());
@@ -1221,6 +1254,8 @@ impl<'a> Rob2Agent<'a> {
             domains,
             escalation,
             escalation_error,
+            escalation_retryable,
+            escalation_status,
             overall,
         })
     }
@@ -1479,7 +1514,35 @@ pub(crate) mod tests {
             .escalation_error
             .as_deref()
             .is_some_and(|e| e.contains("escalate is not true or false")));
+        assert_eq!(
+            (only.escalation_retryable, only.escalation_status),
+            (false, None)
+        );
         assert_eq!(Rob2Run::from_json(&run.to_json()), Ok(run));
+    }
+
+    #[test]
+    fn a_failed_escalation_request_says_whether_to_retry_and_the_status() {
+        for (retryable, status) in [(false, Some(401)), (true, Some(503)), (true, None)] {
+            let mut replies = concerns_run();
+            replies.push(json!({}));
+            let mut chat = Scripted::new(replies);
+            chat.replies[5] = Err(ChatJsonError::Transport {
+                message: "down".into(),
+                attempts: 1,
+                retryable,
+                status,
+            });
+            let run = Rob2Agent::new(&mut chat)
+                .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+                .expect("run");
+            let only = &run.outcomes[0];
+            assert!(only.escalation_error.is_some());
+            assert_eq!(
+                (only.escalation_retryable, only.escalation_status),
+                (retryable, status)
+            );
+        }
     }
 
     #[test]
@@ -1551,6 +1614,14 @@ pub(crate) mod tests {
             assert!(error.contains("status_code"), "{error}");
         }
         let mut stored = good.to_json();
+        let mut missing = good.to_json();
+        missing
+            .as_object_mut()
+            .expect("object")
+            .remove("status_code");
+        assert!(DomainResult::from_json(&missing)
+            .expect_err("refused")
+            .contains("status_code"));
         stored.as_object_mut().expect("object").remove("retryable");
         assert!(DomainResult::from_json(&stored)
             .expect_err("refused")
@@ -1741,6 +1812,23 @@ pub(crate) mod tests {
             (
                 &|d: &mut Value| d["outcomes"][0]["escalation_error"] = json!("x"),
                 "escalation_error",
+            ),
+            (
+                &|d: &mut Value| {
+                    d["outcomes"][0]
+                        .as_object_mut()
+                        .expect("object")
+                        .remove("escalation_status_code");
+                },
+                "escalation_status_code",
+            ),
+            (
+                &|d: &mut Value| d["outcomes"][0]["escalation_retryable"] = json!(true),
+                "escalation_retryable",
+            ),
+            (
+                &|d: &mut Value| d["outcomes"][0]["escalation_status_code"] = json!(99),
+                "escalation_status_code",
             ),
             (
                 &|d: &mut Value| d["outcomes"][0]["escalation"]["escalate"] = json!("yes"),

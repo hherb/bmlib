@@ -34,7 +34,11 @@ All notable changes to bmlib are documented here. The format is based on
   (`status` is already the assessed/failed tag), read back checked, so a 401
   is `retryable` false with `status` 401 and a transport failure `retryable`
   true with no `status`; a request that failed a condensation carries its
-  refusal's own. Retry only when `retryable`; 401 and 403 mean the key. The result has `to_dict` /
+  refusal's own. The escalation question's failure carries the same pair
+  (`OutcomeRob2.escalation_retryable` / `escalation_status`, wire
+  `escalation_retryable` / `escalation_status_code`). Both wire fields are
+  required on read. Retry only when `retryable`; 401 and 403 mean the key.
+  The result has `to_dict` /
   `to_json` and a checked `evidence_weight_from_dict` / `EvidenceWeight::from_json`;
   Python gains `EvidenceLadder.from_wire` for it. Contract:
   `tests/fixtures/evidence_weight.json`, written by `scripts/make_evidence_weight.py`:

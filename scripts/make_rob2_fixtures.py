@@ -317,7 +317,9 @@ def build_run() -> dict[str, Any]:
     second = OutcomeRob2(
         SECOND.name, second_domains, None, rob2_overall(study, second_domains, None)
     )
-    third = OutcomeRob2("Heart rate", list(domains), None, None, "RoB 2 escalation: down")
+    third = OutcomeRob2(
+        "Heart rate", list(domains), None, None, "RoB 2 escalation: HTTP 503", True, 503
+    )
     run = Rob2Run(ROB2_ALGORITHM_VERSION, ROB2_PROMPT_VERSION, study, [first, second, third])
     return run.to_dict()
 

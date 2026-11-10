@@ -770,6 +770,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": "low"
       },
       {
@@ -894,6 +896,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": "low"
       },
       {
@@ -1018,6 +1022,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": "low"
       },
       {
@@ -1132,6 +1138,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": null
       }
      ]
@@ -1286,6 +1294,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": "low"
       },
       "ladder": {
@@ -1444,6 +1454,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": "low"
       },
       "ladder": null,
@@ -1598,6 +1610,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": "low"
       },
       "ladder": {
@@ -1767,6 +1781,8 @@
        ],
        "escalation": null,
        "escalation_error": null,
+       "escalation_retryable": false,
+       "escalation_status_code": null,
        "overall": null
       },
       "ladder": null,

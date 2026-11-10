@@ -415,6 +415,35 @@ class TestTheAgent:
         assert only.escalation is None and only.overall is None
         assert only.escalation_error is not None and "escalate" in only.escalation_error
 
+    @pytest.mark.parametrize(
+        ("code", "retryable", "status"), [(401, False, 401), (503, True, 503), (None, True, None)]
+    )
+    def test_a_failed_escalation_request_says_whether_to_retry_and_the_status(
+        self, code: int | None, retryable: bool, status: int | None
+    ) -> None:
+        failure = ConnectionError("down")
+        if code is not None:
+            failure.status_code = code  # type: ignore[attr-defined]
+        replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
+        replies += [{"answers": CONCERNS[Domain.D5]}]
+        agent = make_agent(*replies)
+        responses = list(agent.llm.chat.side_effect)
+        agent.llm.chat.side_effect = [*responses, failure]
+
+        with patch("bmlib.agents.base.time.sleep"):
+            [only] = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM).outcomes
+
+        assert only.escalation_error is not None
+        assert (only.escalation_retryable, only.escalation_status) == (retryable, status)
+
+    def test_an_unreadable_escalation_is_not_retryable(self) -> None:
+        replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
+        replies += [{"answers": CONCERNS[Domain.D5]}, {"escalate": "yes"}, {"escalate": "yes"}]
+        [only] = (
+            make_agent(*replies).assess("A trial", TEXT, [OUTCOME], min_similarity=SIM).outcomes
+        )
+        assert (only.escalation_retryable, only.escalation_status) == (False, None)
+
     def test_an_unreadable_domain_fails_alone(self) -> None:
         bad = {"answers": {"3.1": entry("Unclear")}}
         replies = [reply(Domain.D1), reply(Domain.D2), bad, bad, reply(Domain.D4)]
@@ -644,6 +673,14 @@ class TestTheWireForm:
             ),
             (lambda d: d["outcomes"][0].update(escalation_error="x"), "escalation_error"),
             (lambda d: d["outcomes"][1]["domains"][1].update(reason=None), "reason"),
+            (lambda d: d["outcomes"][1]["domains"][1].pop("status_code"), "status_code"),
+            (lambda d: d["outcomes"][0].pop("escalation_status_code"), "escalation_status_code"),
+            (lambda d: d["outcomes"][0].pop("escalation_retryable"), "escalation_retryable"),
+            (lambda d: d["outcomes"][0].update(escalation_retryable=True), "escalation_retryable"),
+            (
+                lambda d: d["outcomes"][0].update(escalation_status_code=99),
+                "escalation_status_code",
+            ),
         ],
     )
     def test_from_dict_refuses_what_the_reader_refuses(self, change: Any, word: str) -> None:

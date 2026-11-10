@@ -82,9 +82,10 @@ class EvidenceWeightError(Exception):
 
     Attributes:
         cause: The :class:`~bmlib.quality.design_agent.ProposalError` or
-            :class:`~bmlib.quality.rob2_agent.Rob2RunError` itself; a
-            ``ProposalError`` carries ``retryable`` and ``status`` for a failed
-            request, so ``error.cause.retryable`` says whether to try again.
+            :class:`~bmlib.quality.rob2_agent.Rob2RunError` itself.
+            When the cause is a ``ProposalError`` for a failed request,
+            ``error.cause.retryable`` and ``error.cause.status`` say whether
+            to try again; a ``Rob2RunError`` has neither.
     """
 
     def __init__(self, cause: ProposalError | Rob2RunError) -> None:

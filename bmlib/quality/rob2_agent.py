@@ -179,6 +179,25 @@ def _object(value: object, what: str) -> dict[str, Any]:
     return value
 
 
+#: The lowest and highest HTTP status a stored ``status_code`` may hold.
+HTTP_STATUS_MIN = 100
+HTTP_STATUS_MAX = 599
+
+
+def _status_code(data: dict[str, Any], key: str) -> int | None:
+    """``data[key]``: required, an HTTP status or null, else ``ValueError``."""
+    if key not in data:
+        raise ValueError(f"{key} is absent")
+    status = data[key]
+    if status is not None and (
+        isinstance(status, bool)
+        or not isinstance(status, int)
+        or not HTTP_STATUS_MIN <= status <= HTTP_STATUS_MAX
+    ):
+        raise ValueError(f"{key} is not null or an HTTP status")
+    return status
+
+
 def _optional_text(data: dict[str, Any], key: str) -> str | None:
     """``data[key]`` if it is text or null/absent, else ``ValueError``."""
     value = data.get(key)
@@ -357,7 +376,10 @@ class DomainFailed:
     status: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialise to a JSON-ready dict, tagged ``"status": "failed"``."""
+        """Serialise to a JSON-ready dict, tagged ``"status": "failed"``.
+
+        ``status`` is written as ``status_code``, since ``status`` is the tag.
+        """
         return {
             "status": _FAILED,
             "domain": self.domain.value,
@@ -370,20 +392,17 @@ class DomainFailed:
     def from_dict(cls, data: dict[str, Any]) -> DomainFailed:
         """Rebuild from :meth:`to_dict` output.
 
+        ``retryable`` and ``status_code`` (the ``status`` attribute) are both required.
+
         Raises:
             ValueError: A field is absent or of the wrong type or value, naming it.
         """
         data = _object(data, "the domain")
-        status = data.get("status_code")
-        if status is not None and (
-            isinstance(status, bool) or not isinstance(status, int) or not 100 <= status <= 599
-        ):
-            raise ValueError("status_code is not null or an HTTP status")
         return cls(
             _enum(Domain, data.get("domain"), "domain"),
             _wire(data, "reason", str, "text"),
             _wire(data, "retryable", bool, "a boolean"),
-            status,
+            _status_code(data, "status_code"),
         )
 
 
@@ -451,6 +470,12 @@ class OutcomeRob2:
             guessed judgement.
         escalation_error: Why a needed escalation could not be had; ``None``
             otherwise.
+        escalation_retryable: Whether sending the failed escalation request
+            again may succeed; ``False`` unless ``escalation_error`` came from
+            a request.
+        escalation_status: The HTTP status that request was answered with;
+            ``None`` where no HTTP answer came or ``escalation_error`` is not
+            from a request.  Written as ``escalation_status_code``.
     """
 
     outcome: str
@@ -458,6 +483,8 @@ class OutcomeRob2:
     escalation: Escalation | None = None
     overall: Judgement | None = None
     escalation_error: str | None = None
+    escalation_retryable: bool = False
+    escalation_status: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-ready dict (Rust's wire form)."""
@@ -466,6 +493,8 @@ class OutcomeRob2:
             "domains": [d.to_dict() for d in self.domains],
             "escalation": None if self.escalation is None else self.escalation.to_dict(),
             "escalation_error": self.escalation_error,
+            "escalation_retryable": self.escalation_retryable,
+            "escalation_status_code": self.escalation_status,
             "overall": None if self.overall is None else self.overall.value,
         }
 
@@ -490,6 +519,12 @@ class OutcomeRob2:
         error = _optional_text(data, "escalation_error")
         if escalation is not None and error is not None:
             raise ValueError("escalation and escalation_error are both set")
+        retryable = _wire(data, "escalation_retryable", bool, "a boolean")
+        status = _status_code(data, "escalation_status_code")
+        if error is None and (retryable or status is not None):
+            raise ValueError(
+                "escalation_retryable or escalation_status_code given without an error"
+            )
         overall = data.get("overall")
         return cls(
             outcome=_wire(data, "outcome", str, "text"),
@@ -497,6 +532,8 @@ class OutcomeRob2:
             escalation=escalation,
             overall=None if overall is None else _enum(Judgement, overall, "overall"),
             escalation_error=error,
+            escalation_retryable=retryable,
+            escalation_status=status,
         )
 
 
@@ -984,6 +1021,7 @@ class Rob2Agent(_FullTextAgent):
         """Combine one outcome's domains, asking the escalation question when it is needed."""
         escalation: Escalation | None = None
         error: str | None = None
+        retryable, status = False, None
         judgements = _judgements(study, domains)
         if judgements is not None and needs_escalation_decision(judgements):
             assessed = [d for d in domains if isinstance(d, DomainAssessment)]
@@ -998,7 +1036,13 @@ class Rob2Agent(_FullTextAgent):
                 )
             except _CallFailedError as exc:
                 logger.warning("%s not had: %s", label, exc)
-                error = str(exc)
+                error, retryable, status = str(exc), exc.retryable, exc.status
         return OutcomeRob2(
-            outcome.name, domains, escalation, rob2_overall(study, domains, escalation), error
+            outcome.name,
+            domains,
+            escalation,
+            rob2_overall(study, domains, escalation),
+            error,
+            retryable,
+            status,
         )

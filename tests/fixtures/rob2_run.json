@@ -176,6 +176,8 @@
     "reasoning": "Concerns about concealment and the plan compound."
    },
    "escalation_error": null,
+   "escalation_retryable": false,
+   "escalation_status_code": null,
    "overall": "high"
   },
   {
@@ -240,6 +242,8 @@
    ],
    "escalation": null,
    "escalation_error": null,
+   "escalation_retryable": false,
+   "escalation_status_code": null,
    "overall": null
   },
   {
@@ -371,7 +375,9 @@
     }
    ],
    "escalation": null,
-   "escalation_error": "RoB 2 escalation: down",
+   "escalation_error": "RoB 2 escalation: HTTP 503",
+   "escalation_retryable": true,
+   "escalation_status_code": 503,
    "overall": null
   }
  ]
