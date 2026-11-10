@@ -2860,14 +2860,16 @@ doc.converter_version                     # "jats-1"
   being parsed after `HTML_PARSE_SECONDS` (30) raises `HtmlParseTimeoutError`
   (a `ValueError`, so catch it first; Rust returns `HtmlError::TimedOut`).
   The clock is read between chunks, and one chunk's own time grows with the
-  depth open before it, which a page can build one element per three
-  characters, so a page longer than `HTML_MAX_CHARS` (2,000,000 code points)
-  is refused unparsed with `HtmlPageTooLargeError` (also a `ValueError`; Rust
-  `HtmlError::TooLarge`) *(0.13.0)*. At that length the worst page
-  measured is converted or refused within about twice the budget (#654). None
-  of 142 real pages measured was longer (the longest 929,565 code points,
-  #726), but they were fetched, and a page saved with its images inline as
-  `data:` URIs can be (#656). The clock is wall time, so a loaded machine
+  depth open before it, which only a tag deepens, so a page holding more than
+  `HTML_MAX_TAGS` (666,666) `<` is refused unparsed with
+  `HtmlPageTooLargeError` (also a `ValueError`, its `tags` the count; Rust
+  `HtmlError::TooLarge { tags }`) *(unreleased)*. At that count the worst page
+  measured is converted or refused within about twice the budget (#654). A
+  page's length is not capped *(unreleased)*: until #656 a page longer than
+  2,000,000 code points was refused, and 6 of 81 article pages saved with
+  SingleFile were, their images and fonts inline as `data:` URIs, which hold
+  no `<` (the longest 13.3 million code points; each saved page converts in at most
+  0.16 s and 88 MB, and the most `<` on any of 295 real pages is 6,447). The clock is wall time, so a loaded machine
   can refuse a page an idle one accepts, and a timeout is worth retrying
   elsewhere; a page too large is not. html5ever also rebuilds every
   formatting element a closed block left open each time text follows, so a page of 91 KB
@@ -2876,10 +2878,12 @@ doc.converter_version                     # "jats-1"
   frozen application gets a `RuntimeError`), killed once it holds more than
   `HTML_PARSE_MAX_BYTES` (1 GiB) with `HtmlParseMemoryError` (a `ValueError`),
   which needs `psutil`, in the `html` extra. Rust counts the elements it
-  creates and stops past one per code point plus `HTML_ELEMENT_ALLOWANCE`
-  (`HtmlError::TooManyElements`; `HtmlError` is `#[non_exhaustive]`)
-  *(0.13.0)*. On 142 real pages the most created was 0.0365 per code point and
-  the child's peak 35 MB, so neither limit decided one; a small page shaped
+  creates and stops past `ELEMENTS_PER_TAG` (3) per `<` plus
+  `HTML_ELEMENT_ALLOWANCE` (`HtmlError::TooManyElements`, which carries `tags`;
+  `HtmlError` is `#[non_exhaustive]`) *(unreleased)*; until #656 the budget was
+  one per code point, which a page could raise by padding. On 295 real pages,
+  142 fetched and 153 saved, none created more elements than its `<` count and
+  the child's peak was 88 MB, so neither limit decided one; a small page shaped
   like #723's can still be refused by Rust and converted by Python
   *(unreleased)*. Neither is worth retrying.
   A page with neither `<article>` nor `<main>` may contribute its site name as

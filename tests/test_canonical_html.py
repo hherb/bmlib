@@ -361,28 +361,33 @@ class TestParseDeadline:
             html_module._convert(page)
         assert 0 < raised.value.parsed < len(page)
 
-    def test_a_page_at_the_length_cap_is_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # The cap counts the page as passed, its leading byte-order mark included.
-        monkeypatch.setattr(html_module, "HTML_MAX_CHARS", len(self.PAGE))
+    def test_a_page_at_the_tag_cap_is_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(html_module, "HTML_MAX_TAGS", self.PAGE.count("<"))
         assert pieces(canonical_from_html(self.PAGE))[0] == "Caf\u00e9 \U0001f600"
 
-    def test_a_page_past_the_length_cap_is_refused_unparsed(
+    def test_a_page_past_the_tag_cap_is_refused_unparsed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def no_parser(*args: Any) -> None:
             raise AssertionError("parsed")
 
         monkeypatch.setattr(html_module, "_convert_in_child", no_parser)
-        monkeypatch.setattr(html_module, "HTML_MAX_CHARS", len(self.PAGE) - 1)
-        refused = f"is {len(self.PAGE)} characters"
-        with pytest.raises(HtmlPageTooLargeError, match=refused) as raised:
+        tags = self.PAGE.count("<")
+        monkeypatch.setattr(html_module, "HTML_MAX_TAGS", tags - 1)
+        with pytest.raises(HtmlPageTooLargeError, match=f"holds {tags} '<'") as raised:
             canonical_from_html(self.PAGE)
-        assert raised.value.length == len(self.PAGE)
+        assert raised.value.tags == tags
         assert isinstance(raised.value, ValueError)
 
-    def test_the_length_refusal_pickles(self) -> None:
+    def test_a_page_long_with_data_uris_is_converted(self) -> None:
+        # #656: a saved page carries its images inline, and they hold no `<`.
+        image = "data:image/png;base64," + "A" * 3_000_000
+        page = f'<h1>T</h1><p>One<img src="{image}"> two</p>'
+        assert pieces(canonical_from_html(page)) == ["T", "One two"]
+
+    def test_the_tag_refusal_pickles(self) -> None:
         error = pickle.loads(pickle.dumps(HtmlPageTooLargeError(99)))
-        assert (type(error), error.length, str(error)) == (
+        assert (type(error), error.tags, str(error)) == (
             HtmlPageTooLargeError,
             99,
             str(HtmlPageTooLargeError(99)),

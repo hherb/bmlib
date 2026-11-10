@@ -44,7 +44,7 @@ from bmlib.fulltext.canonical import (
 )
 from bmlib.fulltext.canonical.html import (
     BLOCKS,
-    HTML_MAX_CHARS,
+    HTML_MAX_TAGS,
     HTML_PARSE_CHUNK,
     HTML_PARSE_SECONDS,
     PRUNED,
@@ -93,10 +93,10 @@ def test_the_html_element_sets_are_the_contracts() -> None:
 
 def test_the_html_parse_deadline_is_the_contracts() -> None:
     limits = CONTRACT["html_parse"]
-    assert (HTML_PARSE_SECONDS, HTML_PARSE_CHUNK, HTML_MAX_CHARS) == (
+    assert (HTML_PARSE_SECONDS, HTML_PARSE_CHUNK, HTML_MAX_TAGS) == (
         limits["seconds"],
         limits["chunk_code_points"],
-        limits["max_code_points"],
+        limits["max_tags"],
     )
 
 
