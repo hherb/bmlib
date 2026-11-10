@@ -17,7 +17,7 @@ All notable changes to bmlib are documented here. The format is based on
   page saved with its images and fonts inline is that long without being
   expensive: of 81 article pages saved with SingleFile from #726's DOI
   targets, 6 (7.4%, Wilson 95% 3.4-15.2%) were refused, up to 13.3 million
-  code points, `data:` URIs a median 72% of a page. Each now converts, in at
+  code points, `data:` URIs a median 94% of each page. Each now converts, in at
   most 0.16 s and 88 MB (Python) and 41 ms (Rust, a release build); the text
   of every page that converted before is unchanged, so
   `HTML_CANONICAL_VERSION` stays 1. The cap is the old one divided by three,
@@ -25,14 +25,17 @@ All notable changes to bmlib are documented here. The format is based on
   `<` per three code points) is at the new one and is converted or refused in
   the time it was. The most `<` on any of the 295 real pages measured is
   6,447. A page's length is now bounded only by the parse child's
-  `HTML_PARSE_MAX_BYTES` in Python (about 220 million code points of text)
+  `HTML_PARSE_MAX_BYTES` in Python (the longest page took 4.7 bytes per code
+  point over the interpreter's own 29 MB, so about 220 million code points of
+  such a page)
   and is linear in memory in Rust.
 - **Rust's element budget is three per `<`, not one per code point** (#656):
   `max_elements(tags)` is `ELEMENTS_PER_TAG` (3) per `<` plus
   `HTML_ELEMENT_ALLOWANCE`, so padding a page with text or `data:` no longer
   raises its budget, which with the length uncapped would have let #723's
-  page build gigabytes. Three is the most html5ever was measured to imply per
-  `<` without rebuilding a formatting element (`<col><td>`, 2.5), and at the
+  page build gigabytes. Three is a bound above the most html5ever was measured
+  to imply per `<` without rebuilding a formatting element (`<col><td>`, 2.5),
+  and the tightest real page used a fifth of the budget; at the
   cap it is the budget the old rule allowed at 2,000,000 code points.
   `HtmlError::TooManyElements` gains `tags`. Stricter only for a page that
   rebuilds formatting elements: `rebuilding(40)` (122 `<`, 1,684 elements) is
@@ -40,7 +43,8 @@ All notable changes to bmlib are documented here. The format is based on
   Python; no real page built more elements than its `<` count. **For
   StudyAnalyzer**: a struct literal `HtmlError::TooLarge { length: … }` (two
   tests) becomes `{ tags: … }`; `MAX_HTML_BYTES`' note on bmlib's 2 million
-  code-point cap is out of date, and a 22 MB saved page now converts.
+  code-point cap is out of date, and a saved page up to its own 22 MiB
+  `MAX_HTML_BYTES` now converts unless it holds more than `HTML_MAX_TAGS` `<`.
 
 ### Added
 
@@ -56,7 +60,7 @@ All notable changes to bmlib are documented here. The format is based on
   5, OUP 4 by DOI prefix), so those publishers' saved pages are unmeasured (they fall below `ARTICLE_TEXT_CHARS`). The archived strata are
   not saved: their images' hosts are gone. `tests/test_html_page_sampler.py`
   holds both corpora's summaries to their rows.
-- **`scripts/sample_html_pages.py`, the first measurement of `canonical_from_html`'s limits on real pages** (#726). It draws pages, fetches them as an app opening a `web_url` would, and reports each one's code points, `<` count, elements built (markupever's tree count, equal to the Rust sink's created count on all 187 pages of two exploratory draws), Python's verdict and the parse child's peak memory, under the samplers' shared rules (a probe not made enters no denominator; a stratum past the unmeasured threshold, or whose draw failed, is ERROR). Its corpus, `tests/data/html_page_shapes.json` (numbers and URLs, no page content), covers 142 pages served to a plain client (73 article-like) from five PubMed years' DOI landing pages, four years' free-full-text ones and six archived 1998-2007 HighWire and BMC sites. **Nothing moves; the constants stay.** Both languages accepted every page. The most elements any page built was 0.0365 per code point (median 0.0088), about 27 times under Rust's budget of one per code point plus `HTML_ELEMENT_ALLOWANCE`. No page built more elements than it holds `<`, so html5ever rebuilt no formatting elements on any of them, legacy pages carrying `<font>` included (50 pages, one with 463). The longest page was 929,565 code points and the most `<` 6,447, so none is over `HTML_MAX_CHARS` or #656's proposed `<` cap. The child peaked at 35 MB against `HTML_PARSE_MAX_BYTES`' 1 GiB. Left as it was: a small page shaped like #723's (`rebuilding(60)`, 1,261 code points) is still refused by Rust and converted by Python; no real page was. Unmeasured: pages a publisher refuses to a plain client (about half the DOI targets, SAGE, Wiley, OUP, ACS and LWW among them, recorded as `not_served`), PMC's article pages (a reCAPTCHA page for 52 of 56 requests), pages saved with `data:` images (#656's case), and memory under pressure (#725). Two of the eight archive strata (NEJM, JCB) are ERROR: the Wayback index answered them with something other than JSON.
+- **`scripts/sample_html_pages.py`, the first measurement of `canonical_from_html`'s limits on real pages** (#726). It draws pages, fetches them as an app opening a `web_url` would, and reports each one's code points, `<` count, elements built (markupever's tree count, equal to the Rust sink's created count on all 187 pages of two exploratory draws), Python's verdict and the parse child's peak memory, under the samplers' shared rules (a probe not made enters no denominator; a stratum past the unmeasured threshold, or whose draw failed, is ERROR). Its corpus, `tests/data/html_page_shapes.json` (numbers and URLs, no page content), covers 142 pages served to a plain client (73 article-like) from five PubMed years' DOI landing pages, four years' free-full-text ones and six archived 1998-2007 HighWire and BMC sites. **Nothing moves; the constants stay.** Both languages accepted every page. The most elements any page built was 0.0365 per code point (median 0.0088), about 27 times under Rust's budget of one per code point plus `HTML_ELEMENT_ALLOWANCE` (since #656 three per `<`, about five times what any page needed). No page built more elements than it holds `<`, so html5ever rebuilt no formatting elements on any of them, legacy pages carrying `<font>` included (50 pages, one with 463). The longest page was 929,565 code points and the most `<` 6,447, so none is over `HTML_MAX_CHARS` (replaced by #656) or #656's `<` cap. The child peaked at 35 MB against `HTML_PARSE_MAX_BYTES`' 1 GiB. Left as it was: a small page shaped like #723's (`rebuilding(60)`, 1,261 code points) is still refused by Rust and converted by Python; no real page was. Unmeasured: pages a publisher refuses to a plain client (about half the DOI targets, SAGE, Wiley, OUP, ACS and LWW among them, recorded as `not_served`), PMC's article pages (a reCAPTCHA page for 52 of 56 requests), pages saved with `data:` images (#656's case, measured since, above), and memory under pressure (#725). Two of the eight archive strata (NEJM, JCB) are ERROR: the Wayback index answered them with something other than JSON.
 
 ## [0.13.0] — 2026-11-10
 

@@ -13,16 +13,17 @@ with their resources inline; the saves were made by single-file-cli 2.19.0
 Chrome 157, one per DOI target of #726's corpus. Corpus:
 `tests/data/html_saved_page_shapes.json` (153 saves, 81 article-like). Under
 the old cap 6 of 81 (7.4%) were refused (up to 13.3 million code points,
-`data:` URIs a median 72% of a page), and all 6 converted beneath it (Python
+`data:` URIs a median 94% of each page), and all 6 converted beneath it (Python
 0.16 s and 88 MB at most, Rust 41 ms, the same text in both). So:
 
 - **Both languages cap `<`, not length**: `HTML_MAX_TAGS` = 666,666 (the old
   cap over three, so the worst measured page's timing holds);
   `HtmlPageTooLargeError.tags`, Rust `HtmlError::TooLarge { tags }`.
 - **Rust's budget is `3 × tags + 1,000`** (`ELEMENTS_PER_TAG`), since a budget
-  per code point grows with padding. Three is html5ever's measured ceiling
-  without formatting rebuilds (`<col><td>` 2.5). `rebuilding(40)` is now
-  refused by Rust, converted by Python. The argument is in DECISIONS (#656).
+  per code point grows with padding. Three is a bound above the most html5ever
+  was measured to imply without formatting rebuilds (`<col><td>` 2.5).
+  `rebuilding(40)` is now refused by Rust, converted by Python. The argument
+  is in DECISIONS (#656).
 - `HTML_CANONICAL_VERSION` stays 1 (every saved page's text is unchanged); the
   renderer-version pin was re-pinned.
 - **Blind spot**: 61 of 153 saves are Cloudflare's challenge page (by DOI prefix
@@ -205,7 +206,7 @@ a vector.** Filed from their reviews and open: #581, #582, #585, #577 (its point
 
 **Earlier StudyAnalyzer sessions** (argument in `CHANGELOG.md`): PR #559 (4c,
 `canonical_from_html`, `"html-1"`, html5ever in both languages, every walk
-iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, read between chunks, and since #654 one over `HTML_MAX_CHARS` unparsed; `assess_full_text`, unmeasured,
+iterative; since #563 a page still parsing after `HTML_PARSE_SECONDS` is refused, read between chunks, since #654 one over `HTML_MAX_CHARS` unparsed, and since #656 one over `HTML_MAX_TAGS` `<` instead; `assess_full_text`, unmeasured,
 **#560**; **#557**, **#558** after 2026-11-04); PR #556 (4b,
 `canonical_from_segmented`, `"pdf-1"`, contract from the `SegmentedDocument`);
 PRs #554 and #555 (item 3, `chunk_canonical`, contract

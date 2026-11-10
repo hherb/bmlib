@@ -445,7 +445,7 @@ The converters, each with its own version constant:
 | `canonical_from_markdown(text)` | a hand-written Markdown subset | headings make sections, inline markup is stripped |
 | `canonical_from_plain_text(text, title)` | plain text | blank lines separate paragraphs; one untitled section |
 | `canonical_from_segmented(&doc)` | a `SegmentedDocument` | a soft hyphen at a line end is joined; an ordinary hyphen is kept |
-| `canonical_from_html(html)` | an HTML page's main content | feature `html`; html5ever through `scraper`; `Err(HtmlError::TimedOut)` past `HTML_PARSE_SECONDS`, read between chunks of `HTML_PARSE_CHUNK`; `Err(HtmlError::TooLarge)`, unparsed, past `HTML_MAX_TAGS` `<`, which bounds one chunk's time (#654, #656; a page's length is not capped *(unreleased)*); `Err(HtmlError::TooManyElements)` past `max_elements(tags)`, `ELEMENTS_PER_TAG` per `<` and `HTML_ELEMENT_ALLOWANCE` (#723, #656) *(0.4.0)* |
+| `canonical_from_html(html)` | an HTML page's main content | feature `html`; html5ever through `scraper`; `Err(HtmlError::TimedOut)` past `HTML_PARSE_SECONDS`, read between chunks of `HTML_PARSE_CHUNK`; `Err(HtmlError::TooLarge)`, unparsed, past `HTML_MAX_TAGS` `<`, which bounds one chunk's time (#654, #656; a page's length is not capped *(unreleased)*); `Err(HtmlError::TooManyElements)` past `max_elements(tags)`, `HTML_ELEMENT_ALLOWANCE` *(0.4.0)* and `ELEMENTS_PER_TAG` per `<` (#723, #656 *(unreleased)*) |
 
 Your own converter builds `SectionDraft`s of `BlockDraft::paragraph` /
 `BlockDraft::row` and calls `assemble(title, &sections, format, version)`.

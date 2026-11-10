@@ -30,18 +30,22 @@ numbers those limits are read against:
   two draws (187 of 187 equal) and on #723's own shape (1,684 and 3,724), so
   this script does not need the Rust port. It does not import ``max_elements``
   either: a sampler does not import the judgement it measures;
-* ``python``, what ``canonical_from_html`` answered (``ok`` or the error's
-  type), its ``text_chars``, ``seconds`` (the call's wall time, the child's
-  start included), and ``child_peak_rss``, the most resident memory
-  any child of the one process that converted the page held, which is
-  bmlib's parse child (``getrusage(RUSAGE_CHILDREN)``; bytes on macOS,
-  kilobytes on Linux, converted to bytes here);
+* ``python``, what ``canonical_from_html`` answered (``ok`` or the refusal's
+  type, a ``ValueError``; any other error, a missing extra or a child that
+  failed or was killed, makes the page ``unmeasured``), its ``text_chars``,
+  ``seconds`` (the call's wall time, the child's start included), and
+  ``child_peak_rss``, the most resident memory any child of the one process
+  that converted the page held, which is bmlib's parse child
+  (``getrusage(RUSAGE_CHILDREN)``; bytes on macOS, kilobytes on Linux,
+  converted to bytes here);
 * ``data_uri_chars``, the code points in base64 ``data:`` URIs (#656: a saved
   page carries its images and fonts that way, and they hold no ``<``);
 * ``uncapped``, for a page refused by ``HTML_MAX_TAGS``: what the parse
-  beneath the cap answered, under the child's own memory and time limits. That
-  is the parse a lifted cap would run (#656 measured #654's length cap this
-  way), and its text, elements, time and peak are the row's.
+  beneath the cap answered (``ok`` or the refusal's type, as for ``python``),
+  under the child's own memory and time limits. That is the parse a lifted cap
+  would run, and its text, elements, time and peak are the row's. (#656
+  weighed #654's length cap by ``over_length_cap`` on pages that converted; no
+  committed row is over the ``<`` cap, so none carries ``uncapped``.)
 
 **The population is pages served to a plain HTTP client**, which is what an
 app fetching a ``web_url`` gets. Three strata: a PubMed record's DOI landing
@@ -64,7 +68,8 @@ An answer that is not a page is sorted, never counted as a page:
 
 A page the converter accepted is not thereby an article: interstitials and
 challenge pages are pages too. ``text_chars >= ARTICLE_TEXT_CHARS`` marks the
-article-like ones, and the summary gives both.
+article-like ones, and the summary gives both; a page the converter refused,
+which has no text to judge, is counted with the articles.
 
 Run (the pages are cached in ``--pages-dir`` and never committed)::
 
@@ -235,7 +240,7 @@ def measure_text(text: str) -> dict[str, Any]:
     """
     from bmlib.fulltext.canonical import HtmlPageTooLargeError, canonical_from_html
 
-    # The parse a lifted length cap would run, with the limits it would run under.
+    # The parse a lifted `<` cap would run, with the limits it would run under.
     from bmlib.fulltext.canonical.html import (
         _CHILD_SECONDS,
         HTML_PARSE_MAX_BYTES,
@@ -256,10 +261,10 @@ def measure_text(text: str) -> dict[str, Any]:
         row["python"] = "HtmlPageTooLargeError"
         try:
             canonical = _convert_in_child(text, HTML_PARSE_MAX_BYTES, _CHILD_SECONDS)
-        except Exception as exc:  # noqa: BLE001 - the refusal is the measurement
+        except ValueError as exc:  # a refusal is the measurement; anything else is not
             return row | {"uncapped": type(exc).__name__, "elements": None, "text_chars": None}
         row["uncapped"] = "ok"
-    except Exception as exc:  # noqa: BLE001 - the refusal is the measurement
+    except ValueError as exc:  # a refusal is the measurement; a failed child is not
         return row | {"python": type(exc).__name__, "elements": None, "text_chars": None}
     row["seconds"] = round(perf_counter() - started, 3)
     import markupever
@@ -345,7 +350,10 @@ def summarise(rows: list[dict[str, Any]], failed_draws: dict[str, str]) -> dict[
         pages = [r for r in mine if r["outcome"] == "page"]
         reportable += pages
         strata[name] = entry | {"status": "ok"} | _figures(pages)
-    articles = [p for p in reportable if (p["text_chars"] or 0) >= ARTICLE_TEXT_CHARS]
+    # A refused page has no text to judge it by, so it is kept with the articles, not dropped.
+    articles = [
+        p for p in reportable if p["text_chars"] is None or p["text_chars"] >= ARTICLE_TEXT_CHARS
+    ]
     return {
         "strata": strata,
         "all_pages": _figures(reportable),
@@ -370,7 +378,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(row | {"child_peak_rss": _peak_child_rss()}))
         return 0
     if args.saved_dir is not None:
-        if not args.saved_how or args.out == FETCHED_CORPUS:
+        if not args.saved_how or args.out.resolve() in {
+            FETCHED_CORPUS.resolve(),
+            args.targets.resolve(),
+        }:
             parser.error("--saved-dir needs --saved-how and an --out of its own")
         return measure_saved(args.saved_dir, args.targets, args.out, args.saved_how)
     if args.pages_dir is None:
@@ -416,7 +427,10 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 row |= measure_file(args.pages_dir / row["file"])
             except subprocess.CalledProcessError as exc:  # one page must not cost the run
-                row |= {"outcome": "unmeasured", "error": exc.stderr[-500:]}
+                row |= {
+                    "outcome": "unmeasured",
+                    "error": f"exit {exc.returncode}: {exc.stderr[-500:]}",
+                }
         rows.append(row)
         print(row["outcome"], row.get("status"), row["url"][:80], file=sys.stderr)
     how = (
@@ -444,7 +458,7 @@ def saved_rows(saved_dir: Path, targets: list[dict[str, Any]]) -> list[dict[str,
         try:
             row |= {"outcome": "page", "file": name} | measure_file(saved_dir / name)
         except subprocess.CalledProcessError as exc:  # one page must not cost the run
-            row |= {"outcome": "unmeasured", "error": exc.stderr[-500:]}
+            row |= {"outcome": "unmeasured", "error": f"exit {exc.returncode}: {exc.stderr[-500:]}"}
         rows.append(row)
         print(row["outcome"], row.get("code_points"), row["url"][:80], file=sys.stderr)
     return rows

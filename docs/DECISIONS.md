@@ -6367,8 +6367,9 @@ formatting elements without being the tree builder. Decided by the maintainer
   `scripts/sample_html_pages.py`, `tests/data/html_page_shapes.json`). Of 142
   pages served to a plain client (73 articles, legacy `<font>` pages
   included), none built more than 0.0365 elements per code point, and none
-  more elements than it holds `<`. So the Rust budget is about 27 times what
-  any page needed, and Python's child peaked at 35 MB of its 1 GiB. The two
+  more elements than it holds `<`. So the Rust budget was about 27 times what
+  any page needed (since #656, three per `<`, about five times on the 295
+  pages of both corpora), and Python's child peaked at 35 MB of its 1 GiB. The two
   languages disagree only on pages shaped like #723's (since #656 from
   `rebuilding(40)`, 122 `<`, refused by Rust, converted by Python), and no
   real page was. Do not widen `HTML_ELEMENT_ALLOWANCE` or `ELEMENTS_PER_TAG`,
@@ -6382,7 +6383,7 @@ chunk's parse time. A page saved with its images and fonts inline is long
 without being expensive. Measured with SingleFile on the DOI targets of #726's
 corpus (`tests/data/html_saved_page_shapes.json`, the sampler's
 `--saved-dir`): 6 of 81 article pages (7.4%, Wilson 95% 3.4-15.2%) were over
-it, up to 13.3 million code points, `data:` URIs a median 72% of a page. All 6
+it, up to 13.3 million code points, `data:` URIs a median 94% of each page. All 6
 converted beneath the cap in 0.16 s and 88 MB at most in Python and 41 ms in
 Rust (a release build). The remedy, a `<` cap with Rust's budget based on
 `<`, was the maintainer's choice (2026-11-10); the factor, the names and the
@@ -6401,9 +6402,10 @@ version are this PR's, each against its alternative:
 - **Rust's element budget is `3 × tags + HTML_ELEMENT_ALLOWANCE`**
   (`ELEMENTS_PER_TAG`), not one per code point. With the length uncapped, a
   page padded with text or `data:` would otherwise raise its own budget, and
-  #723's page could then build gigabytes. Three is the measured ceiling of
-  what html5ever implies per `<` without rebuilding a formatting element
-  (`<col><td>`, 2.5; nested `<table><td>`, 2.0), and at the cap it is the
+  #723's page could then build gigabytes. Three is a bound above the most
+  html5ever was measured to imply per `<` without rebuilding a formatting
+  element (`<col><td>`, 2.5; nested `<table><td>`, 2.0; the tightest real page
+  used a fifth of the budget), and at the cap it is the
   memory the old budget allowed at 2,000,000 code points (1,999,998 against
   2,000,000). It is stricter only for pages that rebuild formatting elements:
   `rebuilding(40)` is now refused by Rust and still converted by Python. No
@@ -6412,8 +6414,9 @@ version are this PR's, each against its alternative:
   `the_most_html5ever_implies_per_tag_is_within_the_budget`,
   `a_small_rebuilding_page_is_refused_by_its_tags`.
 - **A page's length is bounded by memory alone.** Python's child is killed past
-  `HTML_PARSE_MAX_BYTES` (about 4.4 bytes per code point of text, so about 220
-  million code points); Rust holds a copy linear in the page's length, which
+  `HTML_PARSE_MAX_BYTES` (the longest saved page took 4.7 bytes per code point
+  over the interpreter's own 29 MB, the six 4.6-9.2, so about 220 million code
+  points of such a page); Rust holds a copy linear in the page's length, which
   the caller already holds once. No length cap is kept beside the `<` cap.
 - **The names stay; the field moves.** `HtmlPageTooLargeError` and
   `HtmlError::TooLarge` still say a page was too large to parse, now in `<`:

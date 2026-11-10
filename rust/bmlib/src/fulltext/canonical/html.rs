@@ -111,11 +111,11 @@ pub const HTML_PARSE_CHUNK: usize = 16_384;
 pub const HTML_ELEMENT_ALLOWANCE: usize = 1_000;
 
 /// The elements one `<` may create in a parse that rebuilds no formatting
-/// element (#656). Only a start tag creates one, and the most html5ever was
-/// measured to imply is a table's: `<col>` makes a `<colgroup>` and the `<col>`,
-/// and a `<td>` after it closes the group and makes a `<tbody>`, a `<tr>` and
-/// the `<td>`, five elements from two `<` (markupever; nested
-/// `<table><td>` makes two per `<`). Three per `<` also keeps the budget at
+/// element (#656), a bound above the most html5ever was measured to imply.
+/// Only a start tag creates one, and that most is a table's: `<col>` makes a
+/// `<colgroup>` and the `<col>`, and a `<td>` after it closes the group and
+/// makes a `<tbody>`, a `<tr>` and the `<td>`, five elements from two `<`
+/// (markupever; nested `<table><td>` makes two per `<`). Three per `<` also keeps the budget at
 /// [`HTML_MAX_TAGS`] where one per code point kept it at #654's 2,000,000 code
 /// points, so the memory a parse may take is what it was.
 pub const ELEMENTS_PER_TAG: usize = 3;
@@ -857,6 +857,14 @@ mod tests {
                 tags: HTML_MAX_TAGS + 1
             }
         );
+    }
+
+    #[test]
+    fn a_page_at_the_cap_is_parsed() {
+        // `< ` is text, not a tag, so the parse is cheap and opens no element.
+        let page = "< ".repeat(HTML_MAX_TAGS);
+        let text = convert_within(&page, Duration::from_secs(3600)).expect("at the cap");
+        assert_eq!(text.text.matches('<').count(), HTML_MAX_TAGS);
     }
 
     #[test]

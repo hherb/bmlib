@@ -117,11 +117,13 @@ HTML_PARSE_SECONDS = 30.0
 #: page's length is no longer capped, because what makes a real page long holds
 #: no ``<``: of 81 article pages saved with SingleFile (#656,
 #: ``tests/data/html_saved_page_shapes.json``), 6 were longer than the old cap
-#: (up to 13.3 million code points, ``data:`` URIs a median 72% of a page),
+#: (up to 13.3 million code points, ``data:`` URIs a median 94% of each page),
 #: and each converts in at most 0.16 s and 88 MB here and 41 ms in Rust; the
 #: most ``<`` any held was 6,436, and the most of 142 fetched pages (#726) 6,447.
 #: A page's own length is bounded only by the memory of the child it is parsed
-#: in (:data:`HTML_PARSE_MAX_BYTES`), about 4.4 bytes per code point of text.
+#: in (:data:`HTML_PARSE_MAX_BYTES`): the longest took 4.7 bytes per code point
+#: over the interpreter's own 29 MB (the six 4.6-9.2), about 220 million code
+#: points of such a page.
 HTML_MAX_TAGS = 666_666
 
 #: Code points fed to the parser between two readings of the clock. Smaller
@@ -139,7 +141,8 @@ HTML_PARSE_CHUNK = 16_384
 #: at the 2,000,000 code points :data:`HTML_MAX_TAGS` replaced peaked at
 #: 181 MB (``<x>`` nested 660,000 deep, #654's), 175 MB (666,000 sibling
 #: ``<p>``) and 69 MB (2 MB shaped like an article), one run each, so the limit
-#: is about six times the most a page the cap admits was measured to need. On
+#: was about six times the most a page #654's cap admitted was measured to need;
+#: the ``<`` cap admits a page of any length, which this limit alone bounds. On
 #: real pages the child peaked at 35 MB at most (#726, 142 served to a plain
 #: client, ``tests/data/html_page_shapes.json``), about 29 MB of it the
 #: interpreter's own, and at 88 MB (#656, 153 saved with SingleFile, the longest
