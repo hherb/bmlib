@@ -6360,16 +6360,68 @@ formatting elements without being the tree builder. Decided by the maintainer
   `rust/bmlib/src/fulltext/canonical/html.rs`.
 - **The two languages refuse by different measures** (bytes held against
   elements created), so the shared `html_parse` contract holds neither limit.
-- **`HTML_MAX_CHARS` stays**: #656, the completeness cost of the length cap,
-  is still open.
+- **`HTML_MAX_CHARS` is gone** (#656, below): the page's `<` count is capped
+  instead, and Rust's budget is three elements per `<` rather than one per
+  code point.
 - **Measured on real pages, and neither budget moves** (#726,
   `scripts/sample_html_pages.py`, `tests/data/html_page_shapes.json`). Of 142
   pages served to a plain client (73 articles, legacy `<font>` pages
   included), none built more than 0.0365 elements per code point, and none
-  more elements than it holds `<`. So the Rust budget is about 27 times what
-  any page needed, and Python's child peaked at 35 MB of its 1 GiB. The two
-  languages disagree only on pages shaped like #723's (`rebuilding(60)`,
-  1.2 KB, refused by Rust, converted by Python), and no real page was. Do not
-  widen `HTML_ELEMENT_ALLOWANCE`, or make it a multiple of the length, to
-  close that gap without a real page that needs it; re-run the sampler
-  first.
+  more elements than it holds `<`. So the Rust budget was about 27 times what
+  any page needed (since #656, three per `<`, about five times on the 295
+  pages of both corpora), and Python's child peaked at 35 MB of its 1 GiB. The two
+  languages disagree only on pages shaped like #723's (since #656 from
+  `rebuilding(40)`, 122 `<`, refused by Rust, converted by Python), and no
+  real page was. Do not widen `HTML_ELEMENT_ALLOWANCE` or `ELEMENTS_PER_TAG`,
+  or base the budget on the length again, to close that gap without a real
+  page that needs it; re-run the sampler first.
+
+## fulltext — an HTML page capped by its `<` count, not its length (#656)
+
+#654's cap refused every page longer than 2,000,000 code points, to bound one
+chunk's parse time. A page saved with its images and fonts inline is long
+without being expensive. Measured with SingleFile on the DOI targets of #726's
+corpus (`tests/data/html_saved_page_shapes.json`, the sampler's
+`--saved-dir`): 6 of 81 article pages (7.4%, Wilson 95% 3.4-15.2%) were over
+it, up to 13.3 million code points, `data:` URIs a median 94% of each page. All 6
+converted beneath the cap in 0.16 s and 88 MB at most in Python and 41 ms in
+Rust (a release build). The remedy, a `<` cap with Rust's budget based on
+`<`, was the maintainer's choice (2026-11-10); the factor, the names and the
+version are this PR's, each against its alternative:
+
+- **The cap is on `<`, `HTML_MAX_TAGS` = 666,666**, not on the length and not
+  on a parsed tag count. Only a tag opens an element, so the depth a chunk's
+  time grows with is bounded by the `<` read, and counting a character needs
+  no tokenizer. A `<` in text or in an attribute counts too, which only errs
+  towards refusing. 666,666 is the old cap divided by three, so the worst page
+  measured at the old cap (`<i>` nested to the page's length) is exactly at
+  the new one and its timing still holds. The most `<` on any of 295 real
+  pages was 6,447. Tests: `test_a_page_past_the_tag_cap_is_refused_unparsed`
+  (Rust `a_page_past_the_cap_is_refused_unparsed`) and
+  `a_page_long_with_data_uris_is_converted`, in both languages.
+- **Rust's element budget is `3 × tags + HTML_ELEMENT_ALLOWANCE`**
+  (`ELEMENTS_PER_TAG`), not one per code point. With the length uncapped, a
+  page padded with text or `data:` would otherwise raise its own budget, and
+  #723's page could then build gigabytes. Three is a bound above the most
+  html5ever was measured to imply per `<` without rebuilding a formatting
+  element (`<col><td>`, 2.5; nested `<table><td>`, 2.0; the tightest real page
+  used a fifth of the budget), and at the cap it is the
+  memory the old budget allowed at 2,000,000 code points (1,999,998 against
+  2,000,000). It is stricter only for pages that rebuild formatting elements:
+  `rebuilding(40)` is now refused by Rust and still converted by Python. No
+  real page built more elements than its `<` count. Tests:
+  `padding_a_page_buys_it_no_element_budget`,
+  `the_most_html5ever_implies_per_tag_is_within_the_budget`,
+  `a_small_rebuilding_page_is_refused_by_its_tags`.
+- **A page's length is bounded by memory alone.** Python's child is killed past
+  `HTML_PARSE_MAX_BYTES` (the longest saved page took 4.7 bytes per code point
+  over the interpreter's own 29 MB, the six 4.6-9.2, so about 220 million code
+  points of such a page); Rust holds a copy linear in the page's length, which
+  the caller already holds once. No length cap is kept beside the `<` cap.
+- **The names stay; the field moves.** `HtmlPageTooLargeError` and
+  `HtmlError::TooLarge` still say a page was too large to parse, now in `<`:
+  the field is `tags` (was `length`), and `TooManyElements` gains `tags`. A
+  match on `TooLarge { .. }` keeps compiling; a struct literal does not.
+- **`HTML_CANONICAL_VERSION` stays 1.** A page that converted converts the same
+  (all 153 saved pages' text and element counts are unchanged); a page refused
+  before has no stored text to make stale.
