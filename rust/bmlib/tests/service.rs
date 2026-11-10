@@ -1002,6 +1002,15 @@ fn a_failed_pdf_source_is_the_answer_when_nothing_else_serves() {
         ("publisher", Some("https://pub/x.pdf"))
     );
     assert_eq!(result.pdf_download_failure.as_deref(), Some("http-403"));
+    // Every tier came back empty-handed, so #67's summary is owed here too.
+    assert!(
+        service.warnings().iter().any(|line| line.starts_with(
+            "No full text found for doi=None pmid= — returning the caller's PDF link, \
+             whose download failed (http-403);"
+        )),
+        "{:?}",
+        service.warnings()
+    );
 }
 
 #[test]
@@ -3069,7 +3078,7 @@ fn fetch_pdf_with_jats_is_off_by_default_and_jats_ends_the_search() {
 fn with_it_on_europe_pmcs_pdf_of_the_same_article_rides_on_the_jats() {
     let dir = TempDir::new("pdf-jats-render");
     let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 200)]));
-    let service = pdf_service(client, &dir, true);
+    let service = pdf_service(client.clone(), &dir, true);
 
     let result = service.fetch_fulltext(&by_pmc_id()).expect("retrieved");
     assert_eq!(result.source, "europepmc");
@@ -3079,6 +3088,11 @@ fn with_it_on_europe_pmcs_pdf_of_the_same_article_rides_on_the_jats() {
         .file_path
         .as_deref()
         .is_some_and(|path| path.ends_with(".pdf")));
+    // Europe PMC's PDF ahead of Unpaywall's, which is not asked.
+    assert!(!client
+        .requests()
+        .iter()
+        .any(|url| url.contains("unpaywall")));
 }
 
 #[test]
@@ -3120,26 +3134,43 @@ fn with_it_on_a_known_pdf_source_left_untried_is_fetched() {
 
 #[test]
 fn with_it_on_unpaywall_is_asked_last() {
+    // The caller's untried PDF first; Unpaywall only once it has failed.
     let dir = TempDir::new("pdf-jats-unpaywall");
     let client = RoutedClient::new(pdf_route(
         "PMC123",
         Some("https://oa/x.pdf"),
-        vec![("https://oa/x.pdf", 200)],
+        vec![("https://pub/x.pdf", 403), ("https://oa/x.pdf", 200)],
     ));
-    let service = pdf_service(client, &dir, true);
+    let service = pdf_service(client.clone(), &dir, true);
     let request = FullTextRequest {
-        fulltext_sources: vec![FullTextSourceEntry {
-            format: "xml".to_string(),
-            ..html_entry("https://pub/x.xml", "publisher")
-        }],
+        fulltext_sources: vec![
+            FullTextSourceEntry {
+                format: "xml".to_string(),
+                ..html_entry("https://pub/x.xml", "publisher")
+            },
+            pdf_entry("https://pub/x.pdf", "publisher"),
+        ],
         doi: Some("10.1/x".to_string()),
         identifier: Some("10.1/x".to_string()),
         ..FullTextRequest::default()
     };
 
     let result = service.fetch_fulltext(&request).expect("retrieved");
+    let asked = client.requests();
+    assert_eq!(asked[..2], ["https://pub/x.xml", "https://pub/x.pdf"]);
+    assert!(
+        asked[2].starts_with("https://api.unpaywall.org/v2/10.1%2Fx?"),
+        "{asked:?}"
+    );
+    assert_eq!(asked[3..], ["https://oa/x.pdf"]);
     assert_eq!(result.content_kind, ContentKind::Fulltext);
-    assert_eq!(result.pdf_url.as_deref(), Some("https://oa/x.pdf"));
+    assert_eq!(
+        (
+            result.pdf_url.as_deref(),
+            result.pdf_download_failure.as_deref()
+        ),
+        (Some("https://oa/x.pdf"), None)
+    );
     assert!(result.file_path.is_some());
 }
 
@@ -3158,9 +3189,15 @@ fn with_it_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats() {
     };
 
     let result = service.fetch_fulltext(&request).expect("retrieved");
-    assert!(
-        client.requests().iter().any(|url| url == RENDER),
-        "it was sought"
+    let asked = client.requests();
+    assert!(asked.iter().any(|url| url == RENDER), "it was sought");
+    assert_eq!(
+        asked
+            .iter()
+            .filter(|url| *url == "https://pub/x.pdf")
+            .count(),
+        1,
+        "the failed one is not asked again"
     );
     assert_eq!(result.content_kind, ContentKind::Fulltext);
     assert_eq!(
@@ -3171,4 +3208,514 @@ fn with_it_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats() {
         (Some("https://pub/x.pdf"), Some("http-403"))
     );
     assert_eq!(result.file_path, None);
+}
+
+// ---------------------------------------------------------------------------
+// #739's review: a held caller PDF, the paths that pair a PDF with JATS
+// ---------------------------------------------------------------------------
+
+/// A Europe PMC search answer of one hit.
+fn search_hit(pmcid: Option<&str>, in_epmc: &str, doi: Option<&str>, render: bool) -> HttpResponse {
+    let mut hit = json!({"inEPMC": in_epmc});
+    if let Some(pmcid) = pmcid {
+        hit["pmcid"] = json!(pmcid);
+    }
+    if let Some(doi) = doi {
+        hit["doi"] = json!(doi);
+    }
+    if render {
+        hit["fullTextUrlList"] = json!({"fullTextUrl": [{
+            "site": "Europe_PMC", "documentStyle": "pdf",
+            "availability": "Free", "url": RENDER,
+        }]});
+    }
+    HttpResponse::ok_text(json!({"resultList": {"result": [hit]}}).to_string())
+}
+
+/// No JATS anywhere: a search hit for PMC123 (with Europe PMC's PDF when
+/// `render`), Unpaywall pointing at `unpaywall_pdf`, `https://pub/x.pdf`
+/// answering 403, each URL in `saved` a PDF, and every other URL 404.
+fn no_jats_route(
+    render: bool,
+    unpaywall_pdf: Option<&'static str>,
+    saved: Vec<&'static str>,
+) -> impl Fn(&str) -> HttpResponse + Send + Sync + 'static {
+    move |url: &str| {
+        if saved.contains(&url) {
+            return HttpResponse::from_bytes(200, b"%PDF-1.4 fake".to_vec());
+        }
+        if url.contains("/search?") {
+            return search_hit(Some("PMC123"), "Y", None, render);
+        }
+        if let (true, Some(pdf)) = (url.starts_with("https://api.unpaywall.org/"), unpaywall_pdf) {
+            return HttpResponse::ok_text(
+                json!({"best_oa_location": {"url_for_pdf": pdf}}).to_string(),
+            );
+        }
+        let status = if url == "https://pub/x.pdf" { 403 } else { 404 };
+        HttpResponse::from_bytes(status, Vec::new())
+    }
+}
+
+fn with_pdf_source(url: &str, doi: Option<&str>, pmid: &str) -> FullTextRequest {
+    FullTextRequest {
+        fulltext_sources: vec![pdf_entry(url, "publisher")],
+        doi: doi.map(str::to_string),
+        pmid: pmid.to_string(),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    }
+}
+
+/// Left in place, it was warned about on every lookup for good, as
+/// `read_cached_jats`'s sibling case was before it quarantined (#545).
+#[test]
+fn an_unreadable_pdf_beside_a_cached_jats_hit_is_moved_aside() {
+    let dir = TempDir::new("unreadable-pdf-aside");
+    let cache = dir.cache();
+    let id = sanitize_identifier("10.1/x");
+    cache.save_html("<p>Body</p>", &id).expect("saved");
+    let pdf = cache
+        .save_pdf(b"%PDF-1.4 fake", &id)
+        .expect("saved")
+        .expect("a PDF");
+    std::fs::remove_file(&pdf).expect("removed");
+    std::fs::create_dir(&pdf).expect("a directory in its place");
+    let service = service(ScriptedClient::new(vec![])).with_cache(Some(cache));
+    let mut request = request();
+    request.identifier = Some("10.1/x".to_string());
+
+    let first = service.fetch_fulltext(&request).expect("cached");
+    let second = service.fetch_fulltext(&request).expect("cached");
+    assert_eq!((first.source.as_str(), first.file_path), ("cached", None));
+    assert_eq!(
+        (
+            second.source.as_str(),
+            second.html.as_deref(),
+            second.file_path
+        ),
+        ("cached", Some("<p>Body</p>"), None)
+    );
+    let warned = service
+        .warnings()
+        .into_iter()
+        .filter(|line| line.contains("Could not open the PDF cached beside"))
+        .count();
+    assert_eq!(warned, 1, "{:?}", service.warnings());
+    let mut aside = pdf.clone().into_os_string();
+    aside.push(".corrupt");
+    assert!(PathBuf::from(aside).is_dir());
+}
+
+/// Unpaywall's link is a landing page as often as not: its `not-a-pdf`
+/// replaced the caller's own URL and 403, and is no better an answer.
+#[test]
+fn a_failed_pdf_source_outranks_a_later_tiers_failed_pdf() {
+    let dir = TempDir::new("failed-pdf-outranks");
+    let client = RoutedClient::new(|url: &str| {
+        if url.starts_with("https://api.unpaywall.org/") {
+            return HttpResponse::ok_text(
+                json!({"best_oa_location": {"url_for_pdf": "https://repo/land"}}).to_string(),
+            );
+        }
+        if url == "https://repo/land" {
+            return HttpResponse::ok_text("<html>landing</html>");
+        }
+        if url.contains("/idconv/") {
+            return HttpResponse::ok_text(json!({"status": "ok", "records": []}).to_string());
+        }
+        let status = if url == "https://pub/x.pdf" { 403 } else { 404 };
+        HttpResponse::from_bytes(status, Vec::new())
+    });
+    let service = pdf_service(client.clone(), &dir, false);
+
+    let result = service
+        .fetch_fulltext(&with_pdf_source("https://pub/x.pdf", Some("10.1/x"), ""))
+        .expect("retrieved");
+    assert!(
+        client
+            .requests()
+            .iter()
+            .any(|url| url == "https://repo/land"),
+        "it was tried"
+    );
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("publisher", Some("https://pub/x.pdf"))
+    );
+    assert_eq!(result.pdf_download_failure.as_deref(), Some("http-403"));
+}
+
+#[test]
+fn a_failed_pdf_source_outranks_europe_pmcs_failed_pdf() {
+    let dir = TempDir::new("failed-pdf-outranks-render");
+    let client = RoutedClient::new(no_jats_route(true, None, vec![]));
+    let service = pdf_service(client.clone(), &dir, false);
+
+    let result = service
+        .fetch_fulltext(&with_pdf_source("https://pub/x.pdf", None, "123"))
+        .expect("retrieved");
+    assert!(
+        client.requests().iter().any(|url| url == RENDER),
+        "it was tried, and 404'd"
+    );
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("publisher", Some("https://pub/x.pdf"))
+    );
+    assert_eq!(result.pdf_download_failure.as_deref(), Some("http-403"));
+}
+
+#[test]
+fn a_failed_pdf_source_gives_way_to_europe_pmcs_pdf() {
+    let dir = TempDir::new("failed-pdf-render");
+    let client = RoutedClient::new(no_jats_route(true, None, vec![RENDER]));
+    let service = pdf_service(client, &dir, false);
+
+    let result = service
+        .fetch_fulltext(&with_pdf_source("https://pub/x.pdf", Some("10.1/x"), ""))
+        .expect("retrieved");
+    assert_eq!(
+        (
+            result.source.as_str(),
+            result.pdf_url.as_deref(),
+            result.pdf_download_failure.as_deref()
+        ),
+        ("europepmc_pdf", Some(RENDER), None)
+    );
+    assert!(result.file_path.is_some());
+}
+
+#[test]
+fn a_failed_pdf_source_gives_way_to_unpaywalls_pdf() {
+    let dir = TempDir::new("failed-pdf-unpaywall");
+    let client = RoutedClient::new(no_jats_route(
+        false,
+        Some("https://oa/x.pdf"),
+        vec!["https://oa/x.pdf"],
+    ));
+    let service = pdf_service(client, &dir, false);
+
+    let result = service
+        .fetch_fulltext(&with_pdf_source("https://pub/x.pdf", Some("10.1/x"), ""))
+        .expect("retrieved");
+    assert_eq!(
+        (
+            result.source.as_str(),
+            result.pdf_url.as_deref(),
+            result.pdf_download_failure.as_deref()
+        ),
+        ("unpaywall", Some("https://oa/x.pdf"), None)
+    );
+}
+
+#[test]
+fn a_saved_pdf_source_is_returned_before_europe_pmcs_pdf() {
+    let dir = TempDir::new("saved-pdf-before-render");
+    let client = RoutedClient::new(no_jats_route(
+        true,
+        None,
+        vec!["https://pub/ok.pdf", RENDER],
+    ));
+    let service = pdf_service(client.clone(), &dir, false);
+
+    let result = service
+        .fetch_fulltext(&with_pdf_source("https://pub/ok.pdf", Some("10.1/x"), ""))
+        .expect("retrieved");
+    assert!(!client.requests().iter().any(|url| url == RENDER));
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("publisher", Some("https://pub/ok.pdf"))
+    );
+}
+
+#[test]
+fn tier0_stops_at_the_first_saved_pdf() {
+    let dir = TempDir::new("tier0-first-saved");
+    let client =
+        RoutedClient::new(|_: &str| HttpResponse::from_bytes(200, b"%PDF-1.4 fake".to_vec()));
+    let service = pdf_service(client.clone(), &dir, false);
+    let request = FullTextRequest {
+        fulltext_sources: vec![
+            pdf_entry("https://pub/first.pdf", "a"),
+            pdf_entry("https://pub/second.pdf", "b"),
+        ],
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(client.requests(), ["https://pub/first.pdf"]);
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("a", Some("https://pub/first.pdf"))
+    );
+}
+
+#[test]
+fn tier0_keeps_the_first_failure() {
+    let dir = TempDir::new("tier0-first-failure");
+    let client = RoutedClient::new(|url: &str| {
+        let status = if url == "https://pub/first.pdf" {
+            403
+        } else {
+            503
+        };
+        HttpResponse::from_bytes(status, Vec::new())
+    });
+    let service = pdf_service(client.clone(), &dir, false);
+    let request = FullTextRequest {
+        fulltext_sources: vec![
+            pdf_entry("https://pub/first.pdf", "a"),
+            pdf_entry("https://pub/second.pdf", "b"),
+        ],
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert!(client
+        .requests()
+        .iter()
+        .any(|url| url == "https://pub/second.pdf"));
+    assert_eq!(
+        (
+            result.source.as_str(),
+            result.pdf_download_failure.as_deref()
+        ),
+        ("a", Some("http-403"))
+    );
+}
+
+/// A DOI-only caller, the common PubMed case: the search finds PMC123.
+#[test]
+fn a_saved_pdf_source_rides_on_jats_found_by_a_discovered_pmc_id() {
+    let dir = TempDir::new("saved-pdf-discovered");
+    let no_jats = no_jats_route(false, None, vec!["https://pub/ok.pdf"]);
+    let client = RoutedClient::new(move |url: &str| {
+        if url.ends_with("/PMC123/fullTextXML") {
+            return HttpResponse::ok_text(FULL_JATS);
+        }
+        no_jats(url)
+    });
+    let service = pdf_service(client, &dir, false);
+
+    let result = service
+        .fetch_fulltext(&with_pdf_source("https://pub/ok.pdf", Some("10.1/x"), ""))
+        .expect("retrieved");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.pdf_url.as_deref(), Some("https://pub/ok.pdf"));
+    assert!(result
+        .file_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with(".pdf")));
+}
+
+#[test]
+fn with_it_on_a_saved_pdf_source_is_kept() {
+    let dir = TempDir::new("pdf-jats-kept");
+    let client = RoutedClient::new(pdf_route(
+        "PMC123",
+        None,
+        vec![("https://pub/x.pdf", 200), (RENDER, 200)],
+    ));
+    let service = pdf_service(client.clone(), &dir, true);
+    let request = FullTextRequest {
+        fulltext_sources: vec![pdf_entry("https://pub/x.pdf", "publisher")],
+        ..by_pmc_id()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert!(!client.requests().iter().any(|url| url == RENDER));
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.pdf_url.as_deref(), Some("https://pub/x.pdf"));
+}
+
+fn by_pmid() -> FullTextRequest {
+    FullTextRequest {
+        pmc_id: Some("PMC123".to_string()),
+        pmid: "123".to_string(),
+        identifier: Some("123".to_string()),
+        ..FullTextRequest::default()
+    }
+}
+
+#[test]
+fn with_it_on_a_pmid_only_caller_asks_unpaywall_by_the_hits_doi() {
+    let dir = TempDir::new("pdf-jats-hit-doi");
+    let base = pdf_route(
+        "PMC123",
+        Some("https://oa/x.pdf"),
+        vec![(RENDER, 503), ("https://oa/x.pdf", 200)],
+    );
+    let client = RoutedClient::new(move |url: &str| {
+        if url.contains("/search?") {
+            return search_hit(Some("PMC123"), "Y", Some("10.1/hit"), true);
+        }
+        base(url)
+    });
+    let service = pdf_service(client.clone(), &dir, true);
+
+    let result = service.fetch_fulltext(&by_pmid()).expect("retrieved");
+    let asked = client.requests();
+    assert!(
+        asked.iter().any(|url| url == RENDER),
+        "the search ran, by the PMID"
+    );
+    assert!(
+        asked
+            .iter()
+            .any(|url| url.starts_with("https://api.unpaywall.org/v2/10.1%2Fhit?")),
+        "{asked:?}"
+    );
+    assert_eq!(
+        (
+            result.pdf_url.as_deref(),
+            result.pdf_download_failure.as_deref()
+        ),
+        (Some("https://oa/x.pdf"), None)
+    );
+}
+
+/// The PMID's search hit is PMC999, not the JATS's PMC123: its DOI is another's.
+#[test]
+fn with_it_on_another_articles_doi_is_never_asked_of_unpaywall() {
+    let dir = TempDir::new("pdf-jats-other-doi");
+    let base = pdf_route(
+        "PMC999",
+        Some("https://oa/other.pdf"),
+        vec![("https://oa/other.pdf", 200)],
+    );
+    let client = RoutedClient::new(move |url: &str| {
+        if url.contains("/search?") {
+            return search_hit(Some("PMC999"), "Y", Some("10.9/other"), true);
+        }
+        base(url)
+    });
+    let service = pdf_service(client.clone(), &dir, true);
+
+    let result = service.fetch_fulltext(&by_pmid()).expect("retrieved");
+    assert!(!client
+        .requests()
+        .iter()
+        .any(|url| url.contains("unpaywall")));
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!((result.pdf_url, result.file_path), (None, None));
+}
+
+#[test]
+fn with_it_on_tier_1bs_search_is_not_asked_again() {
+    let dir = TempDir::new("pdf-jats-one-search");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 200)]));
+    let service = pdf_service(client.clone(), &dir, true);
+    let request = FullTextRequest {
+        doi: Some("10.1/x".to_string()),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    let searches = client
+        .requests()
+        .iter()
+        .filter(|url| url.contains("/search?"))
+        .count();
+    assert_eq!(searches, 1);
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("europepmc", Some(RENDER))
+    );
+}
+
+#[test]
+fn with_it_on_a_failed_unpaywall_lookup_is_recorded() {
+    let dir = TempDir::new("pdf-jats-unpaywall-fault");
+    let client = RoutedClient::new(|url: &str| {
+        if url == "https://pub/x.xml" {
+            return HttpResponse::ok_text(FULL_JATS);
+        }
+        HttpResponse::from_bytes(500, Vec::new())
+    });
+    let service = pdf_service(client, &dir, true);
+    let request = FullTextRequest {
+        fulltext_sources: vec![FullTextSourceEntry {
+            format: "xml".to_string(),
+            ..html_entry("https://pub/x.xml", "publisher")
+        }],
+        doi: Some("10.1/x".to_string()),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.tier_faults, ["FullTextError"]);
+}
+
+/// The search hit names no PMC ID, so it never resolved to the one the JATS
+/// came from: the ID Converter's answer is not the search's.
+#[test]
+fn with_it_on_a_pmc_id_only_the_id_converter_gave_takes_no_search_pdf() {
+    let dir = TempDir::new("pdf-jats-converter");
+    let base = pdf_route("PMC123", None, vec![(RENDER, 200)]);
+    let client = RoutedClient::new(move |url: &str| {
+        if url.contains("/search?") {
+            return search_hit(Some("PMC123"), "N", None, true);
+        }
+        if url.contains("/idconv/") {
+            return HttpResponse::ok_text(
+                json!({"status": "ok", "records": [{"pmcid": "PMC123"}]}).to_string(),
+            );
+        }
+        base(url)
+    });
+    let service = pdf_service(client.clone(), &dir, true);
+    let request = FullTextRequest {
+        doi: Some("10.1/x".to_string()),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    let asked = client.requests();
+    assert!(
+        asked.iter().any(|url| url.ends_with("/PMC123/fullTextXML")),
+        "the converter's ID"
+    );
+    assert!(!asked.iter().any(|url| url == RENDER), "{asked:?}");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.file_path, None);
+}
+
+/// With no cache key nothing is downloaded, so nothing is saved.
+#[test]
+fn a_pdf_left_a_url_for_want_of_an_identifier_is_not_called_saved() {
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 200)]));
+    let service = FullTextService::new(client, "test@example.com").with_fetch_pdf_with_jats(true);
+    let request = FullTextRequest {
+        identifier: None,
+        ..by_pmc_id()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(
+        (result.pdf_url.as_deref(), result.file_path),
+        (Some(RENDER), None)
+    );
+    let lines: Vec<String> = service
+        .log_lines()
+        .into_iter()
+        .map(|line| line.message)
+        .collect();
+    assert!(!lines
+        .iter()
+        .any(|line| line.contains("saved beside the JATS")));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "PDF from europepmc_pdf put on the JATS full text, unsaved"),
+        "{lines:?}"
+    );
 }

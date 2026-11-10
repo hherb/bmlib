@@ -185,6 +185,7 @@ class FullTextService:
         cache: FullTextCache | None = None,
         convert_pdfs: bool = True,
         ncbi_api_key: str | None = None,
+        fetch_pdf_with_jats: bool = False,
     ) -> None: ...
 
     def fetch_fulltext(
@@ -206,7 +207,8 @@ class FullTextService:
 | `timeout` | `float` | HTTP request timeout in seconds (default `30.0`) |
 | `cache` | `FullTextCache \| None` | Cache instance. When `None`, a default `FullTextCache()` is constructed — and if that directory cannot be created, the service warns once and runs uncached rather than raising, so `service.cache` may be `None` |
 | `convert_pdfs` | `bool` | Extract a retrieved PDF's text into `html` (default `True`). Requires `bmlib[pdf]`, and only applies once the PDF is cached — so `fetch_fulltext()` must be given an `identifier` **and** the service must have a cache. `pdf_url` stays set either way; `file_path` too, whenever the PDF was actually downloaded |
-| `ncbi_api_key` | `str \| None` | Optional NCBI API key (default `None`), sent with the Tier 1b′ and Tier 1c requests. Moves them into the key's 10 requests/second allowance instead of the 3/s shared by everything on the IP. It does **not** change bmlib's pacing — the package still throttles nothing. Declared last, so positional construction stays stable |
+| `ncbi_api_key` | `str \| None` | Optional NCBI API key (default `None`), sent with the Tier 1b′ and Tier 1c requests. Moves them into the key's 10 requests/second allowance instead of the 3/s shared by everything on the IP. It does **not** change bmlib's pacing — the package still throttles nothing |
+| `fetch_pdf_with_jats` | `bool` | Whether to look for a PDF once JATS full text is found (default `False`, so JATS ends the search), for an app that processes the JATS and shows the PDF *(#739)*. A PDF the caller's `fulltext_sources` gave rides on the JATS either way. When on, the caller's `pdf` entries not yet tried are asked, then Europe PMC's free PDF (only when its search itself resolves to the PMC ID the JATS came from, so the PDF is the same article's), then Unpaywall; the first PDF saved goes on the JATS result, else the first failure. A cached JATS hit is served as it is. Declared last, so positional construction stays stable |
 
 ### `fetch_fulltext()`
 
@@ -239,16 +241,16 @@ The chain is longer than three tiers. In order:
 | Tier 1b | A usable `doi` or `pmid` given, and no usable `pmc_id` — or one that gave no full text at either source *(0.11.0)* | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid} AND SRC:MED`, the `SRC:MED` *0.11.0 — #474*: other Europe PMC sources number records with bare digits, and a colliding record came first; the PMID canonical, an unusable one never sent — #478); the PMC ID is used only if `inEPMC == "Y"` and it is `PMC` followed by ASCII digits (anything else is logged at `WARNING` and recorded as a fault), then fetched as in 1a and 1c — unless it is the caller's own ID, already tried. One that differs **supersedes** the caller's, logged at `INFO` naming both (#304): the step this replaced already trusted this search hit as the article, taking its free PDF whenever it offered one, so fetching its XML makes no new identity claim. Where the caller's ID was served only as an abstract, the superseding ID's abstract replaces it. The search also yields the free-PDF URL Tier 1d needs | `"europepmc"` |
 | Tier 1b′ | The search reported no usable PMC ID, **or the search itself failed** — and there is no usable `pmc_id`: a converter answer never supersedes a caller's ID, since nothing before #304 trusted one over it *(0.11.0)* | NCBI's [ID Converter](https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/), asked by PMID when there is a usable one and DOI otherwise. Consulted *second* — the Europe PMC search returns the PMC ID and the free-PDF URL in one request, so asking the converter first would cost a request on every lookup or forfeit that URL. But it is consulted even when that search raised, since a second independent resolver is worth most exactly then. A record that is `status: error`, not `live`, or carries a PMC ID failing `PMC\d+` (ASCII digits, *0.11.0 — #472*) resolves to nothing | — |
 | Tier 1c | A PMC ID is in hand — the caller's, or one either resolver found — and Europe PMC gave no body for it. Tried for each ID straight after its Tier 1a, so the caller's ID is asked of both sources before anything supersedes it | `GET eutils…/efetch.fcgi?db=pmc&id={digits}&retmode=xml`, parsed by `JATSParser`. Europe PMC serves the corpus its `inEPMC` flag describes; NCBI serves PMC itself. A reply carrying neither body nor abstract — efetch's answer for an article whose publisher does not release XML — is treated as a failure, not as an abstract | `"ncbi_pmc"` |
-| Tier 1c′ | A Tier 0 `pdf` entry was saved and no tier found JATS *(#739)* | Return it; Tiers 1d and 2 are skipped, since they would only fetch another PDF | `entry.source` |
+| Tier 1c′ | A Tier 0 `pdf` entry was saved (or, with no cache or no `identifier`, left a URL with no failure) and no tier found JATS *(#739)* | Return it; Tiers 1d and 2 are skipped, since they would only fetch another PDF | `entry.source` |
 | Tier 1d | A free PDF render URL was found | Take the first `fullTextUrlList` entry whose `site` is `"Europe_PMC"` *(0.12.0 — #494: Europe PMC also lists free PDFs on `PubMedCentral` (NCBI's host) and `Unpaywall` (a publisher's or repository's), and lists them **first** — all 440 records of a 1,400-record live draw carrying both — so the tier fetched another host's PDF under this label; an entry naming no site is refused, and a blank `url` is skipped for a later entry)*, with `documentStyle == "pdf"` and an accepted availability — `availabilityCode` `OA` or `F`, falling back to the `availability` display string (`"Open access"`/`"Free"`) only for an entry carrying no code; a present-but-unknown code is rejected outright — download and cache it | `"europepmc_pdf"` |
 | Tier 2 | A usable `doi` given, or else a DOI on the Tier 1b search hit *(0.12.0 — #494: another site's free PDF is left to this tier, so a PMID-only caller reaches it here; the maintainer's choice)* | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
-| Tier 2′ | A Tier 0 `pdf` entry failed to download *(#739)* | Return it: `pdf_url` and `pdf_download_failure` set, no file | `entry.source` |
+| Tier 2′ | A Tier 0 `pdf` entry failed to download, and Tiers 1d and 2 found no PDF that downloaded *(#739)* | Return it: `pdf_url` and `pdf_download_failure` set, no file. A Tier 1d or Tier 2 PDF that also failed gives way to it, and the chain logs the *No full text found* WARNING, naming the cause | `entry.source` |
 | Tier 3 | A Tier 0 `html` entry was held *(0.12.0 — #579)* | Return its URL | `entry.source` |
 | Tier 3′ | A usable `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(0.11.0 — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
 | — | no held `html` entry and no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise `FullTextExhaustedError`, a message naming the missing fallback and summarising the failures, with its `faults` and `absences` *(0.13.0 — #565)* | — |
 
-Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and ends nothing *(#739)*: JATS is the better text to process and a PDF the better one to show, so the JATS tiers still run, and a JATS result they find carries the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`. With `fetch_pdf_with_jats` on (off by default, so JATS ends the search), a JATS result found without a saved PDF goes on to seek one: the caller's `pdf` entries if Tier 0 tried none, then Europe PMC's free PDF, only when its search resolves to the PMC ID the JATS came from, then Unpaywall; the first saved PDF, else the first failure, goes on the JATS result. A cached JATS hit is served as it is. A saved PDF is returned only when no JATS was found, and a failed one only once Tiers 1a to 2 have come back empty-handed *(#739: a `pdf` entry used to return at once, so a publisher's 403 hid the JATS Europe PMC serves)*. An `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(0.12.0 — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
+Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and ends nothing *(#739)*: JATS is the better text to process and a PDF the better one to show, so the JATS tiers still run, and a JATS result they find carries the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`. With `fetch_pdf_with_jats` on (off by default, so JATS ends the search), a JATS result found without a saved PDF goes on to seek one: the caller's `pdf` entries if Tier 0 tried none, then Europe PMC's free PDF, only when its search itself resolves to the PMC ID the JATS came from (not the ID Converter), then Unpaywall; the first saved PDF, else the first failure, goes on the JATS result. A cached JATS hit is served as it is. A saved PDF is returned only when no JATS was found, and a failed one only once Tiers 1a to 2 have come back empty-handed, a failed Tier 1d or Tier 2 download included *(#739: a `pdf` entry used to return at once, so a publisher's 403 hid the JATS Europe PMC serves)*. An `html` entry is held and becomes the result's `web_url` only once every later tier has failed to fetch text, ahead of Tier 3's DOI link — HTML sources are never fetched or cached. *(0.12.0 — #579: an `html` entry used to return at once and end the chain, so the `doi.org` and PMC-page links the PubMed fetcher gives every record put a publisher link ahead of Europe PMC's full text.)*
 
 Every "downloads and caches" above is conditional on there being somewhere to put the file. When `fetch_fulltext()` was given no usable `identifier` (none, a blank one, or one set aside), or `service.cache is None` (see [the operational notes](#operational-notes)), the PDF tiers set `pdf_url` and stop there: no request is made and `file_path` stays unset. The tier still counts as having produced a result, so the chain does not fall through to the next one.
 
@@ -353,7 +355,7 @@ class FullTextResult:
 The type names of the faults the tier chain swallowed before this result, in
 the order they happened (#603) — the names the *No full text found* WARNING
 lists, which is logged only when the chain comes back empty-handed. A tier
-returns as soon as it has a result, a PDF tier as soon as it has a URL, so a
+returns as soon as it has a result, a Europe PMC or Unpaywall PDF tier as soon as it has a URL, so a
 PDF returned (or failed to download, see `pdf_download_failure`) while Europe
 PMC's and NCBI's JATS both answered 503 carries `["FullTextError",
 "FullTextError"]`: the better sources were down, and a retry may do more than
@@ -373,7 +375,8 @@ failure is httpx's own name (`"ConnectError"`, `"ReadTimeout"`) in Python and
 
 Why a PDF tier (a fetcher-supplied PDF, Europe PMC's render, Unpaywall) that
 tried to download `pdf_url` came back without a `file_path` (#594), so a free
-PDF a retry may fetch is not mistaken for a bare link:
+PDF a retry may fetch is not mistaken for a bare link. Since #739 it can also
+sit on a JATS full-text result, describing the PDF that rides on it:
 
 | Value | What happened |
 |-------|---------------|
@@ -444,9 +447,9 @@ The `source` values the service can emit:
 |----------|---------|---------------------|
 | `"cached"` | Served from the disk cache | `html` or `file_path` |
 | *fetcher name* | A Tier 0 `FullTextSourceEntry` — the entry's own `source` string, e.g. `"biorxiv"`, `"medrxiv"`, `"pmc"`, `"publisher"` | `html`, or `pdf_url` (+ `file_path`), or `web_url` |
-| `"europepmc"` | JATS XML from Europe PMC, rendered to HTML | `html` |
+| `"europepmc"` | JATS XML from Europe PMC, rendered to HTML | `html` (+ `pdf_url`/`file_path` of a PDF riding on it, #739) |
 | `"europepmc_pdf"` | Free PDF render URL from Europe PMC | `pdf_url` (+ `file_path` if cached) |
-| `"ncbi_pmc"` | Tier 1c — NCBI's own copy of the PMC article, via E-utilities `efetch`. Distinct from a Tier 0 entry whose fetcher named itself `"pmc"` | `html` |
+| `"ncbi_pmc"` | Tier 1c — NCBI's own copy of the PMC article, via E-utilities `efetch`. Distinct from a Tier 0 entry whose fetcher named itself `"pmc"` | `html` (+ `pdf_url`/`file_path` of a PDF riding on it, #739) |
 | `"unpaywall"` | Open-access PDF located via Unpaywall | `pdf_url` (+ `file_path` if cached) |
 | `"doi"` | DOI resolution fallback | `web_url` |
 | `"pubmed"` | PubMed landing-page fallback | `web_url` |
