@@ -478,16 +478,18 @@ it is not clear the results guided which were shown.
 PN: a plan fixes everything this result could have been chosen on (the \
 scale, its definition, the time point) and the report matches it, but only \
 the paper's word places the plan before the data by group were seen: the \
-paper cites no registration or protocol for it, or cites one without a date \
-that does. A plan that leaves any of these open, where the open part could \
-have given a different result, is NI, not N or PN.
-N: the paper cites such a plan (a registration or protocol whose date places \
-it before the data by group were seen) that fixes everything this result \
-could have been chosen on (the scale, its definition, the time point), and \
-the results include every version it names, or the authors give a reason \
-unrelated to the results for any that is missing; or this outcome can be \
-measured in only one way, for example death from any cause at the trial's \
-single follow-up, so there was nothing to choose from.
+paper cites no registration, protocol or analysis plan for it, or cites one \
+without a date that does. A plan dated after the data by group were seen, \
+such as a registration made late, is no such plan: answer NI. A plan that \
+leaves any of these open, where the open part could have given a different \
+result, is NI, not N or PN.
+N: the paper cites such a plan (a registration, protocol or analysis plan \
+whose date places it before the data by group were seen) that fixes \
+everything this result could have been chosen on (the scale, its definition, \
+the time point), and the results include every version it names, or the \
+authors give a reason unrelated to the results for any that is missing; or \
+this outcome can be measured in only one way, for example death from any \
+cause at the trial's single follow-up, so there was nothing to choose from.
 NI: there is no such plan to hold the report against, or the plan leaves \
 open something this result could have been chosen on, and this outcome \
 leaves room for more than one version. Answer NI, not N, even when the paper \
@@ -514,9 +516,10 @@ PN: a plan fixes everything this result could have been chosen on (the \
 model, the covariates, the handling of missing results) and the reported \
 analysis matches it, but only the paper's word places the plan before the \
 data by group were seen: the paper cites no registration, protocol or \
-analysis plan for it, or cites one without a date that does. A plan that \
-leaves any of these open, where the open part could have given a different \
-result, is NI, not N or PN.
+analysis plan for it, or cites one without a date that does. A plan dated \
+after the data by group were seen, such as a registration made late, is no \
+such plan: answer NI. A plan that leaves any of these open, where the open \
+part could have given a different result, is NI, not N or PN.
 N: the paper cites such a plan (a registration, protocol or statistical \
 analysis plan whose date places it before the data by group were seen) that \
 fixes everything this result could have been chosen on (the model, the \
