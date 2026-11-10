@@ -46,6 +46,7 @@
 //! only one the shortcut was ever right about.
 
 use crate::llm::{safe_json_loads, LLMMessage, LLMResponse, Role};
+use crate::pyvalue::repr_str;
 use serde_json::Value;
 
 /// What [`chat_json`]'s retries after an unparseable reply add to the request
@@ -71,6 +72,25 @@ pub fn with_json_correction(messages: &[LLMMessage]) -> Vec<LLMMessage> {
         _ => corrected.push(LLMMessage::user(JSON_CORRECTION_NOTE)),
     }
     corrected
+}
+
+/// A reply of the wrong JSON shape this short (in characters) is quoted whole
+/// in the error, with [`SHORT_REPLY_HINT`]: it is less an answer than a
+/// fragment of one, and the usual cause is not the prompt. Python's
+/// `SHORT_REPLY_MAX_CHARS`.
+pub const SHORT_REPLY_MAX_CHARS: usize = 40;
+
+/// Why a request for a JSON object may come back as a few characters such as
+/// `[1.1]`: a server that constrains decoding to JSON from the first token
+/// (oMLX's JSON mode, measured 2026-11-10) leaves a reasoning model no room to
+/// think. Byte-identical with Python's `SHORT_REPLY_HINT`.
+pub const SHORT_REPLY_HINT: &str = "a reasoning model can answer this little when the server \
+    holds it to JSON from its first token, as some local servers' JSON mode does: try another \
+    server or model";
+
+/// `reply` when it is short enough to quote in a [`ChatJsonError::WrongShape`].
+fn short_reply(reply: &str) -> Option<String> {
+    (reply.chars().count() <= SHORT_REPLY_MAX_CHARS).then(|| reply.to_string())
 }
 
 /// Stop reasons that mean the model hit its output ceiling.
@@ -181,6 +201,9 @@ pub enum ChatJsonError {
     WrongShape {
         /// What arrived, named as the caller would: `"array"`, `"string"`, …
         got: String,
+        /// The whole reply, when it is at most [`SHORT_REPLY_MAX_CHARS`]
+        /// characters: quoted in the message with [`SHORT_REPLY_HINT`].
+        short_reply: Option<String>,
         /// The attempts made.
         attempts: usize,
     },
@@ -232,10 +255,24 @@ impl std::fmt::Display for ChatJsonError {
                 "response truncated at max_tokens={budget} (stop_reason={stop_reason:?}) \
                  after {attempts} attempt(s) — raise max_tokens or request less output"
             ),
-            ChatJsonError::WrongShape { got, attempts } => write!(
-                f,
-                "expected a JSON object, got {got} after {attempts} attempt(s)"
-            ),
+            ChatJsonError::WrongShape {
+                got,
+                short_reply,
+                attempts,
+            } => {
+                write!(
+                    f,
+                    "expected a JSON object, got {got} after {attempts} attempt(s)"
+                )?;
+                match short_reply {
+                    Some(reply) => write!(
+                        f,
+                        "; the whole reply was {}: {SHORT_REPLY_HINT}",
+                        repr_str(reply)
+                    ),
+                    None => Ok(()),
+                }
+            }
             ChatJsonError::Empty { attempts } => {
                 write!(
                     f,
@@ -407,6 +444,7 @@ pub fn chat_json(
                     }
                     let error = ChatJsonError::WrongShape {
                         got: json_type_name(&parsed).to_string(),
+                        short_reply: short_reply(content),
                         attempts,
                     };
                     if greedy {
@@ -456,6 +494,7 @@ pub fn chat_json(
                 if require_dict && !parsed.is_object() {
                     let error = ChatJsonError::WrongShape {
                         got: json_type_name(&parsed).to_string(),
+                        short_reply: short_reply(content),
                         attempts,
                     };
                     if greedy {
@@ -480,6 +519,7 @@ pub fn chat_json(
                 if require_dict && !parsed.is_object() {
                     let error = ChatJsonError::WrongShape {
                         got: json_type_name(&parsed).to_string(),
+                        short_reply: short_reply(content),
                         attempts,
                     };
                     if greedy {

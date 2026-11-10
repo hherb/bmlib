@@ -198,3 +198,6 @@ as `[12]`, excepted; `PassageContradiction`, `#[non_exhaustive]`;
 version, held equal by the oracle. `fold_char`,
 `normalize_with_offsets` and `occurs_once` are the public normalisation, as in
 Python.
+`split_at_ellipses` cuts a quote at its ellipses, as Python's does, for
+`quality::verify_quotes` to locate an elided quote piece by piece
+(`ELLIPSIS_PIECE_MIN_WORDS`; contract `tests/fixtures/quote_pieces.json`).

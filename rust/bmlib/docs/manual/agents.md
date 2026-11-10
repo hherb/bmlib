@@ -78,7 +78,11 @@ assert_eq!(source.calls, 1);
 // An array where an object was required, above temperature 0: retried, then reported.
 let mut source = script(vec![("[1, 2]", Some("stop"))]);
 let error = chat_json(&mut source, 3, 0.7, None, 512, true).unwrap_err();
-assert_eq!(error, ChatJsonError::WrongShape { got: "list".into(), attempts: 3 });
+// A reply this short is quoted whole in the message, with the likely cause
+// (SHORT_REPLY_HINT): a server whose JSON mode leaves a reasoning model no room to think.
+assert_eq!(error, ChatJsonError::WrongShape {
+    got: "list".into(), short_reply: Some("[1, 2]".into()), attempts: 3,
+});
 
 // No extraction: JSON wrapped in a code fence does not parse.
 assert_eq!(JsonAttempt::parse("```json\n{\"a\": 1}\n```", 1), JsonAttempt::Unparseable);
@@ -91,7 +95,7 @@ Each attempt is classified, and the class decides whether a retry could help:
 |---|---|---|
 | Stopped at the ceiling (`max_tokens` or `length`, `TRUNCATION_STOP_REASONS`), and the JSON parses **strictly** | used as-is | used as-is |
 | Stopped at the ceiling, and parses only after repair (or not at all) | `Truncated` at once | retried |
-| A shape other than an object, under `require_dict` | `WrongShape` at once | retried |
+| A shape other than an object, under `require_dict` (quoted in the message when at most `SHORT_REPLY_MAX_CHARS` characters) | `WrongShape` at once | retried |
 | Empty | retried | retried |
 | Unparseable even after repair | retried, with the correction | retried, with the correction |
 | `source.chat` returned `Err` | `Transport` at once | `Transport` at once |

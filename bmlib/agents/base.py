@@ -60,6 +60,21 @@ logger = logging.getLogger(__name__)
 # Anthropic reports "max_tokens", OpenAI-compatible providers "length".
 _TRUNCATION_STOP_REASONS = ("max_tokens", "length")
 
+#: A reply of the wrong JSON shape this short is quoted whole in the error,
+#: with :data:`SHORT_REPLY_HINT`: it is less an answer than a fragment of one,
+#: and the usual cause is not the prompt (Rust's ``SHORT_REPLY_MAX_CHARS``).
+SHORT_REPLY_MAX_CHARS = 40
+
+#: Why a request for a JSON object may come back as a few characters such as
+#: ``[1.1]``: a server that constrains decoding to JSON from the first token
+#: (oMLX's JSON mode, measured 2026-11-10) leaves a reasoning model no room to
+#: think. Byte-identical in the Rust port.
+SHORT_REPLY_HINT = (
+    "a reasoning model can answer this little when the server holds it to JSON "
+    "from its first token, as some local servers' JSON mode does: try another "
+    "server or model"
+)
+
 #: What :meth:`BaseAgent.chat_json`'s retries after an unparseable reply add to
 #: the request (#717), byte-identical in the Rust port.
 JSON_CORRECTION_NOTE = (
@@ -344,14 +359,17 @@ class BaseAgent:
             """
             return effective_temperature == 0.0 and self.llm.honours_temperature(self.model)
 
-        def reject_shape(parsed: dict | list, attempt: int) -> str:
+        def reject_shape(parsed: dict | list, attempt: int, reply: str) -> str:
             """Name the wrong shape; raise when a retry is provably futile.
 
             Defined once and used on both return paths — the normal one and
             the truncation path's :meth:`_try_parse_complete` shortcut — so the two
-            cannot drift apart.
+            cannot drift apart.  A *reply* of at most
+            :data:`SHORT_REPLY_MAX_CHARS` is quoted, with :data:`SHORT_REPLY_HINT`.
             """
             message = f"expected a JSON object, got {type(parsed).__name__}{context}"
+            if len(reply) <= SHORT_REPLY_MAX_CHARS:
+                message += f"; the whole reply was {reply!r}: {SHORT_REPLY_HINT}"
             # The attempt marker already carries *context*, so the log line
             # spells the reason out rather than reusing *message* — which ends
             # in the same context and would print it twice.
@@ -406,7 +424,7 @@ class BaseAgent:
                         # a parse that needed repair closed brackets the model
                         # never closed, and is the truncation below (#300).
                         return parsed
-                    last_error = reject_shape(parsed, attempt)
+                    last_error = reject_shape(parsed, attempt, content)
                     last_cls = ChatJsonWrongShapeError
                     continue
                 budget = max_tokens if max_tokens is not None else self.max_tokens
@@ -459,7 +477,7 @@ class BaseAgent:
                 continue
 
             if require_dict and not isinstance(parsed, dict):
-                last_error = reject_shape(parsed, attempt)
+                last_error = reject_shape(parsed, attempt, content)
                 last_cls = ChatJsonWrongShapeError
                 continue
 

@@ -149,6 +149,30 @@ All notable changes to bmlib are documented here. The format is based on
   `scripts/make_rob2_algorithm.py` (hand-listed `official` cases plus every
   walk of every domain).
 
+### Changed
+
+- **A quote cut with an ellipsis is located piece by piece.** `verify_quotes`
+  (`bmlib/quality/pico_agent.py`, `rust/bmlib/src/quality/pico_agent.rs`), which
+  every full-text agent and `PicoAgent` use, first looks for a quote whole, as
+  before; a quote that is neither found nor contradicted and holds an ellipsis
+  ("…" or three or more full stops, bracketed or not) is then split by the new
+  `split_at_ellipses` (`bmlib.citations`, Rust `bmlib::citations`) and each piece
+  is located on its own. The quote is found when every piece is, each piece a
+  citation of its own (each span once); contradicted when any piece is; and
+  otherwise not found as before. A piece shorter than `ELLIPSIS_PIECE_MIN_WORDS`
+  (3) words would match almost anywhere, so the whole quote stays not found.
+  Measured on the RoB 2 wording smoke test: gpt-oss 120B cut 174 of its 352
+  unlocated quotes this way, of which the split locates about 96 and shows 5 to
+  be contradicted; DeepSeek and Gemma 4 had no such quote, so nothing changes for
+  them. Contract: `tests/fixtures/quote_pieces.json`.
+- **A short reply of the wrong JSON shape is quoted, with the likely cause.**
+  When `chat_json` asked for an object and got another shape in at most
+  `SHORT_REPLY_MAX_CHARS` (40) characters, its error quotes the whole reply and
+  adds `SHORT_REPLY_HINT`: a server that holds a reasoning model to JSON from its
+  first token can leave it no room to think (Qwen3.8 under oMLX's JSON mode
+  answered a RoB 2 domain with `[1.1]`). Rust's `ChatJsonError::WrongShape` gains
+  `short_reply: Option<String>`.
+
 ## [0.13.0] — 2026-11-10
 
 **The hardening release: what 0.12.0's StudyAnalyzer pieces met on current

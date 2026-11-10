@@ -25,6 +25,8 @@ import pytest
 
 from bmlib.agents.base import (
     JSON_CORRECTION_NOTE,
+    SHORT_REPLY_HINT,
+    SHORT_REPLY_MAX_CHARS,
     BaseAgent,
     ChatJsonEmptyError,
     ChatJsonError,
@@ -843,6 +845,30 @@ class TestChatJsonRequireDict:
             agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.7)
 
         assert agent.llm.chat.call_count == 3
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_short_wrong_shape_is_quoted_with_the_likely_cause(self, mock_sleep):
+        # Qwen3.8 under oMLX's JSON mode answered a RoB 2 domain with "[1.1]"
+        # (2026-11-10): the error quotes so short a reply and names the cause.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response("[1.1]")
+
+        with pytest.raises(ValueError) as caught:
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert f"the whole reply was '[1.1]': {SHORT_REPLY_HINT}" in str(caught.value)
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_longer_wrong_shape_is_not_quoted(self, mock_sleep):
+        reply = "[" + ", ".join(['{"a": 1}'] * 5) + "]"
+        assert len(reply) > SHORT_REPLY_MAX_CHARS
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response(reply)
+
+        with pytest.raises(ValueError) as caught:
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert "the whole reply" not in str(caught.value)
 
     @patch("bmlib.agents.base.time.sleep")
     def test_a_list_at_temperature_zero_fails_fast(self, mock_sleep):

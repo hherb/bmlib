@@ -24,11 +24,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::Value;
 
 use crate::agents::ChatJsonError;
-use crate::citations::{find_passage, InvalidSimilarity};
+use crate::citations::passage_match::ELLIPSIS_PIECE_MIN_WORDS;
+use crate::citations::{find_passage, split_at_ellipses, InvalidSimilarity, PassageMatch};
 use crate::context_processor::llm_processor::{ContextModel, PromptTemplates};
 use crate::context_processor::ProcessingConfig;
 use crate::llm::LLMMessage;
-use crate::pyvalue::python_strip;
+use crate::pyvalue::{is_python_space, python_strip};
 use crate::quality::agent_chat::{JsonChat, STOPPED_MESSAGE};
 use crate::quality::cochrane_assessor::{
     clamped_confidence, condense_checked, Condenser, LlmCondenser,
@@ -247,34 +248,73 @@ pub fn verify_quotes(
             dropped += 1;
             continue;
         };
-        let found = find_passage(quote, text, min_similarity)?;
-        if let Some(contradiction) = found.contradiction {
+        let matches = locate(quote, text, min_similarity)?;
+        if let Some(contradiction) = matches.iter().find_map(|m| m.contradiction) {
             contradicted.push(PicoContradictedQuote {
                 quote: quote.to_string(),
                 contradiction,
             });
             continue;
         }
-        let Some(span) = found.span else {
+        if !matches.iter().all(PassageMatch::matched) {
             not_found.push(quote.to_string());
             continue;
-        };
-        // Each span once, in the order the quotes came.
-        if citations
-            .iter()
-            .any(|c| c.start == span.start && c.end == span.end)
-        {
-            continue;
         }
-        citations.push(PicoCitation {
-            start: span.start,
-            end: span.end,
-            text: span.text,
-            similarity: found.similarity,
-            exact: found.exact,
-        });
+        for found in matches {
+            let Some(span) = found.span else {
+                continue; // unreachable: every match is accepted
+            };
+            // Each span once, in the order the quotes came.
+            if citations
+                .iter()
+                .any(|c| c.start == span.start && c.end == span.end)
+            {
+                continue;
+            }
+            citations.push(PicoCitation {
+                start: span.start,
+                end: span.end,
+                text: span.text,
+                similarity: found.similarity,
+                exact: found.exact,
+            });
+        }
     }
     Ok((citations, not_found, contradicted, dropped))
+}
+
+/// Where `quote` is in `text`: the whole quote, or else its pieces. Python's
+/// `_locate`.
+///
+/// The whole quote first, so a quote the paper holds as given (an ellipsis
+/// and all) is matched as before. When it is neither found nor contradicted
+/// and it holds an ellipsis, the pieces [`split_at_ellipses`] cuts it into are
+/// located one by one, unless a piece is shorter than
+/// [`ELLIPSIS_PIECE_MIN_WORDS`] words, which would match almost anywhere:
+/// then the whole quote's miss stands.
+fn locate(
+    quote: &str,
+    text: &str,
+    min_similarity: f64,
+) -> Result<Vec<PassageMatch>, InvalidSimilarity> {
+    let whole = find_passage(quote, text, min_similarity)?;
+    if whole.matched() || whole.contradiction.is_some() {
+        return Ok(vec![whole]);
+    }
+    let pieces = split_at_ellipses(quote);
+    let words = |piece: &String| {
+        piece
+            .split(is_python_space)
+            .filter(|w| !w.is_empty())
+            .count()
+    };
+    if pieces.is_empty() || pieces.iter().any(|p| words(p) < ELLIPSIS_PIECE_MIN_WORDS) {
+        return Ok(vec![whole]);
+    }
+    pieces
+        .iter()
+        .map(|piece| find_passage(piece, text, min_similarity))
+        .collect()
 }
 
 /// Read one PICO part and verify its quotes. Python's `read_part`.
