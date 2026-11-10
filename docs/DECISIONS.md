@@ -6362,3 +6362,14 @@ formatting elements without being the tree builder. Decided by the maintainer
   elements created), so the shared `html_parse` contract holds neither limit.
 - **`HTML_MAX_CHARS` stays**: #656, the completeness cost of the length cap,
   is still open.
+- **Measured on real pages, and neither budget moves** (#726,
+  `scripts/sample_html_pages.py`, `tests/data/html_page_shapes.json`). Of 142
+  pages served to a plain client (73 articles, legacy `<font>` pages
+  included), none built more than 0.0365 elements per code point, and none
+  more elements than it holds `<`. So the Rust budget is about 27 times what
+  any page needed, and Python's child peaked at 35 MB of its 1 GiB. The two
+  languages disagree only on pages shaped like #723's (`rebuilding(60)`,
+  1.2 KB, refused by Rust, converted by Python), and no real page was. Do not
+  widen `HTML_ELEMENT_ALLOWANCE`, or make it a multiple of the length, to
+  close that gap without a real page that needs it; re-run the sampler
+  first.

@@ -81,7 +81,9 @@ pub const HTML_PARSE_SECONDS: u64 = 30;
 /// and then a chunk of `<hr>`, took about 16 s per million code points here (a
 /// release build; 95 s at 4 million, never refused) and about half that in
 /// Python, a loaded machine both. At this length a page is converted or refused
-/// within about twice [`HTML_PARSE_SECONDS`] here (41 s and 60 s measured).
+/// within about twice [`HTML_PARSE_SECONDS`] here (41 s and 60 s measured). Of
+/// 142 real pages (#726) the longest was 929,565 code points, none over this
+/// cap; fetched, so none carried its images inline as `data:` URIs (#656).
 pub const HTML_MAX_CHARS: usize = 2_000_000;
 
 /// Code points fed to the parser between two readings of the clock (Python's
@@ -93,8 +95,15 @@ pub const HTML_PARSE_CHUNK: usize = 16_384;
 /// takes at least three code points, and the elements html5ever implies
 /// (`<html>`, `<head>`, `<body>`, a table's `<tbody>` and `<tr>`) are a few per
 /// tag, so only a page that has html5ever rebuild the same formatting elements
-/// over and over creates more. Unmeasured on real pages, which no draw has
-/// sized: a starting point, like [`MIN_ARTICLE_SHARE`].
+/// over and over creates more. Measured on real pages (#726,
+/// `scripts/sample_html_pages.py`, `tests/data/html_page_shapes.json`): 142
+/// served to a plain client, 73 of them articles, from DOI landing pages of
+/// 1995-2024 and archived 1998-2007 full-text pages (50 with `<font>`, one
+/// with 463), created at most 0.0365 elements per code point (median 0.0088), and
+/// none more elements than its `<` count, so the budget's one per code point
+/// is about 27 times what any needed and the allowance never decided one. A
+/// small page shaped like #723's is still refused here and converted in Python
+/// (`rebuilding(60)`, 1,261 code points, 3,724 elements); no real page was.
 pub const HTML_ELEMENT_ALLOWANCE: usize = 1_000;
 
 /// Code points fed to html5ever between two readings of the elements created

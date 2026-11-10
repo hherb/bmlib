@@ -110,7 +110,10 @@ HTML_PARSE_SECONDS = 30.0
 #: here (markupever; 25 s at 4 million) and about twice that in the Rust port, a
 #: loaded machine both. The cap is the slower language's: at this length a page
 #: is converted or refused within about twice :data:`HTML_PARSE_SECONDS` there
-#: (41 s and 60 s), and that chunk takes about 16 s here.
+#: (41 s and 60 s), and that chunk takes about 16 s here. Of 142 real pages
+#: (#726) the longest was 929,565 code points and the most ``<`` 6,447, none over
+#: this cap or #656's ``<`` cap; they were fetched, so none carried its images
+#: inline as ``data:`` URIs, #656's case.
 HTML_MAX_CHARS = 2_000_000
 
 #: Code points fed to the parser between two readings of the clock. Smaller
@@ -128,7 +131,10 @@ HTML_PARSE_CHUNK = 16_384
 #: at :data:`HTML_MAX_CHARS` peaked at 181 MB (``<x>`` nested 660,000 deep,
 #: #654's), 175 MB (666,000 sibling ``<p>``) and 69 MB (2 MB shaped like an
 #: article), one run each, so the limit is about six times the most a page the
-#: cap admits was measured to need. Unmeasured on real pages.
+#: cap admits was measured to need. On real pages (#726, 142 served to a plain
+#: client, ``tests/data/html_page_shapes.json``) the child peaked at 35 MB at
+#: most, about 29 MB of it the interpreter's own; under memory pressure the
+#: resident set can undercount what the child holds (#725, unmeasured).
 HTML_PARSE_MAX_BYTES = 1 << 30
 
 #: Seconds between two readings of the child's memory. At the fastest rate
