@@ -506,6 +506,139 @@ class TestKnownSources:
         assert result.file_path is not None
 
 
+class TestPdfWithJats:
+    """``fetch_pdf_with_jats``: JATS to process, a PDF to show (#739)."""
+
+    RENDER = "https://europepmc.org/render/PMC123.pdf"
+    JATS = (FIXTURES / "sample_article.xml").read_bytes()
+
+    @classmethod
+    def _route(cls, search_pmcid="PMC123", unpaywall_pdf=None, pdf_status=None):
+        """An ``_http_get`` answering by URL: JATS for PMC123, a search hit, PDFs."""
+        pdf_status = pdf_status or {}
+
+        def answer(url, *args, **kwargs):
+            if url in pdf_status:
+                status = pdf_status[url]
+                return MagicMock(status_code=status, content=TestCacheIntegration.PDF_MAGIC)
+            if url.endswith("/PMC123/fullTextXML"):
+                return MagicMock(status_code=200, content=cls.JATS)
+            if "/search?" in url:
+                hit = {"pmcid": search_pmcid, "inEPMC": "Y"}
+                hit["fullTextUrlList"] = {
+                    "fullTextUrl": [
+                        {
+                            "site": "Europe_PMC",
+                            "documentStyle": "pdf",
+                            "availability": "Free",
+                            "url": cls.RENDER,
+                        }
+                    ]
+                }
+                reply = MagicMock(status_code=200)
+                reply.json.return_value = {"resultList": {"result": [hit]}}
+                return reply
+            if url.startswith("https://api.unpaywall.org/") and unpaywall_pdf:
+                reply = MagicMock(status_code=200)
+                reply.json.return_value = {"best_oa_location": {"url_for_pdf": unpaywall_pdf}}
+                return reply
+            return MagicMock(status_code=404)
+
+        return answer
+
+    def _service(self, tmp_path, on):
+        return FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            fetch_pdf_with_jats=on,
+        )
+
+    def test_it_is_off_by_default_and_jats_ends_the_search(self, tmp_path):
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        assert service.fetch_pdf_with_jats is False
+        route = self._route(pdf_status={self.RENDER: 200})
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        assert result.content_kind == "fulltext"
+        assert (result.pdf_url, result.file_path) == (None, None)
+        assert http_get.call_count == 1  # the JATS, nothing after it
+
+    def test_on_europe_pmcs_pdf_of_the_same_article_rides_on_the_jats(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        route = self._route(pdf_status={self.RENDER: 200})
+        with patch.object(service, "_http_get", side_effect=route):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert result.pdf_url == self.RENDER
+        assert result.file_path is not None and result.file_path.endswith(".pdf")
+
+    def test_on_another_articles_pdf_is_never_taken(self, tmp_path):
+        # The search resolves the DOI to another PMC ID: its PDF is not this JATS's.
+        service = self._service(tmp_path, on=True)
+        route = self._route(search_pmcid="PMC999", pdf_status={self.RENDER: 200})
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        assert self.RENDER not in [c.args[0] for c in http_get.call_args_list]
+        assert result.content_kind == "fulltext"
+        assert result.file_path is None
+
+    def test_on_a_known_pdf_source_left_untried_is_fetched(self, tmp_path):
+        sources = [
+            FullTextSourceEntry(url="https://pub/x.xml", format="xml", source="publisher"),
+            FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher"),
+        ]
+        service = self._service(tmp_path, on=True)
+        route = self._route(pdf_status={"https://pub/x.pdf": 200})
+
+        def answer(url, *args, **kwargs):
+            if url == "https://pub/x.xml":
+                return MagicMock(status_code=200, content=self.JATS)
+            return route(url)
+
+        with patch.object(service, "_http_get", side_effect=answer):
+            result = service.fetch_fulltext(fulltext_sources=sources, identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("publisher", "fulltext")
+        assert result.pdf_url == "https://pub/x.pdf"
+        assert result.file_path is not None
+
+    def test_on_unpaywall_is_asked_last(self, tmp_path):
+        sources = [FullTextSourceEntry(url="https://pub/x.xml", format="xml", source="publisher")]
+        service = self._service(tmp_path, on=True)
+        route = self._route(unpaywall_pdf="https://oa/x.pdf", pdf_status={"https://oa/x.pdf": 200})
+
+        def answer(url, *args, **kwargs):
+            if url == "https://pub/x.xml":
+                return MagicMock(status_code=200, content=self.JATS)
+            return route(url)
+
+        with patch.object(service, "_http_get", side_effect=answer):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert result.content_kind == "fulltext"
+        assert result.pdf_url == "https://oa/x.pdf"
+        assert result.file_path is not None
+
+    def test_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats(self, tmp_path):
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = self._service(tmp_path, on=True)
+        route = self._route(pdf_status={"https://pub/x.pdf": 403, self.RENDER: 503})
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, pmc_id="PMC123", doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert self.RENDER in [c.args[0] for c in http_get.call_args_list]  # it was sought
+        assert result.content_kind == "fulltext"
+        assert (result.pdf_url, result.pdf_download_failure) == ("https://pub/x.pdf", "http-403")
+        assert result.file_path is None
+
+
 class TestFullTextSourceEntry:
     def test_to_dict_and_from_dict(self):
         entry = FullTextSourceEntry(

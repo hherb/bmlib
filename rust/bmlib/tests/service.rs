@@ -2968,3 +2968,207 @@ fn the_html_reference_list_reproduces_the_glue_and_the_note() {
     );
     assert!(html.contains("<li id=\"ref-cit20\"></li>"), "{html}");
 }
+
+// ---------------------------------------------------------------------------
+// fetch_pdf_with_jats: JATS to process, a PDF to show (#739)
+// ---------------------------------------------------------------------------
+
+/// A transport answering by URL, recording what it was asked.
+struct RoutedClient {
+    route: Box<dyn Fn(&str) -> HttpResponse + Send + Sync>,
+    requests: Mutex<Vec<String>>,
+}
+
+impl RoutedClient {
+    fn new(route: impl Fn(&str) -> HttpResponse + Send + Sync + 'static) -> Arc<Self> {
+        Arc::new(RoutedClient {
+            route: Box::new(route),
+            requests: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.requests.lock().expect("lock").clone()
+    }
+}
+
+impl HttpClient for RoutedClient {
+    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
+        self.requests.lock().expect("lock").push(url.to_string());
+        Ok((self.route)(url))
+    }
+}
+
+const RENDER: &str = "https://europepmc.org/render/PMC123.pdf";
+
+/// JATS for PMC123 and for `https://pub/x.xml`, a search hit resolving to
+/// `search_pmcid` with Europe PMC's free PDF, Unpaywall pointing at
+/// `unpaywall_pdf`, and each URL in `pdfs` answering with its status.
+fn pdf_route(
+    search_pmcid: &'static str,
+    unpaywall_pdf: Option<&'static str>,
+    pdfs: Vec<(&'static str, u16)>,
+) -> impl Fn(&str) -> HttpResponse + Send + Sync + 'static {
+    move |url: &str| {
+        if let Some((_, status)) = pdfs.iter().find(|(pdf, _)| *pdf == url) {
+            return HttpResponse::from_bytes(*status, b"%PDF-1.4 fake".to_vec());
+        }
+        if url.ends_with("/PMC123/fullTextXML") || url == "https://pub/x.xml" {
+            return HttpResponse::ok_text(FULL_JATS);
+        }
+        if url.contains("/search?") {
+            let hit = json!({
+                "pmcid": search_pmcid,
+                "inEPMC": "Y",
+                "fullTextUrlList": {"fullTextUrl": [{
+                    "site": "Europe_PMC", "documentStyle": "pdf",
+                    "availability": "Free", "url": RENDER,
+                }]},
+            });
+            return HttpResponse::ok_text(json!({"resultList": {"result": [hit]}}).to_string());
+        }
+        if let (true, Some(pdf)) = (url.starts_with("https://api.unpaywall.org/"), unpaywall_pdf) {
+            return HttpResponse::ok_text(
+                json!({"best_oa_location": {"url_for_pdf": pdf}}).to_string(),
+            );
+        }
+        HttpResponse::from_bytes(404, Vec::new())
+    }
+}
+
+fn pdf_service(client: Arc<RoutedClient>, dir: &TempDir, on: bool) -> FullTextService {
+    FullTextService::new(client, "test@example.com")
+        .with_cache(Some(dir.cache()))
+        .with_fetch_pdf_with_jats(on)
+}
+
+fn by_pmc_id() -> FullTextRequest {
+    FullTextRequest {
+        pmc_id: Some("PMC123".to_string()),
+        doi: Some("10.1/x".to_string()),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    }
+}
+
+#[test]
+fn fetch_pdf_with_jats_is_off_by_default_and_jats_ends_the_search() {
+    let dir = TempDir::new("pdf-jats-off");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 200)]));
+    let service =
+        FullTextService::new(client.clone(), "test@example.com").with_cache(Some(dir.cache()));
+    assert!(!service.fetch_pdf_with_jats());
+
+    let result = service.fetch_fulltext(&by_pmc_id()).expect("retrieved");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!((result.pdf_url, result.file_path), (None, None));
+    assert_eq!(client.requests().len(), 1, "the JATS, nothing after it");
+}
+
+#[test]
+fn with_it_on_europe_pmcs_pdf_of_the_same_article_rides_on_the_jats() {
+    let dir = TempDir::new("pdf-jats-render");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 200)]));
+    let service = pdf_service(client, &dir, true);
+
+    let result = service.fetch_fulltext(&by_pmc_id()).expect("retrieved");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.pdf_url.as_deref(), Some(RENDER));
+    assert!(result
+        .file_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with(".pdf")));
+}
+
+#[test]
+fn with_it_on_another_articles_pdf_is_never_taken() {
+    // The search resolves the DOI to another PMC ID: its PDF is not this JATS's.
+    let dir = TempDir::new("pdf-jats-other");
+    let client = RoutedClient::new(pdf_route("PMC999", None, vec![(RENDER, 200)]));
+    let service = pdf_service(client.clone(), &dir, true);
+
+    let result = service.fetch_fulltext(&by_pmc_id()).expect("retrieved");
+    assert!(!client.requests().iter().any(|url| url == RENDER));
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.file_path, None);
+}
+
+#[test]
+fn with_it_on_a_known_pdf_source_left_untried_is_fetched() {
+    let dir = TempDir::new("pdf-jats-known");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![("https://pub/x.pdf", 200)]));
+    let service = pdf_service(client, &dir, true);
+    let request = FullTextRequest {
+        fulltext_sources: vec![
+            FullTextSourceEntry {
+                format: "xml".to_string(),
+                ..html_entry("https://pub/x.xml", "publisher")
+            },
+            pdf_entry("https://pub/x.pdf", "publisher"),
+        ],
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "publisher");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.pdf_url.as_deref(), Some("https://pub/x.pdf"));
+    assert!(result.file_path.is_some());
+}
+
+#[test]
+fn with_it_on_unpaywall_is_asked_last() {
+    let dir = TempDir::new("pdf-jats-unpaywall");
+    let client = RoutedClient::new(pdf_route(
+        "PMC123",
+        Some("https://oa/x.pdf"),
+        vec![("https://oa/x.pdf", 200)],
+    ));
+    let service = pdf_service(client, &dir, true);
+    let request = FullTextRequest {
+        fulltext_sources: vec![FullTextSourceEntry {
+            format: "xml".to_string(),
+            ..html_entry("https://pub/x.xml", "publisher")
+        }],
+        doi: Some("10.1/x".to_string()),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.pdf_url.as_deref(), Some("https://oa/x.pdf"));
+    assert!(result.file_path.is_some());
+}
+
+#[test]
+fn with_it_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats() {
+    let dir = TempDir::new("pdf-jats-failed");
+    let client = RoutedClient::new(pdf_route(
+        "PMC123",
+        None,
+        vec![("https://pub/x.pdf", 403), (RENDER, 503)],
+    ));
+    let service = pdf_service(client.clone(), &dir, true);
+    let request = FullTextRequest {
+        fulltext_sources: vec![pdf_entry("https://pub/x.pdf", "publisher")],
+        ..by_pmc_id()
+    };
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert!(
+        client.requests().iter().any(|url| url == RENDER),
+        "it was sought"
+    );
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(
+        (
+            result.pdf_url.as_deref(),
+            result.pdf_download_failure.as_deref()
+        ),
+        (Some("https://pub/x.pdf"), Some("http-403"))
+    );
+    assert_eq!(result.file_path, None);
+}
