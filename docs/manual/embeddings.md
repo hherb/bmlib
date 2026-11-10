@@ -50,7 +50,7 @@ its size and sha256 match; nothing that fails the check is kept
 - `download_model(model, directory, progress=None)` returns the final path
   (`directory / model.file`), creating `directory` if missing. It sends
   `User-Agent: bmlib/<version>`.
-- A failed request is a `ModelDownloadError` *(unreleased)*: a
+- A failed request is a `ModelDownloadError` *(0.13.0)*: a
   `ModelStatusError` when the server refused it (`.status`, `.message`), a
   `ModelTransportError` when no answer came (no connection, a timeout, a read
   that failed, a body ending short of its `Content-Length`). `.retryable` says
@@ -258,7 +258,7 @@ hook is `&mut dyn FnMut(u64, u64) -> bool`; returning `false` cancels, removes
 the temporary file and returns `ModelError::Cancelled`. A `ModelFile` that
 cannot be pinned (`ModelFile::check`) is `ModelError::Invalid`, before any
 request. A failed request is `ModelError::Transport` or `ModelError::Status
-{ status, message }` *(unreleased)*, and `ModelError::is_retryable()` is
+{ status, message }` *(0.13.0)*, and `ModelError::is_retryable()` is
 Python's `.retryable`; `ModelError::Io` is a file-system failure alone.
 
 Flash attention is left to llama.cpp's AUTO policy, which turns it on for CPU

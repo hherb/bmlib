@@ -192,7 +192,7 @@ How construction differs from Python:
 
 `fetch_fulltext` returns `Err(FullTextError::Other)` when no identifier was
 given at all, and `Err(FullTextError::Exhausted { message, faults, absences })`
-when the chain found nothing and has no DOI or PMID link to degrade to *(unreleased
+when the chain found nothing and has no DOI or PMID link to degrade to *(0.4.0
 — #565; it was `Other`)*. Match on `faults`, not on `message`: empty means nothing
 the chain asked failed, so a retry now would get the same answers (`absences` is 0
 where nothing could be asked, the only identifier given being refused); non-empty
@@ -210,8 +210,8 @@ answered and has nothing.
 | `jats_xml` | the JATS bytes `html` was rendered from, as served, for `Fulltext` and `Abstract` from JATS |
 | `pdf_url`, `web_url`, `file_path` | a PDF address, a landing page, the cached file |
 | `pdf_download_failure` | why a PDF tier's download left no `file_path`: `"http-<status>"`, `"not-a-pdf"`, `"request-failed"` or `"write-failed"`; `None` when the PDF was cached or no download was tried |
-| `pdf_extraction_failure` | why the cached PDF's text did not extract, a `PdfErrorKind` wire name: `"encrypted"` or `"unreadable"` (the file's), `"engine"` (not the file's, and a `PdfText` with `success` false, which names no kind), `"cancelled"`, `"timed-out"`; `None` when it extracted, was not tried, or was a scan yielding no text *(unreleased)* |
-| `tier_faults` | the type names of the faults the chain swallowed before this result, in order: `"FullTextError"` for a non-200, `"TransportError"` for a failed request; a malformed caller PMC ID is not listed, though the warning counts it; on every result the chain returns, empty on a cache hit *(unreleased)* |
+| `pdf_extraction_failure` | why the cached PDF's text did not extract, a `PdfErrorKind` wire name: `"encrypted"` or `"unreadable"` (the file's), `"engine"` (not the file's, and a `PdfText` with `success` false, which names no kind), `"cancelled"`, `"timed-out"`; `None` when it extracted, was not tried, or was a scan yielding no text *(0.4.0)* |
+| `tier_faults` | the type names of the faults the chain swallowed before this result, in order: `"FullTextError"` for a non-200, `"TransportError"` for a failed request; a malformed caller PMC ID is not listed, though the warning counts it; on every result the chain returns, empty on a cache hit *(0.4.0)* |
 
 **Branch on `content_kind`, not on `html` being set**, or an abstract is
 analysed as an article. `pdf_download_failure` tells a free PDF a retry may
@@ -221,7 +221,7 @@ sources were down from one returned because they had nothing; a
 `FullTextResult` struct literal must name all three. A
 `PdfExtractor` reports a failed conversion as
 `PdfExtractError::Conversion(PdfError)`, whose kind becomes
-`pdf_extraction_failure` *(unreleased; it carried a `String`)*.
+`pdf_extraction_failure` *(0.4.0; it carried a `String`)*.
 
 ## The cache
 
@@ -341,23 +341,23 @@ or a title you have, to the segmenter as `metadata_title`.
 metadata_title, metadata)` turns lines into a `SegmentedDocument` of typed
 `Section`s. Page furniture (running heads, page numbers) is set aside first;
 a heading is a short line larger than the body median (the median of the
-lines' characters, not of the lines, *unreleased*) by
+lines' characters, not of the lines, *0.4.0*) by
 `font_size_threshold`, or a bold or italic one at body size, which must match
 a pattern exactly or carry a section number (`"2.1."`); a line matching a
 pattern exactly needs only to be over the body, or bold or italic down to
-`EXACT_HEADING_FLOOR_RATIO` of it (*unreleased*, #628); a line in a face
+`EXACT_HEADING_FLOOR_RATIO` of it (*0.4.0*, #628); a line in a face
 the paper's exact-match headings are set in, other than the body's own or an
-unnamed one, counts as bold (*unreleased*, #628), since MuPDF flags such a
+unnamed one, counts as bold (*0.4.0*, #628), since MuPDF flags such a
 face (Frontiers', for one) neither bold nor italic; the size floor
 `min_heading_size` is capped at the body median, so a journal set in 8 pt
 finds its 8 pt bold headings. It is classified by `match_section_type`
 ("Method", "Result", "Discussions" and "Experimental" matched only as the
-whole heading, at `0.7`, from `VARIANT_PATTERNS`: *unreleased*, #636), and a
+whole heading, at `0.7`, from `VARIANT_PATTERNS`: *0.4.0*, #636), and a
 heading may wrap over up to three lines in all. A numbered heading nests as a
 subsection at its number's depth, one naming no section taking its parent's
 type unless the parent's own number does not open its number; a numbered
 top-level heading naming none is an `Other` section when the next heading
-found numbers from it (*unreleased*, #628). Text before the
+found numbers from it (*0.4.0*, #628). Text before the
 first heading is `FrontMatter`, and a document with no heading is one
 `Unknown` section titled `"Full Text"`. Python's manual has the rules in full. The
 title is the metadata title where page 1 prints it (`accepted_metadata_title`),
@@ -445,7 +445,7 @@ The converters, each with its own version constant:
 | `canonical_from_markdown(text)` | a hand-written Markdown subset | headings make sections, inline markup is stripped |
 | `canonical_from_plain_text(text, title)` | plain text | blank lines separate paragraphs; one untitled section |
 | `canonical_from_segmented(&doc)` | a `SegmentedDocument` | a soft hyphen at a line end is joined; an ordinary hyphen is kept |
-| `canonical_from_html(html)` | an HTML page's main content | feature `html`; html5ever through `scraper`; `Err(HtmlError::TimedOut)` past `HTML_PARSE_SECONDS`, read between chunks of `HTML_PARSE_CHUNK`; `Err(HtmlError::TooLarge)`, unparsed, past `HTML_MAX_CHARS` code points, which bounds one chunk's time (#654) *(unreleased)* |
+| `canonical_from_html(html)` | an HTML page's main content | feature `html`; html5ever through `scraper`; `Err(HtmlError::TimedOut)` past `HTML_PARSE_SECONDS`, read between chunks of `HTML_PARSE_CHUNK`; `Err(HtmlError::TooLarge)`, unparsed, past `HTML_MAX_CHARS` code points, which bounds one chunk's time (#654) *(0.4.0)* |
 
 Your own converter builds `SectionDraft`s of `BlockDraft::paragraph` /
 `BlockDraft::row` and calls `assemble(title, &sections, format, version)`.

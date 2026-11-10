@@ -1,6 +1,6 @@
 # secrets — API keys in the OS keychain
 
-*(unreleased, #634)* An app's API keys, by provider name, in **one** OS
+*(0.4.0, #634)* An app's API keys, by provider name, in **one** OS
 keychain item: a JSON object `{provider: key}`, read once for every `get` and
 cached, because macOS asks the user on every item read; a `set` or `delete`
 reads it again before rewriting it, so a key another process saved meanwhile

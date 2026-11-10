@@ -9,6 +9,47 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
+Published with the Python library's 0.13.0, from the same merge commit. **The
+hardening release**, the port following Python item by item: the LLM client
+speaks to current models (Anthropic thinking in the model's own shape,
+#707/#710; no Anthropic sampling parameters, #705; the retired Anthropic and
+Gemini defaults replaced; Gemini's documented chat URL, #681), lists a
+provider's models (#680), reads a model's output limit, and gives a
+cancelled stream up at the socket (#635, #649/#652); a non-streamed chat
+waits for its answer as a stream does (#702). **Failures are typed**: an
+HTTP status is `ChatError::Http` (#646), a PICO or condensation failure says
+whether a retry may cure it and its status (#659, #662, #616), a
+context-window lookup its status (#664). `sync()` validates its window,
+locks each day and holds a re-fetch to the day's peak, as Python's does
+(#607, #444). API keys live in the OS keychain (`secrets`, the `keyring`
+feature; #634, #686), and warnings are `log` records rather than stderr
+lines (#688). `canonical_from_html` is bounded in time, length and elements
+created (#563, #654, #723), and the PDF segmenter reaches pdf-7 with Python
+(#628, #636).
+
+A minor bump because public APIs break, gathered under *Changed — breaking*;
+each entry carries the argument. The data answer is the Python CHANGELOG's
+`[0.13.0]`: stored PDF and Markdown canonical texts are stale
+(`PDF_CANONICAL_VERSION` 7, `MARKDOWN_VERSION` 2). Two more are the crate's
+own: a re-run stores a closed-access 500's `full_text_status` as `NotServed`,
+with its provenance line (#608), and `record_to_fulltext_sources` no longer
+stores a source whose `url` is empty (#624). Nothing else stored moves.
+
+These Rust changes are written up once, in the repository's
+[`CHANGELOG.md`](../../CHANGELOG.md) under `[0.13.0]`, which carries the
+argument:
+
+- **`LlmClient::list_models(provider)`** and `ListModelsError` (#680).
+- **`UreqClient::post_json` waits as a stream does** (#702): a timeout is a
+  `FetchError::Transport` naming the limit.
+- **`HttpClient::post_json_stream_with_cancel`** (#649, #652), whose default
+  ignores the flag: a wrapping client must forward it to keep the interrupt.
+- **`LlmCondenser::with_progress`, `LlmChunkProcessor::with_progress`** and
+  `ContextModel::stop_requested()` (#609); a split item's progress counts
+  once (#673).
+
 ### Changed — breaking
 
 - **A PICO quote the paper contradicts keeps its reason** (#647, with
@@ -19,384 +60,6 @@ The Python library is documented separately, in the repository's
   `PicoPartState::Contradicted`. `QuoteCheck` is `(citations, not_found,
   contradicted, dropped)`. An exhaustive `match` on `PicoPartState` needs the
   new arm.
-
-### Added
-
-- **`model-download` feature and `embed::download_verified`**: the pinned,
-  sha256-verified file download (`verify_model`, `ModelError`,
-  `download_model`, `download_model_from`) no longer needs llama.cpp: it is
-  gated on the new `model-download` feature (which `embed` implies; the
-  download also needs `http-ureq`). `download_verified(url, file, size,
-  sha256, directory, progress)` fetches any file the same way, with no
-  Hugging Face `revision` rule; `download_model_from` now calls it.
-
-- **A model's output limit beside its window**: `read_output_limit`,
-  `ModelLimits { window, max_output }`, `read_model_limits` and
-  `LlmClient::model_limits(model)`, which reads both from the one request
-  `context_window` makes (`context_window` is now its `window`). Anthropic's
-  `max_tokens`, Gemini's `outputTokenLimit` and DeepSeek's `max_output_tokens`
-  are read; Mistral, Ollama and OpenAI (answered from the table) give `None`.
-  As Python's; the contract is `output_limits` in
-  `tests/fixtures/context_window.json`.
-
-### Changed
-
-- **Gemini chats go to Google's documented URL** (#681, the maintainer's
-  choice): `chat_url` posts to `…/v1beta/openai/chat/completions`, as
-  Python's SDK does, where it appended the OpenAI protocol's
-  `/v1/chat/completions`. Google answered both with 200 on 2026-11-10, so the
-  old path worked undocumented; a test pins every provider's chat URL.
-- **The Anthropic and Gemini default models answer again** (with the Python
-  package): `claude-sonnet-5-5` and `gemini-flash-lite-latest`, where
-  `claude-sonnet-4-20250514` and `gemini-2.0-flash` answer 404.
-
-- **`chat_json` retries at temperature 0 where the request is sent no
-  temperature** (#708, with the Python package). New defaulted
-  `ChatSource::honours_temperature` (`true`) and
-  `LlmClient::honours_temperature(&ChatRequest)`, `false` for the Anthropic
-  protocol and a reasoning model, the two `chat_body` sends none; the
-  quality agents' and the condenser's source asks it. A truncation or a
-  wrong shape at temperature 0 from such a source takes the normal retries.
-- **`sync()` validates its window, locks each day and holds a re-fetch to the
-  day's peak** (#607, #444, as Python's #99, #447, #346, #446). **Breaking**:
-  `sync()` returns `Result<SyncReport, SyncError>` (`Window(WindowError)`,
-  refused at the entry before anything is read, or `Db(DbError)`; `From<DbError>`,
-  so `?` still works); `sync` and `sync_source` take a clock
-  (`&dyn Fn() -> DateTime<Utc>`, pass `&Utc::now`) instead of an instant, read
-  for day selection and again at every write: a part's checkpoint and a day's
-  row are stamped when written, as Python stamps them, and the close judges the
-  stored row as it stands then (a row another sync completed during this one's
-  fetch is judged as it stands, not as a fetch in the future); `sync_source`
-  returns `Result<(), SyncError>` and refuses a window `sync()` would refuse;
-  `SyncError`'s `source()` is its inner error's own, its `Display` being the
-  inner error's; and `upsert_download_day` takes a `peak_count`. Every
-  write transaction of a day starts with the new `lock_day` (SQLite's write
-  lock through a no-op `UPDATE`; on PostgreSQL Python's advisory-lock key, so a
-  Python and a Rust sync of one database wait for each other); a lock the
-  day's close cannot have costs that day an `errors` line and not the run. The
-  close reads the stored row (`read_stored_day`) and `judge_against_peak`
-  decides what to write: `download_days.peak_count`, never written before, is
-  the most any fetch stored, and a completed re-fetch under half of it is
-  recorded `failed` while the stored row is not final and the day is within
-  `settle_days` + `REFUSAL_GRACE_DAYS` (30) of ending; any other shrink below
-  the recorded count completes with a `notes` line. Held to Python by 45
-  `judge_peak` cases in `sync_cases.json`. A day whose `download_day_parts`
-  cannot be read now goes through the same close (it wrote its row directly),
-  and is logged at ERROR. The rule's lines are `log` records under
-  `bmlib.publications.sync`.
-
-- **An unparseable reply is retried with a correction** (#717, as Python's).
-  After the first unparseable reply in a call, `chat_json` calls the new
-  `ChatSource::correct_json`, and the source behind `LlmChat` and
-  `LlmContextModel::complete_json` puts
-  `JSON_CORRECTION_NOTE` on its request's last user turn
-  (`with_json_correction`) for the attempts that follow; the method's default
-  does nothing, so a third-party source re-sends its request unchanged, as
-  before. The Tier 2, Tier 3, Cochrane and PICO system prompts ask for `null`,
-  never `NaN` or `Infinity`. The PICO oracle now compares the messages of every
-  model call rather than one per `chat_json` call (`ScriptedChat::sent`).
-
-- **`safe_json_loads` wraps an unrepairable input as Python does** (found by
-  #572's new oracle case). With `repair` on, a failed repair returned the
-  repairer's error bare (`Cannot repair JSON after 3 attempts: …`) where
-  Python's reads `Cannot parse JSON even after repair: Cannot repair JSON …`;
-  only `Unrepairable` is wrapped, `TooLarge` passing through as Python's
-  `ValueError` does. The oracle now holds thirteen more JSON cases: eight
-  refusals `serde_json` always made (`NaN`, `NaN` after repair, a
-  single-quoted `NaN` through `repair_json`, `Infinity`, `1e999`, an integer
-  past binary64, a lone surrogate escape, nesting 128 deep), one underflow read
-  as `0.0`, and four where a refused candidate or field is skipped (a `NaN`
-  object through each extractor, a 5,000-digit integer, a `NaN` field). And seven PICO replies, each
-  `UnusableReply` in both languages: four carrying a refused number, and three
-  where Python's `parse_json` used to answer with the object beside one.
-
-- **Anthropic adaptive thinking asks for the summarized trace** (#710, with
-  Python). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and
-  Fable default thinking's `display` to omitted, so their thinking blocks
-  arrive with empty text: since #707 sent them `{"type": "adaptive"}`,
-  `LLMResponse.thinking` was `None` and `chat_stream` delivered no thinking
-  delta, though the model thought and was billed for it. Every adaptive
-  request is now sent `{"type": "adaptive", "display": "summarized"}` (Opus
-  4.6 and Sonnet 4.6 already default to it); a budget request is unchanged.
-  The display changes what comes back, not what is billed. Held by
-  `tests/fixtures/anthropic_thinking.json` in both languages; not probed live.
-
-- **Anthropic thinking takes the shape the model reports** (#707, with
-  Python). A `think` holding an integer was sent as `budget_tokens`, which
-  Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse with a 400,
-  and any other `think` (`true`, an effort level) was dropped for Anthropic. `LlmClient::chat`,
-  `chat_stream` and `chat_stream_with_cancel` now fetch the model's
-  `GET /v1/models/{id}` (on every such call: `LlmClient` holds no cache) when
-  `think` is on (`think_is_on`: not `""`, `"false"` or 0) and add the fields
-  `anthropic_thinking(think, max_tokens, model_body)` reads off it: adaptive
-  plus `output_config.effort` where the model reports them, a budget only for
-  a model reporting budgets. `extra_body` wins: a `thinking` it sets is left
-  whole, and an `output_config` it sets gains only the keys it lacks (its
-  `format` and the looked-up `effort` are both sent). A refusal is the new
-  `ChatError::Thinking(ThinkingRefusal)` (not retryable), before the chat is
-  sent; a failed lookup names the models URL and is `ChatError::Http`,
-  `Transport` (retried as opening a stream is, and retryable) or `Malformed`
-  (not retryable, which includes a client that cannot make the lookup at all:
-  `get_with_headers`' default is a `FetchError::Config`). A budget is held below
-  the `max_tokens` the body sends, `extra_body`'s if it set one; an
-  `output_config` there that is not an object wins whole; an off `think` is
-  no fields from `anthropic_thinking`; a body naming no model is refused
-  naming the model asked for. In
-  `chat_stream_with_cancel` the lookup runs on the worker, so a cancel stops
-  it at once, and a cancel already set makes none. Shared fixture
-  `tests/fixtures/anthropic_thinking.json`. `chat_body`'s change is under
-  *Changed — breaking*.
-
-- **A PICO part loses no quote the model gave, and a part the paper omits
-  may have no description** (#577, #618), as in Python: `verify_quotes`
-  reads a bare string as a list of one, and `read_part` checks quotes given
-  beside `reported: false` (one found makes the part `Verified`; the rest
-  are kept) and accepts a blank, `null` or absent description on a part
-  that stays `NotReported`. The oracle gains a case and one moves.
-
-- **Warnings are `log` records, not stderr lines** (#688, and #685's option
-  (b)). The crate depends on the [`log`](https://docs.rs/log) facade
-  (MIT/Apache-2.0); every `eprintln!` in the library is now a record whose
-  target is the Python module's logger name (`bmlib.secrets`,
-  `bmlib.embed.model`, `bmlib.fulltext.service`, `bmlib.fulltext.jats_parser`,
-  `bmlib.transparency.analyzer`, …) at Python's level, the message without
-  the old `bmlib.x WARNING:` prefix. A packaged app keeps no stderr, so its
-  logger (`env_logger`, `tauri-plugin-log`) now receives them: `KeyBundle::set`
-  replacing an unreadable item, a model file deleted and fetched again, a
-  disabled full-text cache. **A host with no logger now sees nothing**, where
-  it saw stderr. `FullTextService` still keeps its `LogLine`s. Tests read the
-  records with `tests/common/log_capture.rs` (per thread, as `caplog`): the
-  secrets warning mirrors Python's `test_saving_over_an_unreadable_item_says_so_once`,
-  and `a_500_is_not_served_only_for_a_closed_access_record` pins each
-  full-text line's level (DEBUG not served, WARN no answer, a new 404 case),
-  so #685's two mutants now fail.
-
-### Added
-
-- **A live check that ClinicalTrials.gov answers a default `UreqClient`**
-  (#606). `clinicaltrials_gov_answers_a_default_client` in
-  `tests/live_network.rs` (gated on `BMLIB_LIVE_TESTS`) requests a trial with
-  the default `bmlib/{version}` and runs `analyze()` on its paper, asserting
-  the posted-results check was answered. The issue's premise is refuted: the
-  edge that refused any header without `python-httpx` on 2026-09-06 served
-  the default 6 of 6 on 2026-11-07, so no code changes and the manual no
-  longer tells a caller to set the analyzer's header. The test is what sees
-  the rule come back; a mutant breaking the analyzer's request fails it.
-
-- **API keys in the OS keychain** (`secrets`, #634, with Python's
-  `bmlib.secrets`). A `SecretStore` (`get`, `set`, `delete`) over one
-  keychain item holding `{provider: key}`: `KeyBundle` reads it once for
-  every `get` and caches it (macOS asks the user on every read), and reads it
-  again before a `set` or `delete` rewrites it, so another writer's key is
-  kept. `set` replaces an item that is not a key list (or not UTF-8); a
-  `SecretError` (`new`, `with_kind`, `kind`, `message`) never holds a key,
-  and its `SecretErrorKind` (#689) says whether saving a key will help:
-  `UnreadableItem` (it replaces the item), `AmbiguousItem` (the keyring
-  crate's `Ambiguous`, on a read or a write; `set` does not replace it) or
-  `Store` (locked, denied, no keychain). The OS keychain is
-  `KeyringVault`, behind the new `keyring` feature (the `keyring` crate's v1
-  stores), off by default so a mobile build brings its own `Vault`. Held to
-  Python by `tests/fixtures/secret_key_list.json`; it addresses the same item
-  as Python on macOS, Windows, Linux and the BSDs (#686; on Windows the
-  credential is named by the service alone, through `keyring-core`'s
-  `target` modifier, and one of that name another account holds is refused
-  as `Store` rather than overwritten), checked on Windows and Linux by CI's
-  `keychain-interop` job.
-
-### Fixed
-
-- **A full-text 500 for a closed-access record is not served** (#608,
-  following Python's #457). Europe PMC's `fullTextXML` answers HTTP 500 where
-  it answered 404 for an article it holds and does not serve, so every Rust
-  analysis that requested a closed-access paper's full text WARNed and stored
-  `RequestFailed`. A 500
-  for a record whose `isOpenAccess` is exactly `"N"` now stores `NotServed`
-  at DEBUG, as Python does; any other 500 stays `RequestFailed` at WARNING.
-  The flag interprets the answer and gates no request. No score moves; for
-  those analyses the stored `full_text_status` does, and so does its
-  provenance line in `risk_indicators` (*"the request to EuropePMC produced no
-  answer"* becomes *"EuropePMC served none for this article"*).
-
-- **A PMC ID or a full-text accession in non-ASCII digits is refused**
-  (#564, the accession half of #471). The `regex` crate's `\d` is every
-  Unicode decimal digit, so `normalise_pmc_id("٣٤٥")` returned
-  `Ok("PMC٣٤٥")` and `EUROPEPMC_ACCESSION_RE` passed `PMC١٢٣`, each then built
-  into a URL path, where Python's two patterns are `re.ASCII`. Both now read
-  `[0-9]`. Three `normalise_pmc_id` oracle cases (Arabic-Indic and fullwidth
-  digits); no draw has seen such an identifier, so this pins a direction.
-
-- **A fence inside a blockquote closes, a backtick in a backtick fence's
-  info string opens none, and no unclosed opener costs quadratic time**
-  (#548, #549, with the Python library). `canonical_from_markdown` strips a
-  quoted fence's `>` markers and ends the fence at a line carrying fewer; a
-  backtick fence whose info string holds a backtick is read as inline text;
-  and `strip_inline` no longer rescans the text per unclosed emphasis
-  opener, `[`, autolink `<` or backtick run (`InlineIndex`).
-  `MARKDOWN_VERSION` is 2 (`"markdown-2"`); the Python CHANGELOG has the
-  measurement.
-
-- **A fetched record's full-text sources are typed** (#624, found wiring
-  StudyAnalyzer's lookup). `FetchedRecord.fulltext_sources` held
-  `serde_json::Value`s under the name `publications::FullTextSourceEntry`,
-  while `FullTextRequest.fulltext_sources` takes `fulltext`'s struct, so a
-  caller handing `lookup_record`'s record to `fetch_fulltext` had to
-  deserialise each entry and decide what to do with one that did not read.
-  Python's fetchers already build `bmlib.fulltext.models.FullTextSourceEntry`.
-  **Breaking**: `publications::FullTextSourceEntry` is now a re-export of
-  `fulltext::FullTextSourceEntry`; the PubMed, bioRxiv, Europe PMC and OpenAlex
-  fetchers build it, and `lookup_record`'s merge and `record_to_fulltext_sources`
-  read its fields. Code indexing an entry as JSON (`entry["url"]`) reads the
-  field. The struct leaves `version` out of its JSON when unset or empty, as
-  Python's `to_dict` does, so a record serialises as before. `record_to_fulltext_sources`
-  skips an entry whose `url` is empty, as Python's does (a missing `url` was
-  skipped before; an empty one was stored). Shared fixture:
-  `tests/fixtures/fulltext_source_entry.json` (an entry read and written back,
-  and one without `url`, `format` or `source` refused), run by
-  `tests/fulltext_source_entry_contract.rs` and Python's
-  `tests/test_fulltext_source_entry_contract.py`.
-
-- **"Method", "Result", "Discussions" and "Experimental" are section
-  headings** (#636, with the Python library). `segmenter::VARIANT_PATTERNS`
-  (exported) holds them, matched by `match_section_type` only as the whole
-  heading and at `PARTIAL_MATCH_CONFIDENCE`, after the anchored table and
-  before the partial search, so a numbered "2. Method" is `Methods` with its
-  subsections where it was `Other`. `PDF_CANONICAL_VERSION` is 7
-  (`"pdf-7"`); the Python CHANGELOG has the measurement and why the names
-  are not searched within a line.
-
-- **What MuPDF said is kept apart, and a failed read keeps it** (#619, with
-  the Python library). `MupdfExtractor::extract_blocks_with_warnings` and
-  `page_texts_with_warnings` returned early on a failure, dropping MuPDF's
-  captured messages, so a read that repaired a broken xref and then failed
-  left no trace of it. **Breaking**:
-  - `PdfError` gains `engine_messages: Vec<String>`, filled by every MuPDF
-    read that fails (a limit reached mid-read included), and
-    `PdfError::with_engine_messages`. A struct literal adds the field; the
-    constructors leave it empty. `Display` is still the message alone.
-  - `PdfBlocks` gains `engine_messages`, which now holds MuPDF's messages;
-    `warnings` holds bmlib's own note (a `/Title` that could not be read)
-    alone. `ConversionResult` gains `engine_messages` (declared last), which
-    `ConversionResult::failure` fills from the error.
-  - The service's `PdfText.warnings` is renamed `engine_messages`, and
-    `FullTextService` ends a failed extraction's line with what the engine
-    said before it.
-
-  The shared `tests/fixtures/pdf_warnings.json` gains a failed read; see
-  the root CHANGELOG.
-
-### Added
-
-- **`LlmClient::chat_stream_with_cancel(request, &AtomicBool, on_delta)`**
-  (#635, with the Python library): `chat_stream`, which the flag stops at once,
-  even before the first event, while a local server is still reading the
-  prompt. The request is opened (with its retries) and read on a worker thread
-  holding a clone of the client's `Arc`, the caller's thread polling the flag
-  every `CANCEL_POLL_INTERVAL` (50 ms); `on_delta` still runs on the caller's
-  thread. A cancelled call returns what arrived with `stop_reason`
-  `"cancelled"`; a flag already set sends nothing and records no usage. The worker is abandoned: it
-  sends no further retry, and drops the body (closing the connection) when the
-  read it is blocked in returns. A panic in the transport is resumed on the
-  caller's thread, unless a cancel returned first. `chat_stream` is unchanged. `run_stream_until` is
-  `run_stream` with a `cancelled` check at the end of the events; the stream
-  contract test reads the fixture's five new `cancel_after` cases (29).
-
-- **`find_passage`'s contradiction guard** (#632, with the Python library): a
-  fuzzy match whose best window reaches the threshold is rejected when a token
-  the alignment leaves unmatched holds a digit, negates or states a direction;
-  the new `PassageMatch::contradiction: Option<PassageContradiction>`
-  (`Number`, `Negation`, `Direction`, `#[non_exhaustive]`) says which. The
-  word lists (`NEGATION_WORDS`, `NEGATING_PREFIXES`, `DIRECTION_WORDS`) and
-  `CONTRADICTION_RULES_VERSION` are public `const`s. `PassageMatch` is
-  `#[non_exhaustive]`, so the new field breaks no caller. The crate-private
-  `SequenceMatcher` is generic over its element type for the token
-  alignment. The oracle compares the tokens and the lists with Python's. A
-  comma parts a number (`3,4` and `3, 4` cut alike), and a bracketed
-  citation marker left out whole (`[12]`, `[3, 4]`) is not tested.
-
-- **`quality::LlmContextModel`** (#641): the first production `ContextModel`,
-  over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
-  run against a real model. `complete` is a plain chat whose output-ceiling
-  stop reason is an error; `complete_json` reads through `agents::chat_json`
-  (`CONTEXT_MODEL_JSON_RETRIES`, Python's default). Each call retries what
-  `ChatError::is_retryable` says a retry may cure (#646: a transport failure,
-  or an HTTP status in `RETRYABLE_STATUSES`; never a 401, 404 or 400) up to
-  `CONTEXT_MODEL_ATTEMPTS` (3) tries from `LlmClient::retry_base_delay`,
-  doubling, never once its stop is set: the attempts, backoff and statuses of
-  Python's `LLMChunkProcessor`, which also retries some other failures. A
-  call whose tries ran out says `after 3 attempts:`.
-- **`num_ctx` and a stop for the PICO agent** (#640, #642, with the Python
-  library): `LlmChat::with_num_ctx`/`with_stop` and
-  `LlmContextModel::with_num_ctx`/`with_stop` send the window with every
-  request and refuse to send once the flag is set (`STOPPED_MESSAGE`), so
-  `chat_json`'s re-asks stop too; `PicoAgent::with_stop` turns any error while
-  the flag is set, and a condensation that finished while it was set, into the
-  new `PicoError::Stopped(Option<String>)` (`"stopped"`; the enum is
-  `#[non_exhaustive]`), carrying the message of the failure it replaces, where
-  that was more than the stop's own refusal.
-  `tests/pico_stop_contract.rs` reads the shared fixture
-  `tests/fixtures/pico_stop_num_ctx.json`.
-
-- **`PicoAgent::prepare`, `check_suitability_prepared` and `extract_prepared`**
-  (#638, with the Python library): condense a long paper once and hand the
-  `PicoPrepared` to both calls and to every retry, where each call condensed
-  again. `PicoPrepared` reads through accessors (`title`, `text`, `digest`,
-  `condensation_status`, `notes`, `sent`, `condensed_from_chars`) and is
-  stored with `to_json`/`from_json`, which refuses what Python's `from_dict`
-  refuses, word for word. A prepared paper made for another budget is refused
-  before any request: one sending more than the agent's budget is the new
-  `PicoError::PreparedOverBudget { chars, budget }` (`"prepared_over_budget"`),
-  and one condensed though its text fits the agent's budget whole is
-  `PicoError::PreparedUnderBudget { chars, budget }`
-  (`"prepared_under_budget"`); the enum is `#[non_exhaustive]`, so neither
-  breaks a `match`.
-
-- **`FullTextError::Exhausted { message, faults, absences }`** (#565, with the
-  Python library's `FullTextExhaustedError`): `fetch_fulltext`'s error when
-  the chain retrieved nothing and has no link to fall back on, which was
-  `Other`. Empty `faults` means nothing the chain asked failed, so a retry now
-  would get the same answers (`absences` is 0 where nothing could be asked);
-  `Display` is the old message. `"No identifiers provided"` stays `Other`.
-
-- **`FullTextResult::tier_faults`** (#603, with the Python library): the type
-  names of the faults the tier chain swallowed before the result it returned,
-  in order, so a PDF or a link returned while the structured sources failed
-  says so (a non-200 is `"FullTextError"`, a transport failure
-  `"TransportError"`); a malformed caller PMC ID, which no retry changes, is
-  not listed. Empty on a cache hit. Breaking for a `FullTextResult`
-  struct literal, which must name it (`Vec::new()`).
-
-- **`FullTextResult::pdf_extraction_failure`** (#604, with the Python
-  library): the `PdfErrorKind` wire name of a failed extraction of the cached
-  PDF (`"encrypted"`, `"unreadable"`, `"engine"`, `"cancelled"`,
-  `"timed-out"`), so a service caller can tell a damaged file from an engine
-  fault. A `PdfText` with `success` false names no kind and is `"engine"`.
-  `None` when the text extracted, nothing was tried, or a scan yielded none.
-
-- **What MuPDF reads past is reported** (#599). `mupdf-sys` sets MuPDF's
-  warning and error callbacks to nothing, and MuPDF repairs a broken xref or
-  stops a page after too many syntax errors (#605's case) with only a message,
-  so a damaged PDF extracted whole with text missing. While one PDF is read,
-  the thread's MuPDF context now sends both kinds of message to bmlib, and the
-  callbacks found are put back after. `PdfTextExtractor::extract_blocks_with_warnings`
-  returns a `PdfBlocks` (the blocks and the messages, the path replaced by
-  "the file"); its default reports nothing, so another backend compiles
-  unchanged. `MupdfExtractor::page_texts_with_warnings` does the same for page
-  texts, `MupdfPdfExtractor` fills `PdfText.warnings`, and `FullTextService`
-  logs them as one WARNING line; when no text came out it lists every message
-  in place of *likely a scan*, which it used to say with the first three. On a failure they are dropped, the error
-  saying what failed. The capture starts with `fz_flush_warnings`, since a
-  warning MuPDF left counted would swallow the next read's first identical
-  one. `is_about_the_file` sets aside MuPDF's store race (`found duplicate
-  fz_icc_link in the store`), which appeared when the contract's tests ran on
-  parallel threads and costs no text. Python's `PDFBlocks`, held together by
-  `tests/fixtures/pdf_warnings.json`: the crate's MuPDF 1.27.2 words those
-  messages exactly as PyMuPDF 1.28.5 does. Over 128 journal PDFs held locally
-  (no list committed, so not re-derivable from the repo) 118 give
-  identical lists; the other 10 are the version gap (1.28 adds the font's name
-  to `bogus font ... ascent/descent values`, capitalises `ActualText`, and on
-  one PDF no longer reports a bogus font).
-
-### Changed — breaking
 
 - **`HtmlError` is `#[non_exhaustive]` and gains `TooManyElements`** (#723,
   with the Python library). html5ever rebuilds every formatting element a
@@ -535,7 +198,390 @@ The Python library is documented separately, in the repository's
   exhaustive `match` must handle: a numbered top-level heading that names no
   section, kept when the next heading found numbers from it.
 
+Recorded under other headings, each **breaking** for the caller named:
+
+- **`sync()` returns `Result<SyncReport, SyncError>` and `sync` /
+  `sync_source` take a clock** (`&Utc::now`), and `upsert_download_day`
+  takes a `peak_count` (#607, #444; under *Changed*).
+- **`publications::FullTextSourceEntry` is a re-export of the typed
+  `fulltext::FullTextSourceEntry`** (#624; under *Fixed*): code indexing an
+  entry as JSON reads the field.
+- **`PdfError` and `PdfBlocks` gain `engine_messages`, and the service's
+  `PdfText.warnings` is renamed `engine_messages`** (#619; under *Fixed*).
+- **A host with no logger sees no warnings** (#688; under *Changed*), where
+  it saw stderr lines.
+
+### Added
+
+- **`model-download` feature and `embed::download_verified`**: the pinned,
+  sha256-verified file download (`verify_model`, `ModelError`,
+  `download_model`, `download_model_from`) no longer needs llama.cpp: it is
+  gated on the new `model-download` feature (which `embed` implies; the
+  download also needs `http-ureq`). `download_verified(url, file, size,
+  sha256, directory, progress)` fetches any file the same way, with no
+  Hugging Face `revision` rule; `download_model_from` now calls it.
+
+- **A model's output limit beside its window**: `read_output_limit`,
+  `ModelLimits { window, max_output }`, `read_model_limits` and
+  `LlmClient::model_limits(model)`, which reads both from the one request
+  `context_window` makes (`context_window` is now its `window`). Anthropic's
+  `max_tokens`, Gemini's `outputTokenLimit` and DeepSeek's `max_output_tokens`
+  are read; Mistral, Ollama and OpenAI (answered from the table) give `None`.
+  As Python's; the contract is `output_limits` in
+  `tests/fixtures/context_window.json`.
+
+- **A live check that ClinicalTrials.gov answers a default `UreqClient`**
+  (#606). `clinicaltrials_gov_answers_a_default_client` in
+  `tests/live_network.rs` (gated on `BMLIB_LIVE_TESTS`) requests a trial with
+  the default `bmlib/{version}` and runs `analyze()` on its paper, asserting
+  the posted-results check was answered. The issue's premise is refuted: the
+  edge that refused any header without `python-httpx` on 2026-09-06 served
+  the default 6 of 6 on 2026-11-07, so no code changes and the manual no
+  longer tells a caller to set the analyzer's header. The test is what sees
+  the rule come back; a mutant breaking the analyzer's request fails it.
+
+- **API keys in the OS keychain** (`secrets`, #634, with Python's
+  `bmlib.secrets`). A `SecretStore` (`get`, `set`, `delete`) over one
+  keychain item holding `{provider: key}`: `KeyBundle` reads it once for
+  every `get` and caches it (macOS asks the user on every read), and reads it
+  again before a `set` or `delete` rewrites it, so another writer's key is
+  kept. `set` replaces an item that is not a key list (or not UTF-8); a
+  `SecretError` (`new`, `with_kind`, `kind`, `message`) never holds a key,
+  and its `SecretErrorKind` (#689) says whether saving a key will help:
+  `UnreadableItem` (it replaces the item), `AmbiguousItem` (the keyring
+  crate's `Ambiguous`, on a read or a write; `set` does not replace it) or
+  `Store` (locked, denied, no keychain). The OS keychain is
+  `KeyringVault`, behind the new `keyring` feature (the `keyring` crate's v1
+  stores), off by default so a mobile build brings its own `Vault`. Held to
+  Python by `tests/fixtures/secret_key_list.json`; it addresses the same item
+  as Python on macOS, Windows, Linux and the BSDs (#686; on Windows the
+  credential is named by the service alone, through `keyring-core`'s
+  `target` modifier, and one of that name another account holds is refused
+  as `Store` rather than overwritten), checked on Windows and Linux by CI's
+  `keychain-interop` job.
+
+- **`LlmClient::chat_stream_with_cancel(request, &AtomicBool, on_delta)`**
+  (#635, with the Python library): `chat_stream`, which the flag stops at once,
+  even before the first event, while a local server is still reading the
+  prompt. The request is opened (with its retries) and read on a worker thread
+  holding a clone of the client's `Arc`, the caller's thread polling the flag
+  every `CANCEL_POLL_INTERVAL` (50 ms); `on_delta` still runs on the caller's
+  thread. A cancelled call returns what arrived with `stop_reason`
+  `"cancelled"`; a flag already set sends nothing and records no usage. The worker is abandoned: it
+  sends no further retry, and drops the body (closing the connection) when the
+  read it is blocked in returns. A panic in the transport is resumed on the
+  caller's thread, unless a cancel returned first. `chat_stream` is unchanged. `run_stream_until` is
+  `run_stream` with a `cancelled` check at the end of the events; the stream
+  contract test reads the fixture's five new `cancel_after` cases (29).
+
+- **`find_passage`'s contradiction guard** (#632, with the Python library): a
+  fuzzy match whose best window reaches the threshold is rejected when a token
+  the alignment leaves unmatched holds a digit, negates or states a direction;
+  the new `PassageMatch::contradiction: Option<PassageContradiction>`
+  (`Number`, `Negation`, `Direction`, `#[non_exhaustive]`) says which. The
+  word lists (`NEGATION_WORDS`, `NEGATING_PREFIXES`, `DIRECTION_WORDS`) and
+  `CONTRADICTION_RULES_VERSION` are public `const`s. `PassageMatch` is
+  `#[non_exhaustive]`, so the new field breaks no caller. The crate-private
+  `SequenceMatcher` is generic over its element type for the token
+  alignment. The oracle compares the tokens and the lists with Python's. A
+  comma parts a number (`3,4` and `3, 4` cut alike), and a bracketed
+  citation marker left out whole (`[12]`, `[3, 4]`) is not tested.
+
+- **`quality::LlmContextModel`** (#641): the first production `ContextModel`,
+  over an `LlmClient`, so `PicoAgent::pico_condenser` and `LlmCondenser` can
+  run against a real model. `complete` is a plain chat whose output-ceiling
+  stop reason is an error; `complete_json` reads through `agents::chat_json`
+  (`CONTEXT_MODEL_JSON_RETRIES`, Python's default). Each call retries what
+  `ChatError::is_retryable` says a retry may cure (#646: a transport failure,
+  or an HTTP status in `RETRYABLE_STATUSES`; never a 401, 404 or 400) up to
+  `CONTEXT_MODEL_ATTEMPTS` (3) tries from `LlmClient::retry_base_delay`,
+  doubling, never once its stop is set: the attempts, backoff and statuses of
+  Python's `LLMChunkProcessor`, which also retries some other failures. A
+  call whose tries ran out says `after 3 attempts:`.
+- **`num_ctx` and a stop for the PICO agent** (#640, #642, with the Python
+  library): `LlmChat::with_num_ctx`/`with_stop` and
+  `LlmContextModel::with_num_ctx`/`with_stop` send the window with every
+  request and refuse to send once the flag is set (`STOPPED_MESSAGE`), so
+  `chat_json`'s re-asks stop too; `PicoAgent::with_stop` turns any error while
+  the flag is set, and a condensation that finished while it was set, into the
+  new `PicoError::Stopped(Option<String>)` (`"stopped"`; the enum is
+  `#[non_exhaustive]`), carrying the message of the failure it replaces, where
+  that was more than the stop's own refusal.
+  `tests/pico_stop_contract.rs` reads the shared fixture
+  `tests/fixtures/pico_stop_num_ctx.json`.
+
+- **`PicoAgent::prepare`, `check_suitability_prepared` and `extract_prepared`**
+  (#638, with the Python library): condense a long paper once and hand the
+  `PicoPrepared` to both calls and to every retry, where each call condensed
+  again. `PicoPrepared` reads through accessors (`title`, `text`, `digest`,
+  `condensation_status`, `notes`, `sent`, `condensed_from_chars`) and is
+  stored with `to_json`/`from_json`, which refuses what Python's `from_dict`
+  refuses, word for word. A prepared paper made for another budget is refused
+  before any request: one sending more than the agent's budget is the new
+  `PicoError::PreparedOverBudget { chars, budget }` (`"prepared_over_budget"`),
+  and one condensed though its text fits the agent's budget whole is
+  `PicoError::PreparedUnderBudget { chars, budget }`
+  (`"prepared_under_budget"`); the enum is `#[non_exhaustive]`, so neither
+  breaks a `match`.
+
+- **`FullTextError::Exhausted { message, faults, absences }`** (#565, with the
+  Python library's `FullTextExhaustedError`): `fetch_fulltext`'s error when
+  the chain retrieved nothing and has no link to fall back on, which was
+  `Other`. Empty `faults` means nothing the chain asked failed, so a retry now
+  would get the same answers (`absences` is 0 where nothing could be asked);
+  `Display` is the old message. `"No identifiers provided"` stays `Other`.
+
+- **`FullTextResult::tier_faults`** (#603, with the Python library): the type
+  names of the faults the tier chain swallowed before the result it returned,
+  in order, so a PDF or a link returned while the structured sources failed
+  says so (a non-200 is `"FullTextError"`, a transport failure
+  `"TransportError"`); a malformed caller PMC ID, which no retry changes, is
+  not listed. Empty on a cache hit. Breaking for a `FullTextResult`
+  struct literal, which must name it (`Vec::new()`).
+
+- **`FullTextResult::pdf_extraction_failure`** (#604, with the Python
+  library): the `PdfErrorKind` wire name of a failed extraction of the cached
+  PDF (`"encrypted"`, `"unreadable"`, `"engine"`, `"cancelled"`,
+  `"timed-out"`), so a service caller can tell a damaged file from an engine
+  fault. A `PdfText` with `success` false names no kind and is `"engine"`.
+  `None` when the text extracted, nothing was tried, or a scan yielded none.
+
+- **What MuPDF reads past is reported** (#599). `mupdf-sys` sets MuPDF's
+  warning and error callbacks to nothing, and MuPDF repairs a broken xref or
+  stops a page after too many syntax errors (#605's case) with only a message,
+  so a damaged PDF extracted whole with text missing. While one PDF is read,
+  the thread's MuPDF context now sends both kinds of message to bmlib, and the
+  callbacks found are put back after. `PdfTextExtractor::extract_blocks_with_warnings`
+  returns a `PdfBlocks` (the blocks and the messages, the path replaced by
+  "the file"); its default reports nothing, so another backend compiles
+  unchanged. `MupdfExtractor::page_texts_with_warnings` does the same for page
+  texts, `MupdfPdfExtractor` fills `PdfText.warnings`, and `FullTextService`
+  logs them as one WARNING line; when no text came out it lists every message
+  in place of *likely a scan*, which it used to say with the first three. On a failure they are dropped, the error
+  saying what failed. The capture starts with `fz_flush_warnings`, since a
+  warning MuPDF left counted would swallow the next read's first identical
+  one. `is_about_the_file` sets aside MuPDF's store race (`found duplicate
+  fz_icc_link in the store`), which appeared when the contract's tests ran on
+  parallel threads and costs no text. Python's `PDFBlocks`, held together by
+  `tests/fixtures/pdf_warnings.json`: the crate's MuPDF 1.27.2 words those
+  messages exactly as PyMuPDF 1.28.5 does. Over 128 journal PDFs held locally
+  (no list committed, so not re-derivable from the repo) 118 give
+  identical lists; the other 10 are the version gap (1.28 adds the font's name
+  to `bogus font ... ascent/descent values`, capitalises `ActualText`, and on
+  one PDF no longer reports a bogus font).
+
+### Changed
+
+- **Gemini chats go to Google's documented URL** (#681, the maintainer's
+  choice): `chat_url` posts to `…/v1beta/openai/chat/completions`, as
+  Python's SDK does, where it appended the OpenAI protocol's
+  `/v1/chat/completions`. Google answered both with 200 on 2026-11-10, so the
+  old path worked undocumented; a test pins every provider's chat URL.
+- **The Anthropic and Gemini default models answer again** (with the Python
+  package): `claude-sonnet-5-5` and `gemini-flash-lite-latest`, where
+  `claude-sonnet-4-20250514` and `gemini-2.0-flash` answer 404.
+
+- **`chat_json` retries at temperature 0 where the request is sent no
+  temperature** (#708, with the Python package). New defaulted
+  `ChatSource::honours_temperature` (`true`) and
+  `LlmClient::honours_temperature(&ChatRequest)`, `false` for the Anthropic
+  protocol and a reasoning model, the two `chat_body` sends none; the
+  quality agents' and the condenser's source asks it. A truncation or a
+  wrong shape at temperature 0 from such a source takes the normal retries.
+- **`sync()` validates its window, locks each day and holds a re-fetch to the
+  day's peak** (#607, #444, as Python's #99, #447, #346, #446). **Breaking**:
+  `sync()` returns `Result<SyncReport, SyncError>` (`Window(WindowError)`,
+  refused at the entry before anything is read, or `Db(DbError)`; `From<DbError>`,
+  so `?` still works); `sync` and `sync_source` take a clock
+  (`&dyn Fn() -> DateTime<Utc>`, pass `&Utc::now`) instead of an instant, read
+  for day selection and again at every write: a part's checkpoint and a day's
+  row are stamped when written, as Python stamps them, and the close judges the
+  stored row as it stands then (a row another sync completed during this one's
+  fetch is judged as it stands, not as a fetch in the future); `sync_source`
+  returns `Result<(), SyncError>` and refuses a window `sync()` would refuse;
+  `SyncError`'s `source()` is its inner error's own, its `Display` being the
+  inner error's; and `upsert_download_day` takes a `peak_count`. Every
+  write transaction of a day starts with the new `lock_day` (SQLite's write
+  lock through a no-op `UPDATE`; on PostgreSQL Python's advisory-lock key, so a
+  Python and a Rust sync of one database wait for each other); a lock the
+  day's close cannot have costs that day an `errors` line and not the run. The
+  close reads the stored row (`read_stored_day`) and `judge_against_peak`
+  decides what to write: `download_days.peak_count`, never written before, is
+  the most any fetch stored, and a completed re-fetch under half of it is
+  recorded `failed` while the stored row is not final and the day is within
+  `settle_days` + `REFUSAL_GRACE_DAYS` (30) of ending; any other shrink below
+  the recorded count completes with a `notes` line. Held to Python by 45
+  `judge_peak` cases in `sync_cases.json`. A day whose `download_day_parts`
+  cannot be read now goes through the same close (it wrote its row directly),
+  and is logged at ERROR. The rule's lines are `log` records under
+  `bmlib.publications.sync`.
+
+- **An unparseable reply is retried with a correction** (#717, as Python's).
+  After the first unparseable reply in a call, `chat_json` calls the new
+  `ChatSource::correct_json`, and the source behind `LlmChat` and
+  `LlmContextModel::complete_json` puts
+  `JSON_CORRECTION_NOTE` on its request's last user turn
+  (`with_json_correction`) for the attempts that follow; the method's default
+  does nothing, so a third-party source re-sends its request unchanged, as
+  before. The Tier 2, Tier 3, Cochrane and PICO system prompts ask for `null`,
+  never `NaN` or `Infinity`. The PICO oracle now compares the messages of every
+  model call rather than one per `chat_json` call (`ScriptedChat::sent`).
+
+- **`safe_json_loads` wraps an unrepairable input as Python does** (found by
+  #572's new oracle case). With `repair` on, a failed repair returned the
+  repairer's error bare (`Cannot repair JSON after 3 attempts: …`) where
+  Python's reads `Cannot parse JSON even after repair: Cannot repair JSON …`;
+  only `Unrepairable` is wrapped, `TooLarge` passing through as Python's
+  `ValueError` does. The oracle now holds thirteen more JSON cases: eight
+  refusals `serde_json` always made (`NaN`, `NaN` after repair, a
+  single-quoted `NaN` through `repair_json`, `Infinity`, `1e999`, an integer
+  past binary64, a lone surrogate escape, nesting 128 deep), one underflow read
+  as `0.0`, and four where a refused candidate or field is skipped (a `NaN`
+  object through each extractor, a 5,000-digit integer, a `NaN` field). And seven PICO replies, each
+  `UnusableReply` in both languages: four carrying a refused number, and three
+  where Python's `parse_json` used to answer with the object beside one.
+
+- **Anthropic adaptive thinking asks for the summarized trace** (#710, with
+  Python). Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and
+  Fable default thinking's `display` to omitted, so their thinking blocks
+  arrive with empty text: since #707 sent them `{"type": "adaptive"}`,
+  `LLMResponse.thinking` was `None` and `chat_stream` delivered no thinking
+  delta, though the model thought and was billed for it. Every adaptive
+  request is now sent `{"type": "adaptive", "display": "summarized"}` (Opus
+  4.6 and Sonnet 4.6 already default to it); a budget request is unchanged.
+  The display changes what comes back, not what is billed. Held by
+  `tests/fixtures/anthropic_thinking.json` in both languages; not probed live.
+
+- **Anthropic thinking takes the shape the model reports** (#707, with
+  Python). A `think` holding an integer was sent as `budget_tokens`, which
+  Claude Opus 4.7 and later, Sonnet 5+, Haiku 5.5 and Fable refuse with a 400,
+  and any other `think` (`true`, an effort level) was dropped for Anthropic. `LlmClient::chat`,
+  `chat_stream` and `chat_stream_with_cancel` now fetch the model's
+  `GET /v1/models/{id}` (on every such call: `LlmClient` holds no cache) when
+  `think` is on (`think_is_on`: not `""`, `"false"` or 0) and add the fields
+  `anthropic_thinking(think, max_tokens, model_body)` reads off it: adaptive
+  plus `output_config.effort` where the model reports them, a budget only for
+  a model reporting budgets. `extra_body` wins: a `thinking` it sets is left
+  whole, and an `output_config` it sets gains only the keys it lacks (its
+  `format` and the looked-up `effort` are both sent). A refusal is the new
+  `ChatError::Thinking(ThinkingRefusal)` (not retryable), before the chat is
+  sent; a failed lookup names the models URL and is `ChatError::Http`,
+  `Transport` (retried as opening a stream is, and retryable) or `Malformed`
+  (not retryable, which includes a client that cannot make the lookup at all:
+  `get_with_headers`' default is a `FetchError::Config`). A budget is held below
+  the `max_tokens` the body sends, `extra_body`'s if it set one; an
+  `output_config` there that is not an object wins whole; an off `think` is
+  no fields from `anthropic_thinking`; a body naming no model is refused
+  naming the model asked for. In
+  `chat_stream_with_cancel` the lookup runs on the worker, so a cancel stops
+  it at once, and a cancel already set makes none. Shared fixture
+  `tests/fixtures/anthropic_thinking.json`. `chat_body`'s change is under
+  *Changed — breaking*.
+
+- **A PICO part loses no quote the model gave, and a part the paper omits
+  may have no description** (#577, #618), as in Python: `verify_quotes`
+  reads a bare string as a list of one, and `read_part` checks quotes given
+  beside `reported: false` (one found makes the part `Verified`; the rest
+  are kept) and accepts a blank, `null` or absent description on a part
+  that stays `NotReported`. The oracle gains a case and one moves.
+
+- **Warnings are `log` records, not stderr lines** (#688, and #685's option
+  (b)). The crate depends on the [`log`](https://docs.rs/log) facade
+  (MIT/Apache-2.0); every `eprintln!` in the library is now a record whose
+  target is the Python module's logger name (`bmlib.secrets`,
+  `bmlib.embed.model`, `bmlib.fulltext.service`, `bmlib.fulltext.jats_parser`,
+  `bmlib.transparency.analyzer`, …) at Python's level, the message without
+  the old `bmlib.x WARNING:` prefix. A packaged app keeps no stderr, so its
+  logger (`env_logger`, `tauri-plugin-log`) now receives them: `KeyBundle::set`
+  replacing an unreadable item, a model file deleted and fetched again, a
+  disabled full-text cache. **A host with no logger now sees nothing**, where
+  it saw stderr. `FullTextService` still keeps its `LogLine`s. Tests read the
+  records with `tests/common/log_capture.rs` (per thread, as `caplog`): the
+  secrets warning mirrors Python's `test_saving_over_an_unreadable_item_says_so_once`,
+  and `a_500_is_not_served_only_for_a_closed_access_record` pins each
+  full-text line's level (DEBUG not served, WARN no answer, a new 404 case),
+  so #685's two mutants now fail.
+
 ### Fixed
+
+- **A full-text 500 for a closed-access record is not served** (#608,
+  following Python's #457). Europe PMC's `fullTextXML` answers HTTP 500 where
+  it answered 404 for an article it holds and does not serve, so every Rust
+  analysis that requested a closed-access paper's full text WARNed and stored
+  `RequestFailed`. A 500
+  for a record whose `isOpenAccess` is exactly `"N"` now stores `NotServed`
+  at DEBUG, as Python does; any other 500 stays `RequestFailed` at WARNING.
+  The flag interprets the answer and gates no request. No score moves; for
+  those analyses the stored `full_text_status` does, and so does its
+  provenance line in `risk_indicators` (*"the request to EuropePMC produced no
+  answer"* becomes *"EuropePMC served none for this article"*).
+
+- **A PMC ID or a full-text accession in non-ASCII digits is refused**
+  (#564, the accession half of #471). The `regex` crate's `\d` is every
+  Unicode decimal digit, so `normalise_pmc_id("٣٤٥")` returned
+  `Ok("PMC٣٤٥")` and `EUROPEPMC_ACCESSION_RE` passed `PMC١٢٣`, each then built
+  into a URL path, where Python's two patterns are `re.ASCII`. Both now read
+  `[0-9]`. Three `normalise_pmc_id` oracle cases (Arabic-Indic and fullwidth
+  digits); no draw has seen such an identifier, so this pins a direction.
+
+- **A fence inside a blockquote closes, a backtick in a backtick fence's
+  info string opens none, and no unclosed opener costs quadratic time**
+  (#548, #549, with the Python library). `canonical_from_markdown` strips a
+  quoted fence's `>` markers and ends the fence at a line carrying fewer; a
+  backtick fence whose info string holds a backtick is read as inline text;
+  and `strip_inline` no longer rescans the text per unclosed emphasis
+  opener, `[`, autolink `<` or backtick run (`InlineIndex`).
+  `MARKDOWN_VERSION` is 2 (`"markdown-2"`); the Python CHANGELOG has the
+  measurement.
+
+- **A fetched record's full-text sources are typed** (#624, found wiring
+  StudyAnalyzer's lookup). `FetchedRecord.fulltext_sources` held
+  `serde_json::Value`s under the name `publications::FullTextSourceEntry`,
+  while `FullTextRequest.fulltext_sources` takes `fulltext`'s struct, so a
+  caller handing `lookup_record`'s record to `fetch_fulltext` had to
+  deserialise each entry and decide what to do with one that did not read.
+  Python's fetchers already build `bmlib.fulltext.models.FullTextSourceEntry`.
+  **Breaking**: `publications::FullTextSourceEntry` is now a re-export of
+  `fulltext::FullTextSourceEntry`; the PubMed, bioRxiv, Europe PMC and OpenAlex
+  fetchers build it, and `lookup_record`'s merge and `record_to_fulltext_sources`
+  read its fields. Code indexing an entry as JSON (`entry["url"]`) reads the
+  field. The struct leaves `version` out of its JSON when unset or empty, as
+  Python's `to_dict` does, so a record serialises as before. `record_to_fulltext_sources`
+  skips an entry whose `url` is empty, as Python's does (a missing `url` was
+  skipped before; an empty one was stored). Shared fixture:
+  `tests/fixtures/fulltext_source_entry.json` (an entry read and written back,
+  and one without `url`, `format` or `source` refused), run by
+  `tests/fulltext_source_entry_contract.rs` and Python's
+  `tests/test_fulltext_source_entry_contract.py`.
+
+- **"Method", "Result", "Discussions" and "Experimental" are section
+  headings** (#636, with the Python library). `segmenter::VARIANT_PATTERNS`
+  (exported) holds them, matched by `match_section_type` only as the whole
+  heading and at `PARTIAL_MATCH_CONFIDENCE`, after the anchored table and
+  before the partial search, so a numbered "2. Method" is `Methods` with its
+  subsections where it was `Other`. `PDF_CANONICAL_VERSION` is 7
+  (`"pdf-7"`); the Python CHANGELOG has the measurement and why the names
+  are not searched within a line.
+
+- **What MuPDF said is kept apart, and a failed read keeps it** (#619, with
+  the Python library). `MupdfExtractor::extract_blocks_with_warnings` and
+  `page_texts_with_warnings` returned early on a failure, dropping MuPDF's
+  captured messages, so a read that repaired a broken xref and then failed
+  left no trace of it. **Breaking**:
+  - `PdfError` gains `engine_messages: Vec<String>`, filled by every MuPDF
+    read that fails (a limit reached mid-read included), and
+    `PdfError::with_engine_messages`. A struct literal adds the field; the
+    constructors leave it empty. `Display` is still the message alone.
+  - `PdfBlocks` gains `engine_messages`, which now holds MuPDF's messages;
+    `warnings` holds bmlib's own note (a `/Title` that could not be read)
+    alone. `ConversionResult` gains `engine_messages` (declared last), which
+    `ConversionResult::failure` fills from the error.
+  - The service's `PdfText.warnings` is renamed `engine_messages`, and
+    `FullTextService` ends a failed extraction's line with what the engine
+    said before it.
+
+  The shared `tests/fixtures/pdf_warnings.json` gains a failed read; see
+  the root CHANGELOG.
 
 - **An unnamed numbered parent keeps its subsections** (#628, with the Python
   library): `identify_section_markers` keeps a numbered top-level heading that
@@ -587,8 +633,6 @@ The Python library is documented separately, in the repository's
   JSON `null` as the text `"null"` at the model's confidence, and an object
   or a list as its JSON; it now reads as `""` at confidence 0.0 with no
   findings, which `is_valid` drops before consolidation.
-
-### Fixed
 
 - **Anthropic requests carry no `temperature` or `top_p`** (#705, as
   Python's): Claude Opus 4.7 and later refuse any sampling parameter on API

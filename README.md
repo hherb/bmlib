@@ -26,7 +26,7 @@ It covers the plumbing such a tool would otherwise rewrite:
 
 | | Python package `bmlib` | Rust crate `bmlib` |
 |---|---|---|
-| **Version** | 0.12.0 | 0.3.0 (released with Python 0.12.0) |
+| **Version** | 0.13.0 | 0.4.0 (released with Python 0.13.0) |
 | **Requires** | Python ≥ 3.11 | Rust ≥ 1.85 (edition 2021) |
 | **Install** | `pip install bmlib` | `cargo add bmlib` |
 | **Source** | [`bmlib/`](bmlib/) | [`rust/bmlib/`](rust/bmlib/) |
@@ -80,30 +80,30 @@ models and `SectionSegmenter` all import on a core install.
 | `publications` | `pip install bmlib[publications]` | Publication sync and record lookup (httpx) |
 | `fulltext` | `pip install bmlib[fulltext]` | `FullTextService` retrieval (httpx) |
 | `pdf` | `pip install bmlib[pdf]` | PDF → text (PyMuPDF) |
-| `html` | `pip install bmlib[html]` | `canonical_from_html`: an HTML page's main content as canonical text (markupever, a binding to the html5ever parser) |
+| `html` | `pip install bmlib[html]` | `canonical_from_html`: an HTML page's main content as canonical text (markupever, a binding to the html5ever parser, run in a child process that psutil watches) |
 | `embed` | `pip install bmlib[embed]` | `bmlib.embed.Embedder` (llama-cpp-python). It compiles llama.cpp, so it is not in `all` |
 | `secrets` | `pip install bmlib[secrets]` | `bmlib.secrets.KeyringVault`: API keys in the OS keychain (keyring) |
-| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
+| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2, types-psutil |
 | `all` | `pip install bmlib[all]` | Every runtime extra except `embed` (and **not** `dev`). Use `.[all,embed]` for both |
 
-### Upgrading to 0.12
+### Upgrading to 0.13
 
-0.12.0 breaks public APIs in `fulltext`, `llm`, `context_processor`,
-`publications` and `quality`. Each break is listed under
+0.13.0 breaks public APIs in `llm`, `quality`, `citations`,
+`context_processor`, `fulltext` and `embed`. Each break is listed under
 [*Changed — breaking*](CHANGELOG.md#changed--breaking) in the CHANGELOG.
 
 It also changes some stored data:
 
-- bmlib's full-text cache re-fetches every entry an earlier version rendered.
-- An OpenAlex sync now stores `pmcid`.
-- To store a notice's own PMID without zero padding, re-import the Retraction
-  Watch export.
-- Stored `extract_study_type` output changes for some reviews.
+- A stored PDF or Markdown canonical text is stale (`PDF_CANONICAL_VERSION` 7,
+  `MARKDOWN_VERSION` 2), so `bmlib.embed.store` reads its chunk set as
+  `Stale`: re-convert, then re-index.
+- bmlib's full-text cache is kept (`RENDERER_VERSION` stays 7).
 
-`ensure_schema()` is unchanged. The CHANGELOG's 0.12.0 summary says what each
-of these changes costs. If you are upgrading from 0.10 or earlier, read the
-0.11.0 summary as well. The [unreleased](CHANGELOG.md#unreleased) section
-covers what is on `main` since then, such as `bmlib.secrets`.
+`ensure_schema()` is unchanged. The CHANGELOG's 0.13.0 summary says what each
+of these changes costs. If you are upgrading from 0.11 or earlier, read the
+0.12.0 summary as well (and 0.11.0's from 0.10 or earlier). The
+[unreleased](CHANGELOG.md#unreleased) section covers what is on `main` since
+then.
 
 ## Modules
 
@@ -123,7 +123,7 @@ the Python manual. The Rust manual has a page for each module too.
 | [**fulltext**](docs/manual/fulltext.md) | Tiered retrieval (your own sources → Europe PMC XML/PDF → Unpaywall → DOI), a JATS parser that reports what it drops, PDF → text, section segmentation and a disk cache. **`fulltext.canonical`** gives one canonical text per paper from JATS, Markdown, plain text, a PDF or HTML, with every piece a code-point span, plus sentence-aware chunks and a check of whether the text is a whole paper |
 | [**embed**](docs/manual/embeddings.md) | snowflake-arctic-embed-l-v2.0 run in process from pinned, checksum-verified GGUF files. `embed.store` keeps a paper's chunks and vectors in the database and ranks them by cosine similarity, and refuses a vector set that is stale |
 | [**citations**](docs/manual/citations.md) | `[@id:N:Label]` citation markers, Vancouver/APA/Harvard/Chicago formatting, reference lists, and **`find_passage`**, which finds an LLM's near-verbatim quote in its source and returns the source's own wording. Pure stdlib |
-| [**secrets**](docs/manual/secrets.md) | API keys by provider in one OS keychain item, read once and cached. On macOS it is the same item as the Rust crate's *(unreleased)* |
+| [**secrets**](docs/manual/secrets.md) | API keys by provider in one OS keychain item, read once and cached. It is the same item as the Rust crate's *(0.13.0)* |
 
 ## Quick Start
 

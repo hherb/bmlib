@@ -251,7 +251,7 @@ map-reduce over a `context_processor::llm_processor::ContextModel`:
 `quality::LlmContextModel` is the one over `LlmClient` (#641), and an
 implementation of your own must return `Err` for a completion cut off at the
 output ceiling. The result records `condensed_from_chars` and
-`condensation_status`. *(unreleased, #609)* `.with_progress(|info| …)` hands
+`condensation_status`. *(0.4.0, #609)* `.with_progress(|info| …)` hands
 the condensation's every `ProgressInfo` to a callback, Python's
 `condense_progress`, for both agents.
 
@@ -387,7 +387,7 @@ A quote that `find_passage` rejected as a contradiction (a number, a negation
 or a direction changed) is kept in `quotes_contradicted` with its reason, and a
 reported part with no citation and at least one such quote is
 `PicoPartState::Contradicted`: the
-model misreported the paper *(unreleased, #647)*.
+model misreported the paper *(0.4.0, #647)*.
 
 Citation offsets are `char` indices into `text` exactly as passed. Quotes are
 always verified against the original text, never a digest. `min_similarity`
@@ -396,7 +396,7 @@ raises `ValueError`); `PicoError::kind()` gives Python's `PicoErrorKind`
 value, and the enum is `#[non_exhaustive]`. A part whose `description` is
 blank is refused and re-asked as a non-text one is, and an integer
 `sample_size` is kept as its digits (`150` → `"150"`, a float refused)
-*(unreleased, #578)*. Every `ChatError` the client returns to the request, an
+*(0.4.0, #578)*. Every `ChatError` the client returns to the request, an
 unknown provider or a missing API key included, is `RequestFailed` (during
 the condensation of a long text it is `CondensationFailed`), where Python lets those
 propagate as exceptions (#573; see `docs/DECISIONS.md`).
