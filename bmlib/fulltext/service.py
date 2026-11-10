@@ -1260,8 +1260,9 @@ class FullTextService:
 
         # Tier 0: Try fetcher-provided sources
         held_link: FullTextSourceEntry | None = None
+        failed_pdf: FullTextResult | None = None
         if fulltext_sources:
-            result, abstract_only, held_link = self._try_known_sources(
+            result, abstract_only, held_link, failed_pdf = self._try_known_sources(
                 fulltext_sources, cache_id=cache_id, failures=failures
             )
             if result is not None:
@@ -1358,6 +1359,11 @@ class FullTextService:
             except Exception as exc:
                 logger.debug("Unpaywall failed for DOI %s", unpaywall_doi, exc_info=True)
                 failures.record(exc)
+
+        # A caller's free PDF that failed to download, now that no tier did
+        # better (#739): its address and cause beat a bare link.
+        if failed_pdf is not None:
+            return self._with_abstract_fallback(failed_pdf, abstract_only, cache_id)
 
         # Tier 3: DOI / PubMed fallback. When a body-less JATS was seen
         # earlier, keep its abstract and hang the link off it — the reader
@@ -1596,10 +1602,16 @@ class FullTextService:
         *,
         cache_id: str | None = None,
         failures: _TierFailures,
-    ) -> tuple[FullTextResult | None, FullTextResult | None, FullTextSourceEntry | None]:
+    ) -> tuple[
+        FullTextResult | None,
+        FullTextResult | None,
+        FullTextSourceEntry | None,
+        FullTextResult | None,
+    ]:
         """Try fetcher-provided fulltext sources in priority order.
 
-        Priority: xml (JATS) > pdf; an html entry is held, never fetched.
+        Priority: xml (JATS) > pdf; an html entry, and a pdf entry whose
+        download fails, are held.
 
         Args:
             sources: The fetcher's known source URLs.
@@ -1610,9 +1622,9 @@ class FullTextService:
                 was simply offered nothing.
 
         Returns:
-            A tuple of ``(result, abstract_only, held_link)``. ``result`` is
-            the best source that worked — JATS full text or a PDF — or
-            ``None`` when every entry failed; only a ``content_kind`` of
+            A tuple of ``(result, abstract_only, held_link, failed_pdf)``.
+            ``result`` is the best source that worked — JATS full text or a
+            PDF — or ``None`` when every entry failed; only a ``content_kind`` of
             ``"fulltext"`` means article text was actually retrieved.
             ``held_link`` is the first ``html`` entry: a link and not text,
             so it ends nothing here, and the caller uses it only once every
@@ -1624,6 +1636,10 @@ class FullTextService:
             serves an abstract-only JATS (medRxiv does) generally serves the
             complete article as a PDF alongside it; the caller merges it back
             in via :meth:`_with_abstract_fallback` if nothing better turns up.
+            ``failed_pdf`` is the first ``pdf`` entry whose download failed
+            (``pdf_download_failure`` set). It ends nothing either (#739): the
+            caller returns it only once every later tier has come back
+            empty-handed, so the user still learns where the free PDF is.
         """
         priority = {"xml": 0, "pdf": 1, "html": 2}
         sorted_sources = sorted(
@@ -1633,6 +1649,7 @@ class FullTextService:
 
         abstract_only: FullTextResult | None = None
         held_link: FullTextSourceEntry | None = None
+        failed_pdf: FullTextResult | None = None
         for entry in sorted_sources:
             try:
                 if entry.format == "xml":
@@ -1662,12 +1679,18 @@ class FullTextService:
                         ),
                         abstract_only,
                         held_link,
+                        failed_pdf,
                     )
                 elif entry.format == "pdf":
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)
                     self._download_and_cache_pdf(entry.url, cache_id, result, origin="known_source")
-                    return result, abstract_only, held_link
+                    if result.pdf_download_failure is None:
+                        return result, abstract_only, held_link, failed_pdf
+                    # A failed download ends nothing (#739): a publisher's 403
+                    # used to hide the full text a later entry or tier serves.
+                    if failed_pdf is None:
+                        failed_pdf = result
                 elif entry.format == "html":
                     logger.info("HTML source from %s, held as a last resort", entry.source)
                     if held_link is None:
@@ -1682,7 +1705,7 @@ class FullTextService:
                 failures.record(exc)
                 continue
 
-        return None, abstract_only, held_link
+        return None, abstract_only, held_link, failed_pdf
 
     # --- Cache helpers --------------------------------------------------------
 

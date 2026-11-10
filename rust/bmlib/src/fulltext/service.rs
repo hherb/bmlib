@@ -1605,11 +1605,13 @@ impl FullTextService {
 
         // Tier 0: fetcher-provided sources.
         let mut held_link: Option<FullTextSourceEntry> = None;
+        let mut failed_pdf: Option<FullTextResult> = None;
         if !request.fulltext_sources.is_empty() {
-            let (result, held_back, link) =
+            let (result, held_back, link, failed) =
                 self.try_known_sources(&request.fulltext_sources, cache_id, failures);
             abstract_only = held_back;
             held_link = link;
+            failed_pdf = failed;
             if let Some(result) = result {
                 return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
             }
@@ -1734,6 +1736,12 @@ impl FullTextService {
                     failures.record(&fault);
                 }
             }
+        }
+
+        // A caller's free PDF that failed to download, now that no tier did
+        // better (#739): its address and cause beat a bare link.
+        if let Some(failed) = failed_pdf {
+            return Ok(self.with_abstract_fallback(failed, abstract_only.as_ref(), cache_id));
         }
 
         // Tier 3: DOI / PubMed fallback. When a body-less JATS was seen
@@ -1898,7 +1906,7 @@ impl FullTextService {
     /// format keep the order the fetcher gave them; an html entry is held, never
     /// fetched.
     ///
-    /// Returns `(result, abstract_only, held_link)`. `result` is the best source
+    /// Returns `(result, abstract_only, held_link, failed_pdf)`. `result` is the best source
     /// that worked — JATS full text or a PDF — or `None` when every entry
     /// failed; only a [`ContentKind::Fulltext`] means article text was actually
     /// retrieved. `held_link` is the first html entry: a link and not text, so
@@ -1908,7 +1916,10 @@ impl FullTextService {
     /// DOI. `abstract_only` holds a body-less JATS rendering if one was
     /// seen. It is never worth stopping on, because a publisher that serves an
     /// abstract-only JATS (medRxiv does) generally serves the complete article
-    /// as a PDF alongside it.
+    /// as a PDF alongside it. `failed_pdf` is the first pdf entry whose download
+    /// failed (`pdf_download_failure` set). It ends nothing either (#739): the
+    /// caller returns it only once every later tier has come back empty-handed,
+    /// so the user still learns where the free PDF is.
     fn try_known_sources(
         &self,
         sources: &[FullTextSourceEntry],
@@ -1918,6 +1929,7 @@ impl FullTextService {
         Option<FullTextResult>,
         Option<FullTextResult>,
         Option<FullTextSourceEntry>,
+        Option<FullTextResult>,
     ) {
         let priority = |format: &str| match format {
             "xml" => 0,
@@ -1930,6 +1942,7 @@ impl FullTextService {
 
         let mut abstract_only: Option<FullTextResult> = None;
         let mut held_link: Option<FullTextSourceEntry> = None;
+        let mut failed_pdf: Option<FullTextResult> = None;
         for entry in sorted {
             if entry.format == "xml" {
                 match self.fetch_jats_xml(&entry.url) {
@@ -1953,6 +1966,7 @@ impl FullTextService {
                             Some(fulltext_result(&entry.source, html, Some(xml))),
                             abstract_only,
                             held_link,
+                            failed_pdf,
                         );
                     }
                     Err(fault) => {
@@ -1976,7 +1990,14 @@ impl FullTextService {
                     &mut result,
                     PdfOrigin::KnownSource,
                 );
-                return (Some(result), abstract_only, held_link);
+                if result.pdf_download_failure.is_none() {
+                    return (Some(result), abstract_only, held_link, failed_pdf);
+                }
+                // A failed download ends nothing (#739): a publisher's 403
+                // used to hide the full text a later entry or tier serves.
+                if failed_pdf.is_none() {
+                    failed_pdf = Some(result);
+                }
             } else if entry.format == "html" {
                 self.info(format!(
                     "HTML source from {}, held as a last resort",
@@ -1995,7 +2016,7 @@ impl FullTextService {
             // An unknown format matches no branch and the loop continues.
         }
 
-        (None, abstract_only, held_link)
+        (None, abstract_only, held_link, failed_pdf)
     }
 
     // --- Cache helpers ------------------------------------------------------

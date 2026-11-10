@@ -395,6 +395,52 @@ class TestKnownSources:
         # The abstract's own source; the link's ("pmc") was stamped on it before #579.
         assert result.source == "medrxiv"
 
+    def test_a_pdf_source_that_fails_does_not_stop_the_pmc_tier(self, tmp_path):
+        # #739: a pdf entry returned at once even when its download failed, so
+        # a publisher's 403 (MDPI's) hid the JATS Europe PMC serves.
+        jats = MagicMock(status_code=200, content=(FIXTURES / "sample_article.xml").read_bytes())
+
+        def served(url, *args, **kwargs):
+            return MagicMock(status_code=403) if url == "https://pub/x.pdf" else jats
+
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=served) as http_get:
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, pmc_id="PMC123", identifier="10.1/x"
+            )
+
+        assert http_get.call_args_list[0].args[0] == "https://pub/x.pdf"  # it was tried
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert result.pdf_download_failure is None
+
+    def test_a_failed_pdf_source_is_the_answer_when_nothing_else_serves(self, tmp_path):
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", return_value=MagicMock(status_code=403)):
+            result = service.fetch_fulltext(fulltext_sources=sources, identifier="10.1/x")
+
+        assert (result.source, result.pdf_url) == ("publisher", "https://pub/x.pdf")
+        assert result.pdf_download_failure == "http-403"
+
+    def test_a_later_pdf_source_is_tried_after_one_that_fails(self, tmp_path):
+        def served(url, *args, **kwargs):
+            if url == "https://pub/second.pdf":
+                return MagicMock(status_code=200, content=TestCacheIntegration.PDF_MAGIC)
+            return MagicMock(status_code=403)
+
+        sources = [
+            FullTextSourceEntry(url="https://pub/first.pdf", format="pdf", source="a"),
+            FullTextSourceEntry(url="https://pub/second.pdf", format="pdf", source="b"),
+        ]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=served):
+            result = service.fetch_fulltext(fulltext_sources=sources, identifier="10.1/x")
+
+        assert (result.source, result.pdf_url) == ("b", "https://pub/second.pdf")
+        assert result.pdf_download_failure is None
+        assert result.file_path is not None
+
 
 class TestFullTextSourceEntry:
     def test_to_dict_and_from_dict(self):

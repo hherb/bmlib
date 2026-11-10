@@ -841,6 +841,70 @@ fn a_held_link_rides_on_a_held_abstract() {
     assert_eq!(result.source, "medrxiv");
 }
 
+fn pdf_entry(url: &str, source: &str) -> FullTextSourceEntry {
+    FullTextSourceEntry {
+        format: "pdf".to_string(),
+        ..html_entry(url, source)
+    }
+}
+
+/// #739: a pdf entry returned at once even when its download failed, so a
+/// publisher's 403 (MDPI's) hid the JATS Europe PMC serves.
+#[test]
+fn a_pdf_source_that_fails_does_not_stop_the_pmc_tier() {
+    let dir = TempDir::new("failed-pdf-pmc");
+    let client = ScriptedClient::new(vec![status(403), ok(FULL_JATS)]);
+    let service = service(client.clone()).with_cache(Some(dir.cache()));
+    let mut request = request();
+    request.fulltext_sources = vec![pdf_entry("https://pub/x.pdf", "publisher")];
+    request.pmc_id = Some("PMC123".to_string());
+    request.identifier = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(client.requests()[0], "https://pub/x.pdf", "it was tried");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(result.pdf_download_failure, None);
+}
+
+#[test]
+fn a_failed_pdf_source_is_the_answer_when_nothing_else_serves() {
+    let dir = TempDir::new("failed-pdf-alone");
+    let client = ScriptedClient::new(vec![status(403)]);
+    let service = service(client).with_cache(Some(dir.cache()));
+    let mut request = request();
+    request.fulltext_sources = vec![pdf_entry("https://pub/x.pdf", "publisher")];
+    request.identifier = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("the failure");
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("publisher", Some("https://pub/x.pdf"))
+    );
+    assert_eq!(result.pdf_download_failure.as_deref(), Some("http-403"));
+}
+
+#[test]
+fn a_later_pdf_source_is_tried_after_one_that_fails() {
+    let dir = TempDir::new("failed-pdf-second");
+    let client = ScriptedClient::new(vec![status(403), body(200, "%PDF-1.4 fake")]);
+    let service = service(client).with_cache(Some(dir.cache()));
+    let mut request = request();
+    request.fulltext_sources = vec![
+        pdf_entry("https://pub/first.pdf", "a"),
+        pdf_entry("https://pub/second.pdf", "b"),
+    ];
+    request.identifier = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("b", Some("https://pub/second.pdf"))
+    );
+    assert_eq!(result.pdf_download_failure, None);
+    assert!(result.file_path.is_some());
+}
+
 // ---------------------------------------------------------------------------
 // The Europe PMC chain
 // ---------------------------------------------------------------------------
