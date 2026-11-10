@@ -67,6 +67,15 @@ impl ScriptedClient {
         })
     }
 
+    /// Answer from `script`, then every later request with `response`.
+    fn then_always(script: Vec<Answer>, response: HttpResponse) -> Arc<Self> {
+        Arc::new(ScriptedClient {
+            script: Mutex::new(script.into()),
+            repeat: Some(Ok(response)),
+            requests: Mutex::new(Vec::new()),
+        })
+    }
+
     /// The URLs requested, in order.
     fn requests(&self) -> Vec<String> {
         self.requests.lock().expect("lock").clone()
@@ -864,7 +873,118 @@ fn a_pdf_source_that_fails_does_not_stop_the_pmc_tier() {
     assert_eq!(client.requests()[0], "https://pub/x.pdf", "it was tried");
     assert_eq!(result.source, "europepmc");
     assert_eq!(result.content_kind, ContentKind::Fulltext);
+    // What was learnt of the PDF rides on the JATS.
+    assert_eq!(
+        (
+            result.pdf_url.as_deref(),
+            result.pdf_download_failure.as_deref()
+        ),
+        (Some("https://pub/x.pdf"), Some("http-403"))
+    );
+    assert_eq!(result.file_path, None);
+}
+
+/// #739: JATS is what gets processed, the PDF what gets shown, so a saved PDF
+/// no longer ends the search for JATS.
+#[test]
+fn a_saved_pdf_source_rides_on_the_jats_found_after_it() {
+    let dir = TempDir::new("saved-pdf-jats");
+    let client = ScriptedClient::new(vec![body(200, "%PDF-1.4 fake"), ok(FULL_JATS)]);
+    let service = service(client.clone()).with_cache(Some(dir.cache()));
+    let mut request = request();
+    request.fulltext_sources = vec![pdf_entry("https://pub/x.pdf", "publisher")];
+    request.pmc_id = Some("PMC123".to_string());
+    request.identifier = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert!(result.jats_xml.is_some());
+    assert_eq!(result.pdf_url.as_deref(), Some("https://pub/x.pdf"));
+    assert!(result
+        .file_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with(".pdf")));
     assert_eq!(result.pdf_download_failure, None);
+
+    // A later lookup is served from the cache with both.
+    let asked = client.call_count();
+    let again = FullTextRequest {
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+    let again = service.fetch_fulltext(&again).expect("cached");
+    assert_eq!(client.call_count(), asked, "no network");
+    assert_eq!(again.source, "cached");
+    assert_eq!(again.content_kind, ContentKind::Fulltext);
+    assert_eq!(again.file_path, result.file_path);
+}
+
+#[test]
+fn a_saved_pdf_source_is_the_answer_when_no_jats_is_found() {
+    let dir = TempDir::new("saved-pdf-alone");
+    let client = ScriptedClient::then_always(
+        vec![body(200, "%PDF-1.4 fake")],
+        HttpResponse::from_bytes(404, Vec::new()),
+    );
+    let service = service(client.clone()).with_cache(Some(dir.cache()));
+    let mut request = request();
+    request.fulltext_sources = vec![pdf_entry("https://pub/x.pdf", "publisher")];
+    request.pmc_id = Some("PMC123".to_string());
+    request.doi = Some("10.1/x".to_string());
+    request.identifier = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("the PDF");
+    let asked = client.requests();
+    assert!(
+        asked.iter().any(|url| url.contains("PMC123")),
+        "the JATS tiers ran"
+    );
+    assert!(
+        !asked.iter().any(|url| url.contains("unpaywall")),
+        "no second PDF sought: {asked:?}"
+    );
+    assert_eq!(
+        (result.source.as_str(), result.pdf_url.as_deref()),
+        ("publisher", Some("https://pub/x.pdf"))
+    );
+    assert!(result.file_path.is_some());
+}
+
+#[test]
+fn an_unreadable_pdf_beside_a_cached_jats_hit_costs_only_the_pdf() {
+    let dir = TempDir::new("unreadable-pdf-beside");
+    let cache = dir.cache();
+    let id = sanitize_identifier("10.1/x");
+    cache.save_html("<p>Body</p>", &id).expect("saved");
+    let pdf = cache
+        .save_pdf(b"%PDF-1.4 fake", &id)
+        .expect("saved")
+        .expect("a PDF");
+    // A directory where the PDF should be: present, and unreadable.
+    std::fs::remove_file(&pdf).expect("removed");
+    std::fs::create_dir(&pdf).expect("a directory in its place");
+    let service = service(ScriptedClient::new(vec![])).with_cache(Some(cache));
+    let mut request = request();
+    request.identifier = Some("10.1/x".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("cached");
+    assert_eq!(
+        (
+            result.source.as_str(),
+            result.html.as_deref(),
+            result.file_path
+        ),
+        ("cached", Some("<p>Body</p>"), None)
+    );
+    assert!(
+        service
+            .warnings()
+            .iter()
+            .any(|line| line.contains("Could not open the PDF cached beside")),
+        "{:?}",
+        service.warnings()
+    );
 }
 
 #[test]

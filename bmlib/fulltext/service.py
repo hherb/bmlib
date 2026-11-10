@@ -729,6 +729,20 @@ def _default_cache() -> FullTextCache | None:
         return None
 
 
+def _with_pdf(result: FullTextResult, pdf: FullTextResult | None) -> FullTextResult:
+    """*result*, JATS full text, carrying what Tier 0 learnt of the caller's PDF.
+
+    JATS is what gets processed and the PDF what gets shown (#739), so the
+    PDF's address, saved file and any download failure go on the JATS result.
+    Text extracted from the PDF is dropped: the JATS body is the better text.
+    """
+    if pdf is not None:
+        result.pdf_url = pdf.pdf_url
+        result.file_path = pdf.file_path
+        result.pdf_download_failure = pdf.pdf_download_failure
+    return result
+
+
 class FullTextService:
     """Retrieves full text from multiple sources with fallback.
 
@@ -1260,9 +1274,9 @@ class FullTextService:
 
         # Tier 0: Try fetcher-provided sources
         held_link: FullTextSourceEntry | None = None
-        failed_pdf: FullTextResult | None = None
+        pdf: FullTextResult | None = None
         if fulltext_sources:
-            result, abstract_only, held_link, failed_pdf = self._try_known_sources(
+            result, abstract_only, held_link, pdf = self._try_known_sources(
                 fulltext_sources, cache_id=cache_id, failures=failures
             )
             if result is not None:
@@ -1287,7 +1301,7 @@ class FullTextService:
                 caller_pmc_id, cache_id=cache_id, failures=failures, abstract_only=abstract_only
             )
             if result is not None:
-                return result
+                return _with_pdf(result, pdf)
             if abstract_only is not held_before:
                 caller_abstract = abstract_only
 
@@ -1320,7 +1334,7 @@ class FullTextService:
                     discovered_pmc_id, cache_id=cache_id, failures=failures, abstract_only=None
                 )
                 if result is not None:
-                    return result
+                    return _with_pdf(result, pdf)
                 # A superseded ID's own abstract gives way to the superseding
                 # one's: Tier 1d's PDF comes from the same search hit, so the
                 # two are paired, and #305's sidecar would otherwise cache a
@@ -1330,6 +1344,11 @@ class FullTextService:
                     abstract_only is None or abstract_only is caller_abstract
                 ):
                     abstract_only = discovered_abstract
+
+        # No JATS anywhere: a caller's PDF in hand is the answer, and the PDF
+        # tiers below would only fetch another (#739).
+        if pdf is not None and pdf.pdf_download_failure is None:
+            return self._with_abstract_fallback(pdf, abstract_only, cache_id)
 
         # Tier 1d: Europe PMC PDF render (when XML unavailable but free PDF exists)
         if pdf_render_url:
@@ -1362,8 +1381,8 @@ class FullTextService:
 
         # A caller's free PDF that failed to download, now that no tier did
         # better (#739): its address and cause beat a bare link.
-        if failed_pdf is not None:
-            return self._with_abstract_fallback(failed_pdf, abstract_only, cache_id)
+        if pdf is not None:
+            return self._with_abstract_fallback(pdf, abstract_only, cache_id)
 
         # Tier 3: DOI / PubMed fallback. When a body-less JATS was seen
         # earlier, keep its abstract and hang the link off it — the reader
@@ -1610,8 +1629,8 @@ class FullTextService:
     ]:
         """Try fetcher-provided fulltext sources in priority order.
 
-        Priority: xml (JATS) > pdf; an html entry, and a pdf entry whose
-        download fails, are held.
+        Priority: xml (JATS) > pdf; a pdf entry and an html entry are held,
+        so the JATS tiers after this one still run (#579, #739).
 
         Args:
             sources: The fetcher's known source URLs.
@@ -1622,10 +1641,9 @@ class FullTextService:
                 was simply offered nothing.
 
         Returns:
-            A tuple of ``(result, abstract_only, held_link, failed_pdf)``.
-            ``result`` is the best source that worked — JATS full text or a
-            PDF — or ``None`` when every entry failed; only a ``content_kind`` of
-            ``"fulltext"`` means article text was actually retrieved.
+            A tuple of ``(result, abstract_only, held_link, pdf)``.
+            ``result`` is JATS full text, or ``None`` when no xml entry gave
+            it.
             ``held_link`` is the first ``html`` entry: a link and not text,
             so it ends nothing here, and the caller uses it only once every
             tier that can fetch text has failed (#579). Returned at once, it
@@ -1636,10 +1654,11 @@ class FullTextService:
             serves an abstract-only JATS (medRxiv does) generally serves the
             complete article as a PDF alongside it; the caller merges it back
             in via :meth:`_with_abstract_fallback` if nothing better turns up.
-            ``failed_pdf`` is the first ``pdf`` entry whose download failed
-            (``pdf_download_failure`` set). It ends nothing either (#739): the
-            caller returns it only once every later tier has come back
-            empty-handed, so the user still learns where the free PDF is.
+            ``pdf`` is the first ``pdf`` entry that was saved, else the first
+            whose download failed (``pdf_download_failure`` set), else
+            ``None``. It ends nothing either (#739): JATS is better to process
+            than a PDF's text, and a PDF better to show, so the caller keeps
+            looking for JATS and puts a saved PDF on whatever it finds.
         """
         priority = {"xml": 0, "pdf": 1, "html": 2}
         sorted_sources = sorted(
@@ -1649,7 +1668,7 @@ class FullTextService:
 
         abstract_only: FullTextResult | None = None
         held_link: FullTextSourceEntry | None = None
-        failed_pdf: FullTextResult | None = None
+        pdf: FullTextResult | None = None
         for entry in sorted_sources:
             try:
                 if entry.format == "xml":
@@ -1679,18 +1698,19 @@ class FullTextService:
                         ),
                         abstract_only,
                         held_link,
-                        failed_pdf,
+                        pdf,
                     )
                 elif entry.format == "pdf":
+                    if pdf is not None and pdf.pdf_download_failure is None:
+                        continue  # one PDF in hand is enough
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)
                     self._download_and_cache_pdf(entry.url, cache_id, result, origin="known_source")
-                    if result.pdf_download_failure is None:
-                        return result, abstract_only, held_link, failed_pdf
-                    # A failed download ends nothing (#739): a publisher's 403
-                    # used to hide the full text a later entry or tier serves.
-                    if failed_pdf is None:
-                        failed_pdf = result
+                    # A PDF ends nothing (#739): JATS reads better than a PDF's
+                    # text, and a publisher's 403 used to hide the JATS a later
+                    # tier serves. A saved PDF replaces a failed one.
+                    if pdf is None or result.pdf_download_failure is None:
+                        pdf = result
                 elif entry.format == "html":
                     logger.info("HTML source from %s, held as a last resort", entry.source)
                     if held_link is None:
@@ -1705,7 +1725,7 @@ class FullTextService:
                 failures.record(exc)
                 continue
 
-        return None, abstract_only, held_link, failed_pdf
+        return None, abstract_only, held_link, pdf
 
     # --- Cache helpers --------------------------------------------------------
 
@@ -1756,8 +1776,13 @@ class FullTextService:
         if html:
             jats_xml = self._read_cached_jats(cache, cache_id)
             log_hit("Cache hit (HTML) for %s", cache_id)
+            # The PDF saved beside the JATS, for display (#739).
             return FullTextResult(
-                source="cached", html=html, content_kind="fulltext", jats_xml=jats_xml
+                source="cached",
+                html=html,
+                content_kind="fulltext",
+                jats_xml=jats_xml,
+                file_path=self._cached_pdf_beside(cache, cache_id),
             )
         pdf_path = cache.get_pdf(cache_id)
         if pdf_path:
@@ -1772,6 +1797,24 @@ class FullTextService:
                     result.jats_xml = self._read_cached_jats(cache, cache_id)
             return result
         return None
+
+    def _cached_pdf_beside(self, cache: FullTextCache, cache_id: str) -> str | None:
+        """The path of a PDF cached beside a JATS hit, or ``None``, never raising ``OSError``.
+
+        The hit is the JATS; the PDF only rides on it for display (#739), so
+        one that cannot be opened is reported and the hit served without it.
+        """
+        try:
+            return cache.get_pdf(cache_id)
+        except OSError as exc:
+            logger.warning(
+                "Could not open the PDF cached beside %s (%s: %s); serving the cached "
+                "full text without it.",
+                cache_id,
+                type(exc).__name__,
+                exc,
+            )
+            return None
 
     def _read_cached_jats(self, cache: FullTextCache, cache_id: str) -> bytes | None:
         """The JATS XML cached beside a hit, or ``None``, never raising ``OSError``.

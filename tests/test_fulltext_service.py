@@ -412,7 +412,71 @@ class TestKnownSources:
 
         assert http_get.call_args_list[0].args[0] == "https://pub/x.pdf"  # it was tried
         assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        # What was learnt of the PDF rides on the JATS.
+        assert (result.pdf_url, result.pdf_download_failure) == ("https://pub/x.pdf", "http-403")
+        assert result.file_path is None
+
+    def test_a_saved_pdf_source_rides_on_the_jats_found_after_it(self, tmp_path):
+        # #739: JATS is what gets processed, the PDF what gets shown, so a
+        # saved PDF no longer ends the search for JATS.
+        jats = MagicMock(status_code=200, content=(FIXTURES / "sample_article.xml").read_bytes())
+        pdf = MagicMock(status_code=200, content=TestCacheIntegration.PDF_MAGIC)
+
+        def served(url, *args, **kwargs):
+            return pdf if url == "https://pub/x.pdf" else jats
+
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", side_effect=served):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, pmc_id="PMC123", identifier="10.1/x"
+            )
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert result.jats_xml
+        assert result.pdf_url == "https://pub/x.pdf"
+        assert result.file_path is not None and result.file_path.endswith(".pdf")
         assert result.pdf_download_failure is None
+
+        # A later lookup is served from the cache with both.
+        with patch.object(service, "_http_get") as http_get:
+            again = service.fetch_fulltext(identifier="10.1/x")
+        http_get.assert_not_called()
+        assert (again.source, again.content_kind) == ("cached", "fulltext")
+        assert again.file_path == result.file_path
+
+    def test_a_saved_pdf_source_is_the_answer_when_no_jats_is_found(self, tmp_path):
+        pdf = MagicMock(status_code=200, content=TestCacheIntegration.PDF_MAGIC)
+
+        def served(url, *args, **kwargs):
+            return pdf if url == "https://pub/x.pdf" else MagicMock(status_code=404)
+
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=served) as http_get:
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, pmc_id="PMC123", doi="10.1/x", identifier="10.1/x"
+            )
+
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert any("PMC123" in url for url in asked)  # the JATS tiers ran
+        assert not any("unpaywall" in url for url in asked)  # no second PDF sought
+        assert (result.source, result.pdf_url) == ("publisher", "https://pub/x.pdf")
+        assert result.file_path is not None
+
+    def test_an_unreadable_pdf_beside_a_cached_jats_hit_costs_only_the_pdf(self, tmp_path, caplog):
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        cache.save_html("<p>Body</p>", _sanitize_identifier("10.1/x"))
+        with (
+            patch.object(cache, "get_pdf", side_effect=PermissionError("denied")),
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (result.source, result.html, result.file_path) == ("cached", "<p>Body</p>", None)
+        assert any("Could not open the PDF cached beside" in r.getMessage() for r in caplog.records)
 
     def test_a_failed_pdf_source_is_the_answer_when_nothing_else_serves(self, tmp_path):
         sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
