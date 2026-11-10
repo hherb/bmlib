@@ -46,8 +46,13 @@ All notable changes to bmlib are documented here. The format is based on
   code-point cap is out of date, and a saved page up to its own 22 MiB
   `MAX_HTML_BYTES` now converts unless it holds more than `HTML_MAX_TAGS` `<`.
 
+### Fixed
+
+- **A caller's `pdf` source no longer ends the full-text chain, and a JATS result carries it** (#739), in Python and the Rust port alike. Tier 0 returned a `pdf` entry at once, downloaded or not, so the Europe PMC and PMC tiers never ran: JATS, the better text to process, was never sought once a PDF was found, and a failed download hid it outright. Seen in StudyAnalyzer with DOI 10.3390/ijms262110631: mdpi.com answered the PDF link OpenAlex gives with HTTP 403, and the user was told to download it by hand while Europe PMC serves the article's full JATS (PMC12609458). The PDF is now saved and the JATS tiers still run. JATS they find is returned with the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`, so an app can process the JATS and show the PDF. A saved PDF with no JATS is returned before Tiers 1d and 2, which would only fetch another, and a failed one only once Tiers 1a to 2 have found nothing, ahead of Tier 3's link: a Tier 1d or Unpaywall PDF that also failed gives way to it rather than replacing the caller's URL and cause, and the *No full text found* WARNING names the cause (#67). A cached JATS hit now carries a PDF cached beside it as `file_path`; one that cannot be opened is reported, moved aside so the warning is not repeated on every lookup, and the hit served without it.
+
 ### Added
 
+- **`FullTextService(fetch_pdf_with_jats=True)`** (Rust `with_fetch_pdf_with_jats(true)`) looks for a PDF once JATS is found, for an app that processes the JATS and shows the PDF (#739). Off by default, so JATS ends the search. When on, a JATS result without a saved PDF asks the caller's `pdf` entries Tier 0 did not try, then Europe PMC's free PDF, only when its search itself resolves to the PMC ID the JATS came from (an ID the ID Converter gave does not count), so the PDF is the same article's, then Unpaywall. The first PDF saved goes on the JATS result, else the first failure. A JATS hit already cached without a PDF is served as it is.
 - **`scripts/sample_html_pages.py --saved-dir`, saved pages measured** (#656).
   Pages a browser saved with their resources inline, one per DOI target of
   the fetched corpus, are measured as fetched ones are, plus each page's
