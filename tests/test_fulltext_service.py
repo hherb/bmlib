@@ -40,6 +40,7 @@ from bmlib.fulltext.models import ContentKind, FullTextResult, FullTextSourceEnt
 from bmlib.fulltext.pdf_converter import ConversionResult, PDFErrorKind
 from bmlib.fulltext.service import (
     _CONTENT_RANK,
+    NCBI_IDCONV_URL,
     FullTextError,
     FullTextExhaustedError,
     FullTextService,
@@ -478,14 +479,208 @@ class TestKnownSources:
         assert (result.source, result.html, result.file_path) == ("cached", "<p>Body</p>", None)
         assert any("Could not open the PDF cached beside" in r.getMessage() for r in caplog.records)
 
-    def test_a_failed_pdf_source_is_the_answer_when_nothing_else_serves(self, tmp_path):
+    def test_an_unreadable_pdf_beside_a_cached_jats_hit_is_moved_aside(self, tmp_path, caplog):
+        # Left in place, it was warned about on every lookup for good, as
+        # `_read_cached_jats`'s sibling case was before it quarantined (#545).
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        cache_id = _sanitize_identifier("10.1/x")
+        cache.save_html("<p>Body</p>", cache_id)
+        cache.save_pdf(TestCacheIntegration.PDF_MAGIC, cache_id)
+        pdf_path = Path(cache.get_pdf(cache_id))
+        pdf_path.unlink()
+        pdf_path.mkdir()  # a directory standing where the PDF should be
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            first = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+            second = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (first.source, first.file_path) == ("cached", None)
+        assert (second.source, second.html, second.file_path) == ("cached", "<p>Body</p>", None)
+        warned = [r for r in caplog.records if "Could not open the PDF cached beside" in r.message]
+        assert len(warned) == 1
+        assert pdf_path.with_name(f"{pdf_path.name}.corrupt").is_dir()
+
+    def test_a_failed_pdf_source_is_the_answer_when_nothing_else_serves(self, tmp_path, caplog):
         sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
         service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
-        with patch.object(service, "_http_get", return_value=MagicMock(status_code=403)):
+        with (
+            patch.object(service, "_http_get", return_value=MagicMock(status_code=403)),
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
             result = service.fetch_fulltext(fulltext_sources=sources, identifier="10.1/x")
 
         assert (result.source, result.pdf_url) == ("publisher", "https://pub/x.pdf")
         assert result.pdf_download_failure == "http-403"
+        # Every tier came back empty-handed, so #67's summary is owed here too.
+        assert any(
+            r.getMessage().startswith(
+                "No full text found for doi=None pmid= — returning the caller's PDF link, "
+                "whose download failed (http-403);"
+            )
+            for r in caplog.records
+        )
+
+    def test_a_failed_pdf_source_outranks_a_later_tiers_failed_pdf(self, tmp_path):
+        # Unpaywall's link is a landing page as often as not: its `not-a-pdf`
+        # replaced the caller's own URL and 403, and is no better an answer.
+        def served(url, *args, **kwargs):
+            if url == "https://pub/x.pdf":
+                return MagicMock(status_code=403)
+            if url.startswith("https://api.unpaywall.org/"):
+                reply = MagicMock(status_code=200)
+                reply.json.return_value = {"best_oa_location": {"url_for_pdf": "https://repo/land"}}
+                return reply
+            if url == "https://repo/land":
+                return MagicMock(status_code=200, content=b"<html>landing</html>")
+            if url == NCBI_IDCONV_URL:
+                return _idconv_miss()
+            return MagicMock(status_code=404)
+
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=served) as http_get:
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert "https://repo/land" in [c.args[0] for c in http_get.call_args_list]  # it was tried
+        assert (result.source, result.pdf_url) == ("publisher", "https://pub/x.pdf")
+        assert result.pdf_download_failure == "http-403"
+
+    @staticmethod
+    def _no_jats(render=None, unpaywall_pdf=None, saved=()):
+        """An ``_http_get`` with no JATS anywhere: a search hit for PMC123, PDFs by URL."""
+
+        def served(url, *args, **kwargs):
+            if url in saved:
+                return MagicMock(status_code=200, content=TestCacheIntegration.PDF_MAGIC)
+            if "/search?" in url:
+                hit = {"pmcid": "PMC123", "inEPMC": "Y"}
+                if render:
+                    hit["fullTextUrlList"] = {
+                        "fullTextUrl": [
+                            {
+                                "site": "Europe_PMC",
+                                "documentStyle": "pdf",
+                                "availability": "Free",
+                                "url": render,
+                            }
+                        ]
+                    }
+                reply = MagicMock(status_code=200)
+                reply.json.return_value = {"resultList": {"result": [hit]}}
+                return reply
+            if url.startswith("https://api.unpaywall.org/") and unpaywall_pdf:
+                reply = MagicMock(status_code=200)
+                reply.json.return_value = {"best_oa_location": {"url_for_pdf": unpaywall_pdf}}
+                return reply
+            return MagicMock(status_code=403 if url == "https://pub/x.pdf" else 404)
+
+        return served
+
+    def test_a_failed_pdf_source_gives_way_to_europe_pmcs_pdf(self, tmp_path):
+        render = "https://europepmc.org/render/PMC123.pdf"
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        served = self._no_jats(render=render, saved=(render,))
+        with patch.object(service, "_http_get", side_effect=served):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert (result.source, result.pdf_url, result.pdf_download_failure) == (
+            "europepmc_pdf",
+            render,
+            None,
+        )
+        assert result.file_path is not None
+
+    def test_a_failed_pdf_source_outranks_europe_pmcs_failed_pdf(self, tmp_path):
+        render = "https://europepmc.org/render/PMC123.pdf"
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=self._no_jats(render=render)) as get:
+            result = service.fetch_fulltext(fulltext_sources=sources, pmid="123", identifier="123")
+
+        assert render in [c.args[0] for c in get.call_args_list]  # it was tried, and 404'd
+        assert (result.source, result.pdf_url) == ("publisher", "https://pub/x.pdf")
+        assert result.pdf_download_failure == "http-403"
+
+    def test_a_failed_pdf_source_gives_way_to_unpaywalls_pdf(self, tmp_path):
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        served = self._no_jats(unpaywall_pdf="https://oa/x.pdf", saved=("https://oa/x.pdf",))
+        with patch.object(service, "_http_get", side_effect=served):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert (result.source, result.pdf_url, result.pdf_download_failure) == (
+            "unpaywall",
+            "https://oa/x.pdf",
+            None,
+        )
+
+    def test_a_saved_pdf_source_is_returned_before_europe_pmcs_pdf(self, tmp_path):
+        render = "https://europepmc.org/render/PMC123.pdf"
+        sources = [FullTextSourceEntry(url="https://pub/ok.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        served = self._no_jats(render=render, saved=("https://pub/ok.pdf", render))
+        with patch.object(service, "_http_get", side_effect=served) as http_get:
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert render not in [c.args[0] for c in http_get.call_args_list]
+        assert (result.source, result.pdf_url) == ("publisher", "https://pub/ok.pdf")
+
+    def test_tier0_stops_at_the_first_saved_pdf(self, tmp_path):
+        pdf = MagicMock(status_code=200, content=TestCacheIntegration.PDF_MAGIC)
+        sources = [
+            FullTextSourceEntry(url="https://pub/first.pdf", format="pdf", source="a"),
+            FullTextSourceEntry(url="https://pub/second.pdf", format="pdf", source="b"),
+        ]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", return_value=pdf) as http_get:
+            result = service.fetch_fulltext(fulltext_sources=sources, identifier="10.1/x")
+
+        assert [c.args[0] for c in http_get.call_args_list] == ["https://pub/first.pdf"]
+        assert (result.source, result.pdf_url) == ("a", "https://pub/first.pdf")
+
+    def test_tier0_keeps_the_first_failure(self, tmp_path):
+        def served(url, *args, **kwargs):
+            return MagicMock(status_code=403 if url == "https://pub/first.pdf" else 503)
+
+        sources = [
+            FullTextSourceEntry(url="https://pub/first.pdf", format="pdf", source="a"),
+            FullTextSourceEntry(url="https://pub/second.pdf", format="pdf", source="b"),
+        ]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=served) as http_get:
+            result = service.fetch_fulltext(fulltext_sources=sources, identifier="10.1/x")
+
+        assert "https://pub/second.pdf" in [c.args[0] for c in http_get.call_args_list]
+        assert (result.source, result.pdf_download_failure) == ("a", "http-403")
+
+    def test_a_saved_pdf_source_rides_on_jats_found_by_a_discovered_pmc_id(self, tmp_path):
+        # A DOI-only caller, the common PubMed case: the search finds PMC123.
+        jats = MagicMock(status_code=200, content=(FIXTURES / "sample_article.xml").read_bytes())
+        no_jats = self._no_jats(saved=("https://pub/ok.pdf",))
+
+        def served(url, *args, **kwargs):
+            return jats if url.endswith("/PMC123/fullTextXML") else no_jats(url)
+
+        sources = [FullTextSourceEntry(url="https://pub/ok.pdf", format="pdf", source="publisher")]
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=served):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert result.pdf_url == "https://pub/ok.pdf"
+        assert result.file_path is not None and result.file_path.endswith(".pdf")
 
     def test_a_later_pdf_source_is_tried_after_one_that_fails(self, tmp_path):
         def served(url, *args, **kwargs):
@@ -513,7 +708,7 @@ class TestPdfWithJats:
     JATS = (FIXTURES / "sample_article.xml").read_bytes()
 
     @classmethod
-    def _route(cls, search_pmcid="PMC123", unpaywall_pdf=None, pdf_status=None):
+    def _route(cls, search_pmcid="PMC123", unpaywall_pdf=None, pdf_status=None, hit_doi=None):
         """An ``_http_get`` answering by URL: JATS for PMC123, a search hit, PDFs."""
         pdf_status = pdf_status or {}
 
@@ -525,6 +720,8 @@ class TestPdfWithJats:
                 return MagicMock(status_code=200, content=cls.JATS)
             if "/search?" in url:
                 hit = {"pmcid": search_pmcid, "inEPMC": "Y"}
+                if hit_doi:
+                    hit["doi"] = hit_doi
                 hit["fullTextUrlList"] = {
                     "fullTextUrl": [
                         {
@@ -567,12 +764,14 @@ class TestPdfWithJats:
     def test_on_europe_pmcs_pdf_of_the_same_article_rides_on_the_jats(self, tmp_path):
         service = self._service(tmp_path, on=True)
         route = self._route(pdf_status={self.RENDER: 200})
-        with patch.object(service, "_http_get", side_effect=route):
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
 
         assert (result.source, result.content_kind) == ("europepmc", "fulltext")
         assert result.pdf_url == self.RENDER
         assert result.file_path is not None and result.file_path.endswith(".pdf")
+        # Europe PMC's PDF ahead of Unpaywall's, which is not asked.
+        assert not any("unpaywall" in c.args[0] for c in http_get.call_args_list)
 
     def test_on_another_articles_pdf_is_never_taken(self, tmp_path):
         # The search resolves the DOI to another PMC ID: its PDF is not this JATS's.
@@ -584,6 +783,77 @@ class TestPdfWithJats:
         assert self.RENDER not in [c.args[0] for c in http_get.call_args_list]
         assert result.content_kind == "fulltext"
         assert result.file_path is None
+
+    def test_on_tier_1bs_search_is_not_asked_again(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        route = self._route(pdf_status={self.RENDER: 200})
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert len([url for url in asked if "/search?" in url]) == 1
+        assert (result.source, result.pdf_url) == ("europepmc", self.RENDER)
+
+    def test_on_a_failed_unpaywall_lookup_is_recorded(self, tmp_path):
+        sources = [FullTextSourceEntry(url="https://pub/x.xml", format="xml", source="publisher")]
+        service = self._service(tmp_path, on=True)
+
+        def answer(url, *args, **kwargs):
+            if url == "https://pub/x.xml":
+                return MagicMock(status_code=200, content=self.JATS)
+            raise httpx.ConnectError("down")
+
+        with patch.object(service, "_http_get", side_effect=answer):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert result.content_kind == "fulltext"
+        assert result.tier_faults == ["ConnectError"]
+
+    def test_on_a_pmc_id_only_the_id_converter_gave_takes_no_search_pdf(self, tmp_path):
+        # The search hit names no PMC ID, so it never resolved to the one the
+        # JATS came from: the ID Converter's answer is not the search's.
+        route = self._route(pdf_status={self.RENDER: 200})
+
+        def answer(url, *args, **kwargs):
+            if "/search?" in url:
+                reply = route(url)
+                hit = reply.json.return_value["resultList"]["result"][0]
+                hit["inEPMC"] = "N"
+                return reply
+            if url == NCBI_IDCONV_URL:
+                reply = MagicMock(status_code=200)
+                reply.json.return_value = {"status": "ok", "records": [{"pmcid": "PMC123"}]}
+                return reply
+            return route(url)
+
+        service = self._service(tmp_path, on=True)
+        with patch.object(service, "_http_get", side_effect=answer) as http_get:
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert any(url.endswith("/PMC123/fullTextXML") for url in asked)  # the converter's ID
+        assert self.RENDER not in asked
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert result.file_path is None
+
+    def test_a_pdf_left_a_url_for_want_of_an_identifier_is_not_called_saved(self, caplog):
+        # With no cache key nothing is downloaded, so nothing is saved.
+        service = FullTextService(email="test@example.com", fetch_pdf_with_jats=True)
+        route = self._route(pdf_status={self.RENDER: 200})
+        with (
+            patch.object(service, "_http_get", side_effect=route),
+            caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x")
+
+        assert (result.pdf_url, result.file_path) == (self.RENDER, None)
+        assert not any("saved beside the JATS" in r.getMessage() for r in caplog.records)
+        assert any(
+            r.getMessage() == "PDF from europepmc_pdf put on the JATS full text, unsaved"
+            for r in caplog.records
+        )
 
     def test_on_a_known_pdf_source_left_untried_is_fetched(self, tmp_path):
         sources = [
@@ -606,23 +876,78 @@ class TestPdfWithJats:
         assert result.file_path is not None
 
     def test_on_unpaywall_is_asked_last(self, tmp_path):
-        sources = [FullTextSourceEntry(url="https://pub/x.xml", format="xml", source="publisher")]
+        # The caller's untried PDF first; Unpaywall only once it has failed.
+        sources = [
+            FullTextSourceEntry(url="https://pub/x.xml", format="xml", source="publisher"),
+            FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher"),
+        ]
         service = self._service(tmp_path, on=True)
-        route = self._route(unpaywall_pdf="https://oa/x.pdf", pdf_status={"https://oa/x.pdf": 200})
+        route = self._route(
+            unpaywall_pdf="https://oa/x.pdf",
+            pdf_status={"https://pub/x.pdf": 403, "https://oa/x.pdf": 200},
+        )
 
         def answer(url, *args, **kwargs):
             if url == "https://pub/x.xml":
                 return MagicMock(status_code=200, content=self.JATS)
             return route(url)
 
-        with patch.object(service, "_http_get", side_effect=answer):
+        with patch.object(service, "_http_get", side_effect=answer) as http_get:
             result = service.fetch_fulltext(
                 fulltext_sources=sources, doi="10.1/x", identifier="10.1/x"
             )
 
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert asked[:2] == ["https://pub/x.xml", "https://pub/x.pdf"]
+        assert asked[2].startswith("https://api.unpaywall.org/v2/10.1%2Fx?")
+        assert asked[3:] == ["https://oa/x.pdf"]
         assert result.content_kind == "fulltext"
-        assert result.pdf_url == "https://oa/x.pdf"
+        assert (result.pdf_url, result.pdf_download_failure) == ("https://oa/x.pdf", None)
         assert result.file_path is not None
+
+    def test_on_a_saved_pdf_source_is_kept(self, tmp_path):
+        sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
+        service = self._service(tmp_path, on=True)
+        route = self._route(pdf_status={"https://pub/x.pdf": 200, self.RENDER: 200})
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, pmc_id="PMC123", doi="10.1/x", identifier="10.1/x"
+            )
+
+        assert self.RENDER not in [c.args[0] for c in http_get.call_args_list]
+        assert result.content_kind == "fulltext"
+        assert result.pdf_url == "https://pub/x.pdf"
+
+    def test_on_a_pmid_only_caller_asks_unpaywall_by_the_hits_doi(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        route = self._route(
+            hit_doi="10.1/hit",
+            unpaywall_pdf="https://oa/x.pdf",
+            pdf_status={self.RENDER: 503, "https://oa/x.pdf": 200},
+        )
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", pmid="123", identifier="123")
+
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert self.RENDER in asked  # the search ran, by the PMID
+        assert any(url.startswith("https://api.unpaywall.org/v2/10.1%2Fhit?") for url in asked)
+        assert (result.pdf_url, result.pdf_download_failure) == ("https://oa/x.pdf", None)
+
+    def test_on_another_articles_doi_is_never_asked_of_unpaywall(self, tmp_path):
+        # The PMID's search hit is PMC999, not the JATS's PMC123: its DOI is another's.
+        service = self._service(tmp_path, on=True)
+        route = self._route(
+            search_pmcid="PMC999",
+            hit_doi="10.9/other",
+            unpaywall_pdf="https://oa/other.pdf",
+            pdf_status={"https://oa/other.pdf": 200},
+        )
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", pmid="123", identifier="123")
+
+        assert not any("unpaywall" in c.args[0] for c in http_get.call_args_list)
+        assert result.content_kind == "fulltext"
+        assert (result.pdf_url, result.file_path) == (None, None)
 
     def test_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats(self, tmp_path):
         sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
@@ -633,7 +958,9 @@ class TestPdfWithJats:
                 fulltext_sources=sources, pmc_id="PMC123", doi="10.1/x", identifier="10.1/x"
             )
 
-        assert self.RENDER in [c.args[0] for c in http_get.call_args_list]  # it was sought
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert self.RENDER in asked  # it was sought
+        assert asked.count("https://pub/x.pdf") == 1  # the failed one is not asked again
         assert result.content_kind == "fulltext"
         assert (result.pdf_url, result.pdf_download_failure) == ("https://pub/x.pdf", "http-403")
         assert result.file_path is None
@@ -4047,7 +4374,8 @@ class TestAFailedPDFDownloadIsReported:
         self._fetch(self._service(tmp_path), resp, caplog)
 
         assert "not a PDF" in caplog.text
-        assert "404" not in caplog.text
+        # Messages only: caplog.text carries line numbers, and `service.py:2404` holds "404".
+        assert not any("404" in r.getMessage() for r in caplog.records)
 
     def test_a_network_failure_is_reported_as_an_exception(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
