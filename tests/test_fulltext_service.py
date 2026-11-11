@@ -41,6 +41,9 @@ from bmlib.fulltext.pdf_converter import ConversionResult, PDFErrorKind
 from bmlib.fulltext.service import (
     _CONTENT_RANK,
     NCBI_IDCONV_URL,
+    PDF_BESIDE_JATS_ATTEMPTS,
+    PDF_RETRY_DELAY,
+    PDF_SEEK_AGAIN_LIMIT,
     FullTextError,
     FullTextExhaustedError,
     FullTextService,
@@ -744,11 +747,139 @@ class TestPdfWithJats:
         return answer
 
     def _service(self, tmp_path, on):
-        return FullTextService(
+        service = FullTextService(
             email="test@example.com",
             cache=FullTextCache(cache_dir=tmp_path),
             fetch_pdf_with_jats=on,
         )
+        service.pdf_retry_delay = 0  # the backoff's schedule has its own test
+        return service
+
+    def _mark(self, tmp_path):
+        return tmp_path / "jats" / f"{_sanitize_identifier('10.1/x')}.pdf-retry"
+
+    def test_a_failure_that_may_pass_is_retried_with_doubling_waits(self, tmp_path):
+        service = FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            fetch_pdf_with_jats=True,
+        )
+        route = self._route(pdf_status={self.RENDER: 503})
+        with (
+            patch.object(service, "_http_get", side_effect=route) as http_get,
+            patch("bmlib.fulltext.service.time.sleep") as sleep,
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert asked.count(self.RENDER) == PDF_BESIDE_JATS_ATTEMPTS
+        assert [c.args[0] for c in sleep.call_args_list] == [PDF_RETRY_DELAY, 2 * PDF_RETRY_DELAY]
+        assert result.pdf_download_failure == "http-503"
+
+    def test_a_final_failure_is_not_retried(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        route = self._route(pdf_status={self.RENDER: 403})
+        with patch.object(service, "_http_get", side_effect=route) as http_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        assert [c.args[0] for c in http_get.call_args_list].count(self.RENDER) == 1
+        assert result.pdf_download_failure == "http-403"
+        assert not self._mark(tmp_path).exists()  # a later hit seeks nothing
+
+    def test_a_pdf_sought_again_and_saved_ends_the_mark(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        with patch.object(
+            service, "_http_get", side_effect=self._route(pdf_status={self.RENDER: 503})
+        ):
+            service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        assert self._mark(tmp_path).read_text(encoding="utf-8") == "PMC123\n0\n"
+
+        with patch.object(
+            service, "_http_get", side_effect=self._route(pdf_status={self.RENDER: 200})
+        ):
+            again = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        assert (again.source, again.pdf_download_failure) == ("cached", None)
+        assert again.file_path is not None
+        assert not self._mark(tmp_path).exists()
+
+        with patch.object(service, "_http_get") as http_get:
+            third = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        http_get.assert_not_called()
+        assert third.file_path == again.file_path
+
+    def test_a_hit_tries_once_and_the_mark_ends_after_its_limit(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        failing = self._route(pdf_status={self.RENDER: 503})
+        with patch.object(service, "_http_get", side_effect=failing):
+            service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        for seeks in range(1, PDF_SEEK_AGAIN_LIMIT + 1):
+            with patch.object(service, "_http_get", side_effect=failing) as http_get:
+                hit = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+            assert [c.args[0] for c in http_get.call_args_list].count(self.RENDER) == 1
+            assert (hit.source, hit.pdf_download_failure) == ("cached", "http-503")
+            marked = self._mark(tmp_path).exists()
+            assert marked == (seeks < PDF_SEEK_AGAIN_LIMIT), seeks
+        with patch.object(service, "_http_get") as http_get:
+            service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        http_get.assert_not_called()
+
+    def test_a_marked_hit_that_can_try_nothing_keeps_the_mark(self, tmp_path):
+        service = self._service(tmp_path, on=True)
+        with patch.object(
+            service, "_http_get", side_effect=self._route(pdf_status={self.RENDER: 503})
+        ):
+            service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        before = self._mark(tmp_path).read_text(encoding="utf-8")
+        with patch.object(service, "_http_get") as http_get:
+            service.fetch_fulltext(identifier="10.1/x")  # no DOI or PMID to search by
+        http_get.assert_not_called()
+        assert self._mark(tmp_path).read_text(encoding="utf-8") == before
+
+    def test_a_mark_that_cannot_be_written_is_warned_under_its_own_key(self, tmp_path, caplog):
+        service = self._service(tmp_path, on=True)
+        with (
+            patch.object(
+                service, "_http_get", side_effect=self._route(pdf_status={self.RENDER: 503})
+            ),
+            patch.object(FullTextCache, "save_pdf_retry", side_effect=PermissionError("ro")),
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        assert result.content_kind == "fulltext"
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("Could not write the PDF mark" in m for m in messages)
+        assert not any("nothing is being cached" in m for m in messages)
+
+    def test_a_marked_hit_seeks_nothing_with_the_option_off(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        on = self._service(tmp_path, on=True)
+        with patch.object(on, "_http_get", side_effect=self._route(pdf_status={self.RENDER: 503})):
+            on.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        off = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(off, "_http_get") as http_get:
+            result = off.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        http_get.assert_not_called()
+        assert (result.source, result.file_path) == ("cached", None)
+        assert self._mark(tmp_path).exists()  # kept for a service that has it on
+
+    def test_an_unreadable_mark_is_removed_and_the_hit_served(self, tmp_path, caplog):
+        service = self._service(tmp_path, on=True)
+        with patch.object(service, "_http_get", side_effect=self._route()):
+            service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        self._mark(tmp_path).mkdir()  # a directory where the mark belongs
+
+        with (
+            patch.object(service, "_http_get") as http_get,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+
+        http_get.assert_not_called()
+        assert (result.source, result.content_kind) == ("cached", "fulltext")
+        assert any("Could not read the PDF mark" in r.getMessage() for r in caplog.records)
+        assert not self._mark(tmp_path).exists()
 
     def test_it_is_off_by_default_and_jats_ends_the_search(self, tmp_path):
         service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))

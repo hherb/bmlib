@@ -815,11 +815,16 @@ pub struct FullTextResult {
     /// retry may fetch is not mistaken for a bare link: `"http-<status>"` (the
     /// server answered with that non-200 status), `"not-a-pdf"` (a 200 whose
     /// body is not a PDF), `"request-failed"` (the request failed before an
-    /// answer: a timeout, a reset, DNS) or `"write-failed"` (the PDF arrived
-    /// and the cache could not save it).
+    /// answer: a timeout, a reset, DNS), `"write-failed"` (the PDF arrived
+    /// and the cache could not save it) or, only beside JATS
+    /// (`fetch_pdf_with_jats`), [`PDF_SEARCH_FAILED`] (no download was tried
+    /// because the search for a PDF, Europe PMC's or Unpaywall's, failed;
+    /// #744).
     ///
     /// `None` when the PDF was cached, and when no download was attempted — no
     /// cache, or no `identifier` to key one by — as for every non-PDF tier.
+    /// [`FullTextResult::pdf_failure_may_pass`] says whether a later try may
+    /// get the PDF.
     #[serde(default)]
     pub pdf_download_failure: Option<String>,
     /// Why extracting the cached PDF's text failed (#604), as a
@@ -841,9 +846,40 @@ pub struct FullTextResult {
     /// for the best a retry can do. A source answering that it has nothing is
     /// not a fault and is not listed, nor is a malformed caller PMC ID, which
     /// the warning counts and no retry changes. Empty on a cache hit, since no
-    /// chain ran for it.
+    /// chain ran for it, except for the search when a JATS hit's PDF is sought
+    /// again (#744).
     #[serde(default)]
     pub tier_faults: Vec<String>,
+}
+
+/// [`FullTextResult::pdf_download_failure`] when no PDF was downloaded beside
+/// JATS because the search for one failed (#744).
+pub const PDF_SEARCH_FAILED: &str = "search-failed";
+
+impl FullTextResult {
+    /// Whether a later try may get the PDF
+    /// [`pdf_download_failure`](FullTextResult::pdf_download_failure) names
+    /// (#744).
+    ///
+    /// True for an outage: `"request-failed"`, [`PDF_SEARCH_FAILED`],
+    /// `"http-429"` and every `"http-5xx"`. False for every other cause, which
+    /// the same request answers the same way, and for `None`. The rule is
+    /// shared with Python by `tests/fixtures/pdf_failure_may_pass.json`.
+    #[must_use]
+    pub fn pdf_failure_may_pass(&self) -> bool {
+        let cause = self.pdf_download_failure.as_deref().unwrap_or_default();
+        if cause == "request-failed" || cause == PDF_SEARCH_FAILED {
+            return true;
+        }
+        let Some(status) = cause.strip_prefix("http-") else {
+            return false;
+        };
+        let digits = status.as_bytes();
+        status == "429"
+            || (digits.len() == 3
+                && digits[0] == b'5'
+                && digits[1..].iter().all(u8::is_ascii_digit))
+    }
 }
 
 /// What a [`FullTextResult::html`] payload actually is.

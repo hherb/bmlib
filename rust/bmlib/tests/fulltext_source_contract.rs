@@ -19,11 +19,14 @@
 //! `tests/test_fulltext_source_contract.py` asserts against: the service hands
 //! back the JATS it rendered, byte for byte as served, and the cache keeps it
 //! beside the HTML; a PDF download that leaves no file says why (#594); a
-//! result carries the faults the tiers before it swallowed (#603).
+//! result carries the faults the tiers before it swallowed (#603). Also the PDF
+//! sought beside JATS, retried and sought again (#744), and
+//! `pdf_failure_may_pass` (`pdf_failure_may_pass.json`).
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use bmlib::fulltext::{
     sanitize_identifier, FullTextCache, FullTextError, FullTextRequest, FullTextResult,
@@ -94,10 +97,11 @@ impl Drop for TempDir {
 /// that fails as of one that returns.
 fn fetch(
     cache: &FullTextCache,
-    name: &str,
-    request: &Value,
+    case: &Value,
     answers: &[Value],
 ) -> Result<FullTextResult, FullTextError> {
+    let name = case["name"].as_str().unwrap();
+    let request = &case["request"];
     let script = answers
         .iter()
         .map(|answer| {
@@ -115,8 +119,10 @@ fn fetch(
         script: Mutex::new(script),
         asked: Mutex::new(Vec::new()),
     });
-    let service =
-        FullTextService::new(client.clone(), "test@example.com").with_cache(Some(cache.clone()));
+    let service = FullTextService::new(client.clone(), "test@example.com")
+        .with_cache(Some(cache.clone()))
+        .with_fetch_pdf_with_jats(case["fetch_pdf_with_jats"].as_bool() == Some(true))
+        .with_pdf_retry_delay(Duration::ZERO);
     let fulltext_sources: Vec<FullTextSourceEntry> = request
         .get("fulltext_sources")
         .map(|s| serde_json::from_value(s.clone()).expect("sources"))
@@ -124,6 +130,7 @@ fn fetch(
     let request = FullTextRequest {
         fulltext_sources,
         pmc_id: request["pmc_id"].as_str().map(str::to_string),
+        doi: request["doi"].as_str().map(str::to_string),
         identifier: request["identifier"].as_str().map(str::to_string),
         ..FullTextRequest::default()
     };
@@ -182,7 +189,7 @@ fn contract_case() {
             std::fs::write(cache.pdf_dir(), b"").expect("a file where pdfs/ belongs");
         }
         let answers = case["responses"].as_array().expect("responses");
-        let outcome = fetch(&cache, name, &case["request"], answers);
+        let outcome = fetch(&cache, case, answers);
         if let Some(raises) = case["expected"].get("raises") {
             let error = outcome.expect_err(name);
             match (&error, raises["exhausted"].as_bool().expect("exhausted")) {
@@ -222,11 +229,28 @@ fn contract_case() {
             );
         }
         if let Some(then) = case.get("then") {
-            check(
-                name,
-                &unwrap(fetch(&cache, name, &case["request"], &[])),
-                then,
-            );
+            let answers = case["then_responses"]
+                .as_array()
+                .map_or(&[][..], Vec::as_slice);
+            check(name, &unwrap(fetch(&cache, case, answers)), then);
         }
+    }
+}
+
+const MAY_PASS: &str = include_str!("../../../tests/fixtures/pdf_failure_may_pass.json");
+
+#[test]
+fn pdf_failure_may_pass() {
+    let fixture: Value = serde_json::from_str(MAY_PASS).expect("the fixture is JSON");
+    for case in fixture["cases"].as_array().expect("cases") {
+        let result = FullTextResult {
+            pdf_download_failure: case["cause"].as_str().map(str::to_string),
+            ..serde_json::from_value(serde_json::json!({"source": "x"})).expect("a result")
+        };
+        assert_eq!(
+            result.pdf_failure_may_pass(),
+            case["may_pass"].as_bool().expect("may_pass"),
+            "{case}"
+        );
     }
 }

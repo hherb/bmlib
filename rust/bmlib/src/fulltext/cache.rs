@@ -41,12 +41,17 @@ pub const MAX_PREFIX_CHARS: usize = 160;
 /// the service computed for a raw identifier of 150 characters or more was
 /// hashed a second time, so the file written was not the documented
 /// `sanitize_identifier(identifier)` and a lookup by that key missed it (#309).
-/// The 214-character longest name the prefix cap leaves room for was always
-/// computed over *this* length.
+/// The 219-character longest name the prefix cap leaves room for (a key,
+/// then [`PDF_RETRY_SUFFIX`], then the temporary name's 38) is computed over
+/// *this* length.
 pub const MAX_KEY_CHARS: usize = MAX_PREFIX_CHARS + 11;
 
 /// The suffix a quarantined entry carries.
 pub const CORRUPT_SUFFIX: &str = ".corrupt";
+
+/// The mark beside a cached JATS whose PDF a later lookup may get (#744), in
+/// `jats/`; see [`FullTextCache::save_pdf_retry`].
+pub const PDF_RETRY_SUFFIX: &str = ".pdf-retry";
 
 fn safe_identifier_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
@@ -449,6 +454,81 @@ impl FullTextCache {
         }
     }
 
+    fn pdf_retry_path(&self, identifier: &str) -> PathBuf {
+        self.jats_dir()
+            .join(format!("{}{PDF_RETRY_SUFFIX}", safe_filename(identifier)))
+    }
+
+    /// Mark `identifier`'s cached JATS as owing a PDF a later lookup may get.
+    ///
+    /// [`FullTextService`](crate::fulltext::FullTextService) writes it when
+    /// `fetch_pdf_with_jats` sought a PDF beside the JATS and none was saved
+    /// for a cause that may pass (an outage, a 429, a 5xx; #744). A JATS hit
+    /// carrying the mark seeks the PDF again; a hit without it is served as it
+    /// is, so a paper with no PDF anywhere costs no request on a hit.
+    /// `pmc_id` is the PMC ID the JATS came from, so Europe PMC's PDF can be
+    /// sought again for the same article, or `None` when no PMC ID names it;
+    /// it is stored as the file's first line, empty for `None`. `seeks`, the
+    /// hits that have sought the PDF again so far, is the second line, so the
+    /// service can stop after a limit.
+    ///
+    /// # Errors
+    ///
+    /// A filesystem failure — the directory cannot be created, or the write
+    /// fails.
+    pub fn save_pdf_retry(
+        &self,
+        identifier: &str,
+        pmc_id: Option<&str>,
+        seeks: u32,
+    ) -> std::io::Result<PathBuf> {
+        let path = self.pdf_retry_path(identifier);
+        std::fs::create_dir_all(self.jats_dir())?;
+        let text = format!("{}\n{seeks}\n", pmc_id.unwrap_or_default());
+        atomic_write(&path, text.as_bytes())?;
+        Ok(path)
+    }
+
+    /// The mark [`FullTextCache::save_pdf_retry`] wrote: `Ok(Some((pmc_id,
+    /// seeks)))`, the PMC ID it holds (`""` for a mark naming none) and the
+    /// hits that have sought the PDF again so far; `Ok(None)` if there is none.
+    ///
+    /// # Errors
+    ///
+    /// Any read failure but `NotFound`, and `InvalidData` for a mark that is
+    /// not UTF-8 or not two lines, the second a count.
+    pub fn get_pdf_retry(&self, identifier: &str) -> std::io::Result<Option<(String, u32)>> {
+        let text = match std::fs::read_to_string(self.pdf_retry_path(identifier)) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let mut lines = text.split('\n');
+        let (pmc_id, seeks) = (lines.next(), lines.next());
+        match (pmc_id, seeks, lines.next()) {
+            (Some(pmc_id), Some(seeks), Some(_))
+                if !seeks.is_empty() && seeks.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                let seeks = seeks.parse().map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "a seek count too large")
+                })?;
+                Ok(Some((pmc_id.trim().to_string(), seeks)))
+            }
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("malformed PDF mark for {identifier}: {text:?}"),
+            )),
+        }
+    }
+
+    /// Remove `identifier`'s mark, if any (see
+    /// [`FullTextCache::save_pdf_retry`]). Returns whether nothing is left
+    /// there, as [`remove_entry`] does.
+    #[must_use]
+    pub fn delete_pdf_retry(&self, identifier: &str) -> bool {
+        remove_entry(&self.pdf_retry_path(identifier))
+    }
+
     /// Save the abstract a cached PDF was returned with.
     ///
     /// [`FullTextService`](crate::fulltext::FullTextService) holds a body-less
@@ -538,7 +618,8 @@ impl FullTextCache {
         moved
     }
 
-    /// Delete every cached file for `identifier` — HTML, PDF, abstract and JATS.
+    /// Delete every cached file for `identifier` — HTML, PDF, abstract, JATS
+    /// and its PDF mark.
     pub fn delete(&self, identifier: &str) {
         let name = safe_filename(identifier);
         // Best effort: a caller removing an entry has no recovery either way,
@@ -547,6 +628,7 @@ impl FullTextCache {
         let _ = remove_entry(&self.pdf_dir().join(format!("{name}.pdf")));
         let _ = remove_entry(&self.abstract_dir().join(format!("{name}.html")));
         let _ = remove_entry(&self.jats_dir().join(format!("{name}.xml")));
+        let _ = self.delete_pdf_retry(identifier);
     }
 
     /// Remove **all** cached files, quarantined and temporary ones included.

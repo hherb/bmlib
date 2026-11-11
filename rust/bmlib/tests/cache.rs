@@ -19,7 +19,7 @@
 use bmlib::atomic::{atomic_write, temp_path_beside, TEMP_SUFFIX_LEN};
 use bmlib::fulltext::cache::{
     is_readable, safe_filename, sanitize_identifier, FullTextCache, CORRUPT_SUFFIX, MAX_KEY_CHARS,
-    MAX_PREFIX_CHARS, PDF_MAGIC_BYTES, TEMP_ROOM,
+    MAX_PREFIX_CHARS, PDF_MAGIC_BYTES, PDF_RETRY_SUFFIX, TEMP_ROOM,
 };
 use serde_json::Value;
 
@@ -859,4 +859,38 @@ fn a_fresh_directory_takes_a_pdf_and_html_on_the_first_save() {
         .save_html("<p>x</p>", "10.1/x")
         .expect("an HTML write");
     assert!(cache.has_html("10.1/x"));
+}
+
+/// The mark beside a cached JATS whose PDF a later lookup may get (#744):
+/// round-tripped with and without a PMC ID, and removed by its own delete and
+/// by `delete`.
+#[test]
+fn the_pdf_retry_mark_round_trips_and_is_deleted() {
+    let dir = TempDir::new("pdf-retry");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    assert_eq!(cache.get_pdf_retry("a").expect("read"), None);
+    let path = cache.save_pdf_retry("a", Some("PMC123"), 0).expect("saved");
+    assert_eq!(path, cache.jats_dir().join(format!("a{PDF_RETRY_SUFFIX}")));
+    assert_eq!(
+        cache.get_pdf_retry("a").expect("read"),
+        Some(("PMC123".to_string(), 0))
+    );
+    cache.save_pdf_retry("a", None, 2).expect("saved");
+    assert_eq!(
+        cache.get_pdf_retry("a").expect("read"),
+        Some((String::new(), 2))
+    );
+    for text in ["PMC1", "PMC1\nx\n", "PMC1\n-1\n", "\n\n"] {
+        std::fs::write(&path, text).expect("write");
+        let error = cache.get_pdf_retry("a").expect_err(text);
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData, "{text:?}");
+    }
+
+    assert!(cache.delete_pdf_retry("a"));
+    assert_eq!(cache.get_pdf_retry("a").expect("read"), None);
+    assert!(cache.delete_pdf_retry("a"), "none to remove is no failure");
+    cache.save_pdf_retry("a", Some("PMC1"), 0).expect("saved");
+    cache.delete("a");
+    assert_eq!(cache.get_pdf_retry("a").expect("read"), None);
 }

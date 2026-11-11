@@ -48,6 +48,31 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The PDF sought beside JATS is retried, sought again on a later hit, and a
+  failed search for it is said** (#744), in Python and the Rust port alike,
+  with `fetch_pdf_with_jats` on. A download that failed for a cause that may
+  pass (`request-failed`, `http-429`, any `http-5xx`) was tried once and the
+  JATS cached, and a cache hit served it as it was, so a brief outage lost the
+  PDF for that paper for good; it is now tried up to
+  `PDF_BESIDE_JATS_ATTEMPTS` (3) times, waiting `PDF_RETRY_DELAY` (1 s), then
+  twice that. When no PDF is saved and any failure may pass, the cache marks
+  the JATS (`jats/<key>.pdf-retry`, holding the PMC ID it came from and a
+  count), and a hit carrying the mark seeks the PDF again, one try per
+  candidate, at most `PDF_SEEK_AGAIN_LIMIT` (3) hits, so a cause that never
+  passes (a bot wall's 503) costs a bounded number of lookups; a saved PDF or
+  failures that are all final unmark it, and a hit without the mark makes no
+  request. A fault in Europe PMC's search or in Unpaywall's lookup was only on
+  `tier_faults`, so no PDF read as none existing; when it left no download to
+  try, `pdf_download_failure` is now `"search-failed"` (`PDF_SEARCH_FAILED`),
+  and a JATS found through the ID Converter after the search failed asks the
+  search again for its PDF. A mark that cannot be written is warned about
+  once under its own key, not as an unwritable cache.
+  `FullTextResult.pdf_failure_may_pass` says which causes a later try may
+  cure, shared with Rust by `tests/fixtures/pdf_failure_may_pass.json`;
+  `fulltext_source.json` gains five cases. A retried download reports its last
+  try's cause. Not covered: a JATS cached while the option was off carries no
+  mark and is still served as it is (a `shortcut:`), and a failed Tier 0 PDF
+  is not retried in the run, only on the next hit.
 - **A caller's `pdf` source no longer ends the full-text chain, and a JATS result carries it** (#739), in Python and the Rust port alike. Tier 0 returned a `pdf` entry at once, downloaded or not, so the Europe PMC and PMC tiers never ran: JATS, the better text to process, was never sought once a PDF was found, and a failed download hid it outright. Seen in StudyAnalyzer with DOI 10.3390/ijms262110631: mdpi.com answered the PDF link OpenAlex gives with HTTP 403, and the user was told to download it by hand while Europe PMC serves the article's full JATS (PMC12609458). The PDF is now saved and the JATS tiers still run. JATS they find is returned with the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`, so an app can process the JATS and show the PDF. A saved PDF with no JATS is returned before Tiers 1d and 2, which would only fetch another, and a failed one only once Tiers 1a to 2 have found nothing, ahead of Tier 3's link: a Tier 1d or Unpaywall PDF that also failed gives way to it rather than replacing the caller's URL and cause, and the *No full text found* WARNING names the cause (#67). A cached JATS hit now carries a PDF cached beside it as `file_path`; one that cannot be opened is reported, moved aside so the warning is not repeated on every lookup, and the hit served without it.
 
 ### Added

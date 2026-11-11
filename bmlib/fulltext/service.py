@@ -33,6 +33,7 @@ import logging
 import operator
 import re
 import reprlib
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,7 +49,12 @@ if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_htt
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.cache import sanitize_identifier as _sanitize_identifier
 from bmlib.fulltext.jats_parser import RENDERER_VERSION, JATSParser
-from bmlib.fulltext.models import ContentKind, FullTextResult, FullTextSourceEntry
+from bmlib.fulltext.models import (
+    PDF_SEARCH_FAILED,
+    ContentKind,
+    FullTextResult,
+    FullTextSourceEntry,
+)
 
 # Imported eagerly — pdf_converter loads its PyMuPDF backend lazily, so this
 # costs nothing when the optional ``bmlib[pdf]`` extra is absent.
@@ -85,6 +91,18 @@ NCBI_IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
 EUTILS_EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 EUTILS_TOOL_NAME = "bmlib"
 TIMEOUT = 30.0
+
+# A PDF sought beside JATS (#739) whose download failed for a cause that may
+# pass (FullTextResult.pdf_failure_may_pass) is tried this many times in all
+# (#744), waiting PDF_RETRY_DELAY seconds before the second try and twice as
+# long before each later one: 1 s, then 2 s.
+PDF_BESIDE_JATS_ATTEMPTS = 3
+PDF_RETRY_DELAY = 1.0
+# How many later cache hits seek a PDF the cache marks as owed again before
+# the mark is dropped (#744), so a cause that never passes (a bot wall's 503,
+# a refused Unpaywall email) costs a bounded number of lookups. A hit tries
+# each candidate once: the mark is the retry across lookups.
+PDF_SEEK_AGAIN_LIMIT = 3
 
 # A PMC ID reaches a URL path in two fetch helpers, and one of its sources is
 # third-party JSON. Validated where it is used rather than where it arrives,
@@ -828,7 +846,11 @@ class FullTextService:
                 are asked, then Europe PMC's free PDF (only when its search
                 resolves to the PMC ID the JATS came from, so the PDF is the
                 same article's), then Unpaywall; the first PDF saved goes on
-                the JATS result, else the first failure. A cached JATS hit is
+                the JATS result, else the first failure. A download that fails
+                for a cause that may pass is tried again with backoff
+                (:data:`PDF_BESIDE_JATS_ATTEMPTS`), and when no PDF is saved
+                and any failure may pass the cache marks the JATS, so a later
+                hit seeks the PDF again (#744); any other cached JATS hit is
                 served as it is. Declared last so positional construction
                 stays stable.
 
@@ -848,6 +870,10 @@ class FullTextService:
         self.convert_pdfs = convert_pdfs
         self.ncbi_api_key = ncbi_api_key
         self.fetch_pdf_with_jats = fetch_pdf_with_jats
+        # The wait before a PDF beside JATS is tried again, doubling for each
+        # later try (#744). An attribute, not an argument, so a test can set
+        # it to 0 and not spend the backoff.
+        self.pdf_retry_delay = PDF_RETRY_DELAY
         # Faults that are a property of the environment or of bmlib itself
         # rather than of one article: warned once each, keyed by cause, so a
         # second distinct fault is still reported instead of hiding behind the
@@ -1039,7 +1065,14 @@ class FullTextService:
                 self._quarantine_cache_entry(self.cache, cache_id)
                 cached = None
             if cached is not None:
-                return cached
+                return self._seek_pdf_again(
+                    cached,
+                    cache=self.cache,
+                    cache_id=cache_id,
+                    sources=fulltext_sources or [],
+                    doi=doi,
+                    pmid=usable_pmid,
+                )
 
         # Every tier swallows its own exception so the next one still runs;
         # this is what remembers that they did. Made out here, not inside
@@ -1378,9 +1411,13 @@ class FullTextService:
         pdf_render_url: str | None = None
         hit_doi: str | None = None
         if doi or pmid:
+            faults_before = len(failures.faults)
             discovered_pmc_id, search = self._discover_pmc_id(
                 doi=doi, pmid=pmid, failures=failures, use_converter=caller_pmc_id is None
             )
+            # A discovery that recorded a fault may hold a failed search's
+            # empty answer: _pdf_for_jats asks the search again then (#744).
+            search_for_pdf = search if len(failures.faults) == faults_before else None
             _, pdf_render_url, hit_doi = search
             if discovered_pmc_id and discovered_pmc_id != caller_pmc_id:
                 if caller_pmc_id:
@@ -1403,7 +1440,7 @@ class FullTextService:
                         doi=doi,
                         pmid=pmid,
                         pmc_id=discovered_pmc_id,
-                        search=search,
+                        search=search_for_pdf,
                         cache_id=cache_id,
                         failures=failures,
                     )
@@ -1706,6 +1743,7 @@ class FullTextService:
         search: tuple[str | None, str | None, str | None] | None,
         cache_id: str | None,
         failures: _TierFailures,
+        seeks: int = 0,
     ) -> FullTextResult:
         """*result*, JATS full text, with a PDF on it for display (#739).
 
@@ -1735,18 +1773,32 @@ class FullTextService:
                 a URL, as every PDF tier leaves it).
             failures: The run's exhaustion report; a failed search or
                 Unpaywall lookup is recorded on it.
+            seeks: How many cache hits, this one included, have sought the
+                PDF again (#744); 0 in the tier chain. A hit tries each
+                candidate once, the chain up to
+                :data:`PDF_BESIDE_JATS_ATTEMPTS` times. When no PDF is saved
+                and any failure may pass, the cache marks the JATS with this
+                count, until it reaches :data:`PDF_SEEK_AGAIN_LIMIT`; a saved
+                PDF, or failures that are all final, unmark it, and a run that
+                could try nothing leaves the mark as it is.
         """
         if not self.fetch_pdf_with_jats or (pdf is not None and pdf.pdf_download_failure is None):
             return _with_pdf(result, pdf)
+        # Whether a failure seen here may pass, so a later lookup is worth
+        # making (#744): a failed search, or a download that failed so.
+        may_pass = pdf is not None and pdf.pdf_failure_may_pass
+        search_failed = False
         candidates: list[tuple[str, str, _PdfOrigin]] = []
         if pdf is None:
             candidates += [(e.source, e.url, "known_source") for e in sources if e.format == "pdf"]
         hit_doi: str | None = None
         if pmc_id and (doi or pmid):
             if search is None:
+                faults_before = len(failures.faults)
                 _, search = self._discover_pmc_id(
                     doi=doi, pmid=pmid, failures=failures, use_converter=False
                 )
+                search_failed = len(failures.faults) > faults_before
             found_id, render_url, found_doi = search
             if found_id == pmc_id:  # the same article's PDF only
                 hit_doi = found_doi
@@ -1764,19 +1816,161 @@ class FullTextService:
                 except Exception as exc:
                     logger.debug("Unpaywall failed for DOI %s", target, exc_info=True)
                     failures.record(exc)
+                    # Unpaywall answering it has no free PDF is no failure.
+                    search_failed |= not isinstance(exc, FullTextUnavailableError)
                     continue
             else:
                 url = target
-            found = FullTextResult(source=source, pdf_url=url)
-            self._download_and_cache_pdf(url, cache_id, found, origin=origin)
+            found = self._download_beside_jats(
+                url,
+                cache_id,
+                source=source,
+                origin=origin,
+                attempts=1 if seeks else PDF_BESIDE_JATS_ATTEMPTS,
+            )
             if found.pdf_download_failure is None:
                 if found.file_path:
                     logger.info("PDF from %s saved beside the JATS full text", source)
                 else:  # no cache or identifier: left a URL, as every PDF tier leaves it
                     logger.info("PDF from %s put on the JATS full text, unsaved", source)
+                self._mark_pdf_retry(cache_id, pmc_id, seeks=None)
                 return _with_pdf(result, found)
+            may_pass |= found.pdf_failure_may_pass
             first_failure = first_failure or found
+        if first_failure is None and search_failed:
+            # No download was tried because the search for one failed (#744):
+            # said on the result, so it does not read as "no PDF exists".
+            logger.info("The search for a PDF beside the JATS full text failed")
+            first_failure = FullTextResult(
+                source=result.source, pdf_download_failure=PDF_SEARCH_FAILED
+            )
+        if candidates or first_failure is not None:  # else nothing was tried
+            retry = (may_pass or search_failed) and seeks < PDF_SEEK_AGAIN_LIMIT
+            self._mark_pdf_retry(cache_id, pmc_id, seeks=seeks if retry else None)
         return _with_pdf(result, first_failure)
+
+    def _download_beside_jats(
+        self,
+        url: str,
+        cache_id: str | None,
+        *,
+        source: str,
+        origin: _PdfOrigin,
+        attempts: int,
+    ) -> FullTextResult:
+        """Download the PDF at *url* for a JATS result, retrying with backoff (#744).
+
+        A failure that may pass (:attr:`FullTextResult.pdf_failure_may_pass`)
+        is tried again, up to *attempts* tries in all, waiting
+        :attr:`pdf_retry_delay` seconds and twice as long before each later
+        try. Any other outcome is returned at once.
+
+        Returns:
+            The last try's result: saved, or carrying its
+            ``pdf_download_failure``.
+        """
+        attempt = 1
+        while True:
+            found = FullTextResult(source=source, pdf_url=url)
+            self._download_and_cache_pdf(url, cache_id, found, origin=origin)
+            if attempt >= attempts or not found.pdf_failure_may_pass:
+                return found
+            delay = self.pdf_retry_delay * 2 ** (attempt - 1)
+            logger.info(
+                "The PDF from %s failed (%s); trying again in %g s",
+                source,
+                found.pdf_download_failure,
+                delay,
+            )
+            time.sleep(delay)
+            attempt += 1
+
+    def _mark_pdf_retry(
+        self, cache_id: str | None, pmc_id: str | None, *, seeks: int | None
+    ) -> None:
+        """Mark the cached JATS as owing a PDF a later hit seeks again, or unmark it (#744).
+
+        Args:
+            cache_id: The cache key, or ``None`` (nothing is marked).
+            pmc_id: The PMC ID the JATS came from, kept in the mark.
+            seeks: The hits that have sought the PDF again so far, kept in
+                the mark; ``None`` removes it.
+
+        Best effort, as every cache write here: a mark that cannot be written
+        costs only the later look. Warned once per cause under its own key,
+        since the cache's other entries may still be written.
+        """
+        if self.cache is None or not cache_id:
+            return
+        try:
+            if seeks is None:
+                self.cache.delete_pdf_retry(cache_id)
+            else:
+                self.cache.save_pdf_retry(cache_id, pmc_id, seeks)
+        except OSError as exc:
+            self._warn_once(
+                f"pdf-mark-write:{type(exc).__name__}",
+                "Could not write the PDF mark in the full-text cache (%s: %s); a later "
+                "lookup will not seek the PDF beside the JATS again.",
+                type(exc).__name__,
+                exc,
+            )
+
+    def _seek_pdf_again(
+        self,
+        cached: FullTextResult,
+        *,
+        cache: FullTextCache,
+        cache_id: str,
+        sources: list[FullTextSourceEntry],
+        doi: str | None,
+        pmid: str,
+    ) -> FullTextResult:
+        """*cached*, with the PDF beside it sought again if an earlier try may pass (#744).
+
+        Only a JATS hit with no PDF beside it, and only when
+        :attr:`fetch_pdf_with_jats` is on and the cache marks it
+        (:meth:`FullTextCache.save_pdf_retry`): the PDF is then sought as
+        :meth:`_pdf_for_jats` seeks it, by the PMC ID the mark names, one try
+        per candidate, at most :data:`PDF_SEEK_AGAIN_LIMIT` hits in all. Any
+        other hit is returned as it is, so a paper with no PDF anywhere costs
+        no request. The search's faults go on ``tier_faults``.
+        """
+        if not (
+            self.fetch_pdf_with_jats and cached.content_kind == "fulltext" and not cached.file_path
+        ):
+            return cached
+        try:
+            marked = cache.get_pdf_retry(cache_id)
+        except (OSError, ValueError) as exc:  # ValueError: a malformed mark, undecodable
+            logger.warning(
+                "Could not read the PDF mark cached beside %s (%s: %s); removing it and "
+                "serving the cached full text without seeking its PDF.",
+                cache_id,
+                type(exc).__name__,
+                exc,
+            )
+            self._mark_pdf_retry(cache_id, None, seeks=None)
+            return cached
+        if marked is None:
+            return cached
+        pmc_id, seeks = marked
+        logger.info("Seeking again the PDF beside the cached full text of %s", cache_id)
+        failures = _TierFailures(on_bug=self._warn_swallowed_bug)
+        result = self._pdf_for_jats(
+            cached,
+            None,
+            sources=sources,
+            doi=doi,
+            pmid=pmid,
+            pmc_id=pmc_id or None,
+            search=None,
+            cache_id=cache_id,
+            failures=failures,
+            seeks=seeks + 1,
+        )
+        result.tier_faults = list(failures.faults)
+        return result
 
     def _try_known_sources(
         self,
@@ -1940,9 +2134,11 @@ class FullTextService:
         if html:
             jats_xml = self._read_cached_jats(cache, cache_id)
             log_hit("Cache hit (HTML) for %s", cache_id)
-            # The PDF saved beside the JATS, for display (#739).
-            # shortcut: fetch_pdf_with_jats seeks no PDF for a JATS hit cached
-            # without one; seek it here if apps turn the option on after caching.
+            # The PDF saved beside the JATS, for display (#739); fetch_fulltext
+            # seeks it again when the cache marks it (#744).
+            # shortcut: a JATS hit cached without a mark, as one cached while
+            # fetch_pdf_with_jats was off, seeks no PDF; mark such entries if
+            # apps turn the option on after caching.
             return FullTextResult(
                 source="cached",
                 html=html,

@@ -47,7 +47,8 @@ pub mod titles;
 
 pub use cache::{
     default_cache_dir, is_readable, remove_entry, safe_filename, sanitize_identifier,
-    FullTextCache, CORRUPT_SUFFIX, MAX_KEY_CHARS, MAX_PREFIX_CHARS, PDF_MAGIC_BYTES, TEMP_ROOM,
+    FullTextCache, CORRUPT_SUFFIX, MAX_KEY_CHARS, MAX_PREFIX_CHARS, PDF_MAGIC_BYTES,
+    PDF_RETRY_SUFFIX, TEMP_ROOM,
 };
 pub use jats_reader::{
     author_full_name, author_is_named, parse, parse_audited, parse_with_pmc_id, JatsError,
@@ -61,6 +62,7 @@ pub use models::{
     ContentKind, FullTextResult, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
     JATSReferenceInfo, JATSTableInfo, Section, SectionType, SegmentedDocument, TextBlock,
+    PDF_SEARCH_FAILED,
 };
 pub use parse_audit::{unwind_diagnostics, ParseUnwindState};
 pub use pdf_text::{
@@ -82,8 +84,9 @@ pub use service::{
     pick_oa_pdf_url, plural, quote, render_jats_html, FaultKind, FullTextError, FullTextRequest,
     FullTextService, LogLevel, LogLine, PdfExtractError, PdfExtractor, PdfText, TierFailures,
     TierFault, BUG_TYPE_NAMES, DOI_BASE, EUROPE_PMC_BASE, EUTILS_EFETCH_URL, EUTILS_TOOL_NAME,
-    FREE_PDF_AVAILABILITY_CODES, FREE_PDF_AVAILABILITY_LABELS, NCBI_IDCONV_URL, PUBMED_BASE,
-    TIMEOUT, UNPAYWALL_BASE,
+    FREE_PDF_AVAILABILITY_CODES, FREE_PDF_AVAILABILITY_LABELS, NCBI_IDCONV_URL,
+    PDF_BESIDE_JATS_ATTEMPTS, PDF_RETRY_DELAY, PDF_SEEK_AGAIN_LIMIT, PUBMED_BASE, TIMEOUT,
+    UNPAYWALL_BASE,
 };
 pub use titles::{
     accepted_metadata_title, accepted_metadata_title_why, looks_like_junk, normalise,
