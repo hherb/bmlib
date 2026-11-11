@@ -1,0 +1,556 @@
+{
+ "algorithm_version": "rob2-2019-08-22/assignment/parallel/1",
+ "prompt_version": 5,
+ "study": {
+  "status": "assessed",
+  "domain": "D1",
+  "answers": {
+   "1.1": {
+    "answer": "Y",
+    "citations": [
+     {
+      "start": 0,
+      "end": 68,
+      "text": "Participants were randomly assigned using a computer-generated list.",
+      "similarity": 1.0,
+      "exact": true
+     }
+    ],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0,
+    "reasoning": "Because."
+   },
+   "1.2": {
+    "answer": "NI",
+    "citations": [],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0,
+    "reasoning": "Not described."
+   },
+   "1.3": {
+    "answer": "N",
+    "citations": [],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0,
+    "reasoning": "Because."
+   }
+  },
+  "judgement": "some_concerns",
+  "condensed": true,
+  "ignored": []
+ },
+ "outcomes": [
+  {
+   "outcome": "Systolic blood pressure",
+   "domains": [
+    {
+     "status": "assessed",
+     "domain": "D2",
+     "answers": {
+      "2.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.6": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D3",
+     "answers": {
+      "3.1": {
+       "answer": "Y",
+       "citations": [
+        {
+         "start": 248,
+         "end": 300,
+         "text": "Outcome data were available for 98% of participants.",
+         "similarity": 1.0,
+         "exact": true
+        }
+       ],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D4",
+     "answers": {
+      "4.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D5",
+     "answers": {
+      "5.1": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
+      },
+      "5.2": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
+      },
+      "5.3": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
+      }
+     },
+     "judgement": "some_concerns",
+     "condensed": false,
+     "ignored": [],
+     "facts": {
+      "outcome": "Systolic blood pressure",
+      "facts": {
+       "plan_cited": {
+        "claimed": true,
+        "citations": [
+         {
+          "start": 327,
+          "end": 359,
+          "text": "registered protocol, NCT00000000",
+          "similarity": 1.0,
+          "exact": true
+         }
+        ],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "present"
+       },
+       "plan_dated_early": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "plan_late": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "measure_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "timepoint_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "analysis_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "switched": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "change_explained": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       }
+      },
+      "other_measurements": [],
+      "main_analysis": {
+       "differs": false,
+       "planned": [],
+       "reported": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0
+      }
+     }
+    }
+   ],
+   "escalation": {
+    "escalate": true,
+    "reasoning": "Concerns about concealment and the plan compound."
+   },
+   "escalation_error": null,
+   "escalation_retryable": false,
+   "escalation_status_code": null,
+   "overall": "high"
+  },
+  {
+   "outcome": "Diastolic blood pressure",
+   "domains": [
+    {
+     "status": "assessed",
+     "domain": "D2",
+     "answers": {
+      "2.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.6": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": [
+      "2.7"
+     ]
+    },
+    {
+     "status": "failed",
+     "domain": "D3",
+     "reason": "connection refused",
+     "retryable": true,
+     "status_code": null
+    },
+    {
+     "status": "failed",
+     "domain": "D4",
+     "reason": "HTTP 401: invalid x-api-key",
+     "retryable": false,
+     "status_code": 401
+    },
+    {
+     "status": "failed",
+     "domain": "D5",
+     "reason": "HTTP 503: overloaded",
+     "retryable": true,
+     "status_code": 503
+    }
+   ],
+   "escalation": null,
+   "escalation_error": null,
+   "escalation_retryable": false,
+   "escalation_status_code": null,
+   "overall": null
+  },
+  {
+   "outcome": "Heart rate",
+   "domains": [
+    {
+     "status": "assessed",
+     "domain": "D2",
+     "answers": {
+      "2.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "2.6": {
+       "answer": "Y",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D3",
+     "answers": {
+      "3.1": {
+       "answer": "Y",
+       "citations": [
+        {
+         "start": 248,
+         "end": 300,
+         "text": "Outcome data were available for 98% of participants.",
+         "similarity": 1.0,
+         "exact": true
+        }
+       ],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D4",
+     "answers": {
+      "4.1": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.2": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      },
+      "4.3": {
+       "answer": "N",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "Because."
+      }
+     },
+     "judgement": "low",
+     "condensed": false,
+     "ignored": []
+    },
+    {
+     "status": "assessed",
+     "domain": "D5",
+     "answers": {
+      "5.1": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
+      },
+      "5.2": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
+      },
+      "5.3": {
+       "answer": "NI",
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
+      }
+     },
+     "judgement": "some_concerns",
+     "condensed": false,
+     "ignored": [],
+     "facts": {
+      "outcome": "Systolic blood pressure",
+      "facts": {
+       "plan_cited": {
+        "claimed": true,
+        "citations": [
+         {
+          "start": 327,
+          "end": 359,
+          "text": "registered protocol, NCT00000000",
+          "similarity": 1.0,
+          "exact": true
+         }
+        ],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "present"
+       },
+       "plan_dated_early": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "plan_late": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "measure_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "timepoint_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "analysis_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "switched": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "change_explained": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       }
+      },
+      "other_measurements": [],
+      "main_analysis": {
+       "differs": false,
+       "planned": [],
+       "reported": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0
+      }
+     }
+    }
+   ],
+   "escalation": null,
+   "escalation_error": "RoB 2 escalation: HTTP 503",
+   "escalation_retryable": true,
+   "escalation_status_code": 503,
+   "overall": null
+  }
+ ]
+}

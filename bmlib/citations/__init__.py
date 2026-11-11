@@ -78,6 +78,7 @@ from bmlib.citations.passage_match import (
     fold_char,
     normalize_with_offsets,
     occurs_once,
+    split_at_ellipses,
 )
 
 __all__ = [
@@ -116,6 +117,7 @@ __all__ = [
     "parse_citations",
     "replace_all_citations_with_numbers",
     "replace_citation_with_number",
+    "split_at_ellipses",
     "unique_document_ids",
     "validate_citation_marker",
 ]

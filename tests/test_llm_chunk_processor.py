@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bmlib.agents import ChatJsonTruncatedError
-from bmlib.agents.base import BaseAgent, ChatStoppedError
+from bmlib.agents.base import SHORT_REPLY_HINT, BaseAgent, ChatStoppedError
 from bmlib.context_processor import (
     ConsolidatedItem,
     LLMChunkProcessor,
@@ -359,7 +359,11 @@ class TestStructuredExtraction:
         ("reply", "temperature", "cause"),
         [
             # chat_json ends this message with the batch's label ...
-            ("[1]", 0.0, "expected a JSON object, got list"),
+            (
+                "[1]",
+                0.0,
+                f"expected a JSON object, got list; the whole reply was '[1]': {SHORT_REPLY_HINT}",
+            ),
             # ... and puts it mid-message once retries run out.
             ("not json", 0.5, "Failed after 3 attempts: unparseable response"),
         ],

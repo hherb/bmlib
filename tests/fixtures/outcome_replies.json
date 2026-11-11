@@ -1,0 +1,1623 @@
+{
+ "prompt_version": 1,
+ "system_prompt": "You are an expert in clinical research methodology and evidence-based medicine.\n\nCRITICAL RULES:\n1. Base everything ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume, calculate or fabricate any information or number\n3. List only outcomes the paper itself calls primary; never choose one yourself\n4. Return ONLY valid JSON, no explanation",
+ "task_prompt": "Find the PRIMARY outcomes of the research paper below, and the result the paper reports for each.\n\nprimary_outcomes: only the outcomes the paper itself calls primary (or co-primary). Do not list secondary, exploratory or safety outcomes, and do not pick an outcome because it seems the most important. If the paper names no primary outcome, return an empty list.\n\nFor each primary outcome give:\n- name: the outcome as the paper names it\n- timepoint: when it was measured (for example \"12 weeks\"), or null if the paper does not say\n- quotes: 1-3 passages copied VERBATIM from the paper that show the outcome is primary or give its result. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n- result: the effect the paper reports for the primary analysis of this outcome, or null if the paper reports no effect estimate for it:\n  - measure: the name of the measure as the paper gives it (for example \"risk ratio\", \"mean difference\")\n  - scale: \"ratio\" for a ratio (risk ratio, odds ratio, hazard ratio), \"difference\" for a difference (mean difference, risk difference)\n  - estimate: the point estimate, as a number\n  - ci_low, ci_high: the confidence interval bounds, or null if not reported\n  - ci_level: the interval's level as printed (95 for a 95% interval), or null if not stated\n  - n_analysed: the number of participants analysed for this result, or null if not reported\nCopy numbers exactly as printed; do not calculate, convert or round.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"primary_outcomes\": [\n        {\n            \"name\": \"Systolic blood pressure\",\n            \"timepoint\": \"12 weeks\",\n            \"quotes\": [\"The primary outcome was change in systolic blood pressure at 12 weeks.\"],\n            \"result\": {\n                \"measure\": \"mean difference\",\n                \"scale\": \"difference\",\n                \"estimate\": -4.2,\n                \"ci_low\": -6.1,\n                \"ci_high\": -2.3,\n                \"ci_level\": 95,\n                \"n_analysed\": 412\n            }\n        }\n    ]\n}",
+ "condense_query": "Everything that names the study's primary outcome or outcomes (including co-primary outcomes) and when each was measured, and the results of the primary analysis: effect estimates with their confidence intervals and the number of participants analysed.",
+ "text": "The primary outcome was all-cause mortality at 28 days. The risk ratio was 0.70 (95% CI 0.55 to 0.88), n=1200. A co-primary outcome was hospital admission.",
+ "min_similarity": 0.9,
+ "cases": [
+  {
+   "name": "one ratio result",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "two co-primary outcomes",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": null,
+      "quotes": [
+       "A co-primary outcome was hospital admission."
+      ],
+      "result": null
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": null,
+      "result": null,
+      "result_error": null,
+      "citations": [
+       {
+        "start": 111,
+        "end": 155,
+        "text": "A co-primary outcome was hospital admission.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "none named",
+   "reply": {
+    "primary_outcomes": []
+   },
+   "expected": {
+    "outcomes": [],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "difference result, scale folded",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "mean difference",
+       "scale": " Difference ",
+       "estimate": -2.0,
+       "ci_low": -3.1,
+       "ci_high": -0.9,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "mean difference",
+       "scale": "difference",
+       "estimate": -2.0,
+       "ci_low": -3.1,
+       "ci_high": -0.9,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "interval and level absent",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": null,
+       "ci_high": null,
+       "ci_level": null,
+       "n_analysed": null
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "blank timepoint",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "  ",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": null,
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "bounds the wrong way round",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.9,
+       "ci_high": 0.5,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "ci_low <= estimate <= ci_high does not hold",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "ratio bound zero",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.4,
+       "ci_low": 0.0,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "ci_low must be above 0 on the ratio scale",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "one bound only",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": null,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "ci_low and ci_high must be given together",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "estimate outside interval",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.2,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "ci_low <= estimate <= ci_high does not hold",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "level as printed, a percentage",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "level as printed, 99.9",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 99.9,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.9990000000000001,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "level of 100",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 100,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.ci_level is neither a percentage in (1, 100) nor a fraction in (0, 1)",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "level of 1",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 1,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.ci_level is neither a percentage in (1, 100) nor a fraction in (0, 1)",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "level of 0",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.ci_level is neither a percentage in (1, 100) nor a fraction in (0, 1)",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "level text",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": "95%",
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.ci_level is not a finite number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "an unreadable result beside a good one",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": "NR",
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": "28 days",
+      "quotes": [
+       "A co-primary outcome was hospital admission."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.ci_low is not a finite number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 111,
+        "end": 155,
+        "text": "A co-primary outcome was hospital admission.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "negative sample",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": -3
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "n_analysed must be a whole number that fits 32 bits",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "sample over 32 bits",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 4294967296
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "n_analysed must be a whole number that fits 32 bits",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "quotes lost, changed and unusable",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "Patients were followed for a year.",
+       "The primary outcome was all-cause mortality at 90 days.",
+       "The primary outcome was all-cause mortality at 28 days.",
+       "  ",
+       7,
+       null
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [
+       "Patients were followed for a year."
+      ],
+      "contradicted": [
+       {
+        "quote": "The primary outcome was all-cause mortality at 90 days.",
+        "contradiction": "number"
+       }
+      ],
+      "quotes_dropped": 3
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "scale percent",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "percent",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.scale \"percent\" is not a scale",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "scale not text",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": 1,
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.scale is not text",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "measure not text",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": null,
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.measure is not text",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "estimate missing",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": null,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.estimate is not a finite number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "estimate a bool",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": true,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.estimate is not a finite number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "estimate text",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": "0.7",
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.estimate is not a finite number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "bound text",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": "low",
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.ci_low is not a finite number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "sample a float",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200.5
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result.n_analysed is not a whole number",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "result text",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": "risk ratio 0.7"
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": "28 days",
+      "quotes": [
+       "A co-primary outcome was hospital admission."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "expected": {
+    "outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": "28 days",
+      "result": null,
+      "result_error": "result is not an object",
+      "citations": [
+       {
+        "start": 0,
+        "end": 55,
+        "text": "The primary outcome was all-cause mortality at 28 days.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     },
+     {
+      "name": "Hospital admission",
+      "timepoint": "28 days",
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      },
+      "result_error": null,
+      "citations": [
+       {
+        "start": 111,
+        "end": 155,
+        "text": "A co-primary outcome was hospital admission.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
+     }
+    ],
+    "condensed": false,
+    "prompt_version": 1
+   }
+  },
+  {
+   "name": "result missing",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "x",
+      "quotes": []
+     }
+    ]
+   },
+   "error": "primary_outcomes[0].result is missing"
+  },
+  {
+   "name": "name blank",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "  ",
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "error": "primary_outcomes[0].name is empty"
+  },
+  {
+   "name": "name missing",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": null,
+      "timepoint": "28 days",
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "error": "primary_outcomes[0].name is not text"
+  },
+  {
+   "name": "timepoint a number",
+   "reply": {
+    "primary_outcomes": [
+     {
+      "name": "All-cause mortality",
+      "timepoint": 3,
+      "quotes": [
+       "The primary outcome was all-cause mortality at 28 days."
+      ],
+      "result": {
+       "measure": "risk ratio",
+       "scale": "ratio",
+       "estimate": 0.7,
+       "ci_low": 0.55,
+       "ci_high": 0.88,
+       "ci_level": 0.95,
+       "n_analysed": 1200
+      }
+     }
+    ]
+   },
+   "error": "primary_outcomes[0].timepoint is not text"
+  },
+  {
+   "name": "outcome not an object",
+   "reply": {
+    "primary_outcomes": [
+     "mortality"
+    ]
+   },
+   "error": "primary_outcomes[0] is not an object"
+  },
+  {
+   "name": "list not a list",
+   "reply": {
+    "primary_outcomes": "none"
+   },
+   "error": "primary_outcomes is not a list"
+  },
+  {
+   "name": "list missing",
+   "reply": {},
+   "error": "primary_outcomes is not a list"
+  },
+  {
+   "name": "reply not an object",
+   "reply": [
+    "mortality"
+   ],
+   "error": "expected an object"
+  }
+ ]
+}

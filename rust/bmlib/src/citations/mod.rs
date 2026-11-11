@@ -81,6 +81,6 @@ pub use parser::{
     validate_marker, CITATION_PATTERN,
 };
 pub use passage_match::{
-    find_passage, fold_char, normalize_with_offsets, occurs_once, InvalidSimilarity,
-    PassageContradiction, PassageMatch, PassageSpan,
+    find_passage, fold_char, normalize_with_offsets, occurs_once, split_at_ellipses,
+    InvalidSimilarity, PassageContradiction, PassageMatch, PassageSpan,
 };

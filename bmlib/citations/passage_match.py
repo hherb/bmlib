@@ -97,6 +97,18 @@ EDGE_BLOCK_MIN_LENGTH = 2 * SEED_MIN_LENGTH
 # Characters searched for word boundaries on either side of an estimated
 # window edge (a few words).
 EDGE_SEARCH_MARGIN = 16
+# Fewest words each piece of a quote split at its ellipses must have to be
+# located on its own: a shorter fragment ("Anxiety", "or colchicine") matches
+# somewhere in almost any paper.
+ELLIPSIS_PIECE_MIN_WORDS = 3
+# The characters an ellipsis is made of: the ellipsis character, or a run of at
+# least ELLIPSIS_MIN_DOTS full stops.
+_ELLIPSIS_CHARS = ".\u2026"
+ELLIPSIS_MIN_DOTS = 3
+# Left at a piece's start or end by the ellipsis next to it ("a, [...] b"):
+# trimmed, along with whitespace.
+_PIECE_LEADING_TRIM = ",;:)]"
+_PIECE_TRAILING_TRIM = ",;:(["
 
 _SPACE = " "
 
@@ -349,6 +361,52 @@ def occurs_once(fragment: str, text: str) -> bool:
         return False
     first = norm_text.find(norm_fragment)
     return first >= 0 and norm_text.find(norm_fragment, first + 1) < 0
+
+
+def split_at_ellipses(quote: str) -> list[str]:
+    """The pieces of ``quote`` between its ellipses, for locating each on its own.
+
+    A model that shortens a quote marks the cut with an ellipsis, and the
+    shortened quote is then nowhere in the paper, though every piece of it may
+    be. An ellipsis is the character "\u2026" or a run of three or more full
+    stops, alone or mixed ("..\u2026"). Each piece is trimmed of whitespace and
+    of what an ellipsis leaves next to it: a comma, semicolon or colon, an
+    opening bracket at its end and a closing one at its start (the halves of
+    "[...]" or "(\u2026)"). Empty pieces are dropped, so a leading or trailing
+    ellipsis leaves one piece.
+
+    Args:
+        quote: A quote as the model gave it.
+
+    Returns:
+        The trimmed, non-empty pieces in order; an empty list when ``quote``
+        has no ellipsis (or nothing but ellipses).
+    """
+    pieces: list[str] = []
+    start = index = 0
+    while index < len(quote):
+        end = index
+        while end < len(quote) and quote[end] in _ELLIPSIS_CHARS:
+            end += 1
+        run = quote[index:end]
+        if "\u2026" in run or len(run) >= ELLIPSIS_MIN_DOTS:
+            pieces.append(quote[start:index])
+            start = end
+        index = max(end, index + 1)
+    if not pieces:
+        return []
+    pieces.append(quote[start:])
+    return [piece for piece in map(_trim_piece, pieces) if piece]
+
+
+def _trim_piece(piece: str) -> str:
+    """``piece`` without the whitespace and ellipsis leftovers at its ends."""
+    start, end = 0, len(piece)
+    while start < end and (piece[start].isspace() or piece[start] in _PIECE_LEADING_TRIM):
+        start += 1
+    while end > start and (piece[end - 1].isspace() or piece[end - 1] in _PIECE_TRAILING_TRIM):
+        end -= 1
+    return piece[start:end]
 
 
 def find_passage(passage: str, text: str, min_similarity: float) -> PassageMatch:

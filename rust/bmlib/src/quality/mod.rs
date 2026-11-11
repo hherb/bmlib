@@ -32,6 +32,16 @@
 //! | `quality/study_classifier.py` | [`study_classifier`] | ported (Tier 2) |
 //! | `quality/quality_agent.py` | [`quality_agent`] | ported (Tier 3) |
 //! | `quality/cochrane_assessor.py` | [`cochrane_assessor`] | ported (Tier 4) |
+//! | `quality/rob2_algorithm.py` | [`rob2_algorithm`] | ported (evidence weight, piece 4a) |
+//! | `quality/evidence_ladder.py` | [`evidence_ladder`] | ported (evidence weight, piece 5) |
+//! | `quality/_full_text_agent.py` | [`full_text_agent`] | ported (evidence weight, pieces 1-4) |
+//! | `quality/design_agent.py` | [`design_agent`] | ported (evidence weight, pieces 1, 2) |
+//! | `quality/outcome_agent.py` | [`outcome_agent`] | ported (evidence weight, piece 3) |
+//! | `quality/rob2_questions.py` | [`rob2_questions`] | ported (evidence weight, piece 4) |
+//! | `quality/rob2_agent.py` | [`rob2_agent`] | ported (evidence weight, piece 4) |
+//! | `quality/rob2_d5_checks.py` | [`rob2_d5_checks`] | ported (evidence weight, D5 from facts) |
+//! | `quality/rob2_d5_facts.py` | [`rob2_d5_facts`] | ported (evidence weight, D5 from facts) |
+//! | `quality/evidence_weight.py` | [`evidence_weight`] | ported (evidence weight, piece 6) |
 //!
 //! The three LLM tiers do not own a client. Each takes a
 //! [`agent_chat::JsonChat`] — the message-carrying form of
@@ -70,14 +80,24 @@ pub mod cochrane_assessor;
 pub mod cochrane_formatter;
 pub mod cochrane_models;
 pub mod data_models;
+pub mod design_agent;
+pub mod evidence_ladder;
+pub mod evidence_weight;
 pub mod extractors;
+pub mod full_text_agent;
 mod json_fields;
 pub mod llm_parsers;
 pub mod manager;
 pub mod metadata_filter;
+pub mod outcome_agent;
 pub mod pico_agent;
 pub mod pico_models;
 pub mod quality_agent;
+pub mod rob2_agent;
+pub mod rob2_algorithm;
+pub mod rob2_d5_checks;
+pub mod rob2_d5_facts;
+pub mod rob2_questions;
 pub mod scoring_models;
 pub mod study_classifier;
 
@@ -109,7 +129,20 @@ pub use cochrane_models::{
 };
 pub use data_models::{
     design_to_randomized, design_to_score, design_to_tier, designs_per_tier, study_design_from_str,
-    BiasRisk, QualityAssessment, QualityFilter, QualityTier, StudyDesign, VALID_BIAS_VALUES,
+    BiasRisk, QualityAssessment, QualityFilter, QualityTier, RctLayout, StudyDesign,
+    VALID_BIAS_VALUES,
+};
+pub use design_agent::{
+    read_design_reply, DesignAgent, DesignProposal, LlmQueryCondenser, ProposalError,
+    QueryCondenser, DESIGN_CONDENSE_QUERY, DESIGN_PROMPT_VERSION, DESIGN_SYSTEM_PROMPT,
+    DESIGN_TASK_PROMPT,
+};
+pub use evidence_ladder::{
+    build_ladder, paper_weight, start_level, EffectScale, EvidenceLadder, LadderReason,
+    LadderSettings, LadderStep, Level, ReportedResult, LADDER_VERSION,
+};
+pub use evidence_weight::{
+    assess_unattended, AgentOptions, AssessedOutcome, EvidenceWeight, EvidenceWeightError,
 };
 pub use extractors::{
     calculate_sample_size_score, extract_sample_size_dimension, extract_study_type,
@@ -120,6 +153,10 @@ pub use extractors::{
     DEFAULT_STUDY_TYPE_KEYWORDS, DENIAL_LOOKAROUND, EXCLUSION_CONTEXT_WINDOW,
     POWER_CALCULATION_KEYWORDS, POWER_CALCULATION_PATTERNS, SAMPLE_SIZE_PATTERNS,
     SINGULAR_ONLY_STUDY_TYPES, STUDY_TYPE_EXCLUSIONS, STUDY_TYPE_PATTERNS, STUDY_TYPE_PRIORITY,
+};
+pub use outcome_agent::{
+    read_outcome_reply, OutcomeAgent, OutcomeProposal, ProposedOutcome, OUTCOME_CONDENSE_QUERY,
+    OUTCOME_PROMPT_VERSION, OUTCOME_SYSTEM_PROMPT, OUTCOME_TASK_PROMPT,
 };
 pub use pico_agent::{
     read_extraction, read_part, read_suitability, verify_quotes, PicoAgent, QuoteCheck,
@@ -132,6 +169,15 @@ pub use pico_models::{
     PicoPrepared, PicoSuitability,
 };
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
+pub use rob2_agent::{
+    domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, rob2_overall,
+    DomainAssessment, DomainResult, Escalation, MachineAnswer, OutcomeRob2, Rob2Agent, Rob2Run,
+    Rob2RunError, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
+};
+pub use rob2_algorithm::{
+    applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,
+    questions, Answer, Answers, Domain, Judgement, Rob2Error, Scope, ROB2_ALGORITHM_VERSION,
+};
 pub use scoring_models::{
     AssessmentDetail, DimensionScore, ALL_DIMENSIONS, DIMENSION_METHODOLOGICAL_QUALITY,
     DIMENSION_REPLICATION_STATUS, DIMENSION_RISK_OF_BIAS, DIMENSION_SAMPLE_SIZE,

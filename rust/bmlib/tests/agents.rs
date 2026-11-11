@@ -22,7 +22,7 @@
 use bmlib::agents::{
     chat_json, classify_stop_reason, group, json_type_name, round_to, with_json_correction,
     ChatJsonError, ChatSource, JsonAttempt, MetricsSnapshot, Monotonic, PerformanceMetrics,
-    StopReasonClass, JSON_CORRECTION_NOTE,
+    StopReasonClass, JSON_CORRECTION_NOTE, SHORT_REPLY_HINT, SHORT_REPLY_MAX_CHARS,
 };
 use bmlib::llm::{LLMMessage, LLMResponse, Role};
 use serde_json::{json, Value};
@@ -349,6 +349,35 @@ fn a_transport_failure_is_reported_as_such() {
         !error.to_string().contains("empty response"),
         "must not name the wrong cause: {error}"
     );
+}
+
+/// Qwen3.8 under oMLX's JSON mode answered a RoB 2 domain with `[1.1]`
+/// (2026-11-10): the error quotes so short a reply and names the likely cause.
+#[test]
+fn a_short_wrong_shape_is_quoted_with_the_likely_cause() {
+    let mut source = Script::answering("[1.1]", Some("stop"));
+    let error = chat_json(&mut source, 3, 0.0, Some(100), 4096, true).expect_err("fails");
+    let message = error.to_string();
+    assert!(
+        message.contains(&format!(
+            "; the whole reply was '[1.1]': {SHORT_REPLY_HINT}"
+        )),
+        "{message}"
+    );
+}
+
+/// A wrong shape longer than [`SHORT_REPLY_MAX_CHARS`] is named, not quoted.
+#[test]
+fn a_longer_wrong_shape_is_not_quoted() {
+    let reply = format!("[{}]", [r#"{"a": 1}"#; 5].join(", "));
+    assert!(reply.chars().count() > SHORT_REPLY_MAX_CHARS);
+    let mut source = Script::answering(&reply, Some("stop"));
+    let error = chat_json(&mut source, 3, 0.0, Some(100), 4096, true).expect_err("fails");
+    match &error {
+        ChatJsonError::WrongShape { short_reply, .. } => assert_eq!(short_reply, &None),
+        other => panic!("expected WrongShape, got {other:?}"),
+    }
+    assert!(!error.to_string().contains("the whole reply"), "{error}");
 }
 
 /// `require_dict` demands an object, and **at temperature 0 the same messages

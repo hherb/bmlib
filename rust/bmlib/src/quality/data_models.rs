@@ -190,6 +190,55 @@ pub fn study_design_from_str(raw: &str) -> StudyDesign {
     }
 }
 
+/// How a randomised trial allocates participants.
+///
+/// Kept apart from [`StudyDesign`] so that enum's wire values and every tier
+/// built on it stay as they were. Only a parallel-group trial is covered by
+/// the RoB 2 core questions; the others have variants of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RctLayout {
+    /// Participants are randomised individually to parallel groups.
+    Parallel,
+    /// Groups of participants are randomised together.
+    Cluster,
+    /// Each participant receives the arms in turn.
+    Crossover,
+    /// Any other layout.
+    Other,
+}
+
+impl RctLayout {
+    /// Whether the standard (parallel-group) RoB 2 questions apply.
+    #[must_use]
+    pub fn is_covered(self) -> bool {
+        self == RctLayout::Parallel
+    }
+
+    /// The wire spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RctLayout::Parallel => "parallel",
+            RctLayout::Cluster => "cluster",
+            RctLayout::Crossover => "crossover",
+            RctLayout::Other => "other",
+        }
+    }
+
+    /// The layout for an exact wire value, or `None`.
+    #[must_use]
+    pub fn from_wire(raw: &str) -> Option<Self> {
+        match raw {
+            "parallel" => Some(RctLayout::Parallel),
+            "cluster" => Some(RctLayout::Cluster),
+            "crossover" => Some(RctLayout::Crossover),
+            "other" => Some(RctLayout::Other),
+            _ => None,
+        }
+    }
+}
+
 /// Evidence quality tier. **Higher value = stronger evidence.**
 ///
 /// The variant order is the ordering, so it must not be rearranged: this is

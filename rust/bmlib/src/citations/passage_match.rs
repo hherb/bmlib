@@ -55,6 +55,7 @@ use unicode_normalization::char::{canonical_combining_class, is_combining_mark};
 use unicode_normalization::UnicodeNormalization;
 
 use super::sequence_matcher::SequenceMatcher;
+use crate::pyvalue::is_python_space;
 
 /// Shortest seed used for voting; shorter seeds match almost anywhere.
 const SEED_MIN_LENGTH: usize = 4;
@@ -70,6 +71,19 @@ const EDGE_BLOCK_MIN_LENGTH: usize = 2 * SEED_MIN_LENGTH;
 /// Characters searched for word boundaries on either side of an estimated
 /// window edge (a few words).
 const EDGE_SEARCH_MARGIN: isize = 16;
+/// Fewest words each piece of a quote split at its ellipses must have to be
+/// located on its own: a shorter fragment ("Anxiety", "or colchicine") matches
+/// somewhere in almost any paper. Python's `ELLIPSIS_PIECE_MIN_WORDS`.
+pub const ELLIPSIS_PIECE_MIN_WORDS: usize = 3;
+/// Shortest run of full stops that is an ellipsis. Python's `ELLIPSIS_MIN_DOTS`.
+pub const ELLIPSIS_MIN_DOTS: usize = 3;
+/// The ellipsis character.
+const ELLIPSIS: char = '\u{2026}';
+/// Left at a piece's start by the ellipsis before it ("a [...] b"): trimmed,
+/// along with whitespace.
+const PIECE_LEADING_TRIM: &str = ",;:)]";
+/// Left at a piece's end by the ellipsis after it: trimmed, along with whitespace.
+const PIECE_TRAILING_TRIM: &str = ",;:([";
 
 const SPACE: char = ' ';
 
@@ -301,6 +315,64 @@ pub(crate) fn normalize_chars(text: &str) -> (Vec<char>, Vec<usize>) {
 pub fn normalize_with_offsets(text: &str) -> (String, Vec<usize>) {
     let (chars, offsets) = normalize_chars(text);
     (chars.into_iter().collect(), offsets)
+}
+
+/// The pieces of `quote` between its ellipses, for locating each on its own.
+/// Python's `split_at_ellipses`.
+///
+/// A model that shortens a quote marks the cut with an ellipsis, and the
+/// shortened quote is then nowhere in the paper, though every piece of it may
+/// be. An ellipsis is the character "\u{2026}" or a run of three or more full
+/// stops, alone or mixed. Each piece is trimmed of whitespace (Python's
+/// `str.isspace`) and of what an ellipsis leaves next to it: a comma,
+/// semicolon or colon, an opening bracket at its end and a closing one at its
+/// start (the halves of "[...]" or "(\u{2026})"). Empty pieces are dropped, so
+/// a leading or trailing ellipsis leaves one piece.
+///
+/// Returns the trimmed, non-empty pieces in order; empty when `quote` has no
+/// ellipsis (or nothing but ellipses).
+#[must_use]
+pub fn split_at_ellipses(quote: &str) -> Vec<String> {
+    let chars: Vec<char> = quote.chars().collect();
+    let mut pieces: Vec<&[char]> = Vec::new();
+    let (mut start, mut index) = (0, 0);
+    while index < chars.len() {
+        let mut end = index;
+        while end < chars.len() && (chars[end] == '.' || chars[end] == ELLIPSIS) {
+            end += 1;
+        }
+        let run = &chars[index..end];
+        if run.contains(&ELLIPSIS) || run.len() >= ELLIPSIS_MIN_DOTS {
+            pieces.push(&chars[start..index]);
+            start = end;
+        }
+        index = end.max(index + 1);
+    }
+    if pieces.is_empty() {
+        return Vec::new();
+    }
+    pieces.push(&chars[start..]);
+    pieces
+        .into_iter()
+        .map(trim_piece)
+        .filter(|piece| !piece.is_empty())
+        .collect()
+}
+
+/// `piece` without the whitespace and ellipsis leftovers at its ends.
+fn trim_piece(piece: &[char]) -> String {
+    let (mut start, mut end) = (0, piece.len());
+    while start < end
+        && (is_python_space(piece[start]) || PIECE_LEADING_TRIM.contains(piece[start]))
+    {
+        start += 1;
+    }
+    while end > start
+        && (is_python_space(piece[end - 1]) || PIECE_TRAILING_TRIM.contains(piece[end - 1]))
+    {
+        end -= 1;
+    }
+    piece[start..end].iter().collect()
 }
 
 /// Whether `fragment` occurs exactly once in `text`, compared after

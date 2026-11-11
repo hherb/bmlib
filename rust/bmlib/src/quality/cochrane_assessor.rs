@@ -390,7 +390,7 @@ pub trait Condenser {
 pub struct LlmCondenser<'a> {
     model: &'a dyn ContextModel,
     templates: PromptTemplates,
-    query: &'static str,
+    query: String,
     temperature: f64,
     max_tokens: i64,
     /// Shared, as each condensation builds a processor of its own.
@@ -431,7 +431,7 @@ impl<'a> LlmCondenser<'a> {
     pub fn with_prompts(
         model: &'a dyn ContextModel,
         templates: PromptTemplates,
-        query: &'static str,
+        query: &str,
         temperature: f64,
         max_tokens: i64,
     ) -> Result<Self, String> {
@@ -439,7 +439,7 @@ impl<'a> LlmCondenser<'a> {
         Ok(LlmCondenser {
             model,
             templates,
-            query,
+            query: query.to_string(),
             temperature,
             max_tokens,
             progress: None,
@@ -490,9 +490,9 @@ impl Condenser for LlmCondenser<'_> {
                     let progress = Arc::clone(progress);
                     processor
                         .with_progress(Box::new(move |info| progress(info)))
-                        .process(text, self.query)
+                        .process(text, &self.query)
                 }
-                None => processor.process(text, self.query),
+                None => processor.process(text, &self.query),
             },
             // Neither agent's `with_condense_config` validates, and a
             // `Condenser` is public, so a caller can hand this any

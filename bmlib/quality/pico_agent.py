@@ -60,7 +60,8 @@ from bmlib.agents.base import (
     ChatJsonTruncatedError,
     ChatStoppedError,
 )
-from bmlib.citations import find_passage
+from bmlib.citations import PassageMatch, find_passage, split_at_ellipses
+from bmlib.citations.passage_match import ELLIPSIS_PIECE_MIN_WORDS
 from bmlib.context_processor import ProcessingConfig, ProcessingStoppedError, ProgressCallback
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.providers.ollama import MAX_NUM_CTX
@@ -349,6 +350,10 @@ def verify_quotes(
         ``quotes`` (``None``) drops nothing, and a bare string reads as a list
         of one (#577); any other value that is not a list counts as one
         dropped, as does a member that is not a string or is blank.
+
+        A quote not found whole that holds an ellipsis is located piece by
+        piece (:func:`_locate`): found when every piece is, each piece then a
+        citation of its own; contradicted when any piece is.
     """
     if quotes is None:
         return [], [], [], 0
@@ -367,26 +372,53 @@ def verify_quotes(
         if not isinstance(quote, str) or not quote.strip():
             dropped += 1
             continue
-        match = find_passage(quote, text, min_similarity)
-        if match.contradiction is not None:
-            contradicted.append(PicoContradictedQuote(quote, match.contradiction))
+        matches = _locate(quote, text, min_similarity)
+        contradiction = next((m.contradiction for m in matches if m.contradiction), None)
+        if contradiction is not None:
+            contradicted.append(PicoContradictedQuote(quote, contradiction))
             continue
-        if match.start is None or match.end is None or match.text is None:
+        if not all(m.matched for m in matches):
             not_found.append(quote)
             continue
-        if (match.start, match.end) in seen:
-            continue
-        seen.add((match.start, match.end))
-        citations.append(
-            PicoCitation(
-                start=match.start,
-                end=match.end,
-                text=match.text,
-                similarity=match.similarity,
-                exact=match.exact,
+        for match in matches:
+            if match.start is None or match.end is None or match.text is None:
+                continue  # unreachable: every match is accepted
+            if (match.start, match.end) in seen:
+                continue
+            seen.add((match.start, match.end))
+            citations.append(
+                PicoCitation(
+                    start=match.start,
+                    end=match.end,
+                    text=match.text,
+                    similarity=match.similarity,
+                    exact=match.exact,
+                )
             )
-        )
     return citations, not_found, contradicted, dropped
+
+
+def _locate(quote: str, text: str, min_similarity: float) -> list[PassageMatch]:
+    """Where *quote* is in *text*: the whole quote, or else its pieces.
+
+    The whole quote first, so a quote the paper holds as given (an ellipsis
+    and all) is matched as before.  When it is neither found nor
+    contradicted and it holds an ellipsis, the pieces
+    :func:`~bmlib.citations.split_at_ellipses` cuts it into are located one by
+    one — unless a piece is shorter than
+    :data:`~bmlib.citations.passage_match.ELLIPSIS_PIECE_MIN_WORDS` words,
+    which would match almost anywhere: then the whole quote's miss stands.
+
+    Returns:
+        One match per piece located, or the whole quote's match alone.
+    """
+    whole = find_passage(quote, text, min_similarity)
+    if whole.matched or whole.contradiction is not None:
+        return [whole]
+    pieces = split_at_ellipses(quote)
+    if not pieces or any(len(piece.split()) < ELLIPSIS_PIECE_MIN_WORDS for piece in pieces):
+        return [whole]
+    return [find_passage(piece, text, min_similarity) for piece in pieces]
 
 
 def read_part(value: object, text: str, min_similarity: float) -> PicoPart:

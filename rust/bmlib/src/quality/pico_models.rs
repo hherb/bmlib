@@ -202,6 +202,38 @@ pub struct PicoCitation {
 }
 
 impl PicoCitation {
+    /// Python's `from_dict()`: rebuild from [`to_json`](Self::to_json) output.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the field that is absent or of the wrong type.
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let count = |key: &str| {
+            value
+                .get(key)
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| format!("citations.{key} is not a count"))
+        };
+        Ok(PicoCitation {
+            start: count("start")?,
+            end: count("end")?,
+            text: value
+                .get("text")
+                .and_then(Value::as_str)
+                .ok_or("citations.text is not text")?
+                .to_string(),
+            similarity: value
+                .get("similarity")
+                .and_then(Value::as_f64)
+                .ok_or("citations.similarity is not a number")?,
+            exact: value
+                .get("exact")
+                .and_then(Value::as_bool)
+                .ok_or("citations.exact is not a boolean")?,
+        })
+    }
+
     /// Python's `to_dict()`.
     #[must_use]
     pub fn to_json(&self) -> Value {
@@ -227,6 +259,29 @@ pub struct PicoContradictedQuote {
 }
 
 impl PicoContradictedQuote {
+    /// Python's `from_dict()`: rebuild from [`to_json`](Self::to_json) output.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the field that is absent, of the wrong type, or not a
+    /// contradiction [`PassageContradiction`] names.
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let quote = value
+            .get("quote")
+            .and_then(Value::as_str)
+            .ok_or("contradicted.quote is not text")?;
+        let contradiction = match value.get("contradiction").and_then(Value::as_str) {
+            Some("number") => PassageContradiction::Number,
+            Some("negation") => PassageContradiction::Negation,
+            Some("direction") => PassageContradiction::Direction,
+            _ => return Err("contradicted.contradiction is not a contradiction".to_string()),
+        };
+        Ok(PicoContradictedQuote {
+            quote: quote.to_string(),
+            contradiction,
+        })
+    }
+
     /// Python's `to_dict()`.
     #[must_use]
     pub fn to_json(&self) -> Value {
@@ -563,5 +618,45 @@ fn type_name(value: Option<&Value>) -> &'static str {
         Some(Value::String(_)) => "str",
         Some(Value::Array(_)) => "list",
         Some(Value::Object(_)) => "dict",
+    }
+}
+
+#[cfg(test)]
+mod from_json_tests {
+    use super::*;
+
+    #[test]
+    fn a_citation_and_a_contradicted_quote_round_trip_and_wrong_fields_are_named() {
+        let citation = PicoCitation {
+            start: 3,
+            end: 9,
+            text: "abcdef".to_string(),
+            similarity: 0.95,
+            exact: false,
+        };
+        assert_eq!(PicoCitation::from_json(&citation.to_json()), Ok(citation));
+        let mut bad = json!({"start": 1, "end": 2, "text": "x", "similarity": 1.0, "exact": true});
+        bad["start"] = json!(-1);
+        assert!(PicoCitation::from_json(&bad).unwrap_err().contains("start"));
+        bad["start"] = json!(1);
+        bad["exact"] = json!("yes");
+        assert!(PicoCitation::from_json(&bad).unwrap_err().contains("exact"));
+
+        for contradiction in [
+            PassageContradiction::Number,
+            PassageContradiction::Negation,
+            PassageContradiction::Direction,
+        ] {
+            let quote = PicoContradictedQuote {
+                quote: "q".to_string(),
+                contradiction,
+            };
+            assert_eq!(
+                PicoContradictedQuote::from_json(&quote.to_json()),
+                Ok(quote)
+            );
+        }
+        let unknown = json!({"quote": "q", "contradiction": "banana"});
+        assert!(PicoContradictedQuote::from_json(&unknown).is_err());
     }
 }

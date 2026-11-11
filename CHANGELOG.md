@@ -52,7 +52,178 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
-- **`BmlibFFI.xcframework` carries a dSYM per slice** (bmlibrarian_lite#752). `build-xcframework.sh` builds the Apple slices with line tables, packed by rustc into a dSYM before `release-ffi`'s strip, and passes each slice's dSYM to `create-xcframework -debug-symbols`. An app's archive then includes `BmlibFFI.framework.dSYM`, and a crash in bmlib symbolicates to a file and line; until now App Store validation warned of no dSYM, and such a crash was unsymbolicated. The shipped dylibs stay stripped. The script fails if a slice's dSYM does not have its framework binary's UUIDs, because `xcodebuild` packages a mismatched one without a warning. The profile settings come from `CARGO_PROFILE_RELEASE_FFI_*` variables the script sets for the dynamic build only, so the Android `.so` and `--static` build as before. The dSYMs add about 26.5 MB to the xcframework (6.5 MB gzipped).
+- **RoB 2's D5 from facts** (StudyAnalyzer evidence-weight design §4.6), Rust and
+  Python alike; prompt version 5. D5 asks no signalling question: the model
+  reports facts about the plan behind the outcome (a plan cited, dated before
+  or after the data, the measure, time point and analysis set in advance, a
+  switch of the outcome and its reason), the other measurements of the
+  outcome the paper names, and the main analysis set against the one
+  reported, each with quotes. A fact counts only when claimed, quoted, found
+  in the paper and able to show it (`rob2_d5_checks`: a dated plan needs a
+  date or a before-phrase, a switch the language of a change, a measure the
+  outcome's name, a time point a time, and the planning check, a measure,
+  time point or analysis stated as set in advance, not only described). A
+  measurement with no result in the reply gets a second, narrow look; it is
+  missing only when both looks find no passage with a number or a pointer to
+  a figure, table or supplement, and a failed look leaves it undecided. Code
+  answers 5.1-5.3 by the evidence ladder (`rob2_d5_facts.d5_answers`; RoB 2's
+  "measured in only one way" N is not used) and RoB 2's algorithm judges;
+  `DomainAssessment.facts` keeps the facts, and reading one back recomputes
+  every verdict and refuses answers that do not follow. From the RoB 2 wording
+  smoke test (StudyAnalyzer `docs/smokescreens/2026-11-10-rob2-wording.md`,
+  arm F version 3 with its checks): on four models and 20 RCTs, all four give
+  the same D5 judgement in 15 and 17 of 20 paper-runs, against 9 and 10 with
+  the signalling questions, and small models stop answering N without a plan.
+  The D5 question texts stay for a human reviewer. Contracts:
+  `rob2_d5_checks.json`, `rob2_d5_facts.json` (`scripts/make_rob2_d5_fixtures.py`);
+  `rob2_run.json`, `rob2_replies.json` and `evidence_weight.json` regenerated.
+
+- **The unattended evidence-weight pipeline** (StudyAnalyzer evidence weight,
+  piece 6). `assess_unattended` (`bmlib/quality/evidence_weight.py`,
+  `rust/bmlib/src/quality/evidence_weight.rs`) chains the design proposal, the
+  primary-outcome proposal, RoB 2 over all outcomes, the ladder per outcome and
+  the paper's weight, accepting the machine's proposals as they come. Every
+  step gets the same temperature, `max_tokens`, `max_retries` and condensation
+  budget (Rust `AgentOptions`, whose `Default` is the agents' own; Python keyword
+  arguments, `num_ctx` among them; Rust's `num_ctx` is the chat's). The full-text
+  agents' (design, outcome, RoB 2) default `max_tokens` is 16384
+  (`DEFAULT_MAX_TOKENS` in `_full_text_agent.py` and `full_text_agent.rs`), since
+  a reasoning model's thinking counts against it: one RoB 2 domain on
+  `deepseek-flash` took 8,651 output tokens and was cut at 8192. It is a ceiling,
+  not a cost; a caller clips it to `model_limits` for a model that allows less.
+  `PicoAgent` and the Cochrane assessor keep 4096. A design
+  that is not a parallel-group RCT ends as `NotCovered` after one request; a
+  trial with no primary outcome as `NoPrimaryOutcome`; otherwise `Assessed`
+  holds one `AssessedOutcome` per outcome, whose `ladder` is `None` with a
+  `ladder_error` when its risk of bias was not assessed, its result was refused
+  or its result cannot be laddered, and the paper's weight is the largest ladder
+  built. `condensed` is true if any step was. `Assessed` records the
+  `ladder_version` and the `LadderSettings` it was built with, and
+  `DesignProposal` / `OutcomeProposal` their `prompt_version`, so a stored
+  result says which rules and wording made it; reading one back refuses another
+  ladder version or settings that do not validate. `EvidenceWeightError` wraps the
+  step's own `ProposalError` / `Rob2RunError`. A failed request carries
+  `retryable` and `status`, derived as PICO's `PicoError` does: `ProposalError`
+  (Rust `RequestFailed { message, retryable, status }`; Python only a
+  `request_failed` one may carry them) and `DomainFailed` (Rust
+  `DomainResult::Failed`), whose wire form gains `retryable` and `status_code`
+  (`status` is already the assessed/failed tag), read back checked, so a 401
+  is `retryable` false with `status` 401 and a transport failure `retryable`
+  true with no `status`; a request that failed a condensation carries its
+  refusal's own. The escalation question's failure carries the same pair
+  (`OutcomeRob2.escalation_retryable` / `escalation_status`, wire
+  `escalation_retryable` / `escalation_status_code`). Both wire fields are
+  required on read. Retry only when `retryable`; 401 and 403 mean the key.
+  The result has `to_dict` /
+  `to_json` and a checked `evidence_weight_from_dict` / `EvidenceWeight::from_json`;
+  Python gains `EvidenceLadder.from_wire` for it. Contract:
+  `tests/fixtures/evidence_weight.json`, written by `scripts/make_evidence_weight.py`:
+  the model's replies for each status (with a ladder, a refused result and a
+  failed domain) and the result both pipelines make of them, plus wire-form
+  refusals. `bmlib.quality` now exports the evidence-weight names Rust's
+  `quality` module does.
+
+- **The RoB 2 assessor** (StudyAnalyzer evidence weight, piece 4).
+  `Rob2Agent` (`bmlib/quality/rob2_agent.py`, `rust/bmlib/src/quality/rob2_agent.rs`)
+  asks RoB 2's signalling questions one domain per call: D1 once for the trial,
+  D2-D5 once per primary outcome (`ProposedOutcome`'s name, timepoint and result
+  in the prompt; the D5 prompt asks for the registered or pre-specified primary
+  outcome to be compared with the reported one). `read_domain_reply` parses
+  `Y/PY/PN/N/NI` (case and space tolerated; `NA`, `N/A` and `Not applicable`
+  read as unanswered), decides which questions apply from the answers it can
+  read before refusing anything, refuses an applicable question left unanswered,
+  unreadable or answered outside what the question allows, lists answers to
+  questions that do not apply (readable or not) in `ignored`, derives the
+  judgement with `rob2_algorithm`, and verifies every quote against the original
+  text (`quotes_not_found`, `contradicted`, `quotes_dropped` as in the other
+  agents). When no domain is high and two or more have some concerns, one more
+  call asks whether to escalate. A domain whose reply stays unreadable or whose
+  request fails is `DomainResult::Failed` with its reason and the outcome's
+  `overall` is `None` (not assessed); a failed escalation leaves `overall` `None`
+  with `escalation_error`. Only a stop or refused input ends a run
+  (`Rob2RunError`). A paper over the window is condensed per domain, for that
+  domain's query, and flagged `condensed`. The 22 questions and the escalation
+  prompt are bmlib's own (`rob2_questions`, `ROB2_PROMPT_VERSION` 4; RoB 2's
+  guidance is CC BY-NC-ND 4.0 and its text is not copied): written afresh in
+  bmlib's own words from the decision each question feeds; RoB 2's criteria
+  necessarily show through, but its wording, examples and list order are not
+  reused. Each is the
+  question, when it applies (else `NA`; 3.3 is always answered, since its
+  branch opens when the paper does not say how much is missing), where in the
+  paper to look, and one line per answer saying what counts as Y, PY, PN, N
+  and NI. Version 3 makes four answers rest on published evidence only (from a
+  smoke test on 10 RCTs): 5.2 and 5.3 answer N/PN only against a plan fixed
+  before the data by group were seen that leaves nothing open the result could
+  have been chosen on, or when only one measurement or analysis was possible,
+  and NI otherwise (a paper showing one analysis is not N); 1.3
+  answers PN when only the text says the groups were alike at baseline, NI only
+  when the paper says nothing about them; 3.3 answers Y/PY when dropping out
+  could plausibly follow participants' health, with unreported reasons no ground
+  for NI. Version 4 holds 5.1 to the same evidence: Y only for a cited plan,
+  dated before the data by group were seen, that fixes the outcome's measure and
+  analysis; PY when the paper shows what the plan fixes but only its own word
+  dates it; NI for a bare "prespecified", a plan cited without its content, or a
+  late registration (on DeepSeek, PY under version 3 in 6 of 20 runs, 1 under
+  version 4). Contracts: `tests/fixtures/rob2_replies.json` and
+  `tests/fixtures/rob2_run.json`, written by `scripts/make_rob2_fixtures.py`.
+- **Primary outcomes and their results** (StudyAnalyzer evidence weight, piece 3).
+  `OutcomeAgent` (`bmlib/quality/outcome_agent.py`,
+  `rust/bmlib/src/quality/outcome_agent.rs`) asks the model for the outcomes the
+  paper itself calls primary (co-primary allowed; an empty list is valid), each
+  with its timepoint, quotes located in the paper and the reported
+  `ReportedResult`. The model copies the interval's level as printed (`95`
+  for "95% CI"); code reads a value in (1, 100) as a percentage (divided by
+  `PERCENT`) and one in (0, 1) as a fraction. A result with a field that cannot
+  be read (a bound printed as "NR", a null estimate, a scale outside
+  `ratio`/`difference`, a level that is neither), a `result` that is not an
+  object at all (a sentence instead of numbers), or one that reads but is incoherent
+  (bounds the wrong way round, a ratio at or below 0) is kept out with its
+  reason, naming the field, in that outcome's `result_error`; the outcome stays.
+  Only a structural problem (the reply or an outcome not an object,
+  `primary_outcomes` not a list, a missing name or `result` key) refuses the
+  reply (`ProposalError`). Papers over the
+  window are condensed once and flagged `condensed`; quotes are verified against
+  the original text, with contradicted and unusable quotes kept as in the design
+  proposal. Contract: `tests/fixtures/outcome_replies.json`, written by
+  `scripts/make_outcome_replies.py`.
+- **Trial layout and the design proposal** (StudyAnalyzer evidence weight,
+  pieces 1 and 2). `RctLayout` (`parallel`, `cluster`, `crossover`, `other`;
+  only `parallel` is covered), beside an unchanged `StudyDesign`. `DesignAgent`
+  (`bmlib/quality/design_agent.py`, `rust/bmlib/src/quality/design_agent.rs`)
+  asks the model for the paper's own design with quotes located in the paper;
+  a label outside the study-design lookup (or `unknown`), a missing layout for
+  an RCT, or a layout on another design is refused (`ProposalError`), never
+  guessed. A paper over the window is condensed once through the new
+  `QueryCondenser` seam (`LlmQueryCondenser` reuses `LlmCondenser::with_prompts`,
+  now taking the query as `&str`) and flagged `condensed`; quotes are verified
+  against the original text. A quote the paper contradicts keeps its reason
+  (`contradicted`) and unusable quote members are counted (`quotes_dropped`).
+  The plumbing shared by full-text agents lives in `quality/_full_text_agent.py`
+  and `full_text_agent.rs`. Contract: `tests/fixtures/design_replies.json`.
+- **Evidence ladder and the number** (StudyAnalyzer evidence weight, piece 5).
+  `build_ladder`, `start_level`, `paper_weight` in
+  `bmlib/quality/evidence_ladder.py` and `rust/bmlib/src/quality/evidence_ladder.rs`:
+  a trial starts at `high`, loses levels for RoB 2 overall judgement and for
+  imprecision (interval includes no effect, small trial, no interval; capped),
+  and ends at a level whose table weight (`LadderSettings`) is the number. An
+  incoherent `ReportedResult` is refused, never repaired. `LadderSettings` is
+  validated in both languages, with the same messages: step counts fit 8 bits,
+  `small_trial_n` 32 bits, each weight is finite and from 0 to 1, and the
+  weights do not increase down the ladder (Python on construction; Rust in
+  `LadderSettings::validate`, which `build_ladder` and deserialisation use).
+  `settings_from_wire` / Rust's deserialisation refuse an unknown field and
+  default an absent one. Contract:
+  `tests/fixtures/evidence_ladder.json`, written by `scripts/make_evidence_ladder.py`.
+- **RoB 2 decision rules** (StudyAnalyzer evidence weight, piece 4a). The
+  official mapping tables of the 2019 guidance (Tables 1, 3-4, 6, 10, 12, 14)
+  as pure functions in `bmlib/quality/rob2_algorithm.py` and
+  `rust/bmlib/src/quality/rob2_algorithm.rs`: `applicable_questions`,
+  `domain_judgement`, `needs_escalation_decision`, `overall_judgement`. A
+  missing, disallowed or unreadable answer is refused (`Rob2Error`), never
+  defaulted. Contract: `tests/fixtures/rob2_algorithm.json`, written by
+  `scripts/make_rob2_algorithm.py` (hand-listed `official` cases plus every
+  walk of every domain).
+
 - **`FullTextService(fetch_pdf_with_jats=True)`** (Rust `with_fetch_pdf_with_jats(true)`) looks for a PDF once JATS is found, for an app that processes the JATS and shows the PDF (#739). Off by default, so JATS ends the search. When on, a JATS result without a saved PDF asks the caller's `pdf` entries Tier 0 did not try, then Europe PMC's free PDF, only when its search itself resolves to the PMC ID the JATS came from (an ID the ID Converter gave does not count), so the PDF is the same article's, then Unpaywall. The first PDF saved goes on the JATS result, else the first failure. A JATS hit already cached without a PDF is served as it is.
 - **`scripts/sample_html_pages.py --saved-dir`, saved pages measured** (#656).
   Pages a browser saved with their resources inline, one per DOI target of
@@ -67,6 +238,31 @@ All notable changes to bmlib are documented here. The format is based on
   not saved: their images' hosts are gone. `tests/test_html_page_sampler.py`
   holds both corpora's summaries to their rows.
 - **`scripts/sample_html_pages.py`, the first measurement of `canonical_from_html`'s limits on real pages** (#726). It draws pages, fetches them as an app opening a `web_url` would, and reports each one's code points, `<` count, elements built (markupever's tree count, equal to the Rust sink's created count on all 187 pages of two exploratory draws), Python's verdict and the parse child's peak memory, under the samplers' shared rules (a probe not made enters no denominator; a stratum past the unmeasured threshold, or whose draw failed, is ERROR). Its corpus, `tests/data/html_page_shapes.json` (numbers and URLs, no page content), covers 142 pages served to a plain client (73 article-like) from five PubMed years' DOI landing pages, four years' free-full-text ones and six archived 1998-2007 HighWire and BMC sites. **Nothing moves; the constants stay.** Both languages accepted every page. The most elements any page built was 0.0365 per code point (median 0.0088), about 27 times under Rust's budget of one per code point plus `HTML_ELEMENT_ALLOWANCE` (since #656 three per `<`, about five times what any page needed). No page built more elements than it holds `<`, so html5ever rebuilt no formatting elements on any of them, legacy pages carrying `<font>` included (50 pages, one with 463). The longest page was 929,565 code points and the most `<` 6,447, so none is over `HTML_MAX_CHARS` (replaced by #656) or #656's `<` cap. The child peaked at 35 MB against `HTML_PARSE_MAX_BYTES`' 1 GiB. Left as it was: a small page shaped like #723's (`rebuilding(60)`, 1,261 code points) is still refused by Rust and converted by Python; no real page was. Unmeasured: pages a publisher refuses to a plain client (about half the DOI targets, SAGE, Wiley, OUP, ACS and LWW among them, recorded as `not_served`), PMC's article pages (a reCAPTCHA page for 52 of 56 requests), pages saved with `data:` images (#656's case, measured since, above), and memory under pressure (#725). Two of the eight archive strata (NEJM, JCB) are ERROR: the Wayback index answered them with something other than JSON.
+
+### Changed
+
+- **A quote cut with an ellipsis is located piece by piece.** `verify_quotes`
+  (`bmlib/quality/pico_agent.py`, `rust/bmlib/src/quality/pico_agent.rs`), which
+  every full-text agent and `PicoAgent` use, first looks for a quote whole, as
+  before; a quote that is neither found nor contradicted and holds an ellipsis
+  ("…" or three or more full stops, bracketed or not) is then split by the new
+  `split_at_ellipses` (`bmlib.citations`, Rust `bmlib::citations`) and each piece
+  is located on its own. The quote is found when every piece is, each piece a
+  citation of its own (each span once); contradicted when any piece is; and
+  otherwise not found as before. A piece shorter than `ELLIPSIS_PIECE_MIN_WORDS`
+  (3) words would match almost anywhere, so the whole quote stays not found.
+  Measured on the RoB 2 wording smoke test: gpt-oss 120B cut 174 of its 352
+  unlocated quotes this way, of which the split locates about 96 and shows 5 to
+  be contradicted; DeepSeek and Gemma 4 had no such quote, so nothing changes for
+  them. Contract: `tests/fixtures/quote_pieces.json`.
+- **A short reply of the wrong JSON shape is quoted, with the likely cause.**
+  When `chat_json` asked for an object and got another shape in at most
+  `SHORT_REPLY_MAX_CHARS` (40) characters, its error quotes the whole reply and
+  adds `SHORT_REPLY_HINT`: a server that holds a reasoning model to JSON from its
+  first token can leave it no room to think (Qwen3.8 under oMLX's JSON mode
+  answered a RoB 2 domain with `[1.1]`). Rust's `ChatJsonError::WrongShape` gains
+  `short_reply: Option<String>`.
+
 
 ## [0.13.0] — 2026-11-10
 
