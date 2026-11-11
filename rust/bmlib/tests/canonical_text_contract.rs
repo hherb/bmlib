@@ -121,17 +121,14 @@ fn the_html_element_sets_are_the_contracts() {
 #[cfg(feature = "html")]
 #[test]
 fn the_html_parse_deadline_is_the_contracts() {
-    use bmlib::fulltext::canonical::html::{HTML_MAX_CHARS, HTML_PARSE_CHUNK, HTML_PARSE_SECONDS};
+    use bmlib::fulltext::canonical::html::{HTML_MAX_TAGS, HTML_PARSE_CHUNK, HTML_PARSE_SECONDS};
     let limits = &fixture()["html_parse"];
     assert_eq!(limits["seconds"].as_u64(), Some(HTML_PARSE_SECONDS));
     assert_eq!(
         limits["chunk_code_points"].as_u64(),
         Some(HTML_PARSE_CHUNK as u64)
     );
-    assert_eq!(
-        limits["max_code_points"].as_u64(),
-        Some(HTML_MAX_CHARS as u64)
-    );
+    assert_eq!(limits["max_tags"].as_u64(), Some(HTML_MAX_TAGS as u64));
 }
 
 #[test]

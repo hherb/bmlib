@@ -9,6 +9,20 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — breaking
+
+- **`canonical_from_html` caps a page's `<` count, not its length** (#656, as
+  in Python): `HTML_MAX_TAGS` (666,666) replaces `HTML_MAX_CHARS`, and
+  `HtmlError::TooLarge { tags }` replaces `{ length }`. A page saved with its
+  images inline as `data:` URIs is no longer refused for its length: 6 of 81
+  saved article pages were, up to 13.3 million code points, and each now
+  converts in at most 41 ms (a release build).
+- **The element budget is `max_elements(tags)`**, `ELEMENTS_PER_TAG` (3, new)
+  per `<` plus `HTML_ELEMENT_ALLOWANCE`, where it was one per code point, so
+  padding a page buys it no budget; `HtmlError::TooManyElements` gains
+  `tags`. `rebuilding(40)` is now refused here and converted in Python. The
+  argument is the root `CHANGELOG.md`'s.
+
 ## [0.4.0] - 2026-11-10
 
 Published with the Python library's 0.13.0, from the same merge commit. **The

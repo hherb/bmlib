@@ -25,8 +25,10 @@ so nesting depth costs time, not stack. html5ever's own parse is quadratic in
 nesting depth (#563), so the page is fed to it :data:`HTML_PARSE_CHUNK` code
 points at a time, and a page still being parsed after
 :data:`HTML_PARSE_SECONDS` is refused with :class:`HtmlParseTimeoutError`;
-since one chunk's own time grows with the page's length, a page longer than
-:data:`HTML_MAX_CHARS` is refused unparsed (:class:`HtmlPageTooLargeError`).
+since one chunk's own time grows with the depth open before it, and only a tag
+opens an element, a page holding more than :data:`HTML_MAX_TAGS` ``<`` is
+refused unparsed (:class:`HtmlPageTooLargeError`). Its length is not capped: a
+saved page's ``data:`` images and fonts hold no ``<`` (#656).
 html5ever rebuilds every formatting element a closed block left open each time
 text follows, so a page can have it build elements with the square of its length
 (#723), and markupever holds the GIL while it parses: the parse therefore runs
@@ -96,22 +98,33 @@ HTML_CANONICAL_VERSION = 1
 #: ``<div>`` nested 40,000 deep, 429 KB, takes 2.6 s; a
 #: 5 MB page nested that way about 5 minutes), while a 20 MB page shaped like
 #: an article (60 sections, 2,400 paragraphs, tables, 15 MB of ``data:`` image)
-#: parsed in 0.25 s, though :data:`HTML_MAX_CHARS` now refuses it (#656). The clock
+#: parsed in 0.25 s. The clock
 #: is read between chunks, so a refusal comes one chunk late, and a chunk's own
-#: time grows with the depth already open, which :data:`HTML_MAX_CHARS` bounds.
+#: time grows with the depth already open, which :data:`HTML_MAX_TAGS` bounds.
 #: Wall-clock time, so a loaded machine can refuse a page an idle one accepts.
 HTML_PARSE_SECONDS = 30.0
 
-#: The longest page parsed, in code points; a longer one is refused unparsed
-#: (#654). One chunk's time grows with the depth open before it, and a page can
-#: open one element per three code points, so it grows with the page's length:
-#: the worst measured, ``<i>`` or an unknown ``<x>`` nested to the page's
-#: length and then a chunk of ``<hr>``, took about 8 s per million code points
-#: here (markupever; 25 s at 4 million) and about twice that in the Rust port, a
-#: loaded machine both. The cap is the slower language's: at this length a page
-#: is converted or refused within about twice :data:`HTML_PARSE_SECONDS` there
-#: (41 s and 60 s), and that chunk takes about 16 s here.
-HTML_MAX_CHARS = 2_000_000
+#: The most ``<`` a page may hold, counted as characters (so at least its tags);
+#: a page holding more is refused unparsed (#656). One chunk's time grows with
+#: the depth open before it, and only a tag opens an element, so the depth
+#: grows with the ``<`` read: the worst page measured, ``<i>`` or an unknown
+#: ``<x>`` nested to the page's length and then a chunk of ``<hr>``, took about
+#: 8 s per million code points here (markupever; 25 s at 4 million) and about
+#: twice that in the Rust port, a loaded machine both. That page holds one
+#: ``<`` per three code points, so this is the 2,000,000 code points the length
+#: cap of #654 allowed it, divided by three: it is converted or refused within
+#: about twice :data:`HTML_PARSE_SECONDS` in Rust (41 s and 60 s) as before. A
+#: page's length is no longer capped, because what makes a real page long holds
+#: no ``<``: of 81 article pages saved with SingleFile (#656,
+#: ``tests/data/html_saved_page_shapes.json``), 6 were longer than the old cap
+#: (up to 13.3 million code points, ``data:`` URIs a median 94% of each page),
+#: and each converts in at most 0.16 s and 88 MB here and 41 ms in Rust; the
+#: most ``<`` any held was 6,436, and the most of 142 fetched pages (#726) 6,447.
+#: A page's own length is bounded only by the memory of the child it is parsed
+#: in (:data:`HTML_PARSE_MAX_BYTES`): the longest took 4.7 bytes per code point
+#: over the interpreter's own 29 MB (the six 4.6-9.2), about 220 million code
+#: points of such a page.
+HTML_MAX_TAGS = 666_666
 
 #: Code points fed to the parser between two readings of the clock. Smaller
 #: chunks made markupever slower on the same page (4,096: 4.8 s against
@@ -125,10 +138,17 @@ HTML_PARSE_CHUNK = 16_384
 #: with the square of a page's length: 4,000 formatting elements left open in a
 #: block that closes, then 4,000 blocks each holding text, is 91 KB of page and
 #: 4.6 GB parsed whole; here it is refused in about a second. The pages measured
-#: at :data:`HTML_MAX_CHARS` peaked at 181 MB (``<x>`` nested 660,000 deep,
-#: #654's), 175 MB (666,000 sibling ``<p>``) and 69 MB (2 MB shaped like an
-#: article), one run each, so the limit is about six times the most a page the
-#: cap admits was measured to need. Unmeasured on real pages.
+#: at the 2,000,000 code points :data:`HTML_MAX_TAGS` replaced peaked at
+#: 181 MB (``<x>`` nested 660,000 deep, #654's), 175 MB (666,000 sibling
+#: ``<p>``) and 69 MB (2 MB shaped like an article), one run each, so the limit
+#: was about six times the most a page #654's cap admitted was measured to need;
+#: the ``<`` cap admits a page of any length, which this limit alone bounds. On
+#: real pages the child peaked at 35 MB at most (#726, 142 served to a plain
+#: client, ``tests/data/html_page_shapes.json``), about 29 MB of it the
+#: interpreter's own, and at 88 MB (#656, 153 saved with SingleFile, the longest
+#: 13.3 million code points, ``tests/data/html_saved_page_shapes.json``); under
+#: memory pressure the resident set can undercount what the child holds (#725,
+#: unmeasured).
 HTML_PARSE_MAX_BYTES = 1 << 30
 
 #: Seconds between two readings of the child's memory. At the fastest rate
@@ -138,8 +158,8 @@ _MEMORY_POLL_SECONDS = 0.01
 #: Seconds the child may take in all before it is killed: its own parse is held
 #: to :data:`HTML_PARSE_SECONDS`, but the walk after it is not, and a child that
 #: hangs (a stopped process, an ``sys.executable`` that is not Python) would
-#: otherwise hold the caller for ever. The slowest page measured at
-#: :data:`HTML_MAX_CHARS` took 13.1 s in all (666,000 sibling ``<p>``, one run).
+#: otherwise hold the caller for ever. The slowest page measured near
+#: :data:`HTML_MAX_TAGS` took 13.1 s in all (666,000 sibling ``<p>``, one run).
 _CHILD_SECONDS = 4 * HTML_PARSE_SECONDS
 
 #: The least share of the body's text the fullest ``<article>`` must hold to be
@@ -227,22 +247,20 @@ _CITATION_TITLE = "citation_title"
 
 
 class HtmlPageTooLargeError(ValueError):
-    """A page longer than :data:`HTML_MAX_CHARS` code points, refused unparsed.
+    """A page holding more than :data:`HTML_MAX_TAGS` ``<``, refused unparsed.
 
     Attributes:
-        length: the page's length in code points as passed, its leading
-            byte-order mark included.
+        tags: the ``<`` characters the page holds.
     """
 
-    def __init__(self, length: int) -> None:
+    def __init__(self, tags: int) -> None:
         super().__init__(
-            f"the page is {length} characters long, more than the {HTML_MAX_CHARS} "
-            "this converter parses"
+            f"the page holds {tags} '<', more than the {HTML_MAX_TAGS} this converter parses"
         )
-        self.length = length
+        self.tags = tags
 
     def __reduce__(self) -> tuple[Any, ...]:  # ``args`` holds the message, not the field
-        return type(self), (self.length,), self.__dict__
+        return type(self), (self.tags,), self.__dict__
 
 
 class HtmlParseTimeoutError(ValueError):
@@ -304,8 +322,8 @@ def canonical_from_html(html: str) -> CanonicalText:
     Raises:
         TypeError: if *html* is not a ``str`` (decode the page's bytes first).
         ValueError: if *html* holds a lone surrogate, which no parser can read.
-        HtmlPageTooLargeError: (a ``ValueError``) if *html* is longer than
-            :data:`HTML_MAX_CHARS` code points.
+        HtmlPageTooLargeError: (a ``ValueError``) if *html* holds more than
+            :data:`HTML_MAX_TAGS` ``<``.
         HtmlParseTimeoutError: (a ``ValueError``, so catch it first) if parsing
             the page takes longer than :data:`HTML_PARSE_SECONDS`. The clock is
             wall time, so the same page may parse on a less loaded machine.
@@ -321,8 +339,9 @@ def canonical_from_html(html: str) -> CanonicalText:
     """
     if not isinstance(html, str):
         raise TypeError(f"canonical_from_html takes text, not {type(html).__name__}")
-    if len(html) > HTML_MAX_CHARS:
-        raise HtmlPageTooLargeError(len(html))
+    tags = html.count("<")
+    if tags > HTML_MAX_TAGS:
+        raise HtmlPageTooLargeError(tags)
     try:
         html.encode("utf-8")
     except UnicodeEncodeError as e:

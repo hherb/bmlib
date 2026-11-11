@@ -39,7 +39,9 @@
 //! * **Tier 0 before everything** — a fetcher-supplied URL is an address for
 //!   *this* paper, where every later tier resolves one from an identifier. Put
 //!   below Tier 1 and a bioRxiv source would be shadowed by whatever Europe PMC
-//!   happens to hold.
+//!   happens to hold. A Tier 0 `pdf` entry is fetched first but ranks below
+//!   Tiers 1a to 1c on purpose: JATS found later is returned with the PDF on it
+//!   (#739).
 //! * **1a/1c before 1b** — the caller-supplied PMC ID is tried in full first,
 //!   because it is a stronger identity claim than a search hit. Only when it
 //!   gives no full text at *either* source does the search hit supersede it; an
@@ -1227,6 +1229,22 @@ pub trait PdfExtractor {
     fn extract(&self, pdf_path: &Path) -> Result<PdfText, PdfExtractError>;
 }
 
+/// Where JATS full text was found, for [`FullTextService::pdf_for_jats`].
+struct JatsFound<'a> {
+    /// The caller's request: its `fulltext_sources` and PMID.
+    request: &'a FullTextRequest,
+    /// The caller's DOI, if non-empty.
+    doi: Option<&'a str>,
+    /// The PMC ID the JATS came from; `None` for a Tier 0 xml entry, whose
+    /// article no PMC ID names, so Europe PMC's PDF is not asked for it.
+    pmc_id: Option<&'a str>,
+    /// What Tier 1b's search itself returned when it ran; `None` runs it in
+    /// `pdf_for_jats` when `pmc_id` is set. Its PMC ID is the search's alone,
+    /// never the ID Converter's, so a PDF is taken only from a hit that named
+    /// the JATS's article.
+    search: Option<SearchFindings>,
+}
+
 /// Which tier is downloading a PDF.
 ///
 /// A bounded enumeration, not a `String`, because the value keys the one-shot
@@ -1352,6 +1370,7 @@ pub struct FullTextService {
     cache: Option<FullTextCache>,
     convert_pdfs: bool,
     ncbi_api_key: Option<String>,
+    fetch_pdf_with_jats: bool,
     pdf_extractor: Option<Arc<dyn PdfExtractor + Send + Sync>>,
     /// Faults that are a property of the environment or of bmlib itself rather
     /// than of one article, warned once each keyed by cause, so a second
@@ -1378,6 +1397,7 @@ impl FullTextService {
             cache: None,
             convert_pdfs: true,
             ncbi_api_key: None,
+            fetch_pdf_with_jats: false,
             pdf_extractor: None,
             warned: Mutex::new(HashSet::new()),
             log: Mutex::new(Vec::new()),
@@ -1409,6 +1429,20 @@ impl FullTextService {
     #[must_use]
     pub fn with_convert_pdfs(mut self, convert_pdfs: bool) -> Self {
         self.convert_pdfs = convert_pdfs;
+        self
+    }
+
+    /// Whether to look for a PDF once JATS full text is found, for an app that
+    /// processes the JATS and shows the PDF (#739). Off by default, so JATS
+    /// ends the search; a PDF the caller's `fulltext_sources` gave before the
+    /// JATS rides on it either way. When on, the caller's `pdf` entries not yet
+    /// tried are asked, then Europe PMC's free PDF (only when its search
+    /// resolves to the PMC ID the JATS came from, so the PDF is the same
+    /// article's), then Unpaywall; the first PDF saved goes on the JATS result,
+    /// else the first failure. A cached JATS hit is served as it is.
+    #[must_use]
+    pub fn with_fetch_pdf_with_jats(mut self, fetch_pdf_with_jats: bool) -> Self {
+        self.fetch_pdf_with_jats = fetch_pdf_with_jats;
         self
     }
 
@@ -1449,6 +1483,13 @@ impl FullTextService {
     #[must_use]
     pub fn convert_pdfs(&self) -> bool {
         self.convert_pdfs
+    }
+
+    /// Whether a PDF is sought once JATS full text is found
+    /// ([`FullTextService::with_fetch_pdf_with_jats`]).
+    #[must_use]
+    pub fn fetch_pdf_with_jats(&self) -> bool {
+        self.fetch_pdf_with_jats
     }
 
     /// The NCBI API key, if configured.
@@ -1605,12 +1646,21 @@ impl FullTextService {
 
         // Tier 0: fetcher-provided sources.
         let mut held_link: Option<FullTextSourceEntry> = None;
+        let mut pdf: Option<FullTextResult> = None;
         if !request.fulltext_sources.is_empty() {
-            let (result, held_back, link) =
+            let (result, held_back, link, known_pdf) =
                 self.try_known_sources(&request.fulltext_sources, cache_id, failures);
             abstract_only = held_back;
             held_link = link;
+            pdf = known_pdf;
             if let Some(result) = result {
+                let found = JatsFound {
+                    request,
+                    doi,
+                    pmc_id: None,
+                    search: None,
+                };
+                let result = self.pdf_for_jats(result, pdf.as_ref(), &found, cache_id, failures);
                 return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
             }
         }
@@ -1640,7 +1690,13 @@ impl FullTextService {
             let (result, held_back) = self.try_pmc_id(id, cache_id, failures, abstract_only.take());
             abstract_only = held_back;
             if let Some(result) = result {
-                return Ok(result);
+                let found = JatsFound {
+                    request,
+                    doi,
+                    pmc_id: Some(id),
+                    search: None,
+                };
+                return Ok(self.pdf_for_jats(result, pdf.as_ref(), &found, cache_id, failures));
             }
             if !held_before && abstract_only.is_some() {
                 abstract_came_from_caller = true;
@@ -1659,10 +1715,10 @@ impl FullTextService {
         let mut pdf_render_url: Option<String> = None;
         let mut hit_doi: Option<String> = None;
         if has_fallback_identifier {
-            let (discovered_pmc_id, url, found_doi) =
+            let (discovered_pmc_id, search) =
                 self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), failures);
-            pdf_render_url = url;
-            hit_doi = found_doi;
+            pdf_render_url.clone_from(&search.1);
+            hit_doi.clone_from(&search.2);
             if let Some(id) = discovered_pmc_id {
                 if Some(id.as_str()) != caller_pmc_id.as_deref() {
                     if let Some(caller) = caller_pmc_id.as_deref() {
@@ -1673,7 +1729,19 @@ impl FullTextService {
                     let (result, discovered_abstract) =
                         self.try_pmc_id(&id, cache_id, failures, None);
                     if let Some(result) = result {
-                        return Ok(result);
+                        let found = JatsFound {
+                            request,
+                            doi,
+                            pmc_id: Some(&id),
+                            search: Some(search),
+                        };
+                        return Ok(self.pdf_for_jats(
+                            result,
+                            pdf.as_ref(),
+                            &found,
+                            cache_id,
+                            failures,
+                        ));
                     }
                     // A superseded ID's own abstract gives way to the superseding
                     // one's: Tier 1d's PDF comes from the same search hit, so the
@@ -1689,6 +1757,12 @@ impl FullTextService {
             }
         }
 
+        // No JATS anywhere: a caller's PDF in hand is the answer, and the PDF
+        // tiers below would only fetch another (#739).
+        if let Some(saved) = pdf.take_if(|held| held.pdf_download_failure.is_none()) {
+            return Ok(self.with_abstract_fallback(saved, abstract_only.as_ref(), cache_id));
+        }
+
         // Tier 1d: Europe PMC PDF render (free PDF when XML is unavailable).
         if let Some(url) = pdf_render_url {
             self.info(format!("PDF available from Europe PMC render: {url}"));
@@ -1697,7 +1771,11 @@ impl FullTextService {
                 ..empty_result("europepmc_pdf")
             };
             self.download_and_cache_pdf(&url, cache_id, &mut result, PdfOrigin::EuropepmcPdf);
-            return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
+            // A failed one is no better than the caller's held failure, and
+            // would replace its address and cause (#739).
+            if result.pdf_download_failure.is_none() || pdf.is_none() {
+                return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
+            }
         }
 
         // Tier 2: Unpaywall, by the search hit's DOI when the caller gave none
@@ -1723,17 +1801,32 @@ impl FullTextService {
                         &mut result,
                         PdfOrigin::Unpaywall,
                     );
-                    return Ok(self.with_abstract_fallback(
-                        result,
-                        abstract_only.as_ref(),
-                        cache_id,
-                    ));
+                    if result.pdf_download_failure.is_none() || pdf.is_none() {
+                        // As Tier 1d's.
+                        return Ok(self.with_abstract_fallback(
+                            result,
+                            abstract_only.as_ref(),
+                            cache_id,
+                        ));
+                    }
                 }
                 Err(fault) => {
                     self.debug(format!("Unpaywall failed for DOI {doi}: {}", fault.message));
                     failures.record(&fault);
                 }
             }
+        }
+
+        // A caller's free PDF that failed to download, now that no tier did
+        // better (#739): its address and cause beat a bare link. Every tier
+        // came back empty-handed, so #67's summary is owed here as below.
+        if let Some(failed) = pdf {
+            let outcome = format!(
+                "returning the caller's PDF link, whose download failed ({})",
+                failed.pdf_download_failure.as_deref().unwrap_or_default()
+            );
+            self.report_exhausted(doi, pmid, hit_doi.as_deref(), &outcome, failures);
+            return Ok(self.with_abstract_fallback(failed, abstract_only.as_ref(), cache_id));
         }
 
         // Tier 3: DOI / PubMed fallback. When a body-less JATS was seen
@@ -1770,8 +1863,8 @@ impl FullTextService {
             return Err(FullTextError::Other("No identifiers provided".to_string()));
         }
 
-        // One report for every empty-handed exit — the two returns below and
-        // the raise. Keeping it inside the abstract branch made the *more*
+        // One report for every empty-handed exit — the held PDF's above, the
+        // two returns below and the raise. Keeping it inside the abstract branch made the *more*
         // complete failure the quieter one: a caller whose every attempt failed
         // got a result shaped exactly like a paper that genuinely has no free
         // full text, and nothing above DEBUG to tell them apart (issue #67).
@@ -1782,16 +1875,7 @@ impl FullTextService {
         } else {
             "nothing was retrieved and there is no link to fall back on"
         };
-        // A borrowed DOI is named here, or the failure it caused is reported
-        // against `doi=None` with the DOI itself at DEBUG alone (#494).
-        let borrowed = hit_doi
-            .as_deref()
-            .map(|hit_doi| format!(" (Unpaywall asked by the search hit's DOI {hit_doi})"))
-            .unwrap_or_default();
-        self.warn(format!(
-            "No full text found for doi={doi:?} pmid={pmid}{borrowed} — {outcome}; {}",
-            failures.describe()
-        ));
+        self.report_exhausted(doi, pmid, hit_doi.as_deref(), outcome, failures);
 
         if let Some(mut held_back) = abstract_only {
             if let Some(url) = web_url {
@@ -1892,23 +1976,148 @@ impl FullTextService {
         result
     }
 
+    /// Log #67's summary for a chain that came back empty-handed.
+    ///
+    /// `outcome` says what the caller is given instead of full text, and
+    /// `hit_doi` is the search hit's DOI Unpaywall was asked by, if it was.
+    fn report_exhausted(
+        &self,
+        doi: Option<&str>,
+        pmid: &str,
+        hit_doi: Option<&str>,
+        outcome: &str,
+        failures: &TierFailures<'_>,
+    ) {
+        // A borrowed DOI is named here, or the failure it caused is reported
+        // against `doi=None` with the DOI itself at DEBUG alone (#494).
+        let borrowed = hit_doi
+            .map(|hit_doi| format!(" (Unpaywall asked by the search hit's DOI {hit_doi})"))
+            .unwrap_or_default();
+        self.warn(format!(
+            "No full text found for doi={doi:?} pmid={pmid}{borrowed} — {outcome}; {}",
+            failures.describe()
+        ));
+    }
+
+    /// `result`, JATS full text, with a PDF on it for display (#739).
+    ///
+    /// The caller's PDF from Tier 0 rides on it as is unless
+    /// [`FullTextService::with_fetch_pdf_with_jats`] is on and that PDF is
+    /// missing or failed. Then a PDF is sought: the caller's `pdf` entries when
+    /// Tier 0 tried none (its xml entry won first), Europe PMC's free PDF when
+    /// its search resolves to the PMC ID the JATS came from, and Unpaywall by
+    /// the caller's DOI or, failing that, that same hit's DOI. The first saved
+    /// goes on `result`; if none is, the first failure does. A failed search
+    /// or Unpaywall lookup is recorded on `failures`.
+    fn pdf_for_jats(
+        &self,
+        result: FullTextResult,
+        pdf: Option<&FullTextResult>,
+        found: &JatsFound<'_>,
+        cache_id: Option<&str>,
+        failures: &mut TierFailures<'_>,
+    ) -> FullTextResult {
+        if !self.fetch_pdf_with_jats || pdf.is_some_and(|held| held.pdf_download_failure.is_none())
+        {
+            return with_pdf(result, pdf);
+        }
+        let mut candidates: Vec<(String, String, PdfOrigin)> = Vec::new();
+        if pdf.is_none() {
+            candidates.extend(
+                found
+                    .request
+                    .fulltext_sources
+                    .iter()
+                    .filter(|entry| entry.format == "pdf")
+                    .map(|entry| {
+                        (
+                            entry.source.clone(),
+                            entry.url.clone(),
+                            PdfOrigin::KnownSource,
+                        )
+                    }),
+            );
+        }
+        let pmid = found.request.pmid.as_str();
+        let mut hit_doi: Option<String> = None;
+        if let Some(pmc_id) = found.pmc_id {
+            if found.doi.is_some() || !pmid.is_empty() {
+                let (found_id, render_url, found_doi) = match &found.search {
+                    Some(search) => search.clone(),
+                    None => self.discover_pmc_id(found.doi, pmid, false, failures).1,
+                };
+                if found_id.as_deref() == Some(pmc_id) {
+                    // The same article's PDF only.
+                    hit_doi = found_doi;
+                    if let Some(url) = render_url {
+                        candidates.push(("europepmc_pdf".into(), url, PdfOrigin::EuropepmcPdf));
+                    }
+                }
+            }
+        }
+        if let Some(doi) = found.doi.map(str::to_string).or(hit_doi) {
+            candidates.push(("unpaywall".into(), doi, PdfOrigin::Unpaywall));
+        }
+
+        let mut first_failure = pdf.cloned();
+        for (source, target, origin) in candidates {
+            let url = if origin == PdfOrigin::Unpaywall {
+                match self.fetch_unpaywall(&target) {
+                    Ok(url) => url,
+                    Err(fault) => {
+                        self.debug(format!(
+                            "Unpaywall failed for DOI {target}: {}",
+                            fault.message
+                        ));
+                        failures.record(&fault);
+                        continue;
+                    }
+                }
+            } else {
+                target
+            };
+            let mut candidate = FullTextResult {
+                pdf_url: Some(url.clone()),
+                ..empty_result(&source)
+            };
+            self.download_and_cache_pdf(&url, cache_id, &mut candidate, origin);
+            if candidate.pdf_download_failure.is_none() {
+                if candidate.file_path.is_some() {
+                    self.info(format!("PDF from {source} saved beside the JATS full text"));
+                } else {
+                    // No cache or identifier: left a URL, as every PDF tier leaves it.
+                    self.info(format!(
+                        "PDF from {source} put on the JATS full text, unsaved"
+                    ));
+                }
+                return with_pdf(result, Some(&candidate));
+            }
+            if first_failure.is_none() {
+                first_failure = Some(candidate);
+            }
+        }
+        with_pdf(result, first_failure.as_ref())
+    }
+
     /// Try fetcher-provided full-text sources in priority order.
     ///
     /// Priority: xml (JATS) > pdf, and the sort is stable so two entries of one
-    /// format keep the order the fetcher gave them; an html entry is held, never
-    /// fetched.
+    /// format keep the order the fetcher gave them; a pdf entry and an html
+    /// entry are held, so the JATS tiers after this one still run (#579, #739).
     ///
-    /// Returns `(result, abstract_only, held_link)`. `result` is the best source
-    /// that worked — JATS full text or a PDF — or `None` when every entry
-    /// failed; only a [`ContentKind::Fulltext`] means article text was actually
-    /// retrieved. `held_link` is the first html entry: a link and not text, so
-    /// it ends nothing here, and the caller uses it only once every tier that
-    /// can fetch text has failed (#579). Returned at once, it put a publisher
-    /// link ahead of Europe PMC's full text for every PubMed record carrying a
-    /// DOI. `abstract_only` holds a body-less JATS rendering if one was
+    /// Returns `(result, abstract_only, held_link, pdf)`. `result` is JATS full
+    /// text, or `None` when no xml entry gave it. `held_link` is the first html
+    /// entry: a link and not text, so it ends nothing here, and the caller uses
+    /// it only once every tier that can fetch text has failed (#579). Returned
+    /// at once, it put a publisher link ahead of Europe PMC's full text for
+    /// every PubMed record carrying a DOI. `abstract_only` holds a body-less JATS rendering if one was
     /// seen. It is never worth stopping on, because a publisher that serves an
     /// abstract-only JATS (medRxiv does) generally serves the complete article
-    /// as a PDF alongside it.
+    /// as a PDF alongside it. `pdf` is the first pdf entry that was saved, else
+    /// the first whose download failed (`pdf_download_failure` set). It ends
+    /// nothing either (#739): JATS is better to process than a PDF's text, and a
+    /// PDF better to show, so the caller keeps looking for JATS and puts that
+    /// PDF, saved or failed, on any JATS it finds.
     fn try_known_sources(
         &self,
         sources: &[FullTextSourceEntry],
@@ -1918,6 +2127,7 @@ impl FullTextService {
         Option<FullTextResult>,
         Option<FullTextResult>,
         Option<FullTextSourceEntry>,
+        Option<FullTextResult>,
     ) {
         let priority = |format: &str| match format {
             "xml" => 0,
@@ -1930,6 +2140,7 @@ impl FullTextService {
 
         let mut abstract_only: Option<FullTextResult> = None;
         let mut held_link: Option<FullTextSourceEntry> = None;
+        let mut pdf: Option<FullTextResult> = None;
         for entry in sorted {
             if entry.format == "xml" {
                 match self.fetch_jats_xml(&entry.url) {
@@ -1953,6 +2164,7 @@ impl FullTextService {
                             Some(fulltext_result(&entry.source, html, Some(xml))),
                             abstract_only,
                             held_link,
+                            pdf,
                         );
                     }
                     Err(fault) => {
@@ -1965,6 +2177,12 @@ impl FullTextService {
                     }
                 }
             } else if entry.format == "pdf" {
+                if pdf
+                    .as_ref()
+                    .is_some_and(|held| held.pdf_download_failure.is_none())
+                {
+                    continue; // one PDF in hand is enough
+                }
                 self.info(format!("PDF available from {}", entry.source));
                 let mut result = FullTextResult {
                     pdf_url: Some(entry.url.clone()),
@@ -1976,7 +2194,12 @@ impl FullTextService {
                     &mut result,
                     PdfOrigin::KnownSource,
                 );
-                return (Some(result), abstract_only, held_link);
+                // A PDF ends nothing (#739): JATS reads better than a PDF's
+                // text, and a publisher's 403 used to hide the JATS a later
+                // tier serves. A saved PDF replaces a failed one.
+                if pdf.is_none() || result.pdf_download_failure.is_none() {
+                    pdf = Some(result);
+                }
             } else if entry.format == "html" {
                 self.info(format!(
                     "HTML source from {}, held as a last resort",
@@ -1995,7 +2218,7 @@ impl FullTextService {
             // An unknown format matches no branch and the loop continues.
         }
 
-        (None, abstract_only, held_link)
+        (None, abstract_only, held_link, pdf)
     }
 
     // --- Cache helpers ------------------------------------------------------
@@ -2047,7 +2270,12 @@ impl FullTextService {
             if !html.is_empty() {
                 let jats_xml = self.read_cached_jats(cache, cache_id);
                 self.info(format!("Cache hit (HTML) for {cache_id}"));
-                return Some(fulltext_result("cached", html, jats_xml));
+                let mut hit = fulltext_result("cached", html, jats_xml);
+                // The PDF saved beside the JATS, for display (#739).
+                // shortcut: fetch_pdf_with_jats seeks no PDF for a JATS hit cached
+                // without one; seek it here if apps turn the option on after caching.
+                hit.file_path = self.cached_pdf_beside(cache, cache_id);
+                return Some(hit);
             }
         }
         // The PDF entry is consulted the same way, and **presence without a hit
@@ -2108,6 +2336,30 @@ impl FullTextService {
                 }
             }
             return Some(result);
+        }
+        None
+    }
+
+    /// The path of a PDF cached beside a JATS hit, or `None`.
+    ///
+    /// The hit is the JATS; the PDF only rides on it for display (#739), so
+    /// one that is present but cannot be opened is reported, moved aside as
+    /// [`FullTextService::read_cached_jats`] moves its own, and the hit served
+    /// without it, as Python does for the `OSError` its `get_pdf` raises. Left
+    /// in place, it was warned about on every lookup for good.
+    fn cached_pdf_beside(&self, cache: &FullTextCache, cache_id: &str) -> Option<String> {
+        if let Some(path) = cache.get_pdf(cache_id) {
+            return Some(path.display().to_string());
+        }
+        let path = cache
+            .pdf_dir()
+            .join(format!("{}.pdf", safe_filename(cache_id)));
+        if path.exists() {
+            self.warn(format!(
+                "Could not open the PDF cached beside {cache_id} (Unreadable: the entry could not be read back); serving the cached full text without it."
+            ));
+            self.debug(format!("PDF cache read failed for {cache_id}"));
+            self.quarantine_cache_entry(cache, cache_id);
         }
         None
     }
@@ -2623,14 +2875,19 @@ impl FullTextService {
     ///
     /// The search's ID arrives validated, so a malformed one is a recorded fault
     /// and the converter is asked instead.
+    ///
+    /// Returns `(pmc_id, (search_pmc_id, pdf_render_url, hit_doi))`. `pmc_id` is
+    /// the search's or, failing it, the ID Converter's; the inner tuple is the
+    /// search's alone, so the free PDF is paired with the ID only the search
+    /// gave it (#739).
     fn discover_pmc_id(
         &self,
         doi: Option<&str>,
         pmid: &str,
         use_converter: bool,
         failures: &mut TierFailures<'_>,
-    ) -> SearchFindings {
-        let (mut pmc_id, pdf_render_url, hit_doi) =
+    ) -> (Option<String>, SearchFindings) {
+        let (pmc_id, pdf_render_url, hit_doi) =
             match self.resolve_pmc_id_and_pdf_url(doi, pmid, failures) {
                 Ok(found) => found,
                 Err(fault) => {
@@ -2642,10 +2899,11 @@ impl FullTextService {
                     (None, None, None)
                 }
             };
-        if pmc_id.is_none() && use_converter {
-            pmc_id = self.resolve_pmc_id_via_idconv(doi, pmid, failures);
+        let mut resolved = pmc_id.clone();
+        if resolved.is_none() && use_converter {
+            resolved = self.resolve_pmc_id_via_idconv(doi, pmid, failures);
         }
-        (pmc_id, pdf_render_url, hit_doi)
+        (resolved, (pmc_id, pdf_render_url, hit_doi))
     }
 
     /// Search Europe PMC to discover a PMC ID, a free PDF URL and a DOI.
@@ -3119,6 +3377,22 @@ fn fulltext_result(source: &str, html: String, jats_xml: Option<Vec<u8>>) -> Ful
         jats_xml,
         ..empty_result(source)
     }
+}
+
+/// `result`, JATS full text, carrying a PDF's address, saved file and any failure.
+///
+/// JATS is what gets processed and the PDF what gets shown (#739), so the PDF's
+/// address, saved file and any download failure go on the JATS result. Text
+/// extracted from the PDF is dropped: the JATS body is the better text.
+fn with_pdf(mut result: FullTextResult, pdf: Option<&FullTextResult>) -> FullTextResult {
+    if let Some(pdf) = pdf {
+        result.pdf_url.clone_from(&pdf.pdf_url);
+        result.file_path.clone_from(&pdf.file_path);
+        result
+            .pdf_download_failure
+            .clone_from(&pdf.pdf_download_failure);
+    }
+    result
 }
 
 /// A result carrying a body-less JATS rendering — an abstract, never full text.

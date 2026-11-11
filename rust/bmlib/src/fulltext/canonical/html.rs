@@ -25,12 +25,14 @@
 //! html5ever's own parse is quadratic in nesting depth (#563), so the page is
 //! fed to it [`HTML_PARSE_CHUNK`] code points at a time, and a page still being
 //! parsed after [`HTML_PARSE_SECONDS`] is refused ([`HtmlError::TimedOut`]);
-//! since one chunk's own time grows with the page's length, a page longer than
-//! [`HTML_MAX_CHARS`] is refused unparsed ([`HtmlError::TooLarge`]). A page
-//! whose parse creates more than [`max_elements`] of its length is refused
-//! part way ([`HtmlError::TooManyElements`]): html5ever rebuilds every
-//! formatting element a closed block left open each time text follows, so a
-//! page can make it create elements with the square of its length (#723).
+//! since one chunk's own time grows with the depth open before it, and only a
+//! tag opens an element, a page holding more than [`HTML_MAX_TAGS`] `<` is
+//! refused unparsed ([`HtmlError::TooLarge`]); its length is not capped, since
+//! a saved page's `data:` images and fonts hold no `<` (#656). A page whose
+//! parse creates more than [`max_elements`] of its `<` count is refused part
+//! way ([`HtmlError::TooManyElements`]): html5ever rebuilds every formatting
+//! element a closed block left open each time text follows, so a page can make
+//! it create elements with the square of its length (#723).
 //! The leading byte-order mark is discarded here rather than by html5ever,
 //! which discards one at the start of every chunk it is fed. In short: [`PRUNED`] elements and any `hidden` one (but `hidden="until-found"`)
 //! are dropped; the root is the fullest `<article>` if it holds at least
@@ -67,35 +69,56 @@ pub const HTML_CANONICAL_VERSION: u32 = 1;
 /// (#563). html5ever is quadratic in nesting depth. Measured in Python only
 /// (markupever, html5ever 0.40), unmeasured here: `<div>` nested 40,000 deep,
 /// 429 KB, at 2.6 s; a 5 MB page nested that way about 5
-/// minutes; a 20 MB page shaped like an article parsed in 0.25 s, though
-/// [`HTML_MAX_CHARS`] now refuses it (#656). The clock
+/// minutes; a 20 MB page shaped like an article parsed in 0.25 s. The clock
 /// is read between chunks, so a refusal comes one chunk late, and a chunk's own
-/// time grows with the depth already open, which [`HTML_MAX_CHARS`] bounds.
+/// time grows with the depth already open, which [`HTML_MAX_TAGS`] bounds.
 /// Wall-clock time, so a loaded machine can refuse a page an idle one accepts.
 pub const HTML_PARSE_SECONDS: u64 = 30;
 
-/// The longest page parsed, in code points; a longer one is refused unparsed
-/// (#654). One chunk's time grows with the depth open before it, and a page can
-/// open one element per three code points, so it grows with the page's length:
-/// the worst measured, `<i>` or an unknown `<x>` nested to the page's length
-/// and then a chunk of `<hr>`, took about 16 s per million code points here (a
-/// release build; 95 s at 4 million, never refused) and about half that in
-/// Python, a loaded machine both. At this length a page is converted or refused
-/// within about twice [`HTML_PARSE_SECONDS`] here (41 s and 60 s measured).
-pub const HTML_MAX_CHARS: usize = 2_000_000;
+/// The most `<` a page may hold, counted as characters (so at least its tags);
+/// a page holding more is refused unparsed (#656). One chunk's time grows with
+/// the depth open before it, and only a tag opens an element, so the depth
+/// grows with the `<` read: the worst page measured, `<i>` or an unknown `<x>`
+/// nested to the page's length and then a chunk of `<hr>`, took about 16 s per
+/// million code points here (a release build; 95 s at 4 million, never refused)
+/// and about half that in Python, a loaded machine both. That page holds one
+/// `<` per three code points, so this is the 2,000,000 code points #654's
+/// length cap allowed it, divided by three: it is converted or refused within
+/// about twice [`HTML_PARSE_SECONDS`] here (41 s and 60 s measured) as before.
+/// A page's length is no longer capped, because what makes a real page long
+/// holds no `<`: of 81 article pages saved with SingleFile (#656,
+/// `tests/data/html_saved_page_shapes.json`), 6 were longer than the old cap
+/// (up to 13.3 million code points), and each converted here in at most 41 ms;
+/// the most `<` any held was 6,436. Beyond the elements [`max_elements`]
+/// bounds, the memory a parse takes is linear in the page's length.
+pub const HTML_MAX_TAGS: usize = 666_666;
 
 /// Code points fed to the parser between two readings of the clock (Python's
 /// measurement: smaller chunks made markupever slower on the same page).
 pub const HTML_PARSE_CHUNK: usize = 16_384;
 
-/// The elements a page's parse may create beyond one per code point of the
-/// page (#723); past [`max_elements`] it is refused. An element's own start tag
-/// takes at least three code points, and the elements html5ever implies
-/// (`<html>`, `<head>`, `<body>`, a table's `<tbody>` and `<tr>`) are a few per
-/// tag, so only a page that has html5ever rebuild the same formatting elements
-/// over and over creates more. Unmeasured on real pages, which no draw has
-/// sized: a starting point, like [`MIN_ARTICLE_SHARE`].
+/// The elements a page's parse may create beyond [`ELEMENTS_PER_TAG`] per `<`
+/// the page holds (#723, #656); past [`max_elements`] it is refused. Only a
+/// page that has html5ever rebuild the same formatting elements over and over
+/// creates more. Measured on real pages (`scripts/sample_html_pages.py`): of
+/// 142 served to a plain client (#726, `tests/data/html_page_shapes.json`;
+/// DOI landing pages of 1995-2024 and archived 1998-2007 full-text pages, 50
+/// with `<font>`) and 153 saved with SingleFile (#656,
+/// `tests/data/html_saved_page_shapes.json`), none created more elements than
+/// its `<` count, so the allowance never decided one. A small page shaped like
+/// #723's is refused here and converted in Python (`rebuilding(40)`, 122 `<`,
+/// 1,684 elements); no real page was.
 pub const HTML_ELEMENT_ALLOWANCE: usize = 1_000;
+
+/// The elements one `<` may create in a parse that rebuilds no formatting
+/// element (#656), a bound above the most html5ever was measured to imply.
+/// Only a start tag creates one, and that most is a table's: `<col>` makes a
+/// `<colgroup>` and the `<col>`, and a `<td>` after it closes the group and
+/// makes a `<tbody>`, a `<tr>` and the `<td>`, five elements from two `<`
+/// (markupever; nested `<table><td>` makes two per `<`). Three per `<` also keeps the budget at
+/// [`HTML_MAX_TAGS`] where one per code point kept it at #654's 2,000,000 code
+/// points, so the memory a parse may take is what it was.
+pub const ELEMENTS_PER_TAG: usize = 3;
 
 /// Code points fed to html5ever between two readings of the elements created
 /// (#723). One rebuild creates as many elements as the page has formatting
@@ -107,21 +130,28 @@ pub const HTML_ELEMENT_ALLOWANCE: usize = 1_000;
 /// nested `<div>`, 3.0 s either way).
 const ELEMENT_COUNT_PIECE: usize = 64;
 
-/// The most elements the parse of a page of `length` code points may create:
-/// one per code point and [`HTML_ELEMENT_ALLOWANCE`] (#723).
+/// The most elements the parse of a page holding `tags` `<` may create:
+/// [`ELEMENTS_PER_TAG`] per `<` and [`HTML_ELEMENT_ALLOWANCE`] (#723, #656).
+/// Not the page's length, which `data:` URIs or text can pad without a tag.
 #[must_use]
-pub fn max_elements(length: usize) -> usize {
-    length.saturating_add(HTML_ELEMENT_ALLOWANCE)
+pub fn max_elements(tags: usize) -> usize {
+    tags.saturating_mul(ELEMENTS_PER_TAG)
+        .saturating_add(HTML_ELEMENT_ALLOWANCE)
+}
+
+/// The `<` characters `html` holds; `<` is ASCII, so a byte is a code point.
+fn tags_in(html: &str) -> usize {
+    html.bytes().filter(|&b| b == b'<').count()
 }
 
 /// A page [`canonical_from_html`] refuses. Lengths are in code points.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum HtmlError {
-    /// The page is longer than [`HTML_MAX_CHARS`], and was not parsed.
+    /// The page holds more than [`HTML_MAX_TAGS`] `<`, and was not parsed.
     TooLarge {
-        /// The page's length as passed, its leading byte-order mark included.
-        length: usize,
+        /// The `<` characters the page holds.
+        tags: usize,
     },
     /// html5ever was still parsing the page after [`HTML_PARSE_SECONDS`].
     TimedOut {
@@ -130,10 +160,10 @@ pub enum HtmlError {
         /// The page's length after its leading byte-order mark is dropped.
         length: usize,
     },
-    /// html5ever had created more than [`max_elements`] of the page's length
-    /// (#723): it rebuilds every formatting element a closed block left open
-    /// each time text follows, so a page can have it create elements with the
-    /// square of its length.
+    /// html5ever had created more than [`max_elements`] of the page's `<`
+    /// count (#723): it rebuilds every formatting element a closed block left
+    /// open each time text follows, so a page can have it create elements with
+    /// the square of its length.
     TooManyElements {
         /// The elements created when the parse was stopped.
         created: usize,
@@ -141,16 +171,17 @@ pub enum HtmlError {
         parsed: usize,
         /// The page's length after its leading byte-order mark is dropped.
         length: usize,
+        /// The `<` characters the page holds.
+        tags: usize,
     },
 }
 
 impl fmt::Display for HtmlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TooLarge { length } => write!(
+            Self::TooLarge { tags } => write!(
                 f,
-                "the page is {length} characters long, more than the {HTML_MAX_CHARS} this \
-                 converter parses"
+                "the page holds {tags} '<', more than the {HTML_MAX_TAGS} this converter parses"
             ),
             Self::TimedOut { parsed, length } => write!(
                 f,
@@ -161,12 +192,13 @@ impl fmt::Display for HtmlError {
                 created,
                 parsed,
                 length,
+                tags,
             } => write!(
                 f,
                 "the page made the parser create {created} elements, more than the {} its \
-                 {length} characters allow (stopped after {parsed}); it may repeat misnested \
-                 formatting elements",
-                max_elements(*length)
+                 {tags} '<' allow (stopped after {parsed} of {length} characters); it may \
+                 repeat misnested formatting elements",
+                max_elements(*tags)
             ),
         }
     }
@@ -520,32 +552,28 @@ impl Walk {
 ///
 /// # Errors
 ///
-/// [`HtmlError::TooLarge`] if the page is longer than [`HTML_MAX_CHARS`];
+/// [`HtmlError::TooLarge`] if the page holds more than [`HTML_MAX_TAGS`] `<`;
 /// [`HtmlError::TimedOut`] if parsing it takes longer than
 /// [`HTML_PARSE_SECONDS`]. The clock is wall time, so the same page may parse
 /// on a less loaded machine. [`HtmlError::TooManyElements`] if the parse
-/// creates more than [`max_elements`] of the page's length.
+/// creates more than [`max_elements`] of the page's `<` count.
 pub fn canonical_from_html(html: &str) -> Result<CanonicalText, HtmlError> {
     convert_within(html, Duration::from_secs(HTML_PARSE_SECONDS))
 }
 
 /// [`canonical_from_html`] with its parse given `budget`.
 fn convert_within(html: &str, budget: Duration) -> Result<CanonicalText, HtmlError> {
-    refuse_longer_than(html, HTML_MAX_CHARS)?;
+    refuse_more_tags_than(html, HTML_MAX_TAGS)?;
     let start = Instant::now();
     let document = parse(html, HTML_PARSE_CHUNK, || start.elapsed() > budget)?;
     Ok(read(&document))
 }
 
-/// [`HtmlError::TooLarge`] if `html` is longer than `max` code points.
-fn refuse_longer_than(html: &str, max: usize) -> Result<(), HtmlError> {
-    // A page of at most `max` bytes holds at most `max` code points, uncounted.
-    if html.len() <= max {
-        return Ok(());
-    }
-    let length = html.chars().count();
-    if length > max {
-        return Err(HtmlError::TooLarge { length });
+/// [`HtmlError::TooLarge`] if `html` holds more than `max` `<`.
+fn refuse_more_tags_than(html: &str, max: usize) -> Result<(), HtmlError> {
+    let tags = tags_in(html);
+    if tags > max {
+        return Err(HtmlError::TooLarge { tags });
     }
     Ok(())
 }
@@ -565,7 +593,7 @@ fn parse(html: &str, chunk: usize, past_deadline: impl FnMut() -> bool) -> Resul
 }
 
 /// [`parse`], fed `piece` code points at a time, refusing more elements than
-/// `max` of the page's length.
+/// `max` of the page's `<` count.
 fn parse_counted(
     html: &str,
     chunk: usize,
@@ -590,6 +618,7 @@ fn parse_counted(
     };
     let mut parser = driver::parse_document(sink, opts);
     let length = html.chars().count();
+    let tags = tags_in(html);
     let (mut rest, mut parsed) = (html, 0);
     while !rest.is_empty() {
         if parsed > 0 && parsed % chunk == 0 && past_deadline() {
@@ -605,12 +634,13 @@ fn parse_counted(
         // The last piece may be shorter than `take`.
         parsed = (parsed + take).min(length);
         rest = &rest[cut..];
-        if created.get() > max(length) {
+        if created.get() > max(tags) {
             let created = created.get();
             return Err(HtmlError::TooManyElements {
                 created,
                 parsed,
                 length,
+                tags,
             });
         }
     }
@@ -807,21 +837,55 @@ mod tests {
     }
 
     #[test]
-    fn a_page_past_the_length_cap_is_refused() {
-        // Code points outside ASCII, so a count of bytes is not one of code points.
-        let page = "\u{e9}".repeat(5);
-        assert_eq!(refuse_longer_than(&page, 5), Ok(()));
-        let error = refuse_longer_than(&page, 4).expect_err("too long");
-        assert_eq!(error, HtmlError::TooLarge { length: 5 });
-        assert!(error.to_string().contains("is 5 characters"), "{error}");
+    fn a_page_past_the_tag_cap_is_refused() {
+        // Code points outside ASCII around them, so the count is of `<` alone.
+        let page = "\u{e9}<\u{1f600}".repeat(5);
+        assert_eq!(refuse_more_tags_than(&page, 5), Ok(()));
+        let error = refuse_more_tags_than(&page, 4).expect_err("too many");
+        assert_eq!(error, HtmlError::TooLarge { tags: 5 });
+        assert!(error.to_string().contains("holds 5 '<'"), "{error}");
     }
 
     #[test]
     fn a_page_past_the_cap_is_refused_unparsed() {
         // Unparsed, or this many `<i>` would take a minute; refused inside a zero budget.
-        let page = "<i>".repeat(HTML_MAX_CHARS / 3 + 1);
-        let error = convert_within(&page, Duration::ZERO).expect_err("too long");
-        assert_eq!(error, HtmlError::TooLarge { length: page.len() });
+        let page = "<i>".repeat(HTML_MAX_TAGS + 1);
+        let error = convert_within(&page, Duration::ZERO).expect_err("too many");
+        assert_eq!(
+            error,
+            HtmlError::TooLarge {
+                tags: HTML_MAX_TAGS + 1
+            }
+        );
+    }
+
+    #[test]
+    fn a_page_at_the_cap_is_parsed() {
+        // `< ` is text, not a tag, so the parse is cheap and opens no element.
+        let page = "< ".repeat(HTML_MAX_TAGS);
+        let text = convert_within(&page, Duration::from_secs(3600)).expect("at the cap");
+        assert_eq!(text.text.matches('<').count(), HTML_MAX_TAGS);
+    }
+
+    #[test]
+    fn a_page_long_with_data_uris_is_converted() {
+        // #656: a saved page carries its images inline, and they hold no `<`.
+        let image = format!("data:image/png;base64,{}", "A".repeat(3_000_000));
+        let page = format!("<h1>T</h1><p>One<img src=\"{image}\"> two</p>");
+        assert_eq!(convert(&page).text, "T\n\nOne two");
+    }
+
+    #[test]
+    fn padding_a_page_buys_it_no_element_budget() {
+        // A million code points of `data:` held no `<`, so #723's page is refused
+        // as it is unpadded; a budget of one element per code point admitted it.
+        let image = format!("data:image/png;base64,{}", "A".repeat(1_000_000));
+        let page = format!("<img src=\"{image}\">{}", rebuilding(60));
+        let error = convert_within(&page, Duration::from_secs(3600)).expect_err("refused");
+        let HtmlError::TooManyElements { tags, .. } = error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(tags, tags_in(&page));
     }
 
     #[test]
@@ -865,15 +929,17 @@ mod tests {
             created,
             parsed,
             length,
+            tags,
         } = error
         else {
             panic!("{error:?}");
         };
         assert_eq!(length, page.chars().count());
+        assert_eq!(tags, tags_in(&page));
         assert!(parsed < length, "{parsed} of {length}");
         // The count is read after every piece, and a piece of 64 code points
         // holds about five rebuilds of 4,000 elements each.
-        let max = max_elements(length);
+        let max = max_elements(tags);
         assert!(
             created > max && created <= max + 6 * 4_000,
             "{created} of {max}"
@@ -896,7 +962,8 @@ mod tests {
                 created: 5,
                 // The second <p> is created once its `>` is read.
                 parsed: 7,
-                length: 8
+                length: 8,
+                tags: 2
             }
         );
     }
@@ -910,7 +977,8 @@ mod tests {
             HtmlError::TooManyElements {
                 created: 5,
                 parsed: 8,
-                length: 8
+                length: 8,
+                tags: 2
             }
         );
     }
@@ -938,13 +1006,40 @@ mod tests {
     }
 
     #[test]
-    fn the_element_budget_is_the_length_and_the_allowance() {
+    fn the_element_budget_is_three_per_tag_and_the_allowance() {
         assert_eq!(max_elements(0), HTML_ELEMENT_ALLOWANCE);
+        // At the cap, what #654's 2,000,000 code points allowed, within two.
         assert_eq!(
-            max_elements(HTML_MAX_CHARS),
-            HTML_MAX_CHARS + HTML_ELEMENT_ALLOWANCE
+            max_elements(HTML_MAX_TAGS),
+            1_999_998 + HTML_ELEMENT_ALLOWANCE
         );
         assert_eq!(max_elements(usize::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn the_most_html5ever_implies_per_tag_is_within_the_budget() {
+        // `<col><td>`: colgroup, col, tbody, tr and td from two `<` (#656).
+        let page = format!("<table>{}", "<col><td>".repeat(2_000));
+        let document = parse(&page, HTML_PARSE_CHUNK, || false).expect("within budget");
+        let elements = document
+            .tree
+            .nodes()
+            .filter(|n| n.value().is_element())
+            .count();
+        assert_eq!(elements, 10_004);
+        assert!(elements <= ELEMENTS_PER_TAG * tags_in(&page));
+    }
+
+    #[test]
+    fn a_small_rebuilding_page_is_refused_by_its_tags() {
+        // rebuilding(40): 122 `<`, 1,684 elements, over 3 * 122 + 1,000.
+        let page = rebuilding(40);
+        assert_eq!(tags_in(&page), 122);
+        let error = convert_within(&page, Duration::from_secs(3600)).expect_err("refused");
+        assert!(
+            matches!(error, HtmlError::TooManyElements { created, .. } if created > 1_366),
+            "{error:?}"
+        );
     }
 
     /// The text of every block, in order.
