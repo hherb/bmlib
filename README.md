@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/bmlib-logo.webp" alt="bmlib Biomedical Literature Research Library" width="600">
+</p>
+
 # bmlib
 
 [![CI](https://github.com/hherb/bmlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hherb/bmlib/actions/workflows/ci.yml)
