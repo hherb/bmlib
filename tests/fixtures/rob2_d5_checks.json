@@ -1,0 +1,356 @@
+{
+ "supports": [
+  {
+   "fact": "plan_dated_early",
+   "quote": "This study is registered with ClinicalTrials.gov, NCT04546581.",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "ClinicalTrials.gov number, NCT04960202.",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "The primary analysis was planned after approximately 24 primary end-point events had been confirmed",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "On the basis of a group sequential design utilizing a Lan–DeMets alpha-spending function with an O’Brien–Fleming boundary",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "registered (identifier 113021; November 4, 2012)",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "The trial was prospectively registered (ISRCTN123).",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "registered on 03/04/2015",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "The analysis plan was finalised before unblinding.",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "approved (8883-12, 20121212)",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "enregistré le 3 mars 2015 – avant l’inclusion",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "plan_dated_early",
+   "quote": "registered prospectively – before enrolment",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "switched",
+   "quote": "There was one death ‏in the control group ‏and none in the case group; this difference was insignificant (P = 0.495).",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "switched",
+   "quote": "The reported outcome differs from the registered one.",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "switched",
+   "quote": "The primary outcome was changed from pain to function after review.",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "switched",
+   "quote": "Originally registered as a secondary outcome",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "switched",
+   "quote": "The χ2 test was used instead of the planned ANCOVA.",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "measure_fixed",
+   "quote": "The primary endpoint was an ordinal outcome based on the patient's clinical status on day 7",
+   "outcome": "deaths up to day 28",
+   "expected": false
+  },
+  {
+   "fact": "measure_fixed",
+   "quote": "The composite safety outcome at day 28 included all of the outcomes used in the day 7 safety outcome except gr",
+   "outcome": "deaths up to day 28",
+   "expected": false
+  },
+  {
+   "fact": "measure_fixed",
+   "quote": "Children underwent a 28–45 min in person assessment (including the 24-h dietary recall and placement of an acc",
+   "outcome": "daily minutes of moderate-to-vigorous physical activity",
+   "expected": false
+  },
+  {
+   "fact": "measure_fixed",
+   "quote": "Secondary outcomes included death from any cause by day 28.",
+   "outcome": "deaths up to day 28",
+   "expected": true
+  },
+  {
+   "fact": "measure_fixed",
+   "quote": "Échelle de qualité de vie (EQ-5D) ≤ 3",
+   "outcome": "qualité de vie",
+   "expected": true
+  },
+  {
+   "fact": "timepoint_fixed",
+   "quote": "These scales were completed at baseline and at the end of the program.",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "timepoint_fixed",
+   "quote": "The primary outcome was quality of life.",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "timepoint_fixed",
+   "quote": "à l’inclusion et à six mois",
+   "outcome": "x",
+   "expected": false
+  },
+  {
+   "fact": "plan_cited",
+   "quote": "anything",
+   "outcome": "x",
+   "expected": true
+  },
+  {
+   "fact": "analysis_fixed",
+   "quote": "anything",
+   "outcome": "x",
+   "expected": true
+  }
+ ],
+ "names_outcome": [
+  {
+   "quote": "all-cause mortality at the end of follow-up was recorded",
+   "outcome": "all-cause mortality at the end of follow-up",
+   "expected": true
+  },
+  {
+   "quote": "anything",
+   "outcome": "score at 6 months",
+   "expected": true
+  },
+  {
+   "quote": "The KDIGO stage was recorded",
+   "outcome": "Kidney injury (KDIGO)",
+   "expected": true
+  },
+  {
+   "quote": "The primary endpoint was an ordinal outcome based on the patient's clinical status on day 7",
+   "outcome": "deaths up to day 28",
+   "expected": false
+  }
+ ],
+ "states_a_plan": [
+  {
+   "quotes": [
+    "Statistical analysis was performed by the IBM SPSS Statistics for Windows version 17.0."
+   ],
+   "expected": false
+  },
+  {
+   "quotes": [
+    "Assessments were performed at baseline, 7- and 12-weeks follow-up."
+   ],
+   "expected": false
+  },
+  {
+   "quotes": [
+    "The secondary efficacy endpoints as prespecified in the statistical analysis plan were:"
+   ],
+   "expected": true
+  },
+  {
+   "quotes": [
+    "A Poisson regression with robust variance was used as the primary efficacy analysis model."
+   ],
+   "expected": true
+  },
+  {
+   "quotes": [
+    "The primary analysis compared proportions of patients in the two groups."
+   ],
+   "expected": true
+  },
+  {
+   "quotes": [
+    "Le critère principal était pré-spécifié."
+   ],
+   "expected": false
+  },
+  {
+   "quotes": [
+    "Efficacy outcomes included the following self-report scales"
+   ],
+   "expected": false
+  }
+ ],
+ "shows_result": [
+  {
+   "passages": [
+    "p = 0.04"
+   ],
+   "expected": true
+  },
+  {
+   "passages": [
+    "Pain at twelve weeks is shown in Figure 2."
+   ],
+   "expected": true
+  },
+  {
+   "passages": [
+    "(Table S4)"
+   ],
+   "expected": true
+  },
+  {
+   "passages": [
+    "see the Supplementary Appendix"
+   ],
+   "expected": true
+  },
+  {
+   "passages": [
+    "Function improved in both groups."
+   ],
+   "expected": false
+  },
+  {
+   "passages": [],
+   "expected": false
+  },
+  {
+   "passages": [
+    "fell by ٣ points"
+   ],
+   "expected": false
+  },
+  {
+   "passages": [
+    "p ≤ 0·05"
+   ],
+   "expected": true
+  }
+ ],
+ "fact_verdict": [
+  {
+   "fact": "plan_dated_early",
+   "claimed": true,
+   "found": [
+    "registered with ClinicalTrials.gov, NCT04546581."
+   ],
+   "outcome": "x",
+   "expected": "quote_does_not_support"
+  },
+  {
+   "fact": "measure_fixed",
+   "claimed": true,
+   "found": [
+    "Pain was rated on a VAS."
+   ],
+   "outcome": "pain",
+   "expected": "no_plan_stated"
+  },
+  {
+   "fact": "switched",
+   "claimed": true,
+   "found": [],
+   "outcome": "x",
+   "expected": "no_quote_found"
+  },
+  {
+   "fact": "plan_cited",
+   "claimed": false,
+   "found": [
+    "Registered as NCT01."
+   ],
+   "outcome": "x",
+   "expected": "not_claimed"
+  },
+  {
+   "fact": "plan_cited",
+   "claimed": true,
+   "found": [
+    "Registered as NCT01."
+   ],
+   "outcome": "x",
+   "expected": "present"
+  },
+  {
+   "fact": "measure_fixed",
+   "claimed": true,
+   "found": [
+    "The secondary endpoints as prespecified were:",
+    "Mean change in mean diurnal IOP at day 8"
+   ],
+   "outcome": "change of mean diurnal intraocular pressure (IOP)",
+   "expected": "present"
+  },
+  {
+   "fact": "measure_fixed",
+   "claimed": true,
+   "found": [
+    "Mean change in mean diurnal IOP at day 8"
+   ],
+   "outcome": "change of mean diurnal intraocular pressure (IOP)",
+   "expected": "no_plan_stated"
+  },
+  {
+   "fact": "analysis_fixed",
+   "claimed": true,
+   "found": [
+    "Statistical analysis was performed by the IBM SPSS Statistics."
+   ],
+   "outcome": "x",
+   "expected": "no_plan_stated"
+  },
+  {
+   "fact": "timepoint_fixed",
+   "claimed": true,
+   "found": [
+    "The primary outcome was measured at 12 weeks."
+   ],
+   "outcome": "x",
+   "expected": "present"
+  }
+ ]
+}
