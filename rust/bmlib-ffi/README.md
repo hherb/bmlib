@@ -106,7 +106,7 @@ Run everything from `rust/`.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
                   aarch64-apple-darwin x86_64-apple-darwin          # Apple
 # Apple also needs Xcode's command-line tools (xcodebuild, lipo,
-# install_name_tool, strip) and python3, which the script uses.
+# install_name_tool, strip, dwarfdump) and python3, which the script uses.
 rustup target add aarch64-linux-android x86_64-linux-android        # Android
 cargo install cargo-ndk                                              # Android
 export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version>          # Android
@@ -142,11 +142,15 @@ and line. The script builds with `debug = "line-tables-only"` and
 `split-debuginfo = "packed"`, set through `CARGO_PROFILE_RELEASE_FFI_*`
 variables rather than in `Cargo.toml`, so the Android `.so` (same profile) is
 unchanged; rustc writes the dSYM before the profile's strip, and the shipped
-dylibs stay stripped. The link passes `-oso_prefix .`: the debug map ld
-hashes into each dylib's UUID names the object files, and without it by
-their absolute paths, so two checkouts built different UUIDs. Measured 2026-11-11 at `d594be1`: about 5.1 MB per
-architecture (26 MB for the five; 6.5 MB gzipped), beside dylibs of 0.95 MB
-per architecture. The `--static` variant carries no dSYM.
+dylibs stay stripped. Before packaging, the script checks that each slice's
+dSYM has the framework binary's UUIDs, since `xcodebuild` accepts one that
+does not. ld hashes its debug map, which names every object file, into the
+dylib's UUID; the link passes `-oso_prefix .` so those names are relative to
+the workspace, and two checkouts at different paths get the same UUID (with a
+target directory outside `rust/` they stay absolute). Measured 2026-11-11 on
+this source: about 5.3 MB per architecture (26.5 MB for the five; 6.5 MB
+gzipped). The `--static` variant is built without debug info and carries no
+dSYM.
 
 Dynamic frameworks are the default because the committed artifact is an order
 of magnitude smaller. The stripped static archives carry every dependency's
@@ -206,6 +210,8 @@ Measured 2026-10-18 by running `build-xcframework.sh` (dynamic, then
 | `ios-arm64_x86_64-simulator` (two architectures) | 1,245,272 bytes | 20,335,624 bytes |
 | `macos-arm64_x86_64` (two architectures) | 1,278,536 bytes | 20,786,680 bytes |
 | Whole xcframework (`du -sk`) | 3,192 KiB | 50,312 KiB |
+
+The table predates the dynamic slices' dSYMs, which add about 26.5 MB (above).
 
 What the dynamic xcframework costs in git is a delta: about 0.8 MB packed per
 bmlib bump, because the slices delta-compress (bmlibrarian_lite's record, below).

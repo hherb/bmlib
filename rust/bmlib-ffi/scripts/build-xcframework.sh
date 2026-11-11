@@ -31,7 +31,7 @@
 # whole build has succeeded, so a failed run leaves the previous output intact.
 #
 # Dynamic frameworks by default: each architecture is a dead-stripped dylib of
-# about 0.67 MB (the simulator and macOS slices hold two architectures each),
+# about 0.9 MB (the simulator and macOS slices hold two architectures each),
 # where a static archive carries every dependency's objects and is only
 # dead-stripped when the app links. That difference is what decides whether the
 # xcframework can be committed to the consuming repository without LFS.
@@ -41,7 +41,7 @@
 # compiled in and two checkouts build the same bytes (#490).
 #
 # Needs: rustup with the five Apple targets below, Xcode's command-line tools
-# (xcodebuild, lipo, install_name_tool, strip) and python3.
+# (xcodebuild, lipo, install_name_tool, strip, dwarfdump) and python3.
 set -euo pipefail
 
 usage="usage: build-xcframework.sh <out-dir> [--static]"
@@ -80,19 +80,24 @@ export MACOSX_DEPLOYMENT_TARGET=$MACOS_MIN
 # ld hashes that into LC_UUID, which install_name_tool -id below keeps. So a
 # fixed name, else two checkouts differ by the UUID alone (#490). The longest
 # of the final names, so install_name_tool always has room to rewrite it.
-#
-# Line tables and function names, packed by rustc into a dSYM beside each dylib
-# before release-ffi's strip, so a crash in an app symbolicates (each slice's
-# dSYM goes into the xcframework below). Set here rather than in Cargo.toml so
-# the Android .so, built with the same profile, is unchanged. With debug info
-# ld writes a debug map naming each object file by its absolute path, and
-# hashes it into LC_UUID too; -oso_prefix . makes those paths relative to the
-# link's working directory (the workspace, where rustc's dsymutil also runs),
-# else two checkouts again differ by the UUID alone.
-SEP=$'\x1f'
-export CARGO_ENCODED_RUSTFLAGS="-Clink-arg=-Wl,-install_name,@rpath/$NAME.framework/Versions/A/$NAME$SEP-Clink-arg=-Wl,-oso_prefix,."
-export CARGO_PROFILE_RELEASE_FFI_DEBUG=line-tables-only
-export CARGO_PROFILE_RELEASE_FFI_SPLIT_DEBUGINFO=packed
+ENCODED_RUSTFLAGS="-Clink-arg=-Wl,-install_name,@rpath/$NAME.framework/Versions/A/$NAME"
+# Dynamic only: line tables and function names, packed by rustc into a dSYM
+# beside each dylib before release-ffi's strip, so a crash in an app
+# symbolicates (each slice's dSYM goes into the xcframework below). Set here
+# rather than in Cargo.toml so the Android .so, built with the same profile, is
+# unchanged, and only for the dynamic build, so --static builds as before. With
+# debug info ld writes a debug map naming each object file by its absolute
+# path, and hashes it into LC_UUID too; -oso_prefix . makes those paths relative
+# to the link's working directory (the workspace, where rustc's dsymutil also
+# runs), else two checkouts again differ by the UUID alone. A target directory
+# outside the workspace keeps them absolute, so the UUID then depends on where
+# that directory is.
+if [ "$MODE" = dynamic ]; then
+  ENCODED_RUSTFLAGS+=$'\x1f'"-Clink-arg=-Wl,-oso_prefix,."
+  export CARGO_PROFILE_RELEASE_FFI_DEBUG=line-tables-only
+  export CARGO_PROFILE_RELEASE_FFI_SPLIT_DEBUGINFO=packed
+fi
+export CARGO_ENCODED_RUSTFLAGS=$ENCODED_RUSTFLAGS
 
 # macOS is universal: an app's macOS archive builds arm64 *and* x86_64 (the
 # default ARCHS), and a single-architecture slice fails its x86_64 link.
@@ -166,16 +171,28 @@ deep_framework() { # <dir> <dylib>
   done
 }
 
+# "<uuid> (<arch>)" per architecture, sorted.
+uuids() { xcrun dwarfdump --uuid "$1" | awk '{print $2, $3}' | sort; }
+
 # The slice's dSYM, named as Xcode names a framework's, its DWARF the
 # architectures' own (lipo'd for a two-architecture slice). strip and
-# install_name_tool -id keep LC_UUID, so the UUIDs still match the framework.
+# install_name_tool -id keep LC_UUID, so the UUIDs should still match the
+# framework; checked, because xcodebuild packages a dSYM that matches nothing
+# without a word, and a crash would then never symbolicate.
 dsym() { # <dir> <dylib>...
-  local d="$1/$NAME.framework.dSYM" dwarf=() f
+  local fw="$1/$NAME.framework/$NAME" d="$1/$NAME.framework.dSYM" dwarf=() f want got
   shift
   mkdir -p "$d/Contents/Resources/DWARF"
   cp "$1.dSYM/Contents/Info.plist" "$d/Contents/"
   for f in "$@"; do dwarf+=("$f.dSYM/Contents/Resources/DWARF/libbmlib_ffi.dylib"); done
   lipo -create "${dwarf[@]}" -output "$d/Contents/Resources/DWARF/$NAME"
+  want=$(uuids "$fw")
+  got=$(uuids "$d")
+  if [ -z "$want" ] || [ "$want" != "$got" ]; then
+    printf '%s does not match %s:\n  framework: %s\n  dSYM:      %s\n' \
+      "$d" "$fw" "${want:-(no UUID)}" "${got:-(no UUID)}" >&2
+    exit 1
+  fi
 }
 
 BUILT="$STAGE/out"
