@@ -261,6 +261,9 @@ class OtherMeasurement:
         result: The paper's spans giving its result that were found.
         second_look: What a second look found; ``None`` when none was made.
         second_look_error: Why the second look failed, when it did.
+        quotes_not_found: Its naming and result quotes not located in the paper.
+        contradicted: Its quotes the paper contradicts, each with the reason.
+        quotes_dropped: How many of its quote members were not usable text.
     """
 
     label: str
@@ -268,6 +271,9 @@ class OtherMeasurement:
     result: list[PicoCitation]
     second_look: list[PicoCitation] | None = None
     second_look_error: str | None = None
+    quotes_not_found: list[str] = field(default_factory=list)
+    contradicted: list[PicoContradictedQuote] = field(default_factory=list)
+    quotes_dropped: int = 0
 
     def counts(self) -> bool:
         """Whether a passage naming it was found in the paper."""
@@ -286,6 +292,15 @@ class OtherMeasurement:
         """Whether it counts and neither look found its result (a failed look does not count)."""
         return self.counts() and not self.reported() and self.second_look is not None
 
+    def undecided(self) -> bool:
+        """Whether it counts, shows no result, and its second look failed."""
+        return (
+            self.counts()
+            and not self.reported()
+            and self.second_look is None
+            and self.second_look_error is not None
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-ready dict."""
         return {
@@ -296,6 +311,9 @@ class OtherMeasurement:
                 None if self.second_look is None else [c.to_dict() for c in self.second_look]
             ),
             "second_look_error": self.second_look_error,
+            "quotes_not_found": list(self.quotes_not_found),
+            "contradicted": [q.to_dict() for q in self.contradicted],
+            "quotes_dropped": self.quotes_dropped,
         }
 
 
@@ -307,11 +325,17 @@ class AnalysisCheck:
         differs: Whether the model says they differ with no reason given.
         planned: The paper's spans naming the main analysis that were found.
         reported: The paper's spans giving the result with its analysis that were found.
+        quotes_not_found: Its quotes, either side, not located in the paper.
+        contradicted: Its quotes the paper contradicts, each with the reason.
+        quotes_dropped: How many of its quote members were not usable text.
     """
 
     differs: bool
     planned: list[PicoCitation]
     reported: list[PicoCitation]
+    quotes_not_found: list[str] = field(default_factory=list)
+    contradicted: list[PicoContradictedQuote] = field(default_factory=list)
+    quotes_dropped: int = 0
 
     def counts(self) -> bool:
         """Whether they differ, with a found passage for each side."""
@@ -323,6 +347,9 @@ class AnalysisCheck:
             "differs": self.differs,
             "planned": [c.to_dict() for c in self.planned],
             "reported": [c.to_dict() for c in self.reported],
+            "quotes_not_found": list(self.quotes_not_found),
+            "contradicted": [q.to_dict() for q in self.contradicted],
+            "quotes_dropped": self.quotes_dropped,
         }
 
 
@@ -404,6 +431,7 @@ class D5Facts:
                     _citations(item, "result", path),
                     None if look is None else _citations(item, "second_look", path),
                     error,
+                    *_lost(item, path),
                 )
             )
         check = _object(data.get(MAIN_ANALYSIS_KEY), MAIN_ANALYSIS_KEY)
@@ -411,6 +439,7 @@ class D5Facts:
             _field(check, "differs", bool, "a boolean", MAIN_ANALYSIS_KEY),
             _citations(check, "planned", MAIN_ANALYSIS_KEY),
             _citations(check, "reported", MAIN_ANALYSIS_KEY),
+            *_lost(check, MAIN_ANALYSIS_KEY),
         )
         return cls(outcome, facts, measurements, analysis)
 
@@ -428,6 +457,36 @@ def _field(data: dict[str, Any], key: str, kind: type, noun: str, path: str = ""
     if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
         raise ValueError(f"{path + '.' if path else ''}{key} is not {noun}")
     return value
+
+
+def _lost(data: dict[str, Any], path: str) -> tuple[list[str], list[PicoContradictedQuote], int]:
+    """The quotes not found, contradicted and dropped stored under *data*."""
+    return (
+        list(_field(data, "quotes_not_found", list, "a list", path)),
+        [
+            PicoContradictedQuote.from_dict(q)
+            for q in _field(data, "contradicted", list, "a list", path)
+        ],
+        _field(data, "quotes_dropped", int, "a count", path),
+    )
+
+
+def _verified(
+    groups: list[object], text: str, similarity: float
+) -> tuple[list[list[PicoCitation]], list[str], list[PicoContradictedQuote], int]:
+    """Each quote group's found citations, and everything not found, contradicted
+    or dropped across them, so nothing the model quoted is lost."""
+    found: list[list[PicoCitation]] = []
+    not_found: list[str] = []
+    contradicted: list[PicoContradictedQuote] = []
+    dropped = 0
+    for quotes in groups:
+        citations, missed, refused, unusable = verify_quotes(quotes, text, similarity)
+        found.append(citations)
+        not_found += missed
+        contradicted += refused
+        dropped += unusable
+    return found, not_found, contradicted, dropped
 
 
 def _citations(data: dict[str, Any], key: str, path: str) -> list[PicoCitation]:
@@ -485,20 +544,22 @@ def read_facts_reply(
         label = entry.get("label")
         if not isinstance(label, str) or not label.strip():
             raise UnreadableReplyError(f"{path}.label is not text")
-        named = verify_quotes(entry.get("named"), text, similarity)[0]
-        result = verify_quotes(entry.get("result"), text, similarity)[0]
-        measurements.append(OtherMeasurement(label, named, result))
+        (named, result), not_found, contradicted, dropped = _verified(
+            [entry.get("named"), entry.get("result")], text, similarity
+        )
+        measurements.append(
+            OtherMeasurement(label, named, result, None, None, not_found, contradicted, dropped)
+        )
     check = data.get(MAIN_ANALYSIS_KEY)
     if not isinstance(check, dict):
         raise UnreadableReplyError(f"{MAIN_ANALYSIS_KEY} is missing or not an object")
     differs = check.get("differs")
     if not isinstance(differs, bool):
         raise UnreadableReplyError(f"{MAIN_ANALYSIS_KEY}.differs is not true or false")
-    analysis = AnalysisCheck(
-        differs,
-        verify_quotes(check.get("planned"), text, similarity)[0],
-        verify_quotes(check.get("reported"), text, similarity)[0],
+    (planned, reported), not_found, contradicted, dropped = _verified(
+        [check.get("planned"), check.get("reported")], text, similarity
     )
+    analysis = AnalysisCheck(differs, planned, reported, not_found, contradicted, dropped)
     return D5Facts(outcome, facts, measurements, analysis)
 
 
@@ -535,14 +596,20 @@ def read_second_look(data: dict[str, Any], text: str, min_similarity: float) -> 
 
     Raises:
         ValueError: *min_similarity* is not a number in (0, 1].
-        UnreadableReplyError: The reply is not an object with ``found`` true or false.
+        UnreadableReplyError: The reply is not an object with ``found`` true or
+            false, or says ``found`` with no quote found in *text*: "found" on
+            the model's word alone would leave the measurement looking missing
+            (asked again, then the measurement is undecided).
     """
     similarity = check_min_similarity(min_similarity)
     if not isinstance(data, dict) or not isinstance(data.get("found"), bool):
         raise UnreadableReplyError("found is not true or false")
     if not data["found"]:
         return []
-    return verify_quotes(data.get("quotes"), text, similarity)[0]
+    found = verify_quotes(data.get("quotes"), text, similarity)[0]
+    if not found:
+        raise UnreadableReplyError("found is true but no quote was found in the paper")
+    return found
 
 
 #: The reason a 5.2 PY names: an other measurement missing at both looks.

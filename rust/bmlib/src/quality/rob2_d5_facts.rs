@@ -256,6 +256,12 @@ pub struct OtherMeasurement {
     pub second_look: Option<Vec<PicoCitation>>,
     /// Why the second look failed, when it did.
     pub second_look_error: Option<String>,
+    /// Its naming and result quotes not located in the paper.
+    pub quotes_not_found: Vec<String>,
+    /// Its quotes the paper contradicts, each with the reason.
+    pub contradicted: Vec<PicoContradictedQuote>,
+    /// How many of its quote members were not usable text.
+    pub quotes_dropped: usize,
 }
 
 impl OtherMeasurement {
@@ -290,6 +296,15 @@ impl OtherMeasurement {
         self.counts() && !self.reported() && self.second_look.is_some()
     }
 
+    /// Whether it counts, shows no result, and its second look failed.
+    #[must_use]
+    pub fn undecided(&self) -> bool {
+        self.counts()
+            && !self.reported()
+            && self.second_look.is_none()
+            && self.second_look_error.is_some()
+    }
+
     /// Python's `to_dict()`.
     #[must_use]
     pub fn to_json(&self) -> Value {
@@ -299,6 +314,9 @@ impl OtherMeasurement {
             "result": citations_json(&self.result),
             "second_look": self.second_look.as_deref().map(citations_json),
             "second_look_error": self.second_look_error,
+            "quotes_not_found": self.quotes_not_found,
+            "contradicted": self.contradicted.iter().map(PicoContradictedQuote::to_json).collect::<Vec<_>>(),
+            "quotes_dropped": self.quotes_dropped,
         })
     }
 }
@@ -312,6 +330,12 @@ pub struct AnalysisCheck {
     pub planned: Vec<PicoCitation>,
     /// The paper's spans giving the result with its analysis that were found.
     pub reported: Vec<PicoCitation>,
+    /// Its quotes, either side, not located in the paper.
+    pub quotes_not_found: Vec<String>,
+    /// Its quotes the paper contradicts, each with the reason.
+    pub contradicted: Vec<PicoContradictedQuote>,
+    /// How many of its quote members were not usable text.
+    pub quotes_dropped: usize,
 }
 
 impl AnalysisCheck {
@@ -328,6 +352,9 @@ impl AnalysisCheck {
             "differs": self.differs,
             "planned": citations_json(&self.planned),
             "reported": citations_json(&self.reported),
+            "quotes_not_found": self.quotes_not_found,
+            "contradicted": self.contradicted.iter().map(PicoContradictedQuote::to_json).collect::<Vec<_>>(),
+            "quotes_dropped": self.quotes_dropped,
         })
     }
 }
@@ -442,18 +469,23 @@ impl D5Facts {
                 Some(Value::String(e)) => Some(e.clone()),
                 Some(_) => return Err(format!("{path}.second_look_error is not text")),
             };
+            let (quotes_not_found, contradicted, quotes_dropped) = lost(item, &path)?;
             measurements.push(OtherMeasurement {
                 label: field_text(item, "label", &path)?.to_string(),
                 named: citations_field(item, "named", &path)?,
                 result: citations_field(item, "result", &path)?,
                 second_look,
                 second_look_error,
+                quotes_not_found,
+                contradicted,
+                quotes_dropped,
             });
         }
         let check = object(
             data.get(MAIN_ANALYSIS_KEY).unwrap_or(&Value::Null),
             MAIN_ANALYSIS_KEY,
         )?;
+        let (quotes_not_found, contradicted, quotes_dropped) = lost(check, MAIN_ANALYSIS_KEY)?;
         let analysis = AnalysisCheck {
             differs: check
                 .get("differs")
@@ -461,6 +493,9 @@ impl D5Facts {
                 .ok_or_else(|| format!("{MAIN_ANALYSIS_KEY}.differs is not a boolean"))?,
             planned: citations_field(check, "planned", MAIN_ANALYSIS_KEY)?,
             reported: citations_field(check, "reported", MAIN_ANALYSIS_KEY)?,
+            quotes_not_found,
+            contradicted,
+            quotes_dropped,
         };
         Ok(D5Facts {
             outcome,
@@ -469,6 +504,58 @@ impl D5Facts {
             analysis,
         })
     }
+}
+
+/// The quotes not found, contradicted and dropped stored under `data`.
+fn lost(
+    data: &Map<String, Value>,
+    path: &str,
+) -> Result<(Vec<String>, Vec<PicoContradictedQuote>, usize), String> {
+    let not_found = list_field(data, "quotes_not_found", path)?
+        .iter()
+        .map(|q| q.as_str().map(str::to_string))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| format!("{} is not a list", at(path, "quotes_not_found")))?;
+    let contradicted = list_field(data, "contradicted", path)?
+        .iter()
+        .map(PicoContradictedQuote::from_json)
+        .collect::<Result<_, _>>()?;
+    let dropped = data
+        .get("quotes_dropped")
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| format!("{} is not a count", at(path, "quotes_dropped")))?;
+    Ok((not_found, contradicted, dropped))
+}
+
+/// What [`verified`] gives: each group's found citations, then the quotes not
+/// found, the contradicted ones and the count dropped, across the groups.
+type Verified<const N: usize> = (
+    [Vec<PicoCitation>; N],
+    Vec<String>,
+    Vec<PicoContradictedQuote>,
+    usize,
+);
+
+/// Each quote group's found citations, and everything not found,
+/// contradicted or dropped across them, so nothing the model quoted is lost;
+/// `min_similarity` already checked.
+fn verified<const N: usize>(
+    groups: [Option<&Value>; N],
+    text: &str,
+    min_similarity: f64,
+) -> Result<Verified<N>, String> {
+    let mut found: [Vec<PicoCitation>; N] = std::array::from_fn(|_| Vec::new());
+    let (mut not_found, mut contradicted, mut dropped) = (Vec::new(), Vec::new(), 0);
+    for (slot, quotes) in found.iter_mut().zip(groups) {
+        let (citations, missed, refused, unusable) =
+            verify_quotes(quotes, text, min_similarity).map_err(|e| e.to_string())?;
+        *slot = citations;
+        not_found.extend(missed);
+        contradicted.extend(refused);
+        dropped += unusable;
+    }
+    Ok((found, not_found, contradicted, dropped))
 }
 
 /// Citations as JSON.
@@ -595,12 +682,20 @@ pub fn read_facts_reply(
             .and_then(Value::as_str)
             .filter(|l| !l.trim().is_empty())
             .ok_or_else(|| format!("{path}.label is not text"))?;
+        let ([named, result], quotes_not_found, contradicted, quotes_dropped) = verified(
+            [entry.get("named"), entry.get("result")],
+            text,
+            min_similarity,
+        )?;
         measurements.push(OtherMeasurement {
             label: label.to_string(),
-            named: found(entry.get("named"), text, min_similarity)?,
-            result: found(entry.get("result"), text, min_similarity)?,
+            named,
+            result,
             second_look: None,
             second_look_error: None,
+            quotes_not_found,
+            contradicted,
+            quotes_dropped,
         });
     }
     let check = data
@@ -611,14 +706,22 @@ pub fn read_facts_reply(
         .get("differs")
         .and_then(Value::as_bool)
         .ok_or_else(|| format!("{MAIN_ANALYSIS_KEY}.differs is not true or false"))?;
+    let ([planned, reported], quotes_not_found, contradicted, quotes_dropped) = verified(
+        [check.get("planned"), check.get("reported")],
+        text,
+        min_similarity,
+    )?;
     Ok(D5Facts {
         outcome: outcome.to_string(),
         facts,
         measurements,
         analysis: AnalysisCheck {
             differs,
-            planned: found(check.get("planned"), text, min_similarity)?,
-            reported: found(check.get("reported"), text, min_similarity)?,
+            planned,
+            reported,
+            quotes_not_found,
+            contradicted,
+            quotes_dropped,
         },
     })
 }
@@ -663,7 +766,9 @@ pub fn second_look_prompt(
 /// # Errors
 ///
 /// `min_similarity` is not a number in (0, 1]; or the reply is not an object
-/// with `found` true or false.
+/// with `found` true or false, or says `found` with no quote found in `text`:
+/// "found" on the model's word alone would leave the measurement looking
+/// missing (asked again, then the measurement is undecided).
 pub fn read_second_look(
     data: &Value,
     text: &str,
@@ -678,7 +783,11 @@ pub fn read_second_look(
     if !found_flag {
         return Ok(Vec::new());
     }
-    found(data.get("quotes"), text, min_similarity)
+    let passages = found(data.get("quotes"), text, min_similarity)?;
+    if passages.is_empty() {
+        return Err("found is true but no quote was found in the paper".to_string());
+    }
+    Ok(passages)
 }
 
 /// 5.1, 5.2 and 5.3 from `facts`, each with what decided it: the wire names

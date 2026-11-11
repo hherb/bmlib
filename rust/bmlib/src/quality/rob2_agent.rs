@@ -63,7 +63,8 @@ use crate::quality::rob2_algorithm::{
 use crate::quality::rob2_d5_checks::{D5Fact, D5_FACTS};
 use crate::quality::rob2_d5_facts::{
     d5_answers, facts_prompt, read_facts_reply, read_second_look, second_look_prompt, D5Facts,
-    D5_FACTS_SYSTEM_PROMPT, D5_SECOND_LOOK_SYSTEM_PROMPT, DIFFERING_ANALYSIS, MISSING_MEASUREMENT,
+    OtherMeasurement, D5_FACTS_SYSTEM_PROMPT, D5_SECOND_LOOK_SYSTEM_PROMPT, DIFFERING_ANALYSIS,
+    MISSING_MEASUREMENT,
 };
 use crate::quality::rob2_questions::{
     condense_query, domain_title, question_text, D5_OUTCOME_SWITCHING, ESCALATION_PROMPT,
@@ -283,7 +284,7 @@ pub struct DomainAssessment {
     pub ignored: Vec<String>,
     /// D5's facts, from which its answers were derived ([`d5_assessment`]);
     /// `None` for every other domain.
-    pub facts: Option<D5Facts>,
+    pub facts: Option<Box<D5Facts>>,
 }
 
 impl DomainAssessment {
@@ -375,7 +376,7 @@ impl DomainAssessment {
                 if derived != given {
                     return Err("the answers do not follow from the facts".to_string());
                 }
-                Some(facts)
+                Some(Box::new(facts))
             }
         };
         Ok(DomainAssessment {
@@ -838,20 +839,24 @@ pub fn d5_assessment(facts: D5Facts) -> DomainAssessment {
         .map(|f| format!("{}: {}", f.as_str(), facts.facts[f].verdict.as_str()))
         .collect::<Vec<_>>()
         .join("; ");
-    let missing: Vec<&str> = facts
-        .measurements
-        .iter()
-        .filter(|m| m.missing())
-        .map(|m| m.label.as_str())
-        .collect();
-    let reasoning = format!(
-        "From the facts ({verdicts}); other measurements missing at both looks: {}; the \
-         analysis reported differs from the main one: {}.",
-        if missing.is_empty() {
+    let labels = |keep: fn(&OtherMeasurement) -> bool| {
+        let labels: Vec<&str> = facts
+            .measurements
+            .iter()
+            .filter(|m| keep(m))
+            .map(|m| m.label.as_str())
+            .collect();
+        if labels.is_empty() {
             "none".to_string()
         } else {
-            missing.join(", ")
-        },
+            labels.join(", ")
+        }
+    };
+    let reasoning = format!(
+        "From the facts ({verdicts}); other measurements missing at both looks: {}; undecided, \
+         the second look failed: {}; the analysis reported differs from the main one: {}.",
+        labels(OtherMeasurement::missing),
+        labels(OtherMeasurement::undecided),
         if facts.analysis.counts() { "yes" } else { "no" }
     );
     let mut answers = BTreeMap::new();
@@ -896,7 +901,7 @@ pub fn d5_assessment(facts: D5Facts) -> DomainAssessment {
         judgement,
         condensed: false,
         ignored: Vec::new(),
-        facts: Some(facts),
+        facts: Some(Box::new(facts)),
     }
 }
 
@@ -2017,6 +2022,30 @@ pub(crate) mod tests {
             .is_some_and(|e| e.contains("down")));
         assert!(!first.missing());
         assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
+    }
+
+    #[test]
+    fn a_found_without_a_quote_found_leaves_the_measurement_undecided() {
+        // Review: "found" on the model's word alone counted as missing at both looks.
+        let unbacked = json!({"found": true, "quotes": ["A passage the paper does not hold."]});
+        let mut chat = Scripted::new(d5_run(
+            d5_with_measurements(),
+            vec![unbacked.clone(), unbacked, found()],
+        ));
+        let run = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+            .expect("run");
+        let d5 = d5_of(&run);
+        let first = &d5.facts.as_ref().expect("facts").measurements[0];
+        assert!(first.undecided() && !first.missing());
+        assert!(first
+            .second_look_error
+            .as_deref()
+            .is_some_and(|e| e.contains("no quote")));
+        assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
+        assert!(d5.answers["5.2"]
+            .reasoning
+            .contains("undecided, the second look failed: SBP at 24 weeks"));
     }
 
     #[test]

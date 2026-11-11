@@ -835,10 +835,12 @@ def d5_assessment(facts: D5Facts) -> DomainAssessment:
     """
     verdicts = "; ".join(f"{f.value}: {facts.facts[f].verdict.value}" for f in D5_FACTS)
     missing = [m.label for m in facts.measurements if m.missing()]
+    undecided = [m.label for m in facts.measurements if m.undecided()]
     reasoning = (
         f"From the facts ({verdicts}); other measurements missing at both looks: "
-        f"{', '.join(missing) if missing else 'none'}; the analysis reported differs from the "
-        f"main one: {'yes' if facts.analysis.counts() else 'no'}."
+        f"{', '.join(missing) if missing else 'none'}; undecided, the second look failed: "
+        f"{', '.join(undecided) if undecided else 'none'}; the analysis reported differs from "
+        f"the main one: {'yes' if facts.analysis.counts() else 'no'}."
     )
     answers: dict[str, MachineAnswer] = {}
     for question, (answer, deciding) in d5_answers(facts).items():

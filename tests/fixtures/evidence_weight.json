@@ -875,7 +875,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "PN",
@@ -898,7 +898,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -914,7 +914,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "low",
@@ -1016,7 +1016,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -1131,7 +1134,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "NI",
@@ -1147,7 +1150,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -1163,7 +1166,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "some_concerns",
@@ -1265,7 +1268,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -1380,7 +1386,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "NI",
@@ -1396,7 +1402,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -1412,7 +1418,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "some_concerns",
@@ -1514,7 +1520,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -1619,7 +1628,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "NI",
@@ -1635,7 +1644,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -1651,7 +1660,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "some_concerns",
@@ -1753,7 +1762,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -1905,7 +1917,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "PN",
@@ -1928,7 +1940,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -1944,7 +1956,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "low",
@@ -2046,7 +2058,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -2195,7 +2210,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "NI",
@@ -2211,7 +2226,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -2227,7 +2242,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "some_concerns",
@@ -2329,7 +2344,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -2474,7 +2492,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "NI",
@@ -2490,7 +2508,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -2506,7 +2524,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "some_concerns",
@@ -2608,7 +2626,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }
@@ -2768,7 +2789,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.2": {
            "answer": "NI",
@@ -2784,7 +2805,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           },
           "5.3": {
            "answer": "PN",
@@ -2800,7 +2821,7 @@
            "quotes_not_found": [],
            "contradicted": [],
            "quotes_dropped": 0,
-           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
+           "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: quote_does_not_support; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; undecided, the second look failed: none; the analysis reported differs from the main one: no."
           }
          },
          "judgement": "some_concerns",
@@ -2902,7 +2923,10 @@
           "main_analysis": {
            "differs": false,
            "planned": [],
-           "reported": []
+           "reported": [],
+           "quotes_not_found": [],
+           "contradicted": [],
+           "quotes_dropped": 0
           }
          }
         }

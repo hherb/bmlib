@@ -44,7 +44,10 @@
    }
   ],
   "second_look": null,
-  "second_look_error": null
+  "second_look_error": null,
+  "quotes_not_found": [],
+  "contradicted": [],
+  "quotes_dropped": 0
  },
  "second_look_prompt": "Find where the paper below gives the result of this measurement or analysis of the outcome, which its methods name: \"Oswestry\", named as: \"the Oswestry index at 12 weeks\".\n\nOutcome assessed: pain at 6 weeks\nTimepoint: 6 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-1.1,\"ci_low\":-2.0,\"ci_high\":-0.2,\"ci_level\":null,\"n_analysed\":null}\n\nQuote 1-3 passages, VERBATIM, from the results, a table or the abstract that give its result with its numbers, or that point to the figure, table or supplement showing it. If the paper gives no result for it, or only a summary without numbers and without such a pointer, answer found: false with no quotes.\n\nRespond with JSON in exactly this shape:\n\n{\"found\": true, \"quotes\": [\"...\"]}\n\nPaper Title: Exercise for low back pain: a randomised trial\n\nPaper Text:\nThe trial was registered at ClinicalTrials.gov (NCT01234567). It was registered on 3 March 2015, before recruitment began. The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks. Pain was analysed with a repeated measures analysis of variance, as prespecified in the statistical analysis plan. Function was measured with the Oswestry index at 12 weeks. Results: at 6 weeks mean pain was 3.1 versus 4.2 (p=0.01); this difference was significant. Pain at twelve weeks is shown in Figure 2. Function improved in both groups. P values come from a two-sample t test on change scores.",
  "replies": [
@@ -214,7 +217,10 @@
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -370,7 +376,10 @@
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -546,7 +555,10 @@
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -732,7 +744,10 @@
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -898,7 +913,10 @@
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -1074,7 +1092,10 @@
        "similarity": 1.0,
        "exact": true
       }
-     ]
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -1150,6 +1171,13 @@
       "label": "pain at 24 weeks",
       "named": [
        "at 24 weeks"
+      ],
+      "result": []
+     },
+     {
+      "label": "function at 6 weeks",
+      "named": [
+       "Function was measured with the Oswestry index"
       ],
       "result": []
      }
@@ -1274,7 +1302,10 @@
        }
       ],
       "second_look": null,
-      "second_look_error": null
+      "second_look_error": null,
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
      },
      {
       "label": "Oswestry",
@@ -1297,20 +1328,49 @@
        }
       ],
       "second_look": null,
-      "second_look_error": null
+      "second_look_error": null,
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
      },
      {
       "label": "pain at 24 weeks",
       "named": [],
       "result": [],
       "second_look": null,
-      "second_look_error": null
+      "second_look_error": null,
+      "quotes_not_found": [
+       "at 24 weeks"
+      ],
+      "contradicted": [],
+      "quotes_dropped": 0
+     },
+     {
+      "label": "function at 6 weeks",
+      "named": [
+       {
+        "start": 331,
+        "end": 376,
+        "text": "Function was measured with the Oswestry index",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "result": [],
+      "second_look": null,
+      "second_look_error": null,
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
      }
     ],
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -1436,7 +1496,10 @@
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    },
    "answers": {
@@ -1706,6 +1769,21 @@
   },
   {
    "reply": {
+    "found": true,
+    "quotes": [
+     "not in the paper"
+    ]
+   },
+   "error": "found is true but no quote was found in the paper"
+  },
+  {
+   "reply": {
+    "found": true
+   },
+   "error": "found is true but no quote was found in the paper"
+  },
+  {
+   "reply": {
     "found": "yes"
    },
    "error": "found is not true or false"
@@ -1830,7 +1908,10 @@
       }
      ],
      "second_look": null,
-     "second_look_error": null
+     "second_look_error": null,
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     },
     {
      "label": "Oswestry",
@@ -1853,20 +1934,49 @@
       }
      ],
      "second_look": [],
-     "second_look_error": null
+     "second_look_error": null,
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     },
     {
      "label": "pain at 24 weeks",
      "named": [],
      "result": [],
      "second_look": null,
-     "second_look_error": "HTTP 503: overloaded"
+     "second_look_error": "HTTP 503: overloaded",
+     "quotes_not_found": [
+      "at 24 weeks"
+     ],
+     "contradicted": [],
+     "quotes_dropped": 0
+    },
+    {
+     "label": "function at 6 weeks",
+     "named": [
+      {
+       "start": 331,
+       "end": 376,
+       "text": "Function was measured with the Oswestry index",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "result": [],
+     "second_look": null,
+     "second_look_error": "found is true but no quote was found in the paper",
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    ],
    "main_analysis": {
     "differs": false,
     "planned": [],
-    "reported": []
+    "reported": [],
+    "quotes_not_found": [],
+    "contradicted": [],
+    "quotes_dropped": 0
    }
   },
   "answers": {
@@ -1900,7 +2010,7 @@
      "quotes_not_found": [],
      "contradicted": [],
      "quotes_dropped": 0,
-     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; the analysis reported differs from the main one: no."
+     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; undecided, the second look failed: function at 6 weeks; the analysis reported differs from the main one: no."
     },
     "5.2": {
      "answer": "PY",
@@ -1916,7 +2026,7 @@
      "quotes_not_found": [],
      "contradicted": [],
      "quotes_dropped": 0,
-     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; the analysis reported differs from the main one: no."
+     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; undecided, the second look failed: function at 6 weeks; the analysis reported differs from the main one: no."
     },
     "5.3": {
      "answer": "PN",
@@ -1932,7 +2042,7 @@
      "quotes_not_found": [],
      "contradicted": [],
      "quotes_dropped": 0,
-     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; the analysis reported differs from the main one: no."
+     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; undecided, the second look failed: function at 6 weeks; the analysis reported differs from the main one: no."
     }
    },
    "judgement": "high",
@@ -2052,7 +2162,10 @@
        }
       ],
       "second_look": null,
-      "second_look_error": null
+      "second_look_error": null,
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
      },
      {
       "label": "Oswestry",
@@ -2075,20 +2188,49 @@
        }
       ],
       "second_look": [],
-      "second_look_error": null
+      "second_look_error": null,
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
      },
      {
       "label": "pain at 24 weeks",
       "named": [],
       "result": [],
       "second_look": null,
-      "second_look_error": "HTTP 503: overloaded"
+      "second_look_error": "HTTP 503: overloaded",
+      "quotes_not_found": [
+       "at 24 weeks"
+      ],
+      "contradicted": [],
+      "quotes_dropped": 0
+     },
+     {
+      "label": "function at 6 weeks",
+      "named": [
+       {
+        "start": 331,
+        "end": 376,
+        "text": "Function was measured with the Oswestry index",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "result": [],
+      "second_look": null,
+      "second_look_error": "found is true but no quote was found in the paper",
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0
      }
     ],
     "main_analysis": {
      "differs": false,
      "planned": [],
-     "reported": []
+     "reported": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0
     }
    }
   }

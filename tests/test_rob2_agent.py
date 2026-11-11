@@ -717,6 +717,18 @@ class TestD5FromFacts:
         assert not first.missing()
         assert d5.answers["5.2"].answer is Answer.PN
 
+    def test_a_found_without_a_quote_found_leaves_the_measurement_undecided(self) -> None:
+        # Review: "found" on the model's word alone counted as missing at both looks.
+        unbacked = {"found": True, "quotes": ["A passage the paper does not hold."]}
+        replies = low_run()[:-1] + [_d5_with_measurements(), unbacked, unbacked, _FOUND]
+        run = make_agent(*replies).assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        d5 = assessed(run.outcomes[0].domains[3])
+        assert d5.facts is not None
+        first = d5.facts.measurements[0]
+        assert first.undecided() and not first.missing()
+        assert first.second_look_error is not None and "no quote" in first.second_look_error
+        assert d5.answers["5.2"].answer is Answer.PN
+
     def test_a_stop_between_second_looks_ends_the_run(self) -> None:
         stop = threading.Event()
         scripted = low_run()[:-1] + [_d5_with_measurements(), _NOT_FOUND, _FOUND]

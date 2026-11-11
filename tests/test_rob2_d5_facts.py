@@ -224,3 +224,43 @@ def test_the_prompts_carry_the_outcome_the_facts_and_the_paper():
     look = second_look_prompt("A trial", PAPER, outcome, facts.measurements[0])
     assert '"Oswestry"' in look and "the Oswestry index at 12 weeks" in look
     assert "VERBATIM" in D5_FACTS_SYSTEM_PROMPT and "figure" in D5_SECOND_LOOK_SYSTEM_PROMPT
+
+
+def test_a_second_look_that_says_found_but_quotes_nothing_found_is_unreadable():
+    # Review: found:true without a usable quote counted as "missing at both looks".
+    for data in (
+        {"found": True},
+        {"found": True, "quotes": [5]},
+        {"found": True, "quotes": ["The result was given in a passage the paper lacks."]},
+    ):
+        with pytest.raises(UnreadableReplyError, match="no quote"):
+            read_second_look(data, PAPER, SIM)
+
+
+def test_quotes_not_found_are_kept_for_measurements_and_the_analysis_check():
+    # Review: they were dropped, so a paraphrase left no trace.
+    facts = read(
+        reply(
+            [item("Oswestry", ["the Oswestry index at twelve weeks"], ["Function was better."])],
+            analysis={"differs": True, "planned": ["An ANCOVA was planned."], "reported": [3]},
+        )
+    )
+    measurement = facts.measurements[0]
+    assert measurement.named == [] and not measurement.counts()
+    assert measurement.quotes_not_found == [
+        "the Oswestry index at twelve weeks",
+        "Function was better.",
+    ]
+    assert facts.analysis.quotes_not_found == ["An ANCOVA was planned."]
+    assert facts.analysis.quotes_dropped == 1
+    assert D5Facts.from_dict(facts.to_dict()) == facts
+
+
+def test_the_reasoning_names_a_measurement_left_undecided():
+    # Review: a failed second look read as "missing at both looks: none".
+    facts = read(reply([item("Oswestry", ["the Oswestry index at 12 weeks"])], **FIXED))
+    facts.measurements[0].second_look_error = "HTTP 503"
+    assert facts.measurements[0].undecided()
+    reasoning = d5_assessment(facts).answers["5.2"].reasoning
+    assert "missing at both looks: none" in reasoning
+    assert "undecided, the second look failed: Oswestry" in reasoning

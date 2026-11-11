@@ -277,6 +277,8 @@ MEASUREMENTS = [
     {"label": "Oswestry", "named": ["the Oswestry index at 12 weeks"],
      "result": ["Function improved in both groups."]},
     {"label": "pain at 24 weeks", "named": ["at 24 weeks"], "result": []},
+    {"label": "function at 6 weeks", "named": ["Function was measured with the Oswestry index"],
+     "result": []},
 ]  # fmt: skip
 
 
@@ -346,9 +348,10 @@ def _read_case(name: str, reply: Any) -> dict[str, Any]:
 def _looked() -> dict[str, Any]:
     """Stored facts after second looks: one found nothing, one failed."""
     facts = read_facts_reply(_reply(MEASUREMENTS, **FIXED), PAPER, OUTCOME.name, SIM)
-    oswestry, unnamed = facts.measurements[1], facts.measurements[2]
+    oswestry, unnamed, function = facts.measurements[1:4]
     oswestry.second_look = []
     unnamed.second_look_error = "HTTP 503: overloaded"
+    function.second_look_error = "found is true but no quote was found in the paper"
     assessment = d5_assessment(facts)
     return {
         "facts": facts.to_dict(),
@@ -388,6 +391,8 @@ def build_facts() -> dict[str, Any]:
                     "found": True,
                     "quotes": ["Function improved in both groups.", "not in the paper"],
                 },
+                {"found": True, "quotes": ["not in the paper"]},
+                {"found": True},
                 {"found": "yes"},
                 [],
             )
