@@ -495,7 +495,9 @@ mod tests {
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::llm::LLMMessage;
     use crate::quality::evidence_ladder::Level;
-    use crate::quality::rob2_agent::tests::{low_run, Condenser, SIM, TEXT as RANDOMISED};
+    use crate::quality::rob2_agent::tests::{
+        low_run, Condenser, PLANNED_HOSPITALISATION, SIM, TEXT as RANDOMISED,
+    };
     use crate::quality::rob2_algorithm::{Domain, Judgement};
     use std::sync::atomic::Ordering;
 
@@ -503,7 +505,7 @@ mod tests {
     const OUTCOME_QUOTE: &str = "The primary outcome was all-cause mortality at 28 days.";
 
     fn text() -> String {
-        format!("{DESIGN_QUOTE} {OUTCOME_QUOTE} {RANDOMISED}")
+        format!("{DESIGN_QUOTE} {OUTCOME_QUOTE} {PLANNED_HOSPITALISATION} {RANDOMISED}")
     }
 
     fn design(study_design: &str, layout: Option<&str>) -> Value {

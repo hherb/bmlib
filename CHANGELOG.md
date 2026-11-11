@@ -8,6 +8,32 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **RoB 2's D5 from facts** (StudyAnalyzer evidence-weight design §4.6), Rust and
+  Python alike; prompt version 5. D5 asks no signalling question: the model
+  reports facts about the plan behind the outcome (a plan cited, dated before
+  or after the data, the measure, time point and analysis set in advance, a
+  switch of the outcome and its reason), the other measurements of the
+  outcome the paper names, and the main analysis set against the one
+  reported, each with quotes. A fact counts only when claimed, quoted, found
+  in the paper and able to show it (`rob2_d5_checks`: a dated plan needs a
+  date or a before-phrase, a switch the language of a change, a measure the
+  outcome's name, a time point a time, and the planning check, a measure,
+  time point or analysis stated as set in advance, not only described). A
+  measurement with no result in the reply gets a second, narrow look; it is
+  missing only when both looks find no passage with a number or a pointer to
+  a figure, table or supplement, and a failed look leaves it undecided. Code
+  answers 5.1-5.3 by the evidence ladder (`rob2_d5_facts.d5_answers`; RoB 2's
+  "measured in only one way" N is not used) and RoB 2's algorithm judges;
+  `DomainAssessment.facts` keeps the facts, and reading one back recomputes
+  every verdict and refuses answers that do not follow. From the RoB 2 wording
+  smoke test (StudyAnalyzer `docs/smokescreens/2026-11-10-rob2-wording.md`,
+  arm F version 3 with its checks): on four models and 20 RCTs, all four give
+  the same D5 judgement in 15 and 17 of 20 paper-runs, against 9 and 10 with
+  the signalling questions, and small models stop answering N without a plan.
+  The D5 question texts stay for a human reviewer. Contracts:
+  `rob2_d5_checks.json`, `rob2_d5_facts.json` (`scripts/make_rob2_d5_fixtures.py`);
+  `rob2_run.json`, `rob2_replies.json` and `evidence_weight.json` regenerated.
+
 - **The unattended evidence-weight pipeline** (StudyAnalyzer evidence weight,
   piece 6). `assess_unattended` (`bmlib/quality/evidence_weight.py`,
   `rust/bmlib/src/quality/evidence_weight.rs`) chains the design proposal, the

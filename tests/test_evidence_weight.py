@@ -41,13 +41,13 @@ from bmlib.quality.evidence_weight import (
 )
 from bmlib.quality.outcome_agent import OUTCOME_PROMPT_VERSION, OutcomeProposal
 from bmlib.quality.rob2_agent import DomainAssessment, Rob2RunError
-from bmlib.quality.rob2_algorithm import Domain, Judgement
-from tests.test_rob2_agent import SIM, ScriptedCondenser, reply
+from bmlib.quality.rob2_algorithm import Judgement
+from tests.test_rob2_agent import PLANNED_HOSPITALISATION, SIM, ScriptedCondenser, low_run
 from tests.test_rob2_agent import TEXT as RANDOMISED_TEXT
 
 DESIGN_QUOTE = "Participants were randomly assigned 1:1 to metformin or placebo."
 OUTCOME_QUOTE = "The primary outcome was all-cause mortality at 28 days."
-TEXT = f"{DESIGN_QUOTE} {OUTCOME_QUOTE} {RANDOMISED_TEXT}"
+TEXT = f"{DESIGN_QUOTE} {OUTCOME_QUOTE} {PLANNED_HOSPITALISATION} {RANDOMISED_TEXT}"
 SETTINGS = LadderSettings()
 
 
@@ -81,7 +81,7 @@ def outcome(name: str, **result: Any) -> dict[str, Any]:
 
 
 def rob2_replies(outcomes: int = 1) -> list[dict[str, Any]]:
-    return [reply(Domain.D1)] + [reply(d) for d in list(Domain)[1:]] * outcomes
+    return low_run(outcomes)
 
 
 def run(*replies: Any, text: str = TEXT, **kwargs: Any) -> tuple[Any, MagicMock]:

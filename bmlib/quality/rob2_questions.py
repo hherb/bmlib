@@ -62,7 +62,7 @@ __all__ = [
 
 #: Bumped whenever any wording in this module or the agent's prompts changes,
 #: so a stored run says which wording produced it.
-ROB2_PROMPT_VERSION = 4
+ROB2_PROMPT_VERSION = 5
 
 # --- Domain 1: the randomisation process ---
 

@@ -53,6 +53,8 @@ from bmlib.quality.rob2_algorithm import (
     Judgement,
     questions,
 )
+from bmlib.quality.rob2_d5_checks import D5_FACTS
+from bmlib.quality.rob2_d5_facts import D5_FACTS_SYSTEM_PROMPT, facts_prompt
 from bmlib.quality.rob2_questions import (
     D5_OUTCOME_SWITCHING,
     ESCALATION_PROMPT,
@@ -68,9 +70,41 @@ TEXT = (
     f"{RANDOM} {CENTRAL} Baseline characteristics were similar between groups. "
     "Participants and clinicians were blinded with an identical placebo. "
     "Outcome data were available for 98% of participants. "
-    "The analysis followed the registered protocol, NCT00000000, at 12 weeks."
+    "The analysis followed the registered protocol, NCT00000000, at 12 weeks. "
+    "The prespecified primary outcome was systolic blood pressure at 12 weeks, analysed by the "
+    "prespecified analysis of covariance."
 )
 SIM = 0.9
+
+#: The paper's statement of the plan, which the D5 facts below quote.
+PLANNED_BP = "The prespecified primary outcome was systolic blood pressure at 12 weeks"
+#: The evidence-weight tests' outcome sentences (in their paper, not this one).
+PLANNED_MORTALITY = "The primary outcome was all-cause mortality at 28 days."
+PLANNED_HOSPITALISATION = "The secondary outcome was hospitalisation at 28 days."
+ANCOVA = "analysed by the prespecified analysis of covariance"
+
+
+def d5_facts(**claims: list[str]) -> dict[str, Any]:
+    """A D5 facts reply claiming each named fact with its quotes, every other fact absent."""
+    return {
+        "facts": {
+            f.value: {"present": f.value in claims, "quotes": claims.get(f.value, [])}
+            for f in D5_FACTS
+        },
+        "other_measurements": [],
+        "main_analysis": {"differs": False, "planned": [], "reported": []},
+    }
+
+
+#: D5 low on the paper's word: the measure, time point and analysis stated as
+#: prespecified, no dated plan cited (5.1 PY, 5.2 PN, 5.3 PN).
+D5_LOW = d5_facts(
+    measure_fixed=[PLANNED_BP, PLANNED_MORTALITY, PLANNED_HOSPITALISATION],
+    timepoint_fixed=[PLANNED_BP, PLANNED_MORTALITY],
+    analysis_fixed=[ANCOVA],
+)
+#: D5 with nothing stated: 5.1-5.3 NI, some concerns.
+D5_CONCERNS = d5_facts()
 
 
 def entry(answer: str, *quotes: Any, reasoning: Any = "Because.") -> dict[str, Any]:
@@ -156,7 +190,7 @@ class TestTheQuestions:
         assert len({domain_title(d) for d in Domain}) == 5
 
     def test_the_constants(self) -> None:
-        assert ROB2_PROMPT_VERSION == 4
+        assert ROB2_PROMPT_VERSION == 5
         assert '"escalate"' in ESCALATION_PROMPT and "registered" in D5_OUTCOME_SWITCHING
 
 
@@ -322,8 +356,8 @@ def make_agent(*replies: Any, **kwargs: Any) -> Rob2Agent:
 
 
 def low_run(outcomes: int = 1) -> list[dict[str, Any]]:
-    """The replies of a run in which every domain is low."""
-    return [reply(Domain.D1)] + [reply(d) for d in list(Domain)[1:]] * outcomes
+    """The replies of a run in which every domain is low (D5 from facts)."""
+    return [reply(Domain.D1)] + ([reply(d) for d in list(Domain)[1:4]] + [D5_LOW]) * outcomes
 
 
 def sent(agent: Rob2Agent) -> list[str]:
@@ -363,13 +397,15 @@ class TestTheAgent:
 
         assert agent.llm.chat.call_count == 5
         prompts = sent(agent)
-        for prompt, domain in zip(prompts, Domain, strict=True):
+        for prompt, domain in zip(prompts[:4], list(Domain)[:4], strict=True):
             assert domain_title(domain) in prompt and TEXT in prompt
+        # D5 is asked for facts, not its signalling questions (design §4.6).
+        assert prompts[4] == facts_prompt("A trial", TEXT, OUTCOME)
         assert "Systolic blood pressure" not in prompts[0]
         assert all("Systolic blood pressure" in p and '"estimate":-4.2' in p for p in prompts[1:])
-        assert D5_OUTCOME_SWITCHING in prompts[4] and D5_OUTCOME_SWITCHING not in prompts[3]
-        system = agent.llm.chat.call_args.kwargs["messages"][0].content
-        assert system == ROB2_SYSTEM_PROMPT
+        assert all(D5_OUTCOME_SWITCHING not in p for p in prompts)
+        systems = [c.kwargs["messages"][0].content for c in agent.llm.chat.call_args_list]
+        assert systems == [ROB2_SYSTEM_PROMPT] * 4 + [D5_FACTS_SYSTEM_PROMPT]
         assert run.algorithm_version == ROB2_ALGORITHM_VERSION
         assert run.prompt_version == ROB2_PROMPT_VERSION
         assert assessed(run.study).judgement is Judgement.LOW
@@ -393,7 +429,7 @@ class TestTheAgent:
         self, escalate: bool, overall: Judgement
     ) -> None:
         replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
-        replies += [{"answers": CONCERNS[Domain.D5]}, {"escalate": escalate, "reasoning": "R."}]
+        replies += [D5_CONCERNS, {"escalate": escalate, "reasoning": "R."}]
         agent = make_agent(*replies)
 
         run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
@@ -406,7 +442,7 @@ class TestTheAgent:
 
     def test_an_unreadable_escalation_reply_leaves_the_outcome_not_assessed(self) -> None:
         replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
-        replies += [{"answers": CONCERNS[Domain.D5]}, {"escalate": "yes"}, {"escalate": "yes"}]
+        replies += [D5_CONCERNS, {"escalate": "yes"}, {"escalate": "yes"}]
         agent = make_agent(*replies)
 
         [only] = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM).outcomes
@@ -425,7 +461,7 @@ class TestTheAgent:
         if code is not None:
             failure.status_code = code  # type: ignore[attr-defined]
         replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
-        replies += [{"answers": CONCERNS[Domain.D5]}]
+        replies += [D5_CONCERNS]
         agent = make_agent(*replies)
         responses = list(agent.llm.chat.side_effect)
         agent.llm.chat.side_effect = [*responses, failure]
@@ -438,7 +474,7 @@ class TestTheAgent:
 
     def test_an_unreadable_escalation_is_not_retryable(self) -> None:
         replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
-        replies += [{"answers": CONCERNS[Domain.D5]}, {"escalate": "yes"}, {"escalate": "yes"}]
+        replies += [D5_CONCERNS, {"escalate": "yes"}, {"escalate": "yes"}]
         [only] = (
             make_agent(*replies).assess("A trial", TEXT, [OUTCOME], min_similarity=SIM).outcomes
         )
@@ -447,7 +483,7 @@ class TestTheAgent:
     def test_an_unreadable_domain_fails_alone(self) -> None:
         bad = {"answers": {"3.1": entry("Unclear")}}
         replies = [reply(Domain.D1), reply(Domain.D2), bad, bad, reply(Domain.D4)]
-        agent = make_agent(*replies, reply(Domain.D5))
+        agent = make_agent(*replies, D5_LOW)
 
         run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
 
@@ -623,12 +659,126 @@ class TestTheAgent:
         assert not assessed(run.study).condensed
 
 
+#: Two other measurements the paper names, neither with a result in the reply.
+_MEASUREMENTS = [
+    {"label": "SBP at 24 weeks", "named": ["Baseline characteristics were similar"], "result": []},
+    {
+        "label": "SBP at 52 weeks",
+        "named": ["Participants and clinicians were blinded"],
+        "result": [],
+    },
+]
+_NOT_FOUND = {"found": False, "quotes": []}
+_FOUND = {"found": True, "quotes": ["Outcome data were available for 98% of participants."]}
+
+
+def _d5_with_measurements() -> dict[str, Any]:
+    return {**D5_LOW, "other_measurements": _MEASUREMENTS}
+
+
+class TestD5FromFacts:
+    def test_d5_is_one_facts_call_answered_by_the_rules(self) -> None:
+        agent = make_agent(*low_run())
+        run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        assert agent.llm.chat.call_count == 5
+        assert "Facts:" in sent(agent)[4] and "Questions:" not in sent(agent)[4]
+        d5 = assessed(run.outcomes[0].domains[3])
+        assert d5.domain is Domain.D5 and d5.facts is not None
+        assert {q: a.answer for q, a in d5.answers.items()} == {
+            "5.1": Answer.PY,
+            "5.2": Answer.PN,
+            "5.3": Answer.PN,
+        }
+        assert d5.judgement is Judgement.LOW
+
+    def test_a_measurement_without_a_result_gets_a_second_look_in_list_order(self) -> None:
+        replies = low_run()[:-1] + [_d5_with_measurements(), _NOT_FOUND, _FOUND]
+        agent = make_agent(*replies)
+        run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        assert agent.llm.chat.call_count == 7
+        assert '"SBP at 24 weeks"' in sent(agent)[5] and '"SBP at 52 weeks"' in sent(agent)[6]
+        d5 = assessed(run.outcomes[0].domains[3])
+        assert d5.facts is not None
+        first, second = d5.facts.measurements
+        assert first.missing() and second.reported()
+        assert d5.answers["5.2"].answer is Answer.PY
+        assert d5.judgement is Judgement.HIGH
+
+    def test_a_failed_second_look_leaves_its_measurement_undecided(self) -> None:
+        replies = low_run()[:-1] + [_d5_with_measurements(), _FOUND]
+        agent = make_agent(*replies)
+        responses = list(agent.llm.chat.side_effect)
+        agent.llm.chat.side_effect = [*responses[:5], ConnectionError("down"), responses[5]]
+        run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        d5 = assessed(run.outcomes[0].domains[3])
+        assert d5.facts is not None
+        first = d5.facts.measurements[0]
+        assert first.second_look is None and first.second_look_error
+        assert not first.missing()
+        assert d5.answers["5.2"].answer is Answer.PN
+
+    def test_a_stop_between_second_looks_ends_the_run(self) -> None:
+        stop = threading.Event()
+        scripted = low_run()[:-1] + [_d5_with_measurements(), _NOT_FOUND, _FOUND]
+        replies = iter(_response(json.dumps(r)) for r in scripted)
+
+        def answer(**kwargs: Any) -> LLMResponse:
+            if agent.llm.chat.call_count == 6:
+                stop.set()
+            return next(replies)
+
+        agent = make_agent(*scripted, stop=stop)
+        agent.llm.chat.side_effect = answer
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        assert agent.llm.chat.call_count == 6
+
+    def test_an_unreadable_facts_reply_fails_d5_naming_the_field(self) -> None:
+        bad = {**D5_LOW, "main_analysis": {"differs": "no"}}
+        agent = make_agent(*low_run()[:-1], bad, bad)
+        run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        [only] = run.outcomes
+        failed = only.domains[3]
+        assert isinstance(failed, DomainFailed) and failed.domain is Domain.D5
+        assert "main_analysis.differs" in failed.reason
+        assert assessed(only.domains[0]).judgement is Judgement.LOW
+        assert only.overall is None
+
+    def test_an_over_window_paper_sends_d5s_digest_to_the_facts_call_and_the_second_looks(
+        self,
+    ) -> None:
+        text = TEXT + " " + "Filler sentence about nothing. " * 20
+        condenser = ScriptedCondenser("A digest.")
+        replies = low_run()[:-1] + [_d5_with_measurements(), _NOT_FOUND, _NOT_FOUND]
+        agent = make_agent(
+            *replies, condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        run = agent.assess("A trial", text, [OUTCOME], min_similarity=SIM)
+        assert all("A digest." in p and "Filler sentence" not in p for p in sent(agent)[4:])
+        d5 = assessed(run.outcomes[0].domains[3])
+        assert d5.condensed
+        # Quotes are verified against the original text, not the digest.
+        assert d5.facts is not None and d5.facts.measurements[0].counts()
+
+    def test_a_run_with_facts_round_trips_and_answers_must_follow_from_them(self) -> None:
+        replies = low_run()[:-1] + [_d5_with_measurements(), _NOT_FOUND, _FOUND]
+        run = make_agent(*replies).assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        data = json.loads(json.dumps(run.to_dict()))
+        assert Rob2Run.from_dict(data) == run
+        d5 = data["outcomes"][0]["domains"][3]
+        d5["answers"]["5.2"]["answer"] = "PN"
+        d5["judgement"] = "low"
+        with pytest.raises(ValueError, match="facts"):
+            DomainAssessment.from_dict(d5)
+
+
 class TestTheWireForm:
     def _run(self) -> Rob2Run:
         replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
-        replies += [{"answers": CONCERNS[Domain.D5]}, {"escalate": True, "reasoning": "R."}]
+        replies += [D5_CONCERNS, {"escalate": True, "reasoning": "R."}]
         bad = {"answers": {}}
-        replies += [reply(Domain.D2), bad, bad, reply(Domain.D4), reply(Domain.D5)]
+        replies += [reply(Domain.D2), bad, bad, reply(Domain.D4), D5_LOW]
         return make_agent(*replies).assess("A trial", TEXT, [OUTCOME, SECOND], min_similarity=SIM)
 
     def test_a_run_round_trips(self) -> None:

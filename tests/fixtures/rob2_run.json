@@ -1,6 +1,6 @@
 {
  "algorithm_version": "rob2-2019-08-22/assignment/parallel/1",
- "prompt_version": 4,
+ "prompt_version": 5,
  "study": {
   "status": "assessed",
   "domain": "D1",
@@ -147,28 +147,111 @@
        "quotes_not_found": [],
        "contradicted": [],
        "quotes_dropped": 0,
-       "reasoning": "Because."
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
       },
       "5.2": {
-       "answer": "N",
+       "answer": "NI",
        "citations": [],
        "quotes_not_found": [],
        "contradicted": [],
        "quotes_dropped": 0,
-       "reasoning": "Because."
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
       },
       "5.3": {
-       "answer": "N",
+       "answer": "NI",
        "citations": [],
        "quotes_not_found": [],
        "contradicted": [],
        "quotes_dropped": 0,
-       "reasoning": "Because."
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
       }
      },
      "judgement": "some_concerns",
      "condensed": false,
-     "ignored": []
+     "ignored": [],
+     "facts": {
+      "outcome": "Systolic blood pressure",
+      "facts": {
+       "plan_cited": {
+        "claimed": true,
+        "citations": [
+         {
+          "start": 327,
+          "end": 359,
+          "text": "registered protocol, NCT00000000",
+          "similarity": 1.0,
+          "exact": true
+         }
+        ],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "present"
+       },
+       "plan_dated_early": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "plan_late": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "measure_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "timepoint_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "analysis_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "switched": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "change_explained": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       }
+      },
+      "other_measurements": [],
+      "main_analysis": {
+       "differs": false,
+       "planned": [],
+       "reported": []
+      }
+     }
     }
    ],
    "escalation": {
@@ -350,28 +433,111 @@
        "quotes_not_found": [],
        "contradicted": [],
        "quotes_dropped": 0,
-       "reasoning": "Because."
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
       },
       "5.2": {
-       "answer": "N",
+       "answer": "NI",
        "citations": [],
        "quotes_not_found": [],
        "contradicted": [],
        "quotes_dropped": 0,
-       "reasoning": "Because."
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
       },
       "5.3": {
-       "answer": "N",
+       "answer": "NI",
        "citations": [],
        "quotes_not_found": [],
        "contradicted": [],
        "quotes_dropped": 0,
-       "reasoning": "Because."
+       "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
       }
      },
      "judgement": "some_concerns",
      "condensed": false,
-     "ignored": []
+     "ignored": [],
+     "facts": {
+      "outcome": "Systolic blood pressure",
+      "facts": {
+       "plan_cited": {
+        "claimed": true,
+        "citations": [
+         {
+          "start": 327,
+          "end": 359,
+          "text": "registered protocol, NCT00000000",
+          "similarity": 1.0,
+          "exact": true
+         }
+        ],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "present"
+       },
+       "plan_dated_early": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "plan_late": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "measure_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "timepoint_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "analysis_fixed": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "switched": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       },
+       "change_explained": {
+        "claimed": false,
+        "citations": [],
+        "quotes_not_found": [],
+        "contradicted": [],
+        "quotes_dropped": 0,
+        "verdict": "not_claimed"
+       }
+      },
+      "other_measurements": [],
+      "main_analysis": {
+       "differs": false,
+       "planned": [],
+       "reported": []
+      }
+     }
     }
    ],
    "escalation": null,

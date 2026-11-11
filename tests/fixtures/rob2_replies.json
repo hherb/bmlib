@@ -1,5 +1,5 @@
 {
- "prompt_version": 4,
+ "prompt_version": 5,
  "system_prompt": "You are an expert in clinical research methodology and in assessing the risk of bias of randomised trials.\n\nCRITICAL RULES:\n1. Base every answer ONLY on what is ACTUALLY PRESENT in the text\n2. DO NOT invent, assume or fabricate any information\n3. When the paper gives nothing to go on, answer NI (no information) rather than guess\n4. Return ONLY valid JSON, no explanation",
  "domain_prompt": "Assess one domain of the risk of bias of the randomised trial in the research paper below, for the effect of assignment to the interventions (as an intention-to-treat analysis estimates it).\n\nAnswer every question listed below. For each give:\n- answer: \"Y\" (yes), \"PY\" (probably yes), \"PN\" (probably no), \"N\" (no) or \"NI\" (no information), as the question describes; \"NA\" (not applicable) only for a question that says it applies only under a condition, when that condition clearly does not hold\n- quotes: 1-3 passages copied VERBATIM from the paper that support the answer, or an empty list when the paper says nothing on it. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n- reasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape, one entry per question id:\n\n{\n    \"answers\": {\n        \"1.1\": {\n            \"answer\": \"PY\",\n            \"quotes\": [\"Participants were randomly assigned using a computer-generated list.\"],\n            \"reasoning\": \"A computer-generated list is a random sequence.\"\n        }\n    }\n}",
  "d5_outcome_switching": "Compare the primary outcome this paper reports with the registered or pre-specified primary outcome the paper states (in its protocol, trial registration or statistical analysis plan). If they differ, say so in your reasoning and quote both statements.",
@@ -235,31 +235,114 @@
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0,
-      "reasoning": "Because."
+      "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
      },
      "5.2": {
-      "answer": "N",
+      "answer": "NI",
       "citations": [],
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0,
-      "reasoning": "Because."
+      "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
      },
      "5.3": {
-      "answer": "N",
+      "answer": "NI",
       "citations": [],
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0,
-      "reasoning": "Because."
+      "reasoning": "From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
      }
     },
     "judgement": "some_concerns",
     "condensed": false,
-    "ignored": []
+    "ignored": [],
+    "facts": {
+     "outcome": "Systolic blood pressure",
+     "facts": {
+      "plan_cited": {
+       "claimed": true,
+       "citations": [
+        {
+         "start": 327,
+         "end": 359,
+         "text": "registered protocol, NCT00000000",
+         "similarity": 1.0,
+         "exact": true
+        }
+       ],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "present"
+      },
+      "plan_dated_early": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      },
+      "plan_late": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      },
+      "measure_fixed": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      },
+      "timepoint_fixed": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      },
+      "analysis_fixed": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      },
+      "switched": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      },
+      "change_explained": {
+       "claimed": false,
+       "citations": [],
+       "quotes_not_found": [],
+       "contradicted": [],
+       "quotes_dropped": 0,
+       "verdict": "not_claimed"
+      }
+     },
+     "other_measurements": [],
+     "main_analysis": {
+      "differs": false,
+      "planned": [],
+      "reported": []
+     }
+    }
    }
   ],
-  "escalation": "Every domain of this result's risk-of-bias assessment has now been judged. None was judged at high risk of bias, but two or more raised some concerns. In that situation the assessor decides whether the concerns, taken together, are serious enough to rate the result at high risk of bias overall, or whether \"some concerns\" remains the right overall rating.\n\nWeigh the domain judgements and answers below: how serious each concern is, whether several of them could push the result in the same direction, and whether together they leave real doubt that the result reflects the effect of being assigned to the interventions. Minor concerns, or concerns that would push the result in opposite directions, weigh less.\n\nescalate: true to rate this result at high risk of bias overall, false to keep it at some concerns.\nreasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"escalate\": false,\n    \"reasoning\": \"Each concern is small and they would bias the result in different directions.\"\n}\n\nOutcome assessed: Systolic blood pressure\nTimepoint: 12 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-4.2,\"ci_low\":-6.1,\"ci_high\":-2.3,\"ci_level\":0.95,\"n_analysed\":412}\n\nDomain D1: bias arising from the randomisation process (judged once for the trial): some_concerns\n1.1: Y - Because.\n1.2: NI - Not described.\n1.3: N - Because.\n\nDomain D2: bias due to deviations from the intended interventions (the effect of assignment to the interventions): low\n2.1: N - Because.\n2.2: N - Because.\n2.6: Y - Because.\n\nDomain D3: bias due to missing outcome data: low\n3.1: Y - Because.\n\nDomain D4: bias in measurement of the outcome: low\n4.1: N - Because.\n4.2: N - Because.\n4.3: N - Because.\n\nDomain D5: bias in selection of the reported result: some_concerns\n5.1: NI - Because.\n5.2: N - Because.\n5.3: N - Because."
+  "escalation": "Every domain of this result's risk-of-bias assessment has now been judged. None was judged at high risk of bias, but two or more raised some concerns. In that situation the assessor decides whether the concerns, taken together, are serious enough to rate the result at high risk of bias overall, or whether \"some concerns\" remains the right overall rating.\n\nWeigh the domain judgements and answers below: how serious each concern is, whether several of them could push the result in the same direction, and whether together they leave real doubt that the result reflects the effect of being assigned to the interventions. Minor concerns, or concerns that would push the result in opposite directions, weigh less.\n\nescalate: true to rate this result at high risk of bias overall, false to keep it at some concerns.\nreasoning: one or two sentences saying why.\n\nRespond with JSON in exactly this shape:\n\n{\n    \"escalate\": false,\n    \"reasoning\": \"Each concern is small and they would bias the result in different directions.\"\n}\n\nOutcome assessed: Systolic blood pressure\nTimepoint: 12 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-4.2,\"ci_low\":-6.1,\"ci_high\":-2.3,\"ci_level\":0.95,\"n_analysed\":412}\n\nDomain D1: bias arising from the randomisation process (judged once for the trial): some_concerns\n1.1: Y - Because.\n1.2: NI - Not described.\n1.3: N - Because.\n\nDomain D2: bias due to deviations from the intended interventions (the effect of assignment to the interventions): low\n2.1: N - Because.\n2.2: N - Because.\n2.6: Y - Because.\n\nDomain D3: bias due to missing outcome data: low\n3.1: Y - Because.\n\nDomain D4: bias in measurement of the outcome: low\n4.1: N - Because.\n4.2: N - Because.\n4.3: N - Because.\n\nDomain D5: bias in selection of the reported result: some_concerns\n5.1: NI - From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no.\n5.2: NI - From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no.\n5.3: NI - From the facts (plan_cited: present; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: not_claimed; timepoint_fixed: not_claimed; analysis_fixed: not_claimed; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: none; the analysis reported differs from the main one: no."
  },
  "cases": [
   {

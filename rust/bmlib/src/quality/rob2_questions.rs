@@ -47,7 +47,7 @@ use crate::quality::rob2_algorithm::Domain;
 /// Bumped whenever any wording in this module or the agent's prompts changes,
 /// so a stored run says which wording produced it. Python's
 /// `ROB2_PROMPT_VERSION`.
-pub const ROB2_PROMPT_VERSION: u32 = 4;
+pub const ROB2_PROMPT_VERSION: u32 = 5;
 
 /// Question 1.1's wording.
 pub const Q_1_1: &str = r##"Did chance alone decide which group each participant joined?

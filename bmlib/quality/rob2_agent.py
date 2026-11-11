@@ -81,10 +81,16 @@ from bmlib.quality.rob2_algorithm import (
 )
 from bmlib.quality.rob2_d5_checks import D5_FACTS, D5Fact
 from bmlib.quality.rob2_d5_facts import (
+    D5_FACTS_SYSTEM_PROMPT,
+    D5_SECOND_LOOK_SYSTEM_PROMPT,
     DIFFERING_ANALYSIS,
     MISSING_MEASUREMENT,
     D5Facts,
     d5_answers,
+    facts_prompt,
+    read_facts_reply,
+    read_second_look,
+    second_look_prompt,
 )
 from bmlib.quality.rob2_questions import (
     D5_OUTCOME_SWITCHING,
@@ -368,6 +374,9 @@ class DomainAssessment:
             if domain is not Domain.D5:
                 raise ValueError(f"facts are D5's, not {domain.value}'s")
             facts = D5Facts.from_dict(data["facts"])
+            from_facts = d5_assessment(facts)
+            if given != {q: a.answer for q, a in from_facts.answers.items()}:
+                raise ValueError("the answers do not follow from the facts")
         return cls(
             domain,
             answers,
@@ -1034,7 +1043,10 @@ class Rob2Agent(_FullTextAgent):
         similarity: float,
         papers: dict[Domain, str | _CallFailedError],
     ) -> DomainResult:
-        """Ask one domain's questions; a failed call comes back as :class:`DomainFailed`."""
+        """Ask one domain's questions (D5: its facts); a failed call comes back as
+        :class:`DomainFailed`."""
+        if domain is Domain.D5 and outcome is not None:
+            return self._d5(title, stripped, original, outcome, similarity, papers)
         label = f"RoB 2 {domain.value} of {title[:LABEL_CHARS]!r}"
         try:
             paper, condensed = self._paper(domain, title, stripped, papers)
@@ -1047,6 +1059,52 @@ class Rob2Agent(_FullTextAgent):
         except _CallFailedError as exc:
             logger.warning("%s not assessed: %s", label, exc)
             return DomainFailed(domain, str(exc), exc.retryable, exc.status)
+        assessment.condensed = condensed
+        return assessment
+
+    def _d5(
+        self,
+        title: str,
+        stripped: str,
+        original: str,
+        outcome: ProposedOutcome,
+        similarity: float,
+        papers: dict[Domain, str | _CallFailedError],
+    ) -> DomainResult:
+        """D5 from facts (design §4.6): one facts call, then a second look, in list order, at
+        each other measurement that names no result; then the rules.
+
+        A failed facts call (asked twice when unreadable) comes back as :class:`DomainFailed`;
+        a failed second look leaves its measurement undecided, its error kept; a stop ends the
+        run (``Rob2RunError``, raised by the call).
+        """
+        label = f"RoB 2 D5 of {title[:LABEL_CHARS]!r}"
+        try:
+            paper, condensed = self._paper(Domain.D5, title, stripped, papers)
+            facts = self._ask_until_readable(
+                D5_FACTS_SYSTEM_PROMPT,
+                facts_prompt(title, paper, outcome),
+                lambda data: read_facts_reply(data, original, outcome.name, similarity),
+                label,
+            )
+        except _CallFailedError as exc:
+            logger.warning("%s not assessed: %s", label, exc)
+            return DomainFailed(Domain.D5, str(exc), exc.retryable, exc.status)
+        for item in facts.measurements:
+            if not item.needs_second_look():
+                continue
+            look = f"{label}, second look at {item.label[:LABEL_CHARS]!r}"
+            try:
+                item.second_look = self._ask_until_readable(
+                    D5_SECOND_LOOK_SYSTEM_PROMPT,
+                    second_look_prompt(title, paper, outcome, item),
+                    lambda data: read_second_look(data, original, similarity),
+                    look,
+                )
+            except _CallFailedError as exc:
+                logger.warning("%s not had: %s", look, exc)
+                item.second_look_error = str(exc)
+        assessment = d5_assessment(facts)
         assessment.condensed = condensed
         return assessment
 

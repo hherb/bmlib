@@ -49,6 +49,7 @@ from bmlib.quality.rob2_agent import (
     Escalation,
     OutcomeRob2,
     Rob2Run,
+    d5_assessment,
     domain_prompt,
     escalation_message,
     read_domain_reply,
@@ -56,6 +57,8 @@ from bmlib.quality.rob2_agent import (
     rob2_overall,
 )
 from bmlib.quality.rob2_algorithm import ROB2_ALGORITHM_VERSION, Domain
+from bmlib.quality.rob2_d5_checks import D5_FACTS, D5Fact
+from bmlib.quality.rob2_d5_facts import read_facts_reply
 from bmlib.quality.rob2_questions import (
     D5_OUTCOME_SWITCHING,
     ESCALATION_PROMPT,
@@ -246,11 +249,28 @@ def _read(domain: Domain, reply: Any) -> DomainAssessment:
     return read_domain_reply(domain, reply, TEXT, MIN_SIMILARITY)
 
 
+#: A D5 facts reply citing the registered protocol and stating nothing else: 5.1-5.3 NI, so D5
+#: has some concerns (design §4.6).
+D5_CITED_ONLY: dict[str, Any] = {
+    "facts": {
+        f.value: {
+            "present": f is D5Fact.PLAN_CITED,
+            "quotes": ["registered protocol, NCT00000000"] if f is D5Fact.PLAN_CITED else [],
+        }
+        for f in D5_FACTS
+    },
+    "other_measurements": [],
+    "main_analysis": {"differs": False, "planned": [], "reported": []},
+}
+
+
 def _concerns() -> tuple[DomainAssessment, list[DomainAssessment]]:
     """A study and outcome domains with some concerns in D1 and D5 (escalation needed)."""
     study = _read(Domain.D1, _reply(Domain.D1, q1_2=_entry("NI", reasoning="Not described.")))
     domains = [_read(d, _reply(d)) for d in (Domain.D2, Domain.D3, Domain.D4)]
-    domains.append(_read(Domain.D5, _reply(Domain.D5, q5_1=_entry("NI"))))
+    domains.append(
+        d5_assessment(read_facts_reply(D5_CITED_ONLY, TEXT, OUTCOME.name, MIN_SIMILARITY))
+    )
     return study, domains
 
 

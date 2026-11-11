@@ -61,7 +61,10 @@ use crate::quality::rob2_algorithm::{
     questions, Answer, Answers, Domain, Judgement, Rob2Error, ROB2_ALGORITHM_VERSION,
 };
 use crate::quality::rob2_d5_checks::{D5Fact, D5_FACTS};
-use crate::quality::rob2_d5_facts::{d5_answers, D5Facts, DIFFERING_ANALYSIS, MISSING_MEASUREMENT};
+use crate::quality::rob2_d5_facts::{
+    d5_answers, facts_prompt, read_facts_reply, read_second_look, second_look_prompt, D5Facts,
+    D5_FACTS_SYSTEM_PROMPT, D5_SECOND_LOOK_SYSTEM_PROMPT, DIFFERING_ANALYSIS, MISSING_MEASUREMENT,
+};
 use crate::quality::rob2_questions::{
     condense_query, domain_title, question_text, D5_OUTCOME_SWITCHING, ESCALATION_PROMPT,
     ROB2_PROMPT_VERSION,
@@ -363,7 +366,17 @@ impl DomainAssessment {
             Some(_) if domain != Domain::D5 => {
                 return Err(format!("facts are D5's, not {}'s", wire_name(domain)));
             }
-            Some(facts) => Some(D5Facts::from_json(facts)?),
+            Some(facts) => {
+                let facts = D5Facts::from_json(facts)?;
+                let derived: Answers = d5_answers(&facts)
+                    .into_iter()
+                    .map(|(q, (answer, _))| (q, answer))
+                    .collect();
+                if derived != given {
+                    return Err("the answers do not follow from the facts".to_string());
+                }
+                Some(facts)
+            }
         };
         Ok(DomainAssessment {
             domain,
@@ -816,7 +829,7 @@ pub fn read_domain_reply(
 /// # Panics
 ///
 /// When `facts` lacks one of [`D5_FACTS`], which neither
-/// [`read_facts_reply`](crate::quality::rob2_d5_facts::read_facts_reply) nor
+/// [`read_facts_reply`] nor
 /// [`D5Facts::from_json`] lets happen.
 #[must_use]
 pub fn d5_assessment(facts: D5Facts) -> DomainAssessment {
@@ -1264,8 +1277,8 @@ impl<'a> Rob2Agent<'a> {
         digest.map(|digest| (digest, true))
     }
 
-    /// Ask one domain's questions; a failed call comes back as
-    /// [`DomainResult::Failed`].
+    /// Ask one domain's questions (D5: its facts, [`Self::d5`]); a failed
+    /// call comes back as [`DomainResult::Failed`].
     fn domain(
         &mut self,
         domain: Domain,
@@ -1273,6 +1286,9 @@ impl<'a> Rob2Agent<'a> {
         outcome: Option<&ProposedOutcome>,
         papers: &mut Papers,
     ) -> Result<DomainResult, Rob2RunError> {
+        if let (Domain::D5, Some(outcome)) = (domain, outcome) {
+            return self.d5(paper, outcome, papers);
+        }
         let failed = |(reason, retryable, status)| DomainResult::Failed {
             domain,
             reason,
@@ -1305,6 +1321,74 @@ impl<'a> Rob2Agent<'a> {
             }
             Err(failure) => split(failure).map(failed),
         }
+    }
+
+    /// D5 from facts (design §4.6): one facts call, then a second look, in
+    /// list order, at each other measurement that names no result; then the
+    /// rules ([`d5_assessment`]).
+    ///
+    /// A failed facts call (asked twice when unreadable) comes back as
+    /// [`DomainResult::Failed`]; a failed second look leaves its measurement
+    /// undecided, its error kept; a stop ends the run.
+    fn d5(
+        &mut self,
+        paper: &Paper<'_>,
+        outcome: &ProposedOutcome,
+        papers: &mut Papers,
+    ) -> Result<DomainResult, Rob2RunError> {
+        let failed = |(reason, retryable, status)| DomainResult::Failed {
+            domain: Domain::D5,
+            reason,
+            retryable,
+            status,
+        };
+        let (sent, condensed) = match self.paper_for(Domain::D5, paper, papers) {
+            Ok(sent) => sent,
+            Err(failure) => return split(failure).map(failed),
+        };
+        let label = format!(
+            "RoB 2 D5 of {}",
+            repr_str(&paper.title.chars().take(LABEL_CHARS).collect::<String>())
+        );
+        let sampling = self.sampling();
+        let asked = ask_until_readable(
+            &mut *self.chat,
+            D5_FACTS_SYSTEM_PROMPT,
+            &facts_prompt(paper.title, &sent, outcome),
+            sampling,
+            self.stop,
+            &label,
+            |data| read_facts_reply(data, paper.original, &outcome.name, paper.min_similarity),
+        );
+        let mut facts = match asked {
+            Ok(facts) => facts,
+            Err(failure) => return split(failure).map(failed),
+        };
+        for item in &mut facts.measurements {
+            if !item.needs_second_look() {
+                continue;
+            }
+            let look = format!(
+                "{label}, second look at {}",
+                repr_str(&item.label.chars().take(LABEL_CHARS).collect::<String>())
+            );
+            let sampling = self.sampling();
+            match ask_until_readable(
+                &mut *self.chat,
+                D5_SECOND_LOOK_SYSTEM_PROMPT,
+                &second_look_prompt(paper.title, &sent, outcome, item),
+                sampling,
+                self.stop,
+                &look,
+                |data| read_second_look(data, paper.original, paper.min_similarity),
+            ) {
+                Ok(found) => item.second_look = Some(found),
+                Err(failure) => item.second_look_error = Some(split(failure)?.0),
+            }
+        }
+        let mut assessment = d5_assessment(facts);
+        assessment.condensed = condensed;
+        Ok(DomainResult::Assessed(assessment))
     }
 
     /// Combine one outcome's domains, asking the escalation question when it
@@ -1382,7 +1466,53 @@ pub(crate) mod tests {
     use std::sync::atomic::Ordering;
 
     const RANDOM: &str = "Participants were randomly assigned using a computer-generated list.";
-    pub(crate) const TEXT: &str = "Participants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Outcome data were available for 98% of participants.";
+    pub(crate) const TEXT: &str = "Participants were randomly assigned using a computer-generated list. Allocation was concealed by a central web-based service. Outcome data were available for 98% of participants. The prespecified primary outcome was systolic blood pressure at 12 weeks, analysed by the prespecified analysis of covariance.";
+    /// The paper's statement of the plan, which the D5 facts below quote.
+    const PLANNED_BP: &str =
+        "The prespecified primary outcome was systolic blood pressure at 12 weeks";
+    /// The evidence-weight tests' outcome sentences (in their paper, not this one).
+    const PLANNED_MORTALITY: &str = "The primary outcome was all-cause mortality at 28 days.";
+    pub(crate) const PLANNED_HOSPITALISATION: &str =
+        "The secondary outcome was hospitalisation at 28 days.";
+    const ANCOVA: &str = "analysed by the prespecified analysis of covariance";
+
+    /// A D5 facts reply claiming each fact in `claims` with its quotes,
+    /// every other fact absent.
+    pub(crate) fn d5_facts(claims: &[(D5Fact, &[&str])]) -> Value {
+        let facts: Map<String, Value> = D5_FACTS
+            .iter()
+            .map(|f| {
+                let quotes = claims.iter().find(|(c, _)| c == f).map(|(_, q)| *q);
+                (
+                    f.as_str().to_string(),
+                    json!({"present": quotes.is_some(), "quotes": quotes.unwrap_or(&[])}),
+                )
+            })
+            .collect();
+        json!({
+            "facts": facts,
+            "other_measurements": [],
+            "main_analysis": {"differs": false, "planned": [], "reported": []},
+        })
+    }
+
+    /// D5 low on the paper's word: the measure, time point and analysis
+    /// stated as prespecified, no dated plan cited (5.1 PY, 5.2 PN, 5.3 PN).
+    pub(crate) fn d5_low() -> Value {
+        d5_facts(&[
+            (
+                D5Fact::MeasureFixed,
+                &[PLANNED_BP, PLANNED_MORTALITY, PLANNED_HOSPITALISATION],
+            ),
+            (D5Fact::TimepointFixed, &[PLANNED_BP, PLANNED_MORTALITY]),
+            (D5Fact::AnalysisFixed, &[ANCOVA]),
+        ])
+    }
+
+    /// D5 with nothing stated: 5.1-5.3 NI, some concerns.
+    fn d5_concerns() -> Value {
+        d5_facts(&[])
+    }
     pub(crate) const SIM: f64 = 0.9;
 
     fn entry(answer: &str) -> Value {
@@ -1440,10 +1570,12 @@ pub(crate) mod tests {
         );
     }
 
+    /// The replies of a run in which every domain is low (D5 from facts).
     pub(crate) fn low_run(outcomes: usize) -> Vec<Value> {
         let mut replies = vec![reply(Domain::D1, &[])];
         for _ in 0..outcomes {
-            replies.extend(Domain::ALL[1..].iter().map(|d| reply(*d, &[])));
+            replies.extend(Domain::ALL[1..4].iter().map(|d| reply(*d, &[])));
+            replies.push(d5_low());
         }
         replies
     }
@@ -1452,7 +1584,7 @@ pub(crate) mod tests {
     fn concerns_run() -> Vec<Value> {
         let mut replies = vec![reply(Domain::D1, &[("1.2", "NI")])];
         replies.extend(Domain::ALL[1..4].iter().map(|d| reply(*d, &[])));
-        replies.push(reply(Domain::D5, &[("5.1", "NI")]));
+        replies.push(d5_concerns());
         replies
     }
 
@@ -1481,6 +1613,8 @@ pub(crate) mod tests {
     struct Scripted<'s> {
         replies: Vec<Result<Value, ChatJsonError>>,
         sent: Vec<String>,
+        /// Each call's system turn, in order.
+        systems: Vec<String>,
         stop: Option<(&'s AtomicBool, usize)>,
     }
 
@@ -1489,6 +1623,7 @@ pub(crate) mod tests {
             Scripted {
                 replies: replies.into_iter().map(Ok).collect(),
                 sent: Vec::new(),
+                systems: Vec::new(),
                 stop: None,
             }
         }
@@ -1503,7 +1638,17 @@ pub(crate) mod tests {
             _max_retries: usize,
             _require_dict: bool,
         ) -> Result<ChatJsonOutcome, ChatJsonError> {
-            assert_eq!(messages[0].content, ROB2_SYSTEM_PROMPT);
+            let system = messages[0].content.as_str();
+            assert!(
+                [
+                    ROB2_SYSTEM_PROMPT,
+                    D5_FACTS_SYSTEM_PROMPT,
+                    D5_SECOND_LOOK_SYSTEM_PROMPT
+                ]
+                .contains(&system),
+                "{system}"
+            );
+            self.systems.push(system.to_string());
             self.sent.push(messages[messages.len() - 1].content.clone());
             if let Some((stop, at)) = self.stop {
                 if self.sent.len() == at {
@@ -1535,15 +1680,19 @@ pub(crate) mod tests {
             .assess("A trial", TEXT, &[outcome("SBP")], SIM)
             .expect("run");
         assert_eq!(chat.sent.len(), 5);
-        for (prompt, domain) in chat.sent.iter().zip(Domain::ALL) {
-            assert!(prompt.contains(domain_title(domain)) && prompt.contains(TEXT));
+        for (prompt, domain) in chat.sent[..4].iter().zip(&Domain::ALL[..4]) {
+            assert!(prompt.contains(domain_title(*domain)) && prompt.contains(TEXT));
         }
+        // D5 is asked for facts, not its signalling questions (design §4.6).
+        assert_eq!(chat.sent[4], facts_prompt("A trial", TEXT, &outcome("SBP")));
         assert!(!chat.sent[0].contains("Outcome assessed: SBP"));
         assert!(chat.sent[1..]
             .iter()
             .all(|p| p.contains("Outcome assessed: SBP") && p.contains("\"estimate\":-4.2")));
-        assert!(chat.sent[4].contains(D5_OUTCOME_SWITCHING));
-        assert!(!chat.sent[3].contains(D5_OUTCOME_SWITCHING));
+        assert!(chat.sent.iter().all(|p| !p.contains(D5_OUTCOME_SWITCHING)));
+        let mut systems = vec![ROB2_SYSTEM_PROMPT.to_string(); 4];
+        systems.push(D5_FACTS_SYSTEM_PROMPT.to_string());
+        assert_eq!(chat.systems, systems);
         assert_eq!(run.algorithm_version, ROB2_ALGORITHM_VERSION);
         assert_eq!(run.prompt_version, ROB2_PROMPT_VERSION);
         let study = assessed(&run.study);
@@ -1782,6 +1931,163 @@ pub(crate) mod tests {
             Rob2RunError::NoOutcomes.to_string(),
             "no primary outcome to assess"
         );
+    }
+
+    /// A D5 facts reply that comes out low (`d5_low`) with two other
+    /// measurements, neither with a result.
+    fn d5_with_measurements() -> Value {
+        let mut reply = d5_low();
+        reply["other_measurements"] = json!([
+            {"label": "SBP at 24 weeks", "named": ["Allocation was concealed"], "result": []},
+            {"label": "SBP at 52 weeks", "named": ["Participants were randomly assigned"], "result": []},
+        ]);
+        reply
+    }
+
+    fn not_found() -> Value {
+        json!({"found": false, "quotes": []})
+    }
+
+    fn found() -> Value {
+        json!({"found": true, "quotes": ["Outcome data were available for 98% of participants."]})
+    }
+
+    /// The low run with D5's reply replaced by `d5` and `looks` appended.
+    fn d5_run(d5: Value, looks: Vec<Value>) -> Vec<Value> {
+        let mut replies = low_run(1);
+        replies.pop();
+        replies.push(d5);
+        replies.extend(looks);
+        replies
+    }
+
+    fn d5_of(run: &Rob2Run) -> &DomainAssessment {
+        assessed(&run.outcomes[0].domains[3])
+    }
+
+    #[test]
+    fn d5_is_one_facts_call_answered_by_the_rules() {
+        let mut chat = Scripted::new(low_run(1));
+        let run = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+            .expect("run");
+        assert_eq!(chat.sent.len(), 5);
+        let d5 = d5_of(&run);
+        assert!(d5.facts.is_some());
+        let answers: Vec<Answer> = d5.answers.values().map(|a| a.answer).collect();
+        assert_eq!(answers, [Answer::Py, Answer::Pn, Answer::Pn]);
+        assert_eq!(d5.judgement, Judgement::Low);
+    }
+
+    #[test]
+    fn a_measurement_without_a_result_gets_a_second_look_in_list_order() {
+        let mut chat = Scripted::new(d5_run(d5_with_measurements(), vec![not_found(), found()]));
+        let run = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+            .expect("run");
+        assert_eq!(chat.sent.len(), 7);
+        assert!(chat.sent[5].contains("\"SBP at 24 weeks\""));
+        assert!(chat.sent[6].contains("\"SBP at 52 weeks\""));
+        assert_eq!(&chat.systems[5..], [D5_SECOND_LOOK_SYSTEM_PROMPT; 2]);
+        let d5 = d5_of(&run);
+        let facts = d5.facts.as_ref().expect("facts");
+        assert!(facts.measurements[0].missing() && facts.measurements[1].reported());
+        assert_eq!(d5.answers["5.2"].answer, Answer::Py);
+        assert_eq!(d5.judgement, Judgement::High);
+    }
+
+    #[test]
+    fn a_failed_second_look_leaves_its_measurement_undecided() {
+        let mut chat = Scripted::new(d5_run(d5_with_measurements(), vec![found(), found()]));
+        chat.replies[5] = Err(ChatJsonError::Transport {
+            message: "down".into(),
+            attempts: 1,
+            retryable: true,
+            status: None,
+        });
+        let run = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+            .expect("run");
+        let d5 = d5_of(&run);
+        let first = &d5.facts.as_ref().expect("facts").measurements[0];
+        assert!(first.second_look.is_none());
+        assert!(first
+            .second_look_error
+            .as_deref()
+            .is_some_and(|e| e.contains("down")));
+        assert!(!first.missing());
+        assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
+    }
+
+    #[test]
+    fn a_stop_between_second_looks_ends_the_run() {
+        let stop = AtomicBool::new(false);
+        let mut chat = Scripted::new(d5_run(d5_with_measurements(), vec![not_found(), found()]));
+        chat.stop = Some((&stop, 6));
+        let result = Rob2Agent::new(&mut chat).with_stop(&stop).assess(
+            "A trial",
+            TEXT,
+            &[outcome("SBP")],
+            SIM,
+        );
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+        assert_eq!(chat.sent.len(), 6);
+    }
+
+    #[test]
+    fn an_unreadable_facts_reply_fails_d5_naming_the_field() {
+        let mut bad = d5_low();
+        bad["main_analysis"]["differs"] = json!("no");
+        let mut replies = d5_run(bad.clone(), vec![bad]);
+        replies.truncate(6);
+        let mut chat = Scripted::new(replies);
+        let run = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+            .expect("run");
+        let only = &run.outcomes[0];
+        assert!(matches!(
+            &only.domains[3],
+            DomainResult::Failed { domain: Domain::D5, reason, .. } if reason.contains("main_analysis.differs")
+        ));
+        assert_eq!(assessed(&only.domains[0]).judgement, Judgement::Low);
+        assert_eq!(only.overall, None);
+    }
+
+    #[test]
+    fn an_over_window_paper_sends_d5s_digest_to_the_facts_call_and_the_second_looks() {
+        let text = format!("{TEXT} {}", "Filler sentence about nothing. ".repeat(20));
+        let mut condenser = Condenser(Vec::new());
+        let mut chat = Scripted::new(d5_run(
+            d5_with_measurements(),
+            vec![not_found(), not_found()],
+        ));
+        let run = Rob2Agent::new(&mut chat)
+            .with_condenser(&mut condenser)
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+            .assess("A trial", &text, &[outcome("SBP")], SIM)
+            .expect("run");
+        assert!(chat.sent[4..]
+            .iter()
+            .all(|p| p.contains("A digest.") && !p.contains("Filler sentence")));
+        let d5 = d5_of(&run);
+        assert!(d5.condensed);
+        // Quotes are verified against the original text, not the digest.
+        assert!(d5.facts.as_ref().expect("facts").measurements[0].counts());
+    }
+
+    #[test]
+    fn a_run_with_facts_round_trips_and_answers_must_follow_from_them() {
+        let mut chat = Scripted::new(d5_run(d5_with_measurements(), vec![not_found(), found()]));
+        let run = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+            .expect("run");
+        let data = run.to_json();
+        assert_eq!(Rob2Run::from_json(&data).expect("round trip"), run);
+        let mut d5 = data["outcomes"][0]["domains"][3].clone();
+        d5["answers"]["5.2"]["answer"] = json!("PN");
+        d5["judgement"] = json!("low");
+        let error = DomainAssessment::from_json(&d5).expect_err("answers not from the facts");
+        assert!(error.contains("facts"), "{error}");
     }
 
     /// A condenser returning a fixed digest and recording its queries.
