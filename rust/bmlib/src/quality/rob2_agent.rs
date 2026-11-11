@@ -60,6 +60,8 @@ use crate::quality::rob2_algorithm::{
     applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,
     questions, Answer, Answers, Domain, Judgement, Rob2Error, ROB2_ALGORITHM_VERSION,
 };
+use crate::quality::rob2_d5_checks::{D5Fact, D5_FACTS};
+use crate::quality::rob2_d5_facts::{d5_answers, D5Facts, DIFFERING_ANALYSIS, MISSING_MEASUREMENT};
 use crate::quality::rob2_questions::{
     condense_query, domain_title, question_text, D5_OUTCOME_SWITCHING, ESCALATION_PROMPT,
     ROB2_PROMPT_VERSION,
@@ -276,6 +278,9 @@ pub struct DomainAssessment {
     /// Ids the model answered although they do not apply on the branch its
     /// answers took; listed rather than dropped silently.
     pub ignored: Vec<String>,
+    /// D5's facts, from which its answers were derived ([`d5_assessment`]);
+    /// `None` for every other domain.
+    pub facts: Option<D5Facts>,
 }
 
 impl DomainAssessment {
@@ -287,14 +292,18 @@ impl DomainAssessment {
             .iter()
             .map(|(q, a)| (q.clone(), a.to_json()))
             .collect();
-        json!({
+        let mut value = json!({
             "status": ASSESSED,
             "domain": self.domain,
             "answers": answers,
             "judgement": self.judgement,
             "condensed": self.condensed,
             "ignored": self.ignored,
-        })
+        });
+        if let Some(facts) = &self.facts {
+            value["facts"] = facts.to_json();
+        }
+        value
     }
 
     /// Python's `from_dict()`: refuses what the reader refuses. The answers
@@ -349,12 +358,20 @@ impl DomainAssessment {
                 }
             }
         }
+        let facts = match data.get("facts") {
+            None | Some(Value::Null) => None,
+            Some(_) if domain != Domain::D5 => {
+                return Err(format!("facts are D5's, not {}'s", wire_name(domain)));
+            }
+            Some(facts) => Some(D5Facts::from_json(facts)?),
+        };
         Ok(DomainAssessment {
             domain,
             answers,
             judgement,
             condensed: boolean(data, "condensed", "a boolean")?,
             ignored,
+            facts,
         })
     }
 }
@@ -784,7 +801,90 @@ pub fn read_domain_reply(
         judgement,
         condensed: false,
         ignored,
+        facts: None,
     })
+}
+
+/// D5 assessed from `facts`: the answers by [`d5_answers`], the judgement by
+/// RoB 2's algorithm, and the facts kept with it. Python's `d5_assessment`.
+///
+/// Each answer's citations are the passages that decided it: the deciding
+/// facts' quotes, the naming passages of the measurements missing at both
+/// looks, or both sides of a differing analysis. Its reasoning lists every
+/// fact's verdict, so a reader sees why it came out.
+///
+/// # Panics
+///
+/// When `facts` lacks one of [`D5_FACTS`], which neither
+/// [`read_facts_reply`](crate::quality::rob2_d5_facts::read_facts_reply) nor
+/// [`D5Facts::from_json`] lets happen.
+#[must_use]
+pub fn d5_assessment(facts: D5Facts) -> DomainAssessment {
+    let verdicts = D5_FACTS
+        .iter()
+        .map(|f| format!("{}: {}", f.as_str(), facts.facts[f].verdict.as_str()))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let missing: Vec<&str> = facts
+        .measurements
+        .iter()
+        .filter(|m| m.missing())
+        .map(|m| m.label.as_str())
+        .collect();
+    let reasoning = format!(
+        "From the facts ({verdicts}); other measurements missing at both looks: {}; the \
+         analysis reported differs from the main one: {}.",
+        if missing.is_empty() {
+            "none".to_string()
+        } else {
+            missing.join(", ")
+        },
+        if facts.analysis.counts() { "yes" } else { "no" }
+    );
+    let mut answers = BTreeMap::new();
+    for (question, (answer, deciding)) in d5_answers(&facts) {
+        let mut citations: Vec<PicoCitation> = Vec::new();
+        for reason in &deciding {
+            if reason == MISSING_MEASUREMENT {
+                citations.extend(
+                    facts
+                        .measurements
+                        .iter()
+                        .filter(|m| m.missing())
+                        .flat_map(|m| m.named.iter().cloned()),
+                );
+            } else if reason == DIFFERING_ANALYSIS {
+                citations.extend(facts.analysis.planned.iter().cloned());
+                citations.extend(facts.analysis.reported.iter().cloned());
+            } else if let Some(fact) = D5Fact::parse(reason) {
+                citations.extend(facts.facts[&fact].citations.iter().cloned());
+            }
+        }
+        answers.insert(
+            question,
+            MachineAnswer {
+                answer,
+                citations,
+                quotes_not_found: Vec::new(),
+                contradicted: Vec::new(),
+                quotes_dropped: 0,
+                reasoning: reasoning.clone(),
+            },
+        );
+    }
+    let given: Answers = answers
+        .iter()
+        .map(|(q, a): (&String, &MachineAnswer)| (q.clone(), a.answer))
+        .collect();
+    let judgement = judge(Domain::D5, &given).expect("D5's three answers are always complete");
+    DomainAssessment {
+        domain: Domain::D5,
+        answers,
+        judgement,
+        condensed: false,
+        ignored: Vec::new(),
+        facts: Some(facts),
+    }
 }
 
 /// One question's entry as a [`MachineAnswer`], or `None` for `NA`. Python's
@@ -851,7 +951,8 @@ pub fn read_escalation_reply(data: &Value) -> Result<Escalation, String> {
 // --- The prompts ---
 
 /// The outcome as a prompt names it: name, timepoint, reported result.
-fn outcome_block(outcome: &ProposedOutcome) -> String {
+/// Shared by the domain, escalation and D5 facts prompts.
+pub(crate) fn outcome_block(outcome: &ProposedOutcome) -> String {
     // shortcut: a number under 1e-4 or over 1e16 prints its exponent as Rust
     // does (1e-5; Python 1e-05); pin such a case if one ever matters.
     let result = match &outcome.result {

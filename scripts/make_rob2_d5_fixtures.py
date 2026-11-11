@@ -14,7 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Write ``tests/fixtures/rob2_d5_checks.json``, the D5 quote checks' shared contract.
+"""Write ``rob2_d5_checks.json`` and ``rob2_d5_facts.json``, D5's shared contracts.
+
+- ``rob2_d5_checks.json``: every quote-check case and its verdict.
+- ``rob2_d5_facts.json``: the facts and second-look prompts rendered for one
+  paper, each facts reply's reading (the facts, the answers and the
+  judgement) or refusal, each second-look reply's passages or refusal, and
+  stored facts with the answers they give.
 
 Built from the Python implementation; ``tests/test_rob2_d5_contract.py`` and
 ``rust/bmlib/tests/rob2_d5_contract.rs`` assert every case, and the Python
@@ -36,7 +42,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bmlib.quality.evidence_ladder import EffectScale, ReportedResult
+from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.rob2_agent import d5_assessment
 from bmlib.quality.rob2_d5_checks import (
+    D5_FACTS,
     D5Fact,
     fact_verdict,
     names_outcome,
@@ -44,9 +54,18 @@ from bmlib.quality.rob2_d5_checks import (
     states_a_plan,
     supports,
 )
+from bmlib.quality.rob2_d5_facts import (
+    D5_FACTS_SYSTEM_PROMPT,
+    D5_SECOND_LOOK_SYSTEM_PROMPT,
+    facts_prompt,
+    read_facts_reply,
+    read_second_look,
+    second_look_prompt,
+)
 
 DEFAULT_DIRECTORY = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
 CHECKS_NAME = "rob2_d5_checks.json"
+FACTS_NAME = "rob2_d5_facts.json"
 
 #: (fact, quote, outcome) for `supports`.
 SUPPORTS: list[tuple[D5Fact, str, str]] = [
@@ -218,6 +237,165 @@ def build_checks() -> dict[str, Any]:
     }
 
 
+#: The paper the facts contract reads, built from the smoke test's cases: a
+#: registration number with no date (RCT096), a result shown in a figure
+#: (RCT059), "difference" in a results sentence (RCT085), an ANOVA named and a
+#: t test reported (RCT035).
+PAPER = (
+    "The trial was registered at ClinicalTrials.gov (NCT01234567). It was registered on 3 March "
+    "2015, before recruitment began. The prespecified primary outcome was pain on a 0-10 visual "
+    "analogue scale at 6 and 12 weeks. Pain was analysed with a repeated measures analysis of "
+    "variance, as prespecified in the statistical analysis plan. Function was measured with the "
+    "Oswestry index at 12 weeks. Results: at 6 weeks mean pain was 3.1 versus 4.2 (p=0.01); this "
+    "difference was significant. Pain at twelve weeks is shown in Figure 2. Function improved in "
+    "both groups. P values come from a two-sample t test on change scores."
+)
+TITLE = "Exercise for low back pain: a randomised trial"
+OUTCOME = ProposedOutcome(
+    name="pain at 6 weeks",
+    timepoint="6 weeks",
+    result=ReportedResult("mean difference", EffectScale.DIFFERENCE, -1.1, -2.0, -0.2),
+)
+SIM = 0.99
+
+CITED = ["registered at ClinicalTrials.gov (NCT01234567)"]
+DATED = ["It was registered on 3 March 2015, before recruitment began."]
+MEASURE = ["The prespecified primary outcome was pain on a 0-10 visual analogue scale"]
+TIMEPOINT = [
+    "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+]
+ANALYSIS = ["Pain was analysed with a repeated measures analysis of variance, as prespecified"]
+FIXED = {"measure_fixed": MEASURE, "timepoint_fixed": TIMEPOINT, "analysis_fixed": ANALYSIS}
+DIFFERS = {
+    "differs": True,
+    "planned": ["Pain was analysed with a repeated measures analysis of variance"],
+    "reported": ["P values come from a two-sample t test on change scores."],
+}
+MEASUREMENTS = [
+    {"label": "pain at 12 weeks", "named": ["at 6 and 12 weeks"],
+     "result": ["Pain at twelve weeks is shown in Figure 2."]},
+    {"label": "Oswestry", "named": ["the Oswestry index at 12 weeks"],
+     "result": ["Function improved in both groups."]},
+    {"label": "pain at 24 weeks", "named": ["at 24 weeks"], "result": []},
+]  # fmt: skip
+
+
+def _reply(
+    measurements: list[dict[str, Any]] | None = None,
+    analysis: dict[str, Any] | None = None,
+    **claims: list[str],
+) -> dict[str, Any]:
+    """A facts reply claiming each named fact with its quotes, every other fact absent."""
+    return {
+        "facts": {
+            f.value: {"present": f.value in claims, "quotes": claims.get(f.value, [])}
+            for f in D5_FACTS
+        },
+        "other_measurements": measurements or [],
+        "main_analysis": analysis or {"differs": False, "planned": [], "reported": []},
+    }
+
+
+def _replies() -> list[tuple[str, dict[str, Any]]]:
+    """Named facts replies, readable and not."""
+    bad_present = _reply()
+    bad_present["facts"]["plan_cited"]["present"] = "yes"
+    no_fact = _reply()
+    del no_fact["facts"]["switched"]
+    no_analysis = _reply()
+    del no_analysis["main_analysis"]
+    bad_differs = _reply(analysis={"differs": "no"})
+    no_label = _reply([{"named": ["at 24 weeks"], "result": []}])
+    return [
+        ("a cited plan dated early fixing everything",
+         _reply(plan_cited=CITED, plan_dated_early=DATED, **FIXED)),
+        ("the paper's word", _reply(**FIXED)),
+        ("an undated registration",
+         _reply(plan_cited=CITED, plan_dated_early=CITED, **FIXED)),
+        ("a late plan",
+         _reply(plan_cited=CITED, plan_dated_early=DATED, plan_late=DATED, **FIXED)),
+        ("a difference is no switch",
+         _reply(switched=["this difference was significant"], **FIXED)),
+        ("a differing analysis", _reply(analysis=DIFFERS, **FIXED)),
+        ("other measurements", _reply(MEASUREMENTS, **FIXED)),
+        ("nothing", _reply()),
+        ("present not a boolean", bad_present),
+        ("a fact missing", no_fact),
+        ("no analysis check", no_analysis),
+        ("differs not a boolean", bad_differs),
+        ("a measurement without a label", no_label),
+        ("not an object", []),  # type: ignore[list-item]
+    ]  # fmt: skip
+
+
+def _read_case(name: str, reply: Any) -> dict[str, Any]:
+    """A facts reply with what reading it gives: facts, answers, judgement, or the error."""
+    case: dict[str, Any] = {"name": name, "reply": reply}
+    try:
+        facts = read_facts_reply(reply, PAPER, OUTCOME.name, SIM)
+    except ValueError as exc:
+        case["error"] = str(exc)
+        return case
+    assessment = d5_assessment(facts)
+    case["facts"] = facts.to_dict()
+    case["answers"] = {q: a.answer.value for q, a in assessment.answers.items()}
+    case["judgement"] = assessment.judgement.value
+    return case
+
+
+def _looked() -> dict[str, Any]:
+    """Stored facts after second looks: one found nothing, one failed."""
+    facts = read_facts_reply(_reply(MEASUREMENTS, **FIXED), PAPER, OUTCOME.name, SIM)
+    oswestry, unnamed = facts.measurements[1], facts.measurements[2]
+    oswestry.second_look = []
+    unnamed.second_look_error = "HTTP 503: overloaded"
+    assessment = d5_assessment(facts)
+    return {
+        "facts": facts.to_dict(),
+        "answers": {q: a.answer.value for q, a in assessment.answers.items()},
+        "judgement": assessment.judgement.value,
+        "assessment": assessment.to_dict(),
+    }
+
+
+def _second_look_case(reply: Any) -> dict[str, Any]:
+    """A second-look reply with the passages it gives, or the error."""
+    try:
+        return {"reply": reply, "found": [c.to_dict() for c in read_second_look(reply, PAPER, SIM)]}
+    except ValueError as exc:
+        return {"reply": reply, "error": str(exc)}
+
+
+def build_facts() -> dict[str, Any]:
+    """The facts contract: prompts, replies, second looks, stored facts."""
+    facts = read_facts_reply(_reply(MEASUREMENTS), PAPER, OUTCOME.name, SIM)
+    return {
+        "system_prompt": D5_FACTS_SYSTEM_PROMPT,
+        "second_look_system_prompt": D5_SECOND_LOOK_SYSTEM_PROMPT,
+        "title": TITLE,
+        "paper": PAPER,
+        "outcome": OUTCOME.to_dict(),
+        "min_similarity": SIM,
+        "facts_prompt": facts_prompt(TITLE, PAPER, OUTCOME),
+        "second_look_item": facts.measurements[1].to_dict(),
+        "second_look_prompt": second_look_prompt(TITLE, PAPER, OUTCOME, facts.measurements[1]),
+        "replies": [_read_case(name, reply) for name, reply in _replies()],
+        "second_looks": [
+            _second_look_case(r)
+            for r in (
+                {"found": False, "quotes": []},
+                {
+                    "found": True,
+                    "quotes": ["Function improved in both groups.", "not in the paper"],
+                },
+                {"found": "yes"},
+                [],
+            )
+        ],
+        "looked": _looked(),
+    }
+
+
 def _dump(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=1) + "\n"
 
@@ -226,6 +404,7 @@ def main() -> None:
     """Write the contract to the directory given, or to the committed fixtures."""
     directory = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DIRECTORY
     (directory / CHECKS_NAME).write_text(_dump(build_checks()), encoding="utf-8")
+    (directory / FACTS_NAME).write_text(_dump(build_facts()), encoding="utf-8")
 
 
 if __name__ == "__main__":

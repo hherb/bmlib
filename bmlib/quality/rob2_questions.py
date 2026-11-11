@@ -43,6 +43,9 @@ Rust's ``rust/bmlib/src/quality/rob2_questions.rs`` holds the same strings;
 
 from __future__ import annotations
 
+import json
+
+from bmlib.quality.outcome_agent import ProposedOutcome, _result_to_wire
 from bmlib.quality.rob2_algorithm import Domain
 
 __all__ = [
@@ -52,6 +55,7 @@ __all__ = [
     "ROB2_CONDENSE_QUERIES",
     "ROB2_PROMPT_VERSION",
     "condense_query",
+    "outcome_block",
     "domain_title",
     "question_text",
 ]
@@ -677,3 +681,22 @@ def domain_title(domain: Domain) -> str:
 def condense_query(domain: Domain) -> str:
     """The condensation query of *domain* (its entry in :data:`ROB2_CONDENSE_QUERIES`)."""
     return dict(ROB2_CONDENSE_QUERIES)[domain]
+
+
+def outcome_block(outcome: ProposedOutcome) -> str:
+    """The outcome as a RoB 2 prompt names it: name, timepoint, reported result.
+
+    Shared by the domain, escalation and D5 facts prompts.
+    """
+    result = (
+        "none extracted"
+        if outcome.result is None
+        # shortcut: a number under 1e-4 or over 1e16 prints its exponent as
+        # Python does (1e-05; Rust 1e-5); pin such a case if one ever matters.
+        else json.dumps(_result_to_wire(outcome.result), ensure_ascii=False, separators=(",", ":"))
+    )
+    return (
+        f"Outcome assessed: {outcome.name}\n"
+        f"Timepoint: {outcome.timepoint or 'not stated'}\n"
+        f"Reported result: {result}"
+    )

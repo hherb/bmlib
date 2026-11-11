@@ -1,0 +1,2096 @@
+{
+ "system_prompt": "You read reports of randomised trials and report what they say about how the trial was planned.\n\nCRITICAL RULES:\n1. Report ONLY what is ACTUALLY PRESENT in the text\n2. DO NOT infer, assume or judge: a fact the paper does not state is absent\n3. Every fact you mark present needs a quote copied VERBATIM from the paper\n4. Return ONLY valid JSON, no explanation",
+ "second_look_system_prompt": "You find passages in reports of randomised trials.\n\nCRITICAL RULES:\n1. Quote ONLY passages that are ACTUALLY PRESENT in the text, VERBATIM\n2. A passage counts only if it gives the result itself, with its numbers, or points to the figure, table or supplement that shows it\n3. Return ONLY valid JSON, no explanation",
+ "title": "Exercise for low back pain: a randomised trial",
+ "paper": "The trial was registered at ClinicalTrials.gov (NCT01234567). It was registered on 3 March 2015, before recruitment began. The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks. Pain was analysed with a repeated measures analysis of variance, as prespecified in the statistical analysis plan. Function was measured with the Oswestry index at 12 weeks. Results: at 6 weeks mean pain was 3.1 versus 4.2 (p=0.01); this difference was significant. Pain at twelve weeks is shown in Figure 2. Function improved in both groups. P values come from a two-sample t test on change scores.",
+ "outcome": {
+  "name": "pain at 6 weeks",
+  "timepoint": "6 weeks",
+  "result": {
+   "measure": "mean difference",
+   "scale": "difference",
+   "estimate": -1.1,
+   "ci_low": -2.0,
+   "ci_high": -0.2,
+   "ci_level": null,
+   "n_analysed": null
+  },
+  "result_error": null,
+  "citations": [],
+  "quotes_not_found": [],
+  "contradicted": [],
+  "quotes_dropped": 0
+ },
+ "min_similarity": 0.99,
+ "facts_prompt": "Report the following about the randomised trial in the paper below, for the outcome named. Copy every quote VERBATIM from the paper, character for character, without ellipses or joined sentences.\n\nOutcome assessed: pain at 6 weeks\nTimepoint: 6 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-1.1,\"ci_low\":-2.0,\"ci_high\":-0.2,\"ci_level\":null,\"n_analysed\":null}\n\nFacts: for each give present (true or false) and quotes, 1-3 passages that show it, an empty list when it is absent. Mark a fact present only when the paper itself states it.\n- plan_cited: The paper cites a trial registration (registry and number), a published protocol, or a statistical analysis plan (by reference or as a supplement).\n- plan_dated_early: The paper places that registration, protocol or plan BEFORE the outcome data could be seen by group: a registration date before recruitment began or before the trial ended, \"prospectively registered\", a protocol published, or an analysis plan finalised, before unblinding or before the data were analysed.\n- plan_late: The paper says the registration or plan was made AFTER recruitment began or after the data were collected (\"retrospectively registered\", a registration date after the first participant was enrolled).\n- measure_fixed: For the outcome assessed, the paper states which measurement was planned in advance: the instrument or scale and how the outcome is defined, as set in the registration, protocol or plan, or described as prespecified. A bare \"prespecified primary outcome\" that does not name the measurement does not count.\n- timepoint_fixed: For the outcome assessed, the paper states the time point (or points) planned in advance, as set in the registration, protocol or plan, or described as prespecified.\n- analysis_fixed: For the outcome assessed, the paper states the analysis planned in advance: the statistical model or test, and the covariates or the handling of missing data, as set in the registration, protocol or plan, or described as prespecified.\n- switched: The paper says the outcome assessed ITSELF differs from the registration or protocol: added, dropped, moved to or from primary, or defined or timed differently. A change to another outcome does not count.\n- change_explained: The paper gives a reason for that change to the outcome assessed that does not depend on its results (for example a ruling of an ethics committee, or a change made and stated before unblinding).\n\nList: for each item give a short label, named (1-2 passages from the methods, protocol or registration that name it) and result (1-2 passages from the results, a table or the abstract that give its result with its numbers, or that point to the figure, table or supplement showing it; an empty list when the paper gives no result for it, or only a summary without numbers). An empty list when there is no such item.\n- other_measurements: Every OTHER measurement of the SAME outcome as the one assessed (the same thing measured) that the methods, protocol or registration name: the same thing on another instrument or scale, at another time point, or defined another way. Not the measurement assessed itself, not other outcomes, not subgroups, not within-group comparisons.\n\nAnalysis check:\n- main_analysis: the analysis whose result the paper gives for the outcome assessed, set against the main analysis its methods, protocol or analysis plan name for it. planned: 1-2 passages naming the main analysis (the model or test, its covariates, the analysis population, the handling of missing data). reported: 1-2 passages giving the result with the analysis it came from. differs: true only when the analysis reported is NOT the one named as main (another model, other covariates, another population or handling of missing data) and the paper gives no reason for the change; false when they match, or when either is not stated.\n\nRespond with JSON in exactly this shape, every key present:\n\n{\n  \"facts\": {\n    \"plan_cited\": {\"present\": false, \"quotes\": []},\n    \"plan_dated_early\": {\"present\": false, \"quotes\": []},\n    \"plan_late\": {\"present\": false, \"quotes\": []},\n    \"measure_fixed\": {\"present\": false, \"quotes\": []},\n    \"timepoint_fixed\": {\"present\": false, \"quotes\": []},\n    \"analysis_fixed\": {\"present\": false, \"quotes\": []},\n    \"switched\": {\"present\": false, \"quotes\": []},\n    \"change_explained\": {\"present\": false, \"quotes\": []}\n  },\n  \"other_measurements\": [{\"label\": \"short name, e.g. pain VAS at 6 months\", \"named\": [\"passage naming it\"], \"result\": [\"passage giving its result, with numbers, or pointing to its figure or table\"]}],\n  \"main_analysis\": {\"differs\": false, \"planned\": [\"...\"], \"reported\": [\"...\"]}\n}\n\nPaper Title: Exercise for low back pain: a randomised trial\n\nPaper Text:\nThe trial was registered at ClinicalTrials.gov (NCT01234567). It was registered on 3 March 2015, before recruitment began. The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks. Pain was analysed with a repeated measures analysis of variance, as prespecified in the statistical analysis plan. Function was measured with the Oswestry index at 12 weeks. Results: at 6 weeks mean pain was 3.1 versus 4.2 (p=0.01); this difference was significant. Pain at twelve weeks is shown in Figure 2. Function improved in both groups. P values come from a two-sample t test on change scores.",
+ "second_look_item": {
+  "label": "Oswestry",
+  "named": [
+   {
+    "start": 358,
+    "end": 388,
+    "text": "the Oswestry index at 12 weeks",
+    "similarity": 1.0,
+    "exact": true
+   }
+  ],
+  "result": [
+   {
+    "start": 525,
+    "end": 558,
+    "text": "Function improved in both groups.",
+    "similarity": 1.0,
+    "exact": true
+   }
+  ],
+  "second_look": null,
+  "second_look_error": null
+ },
+ "second_look_prompt": "Find where the paper below gives the result of this measurement or analysis of the outcome, which its methods name: \"Oswestry\", named as: \"the Oswestry index at 12 weeks\".\n\nOutcome assessed: pain at 6 weeks\nTimepoint: 6 weeks\nReported result: {\"measure\":\"mean difference\",\"scale\":\"difference\",\"estimate\":-1.1,\"ci_low\":-2.0,\"ci_high\":-0.2,\"ci_level\":null,\"n_analysed\":null}\n\nQuote 1-3 passages, VERBATIM, from the results, a table or the abstract that give its result with its numbers, or that point to the figure, table or supplement showing it. If the paper gives no result for it, or only a summary without numbers and without such a pointer, answer found: false with no quotes.\n\nRespond with JSON in exactly this shape:\n\n{\"found\": true, \"quotes\": [\"...\"]}\n\nPaper Title: Exercise for low back pain: a randomised trial\n\nPaper Text:\nThe trial was registered at ClinicalTrials.gov (NCT01234567). It was registered on 3 March 2015, before recruitment began. The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks. Pain was analysed with a repeated measures analysis of variance, as prespecified in the statistical analysis plan. Function was measured with the Oswestry index at 12 weeks. Results: at 6 weeks mean pain was 3.1 versus 4.2 (p=0.01); this difference was significant. Pain at twelve weeks is shown in Figure 2. Function improved in both groups. P values come from a two-sample t test on change scores.",
+ "replies": [
+  {
+   "name": "a cited plan dated early fixing everything",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": true,
+      "quotes": [
+       "registered at ClinicalTrials.gov (NCT01234567)"
+      ]
+     },
+     "plan_dated_early": {
+      "present": true,
+      "quotes": [
+       "It was registered on 3 March 2015, before recruitment began."
+      ]
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 14,
+        "end": 60,
+        "text": "registered at ClinicalTrials.gov (NCT01234567)",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "plan_dated_early": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 62,
+        "end": 122,
+        "text": "It was registered on 3 March 2015, before recruitment began.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "Y",
+    "5.2": "N",
+    "5.3": "N"
+   },
+   "judgement": "low"
+  },
+  {
+   "name": "the paper's word",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_dated_early": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "PY",
+    "5.2": "PN",
+    "5.3": "PN"
+   },
+   "judgement": "low"
+  },
+  {
+   "name": "an undated registration",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": true,
+      "quotes": [
+       "registered at ClinicalTrials.gov (NCT01234567)"
+      ]
+     },
+     "plan_dated_early": {
+      "present": true,
+      "quotes": [
+       "registered at ClinicalTrials.gov (NCT01234567)"
+      ]
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 14,
+        "end": 60,
+        "text": "registered at ClinicalTrials.gov (NCT01234567)",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "plan_dated_early": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 14,
+        "end": 60,
+        "text": "registered at ClinicalTrials.gov (NCT01234567)",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "quote_does_not_support"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "PY",
+    "5.2": "PN",
+    "5.3": "PN"
+   },
+   "judgement": "low"
+  },
+  {
+   "name": "a late plan",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": true,
+      "quotes": [
+       "registered at ClinicalTrials.gov (NCT01234567)"
+      ]
+     },
+     "plan_dated_early": {
+      "present": true,
+      "quotes": [
+       "It was registered on 3 March 2015, before recruitment began."
+      ]
+     },
+     "plan_late": {
+      "present": true,
+      "quotes": [
+       "It was registered on 3 March 2015, before recruitment began."
+      ]
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 14,
+        "end": 60,
+        "text": "registered at ClinicalTrials.gov (NCT01234567)",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "plan_dated_early": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 62,
+        "end": 122,
+        "text": "It was registered on 3 March 2015, before recruitment began.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "plan_late": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 62,
+        "end": 122,
+        "text": "It was registered on 3 March 2015, before recruitment began.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "NI",
+    "5.2": "NI",
+    "5.3": "NI"
+   },
+   "judgement": "some_concerns"
+  },
+  {
+   "name": "a difference is no switch",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": true,
+      "quotes": [
+       "this difference was significant"
+      ]
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_dated_early": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 449,
+        "end": 480,
+        "text": "this difference was significant",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "quote_does_not_support"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "PY",
+    "5.2": "PN",
+    "5.3": "PN"
+   },
+   "judgement": "low"
+  },
+  {
+   "name": "a differing analysis",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": true,
+     "planned": [
+      "Pain was analysed with a repeated measures analysis of variance"
+     ],
+     "reported": [
+      "P values come from a two-sample t test on change scores."
+     ]
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_dated_early": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": true,
+     "planned": [
+      {
+       "start": 216,
+       "end": 279,
+       "text": "Pain was analysed with a repeated measures analysis of variance",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "reported": [
+      {
+       "start": 559,
+       "end": 615,
+       "text": "P values come from a two-sample t test on change scores.",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ]
+    }
+   },
+   "answers": {
+    "5.1": "PY",
+    "5.2": "PN",
+    "5.3": "PY"
+   },
+   "judgement": "high"
+  },
+  {
+   "name": "other measurements",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale"
+      ]
+     },
+     "timepoint_fixed": {
+      "present": true,
+      "quotes": [
+       "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks."
+      ]
+     },
+     "analysis_fixed": {
+      "present": true,
+      "quotes": [
+       "Pain was analysed with a repeated measures analysis of variance, as prespecified"
+      ]
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [
+     {
+      "label": "pain at 12 weeks",
+      "named": [
+       "at 6 and 12 weeks"
+      ],
+      "result": [
+       "Pain at twelve weeks is shown in Figure 2."
+      ]
+     },
+     {
+      "label": "Oswestry",
+      "named": [
+       "the Oswestry index at 12 weeks"
+      ],
+      "result": [
+       "Function improved in both groups."
+      ]
+     },
+     {
+      "label": "pain at 24 weeks",
+      "named": [
+       "at 24 weeks"
+      ],
+      "result": []
+     }
+    ],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_dated_early": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [
+     {
+      "label": "pain at 12 weeks",
+      "named": [
+       {
+        "start": 197,
+        "end": 214,
+        "text": "at 6 and 12 weeks",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "result": [
+       {
+        "start": 482,
+        "end": 524,
+        "text": "Pain at twelve weeks is shown in Figure 2.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "second_look": null,
+      "second_look_error": null
+     },
+     {
+      "label": "Oswestry",
+      "named": [
+       {
+        "start": 358,
+        "end": 388,
+        "text": "the Oswestry index at 12 weeks",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "result": [
+       {
+        "start": 525,
+        "end": 558,
+        "text": "Function improved in both groups.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "second_look": null,
+      "second_look_error": null
+     },
+     {
+      "label": "pain at 24 weeks",
+      "named": [],
+      "result": [],
+      "second_look": null,
+      "second_look_error": null
+     }
+    ],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "PY",
+    "5.2": "PN",
+    "5.3": "PN"
+   },
+   "judgement": "low"
+  },
+  {
+   "name": "nothing",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "timepoint_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "analysis_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_dated_early": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "timepoint_fixed": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "analysis_fixed": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "answers": {
+    "5.1": "NI",
+    "5.2": "NI",
+    "5.3": "NI"
+   },
+   "judgement": "some_concerns"
+  },
+  {
+   "name": "present not a boolean",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": "yes",
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "timepoint_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "analysis_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "error": "facts.plan_cited.present is not true or false"
+  },
+  {
+   "name": "a fact missing",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "timepoint_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "analysis_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "error": "facts.switched is missing or not an object"
+  },
+  {
+   "name": "no analysis check",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "timepoint_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "analysis_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": []
+   },
+   "error": "main_analysis is missing or not an object"
+  },
+  {
+   "name": "differs not a boolean",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "timepoint_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "analysis_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [],
+    "main_analysis": {
+     "differs": "no"
+    }
+   },
+   "error": "main_analysis.differs is not true or false"
+  },
+  {
+   "name": "a measurement without a label",
+   "reply": {
+    "facts": {
+     "plan_cited": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_dated_early": {
+      "present": false,
+      "quotes": []
+     },
+     "plan_late": {
+      "present": false,
+      "quotes": []
+     },
+     "measure_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "timepoint_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "analysis_fixed": {
+      "present": false,
+      "quotes": []
+     },
+     "switched": {
+      "present": false,
+      "quotes": []
+     },
+     "change_explained": {
+      "present": false,
+      "quotes": []
+     }
+    },
+    "other_measurements": [
+     {
+      "named": [
+       "at 24 weeks"
+      ],
+      "result": []
+     }
+    ],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   },
+   "error": "other_measurements[0].label is not text"
+  },
+  {
+   "name": "not an object",
+   "reply": [],
+   "error": "expected an object"
+  }
+ ],
+ "second_looks": [
+  {
+   "reply": {
+    "found": false,
+    "quotes": []
+   },
+   "found": []
+  },
+  {
+   "reply": {
+    "found": true,
+    "quotes": [
+     "Function improved in both groups.",
+     "not in the paper"
+    ]
+   },
+   "found": [
+    {
+     "start": 525,
+     "end": 558,
+     "text": "Function improved in both groups.",
+     "similarity": 1.0,
+     "exact": true
+    }
+   ]
+  },
+  {
+   "reply": {
+    "found": "yes"
+   },
+   "error": "found is not true or false"
+  },
+  {
+   "reply": [],
+   "error": "found is not true or false"
+  }
+ ],
+ "looked": {
+  "facts": {
+   "outcome": "pain at 6 weeks",
+   "facts": {
+    "plan_cited": {
+     "claimed": false,
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "not_claimed"
+    },
+    "plan_dated_early": {
+     "claimed": false,
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "not_claimed"
+    },
+    "plan_late": {
+     "claimed": false,
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "not_claimed"
+    },
+    "measure_fixed": {
+     "claimed": true,
+     "citations": [
+      {
+       "start": 123,
+       "end": 196,
+       "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "present"
+    },
+    "timepoint_fixed": {
+     "claimed": true,
+     "citations": [
+      {
+       "start": 123,
+       "end": 215,
+       "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "present"
+    },
+    "analysis_fixed": {
+     "claimed": true,
+     "citations": [
+      {
+       "start": 216,
+       "end": 296,
+       "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "present"
+    },
+    "switched": {
+     "claimed": false,
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "not_claimed"
+    },
+    "change_explained": {
+     "claimed": false,
+     "citations": [],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "verdict": "not_claimed"
+    }
+   },
+   "other_measurements": [
+    {
+     "label": "pain at 12 weeks",
+     "named": [
+      {
+       "start": 197,
+       "end": 214,
+       "text": "at 6 and 12 weeks",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "result": [
+      {
+       "start": 482,
+       "end": 524,
+       "text": "Pain at twelve weeks is shown in Figure 2.",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "second_look": null,
+     "second_look_error": null
+    },
+    {
+     "label": "Oswestry",
+     "named": [
+      {
+       "start": 358,
+       "end": 388,
+       "text": "the Oswestry index at 12 weeks",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "result": [
+      {
+       "start": 525,
+       "end": 558,
+       "text": "Function improved in both groups.",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "second_look": [],
+     "second_look_error": null
+    },
+    {
+     "label": "pain at 24 weeks",
+     "named": [],
+     "result": [],
+     "second_look": null,
+     "second_look_error": "HTTP 503: overloaded"
+    }
+   ],
+   "main_analysis": {
+    "differs": false,
+    "planned": [],
+    "reported": []
+   }
+  },
+  "answers": {
+   "5.1": "PY",
+   "5.2": "PY",
+   "5.3": "PN"
+  },
+  "judgement": "high",
+  "assessment": {
+   "status": "assessed",
+   "domain": "D5",
+   "answers": {
+    "5.1": {
+     "answer": "PY",
+     "citations": [
+      {
+       "start": 123,
+       "end": 196,
+       "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+       "similarity": 1.0,
+       "exact": true
+      },
+      {
+       "start": 216,
+       "end": 296,
+       "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; the analysis reported differs from the main one: no."
+    },
+    "5.2": {
+     "answer": "PY",
+     "citations": [
+      {
+       "start": 358,
+       "end": 388,
+       "text": "the Oswestry index at 12 weeks",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; the analysis reported differs from the main one: no."
+    },
+    "5.3": {
+     "answer": "PN",
+     "citations": [
+      {
+       "start": 216,
+       "end": 296,
+       "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+       "similarity": 1.0,
+       "exact": true
+      }
+     ],
+     "quotes_not_found": [],
+     "contradicted": [],
+     "quotes_dropped": 0,
+     "reasoning": "From the facts (plan_cited: not_claimed; plan_dated_early: not_claimed; plan_late: not_claimed; measure_fixed: present; timepoint_fixed: present; analysis_fixed: present; switched: not_claimed; change_explained: not_claimed); other measurements missing at both looks: Oswestry; the analysis reported differs from the main one: no."
+    }
+   },
+   "judgement": "high",
+   "condensed": false,
+   "ignored": [],
+   "facts": {
+    "outcome": "pain at 6 weeks",
+    "facts": {
+     "plan_cited": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_dated_early": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "plan_late": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "measure_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 196,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "timepoint_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 123,
+        "end": 215,
+        "text": "The prespecified primary outcome was pain on a 0-10 visual analogue scale at 6 and 12 weeks.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "analysis_fixed": {
+      "claimed": true,
+      "citations": [
+       {
+        "start": 216,
+        "end": 296,
+        "text": "Pain was analysed with a repeated measures analysis of variance, as prespecified",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "present"
+     },
+     "switched": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     },
+     "change_explained": {
+      "claimed": false,
+      "citations": [],
+      "quotes_not_found": [],
+      "contradicted": [],
+      "quotes_dropped": 0,
+      "verdict": "not_claimed"
+     }
+    },
+    "other_measurements": [
+     {
+      "label": "pain at 12 weeks",
+      "named": [
+       {
+        "start": 197,
+        "end": 214,
+        "text": "at 6 and 12 weeks",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "result": [
+       {
+        "start": 482,
+        "end": 524,
+        "text": "Pain at twelve weeks is shown in Figure 2.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "second_look": null,
+      "second_look_error": null
+     },
+     {
+      "label": "Oswestry",
+      "named": [
+       {
+        "start": 358,
+        "end": 388,
+        "text": "the Oswestry index at 12 weeks",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "result": [
+       {
+        "start": 525,
+        "end": 558,
+        "text": "Function improved in both groups.",
+        "similarity": 1.0,
+        "exact": true
+       }
+      ],
+      "second_look": [],
+      "second_look_error": null
+     },
+     {
+      "label": "pain at 24 weeks",
+      "named": [],
+      "result": [],
+      "second_look": null,
+      "second_look_error": "HTTP 503: overloaded"
+     }
+    ],
+    "main_analysis": {
+     "differs": false,
+     "planned": [],
+     "reported": []
+    }
+   }
+  }
+ }
+}

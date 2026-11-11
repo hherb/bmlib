@@ -47,7 +47,6 @@ The replies are shared with Rust's ``quality::rob2_agent`` through
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -63,7 +62,7 @@ from bmlib.quality._full_text_agent import (
 )
 from bmlib.quality.design_agent import _wire
 from bmlib.quality.evidence_ladder import U32_MAX
-from bmlib.quality.outcome_agent import ProposedOutcome, _result_to_wire
+from bmlib.quality.outcome_agent import ProposedOutcome
 from bmlib.quality.pico_agent import verify_quotes
 from bmlib.quality.pico_models import PicoCitation, PicoContradictedQuote
 from bmlib.quality.rob2_algorithm import (
@@ -80,12 +79,20 @@ from bmlib.quality.rob2_algorithm import (
     overall_judgement,
     questions,
 )
+from bmlib.quality.rob2_d5_checks import D5_FACTS, D5Fact
+from bmlib.quality.rob2_d5_facts import (
+    DIFFERING_ANALYSIS,
+    MISSING_MEASUREMENT,
+    D5Facts,
+    d5_answers,
+)
 from bmlib.quality.rob2_questions import (
     D5_OUTCOME_SWITCHING,
     ESCALATION_PROMPT,
     ROB2_PROMPT_VERSION,
     condense_query,
     domain_title,
+    outcome_block,
     question_text,
 )
 
@@ -103,6 +110,7 @@ __all__ = [
     "Rob2Run",
     "Rob2RunError",
     "Rob2RunErrorKind",
+    "d5_assessment",
     "domain_prompt",
     "domain_result_from_dict",
     "escalation_message",
@@ -300,10 +308,12 @@ class DomainAssessment:
     judgement: Judgement
     condensed: bool = False
     ignored: list[str] = field(default_factory=list)
+    facts: D5Facts | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialise to a JSON-ready dict, tagged ``"status": "assessed"``."""
-        return {
+        """Serialise to a JSON-ready dict, tagged ``"status": "assessed"``; D5's
+        facts, when it has them, under ``"facts"``."""
+        data = {
             "status": _ASSESSED,
             "domain": self.domain.value,
             "answers": {q: a.to_dict() for q, a in self.answers.items()},
@@ -311,6 +321,9 @@ class DomainAssessment:
             "condensed": self.condensed,
             "ignored": list(self.ignored),
         }
+        if self.facts is not None:
+            data["facts"] = self.facts.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DomainAssessment:
@@ -350,8 +363,18 @@ class DomainAssessment:
                     f"ignored lists {question!s}, which is not an unasked question of "
                     f"{domain.value}"
                 )
+        facts = None
+        if data.get("facts") is not None:
+            if domain is not Domain.D5:
+                raise ValueError(f"facts are D5's, not {domain.value}'s")
+            facts = D5Facts.from_dict(data["facts"])
         return cls(
-            domain, answers, judgement, _wire(data, "condensed", bool, "a boolean"), list(ignored)
+            domain,
+            answers,
+            judgement,
+            _wire(data, "condensed", bool, "a boolean"),
+            list(ignored),
+            facts,
         )
 
 
@@ -791,23 +814,39 @@ def read_escalation_reply(data: dict[str, Any]) -> Escalation:
     return Escalation(escalate, reasoning)
 
 
+def d5_assessment(facts: D5Facts) -> DomainAssessment:
+    """D5 assessed from *facts*: the answers by
+    :func:`~bmlib.quality.rob2_d5_facts.d5_answers`, the judgement by RoB 2's
+    algorithm, and the facts kept with it.
+
+    Each answer's citations are the passages that decided it: the deciding
+    facts' quotes, the naming passages of the measurements missing at both
+    looks, or both sides of a differing analysis.  Its reasoning lists every
+    fact's verdict, so a reader sees why it came out.
+    """
+    verdicts = "; ".join(f"{f.value}: {facts.facts[f].verdict.value}" for f in D5_FACTS)
+    missing = [m.label for m in facts.measurements if m.missing()]
+    reasoning = (
+        f"From the facts ({verdicts}); other measurements missing at both looks: "
+        f"{', '.join(missing) if missing else 'none'}; the analysis reported differs from the "
+        f"main one: {'yes' if facts.analysis.counts() else 'no'}."
+    )
+    answers: dict[str, MachineAnswer] = {}
+    for question, (answer, deciding) in d5_answers(facts).items():
+        citations: list[PicoCitation] = []
+        for reason in deciding:
+            if reason == MISSING_MEASUREMENT:
+                citations += [c for m in facts.measurements if m.missing() for c in m.named]
+            elif reason == DIFFERING_ANALYSIS:
+                citations += facts.analysis.planned + facts.analysis.reported
+            else:
+                citations += facts.facts[D5Fact(reason)].citations
+        answers[question] = MachineAnswer(answer, citations, reasoning=reasoning)
+    judgement = _judge(Domain.D5, {q: a.answer for q, a in answers.items()})
+    return DomainAssessment(Domain.D5, answers, judgement, facts=facts)
+
+
 # --- The prompts ---
-
-
-def _outcome_block(outcome: ProposedOutcome) -> str:
-    """The outcome as a prompt names it: name, timepoint, reported result."""
-    result = (
-        "none extracted"
-        if outcome.result is None
-        # shortcut: a number under 1e-4 or over 1e16 prints its exponent as
-        # Python does (1e-05; Rust 1e-5); pin such a case if one ever matters.
-        else json.dumps(_result_to_wire(outcome.result), ensure_ascii=False, separators=(",", ":"))
-    )
-    return (
-        f"Outcome assessed: {outcome.name}\n"
-        f"Timepoint: {outcome.timepoint or 'not stated'}\n"
-        f"Reported result: {result}"
-    )
 
 
 def domain_prompt(domain: Domain, title: str, paper: str, outcome: ProposedOutcome | None) -> str:
@@ -828,7 +867,7 @@ def domain_prompt(domain: Domain, title: str, paper: str, outcome: ProposedOutco
         raise ValueError(f"{domain.value} is judged for an outcome, and none was given")
     parts = [ROB2_DOMAIN_PROMPT, domain_title(domain)]
     if outcome is not None:
-        parts.append(_outcome_block(outcome))
+        parts.append(outcome_block(outcome))
     if domain is Domain.D5:
         parts.append(D5_OUTCOME_SWITCHING)
     listed = "\n\n".join(f"{q}: {question_text(q)}" for q in questions(domain))
@@ -844,7 +883,7 @@ def escalation_message(
     Each domain is its title and judgement, then one line per answer with its
     reasoning.
     """
-    blocks = [ESCALATION_PROMPT, _outcome_block(outcome)]
+    blocks = [ESCALATION_PROMPT, outcome_block(outcome)]
     for assessment in [study, *domains]:
         lines = [f"{domain_title(assessment.domain)}: {assessment.judgement.value}"]
         for question, answer in assessment.answers.items():

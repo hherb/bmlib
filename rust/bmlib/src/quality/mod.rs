@@ -40,6 +40,7 @@
 //! | `quality/rob2_questions.py` | [`rob2_questions`] | ported (evidence weight, piece 4) |
 //! | `quality/rob2_agent.py` | [`rob2_agent`] | ported (evidence weight, piece 4) |
 //! | `quality/rob2_d5_checks.py` | [`rob2_d5_checks`] | ported (evidence weight, D5 from facts) |
+//! | `quality/rob2_d5_facts.py` | [`rob2_d5_facts`] | ported (evidence weight, D5 from facts) |
 //! | `quality/evidence_weight.py` | [`evidence_weight`] | ported (evidence weight, piece 6) |
 //!
 //! The three LLM tiers do not own a client. Each takes a
@@ -95,6 +96,7 @@ pub mod quality_agent;
 pub mod rob2_agent;
 pub mod rob2_algorithm;
 pub mod rob2_d5_checks;
+pub mod rob2_d5_facts;
 pub mod rob2_questions;
 pub mod scoring_models;
 pub mod study_classifier;

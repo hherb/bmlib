@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The shared D5 contracts: ``rob2_d5_checks.json``.
+"""The shared D5 contracts: ``rob2_d5_checks.json`` and ``rob2_d5_facts.json``.
 
 The same file Rust's ``rust/bmlib/tests/rob2_d5_contract.rs`` asserts against.
 Written by ``scripts/make_rob2_d5_fixtures.py``, which must still build it.
@@ -28,6 +28,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.rob2_agent import DomainAssessment, d5_assessment
 from bmlib.quality.rob2_d5_checks import (
     D5Fact,
     fact_verdict,
@@ -36,9 +38,20 @@ from bmlib.quality.rob2_d5_checks import (
     states_a_plan,
     supports,
 )
+from bmlib.quality.rob2_d5_facts import (
+    D5_FACTS_SYSTEM_PROMPT,
+    D5_SECOND_LOOK_SYSTEM_PROMPT,
+    D5Facts,
+    OtherMeasurement,
+    facts_prompt,
+    read_facts_reply,
+    read_second_look,
+    second_look_prompt,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CHECKS: dict[str, Any] = json.loads((FIXTURES / "rob2_d5_checks.json").read_text("utf-8"))
+FACTS: dict[str, Any] = json.loads((FIXTURES / "rob2_d5_facts.json").read_text("utf-8"))
 _SCRIPT_PATH = Path(__file__).resolve().parent.parent / "scripts" / "make_rob2_d5_fixtures.py"
 
 
@@ -81,6 +94,70 @@ def _generator() -> Any:
     return make
 
 
+def test_the_prompts_are_the_contracts() -> None:
+    outcome = ProposedOutcome.from_dict(FACTS["outcome"])
+    assert D5_FACTS_SYSTEM_PROMPT == FACTS["system_prompt"]
+    assert D5_SECOND_LOOK_SYSTEM_PROMPT == FACTS["second_look_system_prompt"]
+    assert facts_prompt(FACTS["title"], FACTS["paper"], outcome) == FACTS["facts_prompt"]
+    item = D5Facts.from_dict(
+        {**FACTS["looked"]["facts"], "other_measurements": [FACTS["second_look_item"]]}
+    ).measurements[0]
+    assert isinstance(item, OtherMeasurement)
+    look = second_look_prompt(FACTS["title"], FACTS["paper"], outcome, item)
+    assert look == FACTS["second_look_prompt"]
+
+
+def test_every_facts_reply_reads_as_the_contract_says() -> None:
+    names = set()
+    for case in FACTS["replies"]:
+        names.add(case["name"])
+        if "error" in case:
+            try:
+                read_facts_reply(
+                    case["reply"], FACTS["paper"], FACTS["outcome"]["name"], FACTS["min_similarity"]
+                )
+            except ValueError as exc:
+                assert str(exc) == case["error"], case["name"]
+            else:
+                raise AssertionError(f"{case['name']} was read")
+            continue
+        facts = read_facts_reply(
+            case["reply"], FACTS["paper"], FACTS["outcome"]["name"], FACTS["min_similarity"]
+        )
+        assert facts.to_dict() == case["facts"], case["name"]
+        assessment = d5_assessment(facts)
+        assert {q: a.answer.value for q, a in assessment.answers.items()} == case["answers"]
+        assert assessment.judgement.value == case["judgement"], case["name"]
+    assert len(names) == len(FACTS["replies"])
+
+
+def test_every_second_look_reads_as_the_contract_says() -> None:
+    for case in FACTS["second_looks"]:
+        if "error" in case:
+            try:
+                read_second_look(case["reply"], FACTS["paper"], FACTS["min_similarity"])
+            except ValueError as exc:
+                assert str(exc) == case["error"]
+            else:
+                raise AssertionError(f"{case} was read")
+        else:
+            found = read_second_look(case["reply"], FACTS["paper"], FACTS["min_similarity"])
+            assert [c.to_dict() for c in found] == case["found"]
+
+
+def test_stored_facts_give_the_contracts_answers_and_round_trip() -> None:
+    looked = FACTS["looked"]
+    facts = D5Facts.from_dict(looked["facts"])
+    assert facts.to_dict() == looked["facts"]
+    assessment = d5_assessment(facts)
+    assert {q: a.answer.value for q, a in assessment.answers.items()} == looked["answers"]
+    assert assessment.judgement.value == looked["judgement"]
+    assert assessment.to_dict() == looked["assessment"]
+    assert DomainAssessment.from_dict(looked["assessment"]).to_dict() == looked["assessment"]
+
+
 def test_the_generator_still_builds_the_fixtures() -> None:
     """A case edited into the JSON by hand, not into the script, is lost on regeneration."""
-    assert _generator().build_checks() == CHECKS
+    make = _generator()
+    assert make.build_checks() == CHECKS
+    assert make.build_facts() == FACTS
