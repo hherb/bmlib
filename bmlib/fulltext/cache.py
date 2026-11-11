@@ -529,9 +529,9 @@ class FullTextCache:
 
         ``FullTextService`` writes it when ``fetch_pdf_with_jats`` sought a PDF
         beside the JATS and none was saved for a cause that may pass (an
-        outage, a 429, a 5xx). A JATS hit carrying the mark seeks the PDF
-        again; a hit without it is served as it is, so a paper with no PDF
-        anywhere costs no request on a hit.
+        outage, a 429, a 5xx, a failed search or Unpaywall lookup). A JATS hit
+        carrying the mark seeks the PDF again; a hit without it is served as it
+        is, so a paper with no PDF anywhere costs no request on a hit.
 
         Args:
             identifier: The cache key.
@@ -562,8 +562,9 @@ class FullTextCache:
 
         Raises:
             OSError: If the mark exists and cannot be read.
-            ValueError: If it is not UTF-8 (``UnicodeDecodeError``) or not two
-                lines, the second a count.
+            ValueError: If it is not UTF-8 (``UnicodeDecodeError``), has fewer
+                than two newline-terminated lines, or a second line that is not
+                a count.
         """
         try:
             text = self._pdf_retry_path(identifier).read_text(encoding="utf-8")

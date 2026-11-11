@@ -22,26 +22,42 @@ reused for a failed search. Both languages, with `fetch_pdf_with_jats` on:
 - **Mark**: no PDF saved and any failure may pass → `jats/<key>.pdf-retry`
   (the PMC ID, then a seek count). A JATS hit with the mark and no PDF seeks
   it again (`_seek_pdf_again` / `seek_pdf_again`), one try per candidate, at
-  most `PDF_SEEK_AGAIN_LIMIT` (3) hits; saved, every failure final or the
-  limit reached → unmarked; a hit that can try nothing leaves it. A hit
-  without it makes no request. A mark write failure warns under
-  `pdf-mark-write:<cause>`, not the cache-write key. `FullTextCache`
+  most `PDF_SEEK_AGAIN_LIMIT` (3) hits. The hit counts itself in the mark
+  *before* it seeks and seeks only if that write succeeds, so a mark that
+  cannot be updated (read-only or full cache) still bounds the requests
+  (finalcheck review: it used to seek on every hit). Saved, every failure
+  final, a search that answered with nothing to download, or the limit
+  reached → unmarked; a hit that can try nothing (no `pdf` source, no DOI,
+  and no PMC ID with a PMID) leaves it. A hit without it makes no request.
+  A mark that cannot be written warns under `pdf-mark-write:<cause>`, one
+  that cannot be removed under a `pdf-mark-delete` key, never the
+  cache-write key. `FullTextCache`
   `save_pdf_retry`, `get_pdf_retry`, `delete_pdf_retry`; `delete` removes it.
   The longest cache filename is now 219 characters (was 214).
-- **Search fault**: a fault in the search or Unpaywall that left no download
-  to try is `"search-failed"` (`PDF_SEARCH_FAILED`). It is detected by the
-  fault count growing across the search, so a malformed PMC ID in a hit, or
-  an Unpaywall 401/422, counts too (bounded by the limit). Tier 1b passes no
-  search to `_pdf_for_jats` when its discovery recorded a fault, so a JATS
-  found through the ID Converter after a failed search asks it again (the
-  pre-PR review's finding).
+- **Search fault**: a failed search or Unpaywall lookup that left no download
+  to try is `"search-failed"` (`PDF_SEARCH_FAILED`). Europe PMC's search has
+  failed only when it raised (`_discover_pmc_id` / `discover_pmc_id` return
+  `None` for its findings then); one that answered with an unusable field is
+  neither sent again nor called failed (finalcheck review: it was, by the
+  fault count). Unpaywall fails on any error but "no free PDF", so a 401 or
+  422 marks too (bounded by the limit). A JATS found through the ID Converter
+  after a failed search asks the search again (the pre-PR review's finding).
 - `fulltext_source.json` gains five cases (and `fetch_pdf_with_jats`, `doi`,
   `then_responses` keys); the renderer-version pins were re-pinned
   (`models.py` changed, no rendering did).
 - **Not covered**: a JATS cached while the option was off carries no mark
   (the `shortcut:` in `_check_cache`); a failed Tier 0 PDF is not retried in
-  the run, only on the next hit; on a marked hit a Tier 0 PDF that failed
-  finally is asked again with the rest (bounded by the limit).
+  the run, only on a later marked hit; on a marked hit a Tier 0 PDF that
+  failed finally is asked again with the rest (bounded by the limit).
+- **Left by the finalcheck review** (minor, no issue filed):
+  - The two languages read an odd mark differently, and no shared fixture
+    holds the mark's text: a count past `u32` is accepted by Python (one seek,
+    then removed) and refused by Rust (warned, removed, no seek).
+  - Rust's mark removal goes through `remove_entry`, which returns a bool, so
+    its `pdf-mark-delete` warning names no OS cause, and it has no test (the
+    Python one patches `delete_pdf_retry`).
+  - A mark that cannot be removed skips the hit that would remove it, so with
+    a broken delete a paper gets `PDF_SEEK_AGAIN_LIMIT` − 1 second looks.
 - **For StudyAnalyzer**: after the pin moves, its notice for a PDF that
   failed beside JATS can name `"search-failed"` and say whether a reopen may
   get it (`pdf_failure_may_pass`).

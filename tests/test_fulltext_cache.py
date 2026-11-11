@@ -583,14 +583,14 @@ class TestTheDocumentedKeyIsTheFilename:
         """The bound moved by eleven — the ``_`` and the digest — and ``NAME_MAX`` still holds.
 
         The longest name this module builds is the longest pass-through plus
-        ``.html`` plus :func:`~bmlib._atomic.atomic_write`'s 38-character
-        temporary overhead, which is the same 214 the prefix cap was chosen
-        for — the digest was always part of the sanitized key's length.
+        :data:`PDF_RETRY_SUFFIX`, its longest suffix, plus
+        :func:`~bmlib._atomic.atomic_write`'s 38-character temporary overhead:
+        219 — the digest was always part of the sanitized key's length.
         """
         longest = "a" * 171
         assert _safe_filename(longest) == longest
         assert _safe_filename(longest + "a") != longest + "a"
-        assert len(longest) + len(".html") + 38 <= 255
+        assert len(longest) + len(PDF_RETRY_SUFFIX) + 38 <= 255
 
 
 class TestAnUnreadablePDFEntryIsNotAHit:

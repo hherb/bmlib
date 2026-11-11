@@ -234,10 +234,10 @@ fn the_prefix_cap_is_characters_and_safe_names_pass_through() {
     assert_eq!(safe_filename(&unicode), unicode);
     // **The whole name must fit the filesystem's limit** with room for the
     // atomic write's temporary affix — the reason a cap exists at all. The
-    // longest name this module builds is the longest key, `.html`, and the
-    // temporary affix.
+    // longest name this module builds is the longest key, its longest suffix
+    // (the PDF mark's), and the temporary affix.
     assert!(
-        MAX_KEY_CHARS + ".html".len() + TEMP_ROOM <= 255,
+        MAX_KEY_CHARS + PDF_RETRY_SUFFIX.len() + TEMP_ROOM <= 255,
         "the longest name must fit NAME_MAX"
     );
 }

@@ -463,7 +463,8 @@ impl FullTextCache {
     ///
     /// [`FullTextService`](crate::fulltext::FullTextService) writes it when
     /// `fetch_pdf_with_jats` sought a PDF beside the JATS and none was saved
-    /// for a cause that may pass (an outage, a 429, a 5xx; #744). A JATS hit
+    /// for a cause that may pass (an outage, a 429, a 5xx, a failed search or
+    /// Unpaywall lookup; #744). A JATS hit
     /// carrying the mark seeks the PDF again; a hit without it is served as it
     /// is, so a paper with no PDF anywhere costs no request on a hit.
     /// `pmc_id` is the PMC ID the JATS came from, so Europe PMC's PDF can be
@@ -496,7 +497,8 @@ impl FullTextCache {
     /// # Errors
     ///
     /// Any read failure but `NotFound`, and `InvalidData` for a mark that is
-    /// not UTF-8 or not two lines, the second a count.
+    /// not UTF-8, has fewer than two newline-terminated lines, or has a second
+    /// line that is not a count.
     pub fn get_pdf_retry(&self, identifier: &str) -> std::io::Result<Option<(String, u32)>> {
         let text = match std::fs::read_to_string(self.pdf_retry_path(identifier)) {
             Ok(text) => text,

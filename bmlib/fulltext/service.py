@@ -1411,14 +1411,12 @@ class FullTextService:
         pdf_render_url: str | None = None
         hit_doi: str | None = None
         if doi or pmid:
-            faults_before = len(failures.faults)
-            discovered_pmc_id, search = self._discover_pmc_id(
+            discovered_pmc_id, search_for_pdf = self._discover_pmc_id(
                 doi=doi, pmid=pmid, failures=failures, use_converter=caller_pmc_id is None
             )
-            # A discovery that recorded a fault may hold a failed search's
-            # empty answer: _pdf_for_jats asks the search again then (#744).
-            search_for_pdf = search if len(failures.faults) == faults_before else None
-            _, pdf_render_url, hit_doi = search
+            # A search that raised is None here: _pdf_for_jats asks it again
+            # then (#744), and only then, so a hit that answered is not re-sent.
+            _, pdf_render_url, hit_doi = search_for_pdf or (None, None, None)
             if discovered_pmc_id and discovered_pmc_id != caller_pmc_id:
                 if caller_pmc_id:
                     logger.info(
@@ -1685,7 +1683,7 @@ class FullTextService:
         pmid: str,
         failures: _TierFailures,
         use_converter: bool,
-    ) -> tuple[str | None, tuple[str | None, str | None, str | None]]:
+    ) -> tuple[str | None, tuple[str | None, str | None, str | None] | None]:
         """Tiers 1b and 1b′: resolve a PMC ID, Europe PMC's free-PDF URL and the hit's DOI.
 
         Europe PMC's search is asked first because it returns the PMC ID and
@@ -1714,22 +1712,20 @@ class FullTextService:
             PDF is paired with the ID only the search gave it (#739). The PMC
             IDs are normalised, so they compare equal to the caller's in any
             spelling; ``hit_doi`` is the search hit's DOI for a caller who
-            gave none.
+            gave none. The inner tuple is ``None`` when the search raised
+            (#744): a fault it recorded while answering, such as an unusable
+            field, is not a failed search.
         """
-        pmc_id: str | None = None
-        pdf_render_url: str | None = None
-        hit_doi: str | None = None
+        search: tuple[str | None, str | None, str | None] | None = None
         try:
-            pmc_id, pdf_render_url, hit_doi = self._resolve_pmc_id_and_pdf_url(
-                doi=doi, pmid=pmid, failures=failures
-            )
+            search = self._resolve_pmc_id_and_pdf_url(doi=doi, pmid=pmid, failures=failures)
         except Exception as exc:
             logger.debug("Europe PMC search failed for doi=%s pmid=%s", doi, pmid, exc_info=True)
             failures.record(exc)
-        resolved = pmc_id
+        resolved = search[0] if search else None
         if not resolved and use_converter:
             resolved = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid, failures=failures)
-        return resolved, (pmc_id, pdf_render_url, hit_doi)
+        return resolved, search
 
     def _pdf_for_jats(
         self,
@@ -1765,8 +1761,8 @@ class FullTextService:
                 entry, whose article no PMC ID names, so Europe PMC's PDF is
                 not asked for it.
             search: What Tier 1b's search itself returned, ``(pmc_id,
-                pdf_url, doi)``, when it ran; ``None`` runs it here if *pmc_id*
-                is set. Its PMC ID is the search's alone, never the ID
+                pdf_url, doi)``, when it answered; ``None`` runs it here if
+                *pmc_id* is set. Its PMC ID is the search's alone, never the ID
                 Converter's, so a PDF is taken only from a hit that named the
                 JATS's article.
             cache_id: Sanitised cache key, or ``None`` (a PDF is then left as
@@ -1780,7 +1776,7 @@ class FullTextService:
                 and any failure may pass, the cache marks the JATS with this
                 count, until it reaches :data:`PDF_SEEK_AGAIN_LIMIT`; a saved
                 PDF, or failures that are all final, unmark it, and a run that
-                could try nothing leaves the mark as it is.
+                made no request leaves the mark as it is.
         """
         if not self.fetch_pdf_with_jats or (pdf is not None and pdf.pdf_download_failure is None):
             return _with_pdf(result, pdf)
@@ -1788,18 +1784,19 @@ class FullTextService:
         # making (#744): a failed search, or a download that failed so.
         may_pass = pdf is not None and pdf.pdf_failure_may_pass
         search_failed = False
+        searched = False  # the search was asked here, so a request was made
         candidates: list[tuple[str, str, _PdfOrigin]] = []
         if pdf is None:
             candidates += [(e.source, e.url, "known_source") for e in sources if e.format == "pdf"]
         hit_doi: str | None = None
         if pmc_id and (doi or pmid):
             if search is None:
-                faults_before = len(failures.faults)
                 _, search = self._discover_pmc_id(
                     doi=doi, pmid=pmid, failures=failures, use_converter=False
                 )
-                search_failed = len(failures.faults) > faults_before
-            found_id, render_url, found_doi = search
+                searched = True
+                search_failed = search is None
+            found_id, render_url, found_doi = search or (None, None, None)
             if found_id == pmc_id:  # the same article's PDF only
                 hit_doi = found_doi
                 if render_url:
@@ -1840,11 +1837,11 @@ class FullTextService:
         if first_failure is None and search_failed:
             # No download was tried because the search for one failed (#744):
             # said on the result, so it does not read as "no PDF exists".
-            logger.info("The search for a PDF beside the JATS full text failed")
+            logger.info("The search for a PDF beside the JATS full text of %s failed", cache_id)
             first_failure = FullTextResult(
                 source=result.source, pdf_download_failure=PDF_SEARCH_FAILED
             )
-        if candidates or first_failure is not None:  # else nothing was tried
+        if searched or candidates or first_failure is not None:  # else no request made
             retry = (may_pass or search_failed) and seeks < PDF_SEEK_AGAIN_LIMIT
             self._mark_pdf_retry(cache_id, pmc_id, seeks=seeks if retry else None)
         return _with_pdf(result, first_failure)
@@ -1862,8 +1859,8 @@ class FullTextService:
 
         A failure that may pass (:attr:`FullTextResult.pdf_failure_may_pass`)
         is tried again, up to *attempts* tries in all, waiting
-        :attr:`pdf_retry_delay` seconds and twice as long before each later
-        try. Any other outcome is returned at once.
+        :attr:`pdf_retry_delay` seconds before the second try, each later wait
+        twice the one before. Any other outcome is returned at once.
 
         Returns:
             The last try's result: saved, or carrying its
@@ -1887,7 +1884,7 @@ class FullTextService:
 
     def _mark_pdf_retry(
         self, cache_id: str | None, pmc_id: str | None, *, seeks: int | None
-    ) -> None:
+    ) -> bool:
         """Mark the cached JATS as owing a PDF a later hit seeks again, or unmark it (#744).
 
         Args:
@@ -1896,25 +1893,41 @@ class FullTextService:
             seeks: The hits that have sought the PDF again so far, kept in
                 the mark; ``None`` removes it.
 
-        Best effort, as every cache write here: a mark that cannot be written
-        costs only the later look. Warned once per cause under its own key,
+        Returns:
+            Whether the mark was written or removed; ``True`` with no cache.
+
+        Best effort, as every cache write here: a mark that cannot be saved
+        costs only the later look, and one that cannot be removed only a
+        bounded number of them, since a hit counts itself before it seeks
+        (:meth:`_seek_pdf_again`). Warned once per cause under its own key,
         since the cache's other entries may still be written.
         """
         if self.cache is None or not cache_id:
-            return
+            return True
         try:
             if seeks is None:
                 self.cache.delete_pdf_retry(cache_id)
             else:
                 self.cache.save_pdf_retry(cache_id, pmc_id, seeks)
         except OSError as exc:
-            self._warn_once(
-                f"pdf-mark-write:{type(exc).__name__}",
-                "Could not write the PDF mark in the full-text cache (%s: %s); a later "
-                "lookup will not seek the PDF beside the JATS again.",
-                type(exc).__name__,
-                exc,
-            )
+            if seeks is None:
+                self._warn_once(
+                    f"pdf-mark-delete:{type(exc).__name__}",
+                    "Could not remove the PDF mark from the full-text cache (%s: %s); it "
+                    "stays in place.",
+                    type(exc).__name__,
+                    exc,
+                )
+            else:
+                self._warn_once(
+                    f"pdf-mark-write:{type(exc).__name__}",
+                    "Could not write the PDF mark in the full-text cache (%s: %s); a later "
+                    "lookup may not seek the PDF beside the JATS again.",
+                    type(exc).__name__,
+                    exc,
+                )
+            return False
+        return True
 
     def _seek_pdf_again(
         self,
@@ -1932,9 +1945,13 @@ class FullTextService:
         :attr:`fetch_pdf_with_jats` is on and the cache marks it
         (:meth:`FullTextCache.save_pdf_retry`): the PDF is then sought as
         :meth:`_pdf_for_jats` seeks it, by the PMC ID the mark names, one try
-        per candidate, at most :data:`PDF_SEEK_AGAIN_LIMIT` hits in all. Any
-        other hit is returned as it is, so a paper with no PDF anywhere costs
-        no request. The search's faults go on ``tier_faults``.
+        per candidate, at most :data:`PDF_SEEK_AGAIN_LIMIT` hits in all. The
+        hit counts itself in the mark *before* it seeks, and seeks only if
+        that write succeeds, so a mark that later cannot be updated still
+        bounds the requests. Any other hit is returned as it is, so a paper
+        with no PDF anywhere costs no request, and so is a hit with nothing to
+        try, which leaves the mark as it is. The search's and Unpaywall's
+        faults go on ``tier_faults``.
         """
         if not (
             self.fetch_pdf_with_jats and cached.content_kind == "fulltext" and not cached.file_path
@@ -1955,6 +1972,15 @@ class FullTextService:
         if marked is None:
             return cached
         pmc_id, seeks = marked
+        # What _pdf_for_jats could ask: a pdf source, Unpaywall by DOI, or the
+        # search for the PMC ID by DOI or PMID.
+        if not (any(e.format == "pdf" for e in sources) or doi or (pmc_id and pmid)):
+            return cached
+        seeks += 1
+        if not self._mark_pdf_retry(
+            cache_id, pmc_id, seeks=seeks if seeks < PDF_SEEK_AGAIN_LIMIT else None
+        ):
+            return cached  # an uncounted seek could repeat on every hit
         logger.info("Seeking again the PDF beside the cached full text of %s", cache_id)
         failures = _TierFailures(on_bug=self._warn_swallowed_bug)
         result = self._pdf_for_jats(
@@ -1967,7 +1993,7 @@ class FullTextService:
             search=None,
             cache_id=cache_id,
             failures=failures,
-            seeks=seeks + 1,
+            seeks=seeks,
         )
         result.tier_faults = list(failures.faults)
         return result

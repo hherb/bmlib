@@ -1254,7 +1254,7 @@ struct JatsFound<'a> {
     /// The PMC ID the JATS came from; `None` for a Tier 0 xml entry, whose
     /// article no PMC ID names, so Europe PMC's PDF is not asked for it.
     pmc_id: Option<&'a str>,
-    /// What Tier 1b's search itself returned when it ran; `None` runs it in
+    /// What Tier 1b's search itself returned when it answered; `None` runs it in
     /// `pdf_for_jats` when `pmc_id` is set. Its PMC ID is the search's alone,
     /// never the ID Converter's, so a PDF is taken only from a hit that named
     /// the JATS's article.
@@ -1264,8 +1264,8 @@ struct JatsFound<'a> {
     /// up to [`PDF_BESIDE_JATS_ATTEMPTS`] times. When no PDF is saved and any
     /// failure may pass, the cache marks the JATS with this count, until it
     /// reaches [`PDF_SEEK_AGAIN_LIMIT`]; a saved PDF, or failures that are all
-    /// final, unmark it, and a run that could try nothing leaves the mark as
-    /// it is.
+    /// final, unmark it, and a run that made no request leaves the mark as it
+    /// is.
     seeks: u32,
 }
 
@@ -1756,14 +1756,14 @@ impl FullTextService {
         let mut pdf_render_url: Option<String> = None;
         let mut hit_doi: Option<String> = None;
         if has_fallback_identifier {
-            let faults_before = failures.faults().len();
-            let (discovered_pmc_id, search) =
+            let (discovered_pmc_id, search_for_pdf) =
                 self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), failures);
-            // A discovery that recorded a fault may hold a failed search's empty
-            // answer: pdf_for_jats asks the search again then (#744).
-            let search_for_pdf = (failures.faults().len() == faults_before).then(|| search.clone());
-            pdf_render_url.clone_from(&search.1);
-            hit_doi.clone_from(&search.2);
+            // A search that failed is `None` here: pdf_for_jats asks it again
+            // then (#744), and only then, so a hit that answered is not re-sent.
+            if let Some(search) = &search_for_pdf {
+                pdf_render_url.clone_from(&search.1);
+                hit_doi.clone_from(&search.2);
+            }
             if let Some(id) = discovered_pmc_id {
                 if Some(id.as_str()) != caller_pmc_id.as_deref() {
                     if let Some(caller) = caller_pmc_id.as_deref() {
@@ -2071,6 +2071,8 @@ impl FullTextService {
         // making (#744): a failed search, or a download that failed so.
         let mut may_pass = pdf.is_some_and(FullTextResult::pdf_failure_may_pass);
         let mut search_failed = false;
+        // The search was asked here, so a request was made.
+        let mut searched = false;
         let mut candidates: Vec<(String, String, PdfOrigin)> = Vec::new();
         if pdf.is_none() {
             candidates.extend(
@@ -2095,10 +2097,10 @@ impl FullTextService {
                 let (found_id, render_url, found_doi) = match &found.search {
                     Some(search) => search.clone(),
                     None => {
-                        let faults_before = failures.faults().len();
                         let search = self.discover_pmc_id(found.doi, pmid, false, failures).1;
-                        search_failed = failures.faults().len() > faults_before;
-                        search
+                        searched = true;
+                        search_failed = search.is_none();
+                        search.unwrap_or_default()
                     }
                 };
                 if found_id.as_deref() == Some(pmc_id) {
@@ -2115,7 +2117,7 @@ impl FullTextService {
         }
 
         let mut first_failure = pdf.cloned();
-        let tried_any = !candidates.is_empty();
+        let tried_any = searched || !candidates.is_empty();
         for (source, target, origin) in candidates {
             let url = if origin == PdfOrigin::Unpaywall {
                 match self.fetch_unpaywall(&target) {
@@ -2160,14 +2162,17 @@ impl FullTextService {
         if first_failure.is_none() && search_failed {
             // No download was tried because the search for one failed (#744):
             // said on the result, so it does not read as "no PDF exists".
-            self.info("The search for a PDF beside the JATS full text failed");
+            self.info(format!(
+                "The search for a PDF beside the JATS full text of {} failed",
+                cache_id.unwrap_or_default()
+            ));
             first_failure = Some(FullTextResult {
                 pdf_download_failure: Some(PDF_SEARCH_FAILED.to_string()),
                 ..empty_result(&result.source)
             });
         }
         if tried_any || first_failure.is_some() {
-            // Else nothing was tried, and the mark stays as it is.
+            // Else no request was made, and the mark stays as it is.
             let retry = (may_pass || search_failed) && found.seeks < PDF_SEEK_AGAIN_LIMIT;
             self.mark_pdf_retry(cache_id, found.pmc_id, retry.then_some(found.seeks));
         }
@@ -2178,8 +2183,8 @@ impl FullTextService {
     /// (#744).
     ///
     /// A failure that may pass ([`FullTextResult::pdf_failure_may_pass`]) is
-    /// tried again, up to `attempts` tries in all, waiting the retry delay and
-    /// twice as long before each later try. Any other
+    /// tried again, up to `attempts` tries in all, waiting the retry delay before
+    /// the second try, each later wait twice the one before. Any other
     /// outcome is returned at once. Returns the last try's result: saved, or
     /// carrying its `pdf_download_failure`.
     fn download_beside_jats(
@@ -2213,30 +2218,47 @@ impl FullTextService {
 
     /// Mark the cached JATS as owing a PDF a later hit seeks again, keeping
     /// the PMC ID it came from and `seeks`, the hits that have sought it again
-    /// so far; `None` unmarks it (#744).
+    /// so far; `None` unmarks it (#744). Returns whether the mark was written
+    /// or removed; `true` with no cache.
     ///
-    /// Best effort, as every cache write here: a mark that cannot be written
-    /// costs only the later look. Warned once per cause under its own key,
-    /// since the cache's other entries may still be written.
-    fn mark_pdf_retry(&self, cache_id: Option<&str>, pmc_id: Option<&str>, seeks: Option<u32>) {
+    /// Best effort, as every cache write here: a mark that cannot be saved
+    /// costs only the later look, and one that cannot be removed only a
+    /// bounded number of them, since a hit counts itself before it seeks
+    /// ([`FullTextService::seek_pdf_again`]). Warned once per cause under its
+    /// own key, since the cache's other entries may still be written.
+    fn mark_pdf_retry(
+        &self,
+        cache_id: Option<&str>,
+        pmc_id: Option<&str>,
+        seeks: Option<u32>,
+    ) -> bool {
         let (Some(cache), Some(cache_id)) = (self.cache.as_ref(), cache_id) else {
-            return;
+            return true;
         };
-        let failure = match seeks {
-            Some(seeks) => cache
-                .save_pdf_retry(cache_id, pmc_id, seeks)
-                .err()
-                .map(|error| (format!("{:?}", error.kind()), error.to_string())),
-            None => (!cache.delete_pdf_retry(cache_id))
-                .then(|| ("Delete".to_string(), "it could not be removed".to_string())),
-        };
-        if let Some((kind, message)) = failure {
-            self.warn_once(
-                &format!("pdf-mark-write:{kind}"),
-                format!(
-                    "Could not write the PDF mark in the full-text cache ({kind}: {message}); a later lookup will not seek the PDF beside the JATS again."
-                ),
-            );
+        match seeks {
+            Some(seeks) => match cache.save_pdf_retry(cache_id, pmc_id, seeks) {
+                Ok(_) => true,
+                Err(error) => {
+                    let kind = format!("{:?}", error.kind());
+                    self.warn_once(
+                        &format!("pdf-mark-write:{kind}"),
+                        format!(
+                            "Could not write the PDF mark in the full-text cache ({kind}: {error}); a later lookup may not seek the PDF beside the JATS again."
+                        ),
+                    );
+                    false
+                }
+            },
+            None => {
+                let removed = cache.delete_pdf_retry(cache_id);
+                if !removed {
+                    self.warn_once(
+                        "pdf-mark-delete",
+                        "Could not remove the PDF mark from the full-text cache; it stays in place.",
+                    );
+                }
+                removed
+            }
         }
     }
 
@@ -2248,8 +2270,12 @@ impl FullTextService {
     /// ([`FullTextCache::save_pdf_retry`]): the PDF is then sought as
     /// [`FullTextService::pdf_for_jats`] seeks it, by the PMC ID the mark
     /// names, one try per candidate, at most [`PDF_SEEK_AGAIN_LIMIT`] hits in
-    /// all. Any other hit is returned as it is, so a paper with no PDF
-    /// anywhere costs no request. The search's faults go on `tier_faults`.
+    /// all. The hit counts itself in the mark *before* it seeks, and seeks
+    /// only if that write succeeds, so a mark that later cannot be updated
+    /// still bounds the requests. Any other hit is returned as it is, so a
+    /// paper with no PDF anywhere costs no request, and so is a hit with
+    /// nothing to try, which leaves the mark as it is. The search's and
+    /// Unpaywall's faults go on `tier_faults`.
     fn seek_pdf_again(
         &self,
         hit: FullTextResult,
@@ -2275,6 +2301,24 @@ impl FullTextService {
                 return hit;
             }
         };
+        let doi = request.doi.as_deref().filter(|doi| !doi.is_empty());
+        let pmc_id = Some(marked.as_str()).filter(|id| !id.is_empty());
+        // What pdf_for_jats could ask: a pdf source, Unpaywall by DOI, or the
+        // search for the PMC ID by DOI or PMID.
+        let can_try = request
+            .fulltext_sources
+            .iter()
+            .any(|entry| entry.format == "pdf")
+            || doi.is_some()
+            || (pmc_id.is_some() && !request.pmid.is_empty());
+        if !can_try {
+            return hit;
+        }
+        let seeks = seeks.saturating_add(1);
+        let counted = (seeks < PDF_SEEK_AGAIN_LIMIT).then_some(seeks);
+        if !self.mark_pdf_retry(Some(cache_id), pmc_id, counted) {
+            return hit; // an uncounted seek could repeat on every hit
+        }
         self.info(format!(
             "Seeking again the PDF beside the cached full text of {cache_id}"
         ));
@@ -2282,10 +2326,10 @@ impl FullTextService {
         let mut failures = TierFailures::reported(&on_bug);
         let found = JatsFound {
             request,
-            doi: request.doi.as_deref().filter(|doi| !doi.is_empty()),
-            pmc_id: Some(marked.as_str()).filter(|id| !id.is_empty()),
+            doi,
+            pmc_id,
             search: None,
-            seeks: seeks.saturating_add(1),
+            seeks,
         };
         let mut result = self.pdf_for_jats(hit, None, &found, Some(cache_id), &mut failures);
         result.tier_faults = failures.faults().iter().map(ToString::to_string).collect();
@@ -3071,34 +3115,35 @@ impl FullTextService {
     /// The search's ID arrives validated, so a malformed one is a recorded fault
     /// and the converter is asked instead.
     ///
-    /// Returns `(pmc_id, (search_pmc_id, pdf_render_url, hit_doi))`. `pmc_id` is
-    /// the search's or, failing it, the ID Converter's; the inner tuple is the
-    /// search's alone, so the free PDF is paired with the ID only the search
-    /// gave it (#739).
+    /// Returns `(pmc_id, Some((search_pmc_id, pdf_render_url, hit_doi)))`.
+    /// `pmc_id` is the search's or, failing it, the ID Converter's; the inner
+    /// tuple is the search's alone, so the free PDF is paired with the ID only
+    /// the search gave it (#739). It is `None` when the search failed (#744): a
+    /// fault it recorded while answering, such as an unusable field, is not a
+    /// failed search.
     fn discover_pmc_id(
         &self,
         doi: Option<&str>,
         pmid: &str,
         use_converter: bool,
         failures: &mut TierFailures<'_>,
-    ) -> (Option<String>, SearchFindings) {
-        let (pmc_id, pdf_render_url, hit_doi) =
-            match self.resolve_pmc_id_and_pdf_url(doi, pmid, failures) {
-                Ok(found) => found,
-                Err(fault) => {
-                    self.debug(format!(
-                        "Europe PMC search failed for doi={doi:?} pmid={pmid}: {}",
-                        fault.message
-                    ));
-                    failures.record(&fault);
-                    (None, None, None)
-                }
-            };
-        let mut resolved = pmc_id.clone();
+    ) -> (Option<String>, Option<SearchFindings>) {
+        let search = match self.resolve_pmc_id_and_pdf_url(doi, pmid, failures) {
+            Ok(found) => Some(found),
+            Err(fault) => {
+                self.debug(format!(
+                    "Europe PMC search failed for doi={doi:?} pmid={pmid}: {}",
+                    fault.message
+                ));
+                failures.record(&fault);
+                None
+            }
+        };
+        let mut resolved = search.as_ref().and_then(|found| found.0.clone());
         if resolved.is_none() && use_converter {
             resolved = self.resolve_pmc_id_via_idconv(doi, pmid, failures);
         }
-        (resolved, (pmc_id, pdf_render_url, hit_doi))
+        (resolved, search)
     }
 
     /// Search Europe PMC to discover a PMC ID, a free PDF URL and a DOI.
