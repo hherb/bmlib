@@ -27,13 +27,14 @@ use bmlib::fulltext::{
     FullTextRequest, FullTextService, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
     JATSReferenceInfo, JATSTableInfo, PdfError, PdfExtractError, PdfExtractor, PdfText,
-    TierFailures, TierFault,
+    TierFailures, TierFault, PDF_BESIDE_JATS_ATTEMPTS, PDF_RETRY_SUFFIX, PDF_SEEK_AGAIN_LIMIT,
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -3049,6 +3050,281 @@ fn pdf_service(client: Arc<RoutedClient>, dir: &TempDir, on: bool) -> FullTextSe
     FullTextService::new(client, "test@example.com")
         .with_cache(Some(dir.cache()))
         .with_fetch_pdf_with_jats(on)
+        .with_pdf_retry_delay(Duration::ZERO)
+}
+
+/// The mark beside `10.1/x`'s cached JATS saying its PDF is owed (#744).
+fn pdf_mark(dir: &TempDir) -> PathBuf {
+    dir.cache().jats_dir().join(format!(
+        "{}{PDF_RETRY_SUFFIX}",
+        sanitize_identifier("10.1/x")
+    ))
+}
+
+#[test]
+fn a_pdf_beside_jats_that_may_pass_is_tried_again_and_a_final_one_is_not() {
+    let tries = usize::try_from(PDF_BESIDE_JATS_ATTEMPTS).expect("small");
+    for (status, tries) in [(503, tries), (403, 1)] {
+        let dir = TempDir::new("pdf-jats-retry");
+        let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, status)]));
+        let result = pdf_service(client.clone(), &dir, true)
+            .fetch_fulltext(&by_pmc_id())
+            .expect("retrieved");
+        let asked = client
+            .requests()
+            .iter()
+            .filter(|url| *url == RENDER)
+            .count();
+        assert_eq!(asked, tries, "{status}");
+        assert_eq!(result.pdf_download_failure, Some(format!("http-{status}")));
+        assert_eq!(pdf_mark(&dir).exists(), status == 503, "{status}");
+    }
+}
+
+#[test]
+fn a_pdf_sought_again_and_saved_ends_the_mark() {
+    let dir = TempDir::new("pdf-jats-again");
+    let failing = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 503)]));
+    pdf_service(failing, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    assert_eq!(
+        std::fs::read_to_string(pdf_mark(&dir)).expect("marked"),
+        "PMC123\n0\n"
+    );
+
+    let serving = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 200)]));
+    let again = pdf_service(serving, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("a hit");
+    assert_eq!(
+        (again.source.as_str(), again.pdf_download_failure.as_deref()),
+        ("cached", None)
+    );
+    assert!(again.file_path.is_some());
+    assert!(!pdf_mark(&dir).exists());
+
+    let silent = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    let third = pdf_service(silent.clone(), &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("a hit");
+    assert!(silent.requests().is_empty());
+    assert_eq!(third.file_path, again.file_path);
+}
+
+#[test]
+fn a_hit_tries_once_and_the_mark_ends_after_its_limit() {
+    let dir = TempDir::new("pdf-jats-limit");
+    let failing = || RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 503)]));
+    pdf_service(failing(), &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    for seeks in 1..=PDF_SEEK_AGAIN_LIMIT {
+        let client = failing();
+        let hit = pdf_service(client.clone(), &dir, true)
+            .fetch_fulltext(&by_pmc_id())
+            .expect("a hit");
+        let asked = client
+            .requests()
+            .iter()
+            .filter(|url| *url == RENDER)
+            .count();
+        assert_eq!(asked, 1, "{seeks}");
+        assert_eq!(
+            (hit.source.as_str(), hit.pdf_download_failure.as_deref()),
+            ("cached", Some("http-503"))
+        );
+        assert_eq!(
+            pdf_mark(&dir).exists(),
+            seeks < PDF_SEEK_AGAIN_LIMIT,
+            "{seeks}"
+        );
+    }
+    let silent = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    pdf_service(silent.clone(), &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("a hit");
+    assert!(silent.requests().is_empty());
+}
+
+#[test]
+fn a_marked_hit_that_can_try_nothing_keeps_the_mark() {
+    let dir = TempDir::new("pdf-jats-nothing");
+    let failing = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 503)]));
+    pdf_service(failing, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    let before = std::fs::read_to_string(pdf_mark(&dir)).expect("marked");
+    let silent = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    let request = FullTextRequest {
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+    pdf_service(silent.clone(), &dir, true)
+        .fetch_fulltext(&request)
+        .expect("a hit");
+    assert!(silent.requests().is_empty());
+    assert_eq!(
+        std::fs::read_to_string(pdf_mark(&dir)).expect("marked"),
+        before
+    );
+}
+
+#[test]
+fn the_backoff_waits_the_delay_then_twice_it() {
+    let dir = TempDir::new("pdf-jats-backoff");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 503)]));
+    let delay = Duration::from_millis(40);
+    let service = pdf_service(client, &dir, true).with_pdf_retry_delay(delay);
+    let started = std::time::Instant::now();
+    service.fetch_fulltext(&by_pmc_id()).expect("retrieved");
+    assert!(started.elapsed() >= delay * 3, "{:?}", started.elapsed());
+    let waits: Vec<String> = service
+        .log_lines()
+        .into_iter()
+        .filter(|line| line.message.contains("trying again in"))
+        .map(|line| line.message)
+        .collect();
+    assert_eq!(waits.len(), 2, "{waits:?}");
+    assert!(
+        waits[0].ends_with("in 0.04 s") && waits[1].ends_with("in 0.08 s"),
+        "{waits:?}"
+    );
+}
+
+#[test]
+fn a_marked_hit_seeks_nothing_with_the_option_off() {
+    let dir = TempDir::new("pdf-jats-mark-off");
+    let failing = RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 503)]));
+    pdf_service(failing, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    let silent = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    let result = pdf_service(silent.clone(), &dir, false)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("a hit");
+    assert!(silent.requests().is_empty());
+    assert_eq!((result.source.as_str(), result.file_path), ("cached", None));
+    assert!(pdf_mark(&dir).exists(), "kept for a service that has it on");
+}
+
+#[test]
+fn an_unreadable_pdf_mark_is_removed_and_the_hit_served() {
+    let dir = TempDir::new("pdf-jats-mark-bad");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    pdf_service(client, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    std::fs::create_dir_all(pdf_mark(&dir)).expect("a directory where the mark belongs");
+
+    let silent = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    let service = pdf_service(silent.clone(), &dir, true);
+    let result = service.fetch_fulltext(&by_pmc_id()).expect("a hit");
+    assert!(silent.requests().is_empty());
+    assert_eq!(
+        (result.source.as_str(), result.content_kind),
+        ("cached", ContentKind::Fulltext)
+    );
+    assert!(service
+        .log_lines()
+        .iter()
+        .any(|line| line.message.contains("Could not read the PDF mark")));
+    assert!(!pdf_mark(&dir).exists());
+}
+
+#[test]
+fn a_marked_hit_whose_search_answers_with_no_pdf_ends_the_mark() {
+    // No DOI, and the hit names another article: the search is the only
+    // request, and it answered, so the mark must not outlive it (#744).
+    let dir = TempDir::new("pdf-jats-search-answered");
+    let client = RoutedClient::new(pdf_route("PMC123", None, vec![]));
+    pdf_service(client, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    dir.cache()
+        .save_pdf_retry("10.1/x", Some("PMC123"), 0)
+        .expect("marked");
+
+    let other = RoutedClient::new(pdf_route("PMC999", None, vec![]));
+    let request = FullTextRequest {
+        pmc_id: Some("PMC123".to_string()),
+        pmid: "12345".to_string(),
+        identifier: Some("10.1/x".to_string()),
+        ..FullTextRequest::default()
+    };
+    let hit = pdf_service(other.clone(), &dir, true)
+        .fetch_fulltext(&request)
+        .expect("a hit");
+    let asked: Vec<bool> = other
+        .requests()
+        .iter()
+        .map(|url| url.contains("/search?"))
+        .collect();
+    assert_eq!(asked, vec![true]);
+    assert_eq!(
+        (hit.source.as_str(), hit.pdf_download_failure.as_deref()),
+        ("cached", None)
+    );
+    assert!(!pdf_mark(&dir).exists());
+}
+
+#[test]
+fn a_failed_search_alone_is_said() {
+    // Unpaywall answers that it has no free PDF, which is no failure: the
+    // search's 503 alone makes the result "search-failed" (#744).
+    let dir = TempDir::new("pdf-jats-search-alone");
+    let route = pdf_route("PMC123", None, vec![]);
+    let client = RoutedClient::new(move |url: &str| {
+        if url.contains("/search?") {
+            return HttpResponse::from_bytes(503, Vec::new());
+        }
+        route(url)
+    });
+    let result = pdf_service(client, &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    assert_eq!(
+        result.pdf_download_failure.as_deref(),
+        Some("search-failed")
+    );
+    assert_eq!(
+        std::fs::read_to_string(pdf_mark(&dir)).expect("marked"),
+        "PMC123\n0\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_hit_that_cannot_count_itself_does_not_seek() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TempDir::new("pdf-jats-mark-readonly");
+    let failing = || RoutedClient::new(pdf_route("PMC123", None, vec![(RENDER, 503)]));
+    pdf_service(failing(), &dir, true)
+        .fetch_fulltext(&by_pmc_id())
+        .expect("retrieved");
+    let jats = dir.cache().jats_dir();
+    std::fs::set_permissions(&jats, std::fs::Permissions::from_mode(0o555)).expect("read-only");
+    if std::fs::write(jats.join("probe"), b"").is_ok() {
+        // Root ignores the mode, so the mark cannot be made unwritable here.
+        std::fs::set_permissions(&jats, std::fs::Permissions::from_mode(0o755)).expect("restored");
+        eprintln!("skipped: the cache directory stays writable for this user");
+        return;
+    }
+    let client = failing();
+    let service = pdf_service(client.clone(), &dir, true);
+    let hits: Vec<_> = (0..PDF_SEEK_AGAIN_LIMIT + 2)
+        .map(|_| service.fetch_fulltext(&by_pmc_id()).expect("a hit"))
+        .collect();
+    std::fs::set_permissions(&jats, std::fs::Permissions::from_mode(0o755)).expect("restored");
+
+    assert!(client.requests().is_empty(), "{:?}", client.requests());
+    assert!(hits
+        .iter()
+        .all(|hit| (hit.source.as_str(), hit.content_kind) == ("cached", ContentKind::Fulltext)));
+    assert!(service
+        .log_lines()
+        .iter()
+        .any(|line| line.message.contains("Could not write the PDF mark")));
 }
 
 fn by_pmc_id() -> FullTextRequest {

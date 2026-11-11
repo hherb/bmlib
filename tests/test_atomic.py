@@ -61,8 +61,8 @@ class TestTheTemporaryNameFitsTheBudgetCallersReserve:
     That constant caps a cache filename so the temporary name built from it
     still fits in ``NAME_MAX``, and both it and :func:`atomic_write` state the
     overhead as 38. Nothing over in ``fulltext`` can catch them drifting
-    apart: the longest name that module builds is 214 characters against a
-    255 limit, so 41 characters of growth pass its guard test unnoticed.
+    apart: the longest name that module builds is 219 characters against a
+    255 limit, so 36 characters of growth pass its guard test unnoticed.
     """
 
     def test_the_temporary_name_adds_exactly_the_documented_overhead(self, tmp_path, monkeypatch):

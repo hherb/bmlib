@@ -58,6 +58,10 @@ logger = logging.getLogger(__name__)
 
 PDF_MAGIC_BYTES = b"%PDF"
 
+# The mark beside a cached JATS whose PDF a later lookup may get (#744), in
+# ``jats/``; see :meth:`FullTextCache.save_pdf_retry`.
+PDF_RETRY_SUFFIX = ".pdf-retry"
+
 # Identifiers made up solely of these characters are used as filenames
 # verbatim; anything else (a raw DOI contains "/") is sanitized first.
 _SAFE_IDENTIFIER_RE = re.compile(r"[\w.\-]+")
@@ -72,7 +76,8 @@ _SAFE_IDENTIFIER_RE = re.compile(r"[\w.\-]+")
 # per-article fault then trips ``FullTextService``'s once-per-service
 # "nothing is being cached" warning, which is both untrue and permanently
 # silences the directory-wide fault the warning exists to report. 160 leaves
-# the longest name this module can build at 214 characters.
+# the longest name this module can build at 219 characters (a key, then
+# :data:`PDF_RETRY_SUFFIX`, then the temporary name's 38).
 _MAX_PREFIX_CHARS = 160
 
 # The longest key :func:`sanitize_identifier` returns: the prefix, ``_`` and a
@@ -81,7 +86,7 @@ _MAX_PREFIX_CHARS = 160
 # every key the service computed for a raw identifier of 150 characters or
 # more was hashed a second time, so the file written was not the documented
 # ``sanitize_identifier(identifier)`` and a lookup by that key missed it
-# (#309). The 214 above was always computed over this length.
+# (#309). The 219 above is computed over this length.
 _MAX_KEY_CHARS = _MAX_PREFIX_CHARS + 11
 
 # The first line of every rendered entry. An HTML comment, so a reader opening
@@ -514,6 +519,70 @@ class FullTextCache:
         except FileNotFoundError:
             return None
 
+    # --- The PDF beside JATS, to seek again (#744) ---------------------------
+
+    def _pdf_retry_path(self, identifier: str) -> Path:
+        return self._jats_dir / f"{_safe_filename(identifier)}{PDF_RETRY_SUFFIX}"
+
+    def save_pdf_retry(self, identifier: str, pmc_id: str | None, seeks: int = 0) -> str:
+        """Mark *identifier*'s cached JATS as owing a PDF a later lookup may get.
+
+        ``FullTextService`` writes it when ``fetch_pdf_with_jats`` sought a PDF
+        beside the JATS and none was saved for a cause that may pass (an
+        outage, a 429, a 5xx, a failed search or Unpaywall lookup). A JATS hit
+        carrying the mark seeks the PDF again; a hit without it is served as it
+        is, so a paper with no PDF anywhere costs no request on a hit.
+
+        Args:
+            identifier: The cache key.
+            pmc_id: The PMC ID the JATS came from, so Europe PMC's PDF can be
+                sought again for the same article; ``None`` when no PMC ID
+                names it. Stored as the file's first line, empty for ``None``.
+            seeks: How many hits have sought the PDF again so far, the second
+                line, so the service can stop after a limit.
+
+        Returns:
+            The file path.
+
+        Raises:
+            OSError: If the directory cannot be created or the write fails.
+        """
+        path = self._pdf_retry_path(identifier)
+        self._jats_dir.mkdir(exist_ok=True)
+        atomic_write(path, f"{pmc_id or ''}\n{seeks}\n".encode())
+        logger.debug("Marked the PDF beside %s to be sought again", identifier)
+        return str(path)
+
+    def get_pdf_retry(self, identifier: str) -> tuple[str, int] | None:
+        """The mark :meth:`save_pdf_retry` wrote, or ``None`` if there is none.
+
+        Returns:
+            ``(pmc_id, seeks)``: the PMC ID it holds (``""`` for a mark naming
+            none) and the hits that have sought the PDF again so far.
+
+        Raises:
+            OSError: If the mark exists and cannot be read.
+            ValueError: If it is not UTF-8 (``UnicodeDecodeError``), has fewer
+                than two newline-terminated lines, or a second line that is not
+                a count.
+        """
+        try:
+            text = self._pdf_retry_path(identifier).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        pmc_id, seeks = text.split("\n")[:2] if text.count("\n") >= 2 else ("", "")
+        if not seeks.isascii() or not seeks.isdigit():
+            raise ValueError(f"malformed PDF mark for {identifier}: {text!r}")
+        return pmc_id.strip(), int(seeks)
+
+    def delete_pdf_retry(self, identifier: str) -> None:
+        """Remove *identifier*'s mark, if any (see :meth:`save_pdf_retry`).
+
+        Raises:
+            OSError: If the mark exists and cannot be removed.
+        """
+        _remove(self._pdf_retry_path(identifier))
+
     # --- Abstract operations ------------------------------------------------
 
     def save_abstract(self, html: str, identifier: str) -> str:
@@ -669,8 +738,8 @@ class FullTextCache:
         return moved
 
     def delete(self, identifier: str) -> None:
-        """Delete all cached files for *identifier* (HTML, PDF, abstract and JATS)."""
-        for path in self._entries(identifier):
+        """Delete all cached files for *identifier* (HTML, PDF, abstract, JATS and its PDF mark)."""
+        for path in (*self._entries(identifier), self._pdf_retry_path(identifier)):
             _remove(path)
 
     def clear(self) -> None:

@@ -23,6 +23,15 @@ The Python library is documented separately, in the repository's
   `tags`. `rebuilding(40)` is now refused here and converted in Python. The
   argument is the root `CHANGELOG.md`'s.
 
+### Added
+
+- **The PDF beside JATS is retried and sought again** (#744, as in Python; the
+  argument is the root `CHANGELOG.md`'s): `FullTextService::with_pdf_retry_delay`,
+  `PDF_BESIDE_JATS_ATTEMPTS`, `PDF_RETRY_DELAY`, `PDF_SEEK_AGAIN_LIMIT`,
+  `FullTextResult::pdf_failure_may_pass`, `PDF_SEARCH_FAILED`, and
+  `FullTextCache::save_pdf_retry`, `get_pdf_retry` and `delete_pdf_retry`
+  (`PDF_RETRY_SUFFIX`); `delete` removes the mark too.
+
 ## [0.4.0] - 2026-11-10
 
 Published with the Python library's 0.13.0, from the same merge commit. **The

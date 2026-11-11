@@ -26,7 +26,12 @@ from unittest import mock
 
 import pytest
 
-from bmlib.fulltext.cache import FullTextCache, _safe_filename, sanitize_identifier
+from bmlib.fulltext.cache import (
+    PDF_RETRY_SUFFIX,
+    FullTextCache,
+    _safe_filename,
+    sanitize_identifier,
+)
 from bmlib.fulltext.jats_parser import RENDERER_VERSION
 
 # The line endings are load-bearing. A descriptor opened without O_BINARY
@@ -56,6 +61,36 @@ class TestPDFCaching:
         cache.save_pdf(PDF_MAGIC, "12345")
         cache.delete("12345")
         assert cache.get_pdf("12345") is None
+
+
+class TestPdfRetryMark:
+    """The mark beside a cached JATS whose PDF a later lookup may get (#744)."""
+
+    def test_round_trip_with_and_without_a_pmc_id(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        assert cache.get_pdf_retry("a") is None
+        path = cache.save_pdf_retry("a", "PMC123")
+        assert path == str(tmp_path / "jats" / f"a{PDF_RETRY_SUFFIX}")
+        assert cache.get_pdf_retry("a") == ("PMC123", 0)
+        cache.save_pdf_retry("a", None, 2)
+        assert cache.get_pdf_retry("a") == ("", 2)
+
+    @pytest.mark.parametrize("text", ["PMC1", "PMC1\nx\n", "PMC1\n-1\n", "\n\n"])
+    def test_a_malformed_mark_raises_value_error(self, tmp_path, text):
+        cache = FullTextCache(cache_dir=tmp_path)
+        Path(cache.save_pdf_retry("a", None)).write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError):
+            cache.get_pdf_retry("a")
+
+    def test_delete_pdf_retry_and_delete_remove_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_pdf_retry("a", None)
+        cache.delete_pdf_retry("a")
+        assert cache.get_pdf_retry("a") is None
+        cache.delete_pdf_retry("a")  # none to remove is no error
+        cache.save_pdf_retry("a", "PMC1")
+        cache.delete("a")
+        assert cache.get_pdf_retry("a") is None
 
 
 class TestHTMLCaching:
@@ -548,14 +583,14 @@ class TestTheDocumentedKeyIsTheFilename:
         """The bound moved by eleven — the ``_`` and the digest — and ``NAME_MAX`` still holds.
 
         The longest name this module builds is the longest pass-through plus
-        ``.html`` plus :func:`~bmlib._atomic.atomic_write`'s 38-character
-        temporary overhead, which is the same 214 the prefix cap was chosen
-        for — the digest was always part of the sanitized key's length.
+        :data:`PDF_RETRY_SUFFIX`, its longest suffix, plus
+        :func:`~bmlib._atomic.atomic_write`'s 38-character temporary overhead:
+        219 — the digest was always part of the sanitized key's length.
         """
         longest = "a" * 171
         assert _safe_filename(longest) == longest
         assert _safe_filename(longest + "a") != longest + "a"
-        assert len(longest) + len(".html") + 38 <= 255
+        assert len(longest) + len(PDF_RETRY_SUFFIX) + 38 <= 255
 
 
 class TestAnUnreadablePDFEntryIsNotAHit:

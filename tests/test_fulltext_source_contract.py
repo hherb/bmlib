@@ -16,6 +16,9 @@
 
 """The shared ``FullTextResult.jats_xml``, ``pdf_download_failure`` and ``tier_faults`` contract.
 
+Also the PDF sought beside JATS, retried and sought again (#744), and
+``pdf_failure_may_pass`` (``pdf_failure_may_pass.json``).
+
 The same file Rust's ``rust/bmlib/tests/fulltext_source_contract.rs`` asserts
 against: the service hands back the JATS it rendered, byte for byte as served,
 and the cache keeps it beside the HTML; a PDF download that leaves no file
@@ -51,6 +54,7 @@ def _response(answer: dict[str, Any]) -> MagicMock:
     resp = MagicMock()
     resp.status_code = answer["status"]
     resp.content = _body(answer.get("body_file")) or b""
+    resp.json.side_effect = lambda: json.loads(resp.content)
     return resp
 
 
@@ -80,6 +84,7 @@ def _fetch(
             return service.fetch_fulltext(
                 fulltext_sources=sources or None,
                 pmc_id=request.get("pmc_id"),
+                doi=request.get("doi"),
                 identifier=request.get("identifier"),
             )
     finally:  # a raising call must have asked for every answer too
@@ -108,7 +113,12 @@ def test_contract_case(case: dict[str, Any], tmp_path: Path) -> None:
     if case.get("seed_pdfs_dir_as_file"):
         (tmp_path / "pdfs").rmdir()
         (tmp_path / "pdfs").write_bytes(b"")
-    service = FullTextService(email="test@example.com", cache=cache)
+    service = FullTextService(
+        email="test@example.com",
+        cache=cache,
+        fetch_pdf_with_jats=case.get("fetch_pdf_with_jats", False),
+    )
+    service.pdf_retry_delay = 0
 
     if "raises" in case["expected"]:
         raises = case["expected"]["raises"]
@@ -124,4 +134,13 @@ def test_contract_case(case: dict[str, Any], tmp_path: Path) -> None:
         assert not jats_entry.exists()
         assert jats_entry.with_name(f"{jats_entry.name}.corrupt").exists()
     if "then" in case:
-        _check(_fetch(service, case["request"], []), case["then"])
+        _check(_fetch(service, case["request"], case.get("then_responses", [])), case["then"])
+
+
+MAY_PASS = json.loads((FIXTURES / "pdf_failure_may_pass.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case", MAY_PASS["cases"], ids=lambda case: str(case["cause"]))
+def test_pdf_failure_may_pass(case: dict[str, Any]) -> None:
+    result = FullTextResult(source="x", pdf_download_failure=case["cause"])
+    assert result.pdf_failure_may_pass is case["may_pass"]
