@@ -136,6 +136,18 @@ depends on it (bmlibrarian_lite: `Packages/BioMedLit`, target `BmlibCore`).
 The macOS slice is universal because an app's macOS archive builds arm64 and
 x86_64; an arm64-only slice fails the x86_64 link.
 
+Each dynamic slice carries its dSYM, `<slice>/dSYMs/BmlibFFI.framework.dSYM`,
+so an app's archive includes it and a crash in bmlib symbolicates to a file
+and line. The script builds with `debug = "line-tables-only"` and
+`split-debuginfo = "packed"`, set through `CARGO_PROFILE_RELEASE_FFI_*`
+variables rather than in `Cargo.toml`, so the Android `.so` (same profile) is
+unchanged; rustc writes the dSYM before the profile's strip, and the shipped
+dylibs stay stripped. The link passes `-oso_prefix .`: the debug map ld
+hashes into each dylib's UUID names the object files, and without it by
+their absolute paths, so two checkouts built different UUIDs. Measured 2026-11-11 at `d594be1`: about 5.1 MB per
+architecture (26 MB for the five; 6.5 MB gzipped), beside dylibs of 0.95 MB
+per architecture. The `--static` variant carries no dSYM.
+
 Dynamic frameworks are the default because the committed artifact is an order
 of magnitude smaller. The stripped static archives carry every dependency's
 objects until the app's linker dead-strips them. The totals are under

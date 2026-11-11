@@ -22,7 +22,8 @@
 #
 # Produces in <out-dir>:
 #   BmlibFFI.xcframework/   ios-arm64, ios-arm64_x86_64-simulator,
-#                           macos-arm64_x86_64
+#                           macos-arm64_x86_64; dynamic slices carry their
+#                           dSYM (line tables) under <slice>/dSYMs
 #   Swift/bmlib_ffi.swift   the generated bindings (compile into a Swift target
 #                           that depends on the BmlibFFI binary target)
 #
@@ -79,7 +80,19 @@ export MACOSX_DEPLOYMENT_TARGET=$MACOS_MIN
 # ld hashes that into LC_UUID, which install_name_tool -id below keeps. So a
 # fixed name, else two checkouts differ by the UUID alone (#490). The longest
 # of the final names, so install_name_tool always has room to rewrite it.
-export CARGO_ENCODED_RUSTFLAGS="-Clink-arg=-Wl,-install_name,@rpath/$NAME.framework/Versions/A/$NAME"
+#
+# Line tables and function names, packed by rustc into a dSYM beside each dylib
+# before release-ffi's strip, so a crash in an app symbolicates (each slice's
+# dSYM goes into the xcframework below). Set here rather than in Cargo.toml so
+# the Android .so, built with the same profile, is unchanged. With debug info
+# ld writes a debug map naming each object file by its absolute path, and
+# hashes it into LC_UUID too; -oso_prefix . makes those paths relative to the
+# link's working directory (the workspace, where rustc's dsymutil also runs),
+# else two checkouts again differ by the UUID alone.
+SEP=$'\x1f'
+export CARGO_ENCODED_RUSTFLAGS="-Clink-arg=-Wl,-install_name,@rpath/$NAME.framework/Versions/A/$NAME$SEP-Clink-arg=-Wl,-oso_prefix,."
+export CARGO_PROFILE_RELEASE_FFI_DEBUG=line-tables-only
+export CARGO_PROFILE_RELEASE_FFI_SPLIT_DEBUGINFO=packed
 
 # macOS is universal: an app's macOS archive builds arm64 *and* x86_64 (the
 # default ARCHS), and a single-architecture slice fails its x86_64 link.
@@ -153,6 +166,18 @@ deep_framework() { # <dir> <dylib>
   done
 }
 
+# The slice's dSYM, named as Xcode names a framework's, its DWARF the
+# architectures' own (lipo'd for a two-architecture slice). strip and
+# install_name_tool -id keep LC_UUID, so the UUIDs still match the framework.
+dsym() { # <dir> <dylib>...
+  local d="$1/$NAME.framework.dSYM" dwarf=() f
+  shift
+  mkdir -p "$d/Contents/Resources/DWARF"
+  cp "$1.dSYM/Contents/Info.plist" "$d/Contents/"
+  for f in "$@"; do dwarf+=("$f.dSYM/Contents/Resources/DWARF/libbmlib_ffi.dylib"); done
+  lipo -create "${dwarf[@]}" -output "$d/Contents/Resources/DWARF/$NAME"
+}
+
 BUILT="$STAGE/out"
 mkdir -p "$BUILT/Swift"
 cp "$GEN/bmlib_ffi.swift" "$BUILT/Swift/"
@@ -182,10 +207,13 @@ else
   shallow_framework "$STAGE/ios" "$(lib aarch64-apple-ios dylib)" iPhoneOS
   shallow_framework "$STAGE/sim" "$STAGE/libsim.dylib" iPhoneSimulator
   deep_framework "$STAGE/macos" "$STAGE/libmac.dylib"
+  dsym "$STAGE/ios" "$(lib aarch64-apple-ios dylib)"
+  dsym "$STAGE/sim" "$(lib aarch64-apple-ios-sim dylib)" "$(lib x86_64-apple-ios dylib)"
+  dsym "$STAGE/macos" "$(lib aarch64-apple-darwin dylib)" "$(lib x86_64-apple-darwin dylib)"
   xcodebuild -create-xcframework \
-    -framework "$STAGE/ios/$NAME.framework" \
-    -framework "$STAGE/sim/$NAME.framework" \
-    -framework "$STAGE/macos/$NAME.framework" \
+    -framework "$STAGE/ios/$NAME.framework" -debug-symbols "$STAGE/ios/$NAME.framework.dSYM" \
+    -framework "$STAGE/sim/$NAME.framework" -debug-symbols "$STAGE/sim/$NAME.framework.dSYM" \
+    -framework "$STAGE/macos/$NAME.framework" -debug-symbols "$STAGE/macos/$NAME.framework.dSYM" \
     -output "$BUILT/$NAME.xcframework"
 fi
 
