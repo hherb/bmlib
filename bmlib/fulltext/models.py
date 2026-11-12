@@ -815,10 +815,10 @@ class FullTextSourceEntry:
         )
 
 
-# ``FullTextResult.pdf_download_failure`` when no PDF was downloaded beside
-# JATS because the search for one failed (#744).
+# ``FullTextResult.pdf_download_failure`` when the search for a PDF beside
+# JATS failed and no download that failed may pass (#744, #746).
 PDF_SEARCH_FAILED = "search-failed"
-# The causes a later try may cure besides an HTTP 429 or 5xx (#744).
+# The causes a later try may cure besides an HTTP 408, 429 or 5xx (#744, #746).
 _PDF_FAILURES_THAT_MAY_PASS = frozenset({"request-failed", PDF_SEARCH_FAILED})
 
 
@@ -864,9 +864,11 @@ class FullTextResult:
     #   "request-failed" — the request raised: a timeout, a reset, DNS, or a
     #                      defect in bmlib itself, which a retry will not cure
     #   "write-failed"   — the PDF arrived and the cache could not save it
-    #   "search-failed"  — only beside JATS (``fetch_pdf_with_jats``): no
-    #                      download was tried because the search for a PDF
-    #                      (Europe PMC's, Unpaywall's) failed (#744)
+    #   "search-failed"  — only beside JATS (``fetch_pdf_with_jats``): the
+    #                      search for a PDF (Europe PMC's, Unpaywall's)
+    #                      failed, and no download was tried (#744) or none
+    #                      that failed may pass (#746); ``pdf_url``, if set,
+    #                      is a download that failed finally
     #
     # ``None`` when the PDF was cached, and when no download was attempted —
     # no cache, or no ``identifier`` to key one by — as for every non-PDF tier.
@@ -907,13 +909,13 @@ class FullTextResult:
         """Whether a later try may get the PDF ``pdf_download_failure`` names (#744).
 
         True for the causes an outage gives: ``"request-failed"``,
-        ``"search-failed"``, ``"http-408"``, ``"http-429"`` and every
-        ``"http-5xx"`` (408 since #746). False for
-        every other cause, which the same request answers the same way, and
-        for ``None``. Some true ones never pass (a bot wall's 503; in Python a
-        defect in bmlib is ``"request-failed"`` too), which is why the service
-        bounds its retries and its second looks. The rule is shared with Rust
-        by ``tests/fixtures/pdf_failure_may_pass.json``.
+        ``"search-failed"``, ``"http-408"`` (since #746), ``"http-429"`` and
+        every ``"http-5xx"``. False for every other cause, which the same
+        request answers the same way, and for ``None``. Some true ones never
+        pass (a bot wall's 503; in Python a defect in bmlib is
+        ``"request-failed"`` too), which is why the service bounds its retries
+        and its second looks. The rule is shared with Rust by
+        ``tests/fixtures/pdf_failure_may_pass.json``.
         """
         cause = self.pdf_download_failure or ""
         if cause in _PDF_FAILURES_THAT_MAY_PASS:

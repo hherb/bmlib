@@ -846,13 +846,14 @@ class FullTextService:
                 are asked, then Europe PMC's free PDF (only when its search
                 resolves to the PMC ID the JATS came from, so the PDF is the
                 same article's), then Unpaywall; the first PDF saved goes on
-                the JATS result, else the first failure. A download that fails
-                for a cause that may pass is tried again with backoff
-                (:data:`PDF_BESIDE_JATS_ATTEMPTS`), and when no PDF is saved
-                and any failure may pass the cache marks the JATS, so a later
-                hit seeks the PDF again (#744); any other cached JATS hit is
-                served as it is. Declared last so positional construction
-                stays stable.
+                the JATS result, else the first failure that may pass, else a
+                failed search's ``"search-failed"``, else the first failure
+                (#746). A download that fails for a cause that may pass is
+                tried again with backoff (:data:`PDF_BESIDE_JATS_ATTEMPTS`),
+                and when no PDF is saved and any failure may pass the cache
+                marks the JATS, so a later hit seeks the PDF again (#744); any
+                other cached JATS hit is served as it is. Declared last so
+                positional construction stays stable.
 
         Raises:
             ImportError: If httpx cannot be imported, naming the extra that
@@ -1805,7 +1806,8 @@ class FullTextService:
 
         first_failure = pdf
         # The first failure a later lookup may cure (#744), the one reported
-        # when there is one, so the result's verdict is the mark's (#746).
+        # when there is one, so the mark is kept exactly when the result's
+        # failure may pass, bar the seek limit (#746).
         passing = pdf if pdf is not None and pdf.pdf_failure_may_pass else None
         for source, target, origin in candidates:
             if origin == "unpaywall":
@@ -1839,9 +1841,21 @@ class FullTextService:
         if passing is None and search_failed:
             # The search for a PDF failed and no download that failed may pass
             # (#744, #746): said on the result, so it does not read as "no PDF
-            # exists", nor a final download failure as the last word.
-            logger.info("The search for a PDF beside the JATS full text of %s failed", cache_id)
-            passing = FullTextResult(source=result.source, pdf_download_failure=PDF_SEARCH_FAILED)
+            # exists", nor a final download failure as the last word. That
+            # download's address stays on the result, and its cause in the log.
+            logger.info(
+                "The search for a PDF beside the JATS full text of %s failed%s",
+                cache_id,
+                f"; the PDF at {first_failure.pdf_url} failed finally"
+                f" ({first_failure.pdf_download_failure})"
+                if first_failure is not None
+                else "",
+            )
+            passing = FullTextResult(
+                source=result.source,
+                pdf_url=first_failure.pdf_url if first_failure is not None else None,
+                pdf_download_failure=PDF_SEARCH_FAILED,
+            )
         reported = passing or first_failure
         if searched or candidates or reported is not None:  # else no request made
             retry = passing is not None and seeks < PDF_SEEK_AGAIN_LIMIT

@@ -817,9 +817,10 @@ pub struct FullTextResult {
     /// body is not a PDF), `"request-failed"` (the request failed before an
     /// answer: a timeout, a reset, DNS), `"write-failed"` (the PDF arrived
     /// and the cache could not save it) or, only beside JATS
-    /// (`fetch_pdf_with_jats`), [`PDF_SEARCH_FAILED`] (no download was tried
-    /// because the search for a PDF, Europe PMC's or Unpaywall's, failed;
-    /// #744).
+    /// (`fetch_pdf_with_jats`), [`PDF_SEARCH_FAILED`] (the search for a PDF,
+    /// Europe PMC's or Unpaywall's, failed, and no download was tried, #744,
+    /// or none that failed may pass, #746; `pdf_url`, if set, is a download
+    /// that failed finally).
     ///
     /// `None` when the PDF was cached, and when no download was attempted — no
     /// cache, or no `identifier` to key one by — as for every non-PDF tier.
@@ -852,8 +853,8 @@ pub struct FullTextResult {
     pub tier_faults: Vec<String>,
 }
 
-/// [`FullTextResult::pdf_download_failure`] when no PDF was downloaded beside
-/// JATS because the search for one failed (#744).
+/// [`FullTextResult::pdf_download_failure`] when the search for a PDF beside
+/// JATS failed and no download that failed may pass (#744, #746).
 pub const PDF_SEARCH_FAILED: &str = "search-failed";
 
 impl FullTextResult {

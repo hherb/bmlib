@@ -131,8 +131,8 @@ fn fetch(
         fulltext_sources,
         pmc_id: request["pmc_id"].as_str().map(str::to_string),
         doi: request["doi"].as_str().map(str::to_string),
+        pmid: request["pmid"].as_str().unwrap_or_default().to_string(),
         identifier: request["identifier"].as_str().map(str::to_string),
-        ..FullTextRequest::default()
     };
     let result = service.fetch_fulltext(&request);
     let asked = client.asked.lock().expect("lock").clone();
@@ -158,6 +158,10 @@ fn check(name: &str, result: &FullTextResult, expected: &Value) {
         expected["pdf_download_failure"].as_str(),
         "{name}"
     );
+    if let Some(url) = expected.get("pdf_url") {
+        // Compared only where a case names it.
+        assert_eq!(result.pdf_url.as_deref(), url.as_str(), "{name}");
+    }
     assert_eq!(
         result.file_path.is_some(),
         expected["pdf_cached"].as_bool().unwrap_or(false),

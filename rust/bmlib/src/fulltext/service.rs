@@ -1465,11 +1465,12 @@ impl FullTextService {
     /// tried are asked, then Europe PMC's free PDF (only when its search
     /// resolves to the PMC ID the JATS came from, so the PDF is the same
     /// article's), then Unpaywall; the first PDF saved goes on the JATS result,
-    /// else the first failure. A download that fails for a cause that may pass
-    /// is tried again with backoff ([`PDF_BESIDE_JATS_ATTEMPTS`]), and when no
-    /// PDF is saved and any failure may pass the cache marks the JATS, so a
-    /// later hit seeks the PDF again (#744); any other cached JATS hit is
-    /// served as it is.
+    /// else the first failure that may pass, else a failed search's
+    /// [`PDF_SEARCH_FAILED`], else the first failure (#746). A download that
+    /// fails for a cause that may pass is tried again with backoff
+    /// ([`PDF_BESIDE_JATS_ATTEMPTS`]), and when no PDF is saved and any failure
+    /// may pass the cache marks the JATS, so a later hit seeks the PDF again
+    /// (#744); any other cached JATS hit is served as it is.
     #[must_use]
     pub fn with_fetch_pdf_with_jats(mut self, fetch_pdf_with_jats: bool) -> Self {
         self.fetch_pdf_with_jats = fetch_pdf_with_jats;
@@ -2116,7 +2117,8 @@ impl FullTextService {
 
         let mut first_failure = pdf.cloned();
         // The first failure a later lookup may cure (#744), the one reported
-        // when there is one, so the result's verdict is the mark's (#746).
+        // when there is one, so the mark is kept exactly when the result's
+        // failure may pass, bar the seek limit (#746).
         let mut passing = pdf.filter(|held| held.pdf_failure_may_pass()).cloned();
         let tried_any = searched || !candidates.is_empty();
         for (source, target, origin) in candidates {
@@ -2165,12 +2167,23 @@ impl FullTextService {
         if passing.is_none() && search_failed {
             // The search for a PDF failed and no download that failed may pass
             // (#744, #746): said on the result, so it does not read as "no PDF
-            // exists", nor a final download failure as the last word.
+            // exists", nor a final download failure as the last word. That
+            // download's address stays on the result, and its cause in the log.
+            let outranked = first_failure.as_ref().map_or_else(String::new, |failed| {
+                format!(
+                    "; the PDF at {} failed finally ({})",
+                    failed.pdf_url.as_deref().unwrap_or_default(),
+                    failed.pdf_download_failure.as_deref().unwrap_or_default()
+                )
+            });
             self.info(format!(
-                "The search for a PDF beside the JATS full text of {} failed",
+                "The search for a PDF beside the JATS full text of {} failed{outranked}",
                 cache_id.unwrap_or_default()
             ));
             passing = Some(FullTextResult {
+                pdf_url: first_failure
+                    .as_ref()
+                    .and_then(|failed| failed.pdf_url.clone()),
                 pdf_download_failure: Some(PDF_SEARCH_FAILED.to_string()),
                 ..empty_result(&result.source)
             });

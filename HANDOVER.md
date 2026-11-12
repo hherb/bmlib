@@ -4,24 +4,29 @@ _Last updated: 2026-11-12 (**#746 fixed, PR open — read *This session*
 first**). Merged since the last update: #745 (#744, below). Before it: #740
 (#656), #741 (#739, a caller's PDF no longer ends the search for JATS;
 `fetch_pdf_with_jats`), #742 (an xcframework dSYM per slice) and #743
-(evidence weight phase 1: RoB 2 with D5 from facts, the ladder). **0.13.0 is on PyPI** (tag `v0.13.0`
-on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io**
-from the same commit._
+(evidence weight phase 1: RoB 2 with D5 from facts, the ladder). **0.13.0
+is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and **the
+Rust crate 0.4.0 on crates.io** from the same commit._
 
 ## This session: the PDF beside JATS reports the failure that may pass (#746, PR open)
 
 StudyAnalyzer PR #108's review filed #746. Both languages:
 
 - **`http-408` may pass** (`pdf_failure_may_pass`; fixture row flipped), as
-  it does in bmlib's own LLM retries (`RETRYABLE_STATUSES`).
+  it does in bmlib's own LLM retries (Rust `RETRYABLE_STATUSES`, Python
+  `_RETRIED_STATUSES`), so a 408 is now retried within the run.
 - **The reported failure follows the mark**: with no PDF saved, the result
   carries the first failure that may pass, else `"search-failed"` when the
   search failed, else the first failure. It carried the first failure, so a
   403 then a 503 read final while the JATS was marked for a second look. A
-  failed search now outranks a final download's cause (the download's 403
-  is no longer on the result then). Two `fulltext_source.json` cases (and
-  `unpaywall_pdf.json`, the fixture's first Unpaywall body); the twin unit
-  tests that pinned the old rule now pin "none may pass, the first rides".
+  failed search now outranks a final download's cause: the download's
+  `pdf_url` stays on the result and its cause goes in the INFO line (the
+  finalcheck review caught the URL being dropped, a caller's own PDF link
+  included). Seven `fulltext_source.json` cases (and `unpaywall_pdf.json`,
+  the fixture's first Unpaywall body), which now compare `pdf_url` where a
+  case names it and pass `pmid`; they kill the first-vs-last, held-PDF and
+  search-outranks mutants. The twin unit tests that pinned the old rule now
+  pin "none may pass, the first rides".
 - The renderer-version pins were re-pinned (`models.py` changed, no
   rendering did).
 - **For StudyAnalyzer**: after the pin moves, its notice's "The fault may

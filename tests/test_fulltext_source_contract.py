@@ -85,6 +85,7 @@ def _fetch(
                 fulltext_sources=sources or None,
                 pmc_id=request.get("pmc_id"),
                 doi=request.get("doi"),
+                pmid=request.get("pmid", ""),
                 identifier=request.get("identifier"),
             )
     finally:  # a raising call must have asked for every answer too
@@ -97,6 +98,8 @@ def _check(result: FullTextResult, expected: dict[str, Any]) -> None:
     assert result.content_kind == expected["content_kind"]
     assert result.jats_xml == _body(expected["jats_xml"])
     assert result.pdf_download_failure == expected.get("pdf_download_failure")
+    if "pdf_url" in expected:  # compared only where a case names it
+        assert result.pdf_url == expected["pdf_url"]
     assert (result.file_path is not None) == expected.get("pdf_cached", False)
     assert result.tier_faults == expected.get("tier_faults", [])
 
