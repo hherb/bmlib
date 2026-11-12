@@ -2053,8 +2053,9 @@ impl FullTextService {
     /// Tier 0 tried none (its xml entry won first), Europe PMC's free PDF when
     /// its search resolves to the PMC ID the JATS came from, and Unpaywall by
     /// the caller's DOI or, failing that, that same hit's DOI. The first saved
-    /// goes on `result`; if none is, the first failure does. A failed search
-    /// or Unpaywall lookup is recorded on `failures`.
+    /// goes on `result`; if none is, the first failure that may pass does,
+    /// else a failed search's [`PDF_SEARCH_FAILED`], else the first failure
+    /// (#746). A failed search or Unpaywall lookup is recorded on `failures`.
     fn pdf_for_jats(
         &self,
         result: FullTextResult,
@@ -2067,9 +2068,6 @@ impl FullTextService {
         {
             return with_pdf(result, pdf);
         }
-        // Whether a failure seen here may pass, so a later lookup is worth
-        // making (#744): a failed search, or a download that failed so.
-        let mut may_pass = pdf.is_some_and(FullTextResult::pdf_failure_may_pass);
         let mut search_failed = false;
         // The search was asked here, so a request was made.
         let mut searched = false;
@@ -2117,6 +2115,9 @@ impl FullTextService {
         }
 
         let mut first_failure = pdf.cloned();
+        // The first failure a later lookup may cure (#744), the one reported
+        // when there is one, so the result's verdict is the mark's (#746).
+        let mut passing = pdf.filter(|held| held.pdf_failure_may_pass()).cloned();
         let tried_any = searched || !candidates.is_empty();
         for (source, target, origin) in candidates {
             let url = if origin == PdfOrigin::Unpaywall {
@@ -2154,29 +2155,33 @@ impl FullTextService {
                 self.mark_pdf_retry(cache_id, found.pmc_id, None);
                 return with_pdf(result, Some(&candidate));
             }
-            may_pass |= candidate.pdf_failure_may_pass();
+            if passing.is_none() && candidate.pdf_failure_may_pass() {
+                passing = Some(candidate.clone());
+            }
             if first_failure.is_none() {
                 first_failure = Some(candidate);
             }
         }
-        if first_failure.is_none() && search_failed {
-            // No download was tried because the search for one failed (#744):
-            // said on the result, so it does not read as "no PDF exists".
+        if passing.is_none() && search_failed {
+            // The search for a PDF failed and no download that failed may pass
+            // (#744, #746): said on the result, so it does not read as "no PDF
+            // exists", nor a final download failure as the last word.
             self.info(format!(
                 "The search for a PDF beside the JATS full text of {} failed",
                 cache_id.unwrap_or_default()
             ));
-            first_failure = Some(FullTextResult {
+            passing = Some(FullTextResult {
                 pdf_download_failure: Some(PDF_SEARCH_FAILED.to_string()),
                 ..empty_result(&result.source)
             });
         }
-        if tried_any || first_failure.is_some() {
+        let retry = passing.is_some() && found.seeks < PDF_SEEK_AGAIN_LIMIT;
+        let reported = passing.or(first_failure);
+        if tried_any || reported.is_some() {
             // Else no request was made, and the mark stays as it is.
-            let retry = (may_pass || search_failed) && found.seeks < PDF_SEEK_AGAIN_LIMIT;
             self.mark_pdf_retry(cache_id, found.pmc_id, retry.then_some(found.seeks));
         }
-        with_pdf(result, first_failure.as_ref())
+        with_pdf(result, reported.as_ref())
     }
 
     /// Download the PDF at `url` for a JATS result, retrying with backoff

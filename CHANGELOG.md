@@ -48,6 +48,15 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The PDF beside JATS reports the failure a later try may cure, and a 408
+  may pass** (#746), in Python and the Rust port alike. With no PDF saved,
+  the result carried the first failure, so a 403 from one source then a 503
+  from another read `pdf_failure_may_pass` false while the cache marked the
+  JATS for a second look. It now carries the first failure that may pass,
+  else `"search-failed"` when the search failed, else the first failure, so
+  the result's verdict is the mark's. `"http-408"` (Request Timeout) now
+  counts as one that may pass, as it does in bmlib's own LLM retries; the
+  fixture row is flipped.
 - **The PDF sought beside JATS is retried, sought again on a later hit, and a
   failed search for it is said** (#744), in Python and the Rust port alike,
   with `fetch_pdf_with_jats` on. A download that failed for a cause that may

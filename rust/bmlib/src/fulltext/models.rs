@@ -862,9 +862,10 @@ impl FullTextResult {
     /// (#744).
     ///
     /// True for an outage: `"request-failed"`, [`PDF_SEARCH_FAILED`],
-    /// `"http-429"` and every `"http-5xx"`. False for every other cause, which
-    /// the same request answers the same way, and for `None`. The rule is
-    /// shared with Python by `tests/fixtures/pdf_failure_may_pass.json`.
+    /// `"http-408"`, `"http-429"` and every `"http-5xx"` (408 since #746).
+    /// False for every other cause, which the same request answers the same
+    /// way, and for `None`. The rule is shared with Python by
+    /// `tests/fixtures/pdf_failure_may_pass.json`.
     #[must_use]
     pub fn pdf_failure_may_pass(&self) -> bool {
         let cause = self.pdf_download_failure.as_deref().unwrap_or_default();
@@ -875,7 +876,8 @@ impl FullTextResult {
             return false;
         };
         let digits = status.as_bytes();
-        status == "429"
+        status == "408"
+            || status == "429"
             || (digits.len() == 3
                 && digits[0] == b'5'
                 && digits[1..].iter().all(u8::is_ascii_digit))

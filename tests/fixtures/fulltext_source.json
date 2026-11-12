@@ -229,6 +229,24 @@
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml"}
   },
   {
+   "name": "pdf-beside-jats-reports-the-failure-that-may-pass",
+   "fetch_pdf_with_jats": true,
+   "request": {"pmc_id": "PMC123", "doi": "10.1/retry-f", "identifier": "10.1/retry-f"},
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 403}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}],
+   "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-503"},
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 403}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
+  },
+  {
+   "name": "pdf-beside-jats-failed-search-outranks-a-final-download",
+   "fetch_pdf_with_jats": true,
+   "request": {"pmc_id": "PMC123", "doi": "10.1/retry-g", "identifier": "10.1/retry-g"},
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 403}],
+   "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "search-failed", "tier_faults": ["FullTextError"]},
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
+  },
+  {
    "name": "pdf-beside-jats-converter-after-a-failed-search",
    "fetch_pdf_with_jats": true,
    "request": {"doi": "10.1/retry-e", "identifier": "10.1/retry-e"},

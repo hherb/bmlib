@@ -1,14 +1,34 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-11 (**#744 fixed, PR open — read *This session*
-first**). Merged since the last update: #740 (#656, below), #741 (#739, a
-caller's PDF no longer ends the search for JATS; `fetch_pdf_with_jats`),
-#742 (an xcframework dSYM per slice) and #743 (evidence weight phase 1:
-RoB 2 with D5 from facts, the ladder). **0.13.0 is on PyPI** (tag `v0.13.0`
+_Last updated: 2026-11-12 (**#746 fixed, PR open — read *This session*
+first**). Merged since the last update: #745 (#744, below). Before it: #740
+(#656), #741 (#739, a caller's PDF no longer ends the search for JATS;
+`fetch_pdf_with_jats`), #742 (an xcframework dSYM per slice) and #743
+(evidence weight phase 1: RoB 2 with D5 from facts, the ladder). **0.13.0 is on PyPI** (tag `v0.13.0`
 on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io**
 from the same commit._
 
-## This session: the PDF beside JATS is retried and sought again (#744, PR open)
+## This session: the PDF beside JATS reports the failure that may pass (#746, PR open)
+
+StudyAnalyzer PR #108's review filed #746. Both languages:
+
+- **`http-408` may pass** (`pdf_failure_may_pass`; fixture row flipped), as
+  it does in bmlib's own LLM retries (`RETRYABLE_STATUSES`).
+- **The reported failure follows the mark**: with no PDF saved, the result
+  carries the first failure that may pass, else `"search-failed"` when the
+  search failed, else the first failure. It carried the first failure, so a
+  403 then a 503 read final while the JATS was marked for a second look. A
+  failed search now outranks a final download's cause (the download's 403
+  is no longer on the result then). Two `fulltext_source.json` cases (and
+  `unpaywall_pdf.json`, the fixture's first Unpaywall body); the twin unit
+  tests that pinned the old rule now pin "none may pass, the first rides".
+- The renderer-version pins were re-pinned (`models.py` changed, no
+  rendering did).
+- **For StudyAnalyzer**: after the pin moves, its notice's "The fault may
+  be a passing one." follows the mark, and its own `download_may_recover`
+  agrees on 408.
+
+## Earlier: the PDF beside JATS is retried and sought again (#744, merged as PR #745)
 
 StudyAnalyzer PR #105's review filed #744; the maintainer chose the remedy's
 shape (2026-11-11): a mark for a later hit, and `pdf_download_failure`
@@ -64,35 +84,14 @@ reused for a failed search. Both languages, with `fetch_pdf_with_jats` on:
 
 ## Earlier: a saved page is not refused for its length (#656, merged as PR #740)
 
-The maintainer chose #656 and, once it was measured, its remedy in the same
-PR. `scripts/sample_html_pages.py --saved-dir` measures pages a browser saved
-with their resources inline; the saves were made by single-file-cli 2.19.0
-(npm, installed in the session scratchpad, not a dependency) with headless
-Chrome 157, one per DOI target of #726's corpus. Corpus:
-`tests/data/html_saved_page_shapes.json` (153 saves, 81 article-like). Under
-the old cap 6 of 81 (7.4%) were refused (up to 13.3 million code points,
-`data:` URIs a median 94% of each page), and all 6 converted beneath it (Python
-0.16 s and 88 MB at most, Rust 41 ms, the same text in both). So:
-
-- **Both languages cap `<`, not length**: `HTML_MAX_TAGS` = 666,666 (the old
-  cap over three, so the worst measured page's timing holds);
-  `HtmlPageTooLargeError.tags`, Rust `HtmlError::TooLarge { tags }`.
-- **Rust's budget is `3 × tags + 1,000`** (`ELEMENTS_PER_TAG`), since a budget
-  per code point grows with padding. Three is a bound above the most html5ever
-  was measured to imply without formatting rebuilds (`<col><td>` 2.5).
-  `rebuilding(40)` is now refused by Rust, converted by Python. The argument
-  is in DECISIONS (#656).
-- `HTML_CANONICAL_VERSION` stays 1 (every saved page's text is unchanged); the
-  renderer-version pin was re-pinned.
-- **Blind spot**: 61 of 153 saves are Cloudflare's challenge page (by DOI prefix
-  Elsevier 24, SAGE 7, Karger 6, ACS 5, OUP 4), which headless Chrome does not pass; a
-  non-headless re-run (it opens Chrome windows) would reach them. No Zotero
-  library was on the machine.
-- **For StudyAnalyzer**: `HtmlError::TooLarge { length: … }` literals (two
-  tests) become `{ tags: … }`; `config.rs`' note on `MAX_HTML_BYTES` cites the
-  old cap.
-- **#726** (merged as PR #738): answered by its measurement and closeable,
-  the maintainer's call. **#725** (memory under pressure) stays unmeasured.
+Both languages cap a page's `<` (`HTML_MAX_TAGS`, 666,666), not its length;
+Rust's element budget is `3 × tags + 1,000` (`ELEMENTS_PER_TAG`). The
+measurement (`scripts/sample_html_pages.py --saved-dir`, corpus
+`tests/data/html_saved_page_shapes.json`) and argument are in CHANGELOG and
+DECISIONS (#656). Still open from it: 61 of 153 saves were Cloudflare's
+challenge page (headless Chrome; a non-headless re-run would reach them);
+**#726** is answered by its measurement and closeable (the maintainer's
+call); **#725** (memory under pressure) stays unmeasured.
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 

@@ -3451,12 +3451,14 @@ fn with_it_on_unpaywall_is_asked_last() {
 }
 
 #[test]
-fn with_it_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats() {
+fn with_it_on_when_no_pdf_saves_and_none_may_pass_the_first_failure_rides() {
+    // One that may pass would outrank it (#746, fixture case
+    // pdf-beside-jats-reports-the-failure-that-may-pass).
     let dir = TempDir::new("pdf-jats-failed");
     let client = RoutedClient::new(pdf_route(
         "PMC123",
         None,
-        vec![("https://pub/x.pdf", 403), (RENDER, 503)],
+        vec![("https://pub/x.pdf", 403), (RENDER, 404)],
     ));
     let service = pdf_service(client.clone(), &dir, true);
     let request = FullTextRequest {

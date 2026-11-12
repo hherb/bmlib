@@ -907,7 +907,8 @@ class FullTextResult:
         """Whether a later try may get the PDF ``pdf_download_failure`` names (#744).
 
         True for the causes an outage gives: ``"request-failed"``,
-        ``"search-failed"``, ``"http-429"`` and every ``"http-5xx"``. False for
+        ``"search-failed"``, ``"http-408"``, ``"http-429"`` and every
+        ``"http-5xx"`` (408 since #746). False for
         every other cause, which the same request answers the same way, and
         for ``None``. Some true ones never pass (a bot wall's 503; in Python a
         defect in bmlib is ``"request-failed"`` too), which is why the service
@@ -918,7 +919,9 @@ class FullTextResult:
         if cause in _PDF_FAILURES_THAT_MAY_PASS:
             return True
         status = cause.removeprefix("http-")
-        return status != cause and (status == "429" or bool(re.fullmatch("5[0-9][0-9]", status)))
+        return status != cause and (
+            status in ("408", "429") or bool(re.fullmatch("5[0-9][0-9]", status))
+        )
 
 
 class SectionType(Enum):
