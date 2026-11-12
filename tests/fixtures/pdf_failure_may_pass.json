@@ -10,7 +10,7 @@
     {"cause": "http-599", "may_pass": true},
     {"cause": "http-404", "may_pass": false},
     {"cause": "http-403", "may_pass": false},
-    {"cause": "http-408", "may_pass": false},
+    {"cause": "http-408", "may_pass": true},
     {"cause": "http-600", "may_pass": false},
     {"cause": "http-5000", "may_pass": false},
     {"cause": "http-5x0", "may_pass": false},

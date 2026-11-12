@@ -1244,10 +1244,12 @@ class TestPdfWithJats:
         assert result.content_kind == "fulltext"
         assert (result.pdf_url, result.file_path) == (None, None)
 
-    def test_on_when_no_pdf_saves_the_first_failure_rides_on_the_jats(self, tmp_path):
+    def test_on_when_no_pdf_saves_and_none_may_pass_the_first_failure_rides(self, tmp_path):
+        # One that may pass would outrank it (#746, fixture case
+        # pdf-beside-jats-reports-the-failure-that-may-pass).
         sources = [FullTextSourceEntry(url="https://pub/x.pdf", format="pdf", source="publisher")]
         service = self._service(tmp_path, on=True)
-        route = self._route(pdf_status={"https://pub/x.pdf": 403, self.RENDER: 503})
+        route = self._route(pdf_status={"https://pub/x.pdf": 403, self.RENDER: 404})
         with patch.object(service, "_http_get", side_effect=route) as http_get:
             result = service.fetch_fulltext(
                 fulltext_sources=sources, pmc_id="PMC123", doi="10.1/x", identifier="10.1/x"

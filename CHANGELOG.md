@@ -48,6 +48,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The PDF beside JATS reports the failure a later try may cure, and a 408
+  may pass** (#746), in Python and the Rust port alike. With no PDF saved,
+  the result carried the first failure, so a 403 from one source then a 503
+  from another read `pdf_failure_may_pass` false while the cache marked the
+  JATS for a second look. It now carries the first failure that may pass,
+  else `"search-failed"` when the search failed, else the first failure, so
+  the mark is kept exactly when the result's failure may pass, bar the seek
+  limit. A `"search-failed"` that outranks a final download keeps that
+  download's `pdf_url`, and its cause is in the INFO line. `"http-408"`
+  (Request Timeout) now counts as one that may pass, as it does in bmlib's
+  own LLM retries, so a 408 is now retried within the run and marks the JATS
+  for a second look; the fixture row is flipped.
 - **The PDF sought beside JATS is retried, sought again on a later hit, and a
   failed search for it is said** (#744), in Python and the Rust port alike,
   with `fetch_pdf_with_jats` on. A download that failed for a cause that may
@@ -261,7 +273,7 @@ All notable changes to bmlib are documented here. The format is based on
   `scripts/make_rob2_algorithm.py` (hand-listed `official` cases plus every
   walk of every domain).
 
-- **`FullTextService(fetch_pdf_with_jats=True)`** (Rust `with_fetch_pdf_with_jats(true)`) looks for a PDF once JATS is found, for an app that processes the JATS and shows the PDF (#739). Off by default, so JATS ends the search. When on, a JATS result without a saved PDF asks the caller's `pdf` entries Tier 0 did not try, then Europe PMC's free PDF, only when its search itself resolves to the PMC ID the JATS came from (an ID the ID Converter gave does not count), so the PDF is the same article's, then Unpaywall. The first PDF saved goes on the JATS result, else the first failure. A JATS hit already cached without a PDF is served as it is.
+- **`FullTextService(fetch_pdf_with_jats=True)`** (Rust `with_fetch_pdf_with_jats(true)`) looks for a PDF once JATS is found, for an app that processes the JATS and shows the PDF (#739). Off by default, so JATS ends the search. When on, a JATS result without a saved PDF asks the caller's `pdf` entries Tier 0 did not try, then Europe PMC's free PDF, only when its search itself resolves to the PMC ID the JATS came from (an ID the ID Converter gave does not count), so the PDF is the same article's, then Unpaywall. The first PDF saved goes on the JATS result, else the first failure that may pass, else a failed search's `"search-failed"`, else the first failure (#746). A JATS hit already cached without a PDF is served as it is.
 - **`scripts/sample_html_pages.py --saved-dir`, saved pages measured** (#656).
   Pages a browser saved with their resources inline, one per DOI target of
   the fetched corpus, are measured as fetched ones are, plus each page's
