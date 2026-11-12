@@ -65,6 +65,10 @@ logger = logging.getLogger(__name__)
 EUROPE_PMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 DOI_BASE = "https://doi.org"
+# PMC's article datasets on AWS Open Data (#748): a public bucket NLM provides
+# for programmatic access, read where bot screens refuse the publisher's and
+# Europe PMC's PDF links to a client that is not a browser.
+PMC_OPEN_DATA_BASE = "https://pmc-oa-opendata.s3.amazonaws.com"
 
 # Which tier is downloading a PDF. A Literal, not a str, because the value set
 # being bounded is a correctness property and not a matter of taste: it keys
@@ -73,7 +77,7 @@ DOI_BASE = "https://doi.org"
 # wrong answer, in scope at all three call sites — is remote-data-derived at
 # Tier 0, so a checker rejecting it here is worth more than the paragraph that
 # used to ask a reader not to write it. See `_download_and_cache_pdf`.
-_PdfOrigin = Literal["europepmc_pdf", "unpaywall", "known_source"]
+_PdfOrigin = Literal["europepmc_pdf", "unpaywall", "known_source", "pmc_open_data"]
 
 # How much of the article each ``content_kind`` carries, for deciding whether a
 # re-fetch over a stale cached rendering returned less than it (#172). Keyed on
@@ -478,6 +482,28 @@ def _pick_oa_pdf_url(data: Any) -> str | None:
         if pdf_url:
             return pdf_url
     return None
+
+
+def _latest_open_data_version(listing: str, pmc_id: str) -> int | None:
+    """The highest version of *pmc_id* a PMC Open Data listing names (#748).
+
+    Args:
+        listing: The body of ``?list-type=2&prefix=<pmc_id>.&delimiter=/``,
+            whose ``<Prefix>`` elements name one ``<pmc_id>.<version>/`` each.
+        pmc_id: The canonical PMC ID asked for, ``PMC`` and ASCII digits.
+
+    Returns:
+        The largest version, compared as a number (a listing sorts ``.10/``
+        before ``.2/``), or ``None`` when the bucket holds no version.
+    """
+    pattern = re.compile(rf"<Prefix>{re.escape(pmc_id)}\.([0-9]+)/</Prefix>")
+    versions = [int(v) for v in pattern.findall(listing)]
+    return max(versions) if versions else None
+
+
+def _open_data_pdf_key(pmc_id: str, version: int) -> str:
+    """The bucket key of *pmc_id*'s PDF at *version*: ``PMC1.2/PMC1.2.pdf`` (#748)."""
+    return f"{pmc_id}.{version}/{pmc_id}.{version}.pdf"
 
 
 def _is_text(value: object) -> TypeGuard[str]:
@@ -1747,11 +1773,13 @@ class FullTextService:
         The caller's PDF from Tier 0 rides on it as is unless
         :attr:`fetch_pdf_with_jats` is on and that PDF is missing or failed.
         Then a PDF is sought: the caller's ``pdf`` entries when Tier 0 tried
-        none (its xml entry won first), Europe PMC's free PDF when its search
-        resolves to *pmc_id*, and Unpaywall by *doi* or, failing that, that
-        same hit's DOI. The first saved goes on *result*; if none is, the
-        first failure that may pass does, else a failed search's
-        ``"search-failed"``, else the first failure (#746).
+        none (its xml entry won first), *pmc_id*'s in PMC's AWS Open Data
+        bucket (#748), Europe PMC's free PDF when its search resolves to
+        *pmc_id*, and Unpaywall by *doi* or, failing that, that same hit's
+        DOI. The first saved goes on *result*; if none is, the first failure
+        that may pass does, else a failed search's ``"search-failed"`` (a
+        failed Open Data listing or Unpaywall lookup counts as one), else the
+        first failure (#746).
 
         Args:
             result: The JATS full text found.
@@ -1769,8 +1797,8 @@ class FullTextService:
                 JATS's article.
             cache_id: Sanitised cache key, or ``None`` (a PDF is then left as
                 a URL, as every PDF tier leaves it).
-            failures: The run's exhaustion report; a failed search or
-                Unpaywall lookup is recorded on it.
+            failures: The run's exhaustion report; a failed search, Open
+                Data listing or Unpaywall lookup is recorded on it.
             seeks: How many cache hits, this one included, have sought the
                 PDF again (#744); 0 in the tier chain. A hit tries each
                 candidate once, the chain up to
@@ -1788,6 +1816,7 @@ class FullTextService:
         if pdf is None:
             candidates += [(e.source, e.url, "known_source") for e in sources if e.format == "pdf"]
         hit_doi: str | None = None
+        render_url: str | None = None
         if pmc_id and (doi or pmid):
             if search is None:
                 _, search = self._discover_pmc_id(
@@ -1795,11 +1824,13 @@ class FullTextService:
                 )
                 searched = True
                 search_failed = search is None
-            found_id, render_url, found_doi = search or (None, None, None)
+            found_id, found_render, found_doi = search or (None, None, None)
             if found_id == pmc_id:  # the same article's PDF only
-                hit_doi = found_doi
-                if render_url:
-                    candidates.append(("europepmc_pdf", render_url, "europepmc_pdf"))
+                hit_doi, render_url = found_doi, found_render
+        if pmc_id:  # the JATS's own article, so no search need name it (#748)
+            candidates.append(("pmc_open_data", pmc_id, "pmc_open_data"))
+        if render_url:
+            candidates.append(("europepmc_pdf", render_url, "europepmc_pdf"))
         unpaywall_doi = doi or hit_doi
         if unpaywall_doi:
             candidates.append(("unpaywall", unpaywall_doi, "unpaywall"))
@@ -1810,13 +1841,16 @@ class FullTextService:
         # failure may pass, bar the seek limit (#746).
         passing = pdf if pdf is not None and pdf.pdf_failure_may_pass else None
         for source, target, origin in candidates:
-            if origin == "unpaywall":
+            if origin in ("unpaywall", "pmc_open_data"):
                 try:
-                    url = self._fetch_unpaywall(target)
+                    if origin == "unpaywall":
+                        url = self._fetch_unpaywall(target)
+                    else:
+                        url = self._fetch_pmc_open_data_pdf(target)
                 except Exception as exc:
-                    logger.debug("Unpaywall failed for DOI %s", target, exc_info=True)
+                    logger.debug("%s failed for %s", source, target, exc_info=True)
                     failures.record(exc)
-                    # Unpaywall answering it has no free PDF is no failure.
+                    # Answering it has no free PDF is no failure.
                     search_failed |= not isinstance(exc, FullTextUnavailableError)
                     continue
             else:
@@ -1988,9 +2022,9 @@ class FullTextService:
         if marked is None:
             return cached
         pmc_id, seeks = marked
-        # What _pdf_for_jats could ask: a pdf source, Unpaywall by DOI, or the
-        # search for the PMC ID by DOI or PMID.
-        if not (any(e.format == "pdf" for e in sources) or doi or (pmc_id and pmid)):
+        # What _pdf_for_jats could ask: a pdf source, Unpaywall by DOI, or PMC
+        # Open Data and the search by the PMC ID (#748).
+        if not (any(e.format == "pdf" for e in sources) or doi or pmc_id):
             return cached
         seeks += 1
         if not self._mark_pdf_retry(
@@ -3063,6 +3097,43 @@ class FullTextService:
         if not article.has_body and not article.abstract_sections:
             raise FullTextUnavailableError(f"NCBI PMC returned no article content for {normalized}")
         return html, article.has_body, resp.content
+
+    def _fetch_pmc_open_data_pdf(self, pmc_id: str) -> str:
+        """The URL of *pmc_id*'s PDF in PMC's AWS Open Data bucket (#748).
+
+        Two listings, each a small XML page: the article's versions, then
+        whether the latest one holds a PDF, so a missing PDF is an answer
+        rather than a failed download. Only the latest version is taken, the
+        one Europe PMC's JATS is of.
+
+        Raises:
+            FullTextError: On a listing answered other than 200.
+            FullTextUnavailableError: When the bucket holds no version of the
+                article, or its latest holds no PDF: the bucket answering
+                that it has none, as most articles outside PMC's open-access
+                subset are.
+        """
+        pmc_id = _normalise_pmc_id(pmc_id)
+        listing = self._open_data_listing(f"prefix={quote(pmc_id + '.')}&delimiter=/")
+        version = _latest_open_data_version(listing, pmc_id)
+        if version is None:
+            raise FullTextUnavailableError(f"{pmc_id} is not in PMC's Open Data bucket")
+        key = _open_data_pdf_key(pmc_id, version)
+        if f"<Key>{key}</Key>" not in self._open_data_listing(f"prefix={quote(key)}&max-keys=1"):
+            raise FullTextUnavailableError(f"{pmc_id}.{version} has no PDF in PMC's Open Data")
+        return f"{PMC_OPEN_DATA_BASE}/{key}"
+
+    def _open_data_listing(self, query: str) -> str:
+        """One ``ListObjectsV2`` page of PMC's Open Data bucket, its body as text.
+
+        Raises:
+            FullTextError: On a response other than 200.
+        """
+        resp = self._http_get(f"{PMC_OPEN_DATA_BASE}/?list-type=2&{query}")
+        if resp.status_code != 200:
+            raise FullTextError(f"PMC Open Data HTTP {resp.status_code}")
+        # Lossy: only the ASCII keys are read, so a stray byte costs nothing.
+        return resp.content.decode("utf-8", errors="replace")
 
     def _fetch_unpaywall(self, doi: str) -> str:
         """Query Unpaywall for open-access PDF URL.

@@ -95,6 +95,20 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The PDF beside JATS from PMC's AWS Open Data bucket** (#748; both
+  languages). With `fetch_pdf_with_jats` on, the PDF beside a JATS full text
+  is sought, after the caller's `pdf` entries and before Europe PMC's
+  `?pdf=render`, in `PMC_OPEN_DATA_BASE` (`pmc-oa-opendata`, a public bucket
+  NLM provides for programmatic access): the latest version's
+  `PMC<n>.<v>/PMC<n>.<v>.pdf`, found by two `ListObjectsV2` pages, so an
+  article or PDF the bucket lacks is an absence; a listing that fails counts
+  as a failed search (`"search-failed"`). On 2026-11-12 the publisher's,
+  Europe PMC's and Unpaywall's links to PMC12609458 (CC BY) all answered a bot
+  screen's 403 to bmlib, and the bucket served its PDF. A cached JATS hit whose
+  mark names a PMC ID can now seek it again without a DOI or PMID. **Moves
+  what a fixture scripts**: every PDF-beside-JATS case answers one more
+  request, the bucket's listing.
+
 - **The PDF beside JATS, retried and sought again** (#744; see Fixed):
   `FullTextService.pdf_retry_delay`, `PDF_BESIDE_JATS_ATTEMPTS`,
   `PDF_RETRY_DELAY`, `PDF_SEEK_AGAIN_LIMIT`, `PDF_SEARCH_FAILED`,

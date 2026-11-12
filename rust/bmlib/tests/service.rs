@@ -28,6 +28,7 @@ use bmlib::fulltext::{
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
     JATSReferenceInfo, JATSTableInfo, PdfError, PdfExtractError, PdfExtractor, PdfText,
     TierFailures, TierFault, PDF_BESIDE_JATS_ATTEMPTS, PDF_RETRY_SUFFIX, PDF_SEEK_AGAIN_LIMIT,
+    PMC_OPEN_DATA_BASE,
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use serde_json::{json, Map, Value};
@@ -3013,13 +3014,17 @@ const RENDER: &str = "https://europepmc.org/render/PMC123.pdf";
 
 /// JATS for PMC123 and for `https://pub/x.xml`, a search hit resolving to
 /// `search_pmcid` with Europe PMC's free PDF, Unpaywall pointing at
-/// `unpaywall_pdf`, and each URL in `pdfs` answering with its status.
+/// `unpaywall_pdf`, and each URL in `pdfs` answering with its status. PMC
+/// Open Data lists no article (#748).
 fn pdf_route(
     search_pmcid: &'static str,
     unpaywall_pdf: Option<&'static str>,
     pdfs: Vec<(&'static str, u16)>,
 ) -> impl Fn(&str) -> HttpResponse + Send + Sync + 'static {
     move |url: &str| {
+        if url.starts_with(&format!("{PMC_OPEN_DATA_BASE}/?")) {
+            return HttpResponse::ok_text("<ListBucketResult></ListBucketResult>");
+        }
         if let Some((_, status)) = pdfs.iter().find(|(pdf, _)| *pdf == url) {
             return HttpResponse::from_bytes(*status, b"%PDF-1.4 fake".to_vec());
         }
@@ -3154,6 +3159,11 @@ fn a_marked_hit_that_can_try_nothing_keeps_the_mark() {
     pdf_service(failing, &dir, true)
         .fetch_fulltext(&by_pmc_id())
         .expect("retrieved");
+    // A mark naming no PMC ID, as a Tier 0 xml entry's JATS leaves it: a PMC
+    // ID alone could be sought in PMC Open Data (#748).
+    dir.cache()
+        .save_pdf_retry("10.1/x", None, 0)
+        .expect("marked");
     let before = std::fs::read_to_string(pdf_mark(&dir)).expect("marked");
     let silent = RoutedClient::new(pdf_route("PMC123", None, vec![]));
     let request = FullTextRequest {
@@ -3234,8 +3244,9 @@ fn an_unreadable_pdf_mark_is_removed_and_the_hit_served() {
 
 #[test]
 fn a_marked_hit_whose_search_answers_with_no_pdf_ends_the_mark() {
-    // No DOI, and the hit names another article: the search is the only
-    // request, and it answered, so the mark must not outlive it (#744).
+    // No DOI, and the hit names another article: the search and PMC Open
+    // Data's listing (#748) are the only requests, and both answered, so the
+    // mark must not outlive them (#744).
     let dir = TempDir::new("pdf-jats-search-answered");
     let client = RoutedClient::new(pdf_route("PMC123", None, vec![]));
     pdf_service(client, &dir, true)
@@ -3260,7 +3271,8 @@ fn a_marked_hit_whose_search_answers_with_no_pdf_ends_the_mark() {
         .iter()
         .map(|url| url.contains("/search?"))
         .collect();
-    assert_eq!(asked, vec![true]);
+    assert_eq!(asked, vec![true, false]);
+    assert!(other.requests()[1].starts_with(PMC_OPEN_DATA_BASE));
     assert_eq!(
         (hit.source.as_str(), hit.pdf_download_failure.as_deref()),
         ("cached", None)

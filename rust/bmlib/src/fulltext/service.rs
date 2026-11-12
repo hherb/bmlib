@@ -118,6 +118,11 @@ pub const UNPAYWALL_BASE: &str = "https://api.unpaywall.org/v2";
 /// The DOI resolver base, for the final link-only fallback.
 pub const DOI_BASE: &str = "https://doi.org";
 
+/// PMC's article datasets on AWS Open Data (#748): a public bucket NLM
+/// provides for programmatic access, read where bot screens refuse the
+/// publisher's and Europe PMC's PDF links to a client that is not a browser.
+pub const PMC_OPEN_DATA_BASE: &str = "https://pmc-oa-opendata.s3.amazonaws.com";
+
 /// PubMed's web base, for the fallback when there is a PMID and no DOI.
 pub const PUBMED_BASE: &str = "https://pubmed.ncbi.nlm.nih.gov";
 
@@ -737,6 +742,29 @@ fn fetch_error_name(error: &FetchError) -> &'static str {
     }
 }
 
+/// The highest version of `pmc_id` a PMC Open Data listing names (#748).
+///
+/// `listing` is the body of `?list-type=2&prefix=<pmc_id>.&delimiter=/`, whose
+/// `<Prefix>` elements name one `<pmc_id>.<version>/` each; `pmc_id` is
+/// canonical, `PMC` and ASCII digits. The versions are compared as numbers (a
+/// listing sorts `.10/` before `.2/`); `None` when the bucket holds no version.
+fn latest_open_data_version(listing: &str, pmc_id: &str) -> Option<u64> {
+    let pattern = Regex::new(&format!(
+        r"<Prefix>{}\.([0-9]+)/</Prefix>",
+        regex::escape(pmc_id)
+    ))
+    .expect("an escaped PMC ID makes a valid pattern");
+    pattern
+        .captures_iter(listing)
+        .filter_map(|found| found[1].parse::<u64>().ok())
+        .max()
+}
+
+/// The bucket key of `pmc_id`'s PDF at `version`: `PMC1.2/PMC1.2.pdf` (#748).
+fn open_data_pdf_key(pmc_id: &str, version: u64) -> String {
+    format!("{pmc_id}.{version}/{pmc_id}.{version}.pdf")
+}
+
 /// One response body read as **strict** UTF-8, for the text tiers.
 ///
 /// The counterpart of `FullTextService::http_get` for the callers that read
@@ -1285,6 +1313,8 @@ enum PdfOrigin {
     Unpaywall,
     /// Tier 0, a fetcher-supplied source.
     KnownSource,
+    /// Beside JATS, PMC's AWS Open Data bucket (#748).
+    PmcOpenData,
 }
 
 impl PdfOrigin {
@@ -1294,6 +1324,7 @@ impl PdfOrigin {
             PdfOrigin::EuropepmcPdf => "europepmc_pdf",
             PdfOrigin::Unpaywall => "unpaywall",
             PdfOrigin::KnownSource => "known_source",
+            PdfOrigin::PmcOpenData => "pmc_open_data",
         }
     }
 }
@@ -2051,12 +2082,14 @@ impl FullTextService {
     /// The caller's PDF from Tier 0 rides on it as is unless
     /// [`FullTextService::with_fetch_pdf_with_jats`] is on and that PDF is
     /// missing or failed. Then a PDF is sought: the caller's `pdf` entries when
-    /// Tier 0 tried none (its xml entry won first), Europe PMC's free PDF when
-    /// its search resolves to the PMC ID the JATS came from, and Unpaywall by
-    /// the caller's DOI or, failing that, that same hit's DOI. The first saved
-    /// goes on `result`; if none is, the first failure that may pass does,
-    /// else a failed search's [`PDF_SEARCH_FAILED`], else the first failure
-    /// (#746). A failed search or Unpaywall lookup is recorded on `failures`.
+    /// Tier 0 tried none (its xml entry won first), the PMC ID's in PMC's AWS
+    /// Open Data bucket (#748), Europe PMC's free PDF when its search resolves
+    /// to the PMC ID the JATS came from, and Unpaywall by the caller's DOI or,
+    /// failing that, that same hit's DOI. The first saved goes on `result`; if
+    /// none is, the first failure that may pass does, else a failed search's
+    /// [`PDF_SEARCH_FAILED`] (a failed Open Data listing or Unpaywall lookup
+    /// counts as one), else the first failure (#746). A failed search, Open
+    /// Data listing or Unpaywall lookup is recorded on `failures`.
     fn pdf_for_jats(
         &self,
         result: FullTextResult,
@@ -2091,6 +2124,7 @@ impl FullTextService {
         }
         let pmid = found.request.pmid.as_str();
         let mut hit_doi: Option<String> = None;
+        let mut europepmc_render: Option<String> = None;
         if let Some(pmc_id) = found.pmc_id {
             if found.doi.is_some() || !pmid.is_empty() {
                 let (found_id, render_url, found_doi) = match &found.search {
@@ -2105,11 +2139,18 @@ impl FullTextService {
                 if found_id.as_deref() == Some(pmc_id) {
                     // The same article's PDF only.
                     hit_doi = found_doi;
-                    if let Some(url) = render_url {
-                        candidates.push(("europepmc_pdf".into(), url, PdfOrigin::EuropepmcPdf));
-                    }
+                    europepmc_render = render_url;
                 }
             }
+            // The JATS's own article, so no search need name it (#748).
+            candidates.push((
+                "pmc_open_data".into(),
+                pmc_id.to_string(),
+                PdfOrigin::PmcOpenData,
+            ));
+        }
+        if let Some(url) = europepmc_render {
+            candidates.push(("europepmc_pdf".into(), url, PdfOrigin::EuropepmcPdf));
         }
         if let Some(doi) = found.doi.map(str::to_string).or(hit_doi) {
             candidates.push(("unpaywall".into(), doi, PdfOrigin::Unpaywall));
@@ -2122,22 +2163,21 @@ impl FullTextService {
         let mut passing = pdf.filter(|held| held.pdf_failure_may_pass()).cloned();
         let tried_any = searched || !candidates.is_empty();
         for (source, target, origin) in candidates {
-            let url = if origin == PdfOrigin::Unpaywall {
-                match self.fetch_unpaywall(&target) {
-                    Ok(url) => url,
-                    Err(fault) => {
-                        self.debug(format!(
-                            "Unpaywall failed for DOI {target}: {}",
-                            fault.message
-                        ));
-                        failures.record(&fault);
-                        // Unpaywall answering it has no free PDF is no failure.
-                        search_failed |= fault.kind != FaultKind::Unavailable;
-                        continue;
-                    }
+            let resolved = match origin {
+                PdfOrigin::Unpaywall => Some(self.fetch_unpaywall(&target)),
+                PdfOrigin::PmcOpenData => Some(self.fetch_pmc_open_data_pdf(&target)),
+                PdfOrigin::EuropepmcPdf | PdfOrigin::KnownSource => None,
+            };
+            let url = match resolved {
+                None => target,
+                Some(Ok(url)) => url,
+                Some(Err(fault)) => {
+                    self.debug(format!("{source} failed for {target}: {}", fault.message));
+                    failures.record(&fault);
+                    // Answering it has no free PDF is no failure.
+                    search_failed |= fault.kind != FaultKind::Unavailable;
+                    continue;
                 }
-            } else {
-                target
             };
             let attempts = if found.seeks > 0 {
                 1
@@ -2321,14 +2361,14 @@ impl FullTextService {
         };
         let doi = request.doi.as_deref().filter(|doi| !doi.is_empty());
         let pmc_id = Some(marked.as_str()).filter(|id| !id.is_empty());
-        // What pdf_for_jats could ask: a pdf source, Unpaywall by DOI, or the
-        // search for the PMC ID by DOI or PMID.
+        // What pdf_for_jats could ask: a pdf source, Unpaywall by DOI, or PMC
+        // Open Data and the search by the PMC ID (#748).
         let can_try = request
             .fulltext_sources
             .iter()
             .any(|entry| entry.format == "pdf")
             || doi.is_some()
-            || (pmc_id.is_some() && !request.pmid.is_empty());
+            || pmc_id.is_some();
         if !can_try {
             return hit;
         }
@@ -3554,6 +3594,59 @@ impl FullTextService {
         ))
     }
 
+    /// The URL of `pmc_id`'s PDF in PMC's AWS Open Data bucket (#748).
+    ///
+    /// Two listings, each a small XML page: the article's versions, then
+    /// whether the latest one holds a PDF, so a missing PDF is an answer
+    /// rather than a failed download. Only the latest version is taken, the
+    /// one Europe PMC's JATS is of.
+    ///
+    /// # Errors
+    ///
+    /// [`TierFault::fault`] on a listing answered other than 200, or a bad id.
+    /// [`TierFault::unavailable`] when the bucket holds no version of the
+    /// article, or its latest holds no PDF: the bucket answering that it has
+    /// none, as most articles outside PMC's open-access subset are.
+    fn fetch_pmc_open_data_pdf(&self, pmc_id: &str) -> Result<String, TierFault> {
+        let pmc_id = normalise_pmc_id(pmc_id).map_err(TierFault::from)?;
+        let listing = self.open_data_listing(&format!(
+            "prefix={}&delimiter=/",
+            quote(&format!("{pmc_id}."), "/")
+        ))?;
+        let Some(version) = latest_open_data_version(&listing, &pmc_id) else {
+            return Err(TierFault::unavailable(format!(
+                "{pmc_id} is not in PMC's Open Data bucket"
+            )));
+        };
+        let key = open_data_pdf_key(&pmc_id, version);
+        let listing = self.open_data_listing(&format!("prefix={}&max-keys=1", quote(&key, "/")))?;
+        if !listing.contains(&format!("<Key>{key}</Key>")) {
+            return Err(TierFault::unavailable(format!(
+                "{pmc_id}.{version} has no PDF in PMC's Open Data"
+            )));
+        }
+        Ok(format!("{PMC_OPEN_DATA_BASE}/{key}"))
+    }
+
+    /// One `ListObjectsV2` page of PMC's Open Data bucket, its body as text.
+    ///
+    /// Read lossily: only the ASCII keys are read, so a stray byte costs
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`TierFault::fault`] on a response other than 200.
+    fn open_data_listing(&self, query: &str) -> Result<String, TierFault> {
+        let response = self.http_get(&format!("{PMC_OPEN_DATA_BASE}/?list-type=2&{query}"))?;
+        if response.status != 200 {
+            return Err(TierFault::fault(
+                "FullTextError",
+                format!("PMC Open Data HTTP {}", response.status),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&response.body).into_owned())
+    }
+
     /// Query Unpaywall for an open-access PDF URL.
     ///
     /// # Errors
@@ -3776,6 +3869,36 @@ fn default_cache_at(default: Option<FullTextCache>) -> Option<FullTextCache> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `delimiter=/` listing for `PMC123.`, naming `prefixes` (#748).
+    fn open_data_listing(prefixes: &[&str]) -> String {
+        let common: String = prefixes
+            .iter()
+            .map(|prefix| format!("<CommonPrefixes><Prefix>{prefix}</Prefix></CommonPrefixes>"))
+            .collect();
+        format!("<ListBucketResult><Prefix>PMC123.</Prefix>{common}</ListBucketResult>")
+    }
+
+    #[test]
+    fn the_latest_open_data_version_is_the_largest_by_number() {
+        let listing = open_data_listing(&["PMC123.1/", "PMC123.10/", "PMC123.2/"]);
+        assert_eq!(latest_open_data_version(&listing, "PMC123"), Some(10));
+    }
+
+    #[test]
+    fn an_open_data_article_whose_id_extends_this_one_is_not_read() {
+        let listing = open_data_listing(&["PMC1231.4/"]);
+        assert_eq!(latest_open_data_version(&listing, "PMC123"), None);
+    }
+
+    #[test]
+    fn an_empty_open_data_listing_names_no_version() {
+        // Its own <Prefix>PMC123.</Prefix> echo is no version.
+        assert_eq!(
+            latest_open_data_version(&open_data_listing(&[]), "PMC123"),
+            None
+        );
+    }
 
     /// **Every arm of [`fetch_error_name`] is Python's exception name.**
     ///
