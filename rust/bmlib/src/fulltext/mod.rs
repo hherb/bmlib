@@ -85,8 +85,8 @@ pub use service::{
     FullTextService, LogLevel, LogLine, PdfExtractError, PdfExtractor, PdfText, TierFailures,
     TierFault, BUG_TYPE_NAMES, DOI_BASE, EUROPE_PMC_BASE, EUTILS_EFETCH_URL, EUTILS_TOOL_NAME,
     FREE_PDF_AVAILABILITY_CODES, FREE_PDF_AVAILABILITY_LABELS, NCBI_IDCONV_URL,
-    PDF_BESIDE_JATS_ATTEMPTS, PDF_RETRY_DELAY, PDF_SEEK_AGAIN_LIMIT, PUBMED_BASE, TIMEOUT,
-    UNPAYWALL_BASE,
+    PDF_BESIDE_JATS_ATTEMPTS, PDF_RETRY_DELAY, PDF_SEEK_AGAIN_LIMIT, PMC_OPEN_DATA_BASE,
+    PUBMED_BASE, TIMEOUT, UNPAYWALL_BASE,
 };
 pub use titles::{
     accepted_metadata_title, accepted_metadata_title_why, looks_like_junk, normalise,

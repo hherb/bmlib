@@ -198,7 +198,7 @@
    "name": "pdf-beside-jats-retried-until-saved",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-a", "identifier": "10.1/retry-a"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 503}, {"raise": "transport"}, {"status": 200, "body_file": "textless.pdf"}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 503}, {"raise": "transport"}, {"status": 200, "body_file": "textless.pdf"}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true},
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
@@ -206,25 +206,25 @@
    "name": "pdf-beside-jats-retries-spent-then-sought-again",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-b", "identifier": "10.1/retry-b"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 503}, {"status": 502}, {"status": 429}, {"status": 404}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 503}, {"status": 502}, {"status": 429}, {"status": 404}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-429"},
-   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
   {
    "name": "pdf-beside-jats-search-failed-then-sought-again",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-c", "identifier": "10.1/retry-c"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 503}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 503}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "search-failed", "tier_faults": ["FullTextError", "FullTextError"]},
-   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
   {
    "name": "pdf-beside-jats-final-failure-not-sought-again",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-d", "identifier": "10.1/retry-d"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 404}, {"status": 404}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 404}, {"status": 404}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-404"},
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml"}
   },
@@ -232,27 +232,27 @@
    "name": "pdf-beside-jats-reports-the-failure-that-may-pass",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-f", "identifier": "10.1/retry-f"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 403}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 403}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-503", "pdf_url": "https://example.org/retry-f.pdf"},
-   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 403}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 403}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
   {
    "name": "pdf-beside-jats-failed-search-outranks-a-final-download",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-g", "identifier": "10.1/retry-g"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 403}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 403}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "search-failed", "pdf_url": "https://example.org/retry-f.pdf", "tier_faults": ["FullTextError"]},
-   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
   {
    "name": "pdf-beside-jats-reports-the-first-of-two-that-may-pass",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-h", "identifier": "10.1/retry-h"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 429}, {"status": 429}, {"status": 429}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 503}, {"status": 503}, {"status": 503}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 429}, {"status": 429}, {"status": 429}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-503", "pdf_url": "https://europepmc.org/render/PMC123.pdf"},
-   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
   {
@@ -262,7 +262,7 @@
     "pmc_id": "PMC123", "pmid": "123", "identifier": "10.1/retry-i",
     "fulltext_sources": [{"url": "https://pub/x.pdf", "format": "pdf", "source": "publisher"}]
    },
-   "responses": [{"status": 503}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 404}],
+   "responses": [{"status": 503}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 404}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-503", "pdf_url": "https://pub/x.pdf"},
    "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
@@ -274,7 +274,7 @@
     "pmc_id": "PMC123", "pmid": "123", "identifier": "10.1/retry-j",
     "fulltext_sources": [{"url": "https://pub/x.pdf", "format": "pdf", "source": "publisher"}]
    },
-   "responses": [{"status": 403}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}],
+   "responses": [{"status": 403}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 503}, {"status": 503}, {"status": 503}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-503", "pdf_url": "https://europepmc.org/render/PMC123.pdf"}
   },
   {
@@ -284,24 +284,48 @@
     "pmc_id": "PMC123", "pmid": "123", "identifier": "10.1/retry-k",
     "fulltext_sources": [{"url": "https://pub/x.pdf", "format": "pdf", "source": "publisher"}]
    },
-   "responses": [{"status": 403}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 503}],
+   "responses": [{"status": 403}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "search-failed", "pdf_url": "https://pub/x.pdf", "tier_faults": ["FullTextError"]}
   },
   {
    "name": "pdf-beside-jats-a-failed-search-does-not-hide-one-that-may-pass",
    "fetch_pdf_with_jats": true,
    "request": {"pmc_id": "PMC123", "doi": "10.1/retry-l", "identifier": "10.1/retry-l"},
-   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}],
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 503}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "unpaywall_pdf.json"}, {"status": 503}, {"status": 503}, {"status": 503}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "http-503", "pdf_url": "https://example.org/retry-f.pdf", "tier_faults": ["FullTextError"]},
-   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "textless.pdf"}],
    "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
   },
   {
    "name": "pdf-beside-jats-converter-after-a-failed-search",
    "fetch_pdf_with_jats": true,
    "request": {"doi": "10.1/retry-e", "identifier": "10.1/retry-e"},
-   "responses": [{"status": 503}, {"status": 200, "body_file": "ncbi_idconv_pmc123.json"}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "textless.pdf"}],
+   "responses": [{"status": 503}, {"status": 200, "body_file": "ncbi_idconv_pmc123.json"}, {"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_absent.xml"}, {"status": 200, "body_file": "textless.pdf"}],
    "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true, "tier_faults": ["FullTextError"]}
+  },
+  {
+   "name": "pdf-beside-jats-from-pmc-open-data",
+   "fetch_pdf_with_jats": true,
+   "request": {"pmc_id": "PMC123", "doi": "10.1/open-a", "identifier": "10.1/open-a"},
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_versions.xml"}, {"status": 200, "body_file": "pmc_open_data_pdf_key.xml"}, {"status": 200, "body_file": "textless.pdf"}],
+   "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_url": "https://pmc-oa-opendata.s3.amazonaws.com/PMC123.10/PMC123.10.pdf", "pdf_cached": true},
+   "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_cached": true}
+  },
+  {
+   "name": "pdf-beside-jats-open-data-version-without-pdf",
+   "fetch_pdf_with_jats": true,
+   "request": {"pmc_id": "PMC123", "doi": "10.1/open-b", "identifier": "10.1/open-b"},
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_versions.xml"}, {"status": 200, "body_file": "pmc_open_data_no_pdf.xml"}, {"status": 200, "body_file": "textless.pdf"}],
+   "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_url": "https://europepmc.org/render/PMC123.pdf", "pdf_cached": true}
+  },
+  {
+   "name": "pdf-beside-jats-open-data-listing-failed-is-a-failed-search",
+   "fetch_pdf_with_jats": true,
+   "request": {"pmc_id": "PMC123", "doi": "10.1/open-c", "identifier": "10.1/open-c"},
+   "responses": [{"status": 200, "body_file": "sample_article.xml"}, {"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 503}, {"status": 404}, {"status": 404}],
+   "expected": {"source": "europepmc", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_download_failure": "search-failed", "pdf_url": "https://europepmc.org/render/PMC123.pdf", "tier_faults": ["FullTextError"]},
+   "then_responses": [{"status": 200, "body_file": "europepmc_search_pmc123_pdf.json"}, {"status": 200, "body_file": "pmc_open_data_versions.xml"}, {"status": 200, "body_file": "pmc_open_data_pdf_key.xml"}, {"status": 200, "body_file": "textless.pdf"}],
+   "then": {"source": "cached", "content_kind": "fulltext", "jats_xml": "sample_article.xml", "pdf_url": "https://pmc-oa-opendata.s3.amazonaws.com/PMC123.10/PMC123.10.pdf", "pdf_cached": true}
   }
  ]
 }

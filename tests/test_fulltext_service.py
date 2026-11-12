@@ -44,12 +44,14 @@ from bmlib.fulltext.service import (
     PDF_BESIDE_JATS_ATTEMPTS,
     PDF_RETRY_DELAY,
     PDF_SEEK_AGAIN_LIMIT,
+    PMC_OPEN_DATA_BASE,
     FullTextError,
     FullTextExhaustedError,
     FullTextService,
     FullTextUnavailableError,
     _extract_free_pdf_url,
     _is_text,
+    _latest_open_data_version,
     _normalise_doi,
     _normalise_pmc_id,
     _normalise_pmid,
@@ -704,6 +706,27 @@ class TestKnownSources:
         assert result.file_path is not None
 
 
+class TestLatestOpenDataVersion:
+    """``_latest_open_data_version``: the version a PMC Open Data listing names (#748)."""
+
+    @staticmethod
+    def _listing(*prefixes: str) -> str:
+        """A ``delimiter=/`` listing for ``PMC123.``, naming *prefixes*."""
+        common = "".join(f"<CommonPrefixes><Prefix>{p}</Prefix></CommonPrefixes>" for p in prefixes)
+        return f"<ListBucketResult><Prefix>PMC123.</Prefix>{common}</ListBucketResult>"
+
+    def test_the_largest_version_by_number(self):
+        listing = self._listing("PMC123.1/", "PMC123.10/", "PMC123.2/")
+        assert _latest_open_data_version(listing, "PMC123") == 10
+
+    def test_another_article_whose_id_extends_this_one_is_not_read(self):
+        assert _latest_open_data_version(self._listing("PMC1231.4/"), "PMC123") is None
+
+    def test_an_empty_listing_names_no_version(self):
+        # Its own <Prefix>PMC123.</Prefix> echo is no version.
+        assert _latest_open_data_version(self._listing(), "PMC123") is None
+
+
 class TestPdfWithJats:
     """``fetch_pdf_with_jats``: JATS to process, a PDF to show (#739)."""
 
@@ -712,10 +735,16 @@ class TestPdfWithJats:
 
     @classmethod
     def _route(cls, search_pmcid="PMC123", unpaywall_pdf=None, pdf_status=None, hit_doi=None):
-        """An ``_http_get`` answering by URL: JATS for PMC123, a search hit, PDFs."""
+        """An ``_http_get`` answering by URL: JATS for PMC123, a search hit, PDFs.
+
+        PMC Open Data lists no article (#748), so the PDFs are Europe PMC's
+        and Unpaywall's.
+        """
         pdf_status = pdf_status or {}
 
         def answer(url, *args, **kwargs):
+            if url.startswith(f"{PMC_OPEN_DATA_BASE}/?"):
+                return MagicMock(status_code=200, content=b"<ListBucketResult></ListBucketResult>")
             if url in pdf_status:
                 status = pdf_status[url]
                 return MagicMock(status_code=status, content=TestCacheIntegration.PDF_MAGIC)
@@ -829,6 +858,9 @@ class TestPdfWithJats:
             service, "_http_get", side_effect=self._route(pdf_status={self.RENDER: 503})
         ):
             service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
+        # A mark naming no PMC ID, as a Tier 0 xml entry's JATS leaves it: a
+        # PMC ID alone could be sought in PMC Open Data (#748).
+        service.cache.save_pdf_retry("10.1/x", None, 0)
         before = self._mark(tmp_path).read_text(encoding="utf-8")
         with patch.object(service, "_http_get") as http_get:
             service.fetch_fulltext(identifier="10.1/x")  # no DOI or PMID to search by
@@ -909,8 +941,9 @@ class TestPdfWithJats:
         assert not self._mark(tmp_path).exists()
 
     def test_a_marked_hit_whose_search_answers_with_no_pdf_ends_the_mark(self, tmp_path):
-        # No DOI, and the hit names another article: the search is the only
-        # request, and it answered, so the mark must not outlive it.
+        # No DOI, and the hit names another article: the search and PMC Open
+        # Data's listing (#748) are the only requests, and both answered, so
+        # the mark must not outlive them.
         service = self._service(tmp_path, on=True)
         with patch.object(service, "_http_get", side_effect=self._route()):
             service.fetch_fulltext(pmc_id="PMC123", doi="10.1/x", identifier="10.1/x")
@@ -920,7 +953,9 @@ class TestPdfWithJats:
         with patch.object(service, "_http_get", side_effect=route) as http_get:
             hit = service.fetch_fulltext(pmc_id="PMC123", pmid="12345", identifier="10.1/x")
 
-        assert ["/search?" in c.args[0] for c in http_get.call_args_list] == [True]
+        asked = [c.args[0] for c in http_get.call_args_list]
+        assert ["/search?" in url for url in asked] == [True, False]
+        assert asked[1].startswith(PMC_OPEN_DATA_BASE)
         assert (hit.source, hit.pdf_download_failure) == ("cached", None)
         assert not self._mark(tmp_path).exists()
 
@@ -934,7 +969,7 @@ class TestPdfWithJats:
             hit = service.fetch_fulltext(pmc_id="PMC123", pmid="12345", identifier="10.1/x")
 
         assert (hit.source, hit.pdf_download_failure) == ("cached", "search-failed")
-        assert hit.tier_faults == ["ConnectError"]
+        assert hit.tier_faults == ["ConnectError", "ConnectError"]  # the search, Open Data
         assert self._mark(tmp_path).read_text(encoding="utf-8") == "PMC123\n1\n"
 
     def test_a_hit_that_cannot_count_itself_does_not_seek(self, tmp_path, caplog):

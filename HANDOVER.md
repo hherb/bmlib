@@ -1,91 +1,63 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-12 (**#746 fixed, PR open — read *This session*
-first**). Merged since the last update: #745 (#744, below). Before it: #740
-(#656), #741 (#739, a caller's PDF no longer ends the search for JATS;
+_Last updated: 2026-11-12 (**#748, PR open — read *This session* first**).
+Merged since the last update: #747 (#746, below). Before it: #745 (#744),
+#740 (#656), #741 (#739, a caller's PDF no longer ends the search for JATS;
 `fetch_pdf_with_jats`), #742 (an xcframework dSYM per slice) and #743
 (evidence weight phase 1: RoB 2 with D5 from facts, the ladder). **0.13.0
 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and **the
 Rust crate 0.4.0 on crates.io** from the same commit._
 
-## This session: the PDF beside JATS reports the failure that may pass (#746, PR open)
+## This session: the PDF beside JATS from PMC's AWS Open Data bucket (#748, PR open)
 
-StudyAnalyzer PR #108's review filed #746. Both languages:
+StudyAnalyzer's click-through of its PR #105 met a 403 from every PDF link
+of a CC BY article in PMC (publisher, Europe PMC's `?pdf=render`,
+Unpaywall), bot screens a browser passes. Impersonating a browser was
+refused (it would reach bulk callers); NLM's public bucket
+`pmc-oa-opendata` serves the same PDF to scripts. Both languages, with
+`fetch_pdf_with_jats` on:
 
-- **`http-408` may pass** (`pdf_failure_may_pass`; fixture row flipped), as
-  it does in bmlib's own LLM retries (Rust `RETRYABLE_STATUSES`, Python
-  `_RETRIED_STATUSES`), so a 408 is now retried within the run.
-- **The reported failure follows the mark**: with no PDF saved, the result
-  carries the first failure that may pass, else `"search-failed"` when the
-  search failed, else the first failure. It carried the first failure, so a
-  403 then a 503 read final while the JATS was marked for a second look. A
-  failed search now outranks a final download's cause: the download's
-  `pdf_url` stays on the result and its cause goes in the INFO line (the
-  finalcheck review caught the URL being dropped, a caller's own PDF link
-  included). Seven `fulltext_source.json` cases (and `unpaywall_pdf.json`,
-  the fixture's first Unpaywall body), which now compare `pdf_url` where a
-  case names it and pass `pmid`; they kill the first-vs-last, held-PDF and
-  search-outranks mutants. The twin unit tests that pinned the old rule now
-  pin "none may pass, the first rides".
-- The renderer-version pins were re-pinned (`models.py` changed, no
-  rendering did).
-- **For StudyAnalyzer**: after the pin moves, its notice's "The fault may
-  be a passing one." follows the mark, and its own `download_may_recover`
-  agrees on 408.
+- **A `pmc_open_data` candidate** after the caller's `pdf` entries, before
+  `europepmc_pdf`, resolved in the loop as Unpaywall is
+  (`_fetch_pmc_open_data_pdf` / `fetch_pmc_open_data_pdf`): one listing for
+  the article's versions (`_latest_open_data_version`, by number, so `.10`
+  beats `.2`), one for the latest's PDF key, so a missing article or PDF is
+  an absence; a listing other than 200 is a failed search. No search needs
+  to name the article: it is the JATS's own PMC ID.
+- **A marked hit with a PMC ID** can now seek without a DOI or PMID (the
+  `can_try` guard), since the bucket needs only the ID.
+- `fulltext_source.json`: every PDF-beside-JATS case answers one more
+  request (`pmc_open_data_absent.xml`, inserted where the code asks; each
+  insertion reviewed), and three new cases (taken from the bucket at version
+  10; a version without a PDF falls to Europe PMC; a failed listing is
+  `"search-failed"` and a later hit gets the bucket's PDF). Four listing
+  fixtures copy the bucket's real shapes (2026-11-12).
+- **Live** (Python, 2026-11-12): PMC12609458's PDF came from the bucket,
+  2,225,123 bytes, no fault.
+- **Not done**: the bucket as a JATS source; its `.json`'s md5 check and
+  `is_retracted` (StudyAnalyzer's later retraction tab may want it); a paper
+  with no PMC ID still meets the publisher's screen.
+
+## Earlier: the PDF beside JATS reports the failure that may pass (#746, merged as PR #747)
+
+`http-408` may pass; with no PDF saved, the result carries the first
+failure that may pass, else `"search-failed"`, else the first failure, so
+the reported failure follows the mark. Seven `fulltext_source.json` cases.
 
 ## Earlier: the PDF beside JATS is retried and sought again (#744, merged as PR #745)
 
-StudyAnalyzer PR #105's review filed #744; the maintainer chose the remedy's
-shape (2026-11-11): a mark for a later hit, and `pdf_download_failure`
-reused for a failed search. Both languages, with `fetch_pdf_with_jats` on:
-
-- **Retry**: a download whose cause may pass (`request-failed`, `http-429`,
-  any `http-5xx`; `FullTextResult.pdf_failure_may_pass`, fixture
-  `pdf_failure_may_pass.json`) is tried `PDF_BESIDE_JATS_ATTEMPTS` (3) times,
-  waiting `PDF_RETRY_DELAY` (1 s) then 2 s (Python `pdf_retry_delay`, Rust
-  `with_pdf_retry_delay`; zero in tests). It reports the last try's cause.
-- **Mark**: no PDF saved and any failure may pass → `jats/<key>.pdf-retry`
-  (the PMC ID, then a seek count). A JATS hit with the mark and no PDF seeks
-  it again (`_seek_pdf_again` / `seek_pdf_again`), one try per candidate, at
-  most `PDF_SEEK_AGAIN_LIMIT` (3) hits. The hit counts itself in the mark
-  *before* it seeks and seeks only if that write succeeds, so a mark that
-  cannot be updated (read-only or full cache) still bounds the requests
-  (finalcheck review: it used to seek on every hit). Saved, every failure
-  final, a search that answered with nothing to download, or the limit
-  reached → unmarked; a hit that can try nothing (no `pdf` source, no DOI,
-  and no PMC ID with a PMID) leaves it. A hit without it makes no request.
-  A mark that cannot be written warns under `pdf-mark-write:<cause>`, one
-  that cannot be removed under a `pdf-mark-delete` key, never the
-  cache-write key. `FullTextCache`
-  `save_pdf_retry`, `get_pdf_retry`, `delete_pdf_retry`; `delete` removes it.
-  The longest cache filename is now 219 characters (was 214).
-- **Search fault**: a failed search or Unpaywall lookup that left no download
-  to try is `"search-failed"` (`PDF_SEARCH_FAILED`). Europe PMC's search has
-  failed only when it raised (`_discover_pmc_id` / `discover_pmc_id` return
-  `None` for its findings then); one that answered with an unusable field is
-  neither sent again nor called failed (finalcheck review: it was, by the
-  fault count). Unpaywall fails on any error but "no free PDF", so a 401 or
-  422 marks too (bounded by the limit). A JATS found through the ID Converter
-  after a failed search asks the search again (the pre-PR review's finding).
-- `fulltext_source.json` gains five cases (and `fetch_pdf_with_jats`, `doi`,
-  `then_responses` keys); the renderer-version pins were re-pinned
-  (`models.py` changed, no rendering did).
+A download whose cause may pass is tried `PDF_BESIDE_JATS_ATTEMPTS` (3)
+times; with no PDF saved and any failure that may pass, the cache marks the
+JATS (`jats/<key>.pdf-retry`), and a later hit seeks again, at most
+`PDF_SEEK_AGAIN_LIMIT` (3) hits, counting itself before it seeks; a failed
+search is `"search-failed"`. Detail in CHANGELOG and the manual.
 - **Not covered**: a JATS cached while the option was off carries no mark
   (the `shortcut:` in `_check_cache`); a failed Tier 0 PDF is not retried in
-  the run, only on a later marked hit; on a marked hit a Tier 0 PDF that
-  failed finally is asked again with the rest (bounded by the limit).
-- **Left by the finalcheck review** (minor, no issue filed):
-  - The two languages read an odd mark differently, and no shared fixture
-    holds the mark's text: a count past `u32` is accepted by Python (one seek,
-    then removed) and refused by Rust (warned, removed, no seek).
-  - Rust's mark removal goes through `remove_entry`, which returns a bool, so
-    its `pdf-mark-delete` warning names no OS cause, and it has no test (the
-    Python one patches `delete_pdf_retry`).
-  - A mark that cannot be removed skips the hit that would remove it, so with
-    a broken delete a paper gets `PDF_SEEK_AGAIN_LIMIT` − 1 second looks.
-- **For StudyAnalyzer**: after the pin moves, its notice for a PDF that
-  failed beside JATS can name `"search-failed"` and say whether a reopen may
-  get it (`pdf_failure_may_pass`).
+  the run, only on a later marked hit.
+- **Left by the finalcheck review** (minor, no issue filed): the two
+  languages read a count past `u32` in a mark differently (no shared fixture
+  holds the mark's text); Rust's mark removal names no OS cause and has no
+  test; with a broken delete a paper gets `PDF_SEEK_AGAIN_LIMIT` − 1 looks.
 
 ## Earlier: a saved page is not refused for its length (#656, merged as PR #740)
 
