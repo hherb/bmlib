@@ -33,12 +33,17 @@ from bmlib.library import (
     BadIdentifier,
     BadInstallation,
     Installation,
+    LibraryError,
+    NewerLibrary,
+    NotALibrary,
     PaperIds,
     PaperInfo,
     RecordProblem,
     SourceKind,
+    Unreachable,
     canonical_ids,
     folder_name,
+    open_library,
     parse_record,
     render_record,
 )
@@ -136,3 +141,32 @@ def test_records(case: dict[str, Any]) -> None:
         assert err.value.version == case["version"]
     else:
         assert err.value.reason
+
+
+@pytest.mark.parametrize("case", _cases("open"))
+def test_open(case: dict[str, Any], tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    if case["entries"] is not None:
+        root.mkdir()
+        for e in case["entries"]:
+            if "dir" in e:
+                (root / e["dir"]).mkdir()
+            else:
+                (root / e["file"]).write_text(e["text"], encoding="utf-8")
+    expect = case["expect"]
+    if expect in ("created", "opened"):
+        lib = open_library(root)
+        assert lib.root == root
+        assert (root / "papers").is_dir()
+        if "marker" in case:
+            assert (root / "bmlib-library.json").read_text(encoding="utf-8") == case["marker"]
+        return
+    kinds: dict[str, type[LibraryError]] = {
+        "newer": NewerLibrary,
+        "not_a_library": NotALibrary,
+        "unreachable": Unreachable,
+    }
+    with pytest.raises(kinds[expect]) as err:
+        open_library(root)
+    if expect == "newer":
+        assert err.value.version == case["version"]  # type: ignore[attr-defined]

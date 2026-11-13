@@ -19,8 +19,8 @@
 //! Python's `tests/test_library_contract.py` asserts against.
 
 use bmlib::library::{
-    folder_name, parse_record, render_record, Installation, LibraryError, PaperIds, PaperInfo,
-    RecordProblem, SourceKind, CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
+    folder_name, parse_record, render_record, Installation, Library, LibraryError, PaperIds,
+    PaperInfo, RecordProblem, SourceKind, CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
 };
 use serde_json::Value;
 
@@ -200,5 +200,47 @@ fn render_then_parse_round_trips() {
             let rec = parse_record(case["text"].as_str().unwrap()).unwrap();
             assert_eq!(parse_record(&render_record(&rec)).unwrap(), rec);
         }
+    }
+}
+
+#[test]
+fn open_matches_the_fixture() {
+    for case in section("open") {
+        let name = case["name"].as_str().unwrap();
+        let base = std::env::temp_dir().join(format!("bmlib-open-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let root = base.join("root");
+        if let Some(entries) = case["entries"].as_array() {
+            std::fs::create_dir_all(&root).unwrap();
+            for e in entries {
+                if let Some(d) = e["dir"].as_str() {
+                    std::fs::create_dir_all(root.join(d)).unwrap();
+                } else {
+                    std::fs::write(
+                        root.join(e["file"].as_str().unwrap()),
+                        e["text"].as_str().unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        let got = Library::open(&root);
+        match (case["expect"].as_str().unwrap(), got) {
+            ("created" | "opened", Ok(lib)) => {
+                assert_eq!(lib.root(), root, "{name}");
+                assert!(root.join("papers").is_dir(), "{name}: papers/");
+                if let Some(want) = case["marker"].as_str() {
+                    let text = std::fs::read_to_string(root.join("bmlib-library.json")).unwrap();
+                    assert_eq!(text, want, "{name}");
+                }
+            }
+            ("newer", Err(LibraryError::NewerLibrary { version })) => {
+                assert_eq!(version, case["version"].as_u64().unwrap(), "{name}");
+            }
+            ("not_a_library", Err(LibraryError::NotALibrary { .. }))
+            | ("unreachable", Err(LibraryError::Unreachable { .. })) => {}
+            (want, got) => panic!("{name}: wanted {want}, got {got:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

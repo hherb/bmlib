@@ -734,5 +734,93 @@
    "files": 1,
    "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 0,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
   }
- ]
+ ],
+  "open": [
+    {
+      "name": "empty",
+      "entries": [],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    },
+    {
+      "name": "only_ds_store",
+      "entries": [
+        {
+          "file": ".DS_Store",
+          "text": ""
+        }
+      ],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    },
+    {
+      "name": "marker",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 1}"
+        },
+        {
+          "dir": "papers"
+        }
+      ],
+      "expect": "opened"
+    },
+    {
+      "name": "marker_without_papers",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 1}"
+        }
+      ],
+      "expect": "opened"
+    },
+    {
+      "name": "marker_version_2",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 2}"
+        }
+      ],
+      "expect": "newer",
+      "version": 2
+    },
+    {
+      "name": "marker_wrong_format",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"x\", \"version\": 1}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_not_json",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "nope"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "users_notes",
+      "entries": [
+        {
+          "file": "notes.txt",
+          "text": "hi"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "root_missing",
+      "entries": null,
+      "expect": "unreachable"
+    }
+  ]
 }

@@ -64,6 +64,7 @@ from bmlib.library.ids import (
     SourceKind,
     canonical_ids,
 )
+from bmlib.library.library import Library, open_library
 from bmlib.library.names import folder_name
 from bmlib.library.records import (
     FileEntry,
@@ -88,6 +89,7 @@ __all__ = [
     "Io",
     "LIBRARY_FORMAT",
     "LIBRARY_VERSION",
+    "Library",
     "LibraryError",
     "MARKER_FILE",
     "MAX_AUTHOR_CHARS_IN_NAME",
@@ -113,6 +115,7 @@ __all__ = [
     "Unreachable",
     "canonical_ids",
     "folder_name",
+    "open_library",
     "parse_record",
     "render_record",
 ]
