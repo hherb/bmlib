@@ -22,7 +22,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   `folder_name_numbered`); versioned records; thirteen error kinds. Held
   together by `tests/fixtures/library_cases.json` and the sample library
   `tests/fixtures/library/sample/`; manuals `docs/manual/library.md` and
-  `rust/bmlib/docs/manual/library.md` (the Rust one is doc-tested). PR #754.
+  `rust/bmlib/docs/manual/library.md` (the Rust one is doc-tested). PR #754. Review follow-ups: #755.
 - **The final review's fixes** (rulings R18-R21 in the session ledger): save,
   record_use and release validate `who` and the ids before writing (a record
   `parse_record` refuses was being written); `component()` refuses names
