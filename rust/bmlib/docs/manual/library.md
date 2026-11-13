@@ -200,6 +200,143 @@ Every fallible call returns `Result<_, LibraryError>`. The variants:
 
 `Display` for each variant is a sentence an app can show as it is.
 
+## FullTextService on a library
+
+`FullTextService` can read papers from a shared library before its cache and
+keep what it downloads there. A library is optional: without one the service
+behaves exactly as before.
+
+### Building a service with a library
+
+```rust
+use std::sync::{Arc, Mutex};
+use bmlib::fulltext::{FullTextRequest, FullTextService};
+use bmlib::library::{Installation, Library, PaperIds, PaperInfo, SourceKind};
+use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
+
+const JATS: &str = "<article><front><article-meta>\
+    <title-group><article-title>A trial</article-title></title-group>\
+    </article-meta></front><body><sec><title>Results</title>\
+    <p>Mortality fell.</p></sec></body></article>";
+
+// A client that counts its requests and finds nothing.
+#[derive(Default)]
+struct Offline(Mutex<usize>);
+
+impl HttpClient for Offline {
+    fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {
+        *self.0.lock().unwrap() += 1;
+        Ok(HttpResponse::from_bytes(404, Vec::new()))
+    }
+}
+
+let root = std::env::temp_dir().join(format!("bmlib-manual-ftlib-{}", std::process::id()));
+std::fs::create_dir_all(&root)?;
+let library = Library::open(&root)?;
+let me = Installation::new("myapp", "aaaa", "My Mac")?;
+
+// Another app (or an earlier lookup) kept this paper's JATS.
+let paper = PaperInfo {
+    ids: PaperIds::canonical(None, None, Some("PMC123"))?,
+    title: Some("A trial".into()),
+    year: None,
+    first_author: None,
+};
+library.save(&me, &paper, JATS.as_bytes(), SourceKind::Jats, "https://example.org/x.xml")?;
+
+let client = Arc::new(Offline::default());
+let service = FullTextService::new(client.clone(), "you@example.org")
+    .with_library(library, me);
+
+let request = FullTextRequest { pmc_id: Some("PMC123".into()), ..FullTextRequest::default() };
+let result = service.fetch_fulltext(&request)?;
+
+assert_eq!(result.source, "library");
+assert!(result.html.as_deref().unwrap().contains("Mortality fell."));
+assert_eq!(result.library_files.len(), 1);
+assert_eq!(result.library_failure, None);
+assert_eq!(*client.0.lock().unwrap(), 0); // the library ended the lookup: no network
+# std::fs::remove_dir_all(&root).ok();
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`FullTextService::with_library(library, who)` takes the `Library` and the
+`Installation` together; `result.library_files` is a `Vec<FileRef>` and
+`result.library_failure` an `Option<String>`.
+
+### The lookup order
+
+The library is keyed by the request's `pmid`, `doi` and `pmc_id`, not by
+`identifier`.
+
+1. **The library's JATS ends the lookup, with no network.** It is used when it
+   parses, has a body, and none of its own identifiers contradicts the
+   request's (an identifier missing on either side agrees). The result's
+   `source` is `"library"`, its HTML is rendered from the JATS on every
+   lookup, and `jats_xml` holds the file's bytes. The library's PDF, if it
+   holds one, is the result's `file_path`, beside the JATS, even when
+   `fetch_pdf_with_jats` is off.
+2. **A library that holds only a PDF still runs the JATS tiers.** A cached PDF
+   used to be a complete answer to a lookup; a library PDF is not, because the
+   service prefers JATS text. A paper held only as a PDF therefore costs the
+   JATS tiers' requests on every lookup, until a JATS is kept in the library.
+3. **A held PDF replaces the PDF tiers.** When the lookup ends on JATS from the
+   chain, or on no JATS at all, the library's PDF is used in place of a PDF
+   download, and in place of the caller's own `pdf` entries
+   (`fulltext_sources`), which are then not fetched.
+4. **What the chain downloads is kept in the library**, a JATS and a PDF each
+   saved once, not in the cache. A PDF is then downloaded even when the
+   request has no `identifier`.
+
+Each library file a lookup uses or saves is noted in the installation's
+record. The library's HTML, Markdown and text files are not used by the
+service; an app finds them through the library API itself.
+
+### `library_files` and `library_failure`
+
+`FullTextResult.library_files` lists the library files the lookup used or
+saved, in order (empty when nothing came from the library).
+
+`FullTextResult.library_failure` is `None` when the library worked or none is
+set. Otherwise it is a sentence naming the paper, the file and the problem: the
+library could not be read or written, a file failed its digest check, or this
+installation's use could not be noted. A library error never stops a lookup and
+is never raised from it. It is logged once at WARNING, the rest of the lookup
+runs as without a library, and the result carries the flag.
+
+**What an app should do with a failure:** keep what the lookup returned as
+*waiting for the library* (design §4.6) and try again later. The cache is a
+staging area in that case, not a second store: the app copies the bytes out, as
+StudyAnalyzer does today.
+
+A library JATS that has no body or does not parse is not a failure of the
+library: it is warned of, not served, and the lookup goes on.
+
+### A folder whose JATS is another paper's
+
+A record is a claim, not proof. When the folder found for the request holds a
+JATS whose own identifiers contradict the request's, the lookup does not serve
+it and does not trust that folder's PDF. It keeps **nothing** in the library
+(the request's identifiers would file the new bytes in that same folder), runs
+the chain with the cache as without a library, and sets `library_failure`
+naming the folder. The app keeps the source as waiting and can show the user
+the folder to put right.
+
+### Identifiers
+
+The request's `pmid`, `doi` and `pmc_id` are made canonical one field at a
+time. A value the library refuses is dropped with a WARNING naming the field,
+and the others are used. A request with no valid identifier does not use the
+library: it runs as without one and sets no `library_failure`, since that is
+not a failure.
+
+### What stays in the cache
+
+With a library, the cache keeps only what the library does not: the *PDF still
+owed* mark (see [the cache](fulltext.md)) and the abstract kept beside a PDF,
+both keyed by `identifier`. When the library fails, or the request has no valid
+identifier, the cache keeps everything, as without a library.
+
 ## Python names
 
 | Rust | Python |

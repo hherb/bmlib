@@ -2071,6 +2071,8 @@ Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
+With a shared library set on the service (`library=`), the cache keeps only the *PDF still owed* mark and the abstract kept beside a PDF; JATS and PDFs go to the library. See [FullTextService on a library](library.md#fulltextservice-on-a-library).
+
 **A rendered entry carries the renderer that wrote it** *(0.11.0, #172)*. `html/` and `abstracts/` hold [`to_html()`](#to_html--str) output, which moves whenever the parser or the renderer changes — nearly every JATS fix in 0.11.0 moves it. An entry written before such a change decodes cleanly and looks right, so until this stamp nothing could tell it from a fresh one and it was served for ever. Each rendered entry now opens with one line naming the renderer version that wrote it:
 
 ```html

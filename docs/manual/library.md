@@ -188,6 +188,105 @@ named in the Rust page:
 
 `str(error)` is a sentence an app can show as it is.
 
+## FullTextService on a library
+
+`FullTextService` can read papers from a shared library before its cache and
+keep what it downloads there. A library is optional: without one the service
+behaves exactly as before.
+
+### Building a service with a library
+
+```python
+from bmlib.fulltext import FullTextService
+from bmlib.library import Installation, open_library
+
+library = open_library("/Users/me/Papers")          # the shared folder
+me = Installation("myapp", "aaaa", "My Mac")        # this installation of the app
+
+service = FullTextService(library=library, installation=me)
+result = service.fetch_fulltext(pmc_id="PMC7614751", doi="10.1/x")
+
+print(result.source)           # "library" when the library held the JATS
+print(result.library_files)    # the library files used or saved
+print(result.library_failure)  # None, or why the library could not be used
+```
+
+`library` and `installation` are given together or not at all (`ValueError`
+otherwise).
+
+### The lookup order
+
+The library is keyed by the request's `pmid`, `doi` and `pmc_id`, not by
+`identifier`.
+
+1. **The library's JATS ends the lookup, with no network.** It is used when it
+   parses, has a body, and none of its own identifiers contradicts the
+   request's (an identifier missing on either side agrees). The result's
+   `source` is `"library"`, its HTML is rendered from the JATS on every
+   lookup, and `jats_xml` holds the file's bytes. The library's PDF, if it
+   holds one, is the result's `file_path`, beside the JATS, even when
+   `fetch_pdf_with_jats` is off.
+2. **A library that holds only a PDF still runs the JATS tiers.** A cached PDF
+   used to be a complete answer to a lookup; a library PDF is not, because the
+   service prefers JATS text. A paper held only as a PDF therefore costs the
+   JATS tiers' requests on every lookup, until a JATS is kept in the library.
+3. **A held PDF replaces the PDF tiers.** When the lookup ends on JATS from the
+   chain, or on no JATS at all, the library's PDF is used in place of a PDF
+   download, and in place of the caller's own `pdf` entries
+   (`fulltext_sources`), which are then not fetched.
+4. **What the chain downloads is kept in the library**, a JATS and a PDF each
+   saved once, not in the cache. A PDF is then downloaded even when the
+   request has no `identifier`.
+
+Each library file a lookup uses or saves is noted in the installation's
+record. The library's HTML, Markdown and text files are not used by the
+service; an app finds them through the library API itself.
+
+### `library_files` and `library_failure`
+
+`FullTextResult.library_files` lists the library files the lookup used or
+saved, in order (empty when nothing came from the library).
+
+`FullTextResult.library_failure` is `None` when the library worked or none is
+set. Otherwise it is a sentence naming the paper, the file and the problem: the
+library could not be read or written, a file failed its digest check, or this
+installation's use could not be noted. A library error never stops a lookup and
+is never raised from it. It is logged once at WARNING, the rest of the lookup
+runs as without a library, and the result carries the flag.
+
+**What an app should do with a failure:** keep what the lookup returned as
+*waiting for the library* (design §4.6) and try again later. The cache is a
+staging area in that case, not a second store: the app copies the bytes out, as
+StudyAnalyzer does today.
+
+A library JATS that has no body or does not parse is not a failure of the
+library: it is warned of, not served, and the lookup goes on.
+
+### A folder whose JATS is another paper's
+
+A record is a claim, not proof. When the folder found for the request holds a
+JATS whose own identifiers contradict the request's, the lookup does not serve
+it and does not trust that folder's PDF. It keeps **nothing** in the library
+(the request's identifiers would file the new bytes in that same folder), runs
+the chain with the cache as without a library, and sets `library_failure`
+naming the folder. The app keeps the source as waiting and can show the user
+the folder to put right.
+
+### Identifiers
+
+The request's `pmid`, `doi` and `pmc_id` are made canonical one field at a
+time. A value the library refuses is dropped with a WARNING naming the field,
+and the others are used. A request with no valid identifier does not use the
+library: it runs as without one and sets no `library_failure`, since that is
+not a failure.
+
+### What stays in the cache
+
+With a library, the cache keeps only what the library does not: the *PDF still
+owed* mark (see [the cache](fulltext.md)) and the abstract kept beside a PDF,
+both keyed by `identifier`. When the library fails, or the request has no valid
+identifier, the cache keeps everything, as without a library.
+
 ## Rust names
 
 | Python | Rust |

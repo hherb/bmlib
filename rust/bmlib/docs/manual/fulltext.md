@@ -231,6 +231,11 @@ directory can be found. Construction creates nothing: each `save_*` creates
 its own subdirectory (`pdfs/`, `html/`, `abstracts/`, `jats/`), and every
 write is atomic.
 
+With a shared library set on the service (`with_library`), the cache keeps
+only the *PDF still owed* mark and the abstract kept beside a PDF; JATS and
+PDFs go to the library. See
+[FullTextService on a library](library.md#fulltextservice-on-a-library).
+
 ```rust
 use bmlib::fulltext::{sanitize_identifier, FullTextCache};
 

@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-13 (**the shared paper library, step 1a, on
-`feat/shared-library` — read *This session* first**). Merged since the last
-update: #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744),
+_Last updated: 2026-11-14 (**the shared paper library: 1a merged, 1b on
+`feat/library-fulltext` — read *This session* first**). Merged since the last
+update: #754 (the library, 1a), #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744),
 #740 (#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0`
 on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io**
 from the same commit._
 
-## This session: `bmlib.library`, the shared paper library (step 1a, branch `feat/shared-library`)
+## This session: the shared paper library (1a merged as #754; 1b on `feat/library-fulltext`, PR pending)
 
 StudyAnalyzer's design
 (`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
@@ -38,12 +38,22 @@ use to share one folder of papers. Built in both languages, in a worktree
   judged under case folding; a folder of only newer records fails the save
   with `NewerRecord`; iCloud placeholders count as user files on open; record
   updates are serialised in one process only.
-- **Not done, and next**: **1b**, `FullTextService` reading from and filling a
-  library (StudyAnalyzer's plan; `save` rescans the library per call, 0.5 s at
-  4,000 papers in Python: the `shortcut:` there says to let 1b pass its
-  `Scan`); **1c**, the `bmlib-ffi` surface for the mobile apps. Not released:
-  the changelog entry is under Unreleased, and the version is still 0.13.0 /
-  0.4.0.
+- **1b, built (`feat/library-fulltext`, PR pending)**: `FullTextService`
+  reads from and fills a library (`library=` and `installation=`, Rust
+  `with_library`). Results carry `library_files` and `library_failure`; source
+  `"library"`. Fixtures `tests/fixtures/fulltext_library_*.json`; manual
+  section "FullTextService on a library"; reasoning in `docs/DECISIONS.md`.
+  `save` keeps bytes once by digest (#755 item 7). `save` still rescans per
+  call (0.5 s at 4,000 papers in Python); its `shortcut:` now says to pass a
+  `Scan` when a scan's cost shows in a lookup's time.
+- **Parked, from the #755-7 decision**: byte-identical files of two different
+  papers (a stub PDF, say) now put both papers' records into one folder. And a
+  library holding only a PDF still runs the JATS tiers on every lookup, a cost
+  a cached PDF did not have; it ends when a JATS is kept in the library.
+- **Next: 1c**, the `bmlib-ffi` surface for the mobile apps. It must convert
+  `with_library`, `library_files` and `library_failure`, besides the library
+  calls below. Not released: the changelog entries are under Unreleased, and
+  the version is still 0.13.0 / 0.4.0.
 - **Owed before the Windows build gets the Library setting**: (1) renaming
   over an open file fails on Windows; retry with backoff, and stop mapping a
   rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
@@ -51,7 +61,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   name can pass 260 characters; (3) the Windows-only gaps the final review
   deferred (superscript `COM¹`-style device names, U+001C-U+001F as
   whitespace in Python only).
-- **Owed by 1c (FFI)**: the conversion list: `find` / `used_by` return
+- **Owed by 1c (FFI)**: the library conversion list: `find` / `used_by` return
   borrowed values, `PaperIds::merged` a tuple, errors hold `&'static str` and
   `PathBuf`, `RecordProblem` has tuple variants; every conversion must call the
   validating constructors (`Installation::new`, `PaperIds::canonical`).

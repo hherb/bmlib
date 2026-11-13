@@ -6519,3 +6519,47 @@ undo.
   unreadable folder, a stray entry) for the app to show.
 - **A negative zero is read as 0** for a record's `size` and `year`, in both
   languages, so a record re-renders to the same bytes.
+
+### FullTextService on a library (step 1b)
+
+- **`save` keeps bytes once** (the maintainer, #755 item 7). When the digest is
+  already in the library, `Library.save` puts the use into the folder holding
+  those bytes, even if the identifiers find another folder, and writes nothing
+  again. This amends design §4.3's "callers look it up first": `save` does it
+  for every caller. The cost: byte-identical files of two different papers (a
+  stub PDF) put both papers' records in one folder.
+- **An unreachable or read-only library does not stop a lookup** (the
+  maintainer). The service warns, sets `library_failure` and runs as without a
+  library, so the app keeps the source as waiting for the library (design
+  §4.6). The cache is a staging area then, not a second store.
+- **The library is keyed by the request's identifiers, not `identifier`**,
+  each made canonical on its own; a refused value is dropped with a WARNING
+  naming the field. No valid identifier means no library and no flag, since
+  that is not a failure.
+- **A JATS hit is parsed and rendered on every lookup.** No HTML render is
+  stored for a library paper, so no stale-render rule applies.
+- **The service handles only JATS and PDF.** The library's HTML, Markdown and
+  text files are for the app to find through the library API (amends design
+  §4.5's last sentence for bmlib).
+- **`save` still rescans per call.** A lookup costs one scan plus one per file
+  saved. The `shortcut:` stays, its trigger now "a scan's cost shows in a
+  lookup's time". A scan passed in would go stale after the lookup's first save
+  and create a second folder.
+- **`file_path` points into the library** for a library PDF, after the bytes
+  passed `Library.read`'s digest check; the extractor reads that path as it
+  reads a cache path.
+- **A folder whose JATS is another paper's keeps nothing in the library and is
+  a `library_failure`.** A record is a claim, not proof (design §4.4); the
+  request's identifiers would file new bytes in that folder, and the app must
+  learn the source was not kept so it can show the folder. Silently caching
+  would lose it.
+- **A held library PDF makes Tier 0 skip the caller's `pdf` entries.** The PDF
+  is already in hand (design §4.5). The cost: a caller's newer PDF is not
+  fetched while the library holds one.
+- **A library JATS that does not parse is a warning, not a `library_failure`.**
+  The library worked and the file is bad; the app gets the chain's result
+  anyway.
+- **A malformed `saved_at` ranks last** when choosing among a paper's files, so
+  one bad record never beats a good one, and the year is bounded to `i32`.
+- **A library holding only a PDF still runs the JATS tiers**, which a cached
+  PDF did not cost: JATS is the better text, so a PDF does not end a lookup.
