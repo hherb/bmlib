@@ -17,7 +17,8 @@
 """Full-text retrieval service with multi-tier fallback chain.
 
 Tier 1a: Europe PMC XML -> JATS parser -> HTML, for a usable caller PMC ID
-Tier 1c: NCBI PMC efetch for that ID, when Europe PMC gave no body
+Tier 1c: NCBI PMC efetch for that ID, when Europe PMC gave no body, then
+         PMC's AWS Open Data bucket, when NCBI gave none either
 Tier 1b: Discover PMC ID via search, then 1a and 1c for it — also when the
          caller's ID gave no full text, which the search hit then supersedes
 Tier 1b': Discover PMC ID via NCBI's ID Converter when the search found none
@@ -29,6 +30,7 @@ Tier 3:  DOI resolution -> publisher website URL
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import operator
 import re
@@ -44,16 +46,20 @@ from urllib.parse import quote
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
     import httpx
 
+from bmlib._strict_json import strict_json_loads
+
 # The sanitizer's canonical implementation lives in bmlib.fulltext.cache so
 # the cache can apply the same scheme as a defense in depth for direct callers.
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.cache import sanitize_identifier as _sanitize_identifier
 from bmlib.fulltext.jats_parser import RENDERER_VERSION, JATSParser
 from bmlib.fulltext.models import (
+    PDF_CHECKSUM_MISMATCH,
     PDF_SEARCH_FAILED,
     ContentKind,
     FullTextResult,
     FullTextSourceEntry,
+    PmcOpenDataRecord,
 )
 
 # Imported eagerly — pdf_converter loads its PyMuPDF backend lazily, so this
@@ -501,9 +507,76 @@ def _latest_open_data_version(listing: str, pmc_id: str) -> int | None:
     return max(versions) if versions else None
 
 
-def _open_data_pdf_key(pmc_id: str, version: int) -> str:
-    """The bucket key of *pmc_id*'s PDF at *version*: ``PMC1.2/PMC1.2.pdf`` (#748)."""
-    return f"{pmc_id}.{version}/{pmc_id}.{version}.pdf"
+def _open_data_file_md5(
+    data: dict[str, Any], field_name: str, stem: str, suffix: str
+) -> str | None:
+    """The md5 a PMC Open Data record gives for the version's own *suffix* file (#750).
+
+    The record names each file as ``s3://pmc-oa-opendata/<stem>/<stem><suffix>?md5=<hex>``,
+    or ``null`` for one the version lacks. The bucket writes every key, so a
+    missing one is a record of another shape, not a file the version lacks.
+
+    Raises:
+        FullTextError: When the value is neither, a file of another name or
+            folder or a missing key included: a record not of the shape read,
+            refused rather than guessed at.
+    """
+    if field_name not in data:
+        raise FullTextError(f"PMC Open Data record {stem}: no {field_name}")
+    value = data[field_name]
+    if value is None:
+        return None
+    if _is_text(value):
+        prefix = f"s3://pmc-oa-opendata/{stem}/{stem}{suffix}?md5="
+        md5 = value.removeprefix(prefix)
+        if md5 != value and re.fullmatch("[0-9a-f]{32}", md5):
+            return md5
+    raise FullTextError(f"PMC Open Data record {stem}: unexpected {field_name} {value!r}")
+
+
+def _open_data_record(data: object, pmc_id: str, version: int) -> PmcOpenDataRecord:
+    """Read *pmc_id*'s record at *version* from its parsed ``.json`` (#750).
+
+    Raises:
+        FullTextError: When the record is not an object of the expected
+            shape, or names another article or version.
+    """
+    stem = f"{pmc_id}.{version}"
+    if not isinstance(data, dict):
+        raise FullTextError(f"PMC Open Data record {stem} is not an object")
+
+    def field_of(name: str, kind: type, *, nullable: bool) -> Any:
+        # The bucket writes every key, ``null`` where it has no value (#752).
+        if name not in data:
+            raise FullTextError(f"PMC Open Data record {stem}: no {name}")
+        value = data[name]
+        if (value is None and nullable) or (type(value) is kind):  # bool is not an int here
+            return value
+        raise FullTextError(f"PMC Open Data record {stem}: unexpected {name} {value!r}")
+
+    if field_of("pmcid", str, nullable=False) != pmc_id or (
+        field_of("version", int, nullable=False) != version
+    ):
+        raise FullTextError(f"PMC Open Data record {stem} names another article or version")
+    pmid = field_of("pmid", int, nullable=True)
+    if pmid is not None and not 0 < pmid < 2**64:  # Rust reads a u64; a PMID is positive
+        raise FullTextError(f"PMC Open Data record {stem}: unexpected pmid {pmid!r}")
+    return PmcOpenDataRecord(
+        pmc_id=pmc_id,
+        version=version,
+        pmid=None if pmid is None else str(pmid),
+        doi=field_of("doi", str, nullable=True),
+        is_retracted=field_of("is_retracted", bool, nullable=False),
+        is_pmc_openaccess=field_of("is_pmc_openaccess", bool, nullable=False),
+        license_code=field_of("license_code", str, nullable=True),
+        xml_md5=_open_data_file_md5(data, "xml_url", stem, ".xml"),
+        pdf_md5=_open_data_file_md5(data, "pdf_url", stem, ".pdf"),
+    )
+
+
+def _md5_hex(content: bytes) -> str:
+    """*content*'s md5 as lowercase hex: a checksum the bucket gives, not security."""
+    return hashlib.md5(content, usedforsecurity=False).hexdigest()
 
 
 def _is_text(value: object) -> TypeGuard[str]:
@@ -974,9 +1047,10 @@ class FullTextService:
               found below, and with none a saved one is returned after 1b',
               a failed one after 2
           1a. Europe PMC XML (known PMC ID)
-          1c. NCBI PMC efetch for that ID, when Europe PMC gave no body
+          1c. NCBI PMC efetch for that ID, when Europe PMC gave no body,
+              then PMC's Open Data bucket, when NCBI gave none either
           1b. Discover a PMC ID via Europe PMC search — when there is no
-              usable known ID, or it gave no full text at either source —
+              usable known ID, or it gave no full text at any source —
               then 1a and 1c for it if it is a different ID
           1b'. Discover PMC ID via NCBI's ID Converter when the search
                reported none — only without a usable known ID, since a
@@ -1428,7 +1502,7 @@ class FullTextService:
 
         # Tiers 1b and 1b′: resolve a PMC ID from the DOI or PMID, then 1a and
         # 1c for it. Reached with a caller ID only once that ID has given no
-        # full text at either source, and then only the *search* may supersede
+        # full text at any source, and then only the *search* may supersede
         # it — the maintainer's decision on #304's stale-ID half, on the
         # ground that the recovery step this replaced already trusted that
         # search hit as the article, taking its free PDF whenever it offered
@@ -1660,13 +1734,15 @@ class FullTextService:
         failures: _TierFailures,
         abstract_only: FullTextResult | None,
     ) -> tuple[FullTextResult | None, FullTextResult | None]:
-        """Tiers 1a and 1c for one PMC ID: Europe PMC's XML, then NCBI's.
+        """Tiers 1a and 1c for one PMC ID: Europe PMC's XML, then NCBI's, then the bucket's.
 
         NCBI is asked only when Europe PMC gave no body — it serves the corpus
-        its ``inEPMC`` flag describes, and NCBI serves PMC itself. Both ahead of
-        the PDF tiers, because structured JATS beats a PDF that needs
-        ``bmlib[pdf]`` to read at all. One method for the caller's ID and a
-        discovered one, since the two were separate copies of the same pair.
+        its ``inEPMC`` flag describes, and NCBI serves PMC itself — and PMC's
+        Open Data bucket only when neither did (#751): the same PMC rendition
+        as NCBI's, served where NCBI fails or throttles. All ahead of the PDF
+        tiers, because structured JATS beats a PDF that needs ``bmlib[pdf]``
+        to read at all. One method for the caller's ID and a discovered one,
+        since the two were separate copies of the same sequence.
 
         Args:
             pmc_id: The ID to fetch; validated by the fetch helpers.
@@ -1676,12 +1752,13 @@ class FullTextService:
 
         Returns:
             A tuple of ``(result, abstract_only)``: the full-text result, or
-            ``None`` when neither source had a body, and the held-back
+            ``None`` when no source had a body, and the held-back
             rendering — the first one seen, earlier tiers' included.
         """
         fetchers = (
             ("europepmc", "Europe PMC", self._fetch_europepmc),
             ("ncbi_pmc", "NCBI PMC", self._fetch_ncbi_pmc),
+            ("pmc_open_data", "PMC Open Data", self._fetch_pmc_open_data_xml),
         )
         for source, name, fetch in fetchers:
             try:
@@ -1841,12 +1918,13 @@ class FullTextService:
         # failure may pass, bar the seek limit (#746).
         passing = pdf if pdf is not None and pdf.pdf_failure_may_pass else None
         for source, target, origin in candidates:
+            md5: str | None = None  # only the bucket's record gives one (#750)
             if origin in ("unpaywall", "pmc_open_data"):
                 try:
                     if origin == "unpaywall":
                         url = self._fetch_unpaywall(target)
                     else:
-                        url = self._fetch_pmc_open_data_pdf(target)
+                        url, md5 = self._fetch_pmc_open_data_pdf(target)
                 except Exception as exc:
                     logger.debug("%s failed for %s", source, target, exc_info=True)
                     failures.record(exc)
@@ -1861,6 +1939,7 @@ class FullTextService:
                 source=source,
                 origin=origin,
                 attempts=1 if seeks else PDF_BESIDE_JATS_ATTEMPTS,
+                md5=md5,
             )
             if found.pdf_download_failure is None:
                 if found.file_path:
@@ -1904,6 +1983,7 @@ class FullTextService:
         source: str,
         origin: _PdfOrigin,
         attempts: int,
+        md5: str | None = None,
     ) -> FullTextResult:
         """Download the PDF at *url* for a JATS result, retrying with backoff (#744).
 
@@ -1919,7 +1999,7 @@ class FullTextService:
         attempt = 1
         while True:
             found = FullTextResult(source=source, pdf_url=url)
-            self._download_and_cache_pdf(url, cache_id, found, origin=origin)
+            self._download_and_cache_pdf(url, cache_id, found, origin=origin, md5=md5)
             if attempt >= attempts or not found.pdf_failure_may_pass:
                 return found
             delay = self.pdf_retry_delay * 2 ** (attempt - 1)
@@ -2441,6 +2521,7 @@ class FullTextService:
         result: FullTextResult,
         *,
         origin: _PdfOrigin,
+        md5: str | None = None,
     ) -> None:
         """Download a PDF and save it to the disk cache.
 
@@ -2478,6 +2559,9 @@ class FullTextService:
                 (bioRxiv, serving its own host) measured 0.7%. The source
                 still appears in the message text, so the first report names
                 the specific venue either way.
+            md5: The md5 the PDF's bytes must have, as lowercase hex, or
+                ``None`` to take them unchecked; a mismatch is
+                ``"checksum-mismatch"`` (#750).
         """
         if self.cache is None:
             # Reachable only when the default cache could not be created (#75).
@@ -2517,6 +2601,16 @@ class FullTextService:
                     cause=f"http-{resp.status_code}",
                 )
                 result.pdf_download_failure = f"http-{resp.status_code}"
+                return
+            if md5 is not None and _md5_hex(resp.content) != md5:
+                self._report_pdf_download_failure(
+                    source=result.source,
+                    origin=origin,
+                    pdf_url=pdf_url,
+                    reason="the PDF does not match the md5 its record gives",
+                    cause=PDF_CHECKSUM_MISMATCH,
+                )
+                result.pdf_download_failure = PDF_CHECKSUM_MISMATCH
                 return
             path, outcome = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
         except Exception as exc:
@@ -3098,42 +3192,117 @@ class FullTextService:
             raise FullTextUnavailableError(f"NCBI PMC returned no article content for {normalized}")
         return html, article.has_body, resp.content
 
-    def _fetch_pmc_open_data_pdf(self, pmc_id: str) -> str:
-        """The URL of *pmc_id*'s PDF in PMC's AWS Open Data bucket (#748).
+    def pmc_open_data_record(self, pmc_id: str) -> PmcOpenDataRecord | None:
+        """*pmc_id*'s latest version's record in PMC's AWS Open Data bucket (#750).
 
-        Two listings, each a small XML page: the article's versions, then
-        whether the latest one holds a PDF, so a missing PDF is an answer
-        rather than a failed download. Only the latest version is taken, the
-        one Europe PMC's JATS is of.
+        Two requests: the listing of the article's versions, then the latest
+        one's ``PMC<n>.<v>.json``. The record says whether PMC lists the
+        article as retracted, its licence, and which files the version holds.
+
+        Args:
+            pmc_id: A PMC ID, with or without the ``PMC`` prefix.
+
+        Returns:
+            The record, or ``None`` when the bucket holds no version of the
+            article or no record for its latest: the bucket answering that it
+            has none, as most articles outside PMC's open-access subset are.
 
         Raises:
-            FullTextError: On a listing answered other than 200.
-            FullTextUnavailableError: When the bucket holds no version of the
-                article, or its latest holds no PDF: the bucket answering
-                that it has none, as most articles outside PMC's open-access
-                subset are.
+            FullTextError: On a malformed PMC ID, a listing or record answered
+                other than 200 (a missing record's 404 aside), and a record
+                that is not valid JSON or not of the shape read.
+            httpx.HTTPError: On a request that failed before an answer, as
+                httpx raised it.
         """
         pmc_id = _normalise_pmc_id(pmc_id)
         listing = self._open_data_listing(f"prefix={quote(pmc_id + '.')}&delimiter=/")
         version = _latest_open_data_version(listing, pmc_id)
         if version is None:
+            return None
+        stem = f"{pmc_id}.{version}"
+        resp = self._http_get(f"{PMC_OPEN_DATA_BASE}/{stem}/{stem}.json")
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            raise FullTextError(f"PMC Open Data HTTP {resp.status_code}")
+        try:
+            # As serde_json reads it, so Python and Rust refuse the same bodies (#572).
+            data = strict_json_loads(resp.content.decode("utf-8"))
+        except ValueError as exc:  # UnicodeDecodeError and JSONDecodeError both
+            raise FullTextError(f"PMC Open Data record {stem} is not JSON") from exc
+        return _open_data_record(data, pmc_id, version)
+
+    def _fetch_pmc_open_data_xml(self, pmc_id: str) -> tuple[str, bool, bytes]:
+        """Fetch *pmc_id*'s JATS from PMC's AWS Open Data bucket (#751).
+
+        The latest version's XML, as its record (:meth:`pmc_open_data_record`)
+        names it, checked against the record's md5.
+
+        Returns:
+            A tuple of the rendered HTML, whether the document had a body, and
+            the XML as served, as for :meth:`_fetch_europepmc`.
+
+        Raises:
+            FullTextError: As :meth:`pmc_open_data_record`; on the XML answered
+                other than 200, which the record says is there; and on bytes
+                that do not match its md5.
+            SAXParseException: On XML that cannot be parsed, as
+                :class:`JATSParser` raised it.
+            FullTextUnavailableError: When the bucket holds no record of the
+                article, its latest version no XML, or the XML no article
+                content (as :meth:`_fetch_ncbi_pmc`).
+        """
+        record = self.pmc_open_data_record(pmc_id)
+        if record is None:
             raise FullTextUnavailableError(f"{pmc_id} is not in PMC's Open Data bucket")
-        key = _open_data_pdf_key(pmc_id, version)
-        if f"<Key>{key}</Key>" not in self._open_data_listing(f"prefix={quote(key)}&max-keys=1"):
-            raise FullTextUnavailableError(f"{pmc_id}.{version} has no PDF in PMC's Open Data")
-        return f"{PMC_OPEN_DATA_BASE}/{key}"
+        if record.xml_md5 is None:
+            raise FullTextUnavailableError(f"{record.stem} has no JATS in PMC's Open Data")
+        resp = self._http_get(f"{PMC_OPEN_DATA_BASE}/{record.stem}/{record.stem}.xml")
+        if resp.status_code != 200:
+            raise FullTextError(f"PMC Open Data HTTP {resp.status_code}")
+        if _md5_hex(resp.content) != record.xml_md5:
+            raise FullTextError(f"{record.stem}.xml does not match the md5 its record gives")
+        parser = JATSParser(resp.content, known_pmc_id=record.pmc_id)
+        article, html = parser.parse_with_html()
+        if not article.has_body and not article.abstract_sections:
+            raise FullTextUnavailableError(f"{record.stem}.xml holds no article content")
+        return html, article.has_body, resp.content
+
+    def _fetch_pmc_open_data_pdf(self, pmc_id: str) -> tuple[str, str]:
+        """The URL and md5 of *pmc_id*'s PDF in PMC's AWS Open Data bucket (#748, #750).
+
+        Read from the latest version's record (:meth:`pmc_open_data_record`),
+        so a missing PDF is an answer rather than a failed download. Only the
+        latest version is taken, the one Europe PMC's JATS is of.
+
+        Raises:
+            FullTextError: As :meth:`pmc_open_data_record`.
+            FullTextUnavailableError: When the bucket holds no record of the
+                article, or its latest version holds no PDF.
+        """
+        record = self.pmc_open_data_record(pmc_id)
+        if record is None:
+            raise FullTextUnavailableError(f"{pmc_id} is not in PMC's Open Data bucket")
+        if record.pdf_md5 is None:
+            raise FullTextUnavailableError(f"{record.stem} has no PDF in PMC's Open Data")
+        return f"{PMC_OPEN_DATA_BASE}/{record.stem}/{record.stem}.pdf", record.pdf_md5
 
     def _open_data_listing(self, query: str) -> str:
         """One ``ListObjectsV2`` page of PMC's Open Data bucket, its body as text.
 
         Raises:
-            FullTextError: On a response other than 200.
+            FullTextError: On a response other than 200, or one that is not a
+                listing (a proxy's page, say), which would otherwise read as
+                naming no version.
         """
         resp = self._http_get(f"{PMC_OPEN_DATA_BASE}/?list-type=2&{query}")
         if resp.status_code != 200:
             raise FullTextError(f"PMC Open Data HTTP {resp.status_code}")
         # Lossy: only the ASCII keys are read, so a stray byte costs nothing.
-        return resp.content.decode("utf-8", errors="replace")
+        listing = resp.content.decode("utf-8", errors="replace")
+        if "<ListBucketResult" not in listing:
+            raise FullTextError("PMC Open Data listing is not a ListBucketResult")
+        return listing
 
     def _fetch_unpaywall(self, doi: str) -> str:
         """Query Unpaywall for open-access PDF URL.

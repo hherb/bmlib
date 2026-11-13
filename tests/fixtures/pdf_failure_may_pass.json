@@ -1,9 +1,10 @@
 {
-  "description": "FullTextResult.pdf_failure_may_pass by pdf_download_failure (#744): whether a later try may get the PDF. Shared by tests/test_fulltext_source_contract.py and rust/bmlib/tests/fulltext_source_contract.rs.",
+  "description": "FullTextResult.pdf_failure_may_pass by pdf_download_failure (#744; checksum-mismatch since #750): whether a later try may get the PDF. Shared by tests/test_fulltext_source_contract.py and rust/bmlib/tests/fulltext_source_contract.rs.",
   "cases": [
     {"cause": null, "may_pass": false},
     {"cause": "request-failed", "may_pass": true},
     {"cause": "search-failed", "may_pass": true},
+    {"cause": "checksum-mismatch", "may_pass": true},
     {"cause": "http-429", "may_pass": true},
     {"cause": "http-500", "may_pass": true},
     {"cause": "http-503", "may_pass": true},

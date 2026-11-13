@@ -26,6 +26,7 @@ to this port and mirror nothing in Swift.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -815,19 +816,98 @@ class FullTextSourceEntry:
         )
 
 
+@dataclass
+class PmcOpenDataRecord:
+    """One article version's metadata in PMC's AWS Open Data bucket (#750).
+
+    Read from the version's ``PMC<n>.<v>.json`` by
+    ``FullTextService.pmc_open_data_record``. Only the fields bmlib uses or a
+    caller asked for are kept.
+    """
+
+    pmc_id: str  # "PMC" and ASCII digits
+    version: int
+    pmid: str | None
+    doi: str | None
+    is_retracted: bool
+    is_pmc_openaccess: bool
+    license_code: str | None  # e.g. "CC BY"; None where PMC names none
+    xml_md5: str | None  # lowercase hex; None when the version holds no JATS
+    pdf_md5: str | None  # lowercase hex; None when the version holds no PDF
+
+    @property
+    def stem(self) -> str:
+        """The version's folder and file stem in the bucket, ``PMC1.2``."""
+        return f"{self.pmc_id}.{self.version}"
+
+    def to_dict(self) -> dict[str, Any]:
+        """The record as a JSON-ready dict, one key per field."""
+        return {
+            "pmc_id": self.pmc_id,
+            "version": self.version,
+            "pmid": self.pmid,
+            "doi": self.doi,
+            "is_retracted": self.is_retracted,
+            "is_pmc_openaccess": self.is_pmc_openaccess,
+            "license_code": self.license_code,
+            "xml_md5": self.xml_md5,
+            "pdf_md5": self.pdf_md5,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PmcOpenDataRecord:
+        """Rebuild a record from :meth:`to_dict` output, refusing to guess.
+
+        Raises:
+            ValueError: Naming the field, when one is missing or not of its
+                type and shape (an md5 not lowercase hex, say).
+        """
+
+        # The values each field may hold, asked of the value's real type.
+        def text(pattern: str, *, nullable: bool) -> Callable[[Any], bool]:
+            return lambda v: (
+                (v is None and nullable)
+                or (type(v) is str and re.fullmatch(pattern, v) is not None)
+            )
+
+        checks: dict[str, Callable[[Any], bool]] = {
+            "pmc_id": text("PMC[0-9]+", nullable=False),
+            "version": lambda v: type(v) is int and v >= 0,
+            "pmid": text("[0-9]+", nullable=True),
+            "doi": lambda v: v is None or type(v) is str,
+            "is_retracted": lambda v: type(v) is bool,
+            "is_pmc_openaccess": lambda v: type(v) is bool,
+            "license_code": lambda v: v is None or type(v) is str,
+            "xml_md5": text("[0-9a-f]{32}", nullable=True),
+            "pdf_md5": text("[0-9a-f]{32}", nullable=True),
+        }
+        for name, check in checks.items():
+            if name not in data or not check(data[name]):
+                raise ValueError(f"PmcOpenDataRecord: {name}")
+        return cls(**{name: data[name] for name in checks})
+
+
 # ``FullTextResult.pdf_download_failure`` when the search for a PDF beside
 # JATS failed and no download that failed may pass (#744, #746).
 PDF_SEARCH_FAILED = "search-failed"
-# The causes a later try may cure besides an HTTP 408, 429 or 5xx (#744, #746).
-_PDF_FAILURES_THAT_MAY_PASS = frozenset({"request-failed", PDF_SEARCH_FAILED})
+# ``FullTextResult.pdf_download_failure`` when the PDF's bytes do not match the
+# md5 the bucket's record gives for them (#750).
+PDF_CHECKSUM_MISMATCH = "checksum-mismatch"
+# The causes a later try may cure besides an HTTP 408, 429 or 5xx (#744, #746;
+# a mismatched checksum since #750, as a transfer cut short or a copy being
+# replaced may give one).
+_PDF_FAILURES_THAT_MAY_PASS = frozenset(
+    {"request-failed", PDF_SEARCH_FAILED, PDF_CHECKSUM_MISMATCH}
+)
 
 
 @dataclass
 class FullTextResult:
     """Result of a full-text retrieval attempt."""
 
-    # "europepmc", "europepmc_pdf", "unpaywall", "doi", "pubmed", "cached",
-    # or a fetcher source name (e.g. "biorxiv") for known full-text URLs
+    # "europepmc", "ncbi_pmc", "pmc_open_data", "europepmc_pdf", "unpaywall",
+    # "doi", "pubmed", "cached", or a fetcher source name (e.g. "biorxiv") for
+    # known full-text URLs
     source: str
     html: str | None = None
     pdf_url: str | None = None
@@ -865,10 +945,13 @@ class FullTextResult:
     #                      defect in bmlib itself, which a retry will not cure
     #   "write-failed"   — the PDF arrived and the cache could not save it
     #   "search-failed"  — only beside JATS (``fetch_pdf_with_jats``): the
-    #                      search for a PDF (Europe PMC's, Unpaywall's)
-    #                      failed, and no download was tried (#744) or none
-    #                      that failed may pass (#746); ``pdf_url``, if set,
-    #                      is a download that failed finally
+    #                      search for a PDF (Europe PMC's, PMC Open Data's
+    #                      listing or record, Unpaywall's) failed, and no
+    #                      download was tried (#744) or none that failed may
+    #                      pass (#746); ``pdf_url``, if set, is a download
+    #                      that failed finally
+    #   "checksum-mismatch" — only from PMC's Open Data bucket: the PDF's bytes
+    #                      do not match the md5 its record gives (#750)
     #
     # ``None`` when the PDF was cached, and when no download was attempted —
     # no cache, or no ``identifier`` to key one by — as for every non-PDF tier.
@@ -909,13 +992,13 @@ class FullTextResult:
         """Whether a later try may get the PDF ``pdf_download_failure`` names (#744).
 
         True for the causes an outage gives: ``"request-failed"``,
-        ``"search-failed"``, ``"http-408"`` (since #746), ``"http-429"`` and
-        every ``"http-5xx"``. False for every other cause, which the same
-        request answers the same way, and for ``None``. Some true ones never
-        pass (a bot wall's 503; in Python a defect in bmlib is
-        ``"request-failed"`` too), which is why the service bounds its retries
-        and its second looks. The rule is shared with Rust by
-        ``tests/fixtures/pdf_failure_may_pass.json``.
+        ``"search-failed"``, ``"checksum-mismatch"`` (since #750),
+        ``"http-408"`` (since #746), ``"http-429"`` and every ``"http-5xx"``.
+        False for every other cause, which the same request answers the same
+        way, and for ``None``. Some true ones never pass (a bot wall's 503; in
+        Python a defect in bmlib is ``"request-failed"`` too), which is why
+        the service bounds its retries and its second looks. The rule is
+        shared with Rust by ``tests/fixtures/pdf_failure_may_pass.json``.
         """
         cause = self.pdf_download_failure or ""
         if cause in _PDF_FAILURES_THAT_MAY_PASS:

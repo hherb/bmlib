@@ -767,9 +767,10 @@ pub struct FullTextSourceEntry {
 /// Result of a full-text retrieval attempt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullTextResult {
-    /// Which tier or fetcher produced this: `"europepmc"`, `"europepmc_pdf"`,
-    /// `"unpaywall"`, `"doi"`, `"pubmed"`, `"cached"`, or a fetcher source name
-    /// (e.g. `"biorxiv"`) for known full-text URLs.
+    /// Which tier or fetcher produced this: `"europepmc"`, `"ncbi_pmc"`,
+    /// `"pmc_open_data"`, `"europepmc_pdf"`, `"unpaywall"`, `"doi"`,
+    /// `"pubmed"`, `"cached"`, or a fetcher source name (e.g. `"biorxiv"`) for
+    /// known full-text URLs.
     pub source: String,
     /// The retrieved payload — HTML or JATS XML — or `None` where nothing was
     /// retrieved.
@@ -818,9 +819,12 @@ pub struct FullTextResult {
     /// answer: a timeout, a reset, DNS), `"write-failed"` (the PDF arrived
     /// and the cache could not save it) or, only beside JATS
     /// (`fetch_pdf_with_jats`), [`PDF_SEARCH_FAILED`] (the search for a PDF,
-    /// Europe PMC's or Unpaywall's, failed, and no download was tried, #744,
-    /// or none that failed may pass, #746; `pdf_url`, if set, is a download
-    /// that failed finally).
+    /// Europe PMC's, PMC Open Data's listing or record, or Unpaywall's,
+    /// failed, and no download was tried, #744, or none that failed may pass,
+    /// #746; `pdf_url`, if set, is a download that failed finally), and, only
+    /// from PMC's Open Data bucket,
+    /// [`PDF_CHECKSUM_MISMATCH`] (the PDF's bytes do not match the md5 its
+    /// record gives, #750).
     ///
     /// `None` when the PDF was cached, and when no download was attempted — no
     /// cache, or no `identifier` to key one by — as for every non-PDF tier.
@@ -857,20 +861,63 @@ pub struct FullTextResult {
 /// JATS failed and no download that failed may pass (#744, #746).
 pub const PDF_SEARCH_FAILED: &str = "search-failed";
 
+/// [`FullTextResult::pdf_download_failure`] when the PDF's bytes do not match
+/// the md5 PMC Open Data's record gives for them (#750).
+pub const PDF_CHECKSUM_MISMATCH: &str = "checksum-mismatch";
+
+/// One article version's metadata in PMC's AWS Open Data bucket (#750).
+///
+/// Read from the version's `PMC<n>.<v>.json` by
+/// `FullTextService::pmc_open_data_record`. Only the fields bmlib uses or a
+/// caller asked for are kept. Python's `PmcOpenDataRecord`. Its `Deserialize`
+/// checks each field's type, not its shape, and reads a missing `Option` as
+/// `None`; Python's `from_dict` refuses both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PmcOpenDataRecord {
+    /// `PMC` and ASCII digits.
+    pub pmc_id: String,
+    /// The version the record is of, the latest the bucket holds.
+    pub version: u64,
+    /// The PMID PMC links, as ASCII digits (a positive integer in the record).
+    pub pmid: Option<String>,
+    /// The DOI PMC links.
+    pub doi: Option<String>,
+    /// Whether PMC lists the article as retracted.
+    pub is_retracted: bool,
+    /// Whether the article is in PMC's open-access subset.
+    pub is_pmc_openaccess: bool,
+    /// For example `"CC BY"`; `None` where PMC names none.
+    pub license_code: Option<String>,
+    /// Lowercase hex; `None` when the version holds no JATS.
+    pub xml_md5: Option<String>,
+    /// Lowercase hex; `None` when the version holds no PDF.
+    pub pdf_md5: Option<String>,
+}
+
+impl PmcOpenDataRecord {
+    /// The version's folder and file stem in the bucket, `PMC1.2`.
+    #[must_use]
+    pub fn stem(&self) -> String {
+        format!("{}.{}", self.pmc_id, self.version)
+    }
+}
+
 impl FullTextResult {
     /// Whether a later try may get the PDF
     /// [`pdf_download_failure`](FullTextResult::pdf_download_failure) names
     /// (#744).
     ///
     /// True for an outage: `"request-failed"`, [`PDF_SEARCH_FAILED`],
-    /// `"http-408"`, `"http-429"` and every `"http-5xx"` (408 since #746).
+    /// [`PDF_CHECKSUM_MISMATCH`] (since #750), `"http-408"`, `"http-429"` and
+    /// every `"http-5xx"` (408 since #746).
     /// False for every other cause, which the same request answers the same
     /// way, and for `None`. The rule is shared with Python by
     /// `tests/fixtures/pdf_failure_may_pass.json`.
     #[must_use]
     pub fn pdf_failure_may_pass(&self) -> bool {
         let cause = self.pdf_download_failure.as_deref().unwrap_or_default();
-        if cause == "request-failed" || cause == PDF_SEARCH_FAILED {
+        if cause == "request-failed" || cause == PDF_SEARCH_FAILED || cause == PDF_CHECKSUM_MISMATCH
+        {
             return true;
         }
         let Some(status) = cause.strip_prefix("http-") else {

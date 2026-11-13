@@ -61,8 +61,8 @@ pub use jats_text::{
 pub use models::{
     ContentKind, FullTextResult, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
-    JATSReferenceInfo, JATSTableInfo, Section, SectionType, SegmentedDocument, TextBlock,
-    PDF_SEARCH_FAILED,
+    JATSReferenceInfo, JATSTableInfo, PmcOpenDataRecord, Section, SectionType, SegmentedDocument,
+    TextBlock, PDF_CHECKSUM_MISMATCH, PDF_SEARCH_FAILED,
 };
 pub use parse_audit::{unwind_diagnostics, ParseUnwindState};
 pub use pdf_text::{

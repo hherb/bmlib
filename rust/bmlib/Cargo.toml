@@ -111,6 +111,10 @@ llama-cpp-sys-2 = { version = "=0.1.159", optional = true }
 # Its own crate: a wrong digest would fail *silently* by accepting a corrupt
 # multi-gigabyte file. Not optional: the store needs it without `embed`.
 sha2 = "0.10"
+# MD5, for PMC Open Data's per-file checksums (#750): the bucket's records give
+# an md5 and nothing stronger. A checksum against a damaged transfer, not a
+# security check. Its own crate, as `sha1` and `sha2` are, and of their family.
+md-5 = "0.10"
 keyring = { version = "4.2", optional = true }
 
 [target.'cfg(windows)'.dependencies]

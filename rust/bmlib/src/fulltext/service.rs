@@ -80,7 +80,7 @@
 //!
 //! * **#304** — a caller PMC ID is validated before it is used. A malformed one
 //!   is recorded and treated as absent, so discovery runs in full, the ID
-//!   Converter included; and a well-formed one that neither source serves is
+//!   Converter included; and a well-formed one that no source serves is
 //!   **superseded by the Europe PMC search hit's id**, which is the hit the
 //!   free-PDF tier already trusted as the article. A remote `pmcid` is validated
 //!   where it is read, so a bare numeric one compares equal to the caller's
@@ -97,7 +97,8 @@ use crate::fulltext::cache::{safe_filename, sanitize_identifier, FullTextCache};
 use crate::fulltext::jats_reader::{author_full_name, parse_with_pmc_id};
 use crate::fulltext::models::{
     join_citation_parts, ContentKind, FullTextResult, FullTextSourceEntry, JATSArticle,
-    JATSBodySection, JATSFundingAward, JATSReferenceInfo, PDF_SEARCH_FAILED,
+    JATSBodySection, JATSFundingAward, JATSReferenceInfo, PmcOpenDataRecord, PDF_CHECKSUM_MISMATCH,
+    PDF_SEARCH_FAILED,
 };
 use crate::fulltext::pdf_text::{PdfError, PdfErrorKind};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
@@ -760,9 +761,123 @@ fn latest_open_data_version(listing: &str, pmc_id: &str) -> Option<u64> {
         .max()
 }
 
-/// The bucket key of `pmc_id`'s PDF at `version`: `PMC1.2/PMC1.2.pdf` (#748).
-fn open_data_pdf_key(pmc_id: &str, version: u64) -> String {
-    format!("{pmc_id}.{version}/{pmc_id}.{version}.pdf")
+/// A fault refusing a PMC Open Data record not of the shape read (#750).
+fn open_data_refusal(stem: &str, what: impl std::fmt::Display) -> TierFault {
+    TierFault::fault(
+        "FullTextError",
+        format!("PMC Open Data record {stem}: {what}"),
+    )
+}
+
+/// The md5 a PMC Open Data record gives for the version's own `suffix` file (#750).
+///
+/// The record names each file as
+/// `s3://pmc-oa-opendata/<stem>/<stem><suffix>?md5=<hex>`, or `null` for one
+/// the version lacks. The bucket writes every key, so a missing one is a
+/// record of another shape, not a file the version lacks. Anything else, a
+/// file of another name or folder included, is a record not of the shape
+/// read: refused, not guessed at.
+fn open_data_file_md5(
+    data: &Map<String, Value>,
+    field: &str,
+    stem: &str,
+    suffix: &str,
+) -> Result<Option<String>, TierFault> {
+    let value = match data.get(field) {
+        None => return Err(open_data_refusal(stem, format!("no {field}"))),
+        Some(Value::Null) => return Ok(None),
+        Some(value) => value,
+    };
+    let prefix = format!("s3://pmc-oa-opendata/{stem}/{stem}{suffix}?md5=");
+    let md5 = value.as_str().and_then(|text| text.strip_prefix(&prefix));
+    match md5 {
+        Some(md5)
+            if md5.len() == 32 && md5.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) =>
+        {
+            Ok(Some(md5.to_string()))
+        }
+        _ => Err(open_data_refusal(
+            stem,
+            format!("unexpected {field} {value}"),
+        )),
+    }
+}
+
+/// Read `pmc_id`'s record at `version` from its parsed `.json` (#750).
+///
+/// A field must be present and have the JSON type the bucket gives it, `null`
+/// only where the bucket leaves it so (it writes every key); the record must
+/// name the article and version asked.
+fn open_data_record(
+    data: &Value,
+    pmc_id: &str,
+    version: u64,
+) -> Result<PmcOpenDataRecord, TierFault> {
+    let stem = format!("{pmc_id}.{version}");
+    let Some(data) = data.as_object() else {
+        return Err(TierFault::fault(
+            "FullTextError",
+            format!("PMC Open Data record {stem} is not an object"),
+        ));
+    };
+    let unexpected = |name: &str| {
+        let value = data.get(name).unwrap_or(&Value::Null);
+        open_data_refusal(&stem, format!("unexpected {name} {value}"))
+    };
+    // The bucket writes every key, `null` where it has no value (#752).
+    let present = |name: &str| {
+        data.get(name)
+            .ok_or_else(|| open_data_refusal(&stem, format!("no {name}")))
+    };
+    let text = |name: &str| match present(name)? {
+        Value::Null => Ok(None),
+        Value::String(value) => Ok(Some(value.clone())),
+        _ => Err(unexpected(name)),
+    };
+    let flag = |name: &str| match present(name)? {
+        Value::Bool(value) => Ok(*value),
+        _ => Err(unexpected(name)),
+    };
+    let named_pmc_id = text("pmcid")?.ok_or_else(|| unexpected("pmcid"))?;
+    let named_version = match present("version")? {
+        Value::Number(number) if number.is_i64() || number.is_u64() => number.as_u64(),
+        _ => return Err(unexpected("version")),
+    };
+    if named_pmc_id != pmc_id || named_version != Some(version) {
+        return Err(TierFault::fault(
+            "FullTextError",
+            format!("PMC Open Data record {stem} names another article or version"),
+        ));
+    }
+    let pmid = match present("pmid")? {
+        Value::Null => None,
+        // A PMID is positive, and one past u64 reads as a float (#752 review).
+        Value::Number(number) => match number.as_u64() {
+            Some(pmid) if pmid > 0 => Some(pmid.to_string()),
+            _ => return Err(unexpected("pmid")),
+        },
+        _ => return Err(unexpected("pmid")),
+    };
+    Ok(PmcOpenDataRecord {
+        pmc_id: pmc_id.to_string(),
+        version,
+        pmid,
+        doi: text("doi")?,
+        is_retracted: flag("is_retracted")?,
+        is_pmc_openaccess: flag("is_pmc_openaccess")?,
+        license_code: text("license_code")?,
+        xml_md5: open_data_file_md5(data, "xml_url", &stem, ".xml")?,
+        pdf_md5: open_data_file_md5(data, "pdf_url", &stem, ".pdf")?,
+    })
+}
+
+/// `content`'s md5 as lowercase hex: a checksum the bucket gives, not security.
+fn md5_hex(content: &[u8]) -> String {
+    use md5::{Digest, Md5};
+    Md5::digest(content)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// One response body read as **strict** UTF-8, for the text tiers.
@@ -1778,7 +1893,7 @@ impl FullTextService {
 
         // Tiers 1b and 1b′: resolve a PMC ID from the DOI or PMID, then 1a and 1c
         // for it. Reached with a caller ID only once that ID has given no full
-        // text at either source, and then only the *search* may supersede it —
+        // text at any source, and then only the *search* may supersede it —
         // the maintainer's decision on #304's stale-ID half, on the ground that
         // the recovery step this replaced already trusted that search hit as the
         // article, taking its free PDF whenever it offered one. Fetching the same
@@ -1848,7 +1963,7 @@ impl FullTextService {
                 pdf_url: Some(url.clone()),
                 ..empty_result("europepmc_pdf")
             };
-            self.download_and_cache_pdf(&url, cache_id, &mut result, PdfOrigin::EuropepmcPdf);
+            self.download_and_cache_pdf(&url, cache_id, &mut result, PdfOrigin::EuropepmcPdf, None);
             // A failed one is no better than the caller's held failure, and
             // would replace its address and cause (#739).
             if result.pdf_download_failure.is_none() || pdf.is_none() {
@@ -1878,6 +1993,7 @@ impl FullTextService {
                         cache_id,
                         &mut result,
                         PdfOrigin::Unpaywall,
+                        None,
                     );
                     if result.pdf_download_failure.is_none() || pdf.is_none() {
                         // As Tier 1d's.
@@ -2163,14 +2279,18 @@ impl FullTextService {
         let mut passing = pdf.filter(|held| held.pdf_failure_may_pass()).cloned();
         let tried_any = searched || !candidates.is_empty();
         for (source, target, origin) in candidates {
+            // Only the bucket's record gives an md5 (#750).
             let resolved = match origin {
-                PdfOrigin::Unpaywall => Some(self.fetch_unpaywall(&target)),
-                PdfOrigin::PmcOpenData => Some(self.fetch_pmc_open_data_pdf(&target)),
+                PdfOrigin::Unpaywall => Some(self.fetch_unpaywall(&target).map(|url| (url, None))),
+                PdfOrigin::PmcOpenData => Some(
+                    self.fetch_pmc_open_data_pdf(&target)
+                        .map(|(url, md5)| (url, Some(md5))),
+                ),
                 PdfOrigin::EuropepmcPdf | PdfOrigin::KnownSource => None,
             };
-            let url = match resolved {
-                None => target,
-                Some(Ok(url)) => url,
+            let (url, md5) = match resolved {
+                None => (target, None),
+                Some(Ok(found)) => found,
                 Some(Err(fault)) => {
                     self.debug(format!("{source} failed for {target}: {}", fault.message));
                     failures.record(&fault);
@@ -2184,7 +2304,14 @@ impl FullTextService {
             } else {
                 PDF_BESIDE_JATS_ATTEMPTS
             };
-            let candidate = self.download_beside_jats(&url, cache_id, &source, origin, attempts);
+            let candidate = self.download_beside_jats(
+                &url,
+                cache_id,
+                &source,
+                origin,
+                attempts,
+                md5.as_deref(),
+            );
             if candidate.pdf_download_failure.is_none() {
                 if candidate.file_path.is_some() {
                     self.info(format!("PDF from {source} saved beside the JATS full text"));
@@ -2252,6 +2379,7 @@ impl FullTextService {
         source: &str,
         origin: PdfOrigin,
         attempts: u32,
+        md5: Option<&str>,
     ) -> FullTextResult {
         let mut attempt = 1;
         loop {
@@ -2259,7 +2387,7 @@ impl FullTextService {
                 pdf_url: Some(url.to_string()),
                 ..empty_result(source)
             };
-            self.download_and_cache_pdf(url, cache_id, &mut found, origin);
+            self.download_and_cache_pdf(url, cache_id, &mut found, origin, md5);
             if attempt >= attempts || !found.pdf_failure_may_pass() {
                 return found;
             }
@@ -2488,6 +2616,7 @@ impl FullTextService {
                     cache_id,
                     &mut result,
                     PdfOrigin::KnownSource,
+                    None,
                 );
                 // A PDF ends nothing (#739): JATS reads better than a PDF's
                 // text, and a publisher's 403 used to hide the JATS a later
@@ -2797,6 +2926,7 @@ impl FullTextService {
         cache_id: Option<&str>,
         result: &mut FullTextResult,
         origin: PdfOrigin,
+        md5: Option<&str>,
     ) {
         let Some(cache) = self.cache.as_ref() else {
             self.debug(format!(
@@ -2830,6 +2960,17 @@ impl FullTextService {
                 &format!("http-{}", response.status),
             );
             result.pdf_download_failure = Some(format!("http-{}", response.status));
+            return;
+        }
+        if md5.is_some_and(|md5| md5_hex(&response.body) != md5) {
+            self.report_pdf_download_failure(
+                &result.source,
+                origin,
+                pdf_url,
+                "the PDF does not match the md5 its record gives",
+                PDF_CHECKSUM_MISMATCH,
+            );
+            result.pdf_download_failure = Some(PDF_CHECKSUM_MISMATCH.to_string());
             return;
         }
 
@@ -3093,15 +3234,18 @@ impl FullTextService {
         ))
     }
 
-    /// Tiers 1a and 1c for **one** PMC ID: Europe PMC's XML, then NCBI's.
+    /// Tiers 1a and 1c for **one** PMC ID: Europe PMC's XML, then NCBI's, then
+    /// the bucket's.
     ///
     /// NCBI is asked only when Europe PMC gave no body — it serves the corpus its
-    /// `inEPMC` flag describes, and NCBI serves PMC itself. Both ahead of the PDF
-    /// tiers, because structured JATS beats a PDF that needs a PDF backend to
-    /// read at all. One method for the caller's ID and a discovered one, since
-    /// the two were separate copies of the same pair.
+    /// `inEPMC` flag describes, and NCBI serves PMC itself — and PMC's Open Data
+    /// bucket only when neither did (#751): the same PMC rendition as NCBI's,
+    /// served where NCBI fails or throttles. All ahead of the PDF tiers,
+    /// because structured JATS beats a PDF that needs a PDF backend to read at
+    /// all. One method for the caller's ID and a discovered one, since the two
+    /// were separate copies of the same sequence.
     ///
-    /// Returns `(result, abstract_only)`: the full text, or `None` when neither
+    /// Returns `(result, abstract_only)`: the full text, or `None` when no
     /// source had a body, and the held-back rendering — **the first one seen**,
     /// earlier tiers' included, which is why the caller's own rendering is passed
     /// in.
@@ -3112,48 +3256,38 @@ impl FullTextService {
         failures: &mut TierFailures<'_>,
         mut abstract_only: Option<FullTextResult>,
     ) -> (Option<FullTextResult>, Option<FullTextResult>) {
-        match self.fetch_europepmc(pmc_id) {
-            Ok((html, true, xml)) => {
-                self.info(format!("Full text retrieved from Europe PMC for {pmc_id}"));
-                self.cache_html(&html, &xml, cache_id);
-                return (
-                    Some(fulltext_result("europepmc", html, Some(xml))),
-                    abstract_only,
-                );
-            }
-            Ok((html, false, xml)) => {
-                self.info(format!(
-                    "Europe PMC XML for {pmc_id} has no body — looking further"
-                ));
-                if abstract_only.is_none() {
-                    abstract_only = Some(abstract_result("europepmc", html, Some(xml)));
+        type Fetch<'s> = fn(&FullTextService, &str) -> Result<(String, bool, Vec<u8>), TierFault>;
+        let fetchers: [(&str, &str, Fetch<'_>); 3] = [
+            ("europepmc", "Europe PMC", Self::fetch_europepmc),
+            ("ncbi_pmc", "NCBI PMC", Self::fetch_ncbi_pmc),
+            (
+                "pmc_open_data",
+                "PMC Open Data",
+                Self::fetch_pmc_open_data_xml,
+            ),
+        ];
+        for (source, name, fetch) in fetchers {
+            match fetch(self, pmc_id) {
+                Ok((html, true, xml)) => {
+                    self.info(format!("Full text retrieved from {name} for {pmc_id}"));
+                    self.cache_html(&html, &xml, cache_id);
+                    return (
+                        Some(fulltext_result(source, html, Some(xml))),
+                        abstract_only,
+                    );
                 }
-            }
-            Err(fault) => {
-                self.debug(format!("Europe PMC failed for {pmc_id}: {}", fault.message));
-                failures.record(&fault);
-            }
-        }
-        match self.fetch_ncbi_pmc(pmc_id) {
-            Ok((html, true, xml)) => {
-                self.info(format!("Full text retrieved from NCBI PMC for {pmc_id}"));
-                self.cache_html(&html, &xml, cache_id);
-                return (
-                    Some(fulltext_result("ncbi_pmc", html, Some(xml))),
-                    abstract_only,
-                );
-            }
-            Ok((html, false, xml)) => {
-                self.info(format!(
-                    "NCBI PMC XML for {pmc_id} has no body — looking further"
-                ));
-                if abstract_only.is_none() {
-                    abstract_only = Some(abstract_result("ncbi_pmc", html, Some(xml)));
+                Ok((html, false, xml)) => {
+                    self.info(format!(
+                        "{name} XML for {pmc_id} has no body — looking further"
+                    ));
+                    if abstract_only.is_none() {
+                        abstract_only = Some(abstract_result(source, html, Some(xml)));
+                    }
                 }
-            }
-            Err(fault) => {
-                self.debug(format!("NCBI PMC failed for {pmc_id}: {}", fault.message));
-                failures.record(&fault);
+                Err(fault) => {
+                    self.debug(format!("{name} failed for {pmc_id}: {}", fault.message));
+                    failures.record(&fault);
+                }
             }
         }
         (None, abstract_only)
@@ -3594,38 +3728,136 @@ impl FullTextService {
         ))
     }
 
-    /// The URL of `pmc_id`'s PDF in PMC's AWS Open Data bucket (#748).
+    /// `pmc_id`'s latest version's record in PMC's AWS Open Data bucket (#750).
     ///
-    /// Two listings, each a small XML page: the article's versions, then
-    /// whether the latest one holds a PDF, so a missing PDF is an answer
-    /// rather than a failed download. Only the latest version is taken, the
-    /// one Europe PMC's JATS is of.
+    /// Two requests: the listing of the article's versions, then the latest
+    /// one's `PMC<n>.<v>.json`. The record says whether PMC lists the article
+    /// as retracted, its licence, and which files the version holds. `None`
+    /// when the bucket holds no version of the article or no record for its
+    /// latest: the bucket answering that it has none, as most articles outside
+    /// PMC's open-access subset are. Python's `pmc_open_data_record`.
     ///
     /// # Errors
     ///
-    /// [`TierFault::fault`] on a listing answered other than 200, or a bad id.
-    /// [`TierFault::unavailable`] when the bucket holds no version of the
-    /// article, or its latest holds no PDF: the bucket answering that it has
-    /// none, as most articles outside PMC's open-access subset are.
-    fn fetch_pmc_open_data_pdf(&self, pmc_id: &str) -> Result<String, TierFault> {
+    /// [`FullTextError::Other`] on a malformed PMC ID, a failed request, a
+    /// listing or record answered other than 200 (a missing record's 404
+    /// aside), and a record that is not valid JSON or not of the shape read.
+    pub fn pmc_open_data_record(
+        &self,
+        pmc_id: &str,
+    ) -> Result<Option<PmcOpenDataRecord>, FullTextError> {
+        self.open_data_record(pmc_id)
+            .map_err(|fault| FullTextError::Other(fault.message))
+    }
+
+    /// [`FullTextService::pmc_open_data_record`], failing as a tier fails.
+    fn open_data_record(&self, pmc_id: &str) -> Result<Option<PmcOpenDataRecord>, TierFault> {
         let pmc_id = normalise_pmc_id(pmc_id).map_err(TierFault::from)?;
         let listing = self.open_data_listing(&format!(
             "prefix={}&delimiter=/",
             quote(&format!("{pmc_id}."), "/")
         ))?;
         let Some(version) = latest_open_data_version(&listing, &pmc_id) else {
+            return Ok(None);
+        };
+        let stem = format!("{pmc_id}.{version}");
+        let response = self.http_get(&format!("{PMC_OPEN_DATA_BASE}/{stem}/{stem}.json"))?;
+        if response.status == 404 {
+            return Ok(None);
+        }
+        if response.status != 200 {
+            return Err(TierFault::fault(
+                "FullTextError",
+                format!("PMC Open Data HTTP {}", response.status),
+            ));
+        }
+        let data: Value = serde_json::from_slice(&response.body).map_err(|_| {
+            TierFault::fault(
+                "FullTextError",
+                format!("PMC Open Data record {stem} is not JSON"),
+            )
+        })?;
+        open_data_record(&data, &pmc_id, version).map(Some)
+    }
+
+    /// Fetch `pmc_id`'s JATS from PMC's AWS Open Data bucket (#751).
+    ///
+    /// The latest version's XML, as its record names it, checked against the
+    /// record's md5. Returns the rendered HTML, whether the document had a
+    /// body, and the XML as served, as [`FullTextService::fetch_ncbi_pmc`].
+    ///
+    /// # Errors
+    ///
+    /// [`TierFault::fault`] as [`FullTextService::pmc_open_data_record`]; on the
+    /// XML answered other than 200, which the record says is there; on bytes
+    /// that do not match its md5; and on XML that cannot be read or parsed
+    /// (`SAXParseException`, as in Python). [`TierFault::unavailable`] when the
+    /// bucket holds no record of the article, its latest version no XML, or
+    /// the XML no article content.
+    fn fetch_pmc_open_data_xml(&self, pmc_id: &str) -> Result<(String, bool, Vec<u8>), TierFault> {
+        let Some(record) = self.open_data_record(pmc_id)? else {
             return Err(TierFault::unavailable(format!(
                 "{pmc_id} is not in PMC's Open Data bucket"
             )));
         };
-        let key = open_data_pdf_key(&pmc_id, version);
-        let listing = self.open_data_listing(&format!("prefix={}&max-keys=1", quote(&key, "/")))?;
-        if !listing.contains(&format!("<Key>{key}</Key>")) {
+        let stem = record.stem();
+        let Some(xml_md5) = record.xml_md5.as_deref() else {
             return Err(TierFault::unavailable(format!(
-                "{pmc_id}.{version} has no PDF in PMC's Open Data"
+                "{stem} has no JATS in PMC's Open Data"
+            )));
+        };
+        let response = self.http_get(&format!("{PMC_OPEN_DATA_BASE}/{stem}/{stem}.xml"))?;
+        if response.status != 200 {
+            return Err(TierFault::fault(
+                "FullTextError",
+                format!("PMC Open Data HTTP {}", response.status),
+            ));
+        }
+        if md5_hex(&response.body) != xml_md5 {
+            return Err(TierFault::fault(
+                "FullTextError",
+                format!("{stem}.xml does not match the md5 its record gives"),
+            ));
+        }
+        let article = parse_with_pmc_id(response_text(&response)?, &record.pmc_id)
+            .map_err(|error| TierFault::fault("SAXParseException", error.to_string()))?;
+        if !article.has_body && article.abstract_sections.is_empty() {
+            return Err(TierFault::unavailable(format!(
+                "{stem}.xml holds no article content"
             )));
         }
-        Ok(format!("{PMC_OPEN_DATA_BASE}/{key}"))
+        Ok((
+            render_jats_html(&article),
+            article.has_body,
+            response.body.clone(),
+        ))
+    }
+
+    /// The URL and md5 of `pmc_id`'s PDF in PMC's AWS Open Data bucket (#748, #750).
+    ///
+    /// Read from the latest version's record
+    /// ([`FullTextService::pmc_open_data_record`]), so a missing PDF is an
+    /// answer rather than a failed download. Only the latest version is taken,
+    /// the one Europe PMC's JATS is of.
+    ///
+    /// # Errors
+    ///
+    /// [`TierFault::fault`] as [`FullTextService::pmc_open_data_record`].
+    /// [`TierFault::unavailable`] when the bucket holds no record of the
+    /// article, or its latest version holds no PDF.
+    fn fetch_pmc_open_data_pdf(&self, pmc_id: &str) -> Result<(String, String), TierFault> {
+        let Some(record) = self.open_data_record(pmc_id)? else {
+            return Err(TierFault::unavailable(format!(
+                "{pmc_id} is not in PMC's Open Data bucket"
+            )));
+        };
+        let stem = record.stem();
+        match record.pdf_md5 {
+            Some(md5) => Ok((format!("{PMC_OPEN_DATA_BASE}/{stem}/{stem}.pdf"), md5)),
+            None => Err(TierFault::unavailable(format!(
+                "{stem} has no PDF in PMC's Open Data"
+            ))),
+        }
     }
 
     /// One `ListObjectsV2` page of PMC's Open Data bucket, its body as text.
@@ -3635,7 +3867,9 @@ impl FullTextService {
     ///
     /// # Errors
     ///
-    /// [`TierFault::fault`] on a response other than 200.
+    /// [`TierFault::fault`] on a response other than 200, or one that is not a
+    /// listing (a proxy's page, say), which would otherwise read as naming no
+    /// version.
     fn open_data_listing(&self, query: &str) -> Result<String, TierFault> {
         let response = self.http_get(&format!("{PMC_OPEN_DATA_BASE}/?list-type=2&{query}"))?;
         if response.status != 200 {
@@ -3644,7 +3878,15 @@ impl FullTextService {
                 format!("PMC Open Data HTTP {}", response.status),
             ));
         }
-        Ok(String::from_utf8_lossy(&response.body).into_owned())
+        let listing = String::from_utf8_lossy(&response.body).into_owned();
+        // Read as a listing, a proxy's page would name no version: an absence.
+        if !listing.contains("<ListBucketResult") {
+            return Err(TierFault::fault(
+                "FullTextError",
+                "PMC Open Data listing is not a ListBucketResult",
+            ));
+        }
+        Ok(listing)
     }
 
     /// Query Unpaywall for an open-access PDF URL.
@@ -3869,6 +4111,7 @@ fn default_cache_at(default: Option<FullTextCache>) -> Option<FullTextCache> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     /// A `delimiter=/` listing for `PMC123.`, naming `prefixes` (#748).
     fn open_data_listing(prefixes: &[&str]) -> String {
@@ -3898,6 +4141,187 @@ mod tests {
             latest_open_data_version(&open_data_listing(&[]), "PMC123"),
             None
         );
+    }
+
+    /// The shared fixture's record, as `pmc_open_data_record` reads it (#750).
+    fn open_data_record_fixture() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../../tests/fixtures/pmc_open_data_record.json"
+        ))
+        .expect("the fixture is JSON")
+    }
+
+    #[test]
+    fn an_open_data_record_is_read_as_python_reads_it() {
+        let record = open_data_record(&open_data_record_fixture(), "PMC123", 10).expect("read");
+        assert_eq!(
+            record,
+            PmcOpenDataRecord {
+                pmc_id: "PMC123".into(),
+                version: 10,
+                pmid: Some("456".into()),
+                doi: Some("10.1/open".into()),
+                is_retracted: false,
+                is_pmc_openaccess: true,
+                license_code: Some("CC BY".into()),
+                xml_md5: Some("c2c199fb4ed79ff17438764763676f71".into()),
+                pdf_md5: Some("abe57a6643460397192ff69ffce75752".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn an_open_data_records_absent_files_and_null_fields_are_none() {
+        let mut data = open_data_record_fixture();
+        for name in ["pmid", "doi", "license_code", "pdf_url", "xml_url"] {
+            data[name] = Value::Null;
+        }
+        data["is_retracted"] = Value::Bool(true);
+        let record = open_data_record(&data, "PMC123", 10).expect("read");
+        assert_eq!(
+            (record.pmid, record.doi, record.license_code),
+            (None, None, None)
+        );
+        assert_eq!((record.pdf_md5, record.xml_md5), (None, None));
+        assert!(record.is_retracted);
+    }
+
+    /// Python's `test_a_record_not_of_the_shape_read_is_refused`, case for case,
+    /// each refused for the reason Python gives.
+    #[test]
+    fn an_open_data_record_not_of_the_shape_read_is_refused() {
+        let md5 = |n: usize, c: char| c.to_string().repeat(n);
+        let url = "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=";
+        let another = " names another article or version";
+        let past_u64: Value = serde_json::from_str("18446744073709551616").expect("JSON");
+        let mut cases: Vec<(&str, Option<Value>, String)> = vec![
+            ("pmcid", Some(json!("PMC124")), another.into()),
+            ("version", Some(json!(9)), another.into()),
+            ("version", Some(json!(11)), another.into()),
+            ("version", Some(json!(-1)), another.into()),
+            ("version", Some(json!(true)), ": unexpected version".into()),
+            (
+                "is_retracted",
+                Some(Value::Null),
+                ": unexpected is_retracted".into(),
+            ),
+            (
+                "is_retracted",
+                Some(json!("false")),
+                ": unexpected is_retracted".into(),
+            ),
+            (
+                "is_pmc_openaccess",
+                Some(json!(1)),
+                ": unexpected is_pmc_openaccess".into(),
+            ),
+            ("pmid", Some(json!("456")), ": unexpected pmid".into()),
+            ("pmid", Some(json!(true)), ": unexpected pmid".into()),
+            ("pmid", Some(json!(0)), ": unexpected pmid".into()),
+            ("pmid", Some(json!(-5)), ": unexpected pmid".into()),
+            ("pmid", Some(past_u64), ": unexpected pmid".into()),
+            ("doi", Some(json!(10)), ": unexpected doi".into()),
+            (
+                "license_code",
+                Some(json!(["CC BY"])),
+                ": unexpected license_code".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!(
+                    "s3://pmc-oa-opendata/PMC123.9/PMC123.9.pdf?md5={}",
+                    md5(32, 'a')
+                ))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!(
+                    "s3://pmc-oa-opendata/PMC123.10/other.pdf?md5={}",
+                    md5(32, 'a')
+                ))),
+                ": unexpected pdf_url".into(),
+            ),
+            // An md5 alone names no file.
+            (
+                "pdf_url",
+                Some(json!(md5(32, 'a'))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!("{url}{}", md5(32, 'A')))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!("{url}{}", md5(31, 'a')))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!("{url}{}", md5(33, 'a')))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!("{url}{}&x=1", md5(32, 'a')))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(url.strip_suffix("?md5=").expect("a query"))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "xml_url",
+                Some(json!(format!("{url}{}", md5(32, 'a')))),
+                ": unexpected xml_url".into(),
+            ),
+            ("xml_url", Some(json!(5)), ": unexpected xml_url".into()),
+        ];
+        for name in [
+            "pmcid",
+            "version",
+            "pmid",
+            "doi",
+            "is_retracted",
+            "is_pmc_openaccess",
+            "license_code",
+            "xml_url",
+            "pdf_url",
+        ] {
+            cases.push((name, None, format!(": no {name}")));
+        }
+        for (name, value, reason) in cases {
+            let mut data = open_data_record_fixture();
+            match &value {
+                Some(value) => data[name] = value.clone(),
+                None => {
+                    data.as_object_mut().expect("an object").remove(name);
+                }
+            }
+            let refused = open_data_record(&data, "PMC123", 10).expect_err("refused");
+            assert_eq!(refused.name, "FullTextError", "{name}: {value:?}");
+            assert!(
+                refused
+                    .message
+                    .starts_with(&format!("PMC Open Data record PMC123.10{reason}")),
+                "{name}: {value:?}: {}",
+                refused.message
+            );
+        }
+        let refused = open_data_record(&json!([]), "PMC123", 10).expect_err("refused");
+        assert!(
+            refused.message.ends_with("is not an object"),
+            "{}",
+            refused.message
+        );
+    }
+
+    #[test]
+    fn md5_hex_is_lowercase_hex() {
+        assert_eq!(md5_hex(b""), "d41d8cd98f00b204e9800998ecf8427e");
     }
 
     /// **Every arm of [`fetch_error_name`] is Python's exception name.**
