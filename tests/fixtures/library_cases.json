@@ -1,0 +1,496 @@
+{
+ "canonical_ids": [
+  {
+   "name": "pmid strips zeros",
+   "pmid": " 0038012345 ",
+   "expect": {
+    "pmid": "38012345",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid preprint lower",
+   "pmid": "ppr123",
+   "expect": {
+    "pmid": "PPR123",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid preprint upper",
+   "pmid": "PPR123",
+   "expect": {
+    "pmid": "PPR123",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid all zeros",
+   "pmid": "000",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid letters",
+   "pmid": "12a",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid bare PPR",
+   "pmid": "PPR",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid full-width",
+   "pmid": "１２",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid blank",
+   "pmid": "  ",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi url",
+   "doi": "https://doi.org/10.1/AbC",
+   "expect": {
+    "pmid": null,
+    "doi": "10.1/abc",
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi prefix",
+   "doi": "doi:10.1/x",
+   "expect": {
+    "pmid": null,
+    "doi": "10.1/x",
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi wrong registrant",
+   "doi": "11.1/x",
+   "error": "doi"
+  },
+  {
+   "name": "doi no slash",
+   "doi": "10.1",
+   "error": "doi"
+  },
+  {
+   "name": "doi blank",
+   "doi": " \t",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmcid lower prefix",
+   "pmcid": "pmc0012",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": "PMC12"
+   }
+  },
+  {
+   "name": "pmcid bare",
+   "pmcid": "12",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": "PMC12"
+   }
+  },
+  {
+   "name": "pmcid no digits",
+   "pmcid": "PMC",
+   "error": "pmcid"
+  },
+  {
+   "name": "pmcid full-width",
+   "pmcid": "１２",
+   "error": "pmcid"
+  },
+  {
+   "name": "pmcid zeros",
+   "pmcid": "PMC000",
+   "error": "pmcid"
+  },
+  {
+   "name": "pmcid blank",
+   "pmcid": "  ",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "all three",
+   "pmid": "1",
+   "doi": "10.5/Z",
+   "pmcid": "9",
+   "expect": {
+    "pmid": "1",
+    "doi": "10.5/z",
+    "pmcid": "PMC9"
+   }
+  },
+  {
+   "name": "nothing",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  }
+ ],
+ "installations": [
+  {
+   "name": "valid",
+   "app": "studyanalyzer",
+   "id": "a1b2-c3",
+   "label": "Horst's MacBook",
+   "expect": "studyanalyzer-a1b2-c3.json"
+  },
+  {
+   "name": "label of 200",
+   "app": "app",
+   "id": "x",
+   "label": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "expect": "app-x.json"
+  },
+  {
+   "name": "upper app",
+   "app": "Study",
+   "id": "x",
+   "label": "L",
+   "error": "app"
+  },
+  {
+   "name": "empty app",
+   "app": "",
+   "id": "x",
+   "label": "L",
+   "error": "app"
+  },
+  {
+   "name": "app with hyphen",
+   "app": "my-app",
+   "id": "x",
+   "label": "L",
+   "error": "app"
+  },
+  {
+   "name": "slash id",
+   "app": "app",
+   "id": "a/b",
+   "label": "L",
+   "error": "id"
+  },
+  {
+   "name": "empty id",
+   "app": "app",
+   "id": "",
+   "label": "L",
+   "error": "id"
+  },
+  {
+   "name": "65-char id",
+   "app": "app",
+   "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "label": "L",
+   "error": "id"
+  },
+  {
+   "name": "bidi label",
+   "app": "app",
+   "id": "x",
+   "label": "Mac‮book",
+   "error": "label"
+  },
+  {
+   "name": "control label",
+   "app": "app",
+   "id": "x",
+   "label": "Mac\nbook",
+   "error": "label"
+  },
+  {
+   "name": "empty label",
+   "app": "app",
+   "id": "x",
+   "label": "",
+   "error": "label"
+  },
+  {
+   "name": "201-char label",
+   "app": "app",
+   "id": "x",
+   "label": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "error": "label"
+  }
+ ],
+ "folder_names": [
+  {
+   "name": "design example",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": "Metformin and cognition",
+   "pmid": "38012345",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 Smith – Metformin and cognition (PMID 38012345)"
+  },
+  {
+   "name": "no title",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": null,
+   "pmid": "38012345",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 Smith (PMID 38012345)"
+  },
+  {
+   "name": "no year no author",
+   "year": null,
+   "first_author": null,
+   "title": "Metformin",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Metformin (PMID 1)"
+  },
+  {
+   "name": "year out of range",
+   "year": 999,
+   "first_author": "Lee",
+   "title": "T",
+   "pmid": "8",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Lee – T (PMID 8)"
+  },
+  {
+   "name": "year only",
+   "year": 2024,
+   "first_author": null,
+   "title": "T",
+   "pmid": "8",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 – T (PMID 8)"
+  },
+  {
+   "name": "long author cut to 40",
+   "year": 2024,
+   "first_author": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "title": null,
+   "pmid": "8",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA (PMID 8)"
+  },
+  {
+   "name": "doi only",
+   "year": null,
+   "first_author": null,
+   "title": null,
+   "pmid": null,
+   "doi": "10.1/x",
+   "pmcid": null,
+   "expect": "(DOI 10.1 x)"
+  },
+  {
+   "name": "pmid wins over doi",
+   "year": null,
+   "first_author": null,
+   "title": "T",
+   "pmid": "3",
+   "doi": "10.1/x",
+   "pmcid": "PMC3",
+   "expect": "T (PMID 3)"
+  },
+  {
+   "name": "pmcid only",
+   "year": null,
+   "first_author": null,
+   "title": "T",
+   "pmid": null,
+   "doi": null,
+   "pmcid": "PMC77",
+   "expect": "T (PMCID PMC77)"
+  },
+  {
+   "name": "no identifier",
+   "year": null,
+   "first_author": null,
+   "title": "Hello",
+   "pmid": null,
+   "doi": null,
+   "pmcid": null,
+   "expect": "Hello (no identifier)"
+  },
+  {
+   "name": "nothing at all",
+   "year": null,
+   "first_author": null,
+   "title": null,
+   "pmid": null,
+   "doi": null,
+   "pmcid": null,
+   "expect": "(no identifier)"
+  },
+  {
+   "name": "title cut at the last space",
+   "year": null,
+   "first_author": null,
+   "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bcdef",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (PMID 2)"
+  },
+  {
+   "name": "space exactly at the limit",
+   "year": null,
+   "first_author": null,
+   "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bcdef",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (PMID 2)"
+  },
+  {
+   "name": "title of 60 is kept whole",
+   "year": null,
+   "first_author": null,
+   "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (PMID 2)"
+  },
+  {
+   "name": "title without a space is hard cut",
+   "year": null,
+   "first_author": null,
+   "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (PMID 2)"
+  },
+  {
+   "name": "forbidden characters",
+   "year": null,
+   "first_author": null,
+   "title": "a/b: c?",
+   "pmid": "3",
+   "doi": null,
+   "pmcid": null,
+   "expect": "a b c (PMID 3)"
+  },
+  {
+   "name": "control and bidi characters",
+   "year": null,
+   "first_author": null,
+   "title": "a\tb‮c",
+   "pmid": "3",
+   "doi": null,
+   "pmcid": null,
+   "expect": "a b c (PMID 3)"
+  },
+  {
+   "name": "CON as the title",
+   "year": null,
+   "first_author": null,
+   "title": "CON",
+   "pmid": "4",
+   "doi": null,
+   "pmcid": null,
+   "expect": "CON (PMID 4)"
+  },
+  {
+   "name": "trailing dots in the title",
+   "year": null,
+   "first_author": null,
+   "title": "Ends...",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Ends... (PMID 5)"
+  },
+  {
+   "name": "only dots",
+   "year": null,
+   "first_author": null,
+   "title": "...",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "(PMID 5)"
+  },
+  {
+   "name": "leading dot",
+   "year": null,
+   "first_author": null,
+   "title": ".hidden",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "hidden (PMID 5)"
+  },
+  {
+   "name": "NFD comes out NFC",
+   "year": null,
+   "first_author": null,
+   "title": "Café",
+   "pmid": "6",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Café (PMID 6)"
+  },
+  {
+   "name": "300-character DOI, whole name cut",
+   "year": null,
+   "first_author": null,
+   "title": null,
+   "pmid": null,
+   "doi": "10.1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "pmcid": null,
+   "expect": "(DOI 10.1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "long DOI after a title",
+   "year": null,
+   "first_author": null,
+   "title": "T",
+   "pmid": null,
+   "doi": "10.1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "pmcid": null,
+   "expect": "T (DOI 10.1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "CJK title hits the byte cap, id kept",
+   "year": 2024,
+   "first_author": "Wang",
+   "title": "漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+   "pmid": "7",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 Wang – 漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  }
+ ]
+}

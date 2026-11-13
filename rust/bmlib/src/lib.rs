@@ -62,6 +62,7 @@ pub mod embed;
 pub mod fulltext;
 #[cfg(feature = "http-ureq")]
 pub mod http;
+pub mod library;
 pub mod llm;
 pub mod publications;
 pub mod quality;
