@@ -6494,6 +6494,13 @@ undo.
   folder holding only placeholders is not empty, so a library is never started
   inside someone's papers; it costs a refusal where the user must pick another
   folder. `read` reports a placeholder as `NotDownloaded`, not `Missing`.
+- **An evicted own record stops a save.** When Optimize Storage has left only
+  `.<app>-<id>.json.icloud`, `save` and `release` fail with `NotDownloaded`
+  and write nothing, and a scan reports the placeholder as
+  `RecordNotDownloaded`. Treating it as absent would write a one-file record
+  that replaces the real one when it is downloaded. The cost is that a save
+  waits for iCloud. macOS 14 and later evict to dataless files with the real
+  name rather than `.icloud` names; that is checked on a device in step 2.
 - **A scan never fails on one bad folder and drops nothing.** Every oddity is a
   `Problem` (unreadable or newer or misnamed record, an unrecorded file, an
   unreadable folder, a stray entry) for the app to show.

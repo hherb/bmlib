@@ -28,6 +28,7 @@ import errno
 import hashlib
 import os
 import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from bmlib._atomic import atomic_write
@@ -87,14 +88,47 @@ def _entries(directory: Path) -> list[str]:
     return sorted(os.listdir(directory), key=os.fsencode)
 
 
+@dataclass(frozen=True)
+class Listing:
+    """What :func:`listing` found in a folder, each list sorted by bytes.
+
+    ``names`` are those a scan looks at (not ignored, not starting with ``.``);
+    ``placeholders`` the files present only as an iCloud placeholder, by their own name
+    (``.x.pdf.icloud`` gives ``x.pdf``).
+    """
+
+    names: list[str] = field(default_factory=list)
+    placeholders: list[str] = field(default_factory=list)
+
+
+def listing(directory: Path) -> Listing:
+    """Return the entries of *directory*, sorted into a :class:`Listing`."""
+    out = Listing()
+    for n in _entries(directory):
+        own = _placeholder_for(n)
+        if own is not None:
+            out.placeholders.append(own)
+        elif not n.startswith(".") and n not in IGNORED_NAMES:
+            out.names.append(n)
+    return out
+
+
 def list_names(directory: Path) -> list[str]:
     """Return the names in *directory*, sorted by bytes, without ignored or dot names."""
-    return [n for n in _entries(directory) if not n.startswith(".") and n not in IGNORED_NAMES]
+    return listing(directory).names
+
+
+def _placeholder_for(name: str) -> str | None:
+    """The file an iCloud placeholder name (``.<name>.icloud``) stands for, or ``None``."""
+    pre, post = ICLOUD_PLACEHOLDER.split("{name}")
+    if name.startswith(pre) and name.endswith(post) and len(name) > len(pre) + len(post):
+        return name[len(pre) : len(name) - len(post)]
+    return None
 
 
 def _is_placeholder_name(name: str) -> bool:
     """Whether *name* is an iCloud placeholder, ``.<something>.icloud``."""
-    return len(name) > len(".icloud") + 1 and name.startswith(".") and name.endswith(".icloud")
+    return _placeholder_for(name) is not None
 
 
 def first_user_entry(directory: Path) -> str | None:

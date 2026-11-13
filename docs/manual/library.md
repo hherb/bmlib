@@ -129,7 +129,9 @@ A `FileRef` is `(folder, name, sha256, kind)`.
 - **iCloud placeholders.** A file shown as `.name.icloud` is online-only.
   `read` reports it as `NotDownloaded` rather than `Missing`, and `open` counts
   it as a user's file, so a library is never started in a folder of someone's
-  papers.
+  papers. When an installation's own record is a placeholder, `save` and
+  `release` fail with `NotDownloaded` and write nothing: a fresh record would
+  replace the real one when it came back, losing its entries.
 - **Concurrency.** Updates to a record are serialised within one process, so
   threads of one installation do not lose each other's entries. Two *processes*
   of one installation are out of scope. Different installations never share a
@@ -152,6 +154,7 @@ versions, so some will be real).
 | `"unreadable_record"` | A record file is not valid; it is not used |
 | `"unreadable_folder"` | A paper folder, or its `records/`, cannot be listed |
 | `"newer_record"` | A record written by a newer layout version; update the app |
+| `"record_not_downloaded"` | A record present only as an iCloud placeholder; its installation's uses are unknown until it is downloaded |
 | `"misnamed_record"` | A valid record whose file name is not its installation's (a "copy of" by a sync conflict) |
 | `"conflicting_ids"` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `"unrecorded_file"` | A source file no record lists (a crash, or a record lost) |

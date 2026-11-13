@@ -107,19 +107,49 @@ fn entries(dir: &Path) -> io::Result<Vec<(Vec<u8>, String)>> {
     Ok(all)
 }
 
+/// What [`listing`] found in a folder, each list sorted by bytes.
+#[derive(Debug, Default)]
+pub(crate) struct Listing {
+    /// The names a scan looks at: not [`IGNORED_NAMES`], not starting with `.`.
+    pub(crate) names: Vec<String>,
+    /// Files present only as an iCloud placeholder, by their own name
+    /// (`.x.pdf.icloud` gives `x.pdf`).
+    pub(crate) placeholders: Vec<String>,
+}
+
+/// The entries of `dir`, sorted into a [`Listing`]. A name that is not UTF-8
+/// is kept, shown lossily.
+pub(crate) fn listing(dir: &Path) -> io::Result<Listing> {
+    let mut out = Listing::default();
+    for (_, name) in entries(dir)? {
+        if let Some(own) = placeholder_for(&name) {
+            out.placeholders.push(own.to_owned());
+        } else if !name.starts_with('.') && !IGNORED_NAMES.contains(&name.as_str()) {
+            out.names.push(name);
+        }
+    }
+    Ok(out)
+}
+
 /// The names in `dir`, sorted by bytes, leaving out [`IGNORED_NAMES`] and any
 /// name starting with `.`. A name that is not UTF-8 is kept, shown lossily.
 pub(crate) fn list_names(dir: &Path) -> io::Result<Vec<String>> {
-    Ok(entries(dir)?
-        .into_iter()
-        .map(|(_, name)| name)
-        .filter(|n| !n.starts_with('.') && !IGNORED_NAMES.contains(&n.as_str()))
-        .collect())
+    Ok(listing(dir)?.names)
+}
+
+/// The file an iCloud placeholder name (`.<name>.icloud`) stands for, if it is one.
+fn placeholder_for(name: &str) -> Option<&str> {
+    let (pre, post) = ICLOUD_PLACEHOLDER
+        .split_once("{name}")
+        .expect("the pattern holds {name}");
+    name.strip_prefix(pre)
+        .and_then(|n| n.strip_suffix(post))
+        .filter(|own| !own.is_empty())
 }
 
 /// Whether `name` is an iCloud placeholder, `.<something>.icloud`.
 fn is_placeholder_name(name: &str) -> bool {
-    name.len() > ".icloud".len() + 1 && name.starts_with('.') && name.ends_with(".icloud")
+    placeholder_for(name).is_some()
 }
 
 /// The first entry of `dir` that belongs to the user: not an ignored name or

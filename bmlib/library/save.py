@@ -38,12 +38,13 @@ from bmlib.library.constants import (
     PAPERS_DIR,
     RECORDS_DIR,
 )
-from bmlib.library.errors import BadIdentifier, Io, Missing, NewerRecord
+from bmlib.library.errors import BadIdentifier, Io, Missing, NewerRecord, NotDownloaded
 from bmlib.library.files import (
     component,
     create_dir_all,
     create_dir_new,
     exists,
+    has_placeholder,
     io_error,
     is_dir,
     list_names,
@@ -146,12 +147,25 @@ def _keep_aside(path: Path) -> Path:
         n += 1
 
 
+def _check_not_evicted(path: Path, folder: str) -> None:
+    """Refuse to go on when this installation's record at *path* is absent but iCloud holds a
+    placeholder for it: a fresh record written now would replace the real one when it is
+    downloaded, and its entries would be lost.
+
+    :raises NotDownloaded: naming the record file.
+    """
+    if not exists(path) and has_placeholder(path.parent, path.name):
+        raise NotDownloaded(folder, path.name)
+
+
 def _load_own_record(path: Path, folder: str) -> Record | None:
     """This installation's record at *path*: ``None`` when there is none, or when it was
-    unreadable and has been kept aside. A newer record raises :class:`NewerRecord`."""
+    unreadable and has been kept aside. A newer record raises :class:`NewerRecord`, one present
+    only as an iCloud placeholder :class:`NotDownloaded`."""
     try:
         data = read_bytes(path)
     except FileNotFoundError:
+        _check_not_evicted(path, folder)
         return None
     except OSError as e:
         raise io_error(path, e, write=False) from e
@@ -273,6 +287,7 @@ def save_file(
     :raises BadIdentifier: ``paper.ids`` are not canonical (nothing is written).
     :raises Io: the record would not read back, such as text holding a lone surrogate
         (nothing is written).
+    :raises NotDownloaded: *who*'s record is only an iCloud placeholder (nothing is written).
     :raises FileClash: a file of that name holds other bytes (nothing is overwritten).
     :raises NewerRecord: *who*'s record, or every record of the folder the paper would go in,
         is from a newer layout (no second folder is made).
@@ -299,14 +314,15 @@ def save_file(
         by_digest = find_digest(scan, digest) if paper.ids.is_empty() else None
         folder = by_digest.folder if by_digest else _claim_folder(papers, paper)
     directory = papers / component(folder)
+    records_dir = directory / RECORDS_DIR
+    path = records_dir / component(who.record_file_name())
+    _check_not_evicted(path, folder)
     write_once(directory / name, data, digest)
 
-    records_dir = directory / RECORDS_DIR
     try:
         create_dir_all(records_dir)
     except OSError as e:
         raise io_error(records_dir, e, write=True) from e
-    path = records_dir / component(who.record_file_name())
     with _RECORD_LOCK:
         record = _load_own_record(path, folder)
         if record is None:
@@ -329,6 +345,7 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
     :raises BadInstallation: *who* is one :meth:`Installation.new` would refuse.
     :raises BadName: a name that is not one path component.
     :raises NewerRecord: the record is from a newer layout.
+    :raises NotDownloaded: the record is only an iCloud placeholder.
     :raises Io: the record cannot be read (it is not touched).
     """
     _check_who(who)
@@ -338,6 +355,7 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
         try:
             text = read_bytes(path).decode("utf-8")
         except FileNotFoundError:
+            _check_not_evicted(path, file.folder)
             return
         except (OSError, UnicodeDecodeError) as e:
             raise Io(path, f"the record is not readable: {e}") from e

@@ -142,7 +142,9 @@ from a record's `FileEntry`.
 - **iCloud placeholders.** A file shown as `.name.icloud` is online-only.
   `read` reports it as `NotDownloaded` rather than `Missing`, and `open` counts
   it as a user's file, so a library is never started in a folder of someone's
-  papers.
+  papers. When an installation's own record is a placeholder, `save` and
+  `release` fail with `NotDownloaded` and write nothing: a fresh record would
+  replace the real one when it came back, losing its entries.
 - **Concurrency.** Updates to a record are serialised within one process, so
   threads of one installation do not lose each other's entries. Two *processes*
   of one installation are out of scope. Different installations never share a
@@ -165,6 +167,7 @@ versions, so some will be real).
 | `UnreadableRecord` | A record file is not valid; it is not used |
 | `UnreadableFolder` | A paper folder, or its `records/`, cannot be listed |
 | `NewerRecord` | A record written by a newer layout version; update the app |
+| `RecordNotDownloaded` | A record present only as an iCloud placeholder; its installation's uses are unknown until it is downloaded |
 | `MisnamedRecord` | A valid record whose file name is not its installation's (a "copy of" by a sync conflict) |
 | `ConflictingIds` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `UnrecordedFile` | A source file no record lists (a crash, or a record lost) |

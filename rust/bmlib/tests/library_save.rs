@@ -460,3 +460,26 @@ fn save_and_release_refuse_unchecked_fields_and_write_nothing() {
     assert_eq!(tree(&dir), saved);
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn an_evicted_own_record_is_not_downloaded_and_nothing_is_written() {
+    // iCloud's Optimize Storage left only `.<record>.icloud`: a fresh record
+    // would replace the real one when it comes back, losing its entries.
+    let (dir, lib) = scratch("evicted");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    let path = record_path(&dir, &me(), &first.folder);
+    let placeholder = path.with_file_name(format!(".{}.icloud", me().record_file_name()));
+    fs::rename(&path, &placeholder).unwrap();
+    let before = tree(&dir);
+    let err = lib
+        .save(&me(), &paper(), b"%PDF other", SourceKind::Pdf, "t")
+        .unwrap_err();
+    assert!(
+        matches!(&err, LibraryError::NotDownloaded { name, .. } if *name == me().record_file_name()),
+        "{err}"
+    );
+    let err = lib.release(&me(), &first).unwrap_err();
+    assert!(matches!(err, LibraryError::NotDownloaded { .. }), "{err}");
+    assert_eq!(tree(&dir), before);
+    fs::remove_dir_all(dir).unwrap();
+}

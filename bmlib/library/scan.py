@@ -29,12 +29,14 @@ from pathlib import Path
 from bmlib.library.constants import DIGEST_PREFIX_HEX, PAPERS_DIR, RECORDS_DIR
 from bmlib.library.errors import DigestMismatch, Missing, NotDownloaded
 from bmlib.library.files import (
+    Listing,
     component,
     exists,
     has_placeholder,
     io_error,
     is_dir,
     list_names,
+    listing,
     read_bytes,
     sha256_hex,
 )
@@ -81,12 +83,20 @@ class PaperFolder:
 class Problem:
     """Something odd a scan found and did not use.
 
-    ``kind`` is one of ``unreadable_record`` (``folder``, ``file``, ``reason``),
-    ``unreadable_folder`` (``folder``, ``reason``: it or its ``records/`` cannot be listed),
-    ``newer_record`` (``folder``, ``file``, ``version``), ``misnamed_record`` (``folder``,
-    ``file``), ``conflicting_ids`` (``folder``, ``field``: two records hold different values
-    for it; both count for :func:`find` and :func:`group`), ``unrecorded_file`` (``folder``,
-    ``name``) or ``stray_entry`` (``name``). Fields a kind does not use are ``None``.
+    ``kind`` is one of (with the fields it uses):
+
+    - ``unreadable_record`` (``folder``, ``file``, ``reason``);
+    - ``unreadable_folder`` (``folder``, ``reason``): it or its ``records/`` cannot be listed;
+    - ``newer_record`` (``folder``, ``file``, ``version``);
+    - ``record_not_downloaded`` (``folder``, ``file``): the record is only an iCloud
+      placeholder, so its installation's uses are unknown;
+    - ``misnamed_record`` (``folder``, ``file``);
+    - ``conflicting_ids`` (``folder``, ``field``): two records hold different values for it;
+      both count for :func:`find` and :func:`group`;
+    - ``unrecorded_file`` (``folder``, ``name``);
+    - ``stray_entry`` (``name``).
+
+    Fields a kind does not use are ``None``.
     """
 
     kind: str
@@ -139,11 +149,11 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
         )
     elif is_dir(records_dir):
         try:
-            names = list_names(records_dir)
+            found = listing(records_dir)
         except OSError as e:
-            names = []
+            found = Listing()
             problems.append(Problem("unreadable_folder", folder=folder, reason=f"records: {e}"))
-        for file in names:
+        for file in found.names:
             path = records_dir / file
             if is_dir(path):
                 continue
@@ -154,6 +164,11 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
                 problems.append(Problem("misnamed_record", folder=folder, file=file))
             else:
                 records.append(got)
+        problems.extend(
+            Problem("record_not_downloaded", folder=folder, file=f)
+            for f in found.placeholders
+            if f not in found.names
+        )
     acc = PaperIds()
     conflicts: list[str] = []
     for r in records:

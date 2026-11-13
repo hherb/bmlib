@@ -26,7 +26,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::files::{
-    component, exists, has_placeholder, io_error, is_dir, list_names, read_bytes, sha256_hex,
+    component, exists, has_placeholder, io_error, is_dir, list_names, listing, read_bytes,
+    sha256_hex,
 };
 use super::{
     parse_record, Installation, Library, LibraryError, PaperIds, Record, RecordProblem, SourceKind,
@@ -110,6 +111,14 @@ pub enum Problem {
         /// Its version.
         version: u32,
     },
+    /// A record present only as an iCloud placeholder (`.<file>.icloud`): its
+    /// installation's uses are unknown until it is downloaded.
+    RecordNotDownloaded {
+        /// The paper's folder.
+        folder: String,
+        /// The record file it stands for.
+        file: String,
+    },
     /// A valid record whose file name is not its installation's.
     MisnamedRecord {
         /// The paper's folder.
@@ -178,10 +187,10 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
     if exists(&records_dir) && !is_dir(&records_dir) {
         problems.push(unreadable_folder(format!("{RECORDS_DIR} is not a folder")));
     } else if is_dir(&records_dir) {
-        match list_names(&records_dir) {
+        match listing(&records_dir) {
             Err(e) => problems.push(unreadable_folder(format!("{RECORDS_DIR}: {e}"))),
-            Ok(names) => {
-                for file in names {
+            Ok(found) => {
+                for file in found.names.iter().cloned() {
                     let path = records_dir.join(&file);
                     if is_dir(&path) {
                         continue;
@@ -209,6 +218,14 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                             });
                         }
                         Ok(r) => records.push(r),
+                    }
+                }
+                for file in found.placeholders {
+                    if !found.names.contains(&file) {
+                        problems.push(Problem::RecordNotDownloaded {
+                            folder: folder.to_owned(),
+                            file,
+                        });
                     }
                 }
             }

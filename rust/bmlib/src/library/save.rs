@@ -28,8 +28,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use unicode_normalization::UnicodeNormalization;
 
 use super::files::{
-    component, create_dir_all, create_dir_new, exists, io_error, is_dir, list_names, read_bytes,
-    remove_dir_all, remove_file, rename, sha256_hex, write_once, write_replace,
+    component, create_dir_all, create_dir_new, exists, has_placeholder, io_error, is_dir,
+    list_names, read_bytes, remove_dir_all, remove_file, rename, sha256_hex, write_once,
+    write_replace,
 };
 use super::scan::{scan_folder, Problem};
 use super::{
@@ -150,12 +151,32 @@ fn keep_aside(path: &Path) -> Result<PathBuf, LibraryError> {
     }
 }
 
+/// Refuse to go on when this installation's record at `path` is absent but
+/// iCloud holds a placeholder for it: a fresh record written now would replace
+/// the real one when it is downloaded, and its entries would be lost (R19).
+fn check_not_evicted(path: &Path, folder: &str) -> Result<(), LibraryError> {
+    let name = file_name(path);
+    match path.parent() {
+        Some(dir) if !exists(path) && has_placeholder(dir, &name) => {
+            Err(LibraryError::NotDownloaded {
+                folder: folder.to_owned(),
+                name,
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
 /// This installation's record at `path`: `None` when there is none, or when it
-/// was unreadable and has been kept aside. A newer record is an error.
+/// was unreadable and has been kept aside. A newer record is an error, and so
+/// is one present only as an iCloud placeholder ([`LibraryError::NotDownloaded`]).
 fn load_own_record(path: &Path, folder: &str) -> Result<Option<Record>, LibraryError> {
     let bytes = match read_bytes(path) {
         Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            check_not_evicted(path, folder)?;
+            return Ok(None);
+        }
         Err(e) => return Err(io_error(path, &e, false)),
     };
     let parsed = String::from_utf8(bytes)
@@ -291,7 +312,9 @@ impl Library {
     /// written); [`LibraryError::FileClash`] when a file of that name holds other bytes
     /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s
     /// record, or every record of the folder the paper would go in, is from a
-    /// newer layout (no second folder is made); [`LibraryError::ReadOnly`];
+    /// newer layout (no second folder is made); [`LibraryError::NotDownloaded`]
+    /// when `who`'s record is only an iCloud placeholder (nothing is written);
+    /// [`LibraryError::ReadOnly`];
     /// [`LibraryError::Io`].
     pub fn save(
         &self,
@@ -339,11 +362,12 @@ impl Library {
             None => claim_folder(&papers, paper)?,
         };
         let dir = papers.join(component(&folder)?);
+        let records_dir = dir.join(RECORDS_DIR);
+        let path = records_dir.join(component(&who.record_file_name())?);
+        check_not_evicted(&path, &folder)?;
         write_once(&dir.join(&name), bytes, &digest)?;
 
-        let records_dir = dir.join(RECORDS_DIR);
         create_dir_all(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
-        let path = records_dir.join(component(&who.record_file_name())?);
         let _guard = record_guard();
         let record = match load_own_record(&path, &folder)? {
             Some(mut record) => {
@@ -372,6 +396,7 @@ impl Library {
     ///
     /// [`LibraryError::BadInstallation`] for a `who` [`Installation::new`] would
     /// refuse; [`LibraryError::BadName`]; [`LibraryError::NewerRecord`];
+    /// [`LibraryError::NotDownloaded`] when the record is only an iCloud placeholder;
     /// [`LibraryError::Io`] for a record that cannot be read (it is not touched).
     pub fn release(&self, who: &Installation, file: &FileRef) -> Result<(), LibraryError> {
         check_who(who)?;
@@ -382,7 +407,9 @@ impl Library {
         let _guard = record_guard();
         let bytes = match read_bytes(&path) {
             Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return check_not_evicted(&path, &file.folder);
+            }
             Err(e) => return Err(io_error(&path, &e, false)),
         };
         let unreadable = |reason: String| LibraryError::Io {

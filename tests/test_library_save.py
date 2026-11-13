@@ -300,3 +300,20 @@ def test_save_and_release_refuse_unchecked_fields_and_write_nothing(lib: Library
     with pytest.raises(BadInstallation):
         lib.release(escaped, first)
     assert _tree(lib.root) == saved
+
+
+def test_an_evicted_own_record_is_not_downloaded_and_nothing_is_written(lib: Library) -> None:
+    # iCloud's Optimize Storage left only ".<record>.icloud": a fresh record would replace the
+    # real one when it comes back, losing its entries.
+    from bmlib.library import NotDownloaded
+
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    path = _record_path(lib, _ME, first.folder)
+    path.rename(path.with_name(f".{path.name}.icloud"))
+    before = _tree(lib.root)
+    with pytest.raises(NotDownloaded) as err:
+        lib.save(_ME, _PAPER, b"%PDF other", SourceKind.PDF, "t")
+    assert err.value.name == _ME.record_file_name()
+    with pytest.raises(NotDownloaded):
+        lib.release(_ME, first)
+    assert _tree(lib.root) == before
