@@ -423,6 +423,26 @@
    "expect": "CON (PMID 4)"
   },
   {
+   "name": "reserved name before a dot",
+   "year": null,
+   "first_author": null,
+   "title": "con.artist",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_con.artist (PMID 5)"
+  },
+  {
+   "name": "reserved name as an author with a dot",
+   "year": null,
+   "first_author": "Nul.",
+   "title": null,
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_Nul. (PMID 5)"
+  },
+  {
    "name": "trailing dots in the title",
    "year": null,
    "first_author": null,
