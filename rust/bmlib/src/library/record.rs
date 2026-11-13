@@ -60,6 +60,16 @@ pub enum RecordProblem {
     Newer(u32),
 }
 
+/// An integer as an `i64`. serde_json reads `-0` as the float `-0.0`; Python reads it as the
+/// integer 0, so negative zero counts as 0 here and in `records.py`.
+fn whole(v: &Value) -> Option<i64> {
+    v.as_i64().or_else(|| {
+        v.as_f64()
+            .filter(|f| *f == 0.0 && f.is_sign_negative())
+            .map(|_| 0)
+    })
+}
+
 fn bad<T>(reason: impl Into<String>) -> Result<T, RecordProblem> {
     Err(RecordProblem::Unreadable(reason.into()))
 }
@@ -96,7 +106,7 @@ fn parse_paper(paper: &Value) -> Result<PaperInfo, RecordProblem> {
     }
     let year = match paper.get("year") {
         None | Some(Value::Null) => None,
-        Some(v) => match v.as_i64().map(i32::try_from) {
+        Some(v) => match whole(v).map(i32::try_from) {
             Some(Ok(y)) => Some(y),
             _ => return bad("paper.year must be an integer or null"),
         },
@@ -138,7 +148,10 @@ fn parse_file(file: &Value) -> Result<FileEntry, RecordProblem> {
             "file name {name:?} does not match its kind and digest"
         ));
     }
-    let Some(size) = file.get("size").and_then(Value::as_u64) else {
+    let Some(size) = file.get("size").and_then(|v| {
+        v.as_u64()
+            .or_else(|| whole(v).and_then(|n| u64::try_from(n).ok()))
+    }) else {
         return bad("file.size must be a non-negative integer");
     };
     Ok(FileEntry {

@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """An installation's JSON account of one paper: who wrote it, what the paper is.
 
@@ -21,6 +22,7 @@ Rust's ``bmlib::library::record`` is the twin; both write the same bytes.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Any, NoReturn, TypeGuard
 
@@ -76,6 +78,16 @@ def _is_int(v: Any) -> TypeGuard[int]:
     return isinstance(v, int) and not isinstance(v, bool)
 
 
+def _whole(v: Any) -> int | None:
+    """An integer value, or ``None``. Negative zero (``-0.0``) is 0, as in Rust, where
+    serde_json reads ``-0`` as that float."""
+    if _is_int(v):
+        return v
+    if isinstance(v, float) and v == 0.0 and math.copysign(1.0, v) < 0:
+        return 0
+    return None
+
+
 def _string(obj: dict[str, Any], key: str, what: str) -> str:
     v = obj.get(key)
     if not isinstance(v, str):
@@ -100,8 +112,8 @@ def _parse_paper(paper: Any) -> PaperInfo:
         _bad(str(err))
     if (ids.pmid, ids.doi, ids.pmcid) != stored:
         _bad("paper identifiers are not canonical")
-    year = paper.get("year")
-    if year is not None and not (_is_int(year) and -(2**31) <= year < 2**31):
+    year = _whole(paper.get("year"))
+    if paper.get("year") is not None and (year is None or not -(2**31) <= year < 2**31):
         _bad("paper.year must be an integer or null")
     return PaperInfo(
         ids=ids,
@@ -124,8 +136,8 @@ def _parse_file(file: Any) -> FileEntry:
     name = _string(file, "name", "file")
     if name != f"{kind.value}-{sha[:DIGEST_PREFIX_HEX]}.{kind.extension()}":
         _bad(f"file name {name!r} does not match its kind and digest")
-    size = file.get("size")
-    if not _is_int(size) or not 0 <= size < 2**64:
+    size = _whole(file.get("size"))
+    if size is None or not 0 <= size < 2**64:
         _bad("file.size must be a non-negative integer")
     return FileEntry(
         sha256=sha,
