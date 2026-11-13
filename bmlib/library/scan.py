@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Reading a library: scan it, find papers by identifier or files by digest, group folders
 that are one paper split in two, and read a file with its digest checked.
