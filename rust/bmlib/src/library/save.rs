@@ -241,8 +241,10 @@ impl Library {
     /// # Errors
     ///
     /// [`LibraryError::FileClash`] when a file of that name holds other bytes
-    /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s record, or every record of the
-    /// folder the paper would go in, is from a newer layout (no second folder is made); [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
+    /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s
+    /// record, or every record of the folder the paper would go in, is from a
+    /// newer layout (no second folder is made); [`LibraryError::ReadOnly`];
+    /// [`LibraryError::Io`].
     pub fn save(
         &self,
         who: &Installation,

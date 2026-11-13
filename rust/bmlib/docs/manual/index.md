@@ -60,6 +60,7 @@ canonical-text model, the JSON repair, the citation formatter) need no feature.
 | `templates` | `{{ variable }}` prompt templates with a user/default directory lookup | [templates.md](../../../../docs/manual/templates.md) | [templates.md](templates.md) |
 | `http` | `UreqClient`, the one implementation of `HttpClient` that goes out | — | [http.md](http.md) |
 | `atomic` | `atomic_write`: publish a file so no partial version is visible | — | [atomic.md](atomic.md) |
+| `library` | A shared folder of research papers several apps read and write: write-once source files, one record per installation, scan, find, read, save | [library.md](../../../../docs/manual/library.md) | [library.md](library.md) |
 
 Every module has a page. The item-level reference is still the rustdoc.
 

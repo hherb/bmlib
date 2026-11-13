@@ -130,6 +130,16 @@ bmlib/
 │       ├── biorxiv.py       # bioRxiv / medRxiv
 │       ├── europepmc.py     # One Europe PMC search hit as a FetchedRecord (lookup_record's, not a sync source)
 │       └── openalex.py      # OpenAlex
+├── library/                 # A shared folder of research papers several apps read and write (stdlib only; Rust `bmlib::library`, fixtures/library_cases.json)
+│   ├── constants.py         # Layout names and limits (marker, papers/, records/, 150-byte folder name)
+│   ├── errors.py            # LibraryError and one subclass per Rust variant
+│   ├── ids.py               # SourceKind, PaperIds, PaperInfo, Installation, canonical_ids
+│   ├── names.py             # folder_name, folder_name_numbered (length fit, then the reserved-device-name prefix)
+│   ├── records.py           # parse_record, render_record — one installation's record, versioned
+│   ├── files.py             # Every file-system call of the module, and sha256_hex
+│   ├── scan.py              # scan_library, find, find_digest, group, read_file; Problem, Scan, PaperFolder, FileRef
+│   ├── save.py              # save_file (write-once, then the record), release_file, remove_*; claiming a folder
+│   └── library.py           # Library and open_library — the opened folder, delegating to the above
 ├── quality/                 # tiered quality assessment pipeline (incl. Tier 4 Cochrane) + standalone extractors
 │   ├── data_models.py       # StudyDesign enum, QualityTier, BiasRisk, QualityAssessment, QualityFilter
 │   ├── manager.py           # QualityManager orchestrator
@@ -195,6 +205,7 @@ The rules a change must not break, per module. The full text, with every measure
   - Industry-funder tokens follow four rules, and rule 4 vetoes the other three. `TestTheStatedCountsAreWhatTheCorpusHolds` re-derives every row in `analyzer.py` and `docs/manual/transparency.md`.
   - URLs and headers are module constants that the API sampler imports. With no API reachable the result is `UNKNOWN` at score 0, and `unknown_reason` says which case.
 - **`publications/`** — Ingestion with DOI/PMID dedup, merge-on-upsert and date-range sync. **Read "A completed day is a durable claim" before touching a fetcher's page loop or `sync()`'s status handling.** Both backends. The dialect differences are limited to the DDL, `lastrowid` vs `RETURNING id`, column listing and the day lock (#447). An oversized PubMed day is partitioned into `[EDAT]` ranges and checkpointed into `download_day_parts` (`SourceDescriptor.resumable`). bioRxiv/medRxiv read `/pubs` (#325) and declare `settle_days`. `retractions.py` is standalone: the import refuses a removal above 1%, short rows and missing columns (#509, #510), and only a Retraction or a Reinstatement decides. `retraction_status.py` (#504) returns `clear` only when the export was consulted **and** Crossref served the DOI. Grants and affiliations are child rows; titles and abstracts are Markdown.
+- **`library/`** — Plain files, no database. Source files are write-once and named for their digest; each installation writes only its own record (`records/{app}-{id}.json`), so a sync service has nothing to merge. **Nothing is ever deleted automatically**: `release` drops one installation's use of a file, and only `remove_file` / `remove_folder`, on the user's request, delete (removing an absent target is `Missing`). `find` returns the whole linked group. A new folder's name clash is judged by the code under Unicode case folding, not the file system; a numbered name is fitted to 150 bytes; a reserved Windows device name is prefixed after the fit. A folder whose records are all `Newer` fails the save with `NewerRecord`, never a second folder. An iCloud placeholder counts as a user file when opening. Record updates hold a process-wide lock; two processes of one installation are out of scope. A scan keeps every oddity as a `Problem`. The reasoning is in `docs/DECISIONS.md`; Rust is held to Python by `tests/fixtures/library_cases.json` and `tests/fixtures/library/sample/`.
 - **`fulltext/`** — Tiered retrieval: caller sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI. PDFs are extracted to text unless `convert_pdfs=False` (needs `bmlib[pdf]` and an `identifier`). Only `FullTextService` needs httpx; the package `__init__` resolves it lazily. The rules most often re-broken:
   - **Bump `jats_parser.RENDERER_VERSION` with any change that can move `to_html()`.** `test_renderer_version.py` fails until it is re-pinned. A stale or unstamped cache entry reads as absent; re-fetch first, and keep the stale entry if the re-fetch returns less (#172).
   - A body-less JATS document (`has_body` False) is never cached as full text. `content_kind` says fulltext / abstract / extracted. `jats_xml` returns the bytes as served.
@@ -335,6 +346,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `scripts/convert_embedding_model.py` | `test_convert_embedding_model.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_pico_agent.py`, `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
+| `library/`           | `test_library_files.py`, `test_library_scan.py`, `test_library_save.py`, `test_library_contract.py` (the shared `library_cases.json` and `library/sample/`; Rust: `tests/library_contract.rs`, `tests/library_save.rs`) |
 | `secrets.py`         | `test_secrets.py` (the shared `secret_key_list.json`, and each platform's store faked), `test_secrets_interop.py` (Rust and Python on one real item; CI's `keychain-interop` job, else skipped) |
 | `templates/`         | `test_templates.py`                                        |
 | `_atomic.py`         | `test_atomic.py` — only what belongs to the helper itself (the 38-char temp-name overhead `fulltext.cache`'s filename cap is arithmetic over, and the exception the caller gets back). The five load-bearing details are pinned at the call sites, where the behaviour is delivered: `test_templates.py::TestInstallingDefaultsIsAtomic` and `test_fulltext_cache.py::TestWritesAreAtomic` |
