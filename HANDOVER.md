@@ -39,7 +39,31 @@ languages, on `feat/pmc-open-data-json`:
 - **Gates**: one `cargo test --features pdf,html,keyring` and one
   `-p bmlib --no-default-features` run failed once while the live probe ran
   and passed on a rerun; the first output was overwritten, so the cause is
-  unknown.
+  unknown. After the review fixes all four Rust test configurations passed at
+  the first run.
+- **Review fixes (finalcheck, same PR)**:
+  - A record missing a key is refused. Live records from 2010 to 2025 write
+    every key, with an explicit `null` where there is no value. Before, a
+    renamed `xml_url` would have read as "no JATS", an absence, for every
+    article.
+  - A PMID that is not a positive integer within u64 is refused.
+  - The record is decoded as `serde_json` reads it (`strict_json_loads`,
+    #572).
+  - A 200 listing that is not a `ListBucketResult` is a fault, where it read
+    as "no version" (from #748).
+  - `PmcOpenDataRecord.from_dict` refuses to guess. Rust's `Deserialize`
+    checks types only, which its doc says.
+  - Each refusal is asserted with its reason, in both languages.
+  - Four more contract cases: no JATS, a JATS 404, a JATS with no content,
+    and a listing that is not one. They add `pmc_open_data_record_no_xml.json`,
+    `pmc_open_data_record_empty_article.json` and
+    `pmc_open_data_empty_article.xml`.
+  - Not done:
+    - The three older `resp.json()` decodes in `service.py`, filed as
+      #753.
+    - Rust's public `pmc_open_data_record` gives a transport failure as
+      `FullTextError::Other`, where Python raises `httpx.HTTPError`. This is
+      documented on the method.
 
 ## Earlier: the PDF beside JATS from PMC's AWS Open Data bucket (#748, merged as PR #749)
 
@@ -268,8 +292,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 10,496 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
-  `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,729 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
+- **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
+  `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,730 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
   `~/.cache/bmlib/models/` on this machine, and the Python live tests need
   `.[all,dev,embed]` installed); measure `main` with `pytest
@@ -298,7 +322,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**119 open**, two of them this session's own (#750, #751, which the PR closes) (#734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
+**120 open**, three of them this session's own (#750 and #751, which the PR closes, and #753, filed by its review) (#734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
 2026-11-13); #651 is #632's residual; #556–#734 are not yet
 sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
 furniture rule; measure the move by diffing before choosing) and **#628**'s

@@ -101,8 +101,9 @@ All notable changes to bmlib are documented here. The format is based on
   record's md5. `FullTextResult.source` gains `"pmc_open_data"`. It is the
   rendition NCBI's efetch serves, from a bucket served to scripts, so an
   article NCBI throttles or fails on is still read. No version, record or JATS
-  is an absence; a failed listing or record, a JATS answered other than 200 or
-  one not matching its md5 is a fault on `tier_faults`. **Moves what a fixture
+  is an absence; a failed listing or record, a JATS answered other than 200,
+  one not matching its md5 or one that cannot be parsed is a fault on
+  `tier_faults`. **Moves what a fixture
   scripts**: every case where neither Europe PMC nor NCBI gives a body answers
   one more request, the bucket's listing (11 Python tests, 9 Rust, 3
   `fulltext_source.json` cases), and the exhaustion report counts one more
@@ -111,9 +112,12 @@ All notable changes to bmlib are documented here. The format is based on
   both languages, Rust `pmc_open_data_record`): the bucket's per-version
   `.json`, read in two requests, giving `is_retracted`, `is_pmc_openaccess`,
   `license_code`, `pmid`, `doi` and the JATS's and PDF's md5; `None` when the
-  bucket holds no version or record. A record of another shape (a field of
-  another JSON type, another article or version, a file URL naming another
-  key) is refused rather than guessed at. For an app that wants the
+  bucket holds no version or record. A record of another shape (a missing
+  key, a field of another JSON type, a PMID that is not a positive integer
+  within u64, another article or version, a file URL naming another key) is
+  refused rather than guessed at, and so is a body that is not JSON as
+  `serde_json` reads it (#572), or a listing that is not a `ListBucketResult`
+  (which would otherwise read as naming no version). For an app that wants the
   retraction flag, which `fetch_fulltext()` does not put on its result: it
   reads the record only when it consults the bucket, so the field would be
   empty for most papers, retracted ones included (the maintainer's call,
@@ -129,9 +133,10 @@ All notable changes to bmlib are documented here. The format is based on
   is sought, after the caller's `pdf` entries and before Europe PMC's
   `?pdf=render`, in `PMC_OPEN_DATA_BASE` (`pmc-oa-opendata`, a public bucket
   NLM provides for programmatic access): the latest version's
-  `PMC<n>.<v>/PMC<n>.<v>.pdf`, found by two `ListObjectsV2` pages, so an
-  article or PDF the bucket lacks is an absence; a listing that fails counts
-  as a failed search (`"search-failed"`). On 2026-11-12 the publisher's,
+  `PMC<n>.<v>/PMC<n>.<v>.pdf`, found from the versions listing and the
+  version's record (#750), so an article or PDF the bucket lacks is an
+  absence; a listing or record that fails counts as a failed search
+  (`"search-failed"`). On 2026-11-12 the publisher's,
   Europe PMC's and Unpaywall's links to PMC12609458 (CC BY) all answered a bot
   screen's 403 to bmlib, and the bucket served its PDF. A cached JATS hit whose
   mark names a PMC ID can now seek it again without a DOI or PMID. **Moves

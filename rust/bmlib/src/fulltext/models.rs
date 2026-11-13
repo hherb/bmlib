@@ -767,9 +767,10 @@ pub struct FullTextSourceEntry {
 /// Result of a full-text retrieval attempt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullTextResult {
-    /// Which tier or fetcher produced this: `"europepmc"`, `"europepmc_pdf"`,
-    /// `"unpaywall"`, `"doi"`, `"pubmed"`, `"cached"`, or a fetcher source name
-    /// (e.g. `"biorxiv"`) for known full-text URLs.
+    /// Which tier or fetcher produced this: `"europepmc"`, `"ncbi_pmc"`,
+    /// `"pmc_open_data"`, `"europepmc_pdf"`, `"unpaywall"`, `"doi"`,
+    /// `"pubmed"`, `"cached"`, or a fetcher source name (e.g. `"biorxiv"`) for
+    /// known full-text URLs.
     pub source: String,
     /// The retrieved payload — HTML or JATS XML — or `None` where nothing was
     /// retrieved.
@@ -818,9 +819,10 @@ pub struct FullTextResult {
     /// answer: a timeout, a reset, DNS), `"write-failed"` (the PDF arrived
     /// and the cache could not save it) or, only beside JATS
     /// (`fetch_pdf_with_jats`), [`PDF_SEARCH_FAILED`] (the search for a PDF,
-    /// Europe PMC's or Unpaywall's, failed, and no download was tried, #744,
-    /// or none that failed may pass, #746; `pdf_url`, if set, is a download
-    /// that failed finally), and, only from PMC's Open Data bucket,
+    /// Europe PMC's, PMC Open Data's listing or record, or Unpaywall's,
+    /// failed, and no download was tried, #744, or none that failed may pass,
+    /// #746; `pdf_url`, if set, is a download that failed finally), and, only
+    /// from PMC's Open Data bucket,
     /// [`PDF_CHECKSUM_MISMATCH`] (the PDF's bytes do not match the md5 its
     /// record gives, #750).
     ///
@@ -867,14 +869,16 @@ pub const PDF_CHECKSUM_MISMATCH: &str = "checksum-mismatch";
 ///
 /// Read from the version's `PMC<n>.<v>.json` by
 /// `FullTextService::pmc_open_data_record`. Only the fields bmlib uses or a
-/// caller asked for are kept. Python's `PmcOpenDataRecord`.
+/// caller asked for are kept. Python's `PmcOpenDataRecord`. Its `Deserialize`
+/// checks each field's type, not its shape, and reads a missing `Option` as
+/// `None`; Python's `from_dict` refuses both.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PmcOpenDataRecord {
     /// `PMC` and ASCII digits.
     pub pmc_id: String,
     /// The version the record is of, the latest the bucket holds.
     pub version: u64,
-    /// The PMID PMC links, as ASCII digits.
+    /// The PMID PMC links, as ASCII digits (a positive integer in the record).
     pub pmid: Option<String>,
     /// The DOI PMC links.
     pub doi: Option<String>,

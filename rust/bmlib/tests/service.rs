@@ -4070,3 +4070,46 @@ fn the_pmc_open_data_record_is_the_latest_versions() {
         Err(FullTextError::Other(_))
     ));
 }
+
+/// Python's `TestPmcOpenDataRecord` failure cases: each a `FullTextError`
+/// saying why, and a missing record no record (#750, #752 review).
+#[test]
+fn a_pmc_open_data_record_that_cannot_be_read_is_a_failure() {
+    let versions = || {
+        ok(std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/pmc_open_data_versions.xml"),
+        )
+        .expect("fixture"))
+    };
+    let lookup =
+        |answers: Vec<Answer>| service(ScriptedClient::new(answers)).pmc_open_data_record("123");
+    assert_eq!(lookup(vec![versions(), status(404)]).expect("read"), None);
+    let cases: Vec<(Vec<Answer>, &str)> = vec![
+        (vec![versions(), status(403)], "HTTP 403"),
+        (vec![versions(), status(500)], "HTTP 500"),
+        (vec![versions(), status(503)], "HTTP 503"),
+        (vec![versions(), ok("<html>")], "is not JSON"),
+        (vec![versions(), ok_bytes(b"\xff".to_vec())], "is not JSON"),
+        (vec![versions(), ok("\u{feff}{}")], "is not JSON"),
+        (
+            vec![versions(), ok(r#"{"title": "\ud800"}"#)],
+            "is not JSON",
+        ),
+        (vec![versions(), ok(r#"{"title": NaN}"#)], "is not JSON"),
+        (vec![versions(), ok("[]")], "is not an object"),
+        // Read as a listing, it would name no version: an absence.
+        (
+            vec![ok("<html>A proxy's page</html>")],
+            "is not a ListBucketResult",
+        ),
+    ];
+    for (answers, reason) in cases {
+        match lookup(answers) {
+            Err(FullTextError::Other(message)) => {
+                assert!(message.ends_with(reason), "{reason}: {message}")
+            }
+            other => panic!("{reason}: {other:?}"),
+        }
+    }
+}

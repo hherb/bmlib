@@ -80,7 +80,7 @@
 //!
 //! * **#304** — a caller PMC ID is validated before it is used. A malformed one
 //!   is recorded and treated as absent, so discovery runs in full, the ID
-//!   Converter included; and a well-formed one that neither source serves is
+//!   Converter included; and a well-formed one that no source serves is
 //!   **superseded by the Europe PMC search hit's id**, which is the hit the
 //!   free-PDF tier already trusted as the article. A remote `pmcid` is validated
 //!   where it is read, so a bare numeric one compares equal to the caller's
@@ -773,8 +773,10 @@ fn open_data_refusal(stem: &str, what: impl std::fmt::Display) -> TierFault {
 ///
 /// The record names each file as
 /// `s3://pmc-oa-opendata/<stem>/<stem><suffix>?md5=<hex>`, or `null` for one
-/// the version lacks. Anything else, a file of another name or folder
-/// included, is a record not of the shape read: refused, not guessed at.
+/// the version lacks. The bucket writes every key, so a missing one is a
+/// record of another shape, not a file the version lacks. Anything else, a
+/// file of another name or folder included, is a record not of the shape
+/// read: refused, not guessed at.
 fn open_data_file_md5(
     data: &Map<String, Value>,
     field: &str,
@@ -782,7 +784,8 @@ fn open_data_file_md5(
     suffix: &str,
 ) -> Result<Option<String>, TierFault> {
     let value = match data.get(field) {
-        None | Some(Value::Null) => return Ok(None),
+        None => return Err(open_data_refusal(stem, format!("no {field}"))),
+        Some(Value::Null) => return Ok(None),
         Some(value) => value,
     };
     let prefix = format!("s3://pmc-oa-opendata/{stem}/{stem}{suffix}?md5=");
@@ -802,8 +805,9 @@ fn open_data_file_md5(
 
 /// Read `pmc_id`'s record at `version` from its parsed `.json` (#750).
 ///
-/// A field must have the JSON type the bucket gives it, `null` only where the
-/// bucket leaves it so; the record must name the article and version asked.
+/// A field must be present and have the JSON type the bucket gives it, `null`
+/// only where the bucket leaves it so (it writes every key); the record must
+/// name the article and version asked.
 fn open_data_record(
     data: &Value,
     pmc_id: &str,
@@ -820,18 +824,23 @@ fn open_data_record(
         let value = data.get(name).unwrap_or(&Value::Null);
         open_data_refusal(&stem, format!("unexpected {name} {value}"))
     };
-    let text = |name: &str| match data.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(unexpected(name)),
+    // The bucket writes every key, `null` where it has no value (#752).
+    let present = |name: &str| {
+        data.get(name)
+            .ok_or_else(|| open_data_refusal(&stem, format!("no {name}")))
     };
-    let flag = |name: &str| match data.get(name) {
-        Some(Value::Bool(value)) => Ok(*value),
+    let text = |name: &str| match present(name)? {
+        Value::Null => Ok(None),
+        Value::String(value) => Ok(Some(value.clone())),
+        _ => Err(unexpected(name)),
+    };
+    let flag = |name: &str| match present(name)? {
+        Value::Bool(value) => Ok(*value),
         _ => Err(unexpected(name)),
     };
     let named_pmc_id = text("pmcid")?.ok_or_else(|| unexpected("pmcid"))?;
-    let named_version = match data.get("version") {
-        Some(Value::Number(number)) if number.is_i64() || number.is_u64() => number.as_u64(),
+    let named_version = match present("version")? {
+        Value::Number(number) if number.is_i64() || number.is_u64() => number.as_u64(),
         _ => return Err(unexpected("version")),
     };
     if named_pmc_id != pmc_id || named_version != Some(version) {
@@ -840,12 +849,14 @@ fn open_data_record(
             format!("PMC Open Data record {stem} names another article or version"),
         ));
     }
-    let pmid = match data.get("pmid") {
-        None | Some(Value::Null) => None,
-        Some(Value::Number(number)) if number.is_i64() || number.is_u64() => {
-            Some(number.to_string())
-        }
-        Some(_) => return Err(unexpected("pmid")),
+    let pmid = match present("pmid")? {
+        Value::Null => None,
+        // A PMID is positive, and one past u64 reads as a float (#752 review).
+        Value::Number(number) => match number.as_u64() {
+            Some(pmid) if pmid > 0 => Some(pmid.to_string()),
+            _ => return Err(unexpected("pmid")),
+        },
+        _ => return Err(unexpected("pmid")),
     };
     Ok(PmcOpenDataRecord {
         pmc_id: pmc_id.to_string(),
@@ -1882,7 +1893,7 @@ impl FullTextService {
 
         // Tiers 1b and 1b′: resolve a PMC ID from the DOI or PMID, then 1a and 1c
         // for it. Reached with a caller ID only once that ID has given no full
-        // text at either source, and then only the *search* may supersede it —
+        // text at any source, and then only the *search* may supersede it —
         // the maintainer's decision on #304's stale-ID half, on the ground that
         // the recovery step this replaced already trusted that search hit as the
         // article, taking its free PDF whenever it offered one. Fetching the same
@@ -3229,10 +3240,10 @@ impl FullTextService {
     /// NCBI is asked only when Europe PMC gave no body — it serves the corpus its
     /// `inEPMC` flag describes, and NCBI serves PMC itself — and PMC's Open Data
     /// bucket only when neither did (#751): the same PMC rendition as NCBI's,
-    /// served where NCBI fails or throttles. All ahead of the PDF
-    /// tiers, because structured JATS beats a PDF that needs a PDF backend to
-    /// read at all. One method for the caller's ID and a discovered one, since
-    /// the two were separate copies of the same pair.
+    /// served where NCBI fails or throttles. All ahead of the PDF tiers,
+    /// because structured JATS beats a PDF that needs a PDF backend to read at
+    /// all. One method for the caller's ID and a discovered one, since the two
+    /// were separate copies of the same sequence.
     ///
     /// Returns `(result, abstract_only)`: the full text, or `None` when no
     /// source had a body, and the held-back rendering — **the first one seen**,
@@ -3778,8 +3789,9 @@ impl FullTextService {
     /// # Errors
     ///
     /// [`TierFault::fault`] as [`FullTextService::pmc_open_data_record`]; on the
-    /// XML answered other than 200, which the record says is there; and on
-    /// bytes that do not match its md5. [`TierFault::unavailable`] when the
+    /// XML answered other than 200, which the record says is there; on bytes
+    /// that do not match its md5; and on XML that cannot be read or parsed
+    /// (`SAXParseException`, as in Python). [`TierFault::unavailable`] when the
     /// bucket holds no record of the article, its latest version no XML, or
     /// the XML no article content.
     fn fetch_pmc_open_data_xml(&self, pmc_id: &str) -> Result<(String, bool, Vec<u8>), TierFault> {
@@ -3855,7 +3867,9 @@ impl FullTextService {
     ///
     /// # Errors
     ///
-    /// [`TierFault::fault`] on a response other than 200.
+    /// [`TierFault::fault`] on a response other than 200, or one that is not a
+    /// listing (a proxy's page, say), which would otherwise read as naming no
+    /// version.
     fn open_data_listing(&self, query: &str) -> Result<String, TierFault> {
         let response = self.http_get(&format!("{PMC_OPEN_DATA_BASE}/?list-type=2&{query}"))?;
         if response.status != 200 {
@@ -3864,7 +3878,15 @@ impl FullTextService {
                 format!("PMC Open Data HTTP {}", response.status),
             ));
         }
-        Ok(String::from_utf8_lossy(&response.body).into_owned())
+        let listing = String::from_utf8_lossy(&response.body).into_owned();
+        // Read as a listing, a proxy's page would name no version: an absence.
+        if !listing.contains("<ListBucketResult") {
+            return Err(TierFault::fault(
+                "FullTextError",
+                "PMC Open Data listing is not a ListBucketResult",
+            ));
+        }
+        Ok(listing)
     }
 
     /// Query Unpaywall for an open-access PDF URL.
@@ -4164,72 +4186,128 @@ mod tests {
         assert!(record.is_retracted);
     }
 
-    /// Python's `test_a_record_not_of_the_shape_read_is_refused`, case for case.
+    /// Python's `test_a_record_not_of_the_shape_read_is_refused`, case for case,
+    /// each refused for the reason Python gives.
     #[test]
     fn an_open_data_record_not_of_the_shape_read_is_refused() {
         let md5 = |n: usize, c: char| c.to_string().repeat(n);
-        let cases = [
-            ("pmcid", json!("PMC124")),
-            ("version", json!(9)),
-            ("version", json!(true)),
-            ("is_retracted", Value::Null),
-            ("is_retracted", json!("false")),
-            ("is_pmc_openaccess", json!(1)),
-            ("pmid", json!("456")),
-            ("pmid", json!(true)),
-            ("doi", json!(10)),
-            ("license_code", json!(["CC BY"])),
+        let url = "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=";
+        let another = " names another article or version";
+        let past_u64: Value = serde_json::from_str("18446744073709551616").expect("JSON");
+        let mut cases: Vec<(&str, Option<Value>, String)> = vec![
+            ("pmcid", Some(json!("PMC124")), another.into()),
+            ("version", Some(json!(9)), another.into()),
+            ("version", Some(json!(11)), another.into()),
+            ("version", Some(json!(-1)), another.into()),
+            ("version", Some(json!(true)), ": unexpected version".into()),
+            (
+                "is_retracted",
+                Some(Value::Null),
+                ": unexpected is_retracted".into(),
+            ),
+            (
+                "is_retracted",
+                Some(json!("false")),
+                ": unexpected is_retracted".into(),
+            ),
+            (
+                "is_pmc_openaccess",
+                Some(json!(1)),
+                ": unexpected is_pmc_openaccess".into(),
+            ),
+            ("pmid", Some(json!("456")), ": unexpected pmid".into()),
+            ("pmid", Some(json!(true)), ": unexpected pmid".into()),
+            ("pmid", Some(json!(0)), ": unexpected pmid".into()),
+            ("pmid", Some(json!(-5)), ": unexpected pmid".into()),
+            ("pmid", Some(past_u64), ": unexpected pmid".into()),
+            ("doi", Some(json!(10)), ": unexpected doi".into()),
+            (
+                "license_code",
+                Some(json!(["CC BY"])),
+                ": unexpected license_code".into(),
+            ),
             (
                 "pdf_url",
-                json!(format!(
+                Some(json!(format!(
                     "s3://pmc-oa-opendata/PMC123.9/PMC123.9.pdf?md5={}",
                     md5(32, 'a')
-                )),
+                ))),
+                ": unexpected pdf_url".into(),
             ),
             (
                 "pdf_url",
-                json!(format!(
+                Some(json!(format!(
                     "s3://pmc-oa-opendata/PMC123.10/other.pdf?md5={}",
                     md5(32, 'a')
-                )),
+                ))),
+                ": unexpected pdf_url".into(),
+            ),
+            // An md5 alone names no file.
+            (
+                "pdf_url",
+                Some(json!(md5(32, 'a'))),
+                ": unexpected pdf_url".into(),
             ),
             (
                 "pdf_url",
-                json!(format!(
-                    "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5={}",
-                    md5(32, 'A')
-                )),
+                Some(json!(format!("{url}{}", md5(32, 'A')))),
+                ": unexpected pdf_url".into(),
             ),
             (
                 "pdf_url",
-                json!(format!(
-                    "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5={}",
-                    md5(31, 'a')
-                )),
+                Some(json!(format!("{url}{}", md5(31, 'a')))),
+                ": unexpected pdf_url".into(),
             ),
             (
                 "pdf_url",
-                json!("s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf"),
+                Some(json!(format!("{url}{}", md5(33, 'a')))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(format!("{url}{}&x=1", md5(32, 'a')))),
+                ": unexpected pdf_url".into(),
+            ),
+            (
+                "pdf_url",
+                Some(json!(url.strip_suffix("?md5=").expect("a query"))),
+                ": unexpected pdf_url".into(),
             ),
             (
                 "xml_url",
-                json!(format!(
-                    "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5={}",
-                    md5(32, 'a')
-                )),
+                Some(json!(format!("{url}{}", md5(32, 'a')))),
+                ": unexpected xml_url".into(),
             ),
-            ("xml_url", json!(5)),
+            ("xml_url", Some(json!(5)), ": unexpected xml_url".into()),
         ];
-        for (name, value) in cases {
+        for name in [
+            "pmcid",
+            "version",
+            "pmid",
+            "doi",
+            "is_retracted",
+            "is_pmc_openaccess",
+            "license_code",
+            "xml_url",
+            "pdf_url",
+        ] {
+            cases.push((name, None, format!(": no {name}")));
+        }
+        for (name, value, reason) in cases {
             let mut data = open_data_record_fixture();
-            data[name] = value.clone();
+            match &value {
+                Some(value) => data[name] = value.clone(),
+                None => {
+                    data.as_object_mut().expect("an object").remove(name);
+                }
+            }
             let refused = open_data_record(&data, "PMC123", 10).expect_err("refused");
-            assert_eq!(refused.name, "FullTextError", "{name}: {value}");
+            assert_eq!(refused.name, "FullTextError", "{name}: {value:?}");
             assert!(
                 refused
                     .message
-                    .starts_with("PMC Open Data record PMC123.10"),
-                "{name}: {value}: {}",
+                    .starts_with(&format!("PMC Open Data record PMC123.10{reason}")),
+                "{name}: {value:?}: {}",
                 refused.message
             );
         }

@@ -753,6 +753,10 @@ class TestLatestOpenDataVersion:
         assert _latest_open_data_version(self._listing(), "PMC123") is None
 
 
+# A key a record case deletes rather than sets (#752 review).
+_DELETED = object()
+
+
 class TestPmcOpenDataRecord:
     """``pmc_open_data_record``: a version's ``.json`` in PMC's Open Data bucket (#750)."""
 
@@ -798,6 +802,31 @@ class TestPmcOpenDataRecord:
         assert urls[1] == f"{PMC_OPEN_DATA_BASE}/PMC123.10/PMC123.10.json"
         assert PmcOpenDataRecord.from_dict(record.to_dict()) == record
 
+    @pytest.mark.parametrize(
+        ("change", "field_name"),
+        [
+            ({"version": "10"}, "version"),
+            ({"version": True}, "version"),
+            ({"pmc_id": 123}, "pmc_id"),
+            ({"pmid": 456}, "pmid"),
+            ({"is_retracted": "false"}, "is_retracted"),
+            ({"xml_md5": "ABC"}, "xml_md5"),
+            ({"pdf_md5": "a" * 31}, "pdf_md5"),
+        ],
+    )
+    def test_from_dict_refuses_to_guess(self, change, field_name):
+        record, _ = self._lookup(self._versions(), (200, json.dumps(self.RECORD).encode()))
+        with pytest.raises(ValueError, match=f"PmcOpenDataRecord: {field_name}$"):
+            PmcOpenDataRecord.from_dict({**record.to_dict(), **change})
+
+    @pytest.mark.parametrize("field_name", ["pmc_id", "pmid", "pdf_md5"])
+    def test_from_dict_refuses_a_missing_field(self, field_name):
+        record, _ = self._lookup(self._versions(), (200, json.dumps(self.RECORD).encode()))
+        data = record.to_dict()
+        del data[field_name]
+        with pytest.raises(ValueError, match=f"PmcOpenDataRecord: {field_name}$"):
+            PmcOpenDataRecord.from_dict(data)
+
     def test_no_version_is_no_record_and_one_request(self):
         record, urls = self._lookup((200, (FIXTURES / "pmc_open_data_absent.xml").read_bytes()))
         assert record is None
@@ -811,37 +840,86 @@ class TestPmcOpenDataRecord:
         with pytest.raises(FullTextError, match=f"HTTP {status}"):
             self._lookup(self._versions(), (status, b""))
 
-    def test_a_record_that_is_not_json_is_a_failure(self):
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"<html>",
+            b"\xff",
+            b"\xef\xbb\xbf{}",  # a BOM
+            b'{"title": "\\ud800"}',  # a lone surrogate, in a field never read
+            b'{"title": NaN}',
+        ],
+    )
+    def test_a_record_that_is_not_json_is_a_failure(self, body):
+        # Not JSON as serde_json reads it, so Rust refuses the same bodies (#572).
         with pytest.raises(FullTextError, match="is not JSON"):
-            self._lookup(self._versions(), (200, b"<html>"))
+            self._lookup(self._versions(), (200, body))
+
+    def test_a_listing_that_is_not_one_is_a_failure(self):
+        # Read as a listing, it would name no version: an absence (#752 review).
+        with pytest.raises(FullTextError, match="is not a ListBucketResult"):
+            self._lookup((200, b"<html>A proxy's page</html>"))
+
+    _URL = "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5="
+    _ANOTHER = " names another article or version"
 
     @pytest.mark.parametrize(
-        "change",
+        ("change", "reason"),
         [
-            {"pmcid": "PMC124"},
-            {"version": 9},
-            {"version": True},
-            {"is_retracted": None},
-            {"is_retracted": "false"},
-            {"is_pmc_openaccess": 1},
-            {"pmid": "456"},
-            {"pmid": True},
-            {"doi": 10},
-            {"license_code": ["CC BY"]},
-            {"pdf_url": "s3://pmc-oa-opendata/PMC123.9/PMC123.9.pdf?md5=" + "a" * 32},
-            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/other.pdf?md5=" + "a" * 32},
-            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=" + "A" * 32},
-            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=" + "a" * 31},
-            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf"},
-            {"xml_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=" + "a" * 32},
-            {"xml_url": 5},
+            ({"pmcid": "PMC124"}, _ANOTHER),
+            ({"version": 9}, _ANOTHER),
+            ({"version": 11}, _ANOTHER),
+            ({"version": -1}, _ANOTHER),
+            ({"version": True}, ": unexpected version"),  # not 1, not "another version"
+            ({"is_retracted": None}, ": unexpected is_retracted"),
+            ({"is_retracted": "false"}, ": unexpected is_retracted"),
+            ({"is_pmc_openaccess": 1}, ": unexpected is_pmc_openaccess"),
+            ({"pmid": "456"}, ": unexpected pmid"),
+            ({"pmid": True}, ": unexpected pmid"),
+            ({"pmid": 0}, ": unexpected pmid"),
+            ({"pmid": -5}, ": unexpected pmid"),
+            ({"pmid": 2**64}, ": unexpected pmid"),  # past Rust's u64
+            ({"doi": 10}, ": unexpected doi"),
+            ({"license_code": ["CC BY"]}, ": unexpected license_code"),
+            *(
+                ({name: _DELETED}, f": no {name}")
+                for name in (
+                    "pmcid",
+                    "version",
+                    "pmid",
+                    "doi",
+                    "is_retracted",
+                    "is_pmc_openaccess",
+                    "license_code",
+                    "xml_url",
+                    "pdf_url",
+                )
+            ),
+            (
+                {"pdf_url": "s3://pmc-oa-opendata/PMC123.9/PMC123.9.pdf?md5=" + "a" * 32},
+                ": unexpected pdf_url",
+            ),
+            (
+                {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/other.pdf?md5=" + "a" * 32},
+                ": unexpected pdf_url",
+            ),
+            ({"pdf_url": "a" * 32}, ": unexpected pdf_url"),  # an md5 alone names no file
+            ({"pdf_url": _URL + "A" * 32}, ": unexpected pdf_url"),
+            ({"pdf_url": _URL + "a" * 31}, ": unexpected pdf_url"),
+            ({"pdf_url": _URL + "a" * 33}, ": unexpected pdf_url"),
+            ({"pdf_url": _URL + "a" * 32 + "&x=1"}, ": unexpected pdf_url"),
+            ({"pdf_url": _URL[: -len("?md5=")]}, ": unexpected pdf_url"),
+            ({"xml_url": _URL + "a" * 32}, ": unexpected xml_url"),
+            ({"xml_url": 5}, ": unexpected xml_url"),
         ],
-        ids=lambda change: repr(change)[:60],
+        ids=lambda case: repr(case)[:60],
     )
-    def test_a_record_not_of_the_shape_read_is_refused(self, change):
+    def test_a_record_not_of_the_shape_read_is_refused(self, change, reason):
         record = {**self.RECORD, **change}
-        with pytest.raises(FullTextError, match="PMC Open Data record PMC123.10"):
+        record = {name: value for name, value in record.items() if value is not _DELETED}
+        with pytest.raises(FullTextError) as refused:
             self._lookup(self._versions(), (200, json.dumps(record).encode()))
+        assert str(refused.value).startswith(f"PMC Open Data record PMC123.10{reason}")
 
     def test_a_record_that_is_not_an_object_is_refused(self):
         with pytest.raises(FullTextError, match="is not an object"):
