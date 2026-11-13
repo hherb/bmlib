@@ -795,7 +795,8 @@ class FullTextSourceEntry:
     format: str  # "pdf", "xml", "html"
     source: str  # e.g. "biorxiv", "medrxiv", "pmc", "publisher"
     open_access: bool = True
-    version: str | None = None  # e.g. "preprint", "accepted", "published"
+    # OpenAlex: "preprint", "accepted", "published"; bioRxiv/medRxiv: the posting's number, "2"
+    version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {

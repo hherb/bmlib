@@ -8,6 +8,10 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed — breaking
 
+- **`sync(sources=None)` and `ALL_SOURCES` include `biorxiv-details` and
+  `medrxiv-details`** (#341, see Added): a caller that syncs every source now
+  fetches every bioRxiv and medRxiv posting, several hundred more records and
+  about ten more pages a day. A caller listing its sources is unaffected.
 - **`canonical_from_html` caps a page's `<` count, not its length** (#656;
   both languages). A page holding more than `HTML_MAX_TAGS` (666,666) `<` is
   refused unparsed; a page of any length under it is parsed. `HTML_MAX_CHARS`
@@ -48,6 +52,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`FullTextService` reads its three remaining JSON bodies as the Rust port
+  does** (#753). The Europe PMC search, NCBI's ID Converter and Unpaywall were
+  decoded by httpx's `json()`, which accepts a UTF-8 BOM, `NaN`/`Infinity`, a
+  number past the largest float, a lone surrogate escape and nesting past 127
+  levels; `serde_json` refuses each, so one body was an answer in Python and
+  a fault in Rust. They now go through `strict_json_loads`, as PMC Open Data's
+  record has since #752. A refused body is a `JSONDecodeError` fault in
+  `tier_faults` in both languages, and the tier falls through; a body that is
+  not UTF-8 is a `UnicodeDecodeError` fault in both, where Rust had named it
+  `TransportError`. A parity fix: no such body has been seen from these
+  services. Nesting past Python's recursion limit still differs (#758).
 - **The PDF beside JATS reports the failure a later try may cure, and a 408
   may pass** (#746), in Python and the Rust port alike. With no PDF saved,
   the result carried the first failure, so a 403 from one source then a 503
@@ -131,6 +146,40 @@ All notable changes to bmlib are documented here. The format is based on
   writes nothing again. Until now such a save made a second folder for a paper
   split across two. Byte-identical files of two different papers now share one
   folder.
+- **Every bioRxiv and medRxiv posting, through `/details`** (#341, both
+  languages). Two new built-in sources, `biorxiv-details` and
+  `medrxiv-details`, read `https://api.biorxiv.org/details/`: one record per
+  posted version, filed under the day it was posted, with its `jatsxml` (an
+  `xml` full-text source) and `version`. `biorxiv` and `medrxiv` still read
+  `/pubs`, which lists only preprints already paired with a journal
+  publication, under the publication's date: on 2024-01-15, `/details` declared
+  28 medRxiv and 207 bioRxiv records against `/pubs`' 10 and 34, and recent
+  weekdays post 55-99 medRxiv and 190-440 bioRxiv versions a day. They are
+  separate sources, not a setting, because `download_days` is keyed by the
+  source's name; the records keep `source` `"medrxiv"`/`"biorxiv"`, so the two
+  populations meet on one row per DOI. **`sync(sources=None)` now includes
+  them**, as `ALL_SOURCES` does, so a caller that syncs every source fetches
+  every posting from now on (a caller listing its sources is unaffected).
+  `fetch_biorxiv(endpoint="details")` (Rust `BiorxivFetcher::with_endpoint`,
+  `Endpoint`) is the switch; `DETAILS_PAGE_SIZE` is **30**, not 100
+  (measured: a walk at 100 would complete a 60-posting day holding 30), and
+  `DETAILS_SETTLE_DAYS` is 7, a bound rather than a measurement.
+- **A bioRxiv/medRxiv full-text source carries the record's `version`**
+  (#341): `"2"` for a second posting, `None` for a `/pubs` record, which names
+  none, where it was always `None`. OpenAlex fills the same field with a kind
+  (`preprint`, `accepted`, `published`), so read it with the row's `source`. A
+  v2 posting stored over its v1 row keeps both versions' sources, since each
+  version's URLs differ; which is newest is the caller's to read from
+  `version`. `add_fulltext_source` gives an existing row of the same source
+  that names no version the version it is now sent, so a v1 PDF `/pubs` stored
+  first takes `"1"` from `/details`; a labelled row keeps its label (both
+  languages).
+- **A bioRxiv/medRxiv page longer than the walk's step fails its day** (#341
+  review, both endpoints, both languages). The cursor is a record offset, so
+  the next page would overlap it, and the repeats counted as delivered would
+  hide a stall from reconciliation. A `/details` record that names no version
+  fails its day too, since it would take v1's URLs, and a `*-details` walk
+  logs, reports progress and reconciles under its own source name.
 
 - **`bmlib.library` / `bmlib::library`: a shared folder of research papers**
   (both languages, held together by `tests/fixtures/library_cases.json` and the

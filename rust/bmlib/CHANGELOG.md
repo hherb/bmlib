@@ -11,6 +11,10 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`HttpPageSource` and `BiorxivFetcher` gain a public `endpoint` field**
+  (#341), so a struct literal of either must name it (`Endpoint::Pubs` keeps
+  the old behaviour); `BiorxivFetcher::new` sets it. `builtin_registry` includes
+  the `*-details` sources (see Added); a `SyncRequest` still names its own.
 - **`canonical_from_html` caps a page's `<` count, not its length** (#656, as
   in Python): `HTML_MAX_TAGS` (666,666) replaces `HTML_MAX_CHARS`, and
   `HtmlError::TooLarge { tags }` replaces `{ length }`. A page saved with its
@@ -24,6 +28,17 @@ The Python library is documented separately, in the repository's
   argument is the root `CHANGELOG.md`'s.
 
 ### Added
+
+- **`/details`: every bioRxiv and medRxiv posting** (#341, as in Python; the
+  argument is the root `CHANGELOG.md`'s). `builtin_registry` gains
+  `biorxiv-details` and `medrxiv-details` (`DETAILS_SETTLE_DAYS`, 7);
+  `Endpoint` (`Pubs`, the default, and `Details`), `DETAILS_BASE_URL`,
+  `DETAILS_PAGE_SIZE` (30) and `BiorxivFetcher::with_endpoint`.
+  `PageSource::endpoint` has a default of `Pubs`, so an existing
+  implementation compiles unchanged. A full-text source carries the record's
+  `version` (`None` where it named none), and `add_fulltext_source` labels an
+  unversioned row of the same source with it. A page longer than the walk's
+  step fails its day, as does a `/details` record naming no version.
 
 - **PMC Open Data's record and JATS** (#750, #751, as in Python; the argument
   is the root `CHANGELOG.md`'s): `FullTextService::pmc_open_data_record`,

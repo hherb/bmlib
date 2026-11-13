@@ -28,8 +28,8 @@
 //! says what the corpus records, and Rust produces the corrected value.
 
 use bmlib::publications::fetchers::biorxiv::{
-    fetch_biorxiv, normalize, page_url, pdf_url, read_page_body, HttpPageSource, PageSource,
-    PAGE_SIZE,
+    fetch_biorxiv, normalize, page_url, pdf_url, read_page_body, Endpoint, HttpPageSource,
+    PageSource, DETAILS_PAGE_SIZE, PAGE_SIZE,
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use chrono::NaiveDate;
@@ -52,11 +52,16 @@ use common::sink::RecordingSink;
 struct ScriptedPages {
     payloads: std::cell::RefCell<Vec<Scripted>>,
     urls: std::cell::RefCell<Vec<String>>,
+    endpoint: Endpoint,
 }
 
 impl PageSource for ScriptedPages {
+    fn endpoint(&self) -> Endpoint {
+        self.endpoint
+    }
+
     fn page(&self, server: &str, date: &str, cursor: usize) -> Result<Value, FetchError> {
-        let url = page_url(server, date, cursor);
+        let url = self.endpoint.page_url(server, date, cursor);
         self.urls.borrow_mut().push(url.clone());
         let mut payloads = self.payloads.borrow_mut();
         if payloads.is_empty() {
@@ -75,10 +80,11 @@ impl PageSource for ScriptedPages {
     }
 }
 
-fn run_scripted(pages: Vec<Scripted>, server: &str, day: &str) -> Value {
+fn run_scripted(pages: Vec<Scripted>, server: &str, day: &str, endpoint: Endpoint) -> Value {
     let source = ScriptedPages {
         payloads: std::cell::RefCell::new(pages),
         urls: std::cell::RefCell::new(Vec::new()),
+        endpoint,
     };
     let date = NaiveDate::parse_from_str(day, "%Y-%m-%d").expect("date");
     // The corpus diffs Python's `fetch_biorxiv`, which reports the running
@@ -113,6 +119,7 @@ fn run_walk(payloads: Vec<Result<Value, FetchError>>, server: &str, day: &str) -
         payloads.into_iter().map(Scripted::from).collect(),
         server,
         day,
+        Endpoint::Pubs,
     )
 }
 
@@ -152,7 +159,12 @@ fn run(case: &Value) -> Value {
                 .as_array()
                 .map(|a| a.iter().map(common::oracle::response).collect())
                 .unwrap_or_default();
-            run_scripted(pages, server, day)
+            let endpoint = match args.get("endpoint").and_then(Value::as_str) {
+                None | Some("pubs") => Endpoint::Pubs,
+                Some("details") => Endpoint::Details,
+                Some(other) => panic!("unknown endpoint {other:?}"),
+            };
+            run_scripted(pages, server, day, endpoint)
         }
         other => panic!("unknown fn {other:?}"),
     }
@@ -432,7 +444,10 @@ fn an_absent_total_stays_none() {
 /// is no longer an example of a normal record.
 fn full_page(count: usize) -> Vec<Value> {
     (0..count)
-        .map(|i| json!({"title": format!("R{i}"), "preprint_doi": format!("10.1101/{i}")}))
+        // A version, as every `/details` posting names one; `/pubs` ignores it.
+        .map(|i| {
+            json!({"title": format!("R{i}"), "preprint_doi": format!("10.1101/{i}"), "version": "1"})
+        })
         .collect()
 }
 
@@ -540,7 +555,12 @@ fn an_error_keeps_the_records_that_arrived_before_it() {
 /// (#349).
 #[test]
 fn a_non_success_status_is_a_status_error_not_a_transport_error() {
-    let result = run_scripted(vec![Scripted::Status(500)], "biorxiv", "2024-06-10");
+    let result = run_scripted(
+        vec![Scripted::Status(500)],
+        "biorxiv",
+        "2024-06-10",
+        Endpoint::Pubs,
+    );
     assert_eq!(result["status"], "failed", "{result}");
     assert_eq!(result["record_count"], 0, "{result}");
     assert_eq!(
@@ -562,7 +582,12 @@ fn a_non_success_status_is_a_status_error_not_a_transport_error() {
     // A client error and a server error are the same refusal here; 429 and 503
     // are what a rate limit and an outage produce, and neither is a quiet day.
     for status in [403u16, 404, 429, 503] {
-        let result = run_scripted(vec![Scripted::Status(status)], "biorxiv", "2024-06-10");
+        let result = run_scripted(
+            vec![Scripted::Status(status)],
+            "biorxiv",
+            "2024-06-10",
+            Endpoint::Pubs,
+        );
         let error = result["error"].as_str().unwrap_or_default();
         assert!(
             error.starts_with("HTTPStatusError: "),
@@ -588,7 +613,7 @@ fn a_status_failure_keeps_the_records_already_delivered() {
         })),
         Scripted::Status(500),
     ];
-    let result = run_scripted(pages, "biorxiv", "2024-06-10");
+    let result = run_scripted(pages, "biorxiv", "2024-06-10", Endpoint::Pubs);
     assert_eq!(result["status"], "failed", "{result}");
     assert_eq!(result["record_count"], PAGE_SIZE, "{result}");
     assert_eq!(result["progress"], json!([[PAGE_SIZE, 150, "in_progress"]]));
@@ -641,6 +666,7 @@ fn the_real_page_source_refuses_a_status_as_a_status_error() {
     });
     let source = HttpPageSource {
         client: client.clone(),
+        endpoint: Endpoint::Pubs,
     };
     let asked = page_url("biorxiv", "2024-06-10", 0);
     let error = source
@@ -684,6 +710,19 @@ fn a_short_page_ends_the_walk() {
     assert_eq!(result["urls"].as_array().expect("urls").len(), 1);
 }
 
+/// A `PageSource` that names no endpoint reads `/pubs`, so an implementation
+/// written before #341 keeps walking in pages of 100.
+#[test]
+fn a_page_source_that_names_no_endpoint_reads_pubs() {
+    struct Unnamed;
+    impl PageSource for Unnamed {
+        fn page(&self, _: &str, _: &str, _: usize) -> Result<Value, FetchError> {
+            Ok(json!({"collection": [], "messages": []}))
+        }
+    }
+    assert_eq!(Unnamed.endpoint(), Endpoint::Pubs);
+}
+
 /// A full page continues, and the cursor advances by the page size.
 #[test]
 fn a_full_page_advances_the_cursor() {
@@ -701,6 +740,53 @@ fn a_full_page_advances_the_cursor() {
         .as_str()
         .unwrap_or_default()
         .ends_with(&format!("/{PAGE_SIZE}")));
+}
+
+/// **A `/details` page holds 30, so a full one is 30, not 100** (#341): read
+/// with `/pubs`' size, the first page would end the walk and 30 of 60 would
+/// complete as a tolerated shortfall.
+#[test]
+fn a_full_details_page_of_thirty_advances_the_cursor() {
+    let pages = vec![
+        Scripted::Body(
+            json!({"collection": full_page(DETAILS_PAGE_SIZE), "messages": [{"total": "60"}]}),
+        ),
+        Scripted::Body(
+            json!({"collection": full_page(DETAILS_PAGE_SIZE), "messages": [{"total": "60"}]}),
+        ),
+    ];
+    let result = run_scripted(pages, "medrxiv", "2026-11-04", Endpoint::Details);
+    assert_eq!(result["status"], "completed", "{result}");
+    assert_eq!(result["record_count"], 60, "{result}");
+    assert_eq!(result["note"], Value::Null, "{result}");
+    assert_eq!(
+        result["urls"],
+        json!([0, 30, 60]
+            .iter()
+            .map(|cursor| format!(
+                "https://api.biorxiv.org/details/medrxiv/2026-11-04/2026-11-04/{cursor}"
+            ))
+            .collect::<Vec<_>>())
+    );
+}
+
+/// The real [`HttpPageSource`] asks the endpoint it was given.
+#[test]
+fn the_real_page_source_asks_its_endpoint() {
+    let client = std::sync::Arc::new(OneStatus {
+        status: 503,
+        asked: std::sync::Mutex::new(Vec::new()),
+    });
+    let source = HttpPageSource {
+        client: client.clone(),
+        endpoint: Endpoint::Details,
+    };
+    let _ = source.page("medrxiv", "2026-11-04", 30);
+    assert_eq!(source.endpoint(), Endpoint::Details);
+    assert_eq!(
+        *client.asked.lock().expect("not poisoned"),
+        vec!["https://api.biorxiv.org/details/medrxiv/2026-11-04/2026-11-04/30".to_string()]
+    );
 }
 
 /// **Records delivered without a count cannot be verified**, so the day cannot

@@ -757,8 +757,9 @@ pub struct FullTextSourceEntry {
     /// Whether the source declares the text open access.
     #[serde(default = "yes")]
     pub open_access: bool,
-    /// The version the source describes, e.g. `"preprint"`, `"accepted"`,
-    /// `"published"`; `None` where it says nothing.
+    /// The version the source describes: OpenAlex's kind (`"preprint"`,
+    /// `"accepted"`, `"published"`) or a bioRxiv/medRxiv posting's number (`"2"`,
+    /// #341); `None` where it says nothing.
     ///
     /// Left out of the JSON when unset or empty, as Python's `to_dict` leaves
     /// it out, so a record serialises to the same object in both languages.
