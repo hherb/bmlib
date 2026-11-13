@@ -25,6 +25,13 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **PMC Open Data's record and JATS** (#750, #751, as in Python; the argument
+  is the root `CHANGELOG.md`'s): `FullTextService::pmc_open_data_record`,
+  `PmcOpenDataRecord`, `PDF_CHECKSUM_MISMATCH`; Tier 1c asks the bucket for the
+  JATS after NCBI (`source` `"pmc_open_data"`), and the PDF beside JATS is
+  checked against the record's md5. New dependency `md-5` 0.10 (RustCrypto,
+  `sha1`'s and `sha2`'s family).
+
 - **The PDF beside JATS is retried and sought again** (#744, as in Python; the
   argument is the root `CHANGELOG.md`'s): `FullTextService::with_pdf_retry_delay`,
   `PDF_BESIDE_JATS_ATTEMPTS`, `PDF_RETRY_DELAY`, `PDF_SEEK_AGAIN_LIMIT`,

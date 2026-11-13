@@ -95,6 +95,35 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **PMC Open Data's JATS after NCBI's** (#751; both languages). When Europe
+  PMC and NCBI give no body for a PMC ID, Tier 1c asks the bucket: the latest
+  version's `PMC<n>.<v>.xml`, as its record names it, checked against the
+  record's md5. `FullTextResult.source` gains `"pmc_open_data"`. It is the
+  rendition NCBI's efetch serves, from a bucket served to scripts, so an
+  article NCBI throttles or fails on is still read. No version, record or JATS
+  is an absence; a failed listing or record, a JATS answered other than 200 or
+  one not matching its md5 is a fault on `tier_faults`. **Moves what a fixture
+  scripts**: every case where neither Europe PMC nor NCBI gives a body answers
+  one more request, the bucket's listing (11 Python tests, 9 Rust, 3
+  `fulltext_source.json` cases), and the exhaustion report counts one more
+  source.
+- **`FullTextService.pmc_open_data_record()` and `PmcOpenDataRecord`** (#750;
+  both languages, Rust `pmc_open_data_record`): the bucket's per-version
+  `.json`, read in two requests, giving `is_retracted`, `is_pmc_openaccess`,
+  `license_code`, `pmid`, `doi` and the JATS's and PDF's md5; `None` when the
+  bucket holds no version or record. A record of another shape (a field of
+  another JSON type, another article or version, a file URL naming another
+  key) is refused rather than guessed at. For an app that wants the
+  retraction flag, which `fetch_fulltext()` does not put on its result: it
+  reads the record only when it consults the bucket, so the field would be
+  empty for most papers, retracted ones included (the maintainer's call,
+  2026-11-13). The PDF beside JATS now reads the record in place of #748's
+  second listing (the same two requests) and checks the download against its
+  md5; a mismatch is a new `pdf_download_failure`, `"checksum-mismatch"`,
+  which may pass (`pdf_failure_may_pass.json`). Live on 2026-11-13: PMC12609458's
+  record, JATS (371,313 bytes) and PDF (2,225,123 bytes) were read and both
+  files matched their md5s.
+
 - **The PDF beside JATS from PMC's AWS Open Data bucket** (#748; both
   languages). With `fetch_pdf_with_jats` on, the PDF beside a JATS full text
   is sought, after the caller's `pdf` entries and before Europe PMC's

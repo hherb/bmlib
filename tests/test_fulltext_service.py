@@ -20,6 +20,7 @@ import contextlib
 import copy
 import errno
 import importlib.metadata
+import json
 import logging
 import os
 import pickle
@@ -36,7 +37,12 @@ import pytest
 import bmlib.fulltext
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.jats_parser import RENDERER_VERSION
-from bmlib.fulltext.models import ContentKind, FullTextResult, FullTextSourceEntry
+from bmlib.fulltext.models import (
+    ContentKind,
+    FullTextResult,
+    FullTextSourceEntry,
+    PmcOpenDataRecord,
+)
 from bmlib.fulltext.pdf_converter import ConversionResult, PDFErrorKind
 from bmlib.fulltext.service import (
     _CONTENT_RANK,
@@ -77,6 +83,14 @@ def _ncbi_miss() -> MagicMock:
     return resp
 
 
+def _open_data_miss() -> MagicMock:
+    """PMC's Open Data bucket listing no version of this PMC ID (#751)."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = (FIXTURES / "pmc_open_data_absent.xml").read_bytes()
+    return resp
+
+
 class TestFetchEuropePMC:
     def test_success(self):
         xml_data = (FIXTURES / "sample_article.xml").read_bytes()
@@ -105,11 +119,17 @@ class TestFetchEuropePMC:
         mock_unpaywall_404.status_code = 404
 
         service = FullTextService(email="test@example.com")
-        # PMC XML 404 -> NCBI 404 -> search (no PDF) -> Unpaywall 404 -> DOI
+        # PMC XML 404 -> NCBI 404 -> Open Data none -> search (no PDF) -> Unpaywall 404 -> DOI
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_404, _ncbi_miss(), mock_search_no_pdf, mock_unpaywall_404],
+            side_effect=[
+                mock_404,
+                _ncbi_miss(),
+                _open_data_miss(),
+                mock_search_no_pdf,
+                mock_unpaywall_404,
+            ],
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
 
@@ -210,7 +230,13 @@ class TestFetchUnpaywall:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_pmc_404, _ncbi_miss(), mock_search_no_pdf, mock_unpaywall],
+            side_effect=[
+                mock_pmc_404,
+                _ncbi_miss(),
+                _open_data_miss(),
+                mock_search_no_pdf,
+                mock_unpaywall,
+            ],
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
 
@@ -725,6 +751,116 @@ class TestLatestOpenDataVersion:
     def test_an_empty_listing_names_no_version(self):
         # Its own <Prefix>PMC123.</Prefix> echo is no version.
         assert _latest_open_data_version(self._listing(), "PMC123") is None
+
+
+class TestPmcOpenDataRecord:
+    """``pmc_open_data_record``: a version's ``.json`` in PMC's Open Data bucket (#750)."""
+
+    RECORD = json.loads((FIXTURES / "pmc_open_data_record.json").read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _answers(*bodies: tuple[int, bytes]) -> list[MagicMock]:
+        answers = []
+        for status, body in bodies:
+            resp = MagicMock(status_code=status, content=body)
+            resp.json.side_effect = lambda body=body: json.loads(body)
+            answers.append(resp)
+        return answers
+
+    def _lookup(self, *bodies: tuple[int, bytes]) -> tuple[object, list[str]]:
+        urls: list[str] = []
+        answers = iter(self._answers(*bodies))
+
+        def get(url: str, **kwargs: object) -> MagicMock:
+            urls.append(url)
+            return next(answers)
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", side_effect=get):
+            return service.pmc_open_data_record("123"), urls
+
+    def _versions(self) -> tuple[int, bytes]:
+        return 200, (FIXTURES / "pmc_open_data_versions.xml").read_bytes()
+
+    def test_the_latest_versions_record_is_read(self):
+        record, urls = self._lookup(self._versions(), (200, json.dumps(self.RECORD).encode()))
+        assert record == PmcOpenDataRecord(
+            pmc_id="PMC123",
+            version=10,
+            pmid="456",
+            doi="10.1/open",
+            is_retracted=False,
+            is_pmc_openaccess=True,
+            license_code="CC BY",
+            xml_md5="c2c199fb4ed79ff17438764763676f71",
+            pdf_md5="abe57a6643460397192ff69ffce75752",
+        )
+        assert urls[1] == f"{PMC_OPEN_DATA_BASE}/PMC123.10/PMC123.10.json"
+        assert PmcOpenDataRecord.from_dict(record.to_dict()) == record
+
+    def test_no_version_is_no_record_and_one_request(self):
+        record, urls = self._lookup((200, (FIXTURES / "pmc_open_data_absent.xml").read_bytes()))
+        assert record is None
+        assert urls == [f"{PMC_OPEN_DATA_BASE}/?list-type=2&prefix=PMC123.&delimiter=/"]
+
+    def test_a_missing_record_is_no_record(self):
+        assert self._lookup(self._versions(), (404, b""))[0] is None
+
+    @pytest.mark.parametrize("status", [403, 500, 503])
+    def test_a_record_answered_otherwise_is_a_failure(self, status):
+        with pytest.raises(FullTextError, match=f"HTTP {status}"):
+            self._lookup(self._versions(), (status, b""))
+
+    def test_a_record_that_is_not_json_is_a_failure(self):
+        with pytest.raises(FullTextError, match="is not JSON"):
+            self._lookup(self._versions(), (200, b"<html>"))
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"pmcid": "PMC124"},
+            {"version": 9},
+            {"version": True},
+            {"is_retracted": None},
+            {"is_retracted": "false"},
+            {"is_pmc_openaccess": 1},
+            {"pmid": "456"},
+            {"pmid": True},
+            {"doi": 10},
+            {"license_code": ["CC BY"]},
+            {"pdf_url": "s3://pmc-oa-opendata/PMC123.9/PMC123.9.pdf?md5=" + "a" * 32},
+            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/other.pdf?md5=" + "a" * 32},
+            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=" + "A" * 32},
+            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=" + "a" * 31},
+            {"pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf"},
+            {"xml_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=" + "a" * 32},
+            {"xml_url": 5},
+        ],
+        ids=lambda change: repr(change)[:60],
+    )
+    def test_a_record_not_of_the_shape_read_is_refused(self, change):
+        record = {**self.RECORD, **change}
+        with pytest.raises(FullTextError, match="PMC Open Data record PMC123.10"):
+            self._lookup(self._versions(), (200, json.dumps(record).encode()))
+
+    def test_a_record_that_is_not_an_object_is_refused(self):
+        with pytest.raises(FullTextError, match="is not an object"):
+            self._lookup(self._versions(), (200, b"[]"))
+
+    def test_absent_files_and_fields_left_null_are_none(self):
+        record = {**self.RECORD, "pmid": None, "doi": None, "license_code": None}
+        record |= {"pdf_url": None, "xml_url": None, "is_retracted": True}
+        found, _ = self._lookup(self._versions(), (200, json.dumps(record).encode()))
+        assert (found.pmid, found.doi, found.license_code) == (None, None, None)
+        assert (found.pdf_md5, found.xml_md5, found.is_retracted) == (None, None, True)
+
+    def test_a_malformed_pmc_id_makes_no_request(self):
+        service = FullTextService(email="test@example.com")
+        with (
+            patch.object(service, "_http_get", side_effect=AssertionError("no request")),
+            pytest.raises(FullTextError, match="Not a usable PMC ID"),
+        ):
+            service.pmc_open_data_record("PMC12a")
 
 
 class TestPdfWithJats:
@@ -1789,6 +1925,7 @@ class TestBodylessEuropePMC:
             side_effect=[
                 self._bodyless(),
                 _ncbi_miss(),
+                _open_data_miss(),
                 self._search(pdf_url="https://europepmc.org/x.pdf"),
                 pdf,
             ],
@@ -1807,7 +1944,13 @@ class TestBodylessEuropePMC:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[self._bodyless(), _ncbi_miss(), self._search(), self._search()],
+            side_effect=[
+                self._bodyless(),
+                _ncbi_miss(),
+                _open_data_miss(),
+                self._search(),
+                self._search(),
+            ],
         ):
             result = service.fetch_fulltext(
                 pmc_id="PMC123", doi="10.1234/test", identifier="10.1234/test"
@@ -1826,7 +1969,13 @@ class TestBodylessEuropePMC:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[self._search(pmcid="PMC999"), self._bodyless(), _ncbi_miss(), unpaywall],
+            side_effect=[
+                self._search(pmcid="PMC999"),
+                self._bodyless(),
+                _ncbi_miss(),
+                _open_data_miss(),
+                unpaywall,
+            ],
         ):
             result = service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
 
@@ -3184,6 +3333,7 @@ class TestAnExhaustedChainReportsItself:
                 side_effect=[
                     body_less,  # Tier 1a: Europe PMC, abstract but no body
                     OSError("network is down"),  # Tier 1c: NCBI PMC
+                    OSError("network is down"),  # Tier 1c: PMC Open Data's listing
                     OSError("network is down"),  # Tier 1b: Europe PMC search
                     # No Tier 1b′: a well-formed caller ID may be superseded
                     # by the search hit alone (#304), so the converter is not
@@ -3196,10 +3346,10 @@ class TestAnExhaustedChainReportsItself:
 
         assert result.content_kind == "abstract"
         assert (
-            "returning the abstract only; 2 attempts failed (OSError); 1 source had nothing"
+            "returning the abstract only; 3 attempts failed (OSError); 1 source had nothing"
             in caplog.text
         )
-        assert result.tier_faults == ["OSError", "OSError"]
+        assert result.tier_faults == ["OSError", "OSError", "OSError"]
 
     def test_a_successful_retrieval_reports_nothing(self, caplog):
         """Negative control: the warning is not simply always emitted."""
@@ -3254,10 +3404,11 @@ class TestAnExhaustedChainReportsItself:
     def test_a_pdf_returned_after_the_structured_sources_failed_says_they_did(self, caplog):
         """Issue #603's own case: the PDF tier returns, so nothing is logged.
 
-        Europe PMC's and NCBI's JATS both answer 503 and Tier 1d's PDF does
-        too. The chain ends at the PDF tier, before the exhaustion report, so
-        only ``tier_faults`` tells the caller the better sources were down
-        and a retry may do more than fetch the same PDF.
+        Europe PMC's and NCBI's JATS both answer 503, as do PMC Open Data's
+        listing (#751) and Tier 1d's PDF. The chain ends at the PDF tier,
+        before the exhaustion report, so only ``tier_faults`` tells the caller
+        the better sources were down and a retry may do more than fetch the
+        same PDF.
         """
         down = MagicMock()
         down.status_code = 503
@@ -3289,14 +3440,14 @@ class TestAnExhaustedChainReportsItself:
             patch.object(
                 service,
                 "_http_get",
-                # Tier 1a, Tier 1c, the Europe PMC search, Tier 1d's download.
-                side_effect=[down, down, search, down],
+                # Tier 1a, Tier 1c's two, the Europe PMC search, Tier 1d's download.
+                side_effect=[down, down, down, search, down],
             ),
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", identifier="x")
 
         assert (result.source, result.pdf_url) == ("europepmc_pdf", "https://ex/a.pdf")
-        assert result.tier_faults == ["FullTextError", "FullTextError"]
+        assert result.tier_faults == ["FullTextError", "FullTextError", "FullTextError"]
         assert "No full text found" not in caplog.text
 
     def test_a_cache_hit_carries_no_faults(self, tmp_path):
@@ -3348,7 +3499,7 @@ class TestAnExhaustedChainReportsItself:
         ):
             service.fetch_fulltext(pmc_id="PMC123")
 
-        assert "2 attempts failed (OSError)" in caplog.text
+        assert "3 attempts failed (OSError)" in caplog.text
 
     def test_a_call_with_no_identifiers_at_all_still_says_so(self, caplog):
         """The documented escaping case keeps its message — and stays quiet.
@@ -3377,7 +3528,8 @@ class TestAnExhaustedChainReportsItself:
         A *search* endpoint is the exception, and deliberately so: Europe PMC
         answers "no such paper" with HTTP 200 and an empty result list, so a
         404 there means the API path is wrong, which is a fault. Hence the
-        one failed attempt below.
+        one failed attempt below, and PMC Open Data's listing, a bucket
+        listing that cannot 404 for a missing article (#751), the second.
         """
         missing = MagicMock()
         missing.status_code = 404
@@ -3391,8 +3543,8 @@ class TestAnExhaustedChainReportsItself:
 
         assert result.source == "doi"
         # Europe PMC, NCBI and Unpaywall each answered "not here"; only the
-        # render-URL search counts as broken.
-        assert "1 attempt failed (FullTextError); 3 sources had nothing" in caplog.text
+        # render-URL search and the bucket's listing count as broken.
+        assert "2 attempts failed (FullTextError); 3 sources had nothing" in caplog.text
 
     def test_a_fetcher_supplied_url_that_404s_is_an_absence(self, caplog):
         """Tier 0's own 404, which used to be a fault.
@@ -5382,6 +5534,7 @@ class _Remote:
     """
 
     SEARCH = "europepmc/webservices/rest/search"
+    OPEN_DATA = "pmc-oa-opendata.s3.amazonaws.com/?list-type=2"
 
     def __init__(
         self,
@@ -5441,6 +5594,8 @@ class _Remote:
             return self._response(200, json={"status": "ok", "records": records})
         if url == self.search_pdf and self.pdf_bytes is not None:
             return self._response(200, content=self.pdf_bytes)
+        if self.OPEN_DATA in url:  # the bucket holds no version of any article (#751)
+            return self._response(200, content=(FIXTURES / "pmc_open_data_absent.xml").read_bytes())
         return self._response(404)
 
     def xml_requests(self) -> list[str]:
@@ -5514,7 +5669,7 @@ class TestAnUnusableCallerPMCIDDoesNotSuppressDiscovery:
         assert remote.xml_requests() == ["PMC999", "PMC1"]
 
     def test_the_callers_id_is_tried_everywhere_before_it_is_superseded(self):
-        """Europe PMC and NCBI both, for the caller's ID, ahead of the search."""
+        """Europe PMC, NCBI and PMC Open Data, for the caller's ID, ahead of the search."""
         remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
 
         self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
@@ -5526,10 +5681,12 @@ class TestAnUnusableCallerPMCIDDoesNotSuppressDiscovery:
             if "efetch" in u
             else "search"
             if _Remote.SEARCH in u
+            else "opendata"
+            if _Remote.OPEN_DATA in u
             else u
             for u in remote.urls
         ]
-        assert kinds == ["epmc:PMC999", "ncbi", "search", "epmc:PMC1"]
+        assert kinds == ["epmc:PMC999", "ncbi", "opendata", "search", "epmc:PMC1"]
 
     def test_the_supersession_names_both_ids(self, caplog):
         remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
@@ -6890,16 +7047,21 @@ class TestTheCallersPmidIsCanonicalOrRefused:
 
     def test_an_exhausted_chain_carries_its_faults_in_the_order_they_happened(self):
         # Two fault types, so a sorted, reversed or renamed list cannot pass:
-        # Europe PMC's 503, then NCBI's transport failure, named by httpx.
+        # Europe PMC's 503, then NCBI's transport failure, named by httpx, then
+        # PMC Open Data's listing 503 (#751).
         service = FullTextService(email="test@example.com")
-        answers = [MagicMock(status_code=503), httpx.ConnectError("down")]
+        answers = [
+            MagicMock(status_code=503),
+            httpx.ConnectError("down"),
+            MagicMock(status_code=503),
+        ]
         with (
             patch.object(service, "_http_get", side_effect=answers),
             pytest.raises(FullTextExhaustedError) as raised,
         ):
             service.fetch_fulltext(pmc_id="PMC9")
         assert (raised.value.faults, raised.value.absences) == (
-            ["FullTextError", "ConnectError"],
+            ["FullTextError", "ConnectError", "FullTextError"],
             0,
         )
 

@@ -1,0 +1,20 @@
+{
+    "pmcid": "PMC123",
+    "version": 10,
+    "pmid": 456,
+    "doi": "10.1/open",
+    "mid": null,
+    "title": "A sample article",
+    "citation": "Sample J. 2025;1:1.",
+    "is_pmc_openaccess": true,
+    "is_manuscript": false,
+    "is_historical_ocr": false,
+    "is_retracted": false,
+    "license_code": "CC BY",
+    "xml_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.xml?md5=ffffffffffffffffffffffffffffffff",
+    "pdf_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.pdf?md5=ffffffffffffffffffffffffffffffff",
+    "text_url": "s3://pmc-oa-opendata/PMC123.10/PMC123.10.txt?md5=00000000000000000000000000000000",
+    "media_urls": [
+        "s3://pmc-oa-opendata/PMC123.10/sample-g001.jpg?md5=11111111111111111111111111111111"
+    ]
+}

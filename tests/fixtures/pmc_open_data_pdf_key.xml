@@ -1,2 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>pmc-oa-opendata</Name><Prefix>PMC123.10/PMC123.10.pdf</Prefix><KeyCount>1</KeyCount><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>PMC123.10/PMC123.10.pdf</Key><LastModified>2026-02-23T20:46:29.000Z</LastModified><ETag>&quot;d2f72b8192f3236fde573095fd045fca&quot;</ETag><Size>2225123</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>

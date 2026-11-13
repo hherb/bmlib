@@ -153,6 +153,11 @@ fn body(code: u16, body: impl Into<String>) -> Answer {
     Ok(HttpResponse::from_bytes(code, body.into().into_bytes()))
 }
 
+/// PMC Open Data's listing naming no version of the article (#751).
+fn open_data_absent() -> Answer {
+    ok("<ListBucketResult></ListBucketResult>")
+}
+
 fn json_ok(value: Value) -> Answer {
     Ok(HttpResponse::ok_text(value.to_string()))
 }
@@ -1063,6 +1068,7 @@ fn the_tier_order_is_epmc_then_ncbi_then_the_pdf_lookup_then_unpaywall_then_doi(
     let client = ScriptedClient::new(vec![
         status(404),
         status(404),
+        open_data_absent(),
         json_ok(search_body(None, None)),
         status(404),
     ]);
@@ -1076,14 +1082,18 @@ fn the_tier_order_is_epmc_then_ncbi_then_the_pdf_lookup_then_unpaywall_then_doi(
     assert_eq!(result.web_url.as_deref(), Some("https://doi.org/10.1/test"));
 
     let requests = client.requests();
-    assert_eq!(requests.len(), 4, "{requests:?}");
+    assert_eq!(requests.len(), 5, "{requests:?}");
     assert!(requests[0].contains("/PMC123/fullTextXML"), "{requests:?}");
     assert!(requests[1].contains("efetch.fcgi"), "{requests:?}");
     assert!(
-        requests[2].contains("/search?query=DOI:10.1%2Ftest"),
+        requests[2].starts_with(&format!("{PMC_OPEN_DATA_BASE}/?")),
         "{requests:?}"
     );
-    assert!(requests[3].contains("api.unpaywall.org"), "{requests:?}");
+    assert!(
+        requests[3].contains("/search?query=DOI:10.1%2Ftest"),
+        "{requests:?}"
+    );
+    assert!(requests[4].contains("api.unpaywall.org"), "{requests:?}");
 }
 
 #[test]
@@ -1388,6 +1398,7 @@ fn a_pmc_only_exhausted_chain_raises_with_the_report() {
     let client = ScriptedClient::new(vec![
         transport("network is down"),
         transport("network is down"),
+        transport("network is down"),
     ]);
     let service = service(client.clone());
     let mut request = request();
@@ -1400,7 +1411,7 @@ fn a_pmc_only_exhausted_chain_raises_with_the_report() {
         "{message}"
     );
     assert!(
-        message.contains("2 attempts failed (TransportError)"),
+        message.contains("3 attempts failed (TransportError)"),
         "{message}"
     );
 }
@@ -1408,8 +1419,9 @@ fn a_pmc_only_exhausted_chain_raises_with_the_report() {
 #[test]
 fn an_exhausted_chain_carries_its_faults_in_the_order_they_happened() {
     // Two fault types, so a sorted, reversed or renamed list cannot pass:
-    // Europe PMC's 503, then NCBI's transport failure.
-    let client = ScriptedClient::new(vec![status(503), transport("network is down")]);
+    // Europe PMC's 503, then NCBI's transport failure, then PMC Open Data's
+    // listing 503 (#751).
+    let client = ScriptedClient::new(vec![status(503), transport("network is down"), status(503)]);
     let service = service(client.clone());
     let mut request = request();
     request.pmc_id = Some("PMC9".to_string());
@@ -1418,7 +1430,7 @@ fn an_exhausted_chain_carries_its_faults_in_the_order_they_happened() {
         FullTextError::Exhausted {
             faults, absences, ..
         } => {
-            assert_eq!(faults, ["FullTextError", "TransportError"]);
+            assert_eq!(faults, ["FullTextError", "TransportError", "FullTextError"]);
             assert_eq!(absences, 0);
         }
         other => panic!("not the exhaustion error: {other:?}"),
@@ -1944,6 +1956,7 @@ fn no_abstract_sidecar_is_written_when_no_pdf_was_cached() {
     let client = ScriptedClient::new(vec![
         ok(ABSTRACT_ONLY_JATS), // Europe PMC, caller's id
         status(404),            // NCBI, caller's id
+        open_data_absent(),     // PMC Open Data, caller's id
         json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
         status(500), // the PDF download fails
     ]);
@@ -2003,6 +2016,7 @@ fn the_abstract_is_written_beside_a_pdf_even_when_the_pdf_yields_text() {
     let client = ScriptedClient::new(vec![
         ok(ABSTRACT_ONLY_JATS), // Europe PMC, caller's id
         status(404),            // NCBI, caller's id
+        open_data_absent(),     // PMC Open Data, caller's id
         json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
         body(200, "%PDF-1.4 fake"),
     ]);
@@ -2044,6 +2058,7 @@ fn a_failed_abstract_write_warns_once_with_its_own_key() {
         vec![
             ok(ABSTRACT_ONLY_JATS),
             status(404),
+            open_data_absent(),
             json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
             body(200, "%PDF-1.4 fake"),
         ]
@@ -2214,6 +2229,7 @@ fn a_well_formed_caller_pmc_id_is_superseded_by_the_search_hit() {
     let client = ScriptedClient::new(vec![
         status(404),                                // Europe PMC, caller's id
         status(404),                                // NCBI, caller's id
+        open_data_absent(),                         // PMC Open Data, caller's id
         json_ok(search_body(Some("PMC777"), None)), // the search hit
         ok(FULL_JATS),                              // Europe PMC, discovered id
     ]);
@@ -2226,14 +2242,18 @@ fn a_well_formed_caller_pmc_id_is_superseded_by_the_search_hit() {
     assert_eq!(result.source, "europepmc");
     assert_eq!(result.content_kind, ContentKind::Fulltext);
     let requests = client.requests();
-    assert_eq!(requests.len(), 4, "{requests:?}");
+    assert_eq!(requests.len(), 5, "{requests:?}");
     assert!(requests[0].contains("/PMC999/fullTextXML"), "{requests:?}");
     assert!(requests[1].contains("efetch.fcgi"), "{requests:?}");
     assert!(
-        requests[2].contains("/search?query=DOI:10.1%2Ftest"),
+        requests[2].starts_with(&format!("{PMC_OPEN_DATA_BASE}/?")),
+        "{requests:?}"
+    );
+    assert!(
+        requests[3].contains("/search?query=DOI:10.1%2Ftest"),
         "the search runs even though the caller gave a well-formed id: {requests:?}"
     );
-    assert!(requests[3].contains("/PMC777/fullTextXML"), "{requests:?}");
+    assert!(requests[4].contains("/PMC777/fullTextXML"), "{requests:?}");
     assert!(
         !requests.iter().any(|url| url.contains("idconv")),
         "a well-formed caller id keeps the converter out: {requests:?}"
@@ -2253,8 +2273,9 @@ fn a_well_formed_caller_pmc_id_is_superseded_by_the_search_hit() {
 #[test]
 fn a_stale_caller_id_still_finds_the_free_pdf() {
     let client = ScriptedClient::new(vec![
-        status(404), // Europe PMC, caller's PMC999
-        status(404), // NCBI, caller's PMC999
+        status(404),        // Europe PMC, caller's PMC999
+        status(404),        // NCBI, caller's PMC999
+        open_data_absent(), // PMC Open Data, caller's PMC999
         json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
     ]);
     let service = service(client.clone());
@@ -2269,9 +2290,9 @@ fn a_stale_caller_id_still_finds_the_free_pdf() {
         Some("https://europepmc.org/x.pdf")
     );
     let requests = client.requests();
-    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert_eq!(requests.len(), 4, "{requests:?}");
     assert!(
-        requests[2].contains("/search?query=DOI:10.1%2Ftest"),
+        requests[3].contains("/search?query=DOI:10.1%2Ftest"),
         "the search ran exactly once: {requests:?}"
     );
 }
@@ -2283,9 +2304,11 @@ fn a_superseding_ids_abstract_replaces_the_caller_ids() {
     let client = ScriptedClient::new(vec![
         ok(ABSTRACT_ONLY_JATS),                     // Europe PMC, caller's id
         status(404),                                // NCBI, caller's id
+        open_data_absent(),                         // PMC Open Data, caller's id
         json_ok(search_body(Some("PMC777"), None)), // the search hit
         ok(SUPERSEDING_ABSTRACT_JATS),              // Europe PMC, discovered id
         status(404),                                // NCBI, discovered id
+        open_data_absent(),                         // PMC Open Data, discovered id
         status(404),                                // Unpaywall
     ]);
     let service = service(client.clone());
@@ -4008,4 +4031,42 @@ fn a_pdf_left_a_url_for_want_of_an_identifier_is_not_called_saved() {
             .any(|line| line == "PDF from europepmc_pdf put on the JATS full text, unsaved"),
         "{lines:?}"
     );
+}
+
+/// `pmc_open_data_record`, the public lookup (#750): the latest version's
+/// record, `None` when the bucket holds the article in no version.
+#[test]
+fn the_pmc_open_data_record_is_the_latest_versions() {
+    let fixture = |name: &str| {
+        std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures")
+                .join(name),
+        )
+        .expect("fixture")
+    };
+    let client = ScriptedClient::new(vec![
+        ok(fixture("pmc_open_data_versions.xml")),
+        ok(fixture("pmc_open_data_record.json")),
+        open_data_absent(),
+    ]);
+    let service = service(client.clone());
+
+    let record = service
+        .pmc_open_data_record("123")
+        .expect("read")
+        .expect("held");
+    assert_eq!(
+        (record.stem(), record.is_retracted),
+        ("PMC123.10".to_string(), false)
+    );
+    assert_eq!(
+        client.requests()[1],
+        format!("{PMC_OPEN_DATA_BASE}/PMC123.10/PMC123.10.json")
+    );
+    assert_eq!(service.pmc_open_data_record("PMC123").expect("read"), None);
+    assert!(matches!(
+        service.pmc_open_data_record("PMC12a"),
+        Err(FullTextError::Other(_))
+    ));
 }
