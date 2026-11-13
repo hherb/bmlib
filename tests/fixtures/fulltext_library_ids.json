@@ -11,6 +11,8 @@
    "ids": {"pmid": null, "doi": null, "pmcid": "PMC123"}, "dropped": []},
   {"name": "a PPR preprint pmid is kept", "pmid": "ppr123", "doi": null, "pmc_id": null,
    "ids": {"pmid": "PPR123", "doi": null, "pmcid": null}, "dropped": []},
+  {"name": "whitespace-only values are absent, nothing dropped", "pmid": "  ", "doi": "  ", "pmc_id": "  ",
+   "ids": {"pmid": null, "doi": null, "pmcid": null}, "dropped": []},
   {"name": "a bad pmid and a bad pmc_id are both dropped", "pmid": "abc", "doi": "10.1/y", "pmc_id": "xyz",
    "ids": {"pmid": null, "doi": "10.1/y", "pmcid": null}, "dropped": ["pmid", "pmc_id"]}
  ]

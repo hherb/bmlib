@@ -61,7 +61,13 @@ from bmlib.fulltext.pdf_converter import (
 from bmlib.fulltext.segmenter import SectionSegmenter
 
 if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
-    from bmlib.fulltext.library_store import LibraryStore, library_ids
+    from bmlib.fulltext.library_store import (
+        Held,
+        LibraryStore,
+        LibraryStoreFailure,
+        library_ids,
+        paper_info,
+    )
     from bmlib.fulltext.service import (
         FullTextError,
         FullTextExhaustedError,
@@ -76,7 +82,9 @@ _LAZY_EXPORTS = frozenset(
 
 #: Names living in ``library_store``, resolved on first access: ``bmlib.library`` imports
 #: ``bmlib.publications``, which imports this package, so an eager import would be circular.
-_LIBRARY_STORE_EXPORTS = frozenset({"LibraryStore", "library_ids"})
+_LIBRARY_STORE_EXPORTS = frozenset(
+    {"Held", "LibraryStore", "LibraryStoreFailure", "library_ids", "paper_info"}
+)
 
 
 def __getattr__(name: str) -> Any:
@@ -135,6 +143,7 @@ __all__ = [
     "FullTextService",
     "FullTextSourceEntry",
     "FullTextUnavailableError",
+    "Held",
     "JATSAbstractSection",
     "JATSArticle",
     "JATSAuthorInfo",
@@ -143,10 +152,11 @@ __all__ = [
     "JATSFundingAward",
     "JATSFundingSource",
     "JATSParser",
-    "LibraryStore",
     "JATSReferenceInfo",
     "JATSTableInfo",
     "LayoutExtractor",
+    "LibraryStore",
+    "LibraryStoreFailure",
     "PDFBlocks",
     "PDFErrorKind",
     "PDFExtractionError",
@@ -163,5 +173,6 @@ __all__ = [
     "is_about_the_file",
     "library_ids",
     "list_converters",
+    "paper_info",
     "render_html",
 ]
