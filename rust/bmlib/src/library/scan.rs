@@ -25,6 +25,8 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use super::files::{
     component, exists, has_placeholder, io_error, is_dir, listing, read_bytes, sha256_hex,
 };
@@ -168,7 +170,7 @@ pub struct Scan {
 }
 
 /// A source file in a paper's folder, with the digest it should have.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileRef {
     /// The paper's folder.
     pub folder: String,

@@ -121,18 +121,21 @@ NOT_RENDERING = {
     # Pure: turns an unwind state into diagnostic strings, which
     # ``jats_parser._audit_parse`` logs; nothing reaches ``_build_html``.
     "bmlib.fulltext._parse_audit",
+    # Annotation only (``models.py`` imports ``FileRef`` under ``TYPE_CHECKING``
+    # for ``FullTextResult.library_files``); no code of it runs in a render.
+    "bmlib.library",
 }
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-CANONICAL_PINNED = (1, "712eae7317ecd27a2ada6de506cf25aee2f28e9d787d35e0c9b6d4aabd35c91a")
+CANONICAL_PINNED = (1, "dbba26a891e91cad1166d725f7fe8734bb9d3246103ccff984f93f2011ad1431")
 PLAIN_TEXT_PINNED = (1, "0bcaf643207714fffded4b3b666145131f2988cf43fc1a21bf57089997c6a34d")
 MARKDOWN_PINNED = (2, "fc16d56ea6df7b4e33e6d1bc72f3f78e17e1265213dc20160ab88a6cfb6e5dcd")
-PDF_PINNED = (7, "eb0763157eb54133a762fc282cc5a66075107594c4459b763b67c8900af49a8e")
+PDF_PINNED = (7, "7f387da6d598245d04188a690b8328bfb63986ff25d8e6072323a245d513dbdf")
 HTML_PINNED = (1, "81817347913d5816c06bfcf362fb0e9cea221576683f2c6cec2ad4ae50c3ac1a")
 CHUNKER_PINNED = (1, "ef8ad47f8c4ee52e960c7349272ff39813c62b0f5ac34b2ba09fc5e41771f845")
 
-PINNED = (7, "0224f21ca3f31b8d2f1ac41b8b92f24cf9d258130de8bda3a9923a040584a4e5")
+PINNED = (7, "dcee9b6a8754082e063b79c4cb416689520d5a722363650a06f94eb1630a2f80")
 
 _SKIPPED_TOKENS = {"COMMENT", "NL", "ENCODING", "ENDMARKER"}
 

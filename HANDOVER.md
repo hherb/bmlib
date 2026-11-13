@@ -1,12 +1,83 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**#341 on `feat/341-biorxiv-details`**). Merged
-since the last update: #757 (#753). Before it: #756, #754 (the shared library,
-step 1a), #752 (#750, #751), #749, #747, #745.
-**0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
-**the Rust crate 0.4.0 on crates.io** from the same commit._
+_Last updated: 2026-11-14 (**the shared paper library: 1a merged, 1b on
+`feat/library-fulltext` — read *This session* first**). Merged since the last
+update: #760 (#341, the `*-details` sources), #757 (#753), #754 (the library,
+1a), #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744), #740
+(#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0` on
+`161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
+the same commit._
 
-## This session: every bioRxiv/medRxiv posting, through `/details` (#341)
+## This session: the shared paper library (1a merged as #754; 1b on `feat/library-fulltext`, PR pending)
+
+StudyAnalyzer's design
+(`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
+`...-library-1a-bmlib-module.md`) asks bmlib for a module that several apps
+use to share one folder of papers. Built in both languages, in a worktree
+(`~/src/bmlib-library`), six tasks, each reviewed:
+
+- **What landed**: `bmlib/library/` and `rust/bmlib/src/library/`. Open, scan,
+  find (the whole linked group), find_digest, group, read (digest-checked),
+  save (write-once file, then the record), record_use (note a file another app
+  saved), release, remove_file, remove_folder; folder names (`folder_name`,
+  `folder_name_numbered`); versioned records; thirteen error kinds. Held
+  together by `tests/fixtures/library_cases.json` and the sample library
+  `tests/fixtures/library/sample/`; manuals `docs/manual/library.md` and
+  `rust/bmlib/docs/manual/library.md` (the Rust one is doc-tested). PR #754.
+  Review follow-ups: #755.
+- **The final review's fixes**: save, record_use and release validate `who`
+  and the ids before writing (a record `parse_record` refuses was being
+  written); `component()` refuses names
+  Windows resolves elsewhere (`...`, `x.`, `C:`, `con`); every record's ids
+  count for find and group, a conflict is `ConflictingIds`; `group` is linear;
+  an evicted own record is `NotDownloaded` (`RecordNotDownloaded` in a scan);
+  atomic-write temporaries are skipped and reported (`LeftoverTemp`); titles
+  are NFC before the cut.
+- **Rules to keep** (the reasoning is in `docs/DECISIONS.md`, "library"):
+  files are write-once; one record per installation; **nothing is deleted
+  automatically** (only the user's `remove_*`); no database; name clashes
+  judged under case folding; a folder of only newer records fails the save
+  with `NewerRecord`; iCloud placeholders count as user files on open; record
+  updates are serialised in one process only.
+- **1b, built (`feat/library-fulltext`, PR pending)**: `FullTextService`
+  reads from and fills a library (`library=` and `installation=`, Rust
+  `with_library`). Results carry `library_files` and `library_failure`; source
+  `"library"`. Fixtures `tests/fixtures/fulltext_library_*.json`; manual
+  section "FullTextService on a library"; reasoning in `docs/DECISIONS.md`.
+  `save` keeps bytes once by digest (#755 item 7). `save` still rescans per
+  call (0.5 s at 4,000 papers in Python); its `shortcut:` now says to pass a
+  `Scan` when a scan's cost shows in a lookup's time.
+- **Parked, from the #755-7 decision**: byte-identical files of two different
+  papers (a stub PDF, say) still put both papers' records into one folder, but
+  the service no longer serves the second paper a file only the first's
+  records list (an identity check on the records). And a library holding only a
+  PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
+  have; it ends when a JATS is kept in the library.
+- **Next: 1c**, the `bmlib-ffi` surface for the mobile apps. It must convert
+  `with_library`, `library_files` and `library_failure`, besides the library
+  calls below. Not released: the changelog entries are under Unreleased, and
+  the version is still 0.13.0 / 0.4.0.
+- **Owed before the Windows build gets the Library setting**: (1) renaming
+  over an open file fails on Windows; retry with backoff, and stop mapping a
+  rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
+  limit: a 150-byte folder name plus `records/` and an atomic write's temporary
+  name can pass 260 characters; (3) the Windows-only gaps the final review
+  deferred (superscript `COM¹`-style device names, U+001C-U+001F as
+  whitespace in Python only).
+- **Owed by 1c (FFI)**: the library conversion list: `find` / `used_by` return
+  borrowed values, `PaperIds::merged` a tuple, errors hold `&'static str` and
+  `PathBuf`, `RecordProblem` has tuple variants; every conversion must call the
+  validating constructors (`Installation::new`, `PaperIds::canonical`).
+- **Owed by Android (phase 4)**: the file operations are free functions on
+  `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
+  passed into `Library`.
+- **To check on a device in step 2**: macOS 14 and later evict iCloud files to
+  dataless files with the real name, not `.name.icloud` placeholders; reading
+  one downloads it (or fails), so `NotDownloaded` may never fire there.
+- **Left open on purpose**: separate processes of one installation writing one
+  record (out of scope; an app has one process per installation).
+
+## Earlier: every bioRxiv/medRxiv posting, through `/details` (#341, merged as PR #760)
 
 BMLibrarian's request (its installer piece 3, Task 0 of
 `docs/superpowers/plans/2026-11-14-library-pipeline.md` in hherb/bmlibrarian).
@@ -55,45 +126,6 @@ not UTF-8 is a `UnicodeDecodeError` fault in both (Rust's `json_body` no
 longer names it `TransportError`). Nesting deep enough to overflow Python's
 recursion limit (~100,000) is still `RecursionError` here and
 `JSONDecodeError` in Rust: **#758** (`strict_json_loads`' 13 callers).
-
-## The shared paper library, step 1a (merged as PR #754)
-
-`bmlib/library/` and `rust/bmlib/src/library/`, held together by
-`tests/fixtures/library_cases.json` and `tests/fixtures/library/sample/`;
-manuals `docs/manual/library.md` (both languages). What landed and the final
-review's fixes are in the CHANGELOG; review follow-ups are #755.
-
-- **Rules to keep** (the reasoning is in `docs/DECISIONS.md`, "library"):
-  files are write-once; one record per installation; **nothing is deleted
-  automatically** (only the user's `remove_*`); no database; name clashes
-  judged under case folding; a folder of only newer records fails the save
-  with `NewerRecord`; iCloud placeholders count as user files on open; record
-  updates are serialised in one process only.
-- **Not done, and next**: **1b**, `FullTextService` reading from and filling a
-  library (StudyAnalyzer's plan; `save` rescans the library per call, 0.5 s at
-  4,000 papers in Python: the `shortcut:` there says to let 1b pass its
-  `Scan`); **1c**, the `bmlib-ffi` surface for the mobile apps. Not released:
-  the changelog entry is under Unreleased, and the version is still 0.13.0 /
-  0.4.0.
-- **Owed before the Windows build gets the Library setting**: (1) renaming
-  over an open file fails on Windows; retry with backoff, and stop mapping a
-  rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
-  limit: a 150-byte folder name plus `records/` and an atomic write's temporary
-  name can pass 260 characters; (3) the Windows-only gaps the final review
-  deferred (superscript `COM¹`-style device names, U+001C-U+001F as
-  whitespace in Python only).
-- **Owed by 1c (FFI)**: the conversion list: `find` / `used_by` return
-  borrowed values, `PaperIds::merged` a tuple, errors hold `&'static str` and
-  `PathBuf`, `RecordProblem` has tuple variants; every conversion must call the
-  validating constructors (`Installation::new`, `PaperIds::canonical`).
-- **Owed by Android (phase 4)**: the file operations are free functions on
-  `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
-  passed into `Library`.
-- **To check on a device in step 2**: macOS 14 and later evict iCloud files to
-  dataless files with the real name, not `.name.icloud` placeholders; reading
-  one downloads it (or fails), so `NotDownloaded` may never fire there.
-- **Left open on purpose**: separate processes of one installation writing one
-  record (out of scope; an app has one process per installation).
 
 ## Earlier: PMC Open Data and the PDF beside JATS (merged as PRs #752, #749, #747, #745)
 
@@ -206,7 +238,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): this session (#341, the `*-details` sources), PR #757 (#753, full text's JSON as `serde_json` reads it), PR #754 (the shared library, step 1a), PR #752 (#750/#751, PMC Open Data's record and JATS), PR #749 (#748), PR #747 (#746), PR #745 (#744), PR #741 (#739), PR #740 (#656, the `<` cap), PR #738 (#726, the HTML limits measured), PR #736 (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): this session (the shared library, step 1b), PR #760 (#341, the `*-details` sources), PR #757 (#753, full text's JSON as `serde_json` reads it), PR #754 (the shared library, step 1a), PR #752 (#750/#751, PMC Open Data's record and JATS), PR #749 (#748), PR #747 (#746), PR #745 (#744), PR #741 (#739), PR #740 (#656, the `<` cap), PR #738 (#726, the HTML limits measured), PR #736 (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -315,12 +347,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**120 open**, #341 (this PR's), **#759** (this PR's: measure the `/details`
-settle period), #755 (#754's review follow-ups) and **#758** (#753's review
+**121 open**, **#759** (PR #760's: measure the `/details` settle period),
+#755 (#754's review follow-ups) and **#758** (#753's review
 residual, `RecursionError`) among them (#734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays
 open for its point 3, which PR #696 left open)
-(`gh issue list --state open --limit 300 --json number`, 2026-11-14); #651 is
+(`gh issue list --state open --limit 300 --json number`, 2026-11-14, after
+#760 merged); #651 is
 #632's residual; #556–#734 are not yet sorted into the lists below). **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR

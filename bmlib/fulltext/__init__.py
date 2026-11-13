@@ -61,7 +61,15 @@ from bmlib.fulltext.pdf_converter import (
 from bmlib.fulltext.segmenter import SectionSegmenter
 
 if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
+    from bmlib.fulltext.library_store import (
+        Held,
+        LibraryStore,
+        LibraryStoreFailure,
+        library_ids,
+        paper_info,
+    )
     from bmlib.fulltext.service import (
+        LIBRARY_SOURCE,
         FullTextError,
         FullTextExhaustedError,
         FullTextService,
@@ -70,7 +78,19 @@ if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
 
 #: Names living in ``service``, resolved on first access.
 _LAZY_EXPORTS = frozenset(
-    {"FullTextError", "FullTextExhaustedError", "FullTextService", "FullTextUnavailableError"}
+    {
+        "FullTextError",
+        "FullTextExhaustedError",
+        "FullTextService",
+        "FullTextUnavailableError",
+        "LIBRARY_SOURCE",
+    }
+)
+
+#: Names living in ``library_store``, resolved on first access: ``bmlib.library`` imports
+#: ``bmlib.publications``, which imports this package, so an eager import would be circular.
+_LIBRARY_STORE_EXPORTS = frozenset(
+    {"Held", "LibraryStore", "LibraryStoreFailure", "library_ids", "paper_info"}
 )
 
 
@@ -99,6 +119,12 @@ def __getattr__(name: str) -> Any:
         # own recommendation) and the name shows up in ``globals()``.
         globals()[name] = value
         return value
+    if name in _LIBRARY_STORE_EXPORTS:
+        from bmlib.fulltext import library_store
+
+        value = getattr(library_store, name)
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -124,6 +150,7 @@ __all__ = [
     "FullTextService",
     "FullTextSourceEntry",
     "FullTextUnavailableError",
+    "Held",
     "JATSAbstractSection",
     "JATSArticle",
     "JATSAuthorInfo",
@@ -134,7 +161,10 @@ __all__ = [
     "JATSParser",
     "JATSReferenceInfo",
     "JATSTableInfo",
+    "LIBRARY_SOURCE",
     "LayoutExtractor",
+    "LibraryStore",
+    "LibraryStoreFailure",
     "PDFBlocks",
     "PDFErrorKind",
     "PDFExtractionError",
@@ -149,6 +179,8 @@ __all__ = [
     "TextBlock",
     "get_converter",
     "is_about_the_file",
+    "library_ids",
     "list_converters",
+    "paper_info",
     "render_html",
 ]

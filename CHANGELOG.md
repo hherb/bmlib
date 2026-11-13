@@ -110,6 +110,42 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`FullTextService` on a shared library** (both languages, held together by
+  `tests/fixtures/fulltext_library_scenarios.json` and
+  `fulltext_library_ids.json`; step 1b of the shared paper library, bmlib#755
+  item 7). `FullTextService(library=, installation=)` /
+  `FullTextService::with_library(library, who)` reads the library before its
+  cache, keyed by the request's `pmid`, `doi` and `pmc_id` (not `identifier`; a
+  value the library refuses is dropped with a warning). A JATS held there ends
+  the lookup with no network: `source` is `"library"` and the library's PDF, if
+  any, is the `file_path`. A library holding only a PDF still runs the JATS
+  tiers, which a cached PDF did not. A held PDF is used beside the JATS
+  (even with `fetch_pdf_with_jats` off) and in place of the PDF tiers and the
+  caller's `pdf` entries. JATS and PDFs the chain downloads are kept in the
+  library, not the cache, which keeps only the *PDF still owed* mark and the
+  abstract sidecar. New on `FullTextResult`: `library_files` (the files used or
+  saved) and `library_failure` (why the library could not be used: a library
+  that cannot be read or written never stops a lookup; the app keeps the source
+  as waiting for the library). A folder whose JATS is another paper's keeps
+  nothing and is a `library_failure`. A library file is used only when a
+  record listing it does not contradict the request's identifiers, so two
+  papers sharing a stub PDF's folder are not given each other's files. A
+  read-only library still serves the PDF it holds. With
+  `fetch_pdf_with_jats`, a library JATS hit with no PDF seeks one once, in the
+  lookup that first notes the JATS for this installation (needs a cache and an
+  `identifier`). A lookup scans the library once, plus once per file saved.
+  New: `bmlib.fulltext.library_store` (`library_ids`, `LibraryStore` with
+  `scan`, `find_source_in` and `note_use_in`, `paper_info`). The service uses
+  the library's JATS and PDF only. Manual: "FullTextService on a library" in
+  `docs/manual/library.md` and `rust/bmlib/docs/manual/library.md`. 1c (the
+  `bmlib-ffi` surface) follows.
+
+- **`Library.save` keeps bytes once** (bmlib#755 item 7; both languages). When
+  the digest is already in the library, `save` puts the use into the folder
+  that holds those bytes, even if the identifiers find another folder, and
+  writes nothing again. Until now such a save made a second folder for a paper
+  split across two. Byte-identical files of two different papers now share one
+  folder.
 - **Every bioRxiv and medRxiv posting, through `/details`** (#341, both
   languages). Two new built-in sources, `biorxiv-details` and
   `medrxiv-details`, read `https://api.biorxiv.org/details/`: one record per

@@ -38,6 +38,7 @@ mod scan;
 
 pub use crate::fulltext::CORRUPT_SUFFIX;
 pub use error::LibraryError;
+pub(crate) use files::component;
 pub use files::sha256_hex;
 pub use ids::{Installation, PaperIds, PaperInfo, SourceKind};
 pub use names::{folder_name, folder_name_numbered};

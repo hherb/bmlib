@@ -6537,3 +6537,69 @@ undo.
   unreadable folder, a stray entry) for the app to show.
 - **A negative zero is read as 0** for a record's `size` and `year`, in both
   languages, so a record re-renders to the same bytes.
+
+### FullTextService on a library (step 1b)
+
+- **`save` keeps bytes once** (the maintainer, #755 item 7). When the digest is
+  already in the library, `Library.save` puts the use into the folder holding
+  those bytes, even if the identifiers find another folder, and writes nothing
+  again. This amends design §4.3's "callers look it up first": `save` does it
+  for every caller. The cost: byte-identical files of two different papers (a
+  stub PDF) put both papers' records in one folder. So the service uses a
+  library file only when at least one record listing it names the paper without
+  contradicting the request's identifiers (absent agrees, the rule the JATS
+  check uses): one paper is never given a file only the other's records list.
+  The split paper (a DOI-only folder, a PMID-only request) still passes. This
+  was chosen over reversing #755-7, which would bring back second folders.
+- **An unreachable or read-only library does not stop a lookup** (the
+  maintainer). The service warns, sets `library_failure` and runs as without a
+  library, so the app keeps the source as waiting for the library (design
+  §4.6). The cache is a staging area then, not a second store.
+- **The library is keyed by the request's identifiers, not `identifier`**,
+  each made canonical on its own; a refused value is dropped with a WARNING
+  naming the field. No valid identifier means no library and no flag, since
+  that is not a failure.
+- **A JATS hit is parsed and rendered on every lookup.** No HTML render is
+  stored for a library paper, so no stale-render rule applies.
+- **The service handles only JATS and PDF.** The library's HTML, Markdown and
+  text files are for the app to find through the library API (amends design
+  §4.5's last sentence for bmlib).
+- **`save` still rescans per call.** A lookup scans the library once (the
+  JATS and PDF lookups and the notes of their use share that scan), plus one
+  scan per file saved, plus one when a held PDF is used later in the chain;
+  noting a file not yet in this installation's record reads that one folder
+  again. The `shortcut:` stays, its trigger now "a scan's cost shows in a
+  lookup's time". A scan passed in would go stale after the lookup's first save
+  and create a second folder.
+- **`file_path` points into the library** for a library PDF, after the bytes
+  passed `Library.read`'s digest check; the extractor reads that path as it
+  reads a cache path.
+- **A folder whose JATS is another paper's keeps nothing in the library and is
+  a `library_failure`.** A record is a claim, not proof (design §4.4); the
+  request's identifiers would file new bytes in that folder, and the app must
+  learn the source was not kept so it can show the folder. Silently caching
+  would lose it.
+- **A held library PDF makes Tier 0 skip the caller's `pdf` entries.** The PDF
+  is already in hand (design §4.5). The cost: a caller's newer PDF is not
+  fetched while the library holds one.
+- **A library JATS that does not parse is a warning, not a `library_failure`.**
+  The library worked and the file is bad; the app gets the chain's result
+  anyway.
+- **A malformed `saved_at` ranks last** when choosing among a paper's files, so
+  one bad record never beats a good one, and the year is bounded to `i32`.
+- **A file ranks by the earliest `saved_at` among the records listing it.**
+  Noting a use stamps the time of the note, so the latest stamp would make an
+  old file noted late beat a newer one.
+- **A read-only library still serves the PDF it holds.** Its bytes passed the
+  digest check; a failed note of its use sets `library_failure` and ends the
+  library's use for the call, as for a JATS hit, but does not cost a download.
+- **A library JATS hit seeks its PDF once for an app that wants PDFs.** When
+  the library holds no PDF, `fetch_pdf_with_jats` is on and the cache has no
+  mark, the lookup that first notes the JATS in this installation's record
+  seeks the PDF as a first download would, and keeps one found in the library.
+  The record is the "sought once" state: a later hit without a mark asks
+  nothing, as a cached JATS hit does, so no cache state was added. It needs a
+  cache and an `identifier`, as the mark does; a lookup whose note fails seeks
+  nothing, since nothing would bound the next lookup's seek.
+- **A library holding only a PDF still runs the JATS tiers**, which a cached
+  PDF did not cost: JATS is the better text, so a PDF does not end a lookup.

@@ -23,6 +23,7 @@
 //! | `fulltext/_parse_audit.py` | [`parse_audit`] | ported |
 //! | `fulltext/models.py` | [`models`] | ported |
 //! | `fulltext/cache.py` | [`cache`] | ported |
+//! | (new, Rust and Python together) | [`library_store`] | the shared library as a store |
 //! | `fulltext/service.py` | [`service`] | ported |
 //! | `fulltext/pdf_converter.py`'s pure half | [`pdf_text`] | ported |
 //! | `fulltext/pdf_converter.py`'s PyMuPDF backend | `mupdf_backend` | ported, behind the `pdf` feature |
@@ -34,6 +35,7 @@ pub mod cache;
 pub mod canonical;
 pub mod jats_reader;
 pub mod jats_text;
+pub mod library_store;
 pub mod models;
 #[cfg(feature = "pdf")]
 pub mod mupdf_backend;
@@ -58,6 +60,7 @@ pub use jats_text::{
     delimiter_pair, elocation_part_continues, latex_expression, normalize_whitespace,
     pad_as_deposited, pad_row, render_formula, without_whitespace, LATEX_DELIMITERS,
 };
+pub use library_store::{library_ids, paper_info, Held, LibraryStore};
 pub use models::{
     ContentKind, FullTextResult, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
@@ -84,7 +87,7 @@ pub use service::{
     pick_oa_pdf_url, plural, quote, render_jats_html, FaultKind, FullTextError, FullTextRequest,
     FullTextService, LogLevel, LogLine, PdfExtractError, PdfExtractor, PdfText, TierFailures,
     TierFault, BUG_TYPE_NAMES, DOI_BASE, EUROPE_PMC_BASE, EUTILS_EFETCH_URL, EUTILS_TOOL_NAME,
-    FREE_PDF_AVAILABILITY_CODES, FREE_PDF_AVAILABILITY_LABELS, NCBI_IDCONV_URL,
+    FREE_PDF_AVAILABILITY_CODES, FREE_PDF_AVAILABILITY_LABELS, LIBRARY_SOURCE, NCBI_IDCONV_URL,
     PDF_BESIDE_JATS_ATTEMPTS, PDF_RETRY_DELAY, PDF_SEEK_AGAIN_LIMIT, PMC_OPEN_DATA_BASE,
     PUBMED_BASE, TIMEOUT, UNPAYWALL_BASE,
 };

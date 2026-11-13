@@ -320,12 +320,12 @@ def save_file(
 ) -> FileRef:
     """Save *data* of *kind* for *paper* and note it in *who*'s record.
 
-    The paper's folder is the first folder holding a record that shares an identifier with it;
-    with no identifiers, the folder already holding these bytes; otherwise a new folder, named
-    by :func:`folder_name` (with `` (2)``, `` (3)`` … when another paper has the name, compared
-    without regard to case). The file is written first, then the record (by the same merge as
-    :func:`record_file_use`), so a crash between leaves only an unrecorded file, which saving
-    the same bytes again records.
+    The paper's folder is the folder already holding these bytes, even when the identifiers
+    find another (the bytes are kept once); otherwise the first folder holding a record that
+    shares an identifier with it; otherwise a new folder, named by :func:`folder_name` (with
+    `` (2)``, `` (3)`` … when another paper has the name, compared without regard to case). The
+    file is written first, then the record (by the same merge as :func:`record_file_use`), so a
+    crash between leaves only an unrecorded file, which saving the same bytes again records.
 
     Within one process the update of a record is serialised, so threads of one installation
     never lose each other's entries; separate processes of one installation are out of scope.
@@ -348,16 +348,21 @@ def save_file(
     entry = FileEntry(digest, kind, name, origin, len(data), _now())
     fresh = Record(who, paper, (entry,))
     _record_bytes(fresh, root)  # before anything is written: the record must read back
-    # shortcut: save rescans the whole library per call; when 1b saves per download or
-    # libraries pass ~5,000 papers, let the caller pass its Scan.
+    # shortcut: save rescans the whole library per call, so a full-text lookup costs one scan
+    # plus one per file saved (and one more when it uses a held PDF); when that shows in a
+    # lookup's time, let the caller pass its Scan.
     scan = scan_library(root)
     papers = root / PAPERS_DIR
+    # Bytes are kept once: the folder already holding them wins over the identifiers,
+    # which may name another folder (a split paper).
+    by_digest = find_digest(scan, digest)
     found = find(scan, paper.ids)
-    if found:
+    if by_digest:
+        folder = by_digest.folder
+    elif found:
         folder = found[0].folder
     else:
-        by_digest = find_digest(scan, digest) if paper.ids.is_empty() else None
-        folder = by_digest.folder if by_digest else _claim_folder(papers, paper)
+        folder = _claim_folder(papers, paper)
     directory = papers / component(folder)
     records_dir = directory / RECORDS_DIR
     path = records_dir / component(who.record_file_name())

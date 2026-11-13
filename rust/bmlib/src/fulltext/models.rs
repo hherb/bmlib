@@ -40,6 +40,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::library::FileRef;
+
 /// Parsed author information from a JATS article.
 ///
 /// JATS names a contributor with `(name | string-name | collab | …)`, and only
@@ -770,8 +772,8 @@ pub struct FullTextSourceEntry {
 pub struct FullTextResult {
     /// Which tier or fetcher produced this: `"europepmc"`, `"ncbi_pmc"`,
     /// `"pmc_open_data"`, `"europepmc_pdf"`, `"unpaywall"`, `"doi"`,
-    /// `"pubmed"`, `"cached"`, or a fetcher source name (e.g. `"biorxiv"`) for
-    /// known full-text URLs.
+    /// `"pubmed"`, `"cached"`, `"library"` (the shared library, design §4.5),
+    /// or a fetcher source name (e.g. `"biorxiv"`) for known full-text URLs.
     pub source: String,
     /// The retrieved payload — HTML or JATS XML — or `None` where nothing was
     /// retrieved.
@@ -856,6 +858,23 @@ pub struct FullTextResult {
     /// again (#744).
     #[serde(default)]
     pub tier_faults: Vec<String>,
+    /// The shared library's files this result stands on (design §4.5): the
+    /// JATS a [`LIBRARY_SOURCE`](crate::fulltext::LIBRARY_SOURCE) result was
+    /// rendered from, then the library PDF at
+    /// [`file_path`](FullTextResult::file_path) if there is one. Empty when
+    /// the service has no library or nothing came from it.
+    #[serde(default)]
+    pub library_files: Vec<FileRef>,
+    /// Why the shared library could not be used in this lookup (it could not
+    /// be read or written, a file failed its digest check, this installation's
+    /// use could not be noted, or the paper's folder holds another paper's
+    /// JATS), naming the paper and the file. The lookup went on without the
+    /// library, so the app keeps what it got as *waiting for the library* and
+    /// tries again later. `None` when the library worked or none is set. A
+    /// library JATS that has no body or does not parse is not a failure of the
+    /// library: it is only warned of.
+    #[serde(default)]
+    pub library_failure: Option<String>,
 }
 
 /// [`FullTextResult::pdf_download_failure`] when the search for a PDF beside

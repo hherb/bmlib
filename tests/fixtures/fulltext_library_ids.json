@@ -1,0 +1,19 @@
+{
+ "_note": "Dropped fields are named after the request's parameters: pmid, doi, pmc_id.",
+ "cases": [
+  {"name": "all three valid, canonical", "pmid": " 0038012345 ", "doi": "10.1/X", "pmc_id": "pmc123",
+   "ids": {"pmid": "38012345", "doi": "10.1/x", "pmcid": "PMC123"}, "dropped": []},
+  {"name": "an invalid doi is dropped, the pmid kept", "pmid": "111", "doi": "not-a-doi", "pmc_id": null,
+   "ids": {"pmid": "111", "doi": null, "pmcid": null}, "dropped": ["doi"]},
+  {"name": "an empty pmid alone gives empty ids", "pmid": "", "doi": null, "pmc_id": null,
+   "ids": {"pmid": null, "doi": null, "pmcid": null}, "dropped": []},
+  {"name": "pmc_id is upper-cased", "pmid": "", "doi": null, "pmc_id": "pmc123",
+   "ids": {"pmid": null, "doi": null, "pmcid": "PMC123"}, "dropped": []},
+  {"name": "a PPR preprint pmid is kept", "pmid": "ppr123", "doi": null, "pmc_id": null,
+   "ids": {"pmid": "PPR123", "doi": null, "pmcid": null}, "dropped": []},
+  {"name": "whitespace-only values are absent, nothing dropped", "pmid": "  ", "doi": "  ", "pmc_id": "  ",
+   "ids": {"pmid": null, "doi": null, "pmcid": null}, "dropped": []},
+  {"name": "a bad pmid and a bad pmc_id are both dropped", "pmid": "abc", "doi": "10.1/y", "pmc_id": "xyz",
+   "ids": {"pmid": null, "doi": "10.1/y", "pmcid": null}, "dropped": ["pmid", "pmc_id"]}
+ ]
+}

@@ -1789,6 +1789,98 @@
    }
   },
   {
+   "name": "a split paper's bytes are kept once",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/s"
+     },
+     "text": "pdf bytes split",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "222"
+     },
+     "text": "pdf bytes split",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/(DOI 10.1 s)/",
+     "papers/(DOI 10.1 s)/pdf-b778cefad01d.pdf",
+     "papers/(DOI 10.1 s)/records/",
+     "papers/(DOI 10.1 s)/records/medicalfactchecker-bbbb.json",
+     "papers/(DOI 10.1 s)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/(DOI 10.1 s)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": "10.1/s",
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "b778cefad01de77973458932b8503b5c368cc66a2c9ed0cbbf42d41c6411fe31",
+        "kind": "pdf",
+        "name": "pdf-b778cefad01d.pdf",
+        "origin": "unit test",
+        "size": 15
+       }
+      ]
+     },
+     "papers/(DOI 10.1 s)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "222",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "b778cefad01de77973458932b8503b5c368cc66a2c9ed0cbbf42d41c6411fe31",
+        "kind": "pdf",
+        "name": "pdf-b778cefad01d.pdf",
+        "origin": "unit test",
+        "size": 15
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
    "name": "release then scan",
    "steps": [
     {

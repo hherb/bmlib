@@ -29,7 +29,10 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:  # Annotation only: bmlib.library imports this package, so a real import cycles.
+    from bmlib.library import FileRef
 
 # What a :attr:`FullTextResult.html` payload actually is. See the field's
 # comment on :class:`FullTextResult` for what each value promises.
@@ -907,8 +910,8 @@ class FullTextResult:
     """Result of a full-text retrieval attempt."""
 
     # "europepmc", "ncbi_pmc", "pmc_open_data", "europepmc_pdf", "unpaywall",
-    # "doi", "pubmed", "cached", or a fetcher source name (e.g. "biorxiv") for
-    # known full-text URLs
+    # "doi", "pubmed", "cached", "library" (the shared library, design §4.5), or a
+    # fetcher source name (e.g. "biorxiv") for known full-text URLs
     source: str
     html: str | None = None
     pdf_url: str | None = None
@@ -987,6 +990,20 @@ class FullTextResult:
     # again (#744); a stale rendering served over a re-fetch that came back
     # with less carries the re-fetch's faults, which are why it was served.
     tier_faults: list[str] = field(default_factory=list)
+    # The shared library's files this result stands on (design §4.5): the JATS
+    # a ``"library"`` result was rendered from, then the library PDF at
+    # ``file_path`` if there is one. Empty when the service has no library or
+    # nothing came from it.
+    library_files: list[FileRef] = field(default_factory=list)
+    # Why the shared library could not be used in this lookup (it could not be
+    # read or written, a file failed its digest check, this installation's use
+    # could not be noted, or the paper's folder holds another paper's JATS),
+    # naming the paper and the file. The lookup went on without the library, so
+    # the app keeps what it got as *waiting for the library* and tries again
+    # later. ``None`` when the library worked or none is set. A library JATS
+    # that has no body or does not parse is not a failure of the library: it is
+    # only warned of.
+    library_failure: str | None = None
 
     @property
     def pdf_failure_may_pass(self) -> bool:
