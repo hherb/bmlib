@@ -70,6 +70,27 @@ def library_ids(
     return PaperIds(**picked), dropped
 
 
+#: The shape of a well-formed ``saved_at``: ``D`` is an ASCII digit, anything else must match
+#: exactly (``2026-11-14T09:30:00Z``).
+_SAVED_AT_SHAPE = "DDDD-DD-DDTDD:DD:DDZ"
+
+#: The ``i32`` range a year must fit, as in Rust.
+_YEAR_MIN = -(2**31)
+_YEAR_MAX = 2**31 - 1
+
+
+def _saved_at_key(saved_at: str) -> str:
+    """*saved_at* as a sort key: itself when it has exactly the shape ``_SAVED_AT_SHAPE``
+    (fixed-width UTC, so string order is time order), else ``""``, which sorts below every
+    well-formed one. A record is free text, so a foreign or tampered ``saved_at`` must not
+    shadow the real newest file."""
+    ok = len(saved_at) == len(_SAVED_AT_SHAPE) and all(
+        (c.isascii() and c.isdigit()) if want == "D" else c == want
+        for c, want in zip(saved_at, _SAVED_AT_SHAPE, strict=True)
+    )
+    return saved_at if ok else ""
+
+
 @dataclass(frozen=True)
 class Held:
     """A source file read from the library, its bytes already checked against its digest."""
@@ -101,12 +122,13 @@ class LibraryStore:
     def find_source(self, ids: PaperIds, kind: SourceKind) -> Held | None:
         """The paper's newest source file of *kind*, read and digest-checked, or ``None``.
 
-        Looks in every folder of the paper (:func:`find`) for files of *kind* that some record
-        lists and that are on disk, and takes the one with the latest ``saved_at`` across the
-        records (ties go to the lower digest). ``saved_at`` is written as fixed-width UTC
-        (``2026-11-14T09:30:00Z``), so comparing the strings orders them in time. If the newest
-        file cannot be read that is an error: a tampered file is reported, not skipped for an
-        older one.
+        Looks in the paper's whole linked group of folders (:func:`find`, not only an
+        exact-identifier folder) for files of *kind* that some record lists and that are on disk,
+        and takes the one with the latest ``saved_at`` across the records (ties go to the lower
+        digest). A ``saved_at`` not of the exact form ``YYYY-MM-DDTHH:MM:SSZ`` sorts below every
+        well-formed one, and those tie among themselves; fixed-width UTC compares in time order
+        as a string. If the newest file cannot be read that is an error: a tampered file is
+        reported, not skipped for an older one.
 
         :raises LibraryStoreFailure: the scan or the read failed; the message names the paper's
             identifiers, the file and the library's error.
@@ -121,7 +143,10 @@ class LibraryStore:
                 if entry.kind != kind or entry.name not in folder.files_on_disk:
                     continue
                 # Later ``saved_at`` wins; on a tie the lower digest does.
-                if best is None or (entry.saved_at, best[1].sha256) > (best[0], entry.sha256):
+                if best is None or (_saved_at_key(entry.saved_at), best[1].sha256) > (
+                    _saved_at_key(best[0]),
+                    entry.sha256,
+                ):
                     best = (entry.saved_at, FileRef(folder.folder, entry.name, entry.sha256, kind))
         if best is None:
             return None
@@ -192,7 +217,7 @@ def paper_info(ids: PaperIds, article: JATSArticle | None) -> PaperInfo:
     return PaperInfo(
         ids=ids.merged(own)[0],
         title=_non_blank(article.title),
-        year=int(year) if year.isascii() and year.isdigit() else None,
+        year=_year(year),
         first_author=(_non_blank(first.surname) or _non_blank(first.collab)) if first else None,
     )
 
@@ -200,3 +225,11 @@ def paper_info(ids: PaperIds, article: JATSArticle | None) -> PaperInfo:
 def _non_blank(text: str) -> str | None:
     """*text* unchanged unless it is only whitespace, then ``None``."""
     return text if text.strip() else None
+
+
+def _year(text: str) -> int | None:
+    """*text* as a year when all ASCII digits and within ``i32``, else ``None``."""
+    if not (text.isascii() and text.isdigit()):
+        return None
+    value = int(text)
+    return value if _YEAR_MIN <= value <= _YEAR_MAX else None

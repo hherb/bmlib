@@ -20,13 +20,31 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from bmlib.fulltext.library_store import library_ids
+from bmlib.fulltext.jats_parser import JATSParser
+from bmlib.fulltext.library_store import (
+    LibraryStore,
+    LibraryStoreFailure,
+    library_ids,
+    paper_info,
+)
+from bmlib.library import (
+    Installation,
+    PaperIds,
+    PaperInfo,
+    SourceKind,
+    canonical_ids,
+    open_library,
+    parse_record,
+    render_record,
+)
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "fulltext_library_ids.json"
 _CASES: list[dict[str, Any]] = json.loads(_FIXTURE.read_text(encoding="utf-8"))["cases"]
@@ -40,25 +58,6 @@ def test_library_ids_match_the_fixture(case: dict[str, Any]) -> None:
 
 
 # ---- Task 2: finding, keeping and noting sources ----
-
-import dataclasses  # noqa: E402
-
-from bmlib.fulltext.jats_parser import JATSParser  # noqa: E402
-from bmlib.fulltext.library_store import (  # noqa: E402
-    LibraryStore,
-    LibraryStoreFailure,
-    paper_info,
-)
-from bmlib.library import (  # noqa: E402
-    Installation,
-    PaperIds,
-    PaperInfo,
-    SourceKind,
-    canonical_ids,
-    open_library,
-    parse_record,
-    render_record,
-)
 
 _SAMPLE = Path(__file__).parent / "fixtures" / "sample_article.xml"
 _ME = Installation.new("studyanalyzer", "aaaa", "Mac")
@@ -122,8 +121,6 @@ def test_a_file_overwritten_on_disk_is_an_error_naming_the_digest(tmp_path: Path
 
 
 def test_an_unreadable_root_is_an_error(tmp_path: Path) -> None:
-    import shutil
-
     (tmp_path / "lib").mkdir()
     store = _store(tmp_path / "lib")
     shutil.rmtree(tmp_path / "lib")
@@ -162,3 +159,59 @@ def test_paper_info_comes_from_the_jats() -> None:
     # The request's PMID wins; the JATS fills the DOI and PMCID.
     assert got.ids == PaperIds(pmid="111", doi="10.1234/jbr.2024.001", pmcid="PMC7614751")
     assert paper_info(PaperIds(), None) == PaperInfo(PaperIds())
+
+
+def _set_saved_at(tmp_path: Path, file_folder: str, times: dict[str, str]) -> None:
+    """Rewrite this installation's record so each digest in *times* has that ``saved_at``."""
+    path = tmp_path / "papers" / file_folder / "records" / _ME.record_file_name()
+    rec = parse_record(path.read_text(encoding="utf-8"))
+    files = tuple(
+        dataclasses.replace(f, saved_at=times.get(f.sha256, f.saved_at)) for f in rec.files
+    )
+    path.write_text(render_record(dataclasses.replace(rec, files=files)), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "bad", ["9999", "zzz", "2026-13-99T00:00:00+00:00", "٢٠٢٦-01-01T00:00:00Z"]
+)
+def test_a_malformed_saved_at_does_not_beat_a_well_formed_one(tmp_path: Path, bad: str) -> None:
+    store = _store(tmp_path)
+    paper = _info("20")
+    a = store.keep(paper, b"%PDF-a", SourceKind.PDF, "t")
+    b = store.keep(paper, b"%PDF-b", SourceKind.PDF, "t")
+    _set_saved_at(tmp_path, a.folder, {a.sha256: "2026-01-01T00:00:00Z", b.sha256: bad})
+    held = store.find_source(paper.ids, SourceKind.PDF)
+    assert held is not None and held.file.sha256 == a.sha256
+
+
+def test_a_tie_goes_to_the_lower_digest(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    paper = _info("21")
+    a = store.keep(paper, b"%PDF-a", SourceKind.PDF, "t")
+    b = store.keep(paper, b"%PDF-b", SourceKind.PDF, "t")
+    same = "2026-01-01T00:00:00Z"
+    _set_saved_at(tmp_path, a.folder, {a.sha256: same, b.sha256: same})
+    held = store.find_source(paper.ids, SourceKind.PDF)
+    assert held is not None and held.file.sha256 == min(a.sha256, b.sha256)
+
+
+def test_a_listed_file_not_on_disk_is_skipped(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    paper = _info("22")
+    a = store.keep(paper, b"%PDF-a", SourceKind.PDF, "t")
+    b = store.keep(paper, b"%PDF-b", SourceKind.PDF, "t")
+    _set_saved_at(
+        tmp_path, a.folder, {a.sha256: "2026-01-01T00:00:00Z", b.sha256: "2026-02-01T00:00:00Z"}
+    )
+    store.path_of(b).unlink()
+    held = store.find_source(paper.ids, SourceKind.PDF)
+    assert held is not None and held.file.sha256 == a.sha256
+
+
+def test_a_year_beyond_i32_is_none() -> None:
+    article = JATSParser(_SAMPLE.read_bytes()).parse()
+    big = dataclasses.replace(article, year="99999999999")
+    assert paper_info(PaperIds(), big).year is None
+    assert (
+        paper_info(PaperIds(), dataclasses.replace(article, year="2147483647")).year == 2147483647
+    )

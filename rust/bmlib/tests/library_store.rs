@@ -218,3 +218,93 @@ fn paper_info_comes_from_the_jats() {
     let bare = paper_info(PaperIds::default(), None);
     assert_eq!(bare, PaperInfo::default());
 }
+
+/// Give each digest in `times` that `saved_at` in this installation's record.
+fn set_saved_at(dir: &std::path::Path, folder: &str, times: &[(&str, &str)]) {
+    let path = dir
+        .join("papers")
+        .join(folder)
+        .join("records")
+        .join(me().record_file_name());
+    let mut rec = parse_record(&fs::read_to_string(&path).unwrap()).unwrap();
+    for f in &mut rec.files {
+        if let Some((_, at)) = times.iter().find(|(d, _)| *d == f.sha256) {
+            f.saved_at = (*at).into();
+        }
+    }
+    fs::write(&path, render_record(&rec)).unwrap();
+}
+
+#[test]
+fn a_malformed_saved_at_does_not_beat_a_well_formed_one() {
+    for bad in [
+        "9999",
+        "zzz",
+        "2026-13-99T00:00:00+00:00",
+        "\u{662}026-01-01T00:00:00Z",
+    ] {
+        let (dir, store) = scratch("malformed");
+        let paper = info(Some("20"), None);
+        let a = store.keep(&paper, b"%PDF-a", SourceKind::Pdf, "t").unwrap();
+        let b = store.keep(&paper, b"%PDF-b", SourceKind::Pdf, "t").unwrap();
+        set_saved_at(
+            &dir,
+            &a.folder,
+            &[(&a.sha256, "2026-01-01T00:00:00Z"), (&b.sha256, bad)],
+        );
+        let held = store
+            .find_source(&paper.ids, SourceKind::Pdf)
+            .unwrap()
+            .unwrap();
+        assert_eq!(held.file.sha256, a.sha256, "{bad}");
+    }
+}
+
+#[test]
+fn a_tie_goes_to_the_lower_digest() {
+    let (dir, store) = scratch("tie");
+    let paper = info(Some("21"), None);
+    let a = store.keep(&paper, b"%PDF-a", SourceKind::Pdf, "t").unwrap();
+    let b = store.keep(&paper, b"%PDF-b", SourceKind::Pdf, "t").unwrap();
+    let same = "2026-01-01T00:00:00Z";
+    set_saved_at(&dir, &a.folder, &[(&a.sha256, same), (&b.sha256, same)]);
+    let held = store
+        .find_source(&paper.ids, SourceKind::Pdf)
+        .unwrap()
+        .unwrap();
+    assert_eq!(held.file.sha256, a.sha256.clone().min(b.sha256.clone()));
+}
+
+#[test]
+fn a_listed_file_not_on_disk_is_skipped() {
+    let (dir, store) = scratch("missing");
+    let paper = info(Some("22"), None);
+    let a = store.keep(&paper, b"%PDF-a", SourceKind::Pdf, "t").unwrap();
+    let b = store.keep(&paper, b"%PDF-b", SourceKind::Pdf, "t").unwrap();
+    set_saved_at(
+        &dir,
+        &a.folder,
+        &[
+            (&a.sha256, "2026-01-01T00:00:00Z"),
+            (&b.sha256, "2026-02-01T00:00:00Z"),
+        ],
+    );
+    fs::remove_file(store.path_of(&b).unwrap()).unwrap();
+    let held = store
+        .find_source(&paper.ids, SourceKind::Pdf)
+        .unwrap()
+        .unwrap();
+    assert_eq!(held.file.sha256, a.sha256);
+}
+
+#[test]
+fn a_year_beyond_i32_is_none() {
+    let mut article = parse(SAMPLE).unwrap();
+    article.year = "99999999999".into();
+    assert_eq!(paper_info(PaperIds::default(), Some(&article)).year, None);
+    article.year = "2147483647".into();
+    assert_eq!(
+        paper_info(PaperIds::default(), Some(&article)).year,
+        Some(i32::MAX)
+    );
+}

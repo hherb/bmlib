@@ -95,6 +95,33 @@ fn describe_ids(ids: &PaperIds) -> String {
     }
 }
 
+/// The shape of a well-formed `saved_at`: `D` is an ASCII digit, anything else
+/// must match exactly (`2026-11-14T09:30:00Z`).
+const SAVED_AT_SHAPE: &str = "DDDD-DD-DDTDD:DD:DDZ";
+
+/// `saved_at` as a sort key: itself when it has exactly the shape
+/// [`SAVED_AT_SHAPE`] (fixed-width UTC, so string order is time order), else `""`,
+/// which sorts below every well-formed one. A record is free text, so a foreign
+/// or tampered `saved_at` must not shadow the real newest file.
+fn saved_at_key(saved_at: &str) -> &str {
+    let ok = saved_at.len() == SAVED_AT_SHAPE.len()
+        && saved_at
+            .bytes()
+            .zip(SAVED_AT_SHAPE.bytes())
+            .all(|(c, want)| {
+                if want == b'D' {
+                    c.is_ascii_digit()
+                } else {
+                    c == want
+                }
+            });
+    if ok {
+        saved_at
+    } else {
+        ""
+    }
+}
+
 /// The one wording of every library failure: the paper's identifiers, the file
 /// (`folder/name`) when there is one, and what the library said. Python's
 /// `_failure` words it the same.
@@ -111,16 +138,16 @@ impl LibraryStore {
     pub fn new(library: Library, who: Installation) -> Self {
         Self { library, who }
     }
-}
 
-impl LibraryStore {
     /// The paper's newest source file of `kind`, read and digest-checked.
     ///
-    /// Looks in every folder of the paper (`find`) for files of `kind` that some
+    /// Looks in the paper's whole linked group of folders (`find`, not only an
+    /// exact-identifier folder) for files of `kind` that some
     /// record lists and that are on disk, and takes the one with the latest
-    /// `saved_at` across the records (ties go to the lower digest). `saved_at` is
-    /// written as fixed-width UTC (`2026-11-14T09:30:00Z`), so comparing the
-    /// strings orders them in time. If the newest file cannot be read, that is an
+    /// `saved_at` across the records (ties go to the lower digest). A `saved_at`
+    /// not of the exact form `YYYY-MM-DDTHH:MM:SSZ` sorts below every well-formed
+    /// one, and those tie among themselves; fixed-width UTC compares in time order
+    /// as a string. If the newest file cannot be read, that is an
     /// error: a tampered file is reported, not skipped for an older one.
     ///
     /// # Errors
@@ -137,7 +164,8 @@ impl LibraryStore {
                 }
                 // Later `saved_at` wins; on a tie the lower digest does.
                 let better = best.as_ref().is_none_or(|(at, f)| {
-                    (entry.saved_at.as_str(), f.sha256.as_str()) > (*at, entry.sha256.as_str())
+                    (saved_at_key(&entry.saved_at), f.sha256.as_str())
+                        > (saved_at_key(at), entry.sha256.as_str())
                 });
                 if better {
                     best = Some((
