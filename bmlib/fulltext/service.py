@@ -934,6 +934,10 @@ class _FromLibrary:
     # The paper as a JATS used or saved in this lookup describes it, so a PDF saved later in the
     # call is filed with its title, year and author.
     paper: PaperInfo | None = None
+    # Whether this lookup first noted the served JATS in this installation's record: the lookup
+    # a first fetch would have sought its PDF in, so ``_seek_pdf_again`` seeks it once without
+    # a mark.
+    jats_first_noted: bool = False
 
     def finish(self, result: FullTextResult) -> FullTextResult:
         """*result* with this lookup's library files and library failure on it."""
@@ -1401,10 +1405,11 @@ class FullTextService:
         if out.failure is None:
             for file in out.files:
                 try:
-                    store.note_use_in(scan, paper, file)
+                    wrote = store.note_use_in(scan, paper, file)
                 except LibraryStoreFailure as exc:
                     self._library_failed(out, exc)
                     break
+                out.jats_first_noted |= wrote and file.kind == SourceKind.JATS
         out.paper = paper
         out.served = result
         return out
@@ -2489,6 +2494,14 @@ class FullTextService:
         try, which leaves the mark as it is. The search's and Unpaywall's
         faults go on ``tier_faults``. A PDF found goes to the library when
         *library* is in use, as in the chain.
+
+        A library JATS hit with no mark is sought once, as a first fetch seeks
+        it (by the paper's PMC ID, with retries), when this lookup first noted
+        the JATS in this installation's record (``library.jats_first_noted``);
+        a failure that may pass marks it as above. Its record then lists the
+        JATS, so a later hit without a mark makes no request: the record is the
+        "sought once" state, and no cache state is added. A lookup whose note
+        failed seeks nothing.
         """
         if not (
             self.fetch_pdf_with_jats and cached.content_kind == "fulltext" and not cached.file_path
@@ -2506,6 +2519,9 @@ class FullTextService:
             )
             self._mark_pdf_retry(cache_id, None, seeks=None)
             return cached
+        first = marked is None and library.jats_first_noted
+        if first:
+            marked = ((library.paper.ids.pmcid if library.paper else None) or "", 0)
         if marked is None:
             return cached
         pmc_id, seeks = marked
@@ -2513,12 +2529,18 @@ class FullTextService:
         # Open Data and the search by the PMC ID (#748).
         if not (any(e.format == "pdf" for e in sources) or doi or pmc_id):
             return cached
-        seeks += 1
-        if not self._mark_pdf_retry(
-            cache_id, pmc_id, seeks=seeks if seeks < PDF_SEEK_AGAIN_LIMIT else None
-        ):
-            return cached  # an uncounted seek could repeat on every hit
-        logger.info("Seeking again the PDF beside the cached full text of %s", cache_id)
+        if first:
+            logger.info(
+                "Seeking the PDF beside the library's full text of %s, new to this installation",
+                cache_id,
+            )
+        else:
+            seeks += 1
+            if not self._mark_pdf_retry(
+                cache_id, pmc_id, seeks=seeks if seeks < PDF_SEEK_AGAIN_LIMIT else None
+            ):
+                return cached  # an uncounted seek could repeat on every hit
+            logger.info("Seeking again the PDF beside the cached full text of %s", cache_id)
         failures = _TierFailures(on_bug=self._warn_swallowed_bug)
         result = self._pdf_for_jats(
             cached,

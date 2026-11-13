@@ -251,6 +251,29 @@
         "folder_name_contains": null,
         "cache": ["jats", "html"]
       }
+    },
+    {
+      "name": "12 the library's JATS without a PDF: the first hit seeks the PDF once and keeps it",
+      "library": [{"kind": "jats", "file": "fulltext_library_other_article.xml", "ids": {"pmid": "999"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "999", "doi": null, "pmc_id": null, "identifier": "s12"},
+      "service": {"fetch_pdf_with_jats": true},
+      "network": [
+        {"pattern": "/search?", "file": "europepmc_search_pmc123_pdf.json"},
+        {"pattern": "list-type=2", "file": "pmc_open_data_versions.xml"},
+        {"pattern": "/PMC123.10/PMC123.10.json", "file": "pmc_open_data_record.json"},
+        {"pattern": "/PMC123.10/PMC123.10.pdf", "file": "textless.pdf"}
+      ],
+      "read_only_after": null,
+      "expect": {
+        "source": "library",
+        "content_kind": "fulltext",
+        "library_files": ["jats", "pdf"],
+        "library_failure": null,
+        "requests": ["/search?", "list-type=2", "/PMC123.10/PMC123.10.json", "/PMC123.10/PMC123.10.pdf"],
+        "folders": [["jats", "pdf"]],
+        "folder_name_contains": null,
+        "cache": []
+      }
     }
   ]
 }

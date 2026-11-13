@@ -1477,6 +1477,10 @@ struct FromLibrary {
     /// The paper as a JATS used or saved in this lookup describes it, so a PDF
     /// saved later in the call is filed with its title, year and author.
     paper: Option<PaperInfo>,
+    /// Whether this lookup first noted the served JATS in this installation's
+    /// record: the lookup a first fetch would have sought its PDF in, so
+    /// [`FullTextService::seek_pdf_again`] seeks it once without a mark.
+    jats_first_noted: bool,
 }
 
 impl FromLibrary {
@@ -2044,9 +2048,12 @@ impl FullTextService {
         let paper = paper_info(ids, Some(&article));
         if out.failure.is_none() {
             for file in &out.files {
-                if let Err(error) = store.note_use_in(&scan, &paper, file) {
-                    self.library_failed(&mut out, &error);
-                    break;
+                match store.note_use_in(&scan, &paper, file) {
+                    Ok(wrote) => out.jats_first_noted |= wrote && file.kind == SourceKind::Jats,
+                    Err(error) => {
+                        self.library_failed(&mut out, &error);
+                        break;
+                    }
                 }
             }
         }
@@ -2923,6 +2930,14 @@ impl FullTextService {
     /// nothing to try, which leaves the mark as it is. The search's and
     /// Unpaywall's faults go on `tier_faults`. A PDF found goes to the
     /// library when `library` is in use, as in the chain.
+    ///
+    /// A library JATS hit with no mark is sought once, as a first fetch seeks
+    /// it (by the paper's PMC ID, with retries), when this lookup first noted
+    /// the JATS in this installation's record
+    /// ([`FromLibrary::jats_first_noted`]); a failure that may pass marks it as
+    /// above. Its record then lists the JATS, so a later hit without a mark
+    /// makes no request: the record is the "sought once" state, and no cache
+    /// state is added. A lookup whose note failed seeks nothing.
     fn seek_pdf_again(
         &self,
         hit: FullTextResult,
@@ -2937,8 +2952,12 @@ impl FullTextService {
         {
             return hit;
         }
-        let (marked, seeks) = match cache.get_pdf_retry(cache_id) {
-            Ok(Some(marked)) => marked,
+        let (marked, seeks, first) = match cache.get_pdf_retry(cache_id) {
+            Ok(Some((marked, seeks))) => (marked, seeks, false),
+            Ok(None) if library.jats_first_noted => {
+                let paper = library.paper.as_ref().and_then(|p| p.ids.pmcid.clone());
+                (paper.unwrap_or_default(), 0, true)
+            }
             Ok(None) => return hit,
             Err(error) => {
                 self.warn(format!(
@@ -2962,14 +2981,22 @@ impl FullTextService {
         if !can_try {
             return hit;
         }
-        let seeks = seeks.saturating_add(1);
-        let counted = (seeks < PDF_SEEK_AGAIN_LIMIT).then_some(seeks);
-        if !self.mark_pdf_retry(Some(cache_id), pmc_id, counted) {
-            return hit; // an uncounted seek could repeat on every hit
-        }
-        self.info(format!(
-            "Seeking again the PDF beside the cached full text of {cache_id}"
-        ));
+        let seeks = if first {
+            self.info(format!(
+                "Seeking the PDF beside the library's full text of {cache_id}, new to this installation"
+            ));
+            0
+        } else {
+            let seeks = seeks.saturating_add(1);
+            let counted = (seeks < PDF_SEEK_AGAIN_LIMIT).then_some(seeks);
+            if !self.mark_pdf_retry(Some(cache_id), pmc_id, counted) {
+                return hit; // an uncounted seek could repeat on every hit
+            }
+            self.info(format!(
+                "Seeking again the PDF beside the cached full text of {cache_id}"
+            ));
+            seeks
+        };
         let on_bug = |fault: &TierFault| self.warn_swallowed_bug(fault);
         let mut failures = TierFailures::reported(&on_bug);
         let found = JatsFound {

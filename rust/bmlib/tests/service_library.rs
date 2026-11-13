@@ -603,3 +603,53 @@ fn library_scenarios() {
     }
     assert!(failed.is_empty(), "failed: {failed:?}");
 }
+
+#[test]
+fn a_library_jats_hit_seeks_no_pdf_after_a_final_failure() {
+    let dir = scratch("seekonce");
+    let other = fs::read(fixtures().join("fulltext_library_other_article.xml")).unwrap();
+    saved_by_other(
+        &dir,
+        &paper_info(pmid_ids("999"), None),
+        &other,
+        SourceKind::Jats,
+    );
+    let answer =
+        |file: &str| HttpResponse::from_bytes(200, fs::read(fixtures().join(file)).unwrap());
+    // Anything else is a 404, a final failure.
+    let client = Arc::new(PatternClient {
+        answers: vec![
+            (
+                "/search?".into(),
+                answer("europepmc_search_pmc123_pdf.json"),
+            ),
+            ("list-type=2".into(), answer("pmc_open_data_absent.xml")),
+        ],
+        requests: std::sync::Mutex::new(Vec::new()),
+        read_only: None,
+    });
+    let svc = FullTextService::new(client.clone(), "test@example.com")
+        .with_cache(FullTextCache::new(Some(dir.join("cache"))))
+        .with_fetch_pdf_with_jats(true)
+        .with_pdf_retry_delay(std::time::Duration::ZERO)
+        .with_library(Library::open(&dir.join("lib")).unwrap(), me());
+    let request = FullTextRequest {
+        identifier: Some("t3".into()),
+        ..by_pmid("999")
+    };
+    let first = svc.fetch_fulltext(&request).unwrap();
+    assert_eq!(first.source, LIBRARY_SOURCE);
+    assert_eq!(first.file_path, None);
+    // The first hit seeks: the search, Open Data (absent), Europe PMC's PDF (404, final).
+    let want = ["/search?", "list-type=2", "render/PMC123.pdf"];
+    let requests = std::mem::take(&mut *client.requests.lock().unwrap());
+    assert_eq!(requests.len(), want.len(), "{requests:?}");
+    assert!(
+        requests.iter().zip(want).all(|(u, p)| u.contains(p)),
+        "{requests:?}"
+    );
+    let second = svc.fetch_fulltext(&request).unwrap();
+    assert_eq!(second.source, LIBRARY_SOURCE);
+    assert!(client.requests.lock().unwrap().is_empty());
+    let _ = fs::remove_dir_all(&dir);
+}

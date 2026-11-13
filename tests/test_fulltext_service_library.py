@@ -410,3 +410,34 @@ def test_a_library_hit_scans_the_library_once(tmp_path: Path) -> None:
     assert result.source == LIBRARY_SOURCE
     assert [f.kind for f in result.library_files] == [SourceKind.JATS, SourceKind.PDF]
     assert scan.call_count == 1
+
+
+def test_a_library_jats_hit_seeks_no_pdf_after_a_final_failure(tmp_path: Path) -> None:
+    other = (_FIXTURES / "fulltext_library_other_article.xml").read_bytes()
+    _saved_by_other(tmp_path, PaperInfo(canonical_ids("999")), other, SourceKind.JATS)
+    answers = {
+        "/search?": (_FIXTURES / "europepmc_search_pmc123_pdf.json").read_bytes(),
+        "list-type=2": (_FIXTURES / "pmc_open_data_absent.xml").read_bytes(),
+    }
+    requests: list[str] = []
+
+    def answer(url: str, **_: object) -> httpx.Response:
+        """The fixture whose pattern is in *url*, else 404 (a final failure)."""
+        requests.append(url)
+        body = next((b for p, b in answers.items() if p in url), None)
+        status = 404 if body is None else 200
+        return httpx.Response(status, content=body or b"", request=httpx.Request("GET", url))
+
+    service = _service(tmp_path)
+    service.fetch_pdf_with_jats = True
+    with patch.object(service, "_http_get", side_effect=answer):
+        first = service.fetch_fulltext(pmid="999", identifier="t3")
+        assert first.source == LIBRARY_SOURCE and first.file_path is None
+        # The first hit seeks: the search, Open Data (absent), Europe PMC's PDF (404, final).
+        want = ("/search?", "list-type=2", "render/PMC123.pdf")
+        assert len(requests) == len(want), requests
+        assert all(p in u for p, u in zip(want, requests, strict=True)), requests
+        requests.clear()
+        second = service.fetch_fulltext(pmid="999", identifier="t3")
+    assert second.source == LIBRARY_SOURCE
+    assert requests == []
