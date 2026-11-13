@@ -2249,6 +2249,118 @@
     ],
     "records": {}
    }
+  },
+  {
+   "name": "record_use notes a file another installation saved, merging the ids",
+   "steps": [
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "record_use",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0,
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/X"
+     }
+    },
+    {
+     "op": "record_use",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0,
+     "paper": {
+      "pmid": "111",
+      "title": "Metformin"
+     }
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
   }
  ],
   "component": [

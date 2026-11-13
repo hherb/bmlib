@@ -92,7 +92,8 @@ lib.remove_folder(file.folder)
 The calls are those of the Rust manual's table, with Python's spelling:
 `open_library(root)`, `lib.root`, `lib.scan()`, `find(scan, ids)`,
 `find_digest(scan, sha256)`, `group(scan)`, `lib.read(file)`,
-`lib.save(who, paper, data, kind, origin)`, `lib.release(who, file)`,
+`lib.save(who, paper, data, kind, origin)`, `lib.record_use(who, paper, file)` (note
+a file another app saved in my record), `lib.release(who, file)`,
 `lib.remove_file(file)`, `lib.remove_folder(name)`, `canonical_ids(pmid=, doi=,
 pmcid=)`, `folder_name(info)`, `folder_name_numbered(info, n)`, `sha256_hex(data)`.
 

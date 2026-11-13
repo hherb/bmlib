@@ -483,3 +483,42 @@ fn an_evicted_own_record_is_not_downloaded_and_nothing_is_written() {
     assert_eq!(tree(&dir), before);
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn record_use_checks_its_inputs_and_the_file() {
+    let (dir, lib) = scratch("record-use");
+    let theirs = save(&lib, &you(), &paper(), BYTES);
+    let before = tree(&dir);
+    let unchecked = Installation {
+        app: "../x".into(),
+        ..me()
+    };
+    let err = lib.record_use(&unchecked, &paper(), &theirs).unwrap_err();
+    assert!(matches!(err, LibraryError::BadInstallation { .. }), "{err}");
+    let mut upper = paper();
+    upper.ids.doi = Some("10.1/X".into());
+    let err = lib.record_use(&me(), &upper, &theirs).unwrap_err();
+    assert!(
+        matches!(err, LibraryError::BadIdentifier { field: "doi", .. }),
+        "{err}"
+    );
+    // A name that is not the library's name for those bytes is refused.
+    let renamed = FileRef {
+        name: "paper.pdf".into(),
+        ..theirs.clone()
+    };
+    fs::copy(
+        dir.join("papers").join(&theirs.folder).join(&theirs.name),
+        dir.join("papers").join(&theirs.folder).join("paper.pdf"),
+    )
+    .unwrap();
+    let err = lib.record_use(&me(), &paper(), &renamed).unwrap_err();
+    assert!(matches!(err, LibraryError::BadName { .. }), "{err}");
+    fs::remove_file(dir.join("papers").join(&theirs.folder).join("paper.pdf")).unwrap();
+    assert_eq!(tree(&dir), before);
+    lib.remove_file(&theirs).unwrap();
+    let err = lib.record_use(&me(), &paper(), &theirs).unwrap_err();
+    assert!(matches!(err, LibraryError::Missing { .. }), "{err}");
+    assert!(!record_path(&dir, &me(), &theirs.folder).exists());
+    fs::remove_dir_all(dir).unwrap();
+}

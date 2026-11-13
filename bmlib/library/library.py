@@ -36,6 +36,7 @@ from bmlib.library.files import (
 )
 from bmlib.library.ids import Installation, PaperInfo, SourceKind
 from bmlib.library.save import (
+    record_file_use,
     release_file,
     remove_paper_folder,
     remove_source_file,
@@ -78,6 +79,11 @@ class Library:
         Never overwrites: a file of that name with other bytes raises :class:`FileClash`.
         """
         return save_file(self._root, who, paper, data, kind, origin)
+
+    def record_use(self, who: Installation, paper: PaperInfo, file: FileRef) -> None:
+        """Note in *who*'s record that it uses *file*, already in the library, merging *paper*
+        as :meth:`save` does (see :func:`record_file_use`)."""
+        record_file_use(self._root, who, paper, file)
 
     def release(self, who: Installation, file: FileRef) -> None:
         """Drop *file* from *who*'s record only; the file stays (see :func:`release_file`)."""

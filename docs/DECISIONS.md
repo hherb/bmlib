@@ -6452,6 +6452,12 @@ undo.
   Within one process the read-modify-write of a record is serialised by a
   process-wide lock; **separate processes of one installation are out of
   scope** (an app has one process per installation).
+- **`record_use` notes a file already there, through `save`'s merge.** An app
+  that opens a file another installation saved lists it in its own record
+  without the bytes in hand. The file is read (digest-checked) first, so only a
+  file present in this library can be noted, and the merge is `save`'s, under
+  the same lock. Its origin is copied from a record that lists the file, or
+  left empty: the caller does not know where another app fetched it from.
 - **Nothing is deleted automatically.** Researchers keep sources for years and
   a sync service makes a deletion on one machine a deletion everywhere. There
   is no eviction, expiry or cache directory. `release` removes one

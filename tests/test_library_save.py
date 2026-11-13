@@ -317,3 +317,25 @@ def test_an_evicted_own_record_is_not_downloaded_and_nothing_is_written(lib: Lib
     with pytest.raises(NotDownloaded):
         lib.release(_ME, first)
     assert _tree(lib.root) == before
+
+
+def test_record_use_checks_its_inputs_and_the_file(lib: Library) -> None:
+    from bmlib.library import BadIdentifier, BadInstallation, BadName, PaperIds
+
+    theirs = lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "t")
+    before = _tree(lib.root)
+    with pytest.raises(BadInstallation):
+        lib.record_use(Installation("../x", "aaaa", "Mac"), _PAPER, theirs)
+    with pytest.raises(BadIdentifier):
+        lib.record_use(_ME, PaperInfo(PaperIds(pmid="111", doi="10.1/X")), theirs)
+    # A name that is not the library's name for those bytes is refused.
+    folder = lib.root / "papers" / theirs.folder
+    (folder / "paper.pdf").write_bytes(_BYTES)
+    with pytest.raises(BadName):
+        lib.record_use(_ME, _PAPER, FileRef(theirs.folder, "paper.pdf", theirs.sha256, theirs.kind))
+    (folder / "paper.pdf").unlink()
+    assert _tree(lib.root) == before
+    lib.remove_file(theirs)
+    with pytest.raises(Missing):
+        lib.record_use(_ME, _PAPER, theirs)
+    assert not _record_path(lib, _ME, theirs.folder).exists()

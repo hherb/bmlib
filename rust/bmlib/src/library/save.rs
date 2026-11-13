@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Writing a library: save a source file, drop it from one installation's
-//! record, and the manual clear.
+//! Writing a library: save a source file, note one already there, drop it from
+//! one installation's record, and the manual clear.
 //!
 //! Nothing is overwritten or deleted unless the caller asks. A source file is
 //! written once under a name made from its digest; each installation writes
@@ -284,6 +284,53 @@ fn merge_paper(mut record: Record, paper: &PaperInfo, path: &Path) -> Record {
     record
 }
 
+/// The name a file of `kind` with this digest has in a paper's folder:
+/// `{kind}-{first 12 hex}.{extension}`. `digest` is 64 hex digits.
+fn stored_name(kind: SourceKind, digest: &str) -> String {
+    format!(
+        "{}-{}.{}",
+        kind.as_str(),
+        &digest[..DIGEST_PREFIX_HEX],
+        kind.extension()
+    )
+}
+
+/// The time a file is noted, as records write it: `YYYY-MM-DDTHH:MM:SSZ` in UTC.
+fn now() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// Note `entry` in `who`'s record in the paper folder `dir` (named `folder`),
+/// under the record lock: the entry added unless its digest is listed already,
+/// and `paper` merged into the record's account. The one path by which both
+/// [`Library::save`] and [`Library::record_use`] change a record.
+fn note_use(
+    dir: &Path,
+    folder: &str,
+    who: &Installation,
+    paper: &PaperInfo,
+    entry: FileEntry,
+) -> Result<(), LibraryError> {
+    let records_dir = dir.join(RECORDS_DIR);
+    create_dir_all(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
+    let path = records_dir.join(component(&who.record_file_name())?);
+    let _guard = record_guard();
+    let record = match load_own_record(&path, folder)? {
+        Some(mut record) => {
+            if !record.files.iter().any(|f| f.sha256 == entry.sha256) {
+                record.files.push(entry);
+            }
+            merge_paper(record, paper, &path)
+        }
+        None => Record {
+            installation: who.clone(),
+            paper: paper.clone(),
+            files: vec![entry],
+        },
+    };
+    store_record(&path, &record)
+}
+
 /// A [`FileRef`]'s folder and name as safe path components, and the paths.
 fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryError> {
     let dir = root.join(PAPERS_DIR).join(component(&file.folder)?);
@@ -298,8 +345,9 @@ impl Library {
     /// identifier with it; with no identifiers, the folder already holding these
     /// bytes; otherwise a new folder, named by [`folder_name`] (with ` (2)`,
     /// ` (3)` … when another paper has the name, compared without regard to case).
-    /// The file is written first, then the record, so a crash between leaves
-    /// only an unrecorded file, which saving the same bytes again records.
+    /// The file is written first, then the record (by the same merge as
+    /// [`Library::record_use`]), so a crash between leaves only an unrecorded
+    /// file, which saving the same bytes again records.
     ///
     /// Within one process the update of a record is serialised, so threads of
     /// one installation never lose each other's entries; separate processes of
@@ -327,19 +375,14 @@ impl Library {
         check_who(who)?;
         check_ids(&paper.ids)?;
         let digest = sha256_hex(bytes);
-        let name = format!(
-            "{}-{}.{}",
-            kind.as_str(),
-            &digest[..DIGEST_PREFIX_HEX],
-            kind.extension()
-        );
+        let name = stored_name(kind, &digest);
         let entry = FileEntry {
             sha256: digest.clone(),
             kind,
             name: name.clone(),
             origin: origin.to_owned(),
             size: bytes.len() as u64,
-            saved_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            saved_at: now(),
         };
         // Before anything is written: the record this save would start must read back.
         let fresh = Record {
@@ -362,29 +405,76 @@ impl Library {
             None => claim_folder(&papers, paper)?,
         };
         let dir = papers.join(component(&folder)?);
-        let records_dir = dir.join(RECORDS_DIR);
-        let path = records_dir.join(component(&who.record_file_name())?);
+        let path = dir
+            .join(RECORDS_DIR)
+            .join(component(&who.record_file_name())?);
         check_not_evicted(&path, &folder)?;
         write_once(&dir.join(&name), bytes, &digest)?;
-
-        create_dir_all(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
-        let _guard = record_guard();
-        let record = match load_own_record(&path, &folder)? {
-            Some(mut record) => {
-                if !record.files.iter().any(|f| f.sha256 == digest) {
-                    record.files.push(entry);
-                }
-                merge_paper(record, paper, &path)
-            }
-            None => fresh,
-        };
-        store_record(&path, &record)?;
+        note_use(&dir, &folder, who, paper, entry)?;
         Ok(FileRef {
             folder,
             name,
             sha256: digest,
             kind,
         })
+    }
+
+    /// Note in `who`'s record that it uses `file`, a file already in the library
+    /// (such as one another installation saved), with what it knows of `paper`.
+    ///
+    /// The file is read through [`Library::read`], so it must be present with
+    /// the bytes `file.sha256` names; then it is merged into the record exactly
+    /// as [`Library::save`] does, under the same lock. The entry's origin is
+    /// copied from a record in the folder that lists the file, or left empty
+    /// when none does.
+    ///
+    /// # Errors
+    ///
+    /// [`LibraryError::BadInstallation`] or [`LibraryError::BadIdentifier`] as
+    /// for `save`; [`LibraryError::BadName`] for a name that is not one path
+    /// component or not the library's name for those bytes;
+    /// [`LibraryError::Missing`], [`LibraryError::NotDownloaded`] or
+    /// [`LibraryError::DigestMismatch`] from reading the file (nothing is
+    /// written); [`LibraryError::NewerRecord`]; [`LibraryError::ReadOnly`];
+    /// [`LibraryError::Io`].
+    pub fn record_use(
+        &self,
+        who: &Installation,
+        paper: &PaperInfo,
+        file: &FileRef,
+    ) -> Result<(), LibraryError> {
+        check_who(who)?;
+        check_ids(&paper.ids)?;
+        let bytes = self.read(file)?;
+        // `read` proved `file.sha256` is the bytes' digest, so it can be sliced.
+        if file.name != stored_name(file.kind, &file.sha256) {
+            return Err(LibraryError::BadName {
+                name: file.name.clone(),
+            });
+        }
+        let (dir, _) = locate(self.root(), file)?;
+        let mut problems = Vec::new();
+        let origin = scan_folder(&dir, &file.folder, &mut problems)
+            .records
+            .iter()
+            .flat_map(|r| &r.files)
+            .find(|f| f.sha256 == file.sha256)
+            .map_or_else(String::new, |f| f.origin.clone());
+        let entry = FileEntry {
+            sha256: file.sha256.clone(),
+            kind: file.kind,
+            name: file.name.clone(),
+            origin,
+            size: bytes.len() as u64,
+            saved_at: now(),
+        };
+        let fresh = Record {
+            installation: who.clone(),
+            paper: paper.clone(),
+            files: vec![entry.clone()],
+        };
+        record_text(&fresh, &dir)?;
+        note_use(&dir, &file.folder, who, paper, entry)
     }
 
     /// Drop `file` from `who`'s record. The file stays, and so do the other

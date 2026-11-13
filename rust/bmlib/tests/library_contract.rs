@@ -543,6 +543,9 @@ fn save_scenarios_match_the_fixture() {
                     );
                 }
                 "release" => lib.release(&installation(step), &of(step)).unwrap(),
+                "record_use" => lib
+                    .record_use(&installation(step), &paper_info(&step["paper"]), &of(step))
+                    .unwrap_or_else(|e| panic!("{name}: {e}")),
                 "remove_file" => {
                     let got = lib.remove_file(&of(step));
                     if step["expect"] == "missing" {

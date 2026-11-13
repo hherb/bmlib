@@ -336,6 +336,11 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
             ref = saved[step["of"]]
             assert ref is not None
             lib.release(Installation.new(step["app"], step["id"], "Test Mac"), ref)
+        elif op == "record_use":
+            ref = saved[step["of"]]
+            assert ref is not None
+            who = Installation.new(step["app"], step["id"], "Test Mac")
+            lib.record_use(who, _paper_info(step["paper"]), ref)
         elif op == "remove_file":
             ref = saved[step["of"]]
             assert ref is not None

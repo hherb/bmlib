@@ -14,8 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Writing a library: save a source file, drop it from one installation's record, and the
-manual clear. Rust's ``library::save`` is the twin.
+"""Writing a library: save a source file, note one already there, drop it from one
+installation's record, and the manual clear. Rust's ``library::save`` is the twin.
 
 Nothing is overwritten or deleted unless the caller asks. A source file is written once under
 a name made from its digest; each installation writes only its own record. Two writers saving
@@ -38,7 +38,7 @@ from bmlib.library.constants import (
     PAPERS_DIR,
     RECORDS_DIR,
 )
-from bmlib.library.errors import BadIdentifier, Io, Missing, NewerRecord, NotDownloaded
+from bmlib.library.errors import BadIdentifier, BadName, Io, Missing, NewerRecord, NotDownloaded
 from bmlib.library.files import (
     component,
     create_dir_all,
@@ -59,7 +59,15 @@ from bmlib.library.files import (
 from bmlib.library.ids import Installation, PaperIds, PaperInfo, SourceKind, canonical_ids
 from bmlib.library.names import folder_name, folder_name_numbered
 from bmlib.library.records import FileEntry, Record, RecordProblem, parse_record, render_record
-from bmlib.library.scan import FileRef, Problem, _scan_folder, find, find_digest, scan_library
+from bmlib.library.scan import (
+    FileRef,
+    Problem,
+    _scan_folder,
+    find,
+    find_digest,
+    read_file,
+    scan_library,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +266,44 @@ def _merge_paper(record: Record, paper: PaperInfo, path: Path) -> Record:
     return dataclasses.replace(record, paper=merged)
 
 
+def _stored_name(kind: SourceKind, digest: str) -> str:
+    """The name a file of *kind* with this digest has in a paper's folder:
+    ``{kind}-{first 12 hex}.{extension}``."""
+    return f"{kind.value}-{digest[:DIGEST_PREFIX_HEX]}.{kind.extension()}"
+
+
+def _now() -> str:
+    """The time a file is noted, as records write it: ``YYYY-MM-DDTHH:MM:SSZ`` in UTC."""
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _note_use(
+    directory: Path, folder: str, who: Installation, paper: PaperInfo, entry: FileEntry
+) -> None:
+    """Note *entry* in *who*'s record in the paper folder *directory*, under the record lock.
+
+    The entry is added unless its digest is listed already, and *paper* is merged into the
+    record's account. The one path by which both :func:`save_file` and
+    :func:`record_file_use` change a record.
+    """
+    records_dir = directory / RECORDS_DIR
+    try:
+        create_dir_all(records_dir)
+    except OSError as e:
+        raise io_error(records_dir, e, write=True) from e
+    path = records_dir / component(who.record_file_name())
+    with _RECORD_LOCK:
+        record = _load_own_record(path, folder)
+        if record is None:
+            record = Record(who, paper, (entry,))
+        else:
+            files = record.files
+            if all(f.sha256 != entry.sha256 for f in files):
+                files = (*files, entry)
+            record = _merge_paper(dataclasses.replace(record, files=files), paper, path)
+        _store_record(path, record)
+
+
 def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
     """The file's folder and path, its names checked as single path components."""
     directory = root / PAPERS_DIR / component(file.folder)
@@ -277,8 +323,9 @@ def save_file(
     The paper's folder is the first folder holding a record that shares an identifier with it;
     with no identifiers, the folder already holding these bytes; otherwise a new folder, named
     by :func:`folder_name` (with `` (2)``, `` (3)`` … when another paper has the name, compared
-    without regard to case). The file is written first, then the record, so a crash between
-    leaves only an unrecorded file, which saving the same bytes again records.
+    without regard to case). The file is written first, then the record (by the same merge as
+    :func:`record_file_use`), so a crash between leaves only an unrecorded file, which saving
+    the same bytes again records.
 
     Within one process the update of a record is serialised, so threads of one installation
     never lose each other's entries; separate processes of one installation are out of scope.
@@ -297,10 +344,8 @@ def save_file(
     _check_who(who)
     _check_ids(paper.ids)
     digest = sha256_hex(data)
-    name = f"{kind.value}-{digest[:DIGEST_PREFIX_HEX]}.{kind.extension()}"
-    entry = FileEntry(
-        digest, kind, name, origin, len(data), datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
+    name = _stored_name(kind, digest)
+    entry = FileEntry(digest, kind, name, origin, len(data), _now())
     fresh = Record(who, paper, (entry,))
     _record_bytes(fresh, root)  # before anything is written: the record must read back
     # shortcut: save rescans the whole library per call; when 1b saves per download or
@@ -318,22 +363,41 @@ def save_file(
     path = records_dir / component(who.record_file_name())
     _check_not_evicted(path, folder)
     write_once(directory / name, data, digest)
-
-    try:
-        create_dir_all(records_dir)
-    except OSError as e:
-        raise io_error(records_dir, e, write=True) from e
-    with _RECORD_LOCK:
-        record = _load_own_record(path, folder)
-        if record is None:
-            record = fresh
-        else:
-            files = record.files
-            if all(f.sha256 != digest for f in files):
-                files = (*files, entry)
-            record = _merge_paper(dataclasses.replace(record, files=files), paper, path)
-        _store_record(path, record)
+    _note_use(directory, folder, who, paper, entry)
     return FileRef(folder, name, digest, kind)
+
+
+def record_file_use(root: Path, who: Installation, paper: PaperInfo, file: FileRef) -> None:
+    """Note in *who*'s record that it uses *file*, a file already in the library (such as one
+    another installation saved), with what it knows of *paper*.
+
+    The file is read through :func:`read_file`, so it must be present with the bytes
+    ``file.sha256`` names; then it is merged into the record exactly as :func:`save_file`
+    does, under the same lock. The entry's origin is copied from a record in the folder that
+    lists the file, or left empty when none does.
+
+    :raises BadInstallation: *who* is one :meth:`Installation.new` would refuse.
+    :raises BadIdentifier: ``paper.ids`` are not canonical.
+    :raises BadName: a name that is not one path component, or not the library's name for
+        those bytes.
+    :raises Missing: the file is not there (nothing is written).
+    :raises NotDownloaded: the file, or *who*'s record, is only an iCloud placeholder.
+    :raises DigestMismatch: the bytes hash to something else (nothing is written).
+    :raises NewerRecord: *who*'s record is from a newer layout.
+    :raises ReadOnly: the library cannot be written.
+    :raises Io: any other failure.
+    """
+    _check_who(who)
+    _check_ids(paper.ids)
+    data = read_file(root, file)
+    if file.name != _stored_name(file.kind, file.sha256):
+        raise BadName(file.name)
+    directory, _ = _locate(root, file)
+    found = _scan_folder(directory, file.folder, [])
+    origin = next((f.origin for r in found.records for f in r.files if f.sha256 == file.sha256), "")
+    entry = FileEntry(file.sha256, file.kind, file.name, origin, len(data), _now())
+    _record_bytes(Record(who, paper, (entry,)), directory)
+    _note_use(directory, file.folder, who, paper, entry)
 
 
 def release_file(root: Path, who: Installation, file: FileRef) -> None:

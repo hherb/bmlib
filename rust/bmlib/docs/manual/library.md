@@ -102,6 +102,7 @@ lib.remove_folder(&file.folder)?;
 | `group(&scan)` | Indices of folders connected by shared identifiers |
 | `lib.read(&file)` | The file's bytes, checked against `file.sha256` |
 | `lib.save(&who, &paper, bytes, kind, origin)` | Writes the file once, then records it |
+| `lib.record_use(&who, &paper, &file)` | Notes in `who`'s record a file already in the library (one another app saved): reads it, digest-checked, then merges as `save` does |
 | `lib.release(&who, &file)` | Drops the file from `who`'s record only |
 | `lib.remove_file(&file)` / `lib.remove_folder(name)` | Delete a file or a paper's folder (the manual clear) |
 | `PaperIds::canonical(pmid, doi, pmcid)` | Canonical identifiers from raw ones: leading zeros dropped, the DOI lower-cased; a blank value is `None` |
