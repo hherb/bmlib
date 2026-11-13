@@ -101,16 +101,16 @@ def test_save_never_overwrites_other_bytes(lib: Library) -> None:
 
 
 def test_newer_own_record_is_not_downgraded(lib: Library) -> None:
-    # YOU's readable record keeps the folder findable once ME's record is unreadable to us.
-    lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "t")
     first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
     path = _record_path(lib, _ME, first.folder)
     newer = path.read_text(encoding="utf-8").replace('"version": 1', '"version": 2')
     path.write_text(newer, encoding="utf-8")
+    before = _tree(lib.root)
     with pytest.raises(NewerRecord) as err:
         lib.save(_ME, _PAPER, b"%PDF other", SourceKind.PDF, "t")
     assert err.value.version == 2
     assert path.read_text(encoding="utf-8") == newer
+    assert _tree(lib.root) == before  # no new folder, nothing else written
 
 
 def test_corrupt_own_record_is_kept_aside(lib: Library, caplog: pytest.LogCaptureFixture) -> None:
@@ -221,14 +221,21 @@ def test_release_of_an_unlisted_file_or_without_a_record_is_fine(lib: Library) -
     assert lib.read(first) == _BYTES
 
 
-def test_a_folder_with_only_a_newer_record_is_not_reused(lib: Library) -> None:
+def test_a_folder_with_only_a_newer_record_fails_the_claim_and_writes_nothing(
+    lib: Library,
+) -> None:
     first = lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "t")
     path = _record_path(lib, _YOU, first.folder)
     path.write_text(path.read_text(encoding="utf-8").replace('"version": 1', '"version": 2'))
-    # Its identifiers are unreadable to us, so nothing proves it is the same paper.
-    got = lib.save(_ME, _PAPER, b"other", SourceKind.PDF, "t")
-    assert got.folder != first.folder
-    assert got.folder.endswith("(2)")
+    before = _tree(lib.root)
+    with pytest.raises(NewerRecord) as err:
+        lib.save(_ME, _PAPER, b"other", SourceKind.PDF, "t")
+    assert err.value.folder == first.folder
+    assert _tree(lib.root) == before
+
+
+def _tree(root: Path) -> list[tuple[str, bytes | None]]:
+    return sorted((str(p), p.read_bytes() if p.is_file() else None) for p in root.rglob("*"))
 
 
 def _save_one(lib: Library, name: bytes, kind: SourceKind, barrier: threading.Barrier) -> None:

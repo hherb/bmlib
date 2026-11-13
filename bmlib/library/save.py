@@ -87,12 +87,20 @@ def _same_name_as(papers: Path, candidate: str) -> list[str]:
 def _belongs_to(papers: Path, name: str, paper: PaperInfo) -> bool:
     """Whether the folder *name* may take *paper*: some record there shares an identifier with
     it, or no record there is readable yet (another writer has claimed the folder, or a crash
-    left it empty). A folder whose only records are newer than this code counts as holding
-    another paper: their identifiers cannot be read."""
+    left it empty).
+
+    A folder whose records are all newer than this code is neither: its identifiers cannot be
+    read, and a second folder beside a newer app's paper would be a silent second store, so
+    that raises :class:`NewerRecord`.
+    """
     problems: list[Problem] = []
     found = _scan_folder(papers / name, name, problems)
     if not found.records:
-        return not any(p.kind == "newer_record" for p in problems)
+        for p in problems:
+            if p.kind == "newer_record":
+                assert p.file is not None and p.version is not None
+                raise NewerRecord(name, p.file, p.version)
+        return True
     return found.ids().shares_any(paper.ids)
 
 
@@ -105,9 +113,15 @@ def _claim_folder(papers: Path, paper: PaperInfo) -> str:
         for _ in range(2):  # the second round re-reads the names after losing a create race
             same = _same_name_as(papers, candidate)
             if same:
-                mine = next((s for s in same if _belongs_to(papers, s, paper)), None)
-                if mine is not None:
-                    return mine
+                newer: NewerRecord | None = None
+                for s in same:
+                    try:
+                        if _belongs_to(papers, s, paper):
+                            return s
+                    except NewerRecord as e:
+                        newer = newer or e
+                if newer is not None:
+                    raise newer
                 break
             target = papers / candidate
             try:
@@ -211,7 +225,8 @@ def save_file(
     never lose each other's entries; separate processes of one installation are out of scope.
 
     :raises FileClash: a file of that name holds other bytes (nothing is overwritten).
-    :raises NewerRecord: *who*'s record is from a newer layout.
+    :raises NewerRecord: *who*'s record, or every record of the folder the paper would go in,
+        is from a newer layout (no second folder is made).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """

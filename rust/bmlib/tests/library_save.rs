@@ -62,6 +62,26 @@ fn scratch(tag: &str) -> (PathBuf, Library) {
     (dir, lib)
 }
 
+/// Every path under `dir` with its bytes (None for a folder), sorted.
+fn tree(dir: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    fn walk(dir: &Path, out: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                out.push((path.clone(), None));
+                walk(&path, out);
+            } else {
+                let bytes = fs::read(&path).unwrap();
+                out.push((path, Some(bytes)));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out.sort();
+    out
+}
+
 fn record_path(dir: &Path, who: &Installation, folder: &str) -> PathBuf {
     dir.join("papers")
         .join(folder)
@@ -126,14 +146,13 @@ fn save_never_overwrites_other_bytes() {
 #[test]
 fn newer_own_record_is_not_downgraded() {
     let (dir, lib) = scratch("newer");
-    // Another installation's readable record keeps the folder findable.
-    save(&lib, &you(), &paper(), BYTES);
     let first = save(&lib, &me(), &paper(), BYTES);
     let path = record_path(&dir, &me(), &first.folder);
     let newer = fs::read_to_string(&path)
         .unwrap()
         .replace("\"version\": 1", "\"version\": 2");
     fs::write(&path, &newer).unwrap();
+    let before = tree(&dir);
     let err = lib
         .save(&me(), &paper(), b"%PDF other", SourceKind::Pdf, "t")
         .unwrap_err();
@@ -142,6 +161,7 @@ fn newer_own_record_is_not_downgraded() {
         "{err}"
     );
     assert_eq!(fs::read_to_string(&path).unwrap(), newer);
+    assert_eq!(tree(&dir), before); // no new folder, nothing else written
     fs::remove_dir_all(dir).unwrap();
 }
 
@@ -316,16 +336,21 @@ fn release_of_an_unlisted_file_or_without_a_record_is_fine() {
 }
 
 #[test]
-fn a_folder_with_only_a_newer_record_is_not_reused() {
+fn a_folder_with_only_a_newer_record_fails_the_claim_and_writes_nothing() {
     let (dir, lib) = scratch("newer-only");
     let first = save(&lib, &you(), &paper(), BYTES);
     let path = record_path(&dir, &you(), &first.folder);
     let text = fs::read_to_string(&path).unwrap();
     fs::write(&path, text.replace("\"version\": 1", "\"version\": 2")).unwrap();
-    // Its identifiers are unreadable to us, so nothing proves it is the same paper.
-    let got = save(&lib, &me(), &paper(), b"other");
-    assert_ne!(got.folder, first.folder);
-    assert!(got.folder.ends_with("(2)"), "{}", got.folder);
+    let before = tree(&dir);
+    let err = lib
+        .save(&me(), &paper(), b"other", SourceKind::Pdf, "t")
+        .unwrap_err();
+    assert!(
+        matches!(&err, LibraryError::NewerRecord { folder, .. } if *folder == first.folder),
+        "{err}"
+    );
+    assert_eq!(tree(&dir), before);
     fs::remove_dir_all(dir).unwrap();
 }
 

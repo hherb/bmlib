@@ -70,18 +70,31 @@ fn same_name_as(papers: &Path, candidate: &str) -> Result<Vec<String>, LibraryEr
 
 /// Whether the folder `name` may take `paper`: some record there shares an
 /// identifier with it, or no record there is readable yet (another writer has
-/// claimed the folder, or a crash left it empty). A folder whose only records
-/// are newer than this code counts as holding another paper: their identifiers
-/// cannot be read (R14).
-fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> bool {
+/// claimed the folder, or a crash left it empty). A folder whose records are all
+/// newer than this code is neither: its identifiers cannot be read, and a second
+/// folder beside a newer app's paper would be a silent second store, so that is
+/// [`LibraryError::NewerRecord`] (R16).
+fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, LibraryError> {
     let mut problems = Vec::new();
     let found = scan_folder(&papers.join(name), name, &mut problems);
     if found.records.is_empty() {
-        return !problems
-            .iter()
-            .any(|p| matches!(p, Problem::NewerRecord { .. }));
+        return match problems.into_iter().find_map(|p| match p {
+            Problem::NewerRecord {
+                folder,
+                file,
+                version,
+            } => Some((folder, file, version)),
+            _ => None,
+        }) {
+            Some((folder, file, version)) => Err(LibraryError::NewerRecord {
+                folder,
+                file,
+                version: u64::from(version),
+            }),
+            None => Ok(true),
+        };
     }
-    found.ids().shares_any(&paper.ids)
+    Ok(found.ids().shares_any(&paper.ids))
 }
 
 /// The folder `paper` goes in when no folder holds it yet: a new one, or one a
@@ -94,8 +107,16 @@ fn claim_folder(papers: &Path, paper: &PaperInfo) -> Result<String, LibraryError
         for _ in 0..2 {
             let same = same_name_as(papers, &candidate)?;
             if !same.is_empty() {
-                if let Some(mine) = same.iter().find(|s| belongs_to(papers, s, paper)) {
-                    return Ok(mine.clone());
+                let mut newer = None;
+                for s in &same {
+                    match belongs_to(papers, s, paper) {
+                        Ok(true) => return Ok(s.clone()),
+                        Ok(false) => {}
+                        Err(e) => newer = newer.or(Some(e)),
+                    }
+                }
+                if let Some(e) = newer {
+                    return Err(e);
                 }
                 break;
             }
@@ -220,8 +241,8 @@ impl Library {
     /// # Errors
     ///
     /// [`LibraryError::FileClash`] when a file of that name holds other bytes
-    /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s record
-    /// is from a newer layout; [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
+    /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s record, or every record of the
+    /// folder the paper would go in, is from a newer layout (no second folder is made); [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn save(
         &self,
         who: &Installation,
