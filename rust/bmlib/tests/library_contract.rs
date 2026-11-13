@@ -436,3 +436,134 @@ fn read_matches_the_fixture() {
     }
     let _ = std::fs::remove_dir_all(base);
 }
+
+/// Every file and folder under `root` (folders with a trailing slash), sorted.
+fn tree(root: &std::path::Path) -> Vec<String> {
+    fn walk(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                out.push(format!("{rel}/"));
+                walk(root, &path, out);
+            } else {
+                out.push(rel);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+fn paper_info(p: &Value) -> PaperInfo {
+    PaperInfo {
+        ids: PaperIds::canonical(p["pmid"].as_str(), p["doi"].as_str(), p["pmcid"].as_str())
+            .unwrap(),
+        title: opt(p, "title"),
+        year: p["year"].as_i64().map(|y| y as i32),
+        first_author: opt(p, "first_author"),
+    }
+}
+
+fn installation(step: &Value) -> Installation {
+    Installation::new(
+        step["app"].as_str().unwrap(),
+        step["id"].as_str().unwrap(),
+        "Test Mac",
+    )
+    .unwrap()
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ`.
+fn is_saved_at(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 20
+        && b[19] == b'Z'
+        && [4, 7].iter().all(|&i| b[i] == b'-')
+        && b[10] == b'T'
+        && [13, 16].iter().all(|&i| b[i] == b':')
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| [4, 7, 10, 13, 16, 19].contains(&i) || c.is_ascii_digit())
+}
+
+#[test]
+fn save_scenarios_match_the_fixture() {
+    for case in section("save_scenarios") {
+        let name = case["name"].as_str().unwrap();
+        let base = std::env::temp_dir().join(format!(
+            "bmlib-save-{}-{}",
+            std::process::id(),
+            name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let lib = Library::open(&base).unwrap();
+        let mut saved: Vec<Option<FileRef>> = Vec::new();
+        for step in case["steps"].as_array().unwrap() {
+            let of = |s: &Value| saved[s["of"].as_u64().unwrap() as usize].clone().unwrap();
+            let mut made = None;
+            match step["op"].as_str().unwrap() {
+                "save" => {
+                    made = Some(
+                        lib.save(
+                            &installation(step),
+                            &paper_info(&step["paper"]),
+                            step["text"].as_str().unwrap().as_bytes(),
+                            SourceKind::parse(step["kind"].as_str().unwrap()).unwrap(),
+                            step["origin"].as_str().unwrap(),
+                        )
+                        .unwrap_or_else(|e| panic!("{name}: {e}")),
+                    );
+                }
+                "release" => lib.release(&installation(step), &of(step)).unwrap(),
+                "remove_file" => lib.remove_file(&of(step)).unwrap(),
+                "remove_folder" => {
+                    let got = lib.remove_folder(step["folder"].as_str().unwrap());
+                    if step["expect"] == "bad_name" {
+                        assert!(matches!(got, Err(LibraryError::BadName { .. })), "{name}");
+                    } else {
+                        got.unwrap();
+                    }
+                }
+                "read" => assert!(
+                    matches!(lib.read(&of(step)), Err(LibraryError::Missing { .. })),
+                    "{name}"
+                ),
+                "used_by" => {
+                    let file = of(step);
+                    let scan = lib.scan().unwrap();
+                    let mut users: Vec<String> = scan
+                        .folders
+                        .iter()
+                        .filter(|f| f.folder == file.folder)
+                        .flat_map(|f| f.used_by(&file.sha256))
+                        .map(|i| format!("{}-{}", i.app, i.id))
+                        .collect();
+                    users.sort();
+                    assert_eq!(serde_json::json!(users), step["expect"], "{name}");
+                }
+                other => panic!("unknown step {other}"),
+            }
+            saved.push(made);
+        }
+        let want = &case["expect"];
+        assert_eq!(serde_json::json!(tree(&base)), want["paths"], "{name}");
+        for (rel, record) in want["records"].as_object().unwrap() {
+            let mut got: Value =
+                serde_json::from_str(&std::fs::read_to_string(base.join(rel)).unwrap()).unwrap();
+            for entry in got["files"].as_array_mut().unwrap() {
+                let at = entry.as_object_mut().unwrap().remove("saved_at").unwrap();
+                assert!(is_saved_at(at.as_str().unwrap()), "{name}: {at}");
+            }
+            assert_eq!(&got, record, "{name}: {rel}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}

@@ -28,6 +28,7 @@ mod ids;
 mod names;
 mod open;
 mod record;
+mod save;
 mod scan;
 
 pub use crate::fulltext::CORRUPT_SUFFIX;

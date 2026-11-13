@@ -143,7 +143,7 @@ pub struct FileRef {
 }
 
 /// Scan one paper folder, adding what is odd to `problems`.
-fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>) -> PaperFolder {
+pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>) -> PaperFolder {
     let unreadable_folder = |reason: String| Problem::UnreadableFolder {
         folder: folder.to_owned(),
         reason,

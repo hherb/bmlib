@@ -23,6 +23,7 @@ Asserts against ``tests/fixtures/library_cases.json``, the file Rust's
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -285,3 +286,79 @@ def test_scan_never_writes_into_the_library(sample: Library) -> None:
     before = sorted(str(p) for p in sample.root.rglob("*"))
     sample.scan()
     assert sorted(str(p) for p in sample.root.rglob("*")) == before
+
+
+_SAVED_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+
+
+def _tree(root: Path) -> list[str]:
+    """Every file and folder under *root* (folders with a trailing slash), sorted."""
+    return sorted(
+        p.relative_to(root).as_posix() + ("/" if p.is_dir() else "") for p in root.rglob("*")
+    )
+
+
+def _paper_info(p: dict[str, Any]) -> PaperInfo:
+    return PaperInfo(
+        canonical_ids(p.get("pmid"), p.get("doi"), p.get("pmcid")),
+        p.get("title"),
+        p.get("year"),
+        p.get("first_author"),
+    )
+
+
+@pytest.mark.parametrize("case", _cases("save_scenarios"))
+def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) -> None:
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    saved: list[FileRef | None] = []
+    for step in case["steps"]:
+        op = step["op"]
+        saved.append(None)
+        if op == "save":
+            who = Installation.new(step["app"], step["id"], "Test Mac")
+            saved[-1] = lib.save(
+                who,
+                _paper_info(step["paper"]),
+                step["text"].encode(),
+                SourceKind(step["kind"]),
+                step["origin"],
+            )
+        elif op == "release":
+            ref = saved[step["of"]]
+            assert ref is not None
+            lib.release(Installation.new(step["app"], step["id"], "Test Mac"), ref)
+        elif op == "remove_file":
+            ref = saved[step["of"]]
+            assert ref is not None
+            lib.remove_file(ref)
+        elif op == "remove_folder":
+            if step.get("expect") == "bad_name":
+                with pytest.raises(BadName):
+                    lib.remove_folder(step["folder"])
+            else:
+                lib.remove_folder(step["folder"])
+        elif op == "read":
+            ref = saved[step["of"]]
+            assert ref is not None
+            with pytest.raises(Missing):
+                lib.read(ref)
+        elif op == "used_by":
+            ref = saved[step["of"]]
+            assert ref is not None
+            users = sorted(
+                f"{i.app}-{i.id}"
+                for f in lib.scan().folders
+                if f.folder == ref.folder
+                for i in f.used_by(ref.sha256)
+            )
+            assert users == step["expect"]
+        else:
+            raise AssertionError(op)
+    want = case["expect"]
+    assert _tree(lib.root) == want["paths"]
+    for rel, record in want["records"].items():
+        got = json.loads((lib.root / rel).read_text(encoding="utf-8"))
+        for entry in got["files"]:
+            assert _SAVED_AT.fullmatch(entry.pop("saved_at"))
+        assert got == record, rel

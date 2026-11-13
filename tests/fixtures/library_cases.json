@@ -1228,5 +1228,832 @@
       },
       "expect": "bad_name"
     }
-  ]
+  ],
+ "save_scenarios": [
+  {
+   "name": "first save into an empty library",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the same bytes by a second installation",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "a second file found by DOI only",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/x",
+      "pmcid": "PMC9"
+     },
+     "text": "<article>one</article>",
+     "kind": "jats",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/jats-605738b5c097.xml",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": "PMC9",
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       },
+       {
+        "sha256": "605738b5c0975fc1d98e8cf11e74a0130a7a776832200bfdf770f7f7bfeeb466",
+        "kind": "jats",
+        "name": "jats-605738b5c097.xml",
+        "origin": "unit test",
+        "size": 22
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "folder_clash_by_case_takes_suffix",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "Statins"
+     },
+     "text": "statins one",
+     "kind": "text",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "STATINS"
+     },
+     "text": "statins two",
+     "kind": "text",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/STATINS (no identifier) (2)/",
+     "papers/STATINS (no identifier) (2)/records/",
+     "papers/STATINS (no identifier) (2)/records/studyanalyzer-aaaa.json",
+     "papers/STATINS (no identifier) (2)/text-6d1e8f134305.txt",
+     "papers/Statins (no identifier)/",
+     "papers/Statins (no identifier)/records/",
+     "papers/Statins (no identifier)/records/studyanalyzer-aaaa.json",
+     "papers/Statins (no identifier)/text-9b1bffacccb0.txt"
+    ],
+    "records": {
+     "papers/Statins (no identifier)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "Statins",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "9b1bffacccb062417b844a7716db9054bc5b09f07545436bcfd8fd85c7e90e06",
+        "kind": "text",
+        "name": "text-9b1bffacccb0.txt",
+        "origin": "unit test",
+        "size": 11
+       }
+      ]
+     },
+     "papers/STATINS (no identifier) (2)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "STATINS",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "6d1e8f1343058e5bd7846b73bdeb1ba03eb2148819f4fb1dfcf25a9c6910134d",
+        "kind": "text",
+        "name": "text-6d1e8f134305.txt",
+        "origin": "unit test",
+        "size": 11
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "a paper with no identifiers saved twice",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "Notes"
+     },
+     "text": "some notes",
+     "kind": "text",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "Notes"
+     },
+     "text": "some notes",
+     "kind": "text",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "title": "Notes"
+     },
+     "text": "some notes",
+     "kind": "text",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/Notes (no identifier)/",
+     "papers/Notes (no identifier)/records/",
+     "papers/Notes (no identifier)/records/medicalfactchecker-bbbb.json",
+     "papers/Notes (no identifier)/records/studyanalyzer-aaaa.json",
+     "papers/Notes (no identifier)/text-237bac67a518.txt"
+    ],
+    "records": {
+     "papers/Notes (no identifier)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "Notes",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "237bac67a518e2dfc901ecbf060f59cde465d4644cf9d0783a877a321f9bbcb3",
+        "kind": "text",
+        "name": "text-237bac67a518.txt",
+        "origin": "unit test",
+        "size": 10
+       }
+      ]
+     },
+     "papers/Notes (no identifier)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "Notes",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "237bac67a518e2dfc901ecbf060f59cde465d4644cf9d0783a877a321f9bbcb3",
+        "kind": "text",
+        "name": "text-237bac67a518.txt",
+        "origin": "unit test",
+        "size": 10
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "release then scan",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    },
+    {
+     "op": "release",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb"
+     ]
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": []
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_file then read",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_file",
+     "of": 0
+    },
+    {
+     "op": "read",
+     "of": 0,
+     "expect": "missing"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder ../x is refused",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "../x",
+     "expect": "bad_name"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder a/b is refused",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "a/b",
+     "expect": "bad_name"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder .. is refused",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "..",
+     "expect": "bad_name"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder clears the paper",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "2024 Smith – Metformin (PMID 111)"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
+  }
+ ]
 }

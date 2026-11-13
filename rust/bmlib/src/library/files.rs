@@ -19,8 +19,6 @@
 //!
 //! Nothing here overwrites: [`write_once`] publishes with
 //! [`crate::atomic::atomic_write`] and refuses a different file of the same name.
-// Task 5 uses the writers; drop this allow when it does.
-#![allow(dead_code)]
 
 use std::fs;
 use std::io;
@@ -178,6 +176,22 @@ pub(crate) fn create_dir_new(path: &Path) -> io::Result<bool> {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
         Err(e) => Err(e),
     }
+}
+
+/// Make the directory `path` and any missing parents; fine when it exists.
+pub(crate) fn create_dir_all(path: &Path) -> io::Result<()> {
+    fs::create_dir_all(path)
+}
+
+/// Rename `from` to `to`.
+pub(crate) fn rename(from: &Path, to: &Path) -> io::Result<()> {
+    fs::rename(from, to)
+}
+
+/// Publish `bytes` at `path` atomically, replacing what is there. Only for a
+/// file its writer alone owns (an installation's own record).
+pub(crate) fn write_replace(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
+    crate::atomic::atomic_write(path, bytes).map_err(|e| io_error(path, &e, true))
 }
 
 /// Delete one file.

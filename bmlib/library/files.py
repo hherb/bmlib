@@ -151,6 +151,27 @@ def create_dir_new(path: Path) -> bool:
     return True
 
 
+def create_dir_all(path: Path) -> None:
+    """Make the directory *path* and any missing parents; fine when it exists."""
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def rename(source: Path, target: Path) -> None:
+    """Rename *source* to *target*."""
+    source.rename(target)
+
+
+def write_replace(path: Path, data: bytes) -> None:
+    """Publish *data* at *path* atomically, replacing what is there.
+
+    Only for a file its writer alone owns (an installation's own record).
+    """
+    try:
+        atomic_write(path, data)
+    except OSError as e:
+        raise io_error(path, e, write=True) from e
+
+
 def remove_file(path: Path) -> None:
     """Delete one file."""
     path.unlink()

@@ -34,13 +34,20 @@ from bmlib.library.files import (
     sha256_hex,
     write_once,
 )
+from bmlib.library.ids import Installation, PaperInfo, SourceKind
+from bmlib.library.save import (
+    release_file,
+    remove_paper_folder,
+    remove_source_file,
+    save_file,
+)
 from bmlib.library.scan import FileRef, Scan, read_file, scan_library
 
 _U32_MAX = 2**32 - 1
 
 
 class Library:
-    """An opened library folder; later tasks add save and remove."""
+    """An opened library folder."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -57,6 +64,32 @@ class Library:
     def read(self, file: FileRef) -> bytes:
         """Read a file's bytes, checking them against ``file.sha256`` (see :func:`read_file`)."""
         return read_file(self._root, file)
+
+    def save(
+        self,
+        who: Installation,
+        paper: PaperInfo,
+        data: bytes,
+        kind: SourceKind,
+        origin: str,
+    ) -> FileRef:
+        """Save *data* for *paper* and note it in *who*'s record (see :func:`save_file`).
+
+        Never overwrites: a file of that name with other bytes raises :class:`FileClash`.
+        """
+        return save_file(self._root, who, paper, data, kind, origin)
+
+    def release(self, who: Installation, file: FileRef) -> None:
+        """Drop *file* from *who*'s record only; the file stays (see :func:`release_file`)."""
+        release_file(self._root, who, file)
+
+    def remove_file(self, file: FileRef) -> None:
+        """Delete one source file, the manual clear (see :func:`remove_source_file`)."""
+        remove_source_file(self._root, file)
+
+    def remove_folder(self, folder: str) -> None:
+        """Delete a paper's whole folder, the manual clear (see :func:`remove_paper_folder`)."""
+        remove_paper_folder(self._root, folder)
 
 
 def _check_marker(root: Path, data: bytes) -> None:
