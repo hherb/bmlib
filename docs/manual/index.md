@@ -36,7 +36,7 @@ pip install -e ".[all,dev]"
 
 ## Module Overview
 
-bmlib is organised into twelve modules, each with a focused responsibility:
+bmlib is organised into thirteen modules, each with a focused responsibility:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
@@ -52,6 +52,7 @@ bmlib is organised into twelve modules, each with a focused responsibility:
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building, locating an LLM's quoted passage *(0.12.0)* (pure stdlib) | [citations.md](citations.md) |
 | [`bmlib.embed`](embeddings.md) | *(0.12.0)* In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download, a paper's chunks stored and searched | [embeddings.md](embeddings.md) |
 | [`bmlib.secrets`](secrets.md) | *(0.13.0)* API keys by provider in one OS keychain item, read once for `get`s and cached; the same item as Rust's (#686) | [secrets.md](secrets.md) |
+| [`bmlib.library`](library.md) | A shared folder of research papers several apps read and write: write-once source files, one record per installation, scan, find, read, save *(unreleased)* (pure stdlib; Rust `bmlib::library`) | [library.md](library.md) |
 
 ## Architecture Principles
 

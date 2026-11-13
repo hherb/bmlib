@@ -62,6 +62,7 @@ pub mod embed;
 pub mod fulltext;
 #[cfg(feature = "http-ureq")]
 pub mod http;
+pub mod library;
 pub mod llm;
 pub mod publications;
 pub mod quality;
@@ -97,6 +98,8 @@ mod manual {
     struct Fulltext;
     #[doc = include_str!("../docs/manual/http.md")]
     struct Http;
+    #[doc = include_str!("../docs/manual/library.md")]
+    struct Library;
     #[doc = include_str!("../docs/manual/llm.md")]
     struct Llm;
     #[doc = include_str!("../docs/manual/publications.md")]

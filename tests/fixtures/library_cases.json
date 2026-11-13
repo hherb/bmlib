@@ -1,0 +1,2513 @@
+{
+ "canonical_ids": [
+  {
+   "name": "pmid strips zeros",
+   "pmid": " 0038012345 ",
+   "expect": {
+    "pmid": "38012345",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid preprint lower",
+   "pmid": "ppr123",
+   "expect": {
+    "pmid": "PPR123",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid preprint upper",
+   "pmid": "PPR123",
+   "expect": {
+    "pmid": "PPR123",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid all zeros",
+   "pmid": "000",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid letters",
+   "pmid": "12a",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid bare PPR",
+   "pmid": "PPR",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid full-width",
+   "pmid": "１２",
+   "error": "pmid"
+  },
+  {
+   "name": "pmid blank",
+   "pmid": "  ",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi url",
+   "doi": "https://doi.org/10.1/AbC",
+   "expect": {
+    "pmid": null,
+    "doi": "10.1/abc",
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi prefix",
+   "doi": "doi:10.1/x",
+   "expect": {
+    "pmid": null,
+    "doi": "10.1/x",
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi wrong registrant",
+   "doi": "11.1/x",
+   "error": "doi"
+  },
+  {
+   "name": "doi no slash",
+   "doi": "10.1",
+   "error": "doi"
+  },
+  {
+   "name": "doi blank",
+   "doi": " \t",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmcid lower prefix",
+   "pmcid": "pmc0012",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": "PMC12"
+   }
+  },
+  {
+   "name": "pmcid bare",
+   "pmcid": "12",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": "PMC12"
+   }
+  },
+  {
+   "name": "pmcid no digits",
+   "pmcid": "PMC",
+   "error": "pmcid"
+  },
+  {
+   "name": "pmcid full-width",
+   "pmcid": "１２",
+   "error": "pmcid"
+  },
+  {
+   "name": "pmcid zeros",
+   "pmcid": "PMC000",
+   "error": "pmcid"
+  },
+  {
+   "name": "pmcid blank",
+   "pmcid": "  ",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "all three",
+   "pmid": "1",
+   "doi": "10.5/Z",
+   "pmcid": "9",
+   "expect": {
+    "pmid": "1",
+    "doi": "10.5/z",
+    "pmcid": "PMC9"
+   }
+  },
+  {
+   "name": "nothing",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  }
+ ],
+ "installations": [
+  {
+   "name": "valid",
+   "app": "studyanalyzer",
+   "id": "a1b2-c3",
+   "label": "Horst's MacBook",
+   "expect": "studyanalyzer-a1b2-c3.json"
+  },
+  {
+   "name": "label of 200",
+   "app": "app",
+   "id": "x",
+   "label": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "expect": "app-x.json"
+  },
+  {
+   "name": "upper app",
+   "app": "Study",
+   "id": "x",
+   "label": "L",
+   "error": "app"
+  },
+  {
+   "name": "empty app",
+   "app": "",
+   "id": "x",
+   "label": "L",
+   "error": "app"
+  },
+  {
+   "name": "app with hyphen",
+   "app": "my-app",
+   "id": "x",
+   "label": "L",
+   "error": "app"
+  },
+  {
+   "name": "slash id",
+   "app": "app",
+   "id": "a/b",
+   "label": "L",
+   "error": "id"
+  },
+  {
+   "name": "empty id",
+   "app": "app",
+   "id": "",
+   "label": "L",
+   "error": "id"
+  },
+  {
+   "name": "65-char id",
+   "app": "app",
+   "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "label": "L",
+   "error": "id"
+  },
+  {
+   "name": "bidi label",
+   "app": "app",
+   "id": "x",
+   "label": "Mac‮book",
+   "error": "label"
+  },
+  {
+   "name": "control label",
+   "app": "app",
+   "id": "x",
+   "label": "Mac\nbook",
+   "error": "label"
+  },
+  {
+   "name": "empty label",
+   "app": "app",
+   "id": "x",
+   "label": "",
+   "error": "label"
+  },
+  {
+   "name": "201-char label",
+   "app": "app",
+   "id": "x",
+   "label": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "error": "label"
+  }
+ ],
+ "folder_names": [
+  {
+   "name": "design example",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": "Metformin and cognition",
+   "pmid": "38012345",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 Smith – Metformin and cognition (PMID 38012345)"
+  },
+  {
+   "name": "no title",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": null,
+   "pmid": "38012345",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 Smith (PMID 38012345)"
+  },
+  {
+   "name": "no year no author",
+   "year": null,
+   "first_author": null,
+   "title": "Metformin",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Metformin (PMID 1)"
+  },
+  {
+   "name": "year out of range",
+   "year": 999,
+   "first_author": "Lee",
+   "title": "T",
+   "pmid": "8",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Lee – T (PMID 8)"
+  },
+  {
+   "name": "year only",
+   "year": 2024,
+   "first_author": null,
+   "title": "T",
+   "pmid": "8",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 – T (PMID 8)"
+  },
+  {
+   "name": "long author cut to 40",
+   "year": 2024,
+   "first_author": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "title": null,
+   "pmid": "8",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA (PMID 8)"
+  },
+  {
+   "name": "doi only",
+   "year": null,
+   "first_author": null,
+   "title": null,
+   "pmid": null,
+   "doi": "10.1/x",
+   "pmcid": null,
+   "expect": "(DOI 10.1 x)"
+  },
+  {
+   "name": "pmid wins over doi",
+   "year": null,
+   "first_author": null,
+   "title": "T",
+   "pmid": "3",
+   "doi": "10.1/x",
+   "pmcid": "PMC3",
+   "expect": "T (PMID 3)"
+  },
+  {
+   "name": "pmcid only",
+   "year": null,
+   "first_author": null,
+   "title": "T",
+   "pmid": null,
+   "doi": null,
+   "pmcid": "PMC77",
+   "expect": "T (PMCID PMC77)"
+  },
+  {
+   "name": "no identifier",
+   "year": null,
+   "first_author": null,
+   "title": "Hello",
+   "pmid": null,
+   "doi": null,
+   "pmcid": null,
+   "expect": "Hello (no identifier)"
+  },
+  {
+   "name": "nothing at all",
+   "year": null,
+   "first_author": null,
+   "title": null,
+   "pmid": null,
+   "doi": null,
+   "pmcid": null,
+   "expect": "(no identifier)"
+  },
+  {
+   "name": "title cut at the last space",
+   "year": null,
+   "first_author": null,
+   "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bcdef",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (PMID 2)"
+  },
+  {
+   "name": "space exactly at the limit",
+   "year": null,
+   "first_author": null,
+   "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bcdef",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (PMID 2)"
+  },
+  {
+   "name": "title of 60 is kept whole",
+   "year": null,
+   "first_author": null,
+   "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (PMID 2)"
+  },
+  {
+   "name": "title without a space is hard cut",
+   "year": null,
+   "first_author": null,
+   "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "pmid": "2",
+   "doi": null,
+   "pmcid": null,
+   "expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (PMID 2)"
+  },
+  {
+   "name": "forbidden characters",
+   "year": null,
+   "first_author": null,
+   "title": "a/b: c?",
+   "pmid": "3",
+   "doi": null,
+   "pmcid": null,
+   "expect": "a b c (PMID 3)"
+  },
+  {
+   "name": "control and bidi characters",
+   "year": null,
+   "first_author": null,
+   "title": "a\tb‮c",
+   "pmid": "3",
+   "doi": null,
+   "pmcid": null,
+   "expect": "a b c (PMID 3)"
+  },
+  {
+   "name": "CON as the title",
+   "year": null,
+   "first_author": null,
+   "title": "CON",
+   "pmid": "4",
+   "doi": null,
+   "pmcid": null,
+   "expect": "CON (PMID 4)"
+  },
+  {
+   "name": "reserved name before a dot",
+   "year": null,
+   "first_author": null,
+   "title": "con.artist",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_con.artist (PMID 5)"
+  },
+  {
+   "name": "reserved name, body cut keeps the underscore in budget",
+   "year": null,
+   "first_author": null,
+   "title": "con.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+   "pmid": "7",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_con.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  },
+  {
+   "name": "unreserved over-length name fills all 150 bytes",
+   "year": null,
+   "first_author": null,
+   "title": "cox.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+   "pmid": "7",
+   "doi": null,
+   "pmcid": null,
+   "expect": "cox.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  },
+  {
+   "name": "reserved name as an author with a dot",
+   "year": null,
+   "first_author": "Nul.",
+   "title": null,
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_Nul. (PMID 5)"
+  },
+  {
+   "name": "trailing dots in the title",
+   "year": null,
+   "first_author": null,
+   "title": "Ends...",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Ends... (PMID 5)"
+  },
+  {
+   "name": "only dots",
+   "year": null,
+   "first_author": null,
+   "title": "...",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "(PMID 5)"
+  },
+  {
+   "name": "leading dot",
+   "year": null,
+   "first_author": null,
+   "title": ".hidden",
+   "pmid": "5",
+   "doi": null,
+   "pmcid": null,
+   "expect": "hidden (PMID 5)"
+  },
+  {
+   "name": "NFD comes out NFC",
+   "year": null,
+   "first_author": null,
+   "title": "Café",
+   "pmid": "6",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Café (PMID 6)"
+  },
+  {
+   "name": "300-character DOI, whole name cut",
+   "year": null,
+   "first_author": null,
+   "title": null,
+   "pmid": null,
+   "doi": "10.1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "pmcid": null,
+   "expect": "(DOI 10.1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "long DOI after a title",
+   "year": null,
+   "first_author": null,
+   "title": "T",
+   "pmid": null,
+   "doi": "10.1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "pmcid": null,
+   "expect": "T (DOI 10.1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "CJK title hits the byte cap, id kept",
+   "year": 2024,
+   "first_author": "Wang",
+   "title": "漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+   "pmid": "7",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 Wang – 漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  },
+  {
+   "name": "numbered short name",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": "Metformin",
+   "pmid": "111",
+   "doi": null,
+   "pmcid": null,
+   "n": 2,
+   "expect": "2024 Smith – Metformin (PMID 111) (2)"
+  },
+  {
+   "name": "numbered name that forces a body cut",
+   "year": 2024,
+   "first_author": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "title": "Effects of long term metformin therapy on cognitive decline in older adults with type two diabetes",
+   "pmid": null,
+   "doi": "10.1234/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "pmcid": null,
+   "n": 7,
+   "expect": "2024 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA – E (DOI 10.1234 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) (7)"
+  },
+  {
+   "name": "numbered 1000",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": "Metformin",
+   "pmid": "111",
+   "doi": null,
+   "pmcid": null,
+   "n": 1000,
+   "expect": "2024 Smith – Metformin (PMID 111) (1000)"
+  },
+  {
+   "name": "NFD title is normalised before the 60-character cut",
+   "year": null,
+   "first_author": null,
+   "title": "Études cliniques de la créatinine chez les âgés, une revue é",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Études cliniques de la créatinine chez les âgés, une revue é (PMID 1)"
+  }
+ ],
+ "records": [
+  {
+   "name": "example parses and renders",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "minimal record, absent optionals",
+   "text": "{\"format\": \"bmlib-library-record\", \"version\": 1, \"installation\": {\"app\": \"studyanalyzer\", \"id\": \"7c1e0b2a\", \"label\": \"StudyAnalyzer on Horst's MacBook \\u00e9\"}, \"paper\": {}, \"files\": []}",
+   "expect": "ok",
+   "files": 0,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": null,\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": null,\n    \"year\": null,\n    \"first_author\": null\n  },\n  \"files\": []\n}\n"
+  },
+  {
+   "name": "unknown fields ignored",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\",\n    \"extra\": [\n      1\n    ]\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ],\n  \"extra\": 1\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "version 2 is newer",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 2,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "newer",
+   "version": 2
+  },
+  {
+   "name": "newer wins over other faults",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 3,\n  \"installation\": {},\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "newer",
+   "version": 3
+  },
+  {
+   "name": "wrong format",
+   "text": "{\n  \"format\": \"x\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version zero",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 0,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version a float",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1.5,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version a string",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": \"1\",\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "bad installation",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"Bad\",\n    \"id\": \"x\",\n    \"label\": \"L\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "pmid not canonical",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"007\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "doi not canonical",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/X\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "blank pmid not canonical",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "year a string",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": \"2024\",\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "kind docx",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"docx\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "sha uppercase",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-AAAAAAAAAAAA.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "sha short",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "name hex differs from digest",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-bbbbbbbbbbbb.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "name wrong extension",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.xml\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "duplicated file",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    },\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "negative size",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": -1,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "files missing",
+   "text": "{\"format\": \"bmlib-library-record\", \"version\": 1, \"installation\": {\"app\": \"studyanalyzer\", \"id\": \"7c1e0b2a\", \"label\": \"StudyAnalyzer on Horst's MacBook \\u00e9\"}, \"paper\": {\"pmid\": \"38012345\", \"doi\": \"10.1/x\", \"pmcid\": null, \"title\": \"A trial of \\\"x\\\" \\u2013 \\u00fc\", \"year\": 2024, \"first_author\": \"Smith\"}}",
+   "expect": "unreadable"
+  },
+  {
+   "name": "malformed JSON",
+   "text": "{\"format\": ",
+   "expect": "unreadable"
+  },
+  {
+   "name": "not an object",
+   "text": "[]",
+   "expect": "unreadable"
+  },
+  {
+   "name": "size -0",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": -0,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 0,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "version -1",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": -1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version 2.0",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 2.0,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version 1.0",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1.0,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "year 1e3",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 1e3,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version 2^32",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 4294967296,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "year beyond i32",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2147483648,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "size 2^64",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 18446744073709551616,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "origin null",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": null,\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "duplicate key",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"version\": 7,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "newer",
+   "version": 7
+  },
+  {
+   "name": "size -0.0",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": -0.0,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 0,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "size 0.0",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 0.0,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "year -0",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": -0,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 0,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  }
+ ],
+  "open": [
+    {
+      "name": "empty",
+      "entries": [],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    },
+    {
+      "name": "only_ds_store",
+      "entries": [
+        {
+          "file": ".DS_Store",
+          "text": ""
+        }
+      ],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    },
+    {
+      "name": "marker",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 1}"
+        },
+        {
+          "dir": "papers"
+        }
+      ],
+      "expect": "opened"
+    },
+    {
+      "name": "marker_without_papers",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 1}"
+        }
+      ],
+      "expect": "opened"
+    },
+    {
+      "name": "marker_version_2",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 2}"
+        }
+      ],
+      "expect": "newer",
+      "version": 2
+    },
+    {
+      "name": "marker_wrong_format",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"x\", \"version\": 1}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_not_json",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "nope"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "users_notes",
+      "entries": [
+        {
+          "file": "notes.txt",
+          "text": "hi"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "root_missing",
+      "entries": null,
+      "expect": "unreachable"
+    },
+    {
+      "name": "marker_version_negative",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": -1}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_zero",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 0}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_float",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 1.0}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_2_pow_32",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 4294967296}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_2_pow_32_minus_1",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 4294967295}"
+        }
+      ],
+      "expect": "newer",
+      "version": 4294967295
+    },
+    {
+      "name": "marker_version_2_pow_64",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 18446744073709551616}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_missing",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\"}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_string",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": \"1\"}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "only_icloud_placeholder",
+      "entries": [
+        {
+          "file": ".paper.pdf.icloud",
+          "text": ""
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "only_dotfiles",
+      "entries": [
+        {
+          "file": ".hidden",
+          "text": ""
+        },
+        {
+          "file": "Thumbs.db",
+          "text": ""
+        }
+      ],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    },
+    {
+      "name": "only_leftover_temporaries",
+      "entries": [
+        {
+          "file": "bmlib-library.json.bmlib-tmp-uuid4hex0000000000000000-00000000-0000000000000000",
+          "text": "{"
+        },
+        {
+          "file": ".bmlib-library.json.0123456789abcdef0123456789abcdef.tmp",
+          "text": "{"
+        }
+      ],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    }
+  ],
+  "scan": [
+    {
+      "name": "sample tree",
+      "expect": {
+        "folders": [
+          {
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "ids": {
+              "pmid": "111",
+              "doi": null,
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "studyanalyzer",
+                "id": "eeee",
+                "files": [
+                  "pdf-0ad7ce4adfea.pdf"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "pdf-0ad7ce4adfea.pdf",
+              "text-7fefb7d6548e.txt"
+            ],
+            "used_by": {
+              "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2": [
+                "studyanalyzer-eeee"
+              ]
+            }
+          },
+          {
+            "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+            "ids": {
+              "pmid": "38012345",
+              "doi": "10.1/x",
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "medicalfactchecker",
+                "id": "bbbb",
+                "files": [
+                  "pdf-9b101e6bb96e.pdf"
+                ]
+              },
+              {
+                "app": "studyanalyzer",
+                "id": "aaaa",
+                "files": [
+                  "pdf-9b101e6bb96e.pdf",
+                  "jats-354be1cb35ec.xml"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "jats-354be1cb35ec.xml",
+              "pdf-9b101e6bb96e.pdf"
+            ],
+            "used_by": {
+              "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1": [
+                "medicalfactchecker-bbbb",
+                "studyanalyzer-aaaa"
+              ],
+              "354be1cb35ec8788619e2bc3dba7943f8d722b85a3d684e09b0a1eea539e8cca": [
+                "studyanalyzer-aaaa"
+              ]
+            }
+          },
+          {
+            "folder": "Smith – Metformin and cognition (DOI 10.1 x)",
+            "ids": {
+              "pmid": null,
+              "doi": "10.1/x",
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "studyanalyzer",
+                "id": "dddd",
+                "files": [
+                  "html-17fcaf45974b.html"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "html-17fcaf45974b.html"
+            ],
+            "used_by": {
+              "17fcaf45974bd3b6594c78a308d832e0b08139eb60693c4307f318ad7879bfe7": [
+                "studyanalyzer-dddd"
+              ]
+            }
+          },
+          {
+            "folder": "Zhou – Aspirin (PMID 1)",
+            "ids": {
+              "pmid": "1",
+              "doi": null,
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "medicalfactchecker",
+                "id": "iiii",
+                "files": [
+                  "text-bd27cffcb5f3.txt"
+                ]
+              },
+              {
+                "app": "studyanalyzer",
+                "id": "hhhh",
+                "files": [
+                  "text-bd27cffcb5f3.txt"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "text-bd27cffcb5f3.txt"
+            ],
+            "used_by": {
+              "bd27cffcb5f387ac58cc074521852c53e0b3b0c2cdf1c14930cffcc06773e8fa": [
+                "medicalfactchecker-iiii",
+                "studyanalyzer-hhhh"
+              ]
+            }
+          }
+        ],
+        "problems": [
+          {
+            "kind": "unreadable_record",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "broken.json"
+          },
+          {
+            "kind": "misnamed_record",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "copy of studyanalyzer-ffff.json"
+          },
+          {
+            "kind": "newer_record",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "studyanalyzer-future.json",
+            "version": 2
+          },
+          {
+            "kind": "record_not_downloaded",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "studyanalyzer-gggg.json"
+          },
+          {
+            "kind": "unrecorded_file",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "name": "text-7fefb7d6548e.txt"
+          },
+          {
+            "kind": "leftover_temp",
+            "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+            "name": "records/.studyanalyzer-aaaa.json.0123456789abcdef0123456789abcdef.tmp"
+          },
+          {
+            "kind": "leftover_temp",
+            "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+            "name": "pdf-9b101e6bb96e.pdf.bmlib-tmp-uuid4hex0000000000000000-00000000-0000000000000000"
+          },
+          {
+            "kind": "conflicting_ids",
+            "folder": "Zhou – Aspirin (PMID 1)",
+            "field": "pmid"
+          },
+          {
+            "kind": "stray_entry",
+            "name": "stray.txt"
+          }
+        ]
+      }
+    }
+  ],
+  "find": [
+    {
+      "name": "pmid alone finds the whole paper, both halves of the split",
+      "pmid": "38012345",
+      "expect": [
+        "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "Smith – Metformin and cognition (DOI 10.1 x)"
+      ]
+    },
+    {
+      "name": "pmid and doi together find both",
+      "pmid": "38012345",
+      "doi": "10.1/x",
+      "expect": [
+        "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "Smith – Metformin and cognition (DOI 10.1 x)"
+      ]
+    },
+    {
+      "name": "doi finds both split folders",
+      "doi": "10.1/x",
+      "expect": [
+        "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "Smith – Metformin and cognition (DOI 10.1 x)"
+      ]
+    },
+    {
+      "name": "pmid finds Lee",
+      "pmid": "111",
+      "expect": [
+        "2023 Lee – Statins (PMID 111)"
+      ]
+    },
+    {
+      "name": "unknown pmcid finds none",
+      "pmcid": "PMC9",
+      "expect": []
+    },
+    {
+      "name": "no identifiers finds none",
+      "expect": []
+    },
+    {
+      "name": "an identifier that lost a conflict inside a folder still finds it",
+      "pmid": "2",
+      "expect": [
+        "Zhou – Aspirin (PMID 1)"
+      ]
+    },
+    {
+      "name": "the identifier that won finds it too",
+      "pmid": "1",
+      "expect": [
+        "Zhou – Aspirin (PMID 1)"
+      ]
+    }
+  ],
+  "find_digest": [
+    {
+      "name": "the Smith PDF",
+      "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+      "expect": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "pdf-9b101e6bb96e.pdf",
+        "kind": "pdf"
+      }
+    },
+    {
+      "name": "the Smith JATS",
+      "sha256": "354be1cb35ec8788619e2bc3dba7943f8d722b85a3d684e09b0a1eea539e8cca",
+      "expect": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "jats-354be1cb35ec.xml",
+        "kind": "jats"
+      }
+    },
+    {
+      "name": "the html in the split folder",
+      "sha256": "17fcaf45974bd3b6594c78a308d832e0b08139eb60693c4307f318ad7879bfe7",
+      "expect": {
+        "folder": "Smith – Metformin and cognition (DOI 10.1 x)",
+        "name": "html-17fcaf45974b.html",
+        "kind": "html"
+      }
+    },
+    {
+      "name": "the unrecorded text file is still found",
+      "sha256": "7fefb7d6548e817ea671dc0efc628ad0e26d8aa6618f73a88db2625a8378cf41",
+      "expect": {
+        "folder": "2023 Lee – Statins (PMID 111)",
+        "name": "text-7fefb7d6548e.txt",
+        "kind": "text"
+      }
+    },
+    {
+      "name": "an unknown digest",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expect": null
+    },
+    {
+      "name": "a digest that is not 64 hex digits",
+      "sha256": "abc",
+      "expect": null
+    },
+    {
+      "name": "a placeholder is not a file",
+      "sha256": "a07fba7957bd20c6151bd11d24640c993f2af5b3bd227f7dd423c4558ac6c2d9",
+      "expect": null
+    }
+  ],
+  "group": [
+    {
+      "name": "Smith splits join, Lee and Zhou stand alone",
+      "expect": [
+        [
+          0
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          3
+        ]
+      ]
+    }
+  ],
+  "read": [
+    {
+      "name": "a good file",
+      "file": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "pdf-9b101e6bb96e.pdf",
+        "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+        "kind": "pdf"
+      },
+      "expect": "ok",
+      "bytes_sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1"
+    },
+    {
+      "name": "bytes that do not match",
+      "file": {
+        "folder": "2023 Lee – Statins (PMID 111)",
+        "name": "pdf-0ad7ce4adfea.pdf",
+        "sha256": "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2",
+        "kind": "pdf"
+      },
+      "expect": "digest_mismatch",
+      "expected": "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2",
+      "found": "bfc4af50aa75dd3b0599b39fd3479a3f3b506fa9d831b4947cddaf9cf95cb39d"
+    },
+    {
+      "name": "an online-only placeholder",
+      "file": {
+        "folder": "2023 Lee – Statins (PMID 111)",
+        "name": "pdf-a07fba7957bd.pdf",
+        "sha256": "a07fba7957bd20c6151bd11d24640c993f2af5b3bd227f7dd423c4558ac6c2d9",
+        "kind": "pdf"
+      },
+      "expect": "not_downloaded"
+    },
+    {
+      "name": "a missing file",
+      "file": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "pdf-000000000000.pdf",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "kind": "pdf"
+      },
+      "expect": "missing"
+    },
+    {
+      "name": "a folder that climbs out",
+      "file": {
+        "folder": "..",
+        "name": "pdf-9b101e6bb96e.pdf",
+        "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+        "kind": "pdf"
+      },
+      "expect": "bad_name"
+    },
+    {
+      "name": "a file name with a slash",
+      "file": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "records/studyanalyzer-aaaa.json",
+        "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+        "kind": "pdf"
+      },
+      "expect": "bad_name"
+    }
+  ],
+ "save_scenarios": [
+  {
+   "name": "first save into an empty library",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the same bytes by a second installation",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "a second file found by DOI only",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/x",
+      "pmcid": "PMC9"
+     },
+     "text": "<article>one</article>",
+     "kind": "jats",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/jats-605738b5c097.xml",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": "PMC9",
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       },
+       {
+        "sha256": "605738b5c0975fc1d98e8cf11e74a0130a7a776832200bfdf770f7f7bfeeb466",
+        "kind": "jats",
+        "name": "jats-605738b5c097.xml",
+        "origin": "unit test",
+        "size": 22
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "folder_clash_by_case_takes_suffix",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "Statins"
+     },
+     "text": "statins one",
+     "kind": "text",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "STATINS"
+     },
+     "text": "statins two",
+     "kind": "text",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/STATINS (no identifier) (2)/",
+     "papers/STATINS (no identifier) (2)/records/",
+     "papers/STATINS (no identifier) (2)/records/studyanalyzer-aaaa.json",
+     "papers/STATINS (no identifier) (2)/text-6d1e8f134305.txt",
+     "papers/Statins (no identifier)/",
+     "papers/Statins (no identifier)/records/",
+     "papers/Statins (no identifier)/records/studyanalyzer-aaaa.json",
+     "papers/Statins (no identifier)/text-9b1bffacccb0.txt"
+    ],
+    "records": {
+     "papers/Statins (no identifier)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "Statins",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "9b1bffacccb062417b844a7716db9054bc5b09f07545436bcfd8fd85c7e90e06",
+        "kind": "text",
+        "name": "text-9b1bffacccb0.txt",
+        "origin": "unit test",
+        "size": 11
+       }
+      ]
+     },
+     "papers/STATINS (no identifier) (2)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "STATINS",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "6d1e8f1343058e5bd7846b73bdeb1ba03eb2148819f4fb1dfcf25a9c6910134d",
+        "kind": "text",
+        "name": "text-6d1e8f134305.txt",
+        "origin": "unit test",
+        "size": 11
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "a paper with no identifiers saved twice",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "Notes"
+     },
+     "text": "some notes",
+     "kind": "text",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "title": "Notes"
+     },
+     "text": "some notes",
+     "kind": "text",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "title": "Notes"
+     },
+     "text": "some notes",
+     "kind": "text",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/Notes (no identifier)/",
+     "papers/Notes (no identifier)/records/",
+     "papers/Notes (no identifier)/records/medicalfactchecker-bbbb.json",
+     "papers/Notes (no identifier)/records/studyanalyzer-aaaa.json",
+     "papers/Notes (no identifier)/text-237bac67a518.txt"
+    ],
+    "records": {
+     "papers/Notes (no identifier)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "Notes",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "237bac67a518e2dfc901ecbf060f59cde465d4644cf9d0783a877a321f9bbcb3",
+        "kind": "text",
+        "name": "text-237bac67a518.txt",
+        "origin": "unit test",
+        "size": 10
+       }
+      ]
+     },
+     "papers/Notes (no identifier)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": null,
+       "pmcid": null,
+       "title": "Notes",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "237bac67a518e2dfc901ecbf060f59cde465d4644cf9d0783a877a321f9bbcb3",
+        "kind": "text",
+        "name": "text-237bac67a518.txt",
+        "origin": "unit test",
+        "size": 10
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "release then scan",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    },
+    {
+     "op": "release",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb"
+     ]
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": []
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_file then read",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_file",
+     "of": 0
+    },
+    {
+     "op": "read",
+     "of": 0,
+     "expect": "missing"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder ../x is refused",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "../x",
+     "expect": "bad_name"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder a/b is refused",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "a/b",
+     "expect": "bad_name"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder .. is refused",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "..",
+     "expect": "bad_name"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder clears the paper",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "2024 Smith – Metformin (PMID 111)"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "remove_file of a file already removed is missing",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_file",
+     "of": 0
+    },
+    {
+     "op": "remove_file",
+     "of": 0,
+     "expect": "missing"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder of a folder already removed is missing",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "2024 Smith – Metformin (PMID 111)"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "2024 Smith – Metformin (PMID 111)",
+     "expect": "missing"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "record_use notes a file another installation saved, merging the ids",
+   "steps": [
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "record_use",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0,
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/X"
+     }
+    },
+    {
+     "op": "record_use",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0,
+     "paper": {
+      "pmid": "111",
+      "title": "Metformin"
+     }
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  }
+ ],
+  "component": [
+    {
+      "name": "three dots resolve to papers itself on Windows",
+      "value": "...",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a lone space",
+      "value": " ",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a dot and a space",
+      "value": ". ",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a trailing dot names x on Windows",
+      "value": "x.",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a trailing space",
+      "value": "x ",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a leading space",
+      "value": " x",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a drive letter replaces the path",
+      "value": "C:",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a colon names a stream on NTFS",
+      "value": "a:b",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name",
+      "value": "con",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name before a dot",
+      "value": "NUL.txt",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name in another case",
+      "value": "Lpt9",
+      "expect": "bad_name"
+    },
+    {
+      "name": "the empty name",
+      "value": "",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a parent step",
+      "value": "..",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a slash",
+      "value": "a/b",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a backslash",
+      "value": "a\\b",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a NUL",
+      "value": "x\u0000",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a plain name",
+      "value": "y",
+      "expect": "ok"
+    },
+    {
+      "name": "a library folder name",
+      "value": "2024 Smith – Metformin (PMID 1)",
+      "expect": "ok"
+    },
+    {
+      "name": "a prefixed device name",
+      "value": "_CON",
+      "expect": "ok"
+    },
+    {
+      "name": "a device name inside a word",
+      "value": "console",
+      "expect": "ok"
+    },
+    {
+      "name": "a dot inside",
+      "value": "a.b",
+      "expect": "ok"
+    },
+    {
+      "name": "a leading dot",
+      "value": ".hidden",
+      "expect": "ok"
+    }
+  ]
+}

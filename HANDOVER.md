@@ -1,108 +1,99 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-13 (**#750 and #751, PR open — read *This session*
-first**). Merged since the last update: #749 (#748, below). Before it: #747
-(#746), #745 (#744), #740 (#656), #741 (#739), #742 and #743. **0.13.0 is on
-PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and **the Rust crate
-0.4.0 on crates.io** from the same commit._
+_Last updated: 2026-11-13 (**the shared paper library, step 1a, on
+`feat/shared-library` — read *This session* first**). Merged since the last
+update: #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744),
+#740 (#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0`
+on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io**
+from the same commit._
 
-## This session: PMC Open Data's record and JATS (#750, #751, PR open)
+## This session: `bmlib.library`, the shared paper library (step 1a, branch `feat/shared-library`)
 
-The maintainer chose both of #748's follow-ups, and an own lookup for the
-retraction flag rather than a `FullTextResult` field (a field would be empty
-whenever the bucket was not consulted, retracted papers included). Both
-languages, on `feat/pmc-open-data-json`:
+StudyAnalyzer's design
+(`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
+`...-library-1a-bmlib-module.md`) asks bmlib for a module that several apps
+use to share one folder of papers. Built in both languages, in a worktree
+(`~/src/bmlib-library`), six tasks, each reviewed:
 
-- **`pmc_open_data_record(pmc_id)`** → `PmcOpenDataRecord | None` (Rust
-  `Result<Option<_>, FullTextError>`): the versions listing, then the latest
-  version's `PMC<n>.<v>.json`. A record not of the shape read (a JSON type,
-  another article or version, a file URL naming another key) is refused, not
-  guessed at; a 404 record is `None`.
-- **The PDF beside JATS** reads the record instead of #748's PDF-key listing
-  (same two requests) and checks the bytes against its md5:
-  `"checksum-mismatch"`, a new `pdf_download_failure`, which may pass
-  (`pdf_failure_may_pass.json`).
-- **Tier 1c's third source**: when Europe PMC and NCBI give no body, the
-  bucket's JATS, md5-checked, `source` `"pmc_open_data"` (`_try_pmc_id` is now
-  a loop in Rust too). Every case where neither gives a body answers one more
-  request, so 11 Python tests, 9 Rust tests and 3 `fulltext_source.json` cases
-  gained the listing; 4 new contract cases; the two PDF-key listing fixtures
-  are replaced by three real-shaped records (their md5s are those of
-  `sample_article.xml` and `textless.pdf`: edit either file and update them).
-- Rust gains `md-5` 0.10. `test_renderer_version.py` re-pinned (models.py
-  moved, no rendering change, no version bump).
-- **Live** (Python, 2026-11-13): PMC12609458's record, JATS and PDF read, both
-  md5s matched; a wrong md5 gave `checksum-mismatch`. Rust was not run live.
-- **Not done**: one record per fetch (a JATS from the bucket reads the record
-  again for its PDF, two extra requests); the bucket's `.txt`; feeding
-  `is_retracted` to `retraction_status` (a design question, not filed).
-- **Gates**: one `cargo test --features pdf,html,keyring` and one
-  `-p bmlib --no-default-features` run failed once while the live probe ran
-  and passed on a rerun; the first output was overwritten, so the cause is
-  unknown. After the review fixes all four Rust test configurations passed at
-  the first run.
-- **Review fixes (finalcheck, same PR)**:
-  - A record missing a key is refused. Live records from 2010 to 2025 write
-    every key, with an explicit `null` where there is no value. Before, a
-    renamed `xml_url` would have read as "no JATS", an absence, for every
-    article.
-  - A PMID that is not a positive integer within u64 is refused.
-  - The record is decoded as `serde_json` reads it (`strict_json_loads`,
-    #572).
-  - A 200 listing that is not a `ListBucketResult` is a fault, where it read
-    as "no version" (from #748).
-  - `PmcOpenDataRecord.from_dict` refuses to guess. Rust's `Deserialize`
-    checks types only, which its doc says.
-  - Each refusal is asserted with its reason, in both languages.
-  - Four more contract cases: no JATS, a JATS 404, a JATS with no content,
-    and a listing that is not one. They add `pmc_open_data_record_no_xml.json`,
-    `pmc_open_data_record_empty_article.json` and
-    `pmc_open_data_empty_article.xml`.
-  - Not done:
-    - The three older `resp.json()` decodes in `service.py`, filed as
-      #753.
-    - Rust's public `pmc_open_data_record` gives a transport failure as
-      `FullTextError::Other`, where Python raises `httpx.HTTPError`. This is
-      documented on the method.
+- **What landed**: `bmlib/library/` and `rust/bmlib/src/library/`. Open, scan,
+  find (the whole linked group), find_digest, group, read (digest-checked),
+  save (write-once file, then the record), record_use (note a file another app
+  saved), release, remove_file, remove_folder; folder names (`folder_name`,
+  `folder_name_numbered`); versioned records; thirteen error kinds. Held
+  together by `tests/fixtures/library_cases.json` and the sample library
+  `tests/fixtures/library/sample/`; manuals `docs/manual/library.md` and
+  `rust/bmlib/docs/manual/library.md` (the Rust one is doc-tested). PR #754.
+  Review follow-ups: #755.
+- **The final review's fixes**: save, record_use and release validate `who`
+  and the ids before writing (a record `parse_record` refuses was being
+  written); `component()` refuses names
+  Windows resolves elsewhere (`...`, `x.`, `C:`, `con`); every record's ids
+  count for find and group, a conflict is `ConflictingIds`; `group` is linear;
+  an evicted own record is `NotDownloaded` (`RecordNotDownloaded` in a scan);
+  atomic-write temporaries are skipped and reported (`LeftoverTemp`); titles
+  are NFC before the cut.
+- **Rules to keep** (the reasoning is in `docs/DECISIONS.md`, "library"):
+  files are write-once; one record per installation; **nothing is deleted
+  automatically** (only the user's `remove_*`); no database; name clashes
+  judged under case folding; a folder of only newer records fails the save
+  with `NewerRecord`; iCloud placeholders count as user files on open; record
+  updates are serialised in one process only.
+- **Not done, and next**: **1b**, `FullTextService` reading from and filling a
+  library (StudyAnalyzer's plan; `save` rescans the library per call, 0.5 s at
+  4,000 papers in Python: the `shortcut:` there says to let 1b pass its
+  `Scan`); **1c**, the `bmlib-ffi` surface for the mobile apps. Not released:
+  the changelog entry is under Unreleased, and the version is still 0.13.0 /
+  0.4.0.
+- **Owed before the Windows build gets the Library setting**: (1) renaming
+  over an open file fails on Windows; retry with backoff, and stop mapping a
+  rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
+  limit: a 150-byte folder name plus `records/` and an atomic write's temporary
+  name can pass 260 characters; (3) the Windows-only gaps the final review
+  deferred (superscript `COM¹`-style device names, U+001C-U+001F as
+  whitespace in Python only).
+- **Owed by 1c (FFI)**: the conversion list: `find` / `used_by` return
+  borrowed values, `PaperIds::merged` a tuple, errors hold `&'static str` and
+  `PathBuf`, `RecordProblem` has tuple variants; every conversion must call the
+  validating constructors (`Installation::new`, `PaperIds::canonical`).
+- **Owed by Android (phase 4)**: the file operations are free functions on
+  `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
+  passed into `Library`.
+- **To check on a device in step 2**: macOS 14 and later evict iCloud files to
+  dataless files with the real name, not `.name.icloud` placeholders; reading
+  one downloads it (or fails), so `NotDownloaded` may never fire there.
+- **Left open on purpose**: separate processes of one installation writing one
+  record (out of scope; an app has one process per installation).
 
-## Earlier: the PDF beside JATS from PMC's AWS Open Data bucket (#748, merged as PR #749)
+## Earlier: PMC Open Data and the PDF beside JATS (merged as PRs #752, #749, #747, #745)
 
-A `pmc_open_data` candidate after the caller's `pdf` entries, before
-`europepmc_pdf`, by the JATS's own PMC ID; a marked hit with a PMC ID can seek
-without a DOI or PMID. StudyAnalyzer's PR #105 met a bot screen's 403 from every
-other PDF link of a CC BY article; impersonating a browser was refused.
-
-## Earlier: the PDF beside JATS reports the failure that may pass (#746, merged as PR #747)
-
-`http-408` may pass; with no PDF saved, the result carries the first
-failure that may pass, else `"search-failed"`, else the first failure, so
-the reported failure follows the mark. Seven `fulltext_source.json` cases.
-
-## Earlier: the PDF beside JATS is retried and sought again (#744, merged as PR #745)
-
-A download whose cause may pass is tried `PDF_BESIDE_JATS_ATTEMPTS` (3)
-times; with no PDF saved and any failure that may pass, the cache marks the
-JATS (`jats/<key>.pdf-retry`), and a later hit seeks again, at most
-`PDF_SEEK_AGAIN_LIMIT` (3) hits, counting itself before it seeks; a failed
-search is `"search-failed"`. Detail in CHANGELOG and the manual.
-- **Not covered**: a JATS cached while the option was off carries no mark
-  (the `shortcut:` in `_check_cache`); a failed Tier 0 PDF is not retried in
-  the run, only on a later marked hit.
-- **Left by the finalcheck review** (minor, no issue filed): the two
-  languages read a count past `u32` in a mark differently (no shared fixture
-  holds the mark's text); Rust's mark removal names no OS cause and has no
-  test; with a broken delete a paper gets `PDF_SEEK_AGAIN_LIMIT` − 1 looks.
+- **#752 (#750, #751)**: `pmc_open_data_record(pmc_id)` (Rust
+  `Result<Option<_>, FullTextError>`) reads the bucket's latest
+  `PMC<n>.<v>.json`, refusing a record of another shape; the PDF beside JATS
+  reads it and checks the md5 (`"checksum-mismatch"`, which may pass); Tier
+  1c's third source is the bucket's JATS (`source` `"pmc_open_data"`). The
+  record fixtures' md5s are those of `sample_article.xml` and `textless.pdf`:
+  edit either file and update them. Not done: one record per fetch, the
+  bucket's `.txt`, `is_retracted` into `retraction_status`, the three older
+  `resp.json()` decodes (#753); Rust gives a transport failure as
+  `FullTextError::Other` where Python raises `httpx.HTTPError`.
+- **#749 (#748)**: a `pmc_open_data` PDF candidate after the caller's `pdf`
+  entries, by the JATS's own PMC ID (a bot screen 403'd every other link of a
+  CC BY article; impersonating a browser was refused).
+- **#747 (#746)**: `http-408` may pass; with no PDF saved, the result carries
+  the first failure that may pass, else `"search-failed"`, else the first.
+- **#745 (#744)**: a download that may pass is tried
+  `PDF_BESIDE_JATS_ATTEMPTS` (3) times, then the JATS is marked
+  (`jats/<key>.pdf-retry`) and sought again on later hits, at most
+  `PDF_SEEK_AGAIN_LIMIT` (3). Not covered: a JATS cached with the option off
+  (the `shortcut:` in `_check_cache`). Left minor: the languages read a mark's
+  count past `u32` differently; Rust's mark removal names no OS cause.
 
 ## Earlier: a saved page is not refused for its length (#656, merged as PR #740)
 
-Both languages cap a page's `<` (`HTML_MAX_TAGS`, 666,666), not its length;
-Rust's element budget is `3 × tags + 1,000` (`ELEMENTS_PER_TAG`). The
-measurement (`scripts/sample_html_pages.py --saved-dir`, corpus
-`tests/data/html_saved_page_shapes.json`) and argument are in CHANGELOG and
-DECISIONS (#656). Still open from it: 61 of 153 saves were Cloudflare's
-challenge page (headless Chrome; a non-headless re-run would reach them);
-**#726** is answered by its measurement and closeable (the maintainer's
-call); **#725** (memory under pressure) stays unmeasured.
+Both languages cap a page's `<` (`HTML_MAX_TAGS`, 666,666), not its length
+(argument in CHANGELOG and DECISIONS). Open: 61 of 153 saves were
+Cloudflare's challenge page; **#726** is answered and closeable (the
+maintainer's call); **#725** (memory under pressure) is unmeasured.
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -292,6 +283,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
+- **Tests on `feat/shared-library`** (2026-11-13, no PostgreSQL DSN, no extras
+  but dev; `--continue-on-collection-errors`): Python 10,473 passed + 170
+  skipped, 51 failed and 1 collection error, the same 52 as before the branch
+  (they need extras not installed: `markupever` and others); Rust 1,782 with
+  `cargo test` in `rust/`. The branch added 270 Python and 52 Rust tests (14
+  unit, 17 `library_contract`, 20 `library_save`, 1 manual doc-test); the
+  baseline was 10,203 and 1,730. The
+  next bullet is the PostgreSQL-DSN run of `feat/pmc-open-data-json`.
 - **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
   `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,730 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in

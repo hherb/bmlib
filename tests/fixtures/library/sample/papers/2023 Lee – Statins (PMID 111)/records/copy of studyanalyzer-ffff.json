@@ -1,0 +1,18 @@
+{
+  "format": "bmlib-library-record",
+  "version": 1,
+  "installation": {
+    "app": "studyanalyzer",
+    "id": "ffff",
+    "label": "studyanalyzer on a Mac"
+  },
+  "paper": {
+    "pmid": "111",
+    "doi": null,
+    "pmcid": null,
+    "title": "Metformin",
+    "year": 2024,
+    "first_author": "Smith"
+  },
+  "files": []
+}

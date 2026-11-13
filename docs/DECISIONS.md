@@ -6425,3 +6425,97 @@ version are this PR's, each against its alternative:
 - **`HTML_CANONICAL_VERSION` stays 1.** A page that converted converts the same
   (all 153 saved pages' text and element counts are unchanged); a page refused
   before has no stored text to make stale.
+
+## library — a shared folder of plain files (step 1a of the shared paper library)
+
+The design is StudyAnalyzer's `docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`;
+this records the choices made building it that a later session may want to
+undo.
+
+- **Plain files, no database.** A library is shared by apps that may be on
+  different machines, written through iCloud, Dropbox or Syncthing, and read by
+  a person in a file manager. A SQLite file in a synced folder is corrupted by
+  the first two concurrent writers; files that are written once, or written by
+  one installation only, cannot be. Do not add an index database "for speed":
+  a scan of a few thousand small folders is the cost, and an index is a second
+  store to disagree with the first.
+- **Source files are write-once and named for their content.**
+  `{kind}-{sha256[..12]}.{ext}`: the same bytes are the same file, so two apps
+  fetching one paper at once write one file, and a sync service never has two
+  versions to choose between. `save` never overwrites; other bytes under that
+  name are `FileClash`, which means a damaged file (48 bits of digest), not a
+  collision. `read` checks the full digest every time, so a half-synced or
+  edited file is `DigestMismatch`, never used.
+- **One record per installation.** `records/{app}-{id}.json` is written only by
+  the installation it names, so there is nothing to merge and no lock between
+  machines. The cost is that "who uses this file" is the union of the records.
+  Within one process the read-modify-write of a record is serialised by a
+  process-wide lock; **separate processes of one installation are out of
+  scope** (an app has one process per installation).
+- **`record_use` notes a file already there, through `save`'s merge.** An app
+  that opens a file another installation saved lists it in its own record
+  without the bytes in hand. The file is read (digest-checked) first, so only a
+  file present in this library can be noted, and the merge is `save`'s, under
+  the same lock. Its origin is copied from a record that lists the file, or
+  left empty: the caller does not know where another app fetched it from.
+- **Nothing is deleted automatically.** Researchers keep sources for years and
+  a sync service makes a deletion on one machine a deletion everywhere. There
+  is no eviction, expiry or cache directory. `release` removes one
+  installation's use of a file and leaves the file; `remove_file` and
+  `remove_folder` are the user's explicit clear. Removing something already
+  gone is `Missing`, not success, so a stale `FileRef` is never read as done.
+- **A paper is the union of folders whose records share an identifier, and
+  `find` returns the whole group.** Two apps can create folders before either
+  knows the other's identifier; a later record that carries both links them.
+  `find` returns every folder of the linked group, not only those sharing an
+  identifier with the query, so `save` lands in a folder of the paper.
+- **Every record's identifiers count for `find` and `group`, and a conflict is
+  reported.** Two records of one folder can disagree (two PMIDs). Both values
+  link the folder, so an identifier that lost the conflict still finds it and
+  the same bytes never get a second folder; the scan reports
+  `ConflictingIds { folder, field }` rather than resolve it silently.
+  `PaperFolder::ids` keeps the first record's value, for display only.
+- **`save` rescans the library on every call.** Measured in Python at 4,000
+  folders: 0.52 s per save, nearly all of it the scan; `group`, which was
+  O(n²) (2.1 s there), now maps each identifier value to the first folder
+  holding it and is linear (3 ms). Accepted for step 1a, where a save follows a
+  user's action. When step 1b saves per download, or libraries pass about 5,000
+  papers, let the caller pass the `Scan` it already holds.
+- **Folder-name clashes are decided by the code, not the file system.** A new
+  name is compared under Unicode case folding (lower-case of NFC), so the same
+  library behaves the same on a case-sensitive Linux disk and a case-insensitive
+  Mac and moves between them. A clashing name takes ` (2)`, ` (3)`, fitted so
+  the whole stays within 150 bytes. A same-named folder is reused when its
+  records share an identifier or it has no readable record yet (another
+  writer's claim in progress, or a crash's leftover). A same-named folder whose
+  records are **all** from a newer layout is neither reused nor numbered:
+  `save` fails with `NewerRecord`. A newer app's folder carrying our paper's
+  name almost surely holds our paper, and a second silent store is the failure
+  this design exists to prevent. The price is that an old app cannot save a
+  different paper whose name collides until it is updated.
+- **A Windows device name is prefixed `_` after the length fit**, keeping one
+  byte of the budget for it, so a name valid on Windows is also within 150
+  bytes.
+- **An iCloud placeholder (`.name.icloud`) is a user's file when opening.** A
+  folder holding only placeholders is not empty, so a library is never started
+  inside someone's papers; it costs a refusal where the user must pick another
+  folder. `read` reports a placeholder as `NotDownloaded`, not `Missing`.
+- **An evicted own record stops a save.** When Optimize Storage has left only
+  `.<app>-<id>.json.icloud`, `save` and `release` fail with `NotDownloaded`
+  and write nothing, and a scan reports the placeholder as
+  `RecordNotDownloaded`. Treating it as absent would write a one-file record
+  that replaces the real one when it is downloaded. The cost is that a save
+  waits for iCloud. macOS 14 and later evict to dataless files with the real
+  name rather than `.icloud` names; that is checked on a device in step 2.
+- **An atomic write's temporary is reported, never deleted.** Both languages'
+  temporaries (Rust's `{name}.bmlib-tmp-uuid4hex…`, Python's
+  `.{name}.{hex}.tmp`) are left out of every listing, so they are neither
+  source files nor records nor a reason for `open` to call a folder taken, and
+  a scan reports each as `LeftoverTemp`. Any one is reported, not only a stale
+  one: telling an in-flight write from a crash's leftover would need a clock
+  rule, and the app can show it as harmless.
+- **A scan never fails on one bad folder and drops nothing.** Every oddity is a
+  `Problem` (unreadable or newer or misnamed record, an unrecorded file, an
+  unreadable folder, a stray entry) for the app to show.
+- **A negative zero is read as 0** for a record's `size` and `year`, in both
+  languages, so a record re-renders to the same bytes.

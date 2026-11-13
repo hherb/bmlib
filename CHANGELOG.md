@@ -95,6 +95,39 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`bmlib.library` / `bmlib::library`: a shared folder of research papers**
+  (both languages, held together by `tests/fixtures/library_cases.json` and the
+  sample library under `tests/fixtures/library/sample/`; the design is
+  StudyAnalyzer's `2026-11-13-shared-paper-library-design.md`, step 1a). A
+  folder the user chooses, in which several apps keep the papers they fetched,
+  as plain files and no database: a marker `bmlib-library.json`, one folder per
+  paper under `papers/`, write-once source files named
+  `{kind}-{sha256[..12]}.{ext}`, and one `records/{app}-{id}.json` per
+  installation, so two apps never write the same file. `open_library` /
+  `Library::open`, `scan`, `find` (the whole group of folders linked by a shared
+  identifier), `find_digest`, `group`, `read` (checked against the recorded
+  digest), `save`, `record_use` (note a file another app saved), `release`,
+  `remove_file`, `remove_folder`, `folder_name`, `canonical_ids` /
+  `PaperIds::canonical`. Nothing is deleted automatically; only the two
+  `remove_*` calls, made when the user asks, delete anything. A scan reports
+  every oddity as a `Problem` and drops none, among them a record present only
+  as an iCloud placeholder, two records of one folder disagreeing on an
+  identifier (both values still find the folder) and an atomic write's leftover
+  temporary (never deleted). `save`, `record_use` and `release` refuse an
+  `Installation` or identifiers the validating constructors would refuse, and an
+  own record evicted by iCloud (`NotDownloaded`), before writing anything; a
+  caller's folder or file name that Windows would resolve elsewhere (`...`,
+  `x.`, `C:`, `con`) is `BadName` on every platform. A new paper folder whose
+  name another has (compared without regard to case) is numbered ` (2)` within
+  150 bytes, and a folder whose records are all from a newer layout fails the
+  save with `NewerRecord` rather than fork the paper. Windows device names are
+  prefixed `_`. Record updates are serialised within a process; separate
+  processes of one installation are out of scope. Needs no feature flag (it
+  builds with `default-features = false`) and no extra. Manuals:
+  `docs/manual/library.md`, `rust/bmlib/docs/manual/library.md`. 1b
+  (`FullTextService` reading and filling a library) and 1c (the `bmlib-ffi`
+  surface) follow.
+
 - **PMC Open Data's JATS after NCBI's** (#751; both languages). When Europe
   PMC and NCBI give no body for a PMC ID, Tier 1c asks the bucket: the latest
   version's `PMC<n>.<v>.xml`, as its record names it, checked against the

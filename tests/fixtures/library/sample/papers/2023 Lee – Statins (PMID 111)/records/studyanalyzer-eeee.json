@@ -1,0 +1,27 @@
+{
+  "format": "bmlib-library-record",
+  "version": 1,
+  "installation": {
+    "app": "studyanalyzer",
+    "id": "eeee",
+    "label": "studyanalyzer on a Mac"
+  },
+  "paper": {
+    "pmid": "111",
+    "doi": null,
+    "pmcid": null,
+    "title": "Metformin",
+    "year": 2024,
+    "first_author": "Smith"
+  },
+  "files": [
+    {
+      "sha256": "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2",
+      "kind": "pdf",
+      "name": "pdf-0ad7ce4adfea.pdf",
+      "origin": "sample",
+      "size": 22,
+      "saved_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
