@@ -29,6 +29,7 @@ from bmlib.library.constants import DIGEST_PREFIX_HEX, PAPERS_DIR, RECORDS_DIR
 from bmlib.library.errors import DigestMismatch, Missing, NotDownloaded
 from bmlib.library.files import (
     component,
+    exists,
     has_placeholder,
     io_error,
     is_dir,
@@ -68,10 +69,11 @@ class PaperFolder:
 class Problem:
     """Something odd a scan found and did not use.
 
-    ``kind`` is one of ``unreadable_record`` (``folder``, ``file``, ``reason``; ``file`` is
-    ``"records"`` or ``"."`` when a listing failed), ``newer_record`` (``folder``, ``file``,
-    ``version``), ``misnamed_record`` (``folder``, ``file``), ``unrecorded_file`` (``folder``,
-    ``name``) or ``stray_entry`` (``name``). Fields a kind does not use are ``None``.
+    ``kind`` is one of ``unreadable_record`` (``folder``, ``file``, ``reason``),
+    ``unreadable_folder`` (``folder``, ``reason``: it or its ``records/`` cannot be listed),
+    ``newer_record`` (``folder``, ``file``, ``version``), ``misnamed_record`` (``folder``,
+    ``file``), ``unrecorded_file`` (``folder``, ``name``) or ``stray_entry`` (``name``).
+    Fields a kind does not use are ``None``.
     """
 
     kind: str
@@ -117,14 +119,16 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
     """Scan one paper folder, adding what is odd to *problems*."""
     records: list[Record] = []
     records_dir = directory / RECORDS_DIR
-    if is_dir(records_dir):
+    if exists(records_dir) and not is_dir(records_dir):
+        problems.append(
+            Problem("unreadable_folder", folder=folder, reason="records is not a folder")
+        )
+    elif is_dir(records_dir):
         try:
             names = list_names(records_dir)
         except OSError as e:
             names = []
-            problems.append(
-                Problem("unreadable_record", folder=folder, file=RECORDS_DIR, reason=str(e))
-            )
+            problems.append(Problem("unreadable_folder", folder=folder, reason=f"records: {e}"))
         for file in names:
             path = records_dir / file
             if is_dir(path):
@@ -137,10 +141,12 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
             else:
                 records.append(got)
     try:
-        on_disk = [n for n in list_names(directory) if not is_dir(directory / n)]
+        on_disk = [
+            n for n in list_names(directory) if n != RECORDS_DIR and not is_dir(directory / n)
+        ]
     except OSError as e:
         on_disk = []
-        problems.append(Problem("unreadable_record", folder=folder, file=".", reason=str(e)))
+        problems.append(Problem("unreadable_folder", folder=folder, reason=str(e)))
     recorded = {f.name for r in records for f in r.files}
     problems.extend(
         Problem("unrecorded_file", folder=folder, name=n) for n in on_disk if n not in recorded
@@ -195,8 +201,15 @@ def read_file(root: Path, file: FileRef) -> bytes:
 
 
 def find(scan: Scan, ids: PaperIds) -> list[PaperFolder]:
-    """The folders whose identifiers share any with *ids*, in scan order."""
-    return [f for f in scan.folders if f.ids().shares_any(ids)]
+    """Every folder of the paper(s) matching *ids*, in scan order.
+
+    A paper is the union of folders whose records share an identifier, so this is each folder
+    in the :func:`group` of any folder whose identifiers share one with *ids*.
+    """
+    hit = {
+        i for g in group(scan) if any(scan.folders[i].ids().shares_any(ids) for i in g) for i in g
+    }
+    return [f for i, f in enumerate(scan.folders) if i in hit]
 
 
 def _is_digest(s: str) -> bool:

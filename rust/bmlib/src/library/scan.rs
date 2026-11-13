@@ -24,7 +24,7 @@
 use std::path::Path;
 
 use super::files::{
-    component, has_placeholder, io_error, is_dir, list_names, read_bytes, sha256_hex,
+    component, exists, has_placeholder, io_error, is_dir, list_names, read_bytes, sha256_hex,
 };
 use super::{
     parse_record, Installation, Library, LibraryError, PaperIds, Record, RecordProblem, SourceKind,
@@ -74,12 +74,19 @@ impl PaperFolder {
 /// Something odd a scan found and did not use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Problem {
-    /// A record (or, with `file` `"records"`/`"."`, a listing) could not be read.
+    /// A record file could not be read or is not a valid record.
     UnreadableRecord {
         /// The paper's folder.
         folder: String,
         /// The record file.
         file: String,
+        /// Why.
+        reason: String,
+    },
+    /// A paper folder or its `records/` directory could not be listed.
+    UnreadableFolder {
+        /// The paper's folder.
+        folder: String,
         /// Why.
         reason: String,
     },
@@ -137,6 +144,10 @@ pub struct FileRef {
 
 /// Scan one paper folder, adding what is odd to `problems`.
 fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>) -> PaperFolder {
+    let unreadable_folder = |reason: String| Problem::UnreadableFolder {
+        folder: folder.to_owned(),
+        reason,
+    };
     let unreadable = |file: &str, reason: String| Problem::UnreadableRecord {
         folder: folder.to_owned(),
         file: file.to_owned(),
@@ -144,9 +155,11 @@ fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>) -> PaperFo
     };
     let mut records = Vec::new();
     let records_dir = dir.join(RECORDS_DIR);
-    if is_dir(&records_dir) {
+    if exists(&records_dir) && !is_dir(&records_dir) {
+        problems.push(unreadable_folder(format!("{RECORDS_DIR} is not a folder")));
+    } else if is_dir(&records_dir) {
         match list_names(&records_dir) {
-            Err(e) => problems.push(unreadable(RECORDS_DIR, e.to_string())),
+            Err(e) => problems.push(unreadable_folder(format!("{RECORDS_DIR}: {e}"))),
             Ok(names) => {
                 for file in names {
                     let path = records_dir.join(&file);
@@ -184,10 +197,10 @@ fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>) -> PaperFo
     let files_on_disk = match list_names(dir) {
         Ok(names) => names
             .into_iter()
-            .filter(|n| !is_dir(&dir.join(n)))
+            .filter(|n| n != RECORDS_DIR && !is_dir(&dir.join(n)))
             .collect(),
         Err(e) => {
-            problems.push(unreadable(".", e.to_string()));
+            problems.push(unreadable_folder(e.to_string()));
             Vec::new()
         }
     };
@@ -266,12 +279,22 @@ impl Library {
     }
 }
 
-/// The folders whose identifiers share any with `ids`, in scan order.
+/// Every folder of the paper(s) matching `ids`, in scan order.
+///
+/// A paper is the union of folders whose records share an identifier, so this is
+/// each folder in the [`group`] of any folder whose identifiers share one with `ids`.
 #[must_use]
 pub fn find<'a>(scan: &'a Scan, ids: &PaperIds) -> Vec<&'a PaperFolder> {
+    let hit: Vec<usize> = group(scan)
+        .into_iter()
+        .filter(|g| g.iter().any(|&i| scan.folders[i].ids().shares_any(ids)))
+        .flatten()
+        .collect();
     scan.folders
         .iter()
-        .filter(|f| f.ids().shares_any(ids))
+        .enumerate()
+        .filter(|(i, _)| hit.contains(i))
+        .map(|(_, f)| f)
         .collect()
 }
 
@@ -386,6 +409,44 @@ mod tests {
         let ids = f.ids();
         assert_eq!(ids.pmid.as_deref(), Some("1"));
         assert_eq!(ids.doi.as_deref(), Some("10.1/x"));
+    }
+
+    #[test]
+    fn find_follows_a_chain_of_three_folders() {
+        // a-b share a DOI, b-c share a PMCID: a query for c's PMCID finds all three.
+        let mut a = folder("a", None, Some("10.1/x"));
+        let mut b = folder("b", None, Some("10.1/x"));
+        let mut c = folder("c", None, None);
+        b.records[0].paper.ids.pmcid = Some("PMC5".into());
+        c.records[0].paper.ids.pmcid = Some("PMC5".into());
+        a.records[0].paper.ids.pmid = None;
+        let other = folder("d", Some("9"), None);
+        let scan = Scan {
+            folders: vec![a, other, b, c],
+            problems: Vec::new(),
+        };
+        let q = PaperIds::canonical(None, None, Some("PMC5")).unwrap();
+        let got: Vec<&str> = find(&scan, &q).iter().map(|f| f.folder.as_str()).collect();
+        assert_eq!(got, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_records_that_is_a_file_is_an_unreadable_folder() {
+        let base = std::env::temp_dir().join(format!("bmlib-scan-rf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("papers/p")).unwrap();
+        std::fs::write(base.join("papers/p/records"), "x").unwrap();
+        std::fs::write(
+            base.join("bmlib-library.json"),
+            "{\"format\":\"bmlib-library\",\"version\":1}",
+        )
+        .unwrap();
+        let scan = Library::open(&base).unwrap().scan().unwrap();
+        assert!(matches!(
+            scan.problems.as_slice(),
+            [Problem::UnreadableFolder { folder, .. }] if folder == "p"
+        ));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

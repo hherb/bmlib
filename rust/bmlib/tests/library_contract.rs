@@ -325,6 +325,7 @@ fn scan_matches_the_fixture() {
                 assert!(!reason.is_empty());
                 serde_json::json!({"kind": "unreadable_record", "folder": folder, "file": file})
             }
+            Problem::UnreadableFolder { .. } => panic!("no unreadable folder in the sample"),
             Problem::NewerRecord {
                 folder,
                 file,

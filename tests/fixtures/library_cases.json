@@ -1056,14 +1056,15 @@
   ],
   "find": [
     {
-      "name": "pmid alone finds only the folder whose records hold it",
+      "name": "pmid alone finds the whole paper, both halves of the split",
       "pmid": "38012345",
       "expect": [
-        "2024 Smith – Metformin and cognition (PMID 38012345)"
+        "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "Smith – Metformin and cognition (DOI 10.1 x)"
       ]
     },
     {
-      "name": "pmid and doi together find both halves of the split",
+      "name": "pmid and doi together find both",
       "pmid": "38012345",
       "doi": "10.1/x",
       "expect": [

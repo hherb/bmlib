@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from bmlib.library import (
     Installation,
     PaperFolder,
@@ -24,8 +26,10 @@ from bmlib.library import (
     Record,
     Scan,
     canonical_ids,
+    find,
     find_digest,
     group,
+    open_library,
 )
 
 
@@ -70,3 +74,35 @@ def test_find_digest_refuses_a_malformed_digest() -> None:
     scan = Scan((), ())
     assert find_digest(scan, "ABC") is None
     assert find_digest(scan, "A" * 64) is None
+
+
+def test_find_follows_a_chain_of_three_folders() -> None:
+    # a-b share a DOI, b-c share a PMCID: a query for c's PMCID finds all three.
+    def f(name: str, doi: str | None, pmcid: str | None) -> PaperFolder:
+        rec = Record(
+            Installation.new("studyanalyzer", "a", "Mac"),
+            PaperInfo(canonical_ids(None, doi, pmcid)),
+            (),
+        )
+        return PaperFolder(name, (rec,), ())
+
+    scan = Scan(
+        (
+            f("a", "10.1/x", None),
+            f("d", None, "PMC9"),
+            f("b", "10.1/x", "PMC5"),
+            f("c", None, "PMC5"),
+        ),
+        (),
+    )
+    got = find(scan, canonical_ids(None, None, "PMC5"))
+    assert [x.folder for x in got] == ["a", "b", "c"]
+
+
+def test_a_records_that_is_a_file_is_an_unreadable_folder(tmp_path: Path) -> None:
+    lib = open_library(tmp_path / "lib") if (tmp_path / "lib").mkdir() is None else None
+    assert lib is not None
+    (lib.root / "papers" / "p").mkdir()
+    (lib.root / "papers" / "p" / "records").write_text("x", encoding="utf-8")
+    problems = lib.scan().problems
+    assert [(p.kind, p.folder) for p in problems] == [("unreadable_folder", "p")]
