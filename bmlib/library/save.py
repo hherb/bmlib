@@ -38,7 +38,7 @@ from bmlib.library.constants import (
     PAPERS_DIR,
     RECORDS_DIR,
 )
-from bmlib.library.errors import Io, Missing, NewerRecord
+from bmlib.library.errors import BadIdentifier, Io, Missing, NewerRecord
 from bmlib.library.files import (
     component,
     create_dir_all,
@@ -55,7 +55,7 @@ from bmlib.library.files import (
     write_once,
     write_replace,
 )
-from bmlib.library.ids import Installation, PaperInfo, SourceKind
+from bmlib.library.ids import Installation, PaperIds, PaperInfo, SourceKind, canonical_ids
 from bmlib.library.names import folder_name, folder_name_numbered
 from bmlib.library.records import FileEntry, Record, RecordProblem, parse_record, render_record
 from bmlib.library.scan import FileRef, Problem, _scan_folder, find, find_digest, scan_library
@@ -168,9 +168,54 @@ def _load_own_record(path: Path, folder: str) -> Record | None:
         return None
 
 
+def _check_who(who: Installation) -> None:
+    """Refuse an installation :meth:`Installation.new` would refuse.
+
+    A dataclass can be built without ``new``, and its record name becomes a path.
+
+    :raises BadInstallation: naming the field.
+    :raises BadName: the record name is not one path component.
+    """
+    Installation.new(who.app, who.id, who.label)
+    component(who.record_file_name())
+
+
+def _check_ids(ids: PaperIds) -> None:
+    """Refuse identifiers that are not canonical.
+
+    :func:`parse_record` refuses them, so a record holding them would not read back and the
+    next save would put it aside.
+
+    :raises BadIdentifier: naming the first field that is not canonical.
+    """
+    canon = canonical_ids(ids.pmid, ids.doi, ids.pmcid)
+    for field in ("pmid", "doi", "pmcid"):
+        given = getattr(ids, field)
+        if given != getattr(canon, field):
+            raise BadIdentifier(field, given or "")
+
+
+def _record_bytes(record: Record, path: Path) -> bytes:
+    """*record* as the bytes to write, after the last check that it reads back.
+
+    A record :func:`parse_record` refuses would be put aside by the next save, and the files
+    it lists would then look unused. Text that is not valid Unicode (a lone surrogate) cannot
+    be written as UTF-8 and is refused the same way.
+
+    :raises Io: the record would not read back; nothing was written.
+    """
+    text = render_record(record)
+    try:
+        data = text.encode("utf-8")
+        parse_record(text)
+    except (UnicodeEncodeError, RecordProblem) as e:
+        raise Io(path, f"the record would not read back ({e}); nothing was written") from e
+    return data
+
+
 def _store_record(path: Path, record: Record) -> None:
     """Write *record* over *path* unless that is what is there already."""
-    data = render_record(record).encode("utf-8")
+    data = _record_bytes(record, path)
     try:
         if read_bytes(path) == data:
             return
@@ -224,14 +269,25 @@ def save_file(
     Within one process the update of a record is serialised, so threads of one installation
     never lose each other's entries; separate processes of one installation are out of scope.
 
+    :raises BadInstallation: *who* is one :meth:`Installation.new` would refuse.
+    :raises BadIdentifier: ``paper.ids`` are not canonical (nothing is written).
+    :raises Io: the record would not read back, such as text holding a lone surrogate
+        (nothing is written).
     :raises FileClash: a file of that name holds other bytes (nothing is overwritten).
     :raises NewerRecord: *who*'s record, or every record of the folder the paper would go in,
         is from a newer layout (no second folder is made).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
+    _check_who(who)
+    _check_ids(paper.ids)
     digest = sha256_hex(data)
     name = f"{kind.value}-{digest[:DIGEST_PREFIX_HEX]}.{kind.extension()}"
+    entry = FileEntry(
+        digest, kind, name, origin, len(data), datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    fresh = Record(who, paper, (entry,))
+    _record_bytes(fresh, root)  # before anything is written: the record must read back
     scan = scan_library(root)
     papers = root / PAPERS_DIR
     found = find(scan, paper.ids)
@@ -248,14 +304,11 @@ def save_file(
         create_dir_all(records_dir)
     except OSError as e:
         raise io_error(records_dir, e, write=True) from e
-    path = records_dir / who.record_file_name()
-    entry = FileEntry(
-        digest, kind, name, origin, len(data), datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    )
+    path = records_dir / component(who.record_file_name())
     with _RECORD_LOCK:
         record = _load_own_record(path, folder)
         if record is None:
-            record = Record(who, paper, (entry,))
+            record = fresh
         else:
             files = record.files
             if all(f.sha256 != digest for f in files):
@@ -271,12 +324,14 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
     A file the record does not list (or no record) is already not used, so that is fine.
     Serialised with :func:`save_file` in this process.
 
+    :raises BadInstallation: *who* is one :meth:`Installation.new` would refuse.
     :raises BadName: a name that is not one path component.
     :raises NewerRecord: the record is from a newer layout.
     :raises Io: the record cannot be read (it is not touched).
     """
+    _check_who(who)
     directory, _ = _locate(root, file)
-    path = directory / RECORDS_DIR / who.record_file_name()
+    path = directory / RECORDS_DIR / component(who.record_file_name())
     with _RECORD_LOCK:
         try:
             text = read_bytes(path).decode("utf-8")

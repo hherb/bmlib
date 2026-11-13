@@ -419,3 +419,44 @@ fn read_only_library_says_so() {
     }
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn save_and_release_refuse_unchecked_fields_and_write_nothing() {
+    let (dir, lib) = scratch("unchecked");
+    let before = tree(&dir);
+    let not_canonical = PaperInfo {
+        ids: PaperIds {
+            doi: Some("10.1/AbC".into()),
+            ..PaperIds::default()
+        },
+        ..PaperInfo::default()
+    };
+    let err = lib
+        .save(&me(), &not_canonical, BYTES, SourceKind::Pdf, "t")
+        .unwrap_err();
+    assert!(
+        matches!(&err, LibraryError::BadIdentifier { field: "doi", value } if value == "10.1/AbC"),
+        "{err}"
+    );
+    // Fields are public, so an installation can be built without `new`; its
+    // record name would climb out of `papers/`.
+    let escaped = Installation {
+        app: "../../../escaped".into(),
+        id: "x".into(),
+        label: "x".into(),
+    };
+    let err = lib
+        .save(&escaped, &paper(), BYTES, SourceKind::Pdf, "t")
+        .unwrap_err();
+    assert!(
+        matches!(err, LibraryError::BadInstallation { field: "app", .. }),
+        "{err}"
+    );
+    assert_eq!(tree(&dir), before);
+    let first = save(&lib, &me(), &paper(), BYTES);
+    let saved = tree(&dir);
+    let err = lib.release(&escaped, &first).unwrap_err();
+    assert!(matches!(err, LibraryError::BadInstallation { .. }), "{err}");
+    assert_eq!(tree(&dir), saved);
+    fs::remove_dir_all(dir).unwrap();
+}

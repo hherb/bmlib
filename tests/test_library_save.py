@@ -277,3 +277,26 @@ def test_read_only_library_says_so(lib: Library) -> None:
     finally:
         papers.chmod(0o755)
     assert list(papers.iterdir()) == []
+
+
+def test_save_and_release_refuse_unchecked_fields_and_write_nothing(lib: Library) -> None:
+    from bmlib.library import BadIdentifier, BadInstallation, LibraryError, PaperIds
+
+    before = _tree(lib.root)
+    with pytest.raises(BadIdentifier) as err:
+        lib.save(_ME, PaperInfo(PaperIds(doi="10.1/AbC")), _BYTES, SourceKind.PDF, "t")
+    assert (err.value.field, err.value.value) == ("doi", "10.1/AbC")
+    # A dataclass can be built without ``new``; its record name would climb out of papers/.
+    escaped = Installation("../../../escaped", "x", "x")
+    with pytest.raises(BadInstallation) as bad:
+        lib.save(escaped, _PAPER, _BYTES, SourceKind.PDF, "t")
+    assert bad.value.field == "app"
+    # A lone surrogate cannot be written as UTF-8: a LibraryError, not UnicodeEncodeError.
+    with pytest.raises(LibraryError):
+        lib.save(_ME, PaperInfo(_PAPER.ids, "bad \ud800 title"), _BYTES, SourceKind.PDF, "t")
+    assert _tree(lib.root) == before
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    saved = _tree(lib.root)
+    with pytest.raises(BadInstallation):
+        lib.release(escaped, first)
+    assert _tree(lib.root) == saved

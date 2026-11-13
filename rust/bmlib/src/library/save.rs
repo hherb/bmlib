@@ -34,8 +34,8 @@ use super::files::{
 use super::scan::{scan_folder, Problem};
 use super::{
     find, find_digest, folder_name, folder_name_numbered, parse_record, render_record, FileEntry,
-    FileRef, Installation, Library, LibraryError, PaperInfo, Record, RecordProblem, SourceKind,
-    CORRUPT_SUFFIX, DIGEST_PREFIX_HEX, MAX_NAME_SUFFIX, PAPERS_DIR, RECORDS_DIR,
+    FileRef, Installation, Library, LibraryError, PaperIds, PaperInfo, Record, RecordProblem,
+    SourceKind, CORRUPT_SUFFIX, DIGEST_PREFIX_HEX, MAX_NAME_SUFFIX, PAPERS_DIR, RECORDS_DIR,
 };
 
 /// Serialises the read-merge-write of records (and keeping one aside) within
@@ -187,9 +187,55 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Refuse an installation [`Installation::new`] would refuse. Its fields are
+/// public, so a caller can build one unchecked, and its record name becomes a path.
+fn check_who(who: &Installation) -> Result<(), LibraryError> {
+    Installation::new(&who.app, &who.id, &who.label)?;
+    component(&who.record_file_name())?;
+    Ok(())
+}
+
+/// Refuse identifiers that are not canonical: [`parse_record`] refuses them, so
+/// a record holding them would not read back and the next save would put it aside.
+fn check_ids(ids: &PaperIds) -> Result<(), LibraryError> {
+    let canon = PaperIds::canonical(
+        ids.pmid.as_deref(),
+        ids.doi.as_deref(),
+        ids.pmcid.as_deref(),
+    )?;
+    let fields = [
+        ("pmid", &ids.pmid, &canon.pmid),
+        ("doi", &ids.doi, &canon.doi),
+        ("pmcid", &ids.pmcid, &canon.pmcid),
+    ];
+    for (field, given, want) in fields {
+        if given != want {
+            return Err(LibraryError::BadIdentifier {
+                field,
+                value: given.clone().unwrap_or_default(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// `record` as the text to write, after the last check that it reads back:
+/// a record [`parse_record`] refuses would be put aside by the next save, and
+/// the files it lists would then look unused.
+fn record_text(record: &Record, path: &Path) -> Result<String, LibraryError> {
+    let text = render_record(record);
+    match parse_record(&text) {
+        Ok(_) => Ok(text),
+        Err(problem) => Err(LibraryError::Io {
+            path: path.to_owned(),
+            reason: format!("the record would not read back ({problem:?}); nothing was written"),
+        }),
+    }
+}
+
 /// Write `record` over `path` unless that is what is there already.
 fn store_record(path: &Path, record: &Record) -> Result<(), LibraryError> {
-    let text = render_record(record);
+    let text = record_text(record, path)?;
     if read_bytes(path).is_ok_and(|old| old == text.as_bytes()) {
         return Ok(());
     }
@@ -240,7 +286,9 @@ impl Library {
     ///
     /// # Errors
     ///
-    /// [`LibraryError::FileClash`] when a file of that name holds other bytes
+    /// [`LibraryError::BadInstallation`] or [`LibraryError::BadIdentifier`] for a
+    /// `who` or `paper.ids` the validating constructors would refuse (nothing is
+    /// written); [`LibraryError::FileClash`] when a file of that name holds other bytes
     /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s
     /// record, or every record of the folder the paper would go in, is from a
     /// newer layout (no second folder is made); [`LibraryError::ReadOnly`];
@@ -253,6 +301,8 @@ impl Library {
         kind: SourceKind,
         origin: &str,
     ) -> Result<FileRef, LibraryError> {
+        check_who(who)?;
+        check_ids(&paper.ids)?;
         let digest = sha256_hex(bytes);
         let name = format!(
             "{}-{}.{}",
@@ -260,6 +310,21 @@ impl Library {
             &digest[..DIGEST_PREFIX_HEX],
             kind.extension()
         );
+        let entry = FileEntry {
+            sha256: digest.clone(),
+            kind,
+            name: name.clone(),
+            origin: origin.to_owned(),
+            size: bytes.len() as u64,
+            saved_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        };
+        // Before anything is written: the record this save would start must read back.
+        let fresh = Record {
+            installation: who.clone(),
+            paper: paper.clone(),
+            files: vec![entry.clone()],
+        };
+        record_text(&fresh, self.root())?;
         let scan = self.scan()?;
         let papers = self.root().join(PAPERS_DIR);
         let existing = match find(&scan, &paper.ids).first() {
@@ -276,15 +341,7 @@ impl Library {
 
         let records_dir = dir.join(RECORDS_DIR);
         create_dir_all(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
-        let path = records_dir.join(who.record_file_name());
-        let entry = FileEntry {
-            sha256: digest.clone(),
-            kind,
-            name: name.clone(),
-            origin: origin.to_owned(),
-            size: bytes.len() as u64,
-            saved_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        };
+        let path = records_dir.join(component(&who.record_file_name())?);
         let _guard = record_guard();
         let record = match load_own_record(&path, &folder)? {
             Some(mut record) => {
@@ -293,11 +350,7 @@ impl Library {
                 }
                 merge_paper(record, paper, &path)
             }
-            None => Record {
-                installation: who.clone(),
-                paper: paper.clone(),
-                files: vec![entry],
-            },
+            None => fresh,
         };
         store_record(&path, &record)?;
         Ok(FileRef {
@@ -315,11 +368,15 @@ impl Library {
     ///
     /// # Errors
     ///
-    /// [`LibraryError::BadName`]; [`LibraryError::NewerRecord`]; [`LibraryError::Io`]
-    /// for a record that cannot be read (it is not touched).
+    /// [`LibraryError::BadInstallation`] for a `who` [`Installation::new`] would
+    /// refuse; [`LibraryError::BadName`]; [`LibraryError::NewerRecord`];
+    /// [`LibraryError::Io`] for a record that cannot be read (it is not touched).
     pub fn release(&self, who: &Installation, file: &FileRef) -> Result<(), LibraryError> {
+        check_who(who)?;
         let (dir, _) = locate(self.root(), file)?;
-        let path = dir.join(RECORDS_DIR).join(who.record_file_name());
+        let path = dir
+            .join(RECORDS_DIR)
+            .join(component(&who.record_file_name())?);
         let _guard = record_guard();
         let bytes = match read_bytes(&path) {
             Ok(b) => b,
