@@ -1490,9 +1490,12 @@ class FullTextService:
         return str(path)
 
     def _use_library_pdf(self, library: _FromLibrary) -> str | None:
-        """The library's PDF held for this lookup, in place of a download: its path, once noted
-        in this installation's record and added to ``library.files``. ``None`` when none is held,
-        the library is no longer used, or noting it fails (warned of and recorded)."""
+        """The library's PDF held for this lookup, in place of a download: its path, added to
+        ``library.files``, once noted in this installation's record. ``None`` when none is held,
+        the library is no longer used, or its path fails (warned of and recorded). A note that
+        fails is warned of and recorded too, which ends the library's use for the call, but the
+        PDF is still served: its bytes passed the digest check, and a read-only library must not
+        cost a download of a PDF it holds."""
         store = self._keeper(library)
         held = library.pdf
         if store is None or held is None:
@@ -1500,14 +1503,20 @@ class FullTextService:
         library.pdf = None
         try:
             path = store.path_of(held.file)
-            store.note_use(library.pdf_paper(), held.file)
         except LibraryStoreFailure as exc:
             self._library_failed(library, exc)
             return None
+        failed: LibraryStoreFailure | None = None
+        try:
+            store.note_use(library.pdf_paper(), held.file)
+        except LibraryStoreFailure as exc:
+            failed = exc
         logger.info(
             "Using the library's PDF %s/%s in place of a download", held.file.folder, held.file.name
         )
         library.files.append(held.file)
+        if failed is not None:
+            self._library_failed(library, failed)
         return str(path)
 
     @staticmethod

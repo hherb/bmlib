@@ -211,6 +211,46 @@
         "folder_name_contains": null,
         "cache": []
       }
+    },
+    {
+      "name": "10 a read-only library holding only a PDF serves it, the network has no JATS",
+      "library": [{"kind": "pdf", "file": "textless.pdf", "ids": {"pmid": "34567890"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "34567890", "doi": "10.1/four", "pmc_id": null, "identifier": null},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [
+        {"pattern": "/search?", "file": "europepmc_search_pmc123_pdf.json"},
+        {"pattern": "render/PMC123.pdf", "file": "textless.pdf"},
+        {"pattern": "api.unpaywall.org", "file": "unpaywall_pdf.json"}
+      ],
+      "read_only_after": 0,
+      "expect": {
+        "source": "library",
+        "content_kind": "none",
+        "library_files": ["pdf"],
+        "library_failure": "read-only",
+        "requests": ["/search?", "/PMC123/fullTextXML", "efetch.fcgi", "list-type=2"],
+        "folders": [["pdf"]],
+        "folder_name_contains": null,
+        "cache": []
+      }
+    },
+    {
+      "name": "11 a read-only library: the JATS is not saved there, the cache keeps it",
+      "library": [],
+      "request": {"pmid": "34567890", "doi": null, "pmc_id": "PMC7614751", "identifier": "s11"},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [{"pattern": "/PMC7614751/fullTextXML", "file": "sample_article.xml"}],
+      "read_only_after": 0,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": [],
+        "library_failure": "read-only",
+        "requests": ["/PMC7614751/fullTextXML"],
+        "folders": [],
+        "folder_name_contains": null,
+        "cache": ["jats", "html"]
+      }
     }
   ]
 }

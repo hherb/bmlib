@@ -2147,31 +2147,32 @@ impl FullTextService {
     }
 
     /// The library's PDF held for this lookup, in place of a download: its
-    /// path, once noted in this installation's record and added to
-    /// `library.files`. `None` when none is held, the library is no longer
-    /// used, or noting it fails (warned of and recorded).
+    /// path, added to `library.files`, once noted in this installation's
+    /// record. `None` when none is held, the library is no longer used, or its
+    /// path fails (warned of and recorded). A note that fails is warned of and
+    /// recorded too, which ends the library's use for the call, but the PDF is
+    /// still served: its bytes passed the digest check, and a read-only library
+    /// must not cost a download of a PDF it holds.
     fn use_library_pdf(&self, library: &mut FromLibrary) -> Option<PathBuf> {
         let store = self.keeper(library)?;
         let held = library.pdf.take()?;
-        let used = store.path_of(&held.file).and_then(|path| {
-            store
-                .note_use(&library.pdf_paper(), &held.file)
-                .map(|()| path)
-        });
-        match used {
-            Ok(path) => {
-                self.info(format!(
-                    "Using the library's PDF {}/{} in place of a download",
-                    held.file.folder, held.file.name
-                ));
-                library.files.push(held.file);
-                Some(path)
-            }
+        let path = match store.path_of(&held.file) {
+            Ok(path) => path,
             Err(error) => {
                 self.library_failed(library, &error);
-                None
+                return None;
             }
+        };
+        let noted = store.note_use(&library.pdf_paper(), &held.file);
+        self.info(format!(
+            "Using the library's PDF {}/{} in place of a download",
+            held.file.folder, held.file.name
+        ));
+        library.files.push(held.file);
+        if let Err(error) = noted {
+            self.library_failed(library, &error);
         }
+        Some(path)
     }
 
     /// The library's JATS `held`, parsed, when it may be served for `ids`: it
