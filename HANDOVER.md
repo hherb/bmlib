@@ -319,6 +319,44 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Next up
 
+### Downstream request: bioRxiv/medRxiv `/details/` mode (#341), Python + Rust
+
+BMLibrarian's installer (piece 3, the medRxiv library pipeline) needs every
+medRxiv posting. Its owner (also this repo's maintainer) decided on
+2026-11-14 that **bmlib gains a `/details/` mode**, landing in Python and
+Rust together, and that BMLibrarian then bumps its pin. BMLibrarian's piece 3
+waits on this. Plan, Task 0:
+`docs/superpowers/plans/2026-11-14-library-pipeline.md` in hherb/bmlibrarian.
+Measurement: the 2026-11-14 comment on #341.
+
+- **Why:** `/pubs/` lists only preprints later published in a journal, filed
+  under the publication date (medRxiv 2024-01-15: `/pubs/` 10, `/details/`
+  28). It also carries no `jatsxml` and no `version`, so `normalize` stores
+  only a `v1` PDF URL and JATS is never offered.
+- **Measured 2026-11-14:** `/details/` answers in full, with one record per
+  posted version (21 v1 + 7 v2 that day). Each record has `jatsxml`,
+  `version` and `date` (posting date), and `messages[0].total` gives the
+  count to reconcile against. The fetcher's and `BASE_URL`'s doc comments
+  still say `/details` is dead.
+- **To decide while building:**
+  - opt-in (a source config key or a separate registry source) versus making
+    `/details/` the default for every consumer (StudyAnalyzer,
+    BioMedicalNews; the maintainer's call);
+  - `settle_days` for `/details/`, measured, since postings are filed under
+    their posting date rather than months later;
+  - `jatsxml` as an `xml` source, and the record's `version` in
+    `FullTextSourceEntry.version` (the `fulltext_sources.version` column
+    exists and is always empty today);
+  - how a v2 record merges into the v1 row and updates the sources' version.
+- **Tests:** shared fixtures for a `/details/` page (with a v2 record and a
+  quiet day). The gated live suite already measures `/details` against
+  `/pubs`.
+- **Related, not this item:** `www.medrxiv.org` answered 429 after about 10
+  requests at 1.5 s spacing and blocked most PDFs with a Cloudflare 403.
+  This is why BMLibrarian moves MECA bulk (requester-pays S3, a new bmlib
+  reader in Python + Rust) up to right after piece 3. Expect that request
+  next.
+
 ### Open GitHub issues
 
 **120 open**, three of them this session's own (#750 and #751, which the PR closes, and #753, filed by its review) (#734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
