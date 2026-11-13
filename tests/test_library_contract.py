@@ -232,7 +232,7 @@ def test_scan_matches_the_fixture(sample: Library) -> None:
     got_problems = []
     for p in scan.problems:
         d: dict[str, Any] = {"kind": p.kind}
-        for key in ("folder", "file", "name"):
+        for key in ("folder", "file", "name", "field"):
             if getattr(p, key) is not None:
                 d[key] = getattr(p, key)
         if p.kind == "newer_record":

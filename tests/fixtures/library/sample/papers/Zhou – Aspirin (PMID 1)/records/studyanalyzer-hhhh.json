@@ -1,0 +1,27 @@
+{
+  "format": "bmlib-library-record",
+  "version": 1,
+  "installation": {
+    "app": "studyanalyzer",
+    "id": "hhhh",
+    "label": "Test Mac"
+  },
+  "paper": {
+    "pmid": "2",
+    "doi": null,
+    "pmcid": null,
+    "title": "Aspirin",
+    "year": 2022,
+    "first_author": "Zhou"
+  },
+  "files": [
+    {
+      "sha256": "bd27cffcb5f387ac58cc074521852c53e0b3b0c2cdf1c14930cffcc06773e8fa",
+      "kind": "text",
+      "name": "text-bd27cffcb5f3.txt",
+      "origin": "fixture",
+      "size": 18,
+      "saved_at": "2026-11-13T00:00:00Z"
+    }
+  ]
+}

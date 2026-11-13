@@ -1055,6 +1055,39 @@
                 "studyanalyzer-dddd"
               ]
             }
+          },
+          {
+            "folder": "Zhou – Aspirin (PMID 1)",
+            "ids": {
+              "pmid": "1",
+              "doi": null,
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "medicalfactchecker",
+                "id": "iiii",
+                "files": [
+                  "text-bd27cffcb5f3.txt"
+                ]
+              },
+              {
+                "app": "studyanalyzer",
+                "id": "hhhh",
+                "files": [
+                  "text-bd27cffcb5f3.txt"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "text-bd27cffcb5f3.txt"
+            ],
+            "used_by": {
+              "bd27cffcb5f387ac58cc074521852c53e0b3b0c2cdf1c14930cffcc06773e8fa": [
+                "medicalfactchecker-iiii",
+                "studyanalyzer-hhhh"
+              ]
+            }
           }
         ],
         "problems": [
@@ -1078,6 +1111,11 @@
             "kind": "unrecorded_file",
             "folder": "2023 Lee – Statins (PMID 111)",
             "name": "text-7fefb7d6548e.txt"
+          },
+          {
+            "kind": "conflicting_ids",
+            "folder": "Zhou – Aspirin (PMID 1)",
+            "field": "pmid"
           },
           {
             "kind": "stray_entry",
@@ -1128,6 +1166,20 @@
     {
       "name": "no identifiers finds none",
       "expect": []
+    },
+    {
+      "name": "an identifier that lost a conflict inside a folder still finds it",
+      "pmid": "2",
+      "expect": [
+        "Zhou – Aspirin (PMID 1)"
+      ]
+    },
+    {
+      "name": "the identifier that won finds it too",
+      "pmid": "1",
+      "expect": [
+        "Zhou – Aspirin (PMID 1)"
+      ]
     }
   ],
   "find_digest": [
@@ -1185,7 +1237,7 @@
   ],
   "group": [
     {
-      "name": "Smith splits join, Lee stands alone",
+      "name": "Smith splits join, Lee and Zhou stand alone",
       "expect": [
         [
           0
@@ -1193,6 +1245,9 @@
         [
           1,
           2
+        ],
+        [
+          3
         ]
       ]
     }

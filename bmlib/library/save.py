@@ -101,7 +101,7 @@ def _belongs_to(papers: Path, name: str, paper: PaperInfo) -> bool:
                 assert p.file is not None and p.version is not None
                 raise NewerRecord(name, p.file, p.version)
         return True
-    return found.ids().shares_any(paper.ids)
+    return found.shares_any(paper.ids)
 
 
 def _claim_folder(papers: Path, paper: PaperInfo) -> str:
@@ -288,6 +288,8 @@ def save_file(
     )
     fresh = Record(who, paper, (entry,))
     _record_bytes(fresh, root)  # before anything is written: the record must read back
+    # shortcut: save rescans the whole library per call; when 1b saves per download or
+    # libraries pass ~5,000 papers, let the caller pass its Scan.
     scan = scan_library(root)
     papers = root / PAPERS_DIR
     found = find(scan, paper.ids)

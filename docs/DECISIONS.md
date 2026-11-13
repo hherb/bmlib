@@ -6463,6 +6463,18 @@ undo.
   knows the other's identifier; a later record that carries both links them.
   `find` returns every folder of the linked group, not only those sharing an
   identifier with the query, so `save` lands in a folder of the paper.
+- **Every record's identifiers count for `find` and `group`, and a conflict is
+  reported.** Two records of one folder can disagree (two PMIDs). Both values
+  link the folder, so an identifier that lost the conflict still finds it and
+  the same bytes never get a second folder; the scan reports
+  `ConflictingIds { folder, field }` rather than resolve it silently.
+  `PaperFolder::ids` keeps the first record's value, for display only.
+- **`save` rescans the library on every call.** Measured in Python at 4,000
+  folders: 0.52 s per save, nearly all of it the scan; `group`, which was
+  O(n²) (2.1 s there), now maps each identifier value to the first folder
+  holding it and is linear (3 ms). Accepted for step 1a, where a save follows a
+  user's action. When step 1b saves per download, or libraries pass about 5,000
+  papers, let the caller pass the `Scan` it already holds.
 - **Folder-name clashes are decided by the code, not the file system.** A new
   name is compared under Unicode case folding (lower-case of NFC), so the same
   library behaves the same on a case-sensitive Linux disk and a case-insensitive

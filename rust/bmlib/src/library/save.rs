@@ -94,7 +94,7 @@ fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, Libr
             None => Ok(true),
         };
     }
-    Ok(found.ids().shares_any(&paper.ids))
+    Ok(found.shares_any(&paper.ids))
 }
 
 /// The folder `paper` goes in when no folder holds it yet: a new one, or one a
@@ -325,6 +325,8 @@ impl Library {
             files: vec![entry.clone()],
         };
         record_text(&fresh, self.root())?;
+        // shortcut: save rescans the whole library per call; when 1b saves per
+        // download or libraries pass ~5,000 papers, let the caller pass its Scan.
         let scan = self.scan()?;
         let papers = self.root().join(PAPERS_DIR);
         let existing = match find(&scan, &paper.ids).first() {

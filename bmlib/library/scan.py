@@ -55,11 +55,22 @@ class PaperFolder:
     files_on_disk: tuple[str, ...]
 
     def ids(self) -> PaperIds:
-        """The union of the records' identifiers; the first record wins a conflict."""
+        """The union of the records' identifiers; the first record wins a conflict.
+
+        A scan reports the conflict as ``conflicting_ids``. To match a query use
+        :meth:`shares_any`, which sees every record's value.
+        """
         acc = PaperIds()
         for r in self.records:
             acc = acc.merged(r.paper.ids)[0]
         return acc
+
+    def shares_any(self, ids: PaperIds) -> bool:
+        """True when any record here holds the same value as *ids* for an identifier.
+
+        So a value that lost a conflict inside the folder still finds it.
+        """
+        return any(r.paper.ids.shares_any(ids) for r in self.records)
 
     def used_by(self, sha256: str) -> list[Installation]:
         """The installations whose record lists a file with this digest."""
@@ -73,12 +84,14 @@ class Problem:
     ``kind`` is one of ``unreadable_record`` (``folder``, ``file``, ``reason``),
     ``unreadable_folder`` (``folder``, ``reason``: it or its ``records/`` cannot be listed),
     ``newer_record`` (``folder``, ``file``, ``version``), ``misnamed_record`` (``folder``,
-    ``file``), ``unrecorded_file`` (``folder``, ``name``) or ``stray_entry`` (``name``).
-    Fields a kind does not use are ``None``.
+    ``file``), ``conflicting_ids`` (``folder``, ``field``: two records hold different values
+    for it; both count for :func:`find` and :func:`group`), ``unrecorded_file`` (``folder``,
+    ``name``) or ``stray_entry`` (``name``). Fields a kind does not use are ``None``.
     """
 
     kind: str
     folder: str | None = None
+    field: str | None = None
     file: str | None = None
     name: str | None = None
     reason: str | None = None
@@ -141,6 +154,14 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
                 problems.append(Problem("misnamed_record", folder=folder, file=file))
             else:
                 records.append(got)
+    acc = PaperIds()
+    conflicts: list[str] = []
+    for r in records:
+        acc, fields = acc.merged(r.paper.ids)
+        for field in fields:
+            if field not in conflicts:
+                conflicts.append(field)
+                problems.append(Problem("conflicting_ids", folder=folder, field=field))
     try:
         on_disk = [
             n for n in list_names(directory) if n != RECORDS_DIR and not is_dir(directory / n)
@@ -205,11 +226,9 @@ def find(scan: Scan, ids: PaperIds) -> list[PaperFolder]:
     """Every folder of the paper(s) matching *ids*, in scan order.
 
     A paper is the union of folders whose records share an identifier, so this is each folder
-    in the :func:`group` of any folder whose identifiers share one with *ids*.
+    in the :func:`group` of any folder with a record sharing one with *ids*.
     """
-    hit = {
-        i for g in group(scan) if any(scan.folders[i].ids().shares_any(ids) for i in g) for i in g
-    }
+    hit = {i for g in group(scan) if any(scan.folders[j].shares_any(ids) for j in g) for i in g}
     return [f for i, f in enumerate(scan.folders) if i in hit]
 
 
@@ -237,10 +256,11 @@ def find_digest(scan: Scan, sha256: str) -> FileRef | None:
 def group(scan: Scan) -> list[list[int]]:
     """Indices of folders connected by shared identifiers, each group and the list sorted.
 
-    A folder with no identifiers stands alone.
+    Every record's identifiers count, not only :meth:`PaperFolder.ids`. A folder with no
+    identifiers stands alone. Linear in the number of records: each identifier value is
+    mapped to the first folder holding it, and later holders are joined to that one.
     """
-    ids = [f.ids() for f in scan.folders]
-    parent = list(range(len(ids)))
+    parent = list(range(len(scan.folders)))
 
     def root(i: int) -> int:
         while parent[i] != i:
@@ -248,12 +268,18 @@ def group(scan: Scan) -> list[list[int]]:
             i = parent[i]
         return i
 
-    for i in range(len(ids)):
-        for j in range(i + 1, len(ids)):
-            if ids[i].shares_any(ids[j]):
-                a, b = root(i), root(j)
-                parent[max(a, b)] = min(a, b)
+    first: dict[tuple[str, str], int] = {}
+    for i, f in enumerate(scan.folders):
+        for r in f.records:
+            for field in ("pmid", "doi", "pmcid"):
+                value = getattr(r.paper.ids, field)
+                if value is None:
+                    continue
+                j = first.setdefault((field, value), i)
+                if j != i:
+                    a, b = root(i), root(j)
+                    parent[max(a, b)] = min(a, b)
     groups: dict[int, list[int]] = {}
-    for i in range(len(ids)):
+    for i in range(len(scan.folders)):
         groups.setdefault(root(i), []).append(i)
     return sorted(groups.values())

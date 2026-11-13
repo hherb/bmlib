@@ -340,6 +340,9 @@ fn scan_matches_the_fixture() {
                 serde_json::json!({"kind": "unreadable_record", "folder": folder, "file": file})
             }
             Problem::UnreadableFolder { .. } => panic!("no unreadable folder in the sample"),
+            Problem::ConflictingIds { folder, field } => {
+                serde_json::json!({"kind": "conflicting_ids", "folder": folder, "field": field})
+            }
             Problem::NewerRecord {
                 folder,
                 file,

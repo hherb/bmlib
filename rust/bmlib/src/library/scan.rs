@@ -21,6 +21,8 @@
 //! A scan never fails on one bad folder: every oddity is a [`Problem`], so the
 //! caller can show it (a record is never silently dropped).
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::path::Path;
 
 use super::files::{
@@ -52,12 +54,21 @@ pub struct PaperFolder {
 }
 
 impl PaperFolder {
-    /// The union of the records' identifiers; the first record wins a conflict.
+    /// The union of the records' identifiers; the first record wins a conflict
+    /// (a scan reports it as [`Problem::ConflictingIds`]). To match a query, use
+    /// [`PaperFolder::shares_any`], which sees every record's value.
     #[must_use]
     pub fn ids(&self) -> PaperIds {
         self.records
             .iter()
             .fold(PaperIds::default(), |acc, r| acc.merged(&r.paper.ids).0)
+    }
+
+    /// True when any record here holds the same value as `ids` for an identifier,
+    /// so a value that lost a conflict inside the folder still finds it.
+    #[must_use]
+    pub fn shares_any(&self, ids: &PaperIds) -> bool {
+        self.records.iter().any(|r| r.paper.ids.shares_any(ids))
     }
 
     /// The installations whose record lists a file with this digest.
@@ -105,6 +116,15 @@ pub enum Problem {
         folder: String,
         /// The record file.
         file: String,
+    },
+    /// Two records of one folder hold different values for one identifier.
+    /// Both values count for [`find`] and [`group`]; [`PaperFolder::ids`] keeps
+    /// the first record's.
+    ConflictingIds {
+        /// The paper's folder.
+        folder: String,
+        /// `"pmid"`, `"doi"` or `"pmcid"`.
+        field: &'static str,
     },
     /// A source file no valid record lists.
     UnrecordedFile {
@@ -191,6 +211,21 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                         Ok(r) => records.push(r),
                     }
                 }
+            }
+        }
+    }
+    let mut acc = PaperIds::default();
+    let mut conflicts: Vec<&'static str> = Vec::new();
+    for r in &records {
+        let (merged, fields) = acc.merged(&r.paper.ids);
+        acc = merged;
+        for field in fields {
+            if !conflicts.contains(&field) {
+                conflicts.push(field);
+                problems.push(Problem::ConflictingIds {
+                    folder: folder.to_owned(),
+                    field,
+                });
             }
         }
     }
@@ -282,19 +317,21 @@ impl Library {
 /// Every folder of the paper(s) matching `ids`, in scan order.
 ///
 /// A paper is the union of folders whose records share an identifier, so this is
-/// each folder in the [`group`] of any folder whose identifiers share one with `ids`.
+/// each folder in the [`group`] of any folder with a record sharing one with `ids`.
 #[must_use]
 pub fn find<'a>(scan: &'a Scan, ids: &PaperIds) -> Vec<&'a PaperFolder> {
-    let hit: Vec<usize> = group(scan)
-        .into_iter()
-        .filter(|g| g.iter().any(|&i| scan.folders[i].ids().shares_any(ids)))
-        .flatten()
-        .collect();
+    let mut hit = vec![false; scan.folders.len()];
+    for g in group(scan) {
+        if g.iter().any(|&i| scan.folders[i].shares_any(ids)) {
+            for i in g {
+                hit[i] = true;
+            }
+        }
+    }
     scan.folders
         .iter()
-        .enumerate()
-        .filter(|(i, _)| hit.contains(i))
-        .map(|(_, f)| f)
+        .zip(hit)
+        .filter_map(|(f, h)| h.then_some(f))
         .collect()
 }
 
@@ -323,11 +360,15 @@ pub fn find_digest(scan: &Scan, sha256: &str) -> Option<FileRef> {
 }
 
 /// Indices of folders connected by shared identifiers, each group and the list
-/// sorted. A folder with no identifiers stands alone.
+/// sorted. Every record's identifiers count, not only [`PaperFolder::ids`]. A
+/// folder with no identifiers stands alone.
+///
+/// Linear in the number of records: each identifier value is mapped to the
+/// first folder holding it, and later holders are joined to that one.
 #[must_use]
 pub fn group(scan: &Scan) -> Vec<Vec<usize>> {
-    let ids: Vec<PaperIds> = scan.folders.iter().map(PaperFolder::ids).collect();
-    let mut parent: Vec<usize> = (0..ids.len()).collect();
+    let n = scan.folders.len();
+    let mut parent: Vec<usize> = (0..n).collect();
     fn root(parent: &mut [usize], mut i: usize) -> usize {
         while parent[i] != i {
             parent[i] = parent[parent[i]];
@@ -335,17 +376,31 @@ pub fn group(scan: &Scan) -> Vec<Vec<usize>> {
         }
         i
     }
-    for i in 0..ids.len() {
-        for j in (i + 1)..ids.len() {
-            if ids[i].shares_any(&ids[j]) {
-                let (a, b) = (root(&mut parent, i), root(&mut parent, j));
-                parent[a.max(b)] = a.min(b);
+    let mut first: HashMap<(&'static str, &str), usize> = HashMap::new();
+    for (i, f) in scan.folders.iter().enumerate() {
+        for r in &f.records {
+            let ids = &r.paper.ids;
+            for (field, value) in [
+                ("pmid", &ids.pmid),
+                ("doi", &ids.doi),
+                ("pmcid", &ids.pmcid),
+            ] {
+                let Some(value) = value else { continue };
+                match first.entry((field, value.as_str())) {
+                    Entry::Vacant(e) => {
+                        e.insert(i);
+                    }
+                    Entry::Occupied(e) => {
+                        let (a, b) = (root(&mut parent, i), root(&mut parent, *e.get()));
+                        parent[a.max(b)] = a.min(b);
+                    }
+                }
             }
         }
     }
     let mut groups: Vec<Vec<usize>> = Vec::new();
-    let mut slot = vec![usize::MAX; ids.len()];
-    for i in 0..ids.len() {
+    let mut slot = vec![usize::MAX; n];
+    for i in 0..n {
         let r = root(&mut parent, i);
         if slot[r] == usize::MAX {
             slot[r] = groups.len();
@@ -409,6 +464,22 @@ mod tests {
         let ids = f.ids();
         assert_eq!(ids.pmid.as_deref(), Some("1"));
         assert_eq!(ids.doi.as_deref(), Some("10.1/x"));
+    }
+
+    #[test]
+    fn every_records_ids_count_for_find_and_group() {
+        // a's second record lost the PMID conflict to its first; b shares the loser.
+        let mut a = folder("a", Some("1"), None);
+        a.records
+            .push(folder("a", Some("2"), None).records.remove(0));
+        let scan = Scan {
+            folders: vec![a, folder("b", Some("2"), None)],
+            problems: Vec::new(),
+        };
+        assert_eq!(group(&scan), vec![vec![0, 1]]);
+        let q = PaperIds::canonical(Some("2"), None, None).unwrap();
+        let got: Vec<&str> = find(&scan, &q).iter().map(|f| f.folder.as_str()).collect();
+        assert_eq!(got, ["a", "b"]);
     }
 
     #[test]

@@ -41,7 +41,8 @@ My Papers/
   of 1 to 200 characters a person recognises).
 - **A paper is the union of folders whose records share an identifier.** If two
   apps each created a folder before either knew the other's identifier, `find`
-  and `group` still see one paper.
+  and `group` still see one paper. Every record's identifiers count, so a value
+  that lost a conflict inside one folder still finds it.
 
 ## Opening, scanning, finding
 
@@ -134,6 +135,11 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   of one installation are out of scope. Different installations never share a
   file.
 - **Numbers.** A record's `size` and `year` read `-0` as 0.
+- **Cost.** `save` scans the whole library on each call, so it finds the
+  paper's folder wherever another app put it. Measured in Python on a laptop
+  SSD: about 0.12 s per save at 1,000 papers and 0.5 s at 4,000, nearly all of
+  it the scan (`group` is linear). An app saving many files at once pays it per
+  file.
 
 ## Problems a scan reports
 
@@ -147,6 +153,7 @@ versions, so some will be real).
 | `"unreadable_folder"` | A paper folder, or its `records/`, cannot be listed |
 | `"newer_record"` | A record written by a newer layout version; update the app |
 | `"misnamed_record"` | A valid record whose file name is not its installation's (a "copy of" by a sync conflict) |
+| `"conflicting_ids"` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `"unrecorded_file"` | A source file no record lists (a crash, or a record lost) |
 | `"stray_entry"` | Something in `papers/` that is not a folder |
 

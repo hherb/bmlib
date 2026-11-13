@@ -71,6 +71,13 @@ def test_ids_first_record_wins_a_conflict() -> None:
     assert (ids.pmid, ids.doi) == ("1", "10.1/x")
 
 
+def test_every_records_ids_count_for_find_and_group() -> None:
+    # a's second record lost the PMID conflict to its first; b shares the loser.
+    scan = Scan((_folder("a", "1", None, ("2", None)), _folder("b", "2", None)), ())
+    assert group(scan) == [[0, 1]]
+    assert [f.folder for f in find(scan, canonical_ids("2"))] == ["a", "b"]
+
+
 def test_find_digest_refuses_a_malformed_digest() -> None:
     scan = Scan((), ())
     assert find_digest(scan, "ABC") is None
