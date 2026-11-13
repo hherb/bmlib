@@ -93,7 +93,7 @@
 //!   twice, and `get_pdf` refuses an unreadable entry so the service quarantines
 //!   it.
 
-use crate::fulltext::cache::{safe_filename, sanitize_identifier, FullTextCache};
+use crate::fulltext::cache::{safe_filename, sanitize_identifier, FullTextCache, PDF_MAGIC_BYTES};
 use crate::fulltext::jats_reader::{author_full_name, parse_with_pmc_id};
 use crate::fulltext::library_store::{library_ids, paper_info, Held, LibraryStore};
 use crate::fulltext::models::{
@@ -102,7 +102,7 @@ use crate::fulltext::models::{
     PDF_SEARCH_FAILED,
 };
 use crate::fulltext::pdf_text::{PdfError, PdfErrorKind};
-use crate::library::{Installation, Library, PaperIds, SourceKind};
+use crate::library::{FileRef, Installation, Library, PaperIds, PaperInfo, SourceKind};
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
 use crate::pyvalue::{python_repr, python_str, python_strip, truthy};
 use regex::Regex;
@@ -1450,17 +1450,50 @@ impl PdfOrigin {
     }
 }
 
-/// What the shared library gave one lookup, before the cache and the chain
-/// ([`FullTextService::read_library`]).
+/// The shared library's part in one lookup: what it gave before the cache and
+/// the chain ([`FullTextService::read_library`]), and what the chain keeps in
+/// it and takes from it after.
+///
+/// One value per `fetch_fulltext` call, passed down the chain. The library is
+/// used only while `ids` is not empty and `failure` is `None`
+/// ([`FullTextService::keeper`]), so the first library error ends its use for
+/// the rest of the call.
 #[derive(Default)]
 struct FromLibrary {
     /// The library's JATS, rendered: it ends the lookup.
     served: Option<FullTextResult>,
-    /// The library's PDF when no JATS was served, held for the chain.
+    /// The library's PDF when no JATS was served, held for the chain, which
+    /// takes it in place of a download.
     pdf: Option<Held>,
     /// The library error that stopped its use in this lookup, for the result's
     /// [`FullTextResult::library_failure`].
     failure: Option<String>,
+    /// The request's identifiers in the library's form; empty when the lookup
+    /// does not use the library.
+    ids: PaperIds,
+    /// The library files this lookup used or saved, in order, for the result's
+    /// [`FullTextResult::library_files`].
+    files: Vec<FileRef>,
+    /// The paper as a JATS used or saved in this lookup describes it, so a PDF
+    /// saved later in the call is filed with its title, year and author.
+    paper: Option<PaperInfo>,
+}
+
+impl FromLibrary {
+    /// `result` with this lookup's library files and library failure on it.
+    fn finish(self, mut result: FullTextResult) -> FullTextResult {
+        result.library_files = self.files;
+        result.library_failure = self.failure;
+        result
+    }
+
+    /// The paper to file a PDF under: the JATS's when this lookup used or saved
+    /// one, else the request's identifiers alone.
+    fn pdf_paper(&self) -> PaperInfo {
+        self.paper
+            .clone()
+            .unwrap_or_else(|| paper_info(self.ids.clone(), None))
+    }
 }
 
 /// What [`FullTextService::usable_library_jats`] made of the library's JATS.
@@ -1713,9 +1746,14 @@ impl FullTextService {
     /// identifier of its own contradicting the request's): the result's
     /// `source` is [`LIBRARY_SOURCE`], it lists the files it used in
     /// [`FullTextResult::library_files`], and the library's PDF, if any, is its
-    /// `file_path`. Each file used is noted in `who`'s record. A library that
-    /// cannot be read does not stop the lookup: it is warned of, named in
-    /// [`FullTextResult::library_failure`], and the cache and the chain run as
+    /// `file_path`. Each file used is noted in `who`'s record. Otherwise the
+    /// chain runs, and the JATS and PDFs it downloads are kept in the library
+    /// rather than the cache (a PDF is then downloaded even without an
+    /// `identifier`), while the library's PDF, when it holds one, is taken in
+    /// place of a download. The cache keeps only the *PDF still owed* mark and
+    /// an abstract kept with a PDF. A library that cannot be read or written
+    /// does not stop the lookup: it is warned of, named in
+    /// [`FullTextResult::library_failure`], and the rest of the lookup runs as
     /// without a library.
     #[must_use]
     pub fn with_library(mut self, library: Library, who: Installation) -> Self {
@@ -1863,14 +1901,18 @@ impl FullTextService {
             .map(sanitize_identifier);
 
         // The library first (design §4.5): its JATS ends the lookup. Its
-        // failure is carried onto whatever the cache or the chain returns.
-        let from_library = self.read_library(request);
-        if let Some(hit) = from_library.served {
+        // files and failure are carried onto whatever the cache or the chain
+        // returns.
+        let mut library = self.read_library(request);
+        if let Some(hit) = library.served.take() {
             // No PDF in the library: the cache's PDF mark (#744) still applies.
-            return Ok(match (cache_id.as_deref(), self.cache.as_ref()) {
-                (Some(id), Some(cache)) => self.seek_pdf_again(hit, cache, id, request),
+            let hit = match (cache_id.as_deref(), self.cache.as_ref()) {
+                (Some(id), Some(cache)) => {
+                    self.seek_pdf_again(hit, cache, id, request, &mut library)
+                }
                 _ => hit,
-            });
+            };
+            return Ok(library.finish(hit));
         }
 
         // Cache check — return immediately if content is already on disk.
@@ -1890,9 +1932,8 @@ impl FullTextService {
         // abstract to pair it with.
         if let (Some(id), Some(cache)) = (cache_id.as_deref(), self.cache.as_ref()) {
             if let Some(hit) = self.check_cache(cache, id) {
-                let mut hit = self.seek_pdf_again(hit, cache, id, request);
-                hit.library_failure = from_library.failure;
-                return Ok(hit);
+                let hit = self.seek_pdf_again(hit, cache, id, request, &mut library);
+                return Ok(library.finish(hit));
             }
         }
 
@@ -1900,15 +1941,10 @@ impl FullTextService {
         // runs; this is what remembers that they did, whichever tier returns.
         let on_bug = |fault: &TierFault| self.warn_swallowed_bug(fault);
         let mut failures = TierFailures::reported(&on_bug);
-        let mut result = self.retrieve(
-            request,
-            cache_id.as_deref(),
-            &mut failures,
-            from_library.pdf.as_ref(),
-        )?;
+        let mut result =
+            self.retrieve(request, cache_id.as_deref(), &mut failures, &mut library)?;
         result.tier_faults = failures.faults().iter().map(ToString::to_string).collect();
-        result.library_failure = from_library.failure;
-        Ok(result)
+        Ok(library.finish(result))
     }
 
     /// What the library holds for `request`, read before the cache (design
@@ -1920,10 +1956,11 @@ impl FullTextService {
     /// when it parses, has a body, and none of its own identifiers contradicts
     /// the request's (an identifier absent on either side agrees); the
     /// library's PDF goes beside it, and each file used is noted in this
-    /// installation's record. A JATS that is the wrong paper, has no body or
-    /// does not parse is warned of and not served, and the library's PDF is
-    /// held for the chain instead. The first library error is warned of and
-    /// kept as the failure, and the rest of the call uses no library.
+    /// installation's record. A JATS that has no body or does not parse is
+    /// warned of and not served, and the library's PDF is held for the chain
+    /// instead. A JATS that is the wrong paper is warned of and not served,
+    /// and no PDF of its folder is held. The first library error is warned of
+    /// and kept as the failure, and the rest of the call uses no library.
     fn read_library(&self, request: &FullTextRequest) -> FromLibrary {
         let mut out = FromLibrary::default();
         let Some(store) = self.library.as_ref() else {
@@ -1939,9 +1976,13 @@ impl FullTextService {
         if ids.is_empty() {
             return out;
         }
+        out.ids = ids.clone();
         let jats = match store.find_source(&ids, SourceKind::Jats) {
             Ok(jats) => jats,
-            Err(error) => return self.library_failed(out, &error),
+            Err(error) => {
+                self.library_failed(&mut out, &error);
+                return out;
+            }
         };
         let article = match jats
             .as_ref()
@@ -1956,7 +1997,7 @@ impl FullTextService {
         let pdf = match store.find_source(&ids, SourceKind::Pdf) {
             Ok(pdf) => pdf,
             Err(error) => {
-                out = self.library_failed(out, &error);
+                self.library_failed(&mut out, &error);
                 None
             }
         };
@@ -1976,37 +2017,138 @@ impl FullTextService {
         ));
         let mut result =
             fulltext_result(LIBRARY_SOURCE, render_jats_html(&article), Some(jats.bytes));
-        result.library_files.push(jats.file);
+        out.files.push(jats.file);
         if let Some(pdf) = pdf {
             match store.path_of(&pdf.file) {
                 Ok(path) => {
                     result.file_path = Some(path.display().to_string());
-                    result.library_files.push(pdf.file);
+                    out.files.push(pdf.file);
                 }
-                Err(error) => out = self.library_failed(out, &error),
+                Err(error) => self.library_failed(&mut out, &error),
             }
         }
+        let paper = paper_info(ids, Some(&article));
         if out.failure.is_none() {
-            let paper = paper_info(ids, Some(&article));
-            for file in &result.library_files {
+            for file in &out.files {
                 if let Err(error) = store.note_use(&paper, file) {
-                    out = self.library_failed(out, &error);
+                    self.library_failed(&mut out, &error);
                     break;
                 }
             }
         }
-        result.library_failure = out.failure.take();
+        out.paper = Some(paper);
         out.served = Some(result);
         out
     }
 
-    /// `out` with `error` as the library's failure in this lookup, warned of.
-    fn library_failed(&self, mut out: FromLibrary, error: &str) -> FromLibrary {
+    /// Record `error` as the library's failure in this lookup, warned of; the
+    /// rest of the lookup uses no library.
+    fn library_failed(&self, out: &mut FromLibrary, error: &str) {
         self.warn(format!(
             "Could not use the library ({error}); going on without it."
         ));
         out.failure = Some(error.to_string());
-        out
+    }
+
+    /// The library, when this lookup may still use it: one is set, the request
+    /// gave it identifiers, and no library error has been met.
+    fn keeper(&self, library: &FromLibrary) -> Option<&LibraryStore> {
+        self.library
+            .as_ref()
+            .filter(|_| library.failure.is_none() && !library.ids.is_empty())
+    }
+
+    /// JATS full text the chain's tier `source` found: kept in the library
+    /// when this lookup uses one, else cached as [`FullTextService::cache_html`]
+    /// caches it.
+    ///
+    /// The paper is filed under the request's identifiers, with the title,
+    /// year, first author and missing identifiers read from `xml` (parsed as
+    /// the tier parsed it, with `known_pmc_id`). The saved file goes on
+    /// `library.files`. A library error is warned of and recorded, and the
+    /// JATS is cached instead.
+    fn keep_jats(
+        &self,
+        html: &str,
+        xml: &[u8],
+        source: &str,
+        known_pmc_id: &str,
+        cache_id: Option<&str>,
+        library: &mut FromLibrary,
+    ) {
+        if let Some(store) = self.keeper(library) {
+            let article = std::str::from_utf8(xml)
+                .ok()
+                .and_then(|text| parse_with_pmc_id(text, known_pmc_id).ok());
+            let paper = paper_info(library.ids.clone(), article.as_ref());
+            match store.keep(&paper, xml, SourceKind::Jats, source) {
+                Ok(file) => {
+                    self.info(format!(
+                        "JATS from {source} kept in the library ({}/{})",
+                        file.folder, file.name
+                    ));
+                    library.files.push(file);
+                    library.paper = Some(paper);
+                    return;
+                }
+                Err(error) => self.library_failed(library, &error),
+            }
+        }
+        self.cache_html(html, xml, cache_id);
+    }
+
+    /// Keep downloaded PDF `bytes` from `url` in the library, filed under
+    /// [`FromLibrary::pdf_paper`]. Returns the file's path in the library, the
+    /// file added to `library.files`; `None` after a library error, warned of
+    /// and recorded. The caller has checked the bytes are a PDF.
+    fn keep_pdf(
+        &self,
+        store: &LibraryStore,
+        bytes: &[u8],
+        url: &str,
+        library: &mut FromLibrary,
+    ) -> Option<PathBuf> {
+        let kept = store
+            .keep(&library.pdf_paper(), bytes, SourceKind::Pdf, url)
+            .and_then(|file| store.path_of(&file).map(|path| (file, path)));
+        match kept {
+            Ok((file, path)) => {
+                library.files.push(file);
+                Some(path)
+            }
+            Err(error) => {
+                self.library_failed(library, &error);
+                None
+            }
+        }
+    }
+
+    /// The library's PDF held for this lookup, in place of a download: its
+    /// path, once noted in this installation's record and added to
+    /// `library.files`. `None` when none is held, the library is no longer
+    /// used, or noting it fails (warned of and recorded).
+    fn use_library_pdf(&self, library: &mut FromLibrary) -> Option<PathBuf> {
+        let store = self.keeper(library)?;
+        let held = library.pdf.take()?;
+        let used = store.path_of(&held.file).and_then(|path| {
+            store
+                .note_use(&library.pdf_paper(), &held.file)
+                .map(|()| path)
+        });
+        match used {
+            Ok(path) => {
+                self.info(format!(
+                    "Using the library's PDF {}/{} in place of a download",
+                    held.file.folder, held.file.name
+                ));
+                library.files.push(held.file);
+                Some(path)
+            }
+            Err(error) => {
+                self.library_failed(library, &error);
+                None
+            }
+        }
     }
 
     /// The library's JATS `held`, parsed, when it may be served for `ids`: it
@@ -2053,14 +2195,16 @@ impl FullTextService {
 
     /// The tier chain. Every return is an exit a caller can observe.
     ///
-    /// `_library_pdf` is the library's PDF for the paper when the library held
-    /// no JATS it could serve (design §4.5); the chain does not use it yet.
+    /// `library` is the lookup's part of the shared library (design §4.5): JATS
+    /// and PDFs the chain finds are kept in it rather than in the cache, and
+    /// the library's PDF it holds is taken in place of a download, beside
+    /// JATS or, with no JATS, ahead of Tier 1d.
     fn retrieve(
         &self,
         request: &FullTextRequest,
         cache_id: Option<&str>,
         failures: &mut TierFailures<'_>,
-        _library_pdf: Option<&Held>,
+        library: &mut FromLibrary,
     ) -> Result<FullTextResult, FullTextError> {
         // Python's truthiness, once, so every gate below reads what it read.
         let pmc_id = request
@@ -2083,7 +2227,7 @@ impl FullTextService {
         let mut pdf: Option<FullTextResult> = None;
         if !request.fulltext_sources.is_empty() {
             let (result, held_back, link, known_pdf) =
-                self.try_known_sources(&request.fulltext_sources, cache_id, failures);
+                self.try_known_sources(&request.fulltext_sources, cache_id, failures, library);
             abstract_only = held_back;
             held_link = link;
             pdf = known_pdf;
@@ -2095,7 +2239,8 @@ impl FullTextService {
                     search: None,
                     seeks: 0,
                 };
-                let result = self.pdf_for_jats(result, pdf.as_ref(), &found, cache_id, failures);
+                let result =
+                    self.pdf_for_jats(result, pdf.as_ref(), &found, cache_id, failures, library);
                 return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
             }
         }
@@ -2122,7 +2267,8 @@ impl FullTextService {
         let mut abstract_came_from_caller = false;
         if let Some(id) = caller_pmc_id.as_deref() {
             let held_before = abstract_only.is_some();
-            let (result, held_back) = self.try_pmc_id(id, cache_id, failures, abstract_only.take());
+            let (result, held_back) =
+                self.try_pmc_id(id, cache_id, failures, abstract_only.take(), library);
             abstract_only = held_back;
             if let Some(result) = result {
                 let found = JatsFound {
@@ -2132,7 +2278,14 @@ impl FullTextService {
                     search: None,
                     seeks: 0,
                 };
-                return Ok(self.pdf_for_jats(result, pdf.as_ref(), &found, cache_id, failures));
+                return Ok(self.pdf_for_jats(
+                    result,
+                    pdf.as_ref(),
+                    &found,
+                    cache_id,
+                    failures,
+                    library,
+                ));
             }
             if !held_before && abstract_only.is_some() {
                 abstract_came_from_caller = true;
@@ -2167,7 +2320,7 @@ impl FullTextService {
                         ));
                     }
                     let (result, discovered_abstract) =
-                        self.try_pmc_id(&id, cache_id, failures, None);
+                        self.try_pmc_id(&id, cache_id, failures, None, library);
                     if let Some(result) = result {
                         let found = JatsFound {
                             request,
@@ -2182,6 +2335,7 @@ impl FullTextService {
                             &found,
                             cache_id,
                             failures,
+                            library,
                         ));
                     }
                     // A superseded ID's own abstract gives way to the superseding
@@ -2204,6 +2358,16 @@ impl FullTextService {
             return Ok(self.with_abstract_fallback(saved, abstract_only.as_ref(), cache_id));
         }
 
+        // The library's PDF in place of the PDF tiers below (design §4.5).
+        if let Some(path) = self.use_library_pdf(library) {
+            let mut result = FullTextResult {
+                file_path: Some(path.display().to_string()),
+                ..empty_result(LIBRARY_SOURCE)
+            };
+            self.attach_pdf_text(&path, &mut result);
+            return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
+        }
+
         // Tier 1d: Europe PMC PDF render (free PDF when XML is unavailable).
         if let Some(url) = pdf_render_url {
             self.info(format!("PDF available from Europe PMC render: {url}"));
@@ -2211,7 +2375,14 @@ impl FullTextService {
                 pdf_url: Some(url.clone()),
                 ..empty_result("europepmc_pdf")
             };
-            self.download_and_cache_pdf(&url, cache_id, &mut result, PdfOrigin::EuropepmcPdf, None);
+            self.download_and_cache_pdf(
+                &url,
+                cache_id,
+                &mut result,
+                PdfOrigin::EuropepmcPdf,
+                None,
+                library,
+            );
             // A failed one is no better than the caller's held failure, and
             // would replace its address and cause (#739).
             if result.pdf_download_failure.is_none() || pdf.is_none() {
@@ -2242,6 +2413,7 @@ impl FullTextService {
                         &mut result,
                         PdfOrigin::Unpaywall,
                         None,
+                        library,
                     );
                     if result.pdf_download_failure.is_none() || pdf.is_none() {
                         // As Tier 1d's.
@@ -2454,6 +2626,11 @@ impl FullTextService {
     /// [`PDF_SEARCH_FAILED`] (a failed Open Data listing or Unpaywall lookup
     /// counts as one), else the first failure (#746). A failed search, Open
     /// Data listing or Unpaywall lookup is recorded on `failures`.
+    ///
+    /// Short of a saved caller's PDF, the library's PDF held for `library`
+    /// goes on `result` in place of any download, whether or not
+    /// `fetch_pdf_with_jats` is on (a later lookup serves the two together
+    /// anyway), and the cache's mark is removed as for a saved download.
     fn pdf_for_jats(
         &self,
         result: FullTextResult,
@@ -2461,9 +2638,20 @@ impl FullTextService {
         found: &JatsFound<'_>,
         cache_id: Option<&str>,
         failures: &mut TierFailures<'_>,
+        library: &mut FromLibrary,
     ) -> FullTextResult {
-        if !self.fetch_pdf_with_jats || pdf.is_some_and(|held| held.pdf_download_failure.is_none())
-        {
+        let pdf_saved = pdf.is_some_and(|held| held.pdf_download_failure.is_none());
+        if !pdf_saved {
+            if let Some(path) = self.use_library_pdf(library) {
+                self.mark_pdf_retry(cache_id, found.pmc_id, None);
+                let held = FullTextResult {
+                    file_path: Some(path.display().to_string()),
+                    ..empty_result(LIBRARY_SOURCE)
+                };
+                return with_pdf(result, Some(&held));
+            }
+        }
+        if !self.fetch_pdf_with_jats || pdf_saved {
             return with_pdf(result, pdf);
         }
         let mut search_failed = false;
@@ -2559,6 +2747,7 @@ impl FullTextService {
                 origin,
                 attempts,
                 md5.as_deref(),
+                library,
             );
             if candidate.pdf_download_failure.is_none() {
                 if candidate.file_path.is_some() {
@@ -2620,6 +2809,7 @@ impl FullTextService {
     /// the second try, each later wait twice the one before. Any other
     /// outcome is returned at once. Returns the last try's result: saved, or
     /// carrying its `pdf_download_failure`.
+    #[allow(clippy::too_many_arguments)]
     fn download_beside_jats(
         &self,
         url: &str,
@@ -2628,6 +2818,7 @@ impl FullTextService {
         origin: PdfOrigin,
         attempts: u32,
         md5: Option<&str>,
+        library: &mut FromLibrary,
     ) -> FullTextResult {
         let mut attempt = 1;
         loop {
@@ -2635,7 +2826,7 @@ impl FullTextService {
                 pdf_url: Some(url.to_string()),
                 ..empty_result(source)
             };
-            self.download_and_cache_pdf(url, cache_id, &mut found, origin, md5);
+            self.download_and_cache_pdf(url, cache_id, &mut found, origin, md5, library);
             if attempt >= attempts || !found.pdf_failure_may_pass() {
                 return found;
             }
@@ -2709,13 +2900,15 @@ impl FullTextService {
     /// still bounds the requests. Any other hit is returned as it is, so a
     /// paper with no PDF anywhere costs no request, and so is a hit with
     /// nothing to try, which leaves the mark as it is. The search's and
-    /// Unpaywall's faults go on `tier_faults`.
+    /// Unpaywall's faults go on `tier_faults`. A PDF found goes to the
+    /// library when `library` is in use, as in the chain.
     fn seek_pdf_again(
         &self,
         hit: FullTextResult,
         cache: &FullTextCache,
         cache_id: &str,
         request: &FullTextRequest,
+        library: &mut FromLibrary,
     ) -> FullTextResult {
         if !(self.fetch_pdf_with_jats
             && hit.content_kind == ContentKind::Fulltext
@@ -2765,7 +2958,8 @@ impl FullTextService {
             search: None,
             seeks,
         };
-        let mut result = self.pdf_for_jats(hit, None, &found, Some(cache_id), &mut failures);
+        let mut result =
+            self.pdf_for_jats(hit, None, &found, Some(cache_id), &mut failures, library);
         result.tier_faults = failures.faults().iter().map(ToString::to_string).collect();
         result
     }
@@ -2794,6 +2988,7 @@ impl FullTextService {
         sources: &[FullTextSourceEntry],
         cache_id: Option<&str>,
         failures: &mut TierFailures<'_>,
+        library: &mut FromLibrary,
     ) -> (
         Option<FullTextResult>,
         Option<FullTextResult>,
@@ -2830,7 +3025,7 @@ impl FullTextService {
                     }
                     Ok((html, true, xml)) => {
                         self.info(format!("Full text from JATS XML ({})", entry.source));
-                        self.cache_html(&html, &xml, cache_id);
+                        self.keep_jats(&html, &xml, &entry.source, "", cache_id, library);
                         return (
                             Some(fulltext_result(&entry.source, html, Some(xml))),
                             abstract_only,
@@ -2865,6 +3060,7 @@ impl FullTextService {
                     &mut result,
                     PdfOrigin::KnownSource,
                     None,
+                    library,
                 );
                 // A PDF ends nothing (#739): JATS reads better than a PDF's
                 // text, and a publisher's 403 used to hide the JATS a later
@@ -3157,6 +3353,13 @@ impl FullTextService {
     /// `file_path` is lost even for a caller who turned extraction off
     /// precisely because they wanted the file.
     ///
+    /// When `library` is in use the PDF is downloaded with or without a cache
+    /// or an identifier, and its bytes, once they pass the md5 and `%PDF`
+    /// checks, are kept in the library ([`FullTextService::keep_pdf`]):
+    /// `file_path` is then the library's file. If the library fails, the PDF
+    /// goes to the cache as without one, or, with no cache or identifier,
+    /// only its URL stays on the result, as without a cache.
+    ///
     /// The three failure causes are reported once per `(origin, cause)` rather
     /// than per article, and the level was chosen from a measured rate against
     /// a rule fixed before the numbers landed: under 5% of attempts a
@@ -3175,21 +3378,25 @@ impl FullTextService {
         result: &mut FullTextResult,
         origin: PdfOrigin,
         md5: Option<&str>,
+        library: &mut FromLibrary,
     ) {
-        let Some(cache) = self.cache.as_ref() else {
-            self.debug(format!(
-                "The full-text cache could not be created, so {pdf_url} is not downloaded — the URL is left on the result, and there is no file to extract text from"
-            ));
-            return;
-        };
-        let Some(cache_id) = cache_id else {
-            if self.convert_pdfs {
-                self.info(format!(
-                    "convert_pdfs is on but no identifier was given — a PDF is only extracted once cached, so {pdf_url} is left as a URL"
+        let keeper = self.keeper(library);
+        if keeper.is_none() {
+            if self.cache.is_none() {
+                self.debug(format!(
+                    "The full-text cache could not be created, so {pdf_url} is not downloaded — the URL is left on the result, and there is no file to extract text from"
                 ));
+                return;
             }
-            return;
-        };
+            if cache_id.is_none() {
+                if self.convert_pdfs {
+                    self.info(format!(
+                        "convert_pdfs is on but no identifier was given — a PDF is only extracted once cached, so {pdf_url} is left as a URL"
+                    ));
+                }
+                return;
+            }
+        }
 
         let response = match self.http_get(pdf_url) {
             Ok(response) => response,
@@ -3221,6 +3428,31 @@ impl FullTextService {
             result.pdf_download_failure = Some(PDF_CHECKSUM_MISMATCH.to_string());
             return;
         }
+
+        if let Some(store) = keeper {
+            // The cache's own check, made before the library keeps the bytes.
+            if !response.body.starts_with(PDF_MAGIC_BYTES) {
+                self.report_pdf_download_failure(
+                    &result.source,
+                    origin,
+                    pdf_url,
+                    "the response is not a PDF",
+                    "not-a-pdf",
+                );
+                result.pdf_download_failure = Some("not-a-pdf".to_string());
+                return;
+            }
+            if let Some(path) = self.keep_pdf(store, &response.body, pdf_url, library) {
+                result.file_path = Some(path.display().to_string());
+                self.info(format!("PDF kept in the library at {}", path.display()));
+                self.attach_pdf_text(&path, result);
+                return;
+            }
+        }
+        // Without the library, or after it failed: the cache, else the URL alone.
+        let (Some(cache), Some(cache_id)) = (self.cache.as_ref(), cache_id) else {
+            return;
+        };
 
         // **The bytes, not a decoded string.** The cache validates the `%PDF`
         // prefix and nothing else, so a lossy decode on this path is what wrote a
@@ -3503,6 +3735,7 @@ impl FullTextService {
         cache_id: Option<&str>,
         failures: &mut TierFailures<'_>,
         mut abstract_only: Option<FullTextResult>,
+        library: &mut FromLibrary,
     ) -> (Option<FullTextResult>, Option<FullTextResult>) {
         type Fetch<'s> = fn(&FullTextService, &str) -> Result<(String, bool, Vec<u8>), TierFault>;
         let fetchers: [(&str, &str, Fetch<'_>); 3] = [
@@ -3518,7 +3751,7 @@ impl FullTextService {
             match fetch(self, pmc_id) {
                 Ok((html, true, xml)) => {
                     self.info(format!("Full text retrieved from {name} for {pmc_id}"));
-                    self.cache_html(&html, &xml, cache_id);
+                    self.keep_jats(&html, &xml, source, pmc_id, cache_id, library);
                     return (
                         Some(fulltext_result(source, html, Some(xml))),
                         abstract_only,

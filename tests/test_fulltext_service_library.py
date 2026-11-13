@@ -14,21 +14,28 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The full-text service reading the shared library before its cache and its chain (design
-§4.5). Rust's ``tests/service_library.rs`` runs the same six cases."""
+"""The full-text service reading the shared library before its cache and its chain, and keeping
+what the chain downloads in it (design §4.5). Rust's ``tests/service_library.rs`` runs the same
+cases and the same shared scenarios (``tests/fixtures/fulltext_library_scenarios.json``)."""
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import shutil
+import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.library_store import LibraryStore, paper_info
+from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.fulltext.service import LIBRARY_SOURCE, FullTextService, _sanitize_identifier
 from bmlib.library import (
     FileRef,
@@ -41,7 +48,8 @@ from bmlib.library import (
     open_library,
 )
 
-_SAMPLE = (Path(__file__).parent / "fixtures" / "sample_article.xml").read_bytes()
+_FIXTURES = Path(__file__).parent / "fixtures"
+_SAMPLE = (_FIXTURES / "sample_article.xml").read_bytes()
 # The sample's own PMID, and part of the title its rendering carries.
 _SAMPLE_PMID = "34567890"
 _SAMPLE_TITLE = "Effects of Novel Compound X"
@@ -264,3 +272,112 @@ def test_a_library_pdf_without_jats_is_held_for_the_chain(
     ):
         service.fetch_fulltext(pmid="999")
     assert _holds_a_library_pdf(caplog), caplog.text
+
+
+# ---------------------------------------------------------------------------
+# The shared scenarios (tests/fixtures/fulltext_library_scenarios.json), which Rust's
+# ``library_scenarios`` runs too.
+# ---------------------------------------------------------------------------
+
+_SCENARIOS = json.loads((_FIXTURES / "fulltext_library_scenarios.json").read_text("utf-8"))[
+    "scenarios"
+]
+
+
+def _source_count(lib: Path) -> int:
+    """How many source files the library at *lib* holds, over all folders."""
+    return sum(len(f.files_on_disk) for f in open_library(lib).scan().folders)
+
+
+def _chmod_dirs(root: Path, mode: int) -> None:
+    """Every directory under *root*, *root* included, set to *mode*."""
+    for dirpath, _, _ in os.walk(root):
+        os.chmod(dirpath, mode)
+
+
+def _folder_kinds(lib: Path) -> tuple[list[list[str]], list[str]]:
+    """Each folder's file kinds (sorted), the folders sorted, and the folder names."""
+    folders = open_library(lib).scan().folders
+    kinds = []
+    for folder in folders:
+        by_name = {e.name: e.kind.value for r in folder.records for e in r.files}
+        kinds.append(sorted(by_name[n] for n in folder.files_on_disk if n in by_name))
+    return sorted(kinds), [f.folder for f in folders]
+
+
+@pytest.mark.parametrize("scenario", _SCENARIOS, ids=[s["name"] for s in _SCENARIOS])
+def test_library_scenario(tmp_path: Path, scenario: dict[str, Any]) -> None:
+    read_only_after = scenario["read_only_after"]
+    # Called here, not at collection: os.geteuid does not exist on Windows (#755).
+    if read_only_after is not None and (sys.platform == "win32" or os.geteuid() == 0):
+        pytest.skip("permissions are not enforced")
+    lib = _library(tmp_path).root
+    for saved in scenario["library"]:
+        ids = saved["ids"]
+        paper = PaperInfo(canonical_ids(ids.get("pmid"), ids.get("doi"), ids.get("pmc_id")))
+        who = Installation.new(saved["app"], "bbbb", "Mac")
+        data = (_FIXTURES / saved["file"]).read_bytes()
+        _library(tmp_path).save(who, paper, data, SourceKind(saved["kind"]), "test")
+    answers = [
+        (
+            a["pattern"],
+            200 if "file" in a else a["status"],
+            (_FIXTURES / a["file"]).read_bytes() if "file" in a else b"",
+        )
+        for a in scenario["network"]
+    ]
+    lock_at = None if read_only_after is None else _source_count(lib) + read_only_after
+    requests: list[str] = []
+
+    def answer(url: str, **_: object) -> httpx.Response:
+        """The first answer whose pattern is in *url*, else 404; locks the library on cue."""
+        requests.append(url)
+        if lock_at is not None and _source_count(lib) >= lock_at:
+            _chmod_dirs(lib, 0o555)
+        status, body = next(((s, b) for p, s, b in answers if p in url), (404, b""))
+        return httpx.Response(status, content=body, request=httpx.Request("GET", url))
+
+    cache = FullTextCache(cache_dir=tmp_path / "cache")
+    service = FullTextService(
+        email="test@example.com",
+        cache=cache,
+        fetch_pdf_with_jats=scenario["service"]["fetch_pdf_with_jats"],
+        library=_library(tmp_path),
+        installation=_ME,
+    )
+    service.pdf_retry_delay = 0
+    req = scenario["request"]
+    try:
+        with patch.object(service, "_http_get", side_effect=answer):
+            result = service.fetch_fulltext(
+                pmid=req["pmid"] or "",
+                doi=req["doi"],
+                pmc_id=req["pmc_id"],
+                identifier=req["identifier"],
+                fulltext_sources=[FullTextSourceEntry(**e) for e in req.get("fulltext_sources", [])]
+                or None,
+            )
+    finally:
+        _chmod_dirs(lib, 0o755)
+
+    want = scenario["expect"]
+    assert result.source == want["source"]
+    assert result.content_kind == want["content_kind"]
+    assert [f.kind.value for f in result.library_files] == want["library_files"]
+    if want["library_failure"] is None:
+        assert result.library_failure is None
+    else:
+        assert want["library_failure"] in (result.library_failure or "")
+    assert len(requests) == len(want["requests"]), requests
+    assert all(p in url for url, p in zip(requests, want["requests"], strict=True)), requests
+    folders, names = _folder_kinds(lib)
+    assert folders == want["folders"]
+    if want["folder_name_contains"] is not None:
+        assert all(want["folder_name_contains"] in n for n in names), names
+    entries = []
+    if req["identifier"] is not None:
+        key = _sanitize_identifier(req["identifier"])
+        entries += ["jats"] if cache.get_jats(key) is not None else []
+        entries += ["html"] if cache.has_html(key) else []
+        entries += ["pdf"] if cache.get_pdf(key) is not None else []
+    assert entries == want["cache"]

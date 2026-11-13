@@ -15,8 +15,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! The full-text service reading the shared library before its cache and its
-//! chain (design §4.5). Python's `tests/test_fulltext_service_library.py` runs
-//! the same six cases.
+//! chain, and keeping what the chain downloads in it (design §4.5). Python's
+//! `tests/test_fulltext_service_library.py` runs the same cases and the same
+//! shared scenarios (`tests/fixtures/fulltext_library_scenarios.json`).
 
 #[path = "common/scripted_http.rs"]
 mod scripted_http;
@@ -297,4 +298,292 @@ fn a_library_pdf_without_jats_is_held_for_the_chain() {
     svc.fetch_fulltext(&by_pmid("999")).unwrap();
     assert!(holds_a_library_pdf(&svc), "{:?}", svc.log_lines());
     let _ = fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// The shared scenarios (tests/fixtures/fulltext_library_scenarios.json)
+// ---------------------------------------------------------------------------
+
+/// The contract fixtures' directory.
+fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures")
+}
+
+/// How many source files the library at `lib` holds, over all folders.
+fn source_count(lib: &Path) -> usize {
+    Library::open(lib)
+        .unwrap()
+        .scan()
+        .unwrap()
+        .folders
+        .iter()
+        .map(|f| f.files_on_disk.len())
+        .sum()
+}
+
+/// Every directory under `root`, `root` included, set to `mode`; nothing
+/// where permissions are not Unix modes.
+fn chmod_dirs(root: &Path, mode: u32) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if !root.is_dir() {
+            return;
+        }
+        for entry in fs::read_dir(root).unwrap() {
+            chmod_dirs(&entry.unwrap().path(), mode);
+        }
+        fs::set_permissions(root, fs::Permissions::from_mode(mode)).unwrap();
+    }
+    #[cfg(not(unix))]
+    let _ = (root, mode);
+}
+
+/// Whether this process is refused a write into a read-only directory (not
+/// root, and a filesystem that enforces permissions).
+fn permissions_enforced(dir: &Path) -> bool {
+    if !cfg!(unix) {
+        return false;
+    }
+    let probe = dir.join("probe");
+    fs::create_dir_all(&probe).unwrap();
+    chmod_dirs(&probe, 0o555);
+    let refused = fs::write(probe.join("x"), b"x").is_err();
+    chmod_dirs(&probe, 0o755);
+    let _ = fs::remove_dir_all(&probe);
+    refused
+}
+
+/// A transport answering by URL pattern (the scenario's `network`), 404 for
+/// any other URL, recording each URL. With `read_only` set, the library at its
+/// path turns read-only at the first request after that many saves.
+struct PatternClient {
+    answers: Vec<(String, HttpResponse)>,
+    requests: std::sync::Mutex<Vec<String>>,
+    read_only: Option<(PathBuf, usize)>,
+}
+
+impl bmlib::publications::fetchers::HttpClient for PatternClient {
+    fn get(&self, url: &str) -> Result<HttpResponse, bmlib::publications::fetchers::FetchError> {
+        self.requests.lock().unwrap().push(url.to_string());
+        if let Some((lib, after)) = &self.read_only {
+            if source_count(lib) >= *after {
+                chmod_dirs(lib, 0o555);
+            }
+        }
+        Ok(self
+            .answers
+            .iter()
+            .find(|(pattern, _)| url.contains(pattern.as_str()))
+            .map_or_else(
+                || HttpResponse::from_bytes(404, Vec::new()),
+                |(_, response)| response.clone(),
+            ))
+    }
+}
+
+/// A JSON value as an optional string.
+fn opt(value: &serde_json::Value) -> Option<String> {
+    value.as_str().map(str::to_string)
+}
+
+/// Each folder's file kinds (sorted), the folders sorted, and the folder names.
+fn folder_kinds(lib: &Path) -> (Vec<Vec<String>>, Vec<String>) {
+    let scan = Library::open(lib).unwrap().scan().unwrap();
+    let mut kinds: Vec<Vec<String>> = scan
+        .folders
+        .iter()
+        .map(|folder| {
+            let mut kinds: Vec<String> = folder
+                .files_on_disk
+                .iter()
+                .filter_map(|name| {
+                    folder
+                        .records
+                        .iter()
+                        .flat_map(|r| &r.files)
+                        .find(|e| &e.name == name)
+                        .map(|e| e.kind.as_str().to_string())
+                })
+                .collect();
+            kinds.sort();
+            kinds
+        })
+        .collect();
+    kinds.sort();
+    (
+        kinds,
+        scan.folders.iter().map(|f| f.folder.clone()).collect(),
+    )
+}
+
+/// Run one scenario and check its `expect`. Returns `false` when skipped.
+fn run_scenario(scenario: &serde_json::Value, enforced: bool) -> bool {
+    let name = scenario["name"].as_str().unwrap();
+    let read_only_after = scenario["read_only_after"].as_u64().map(|n| n as usize);
+    if read_only_after.is_some() && !enforced {
+        eprintln!("skipped (permissions not enforced): {name}");
+        return false;
+    }
+    let dir = scratch(&format!("scenario{}", &name[..1]));
+    let lib = dir.join("lib");
+    for saved in scenario["library"].as_array().unwrap() {
+        let ids = &saved["ids"];
+        let paper = PaperInfo {
+            ids: PaperIds::canonical(
+                ids["pmid"].as_str(),
+                ids["doi"].as_str(),
+                ids["pmc_id"].as_str(),
+            )
+            .unwrap(),
+            ..PaperInfo::default()
+        };
+        let who = Installation::new(saved["app"].as_str().unwrap(), "bbbb", "Mac").unwrap();
+        let kind = match saved["kind"].as_str().unwrap() {
+            "pdf" => SourceKind::Pdf,
+            "jats" => SourceKind::Jats,
+            other => panic!("kind {other}"),
+        };
+        let bytes = fs::read(fixtures().join(saved["file"].as_str().unwrap())).unwrap();
+        Library::open(&lib)
+            .unwrap()
+            .save(&who, &paper, &bytes, kind, "test")
+            .unwrap();
+    }
+    let answers = scenario["network"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|answer| {
+            let response = match answer["file"].as_str() {
+                Some(file) => {
+                    HttpResponse::from_bytes(200, fs::read(fixtures().join(file)).unwrap())
+                }
+                None => HttpResponse::from_bytes(answer["status"].as_u64().unwrap() as u16, vec![]),
+            };
+            (answer["pattern"].as_str().unwrap().to_string(), response)
+        })
+        .collect();
+    let client = Arc::new(PatternClient {
+        answers,
+        requests: std::sync::Mutex::new(Vec::new()),
+        read_only: read_only_after.map(|n| (lib.clone(), source_count(&lib) + n)),
+    });
+    let cache = FullTextCache::new(Some(dir.join("cache"))).unwrap();
+    let svc = FullTextService::new(client.clone(), "test@example.com")
+        .with_cache(Some(cache.clone()))
+        .with_fetch_pdf_with_jats(
+            scenario["service"]["fetch_pdf_with_jats"]
+                .as_bool()
+                .unwrap(),
+        )
+        .with_pdf_retry_delay(std::time::Duration::ZERO)
+        .with_library(Library::open(&lib).unwrap(), me());
+    let req = &scenario["request"];
+    let request = FullTextRequest {
+        pmid: opt(&req["pmid"]).unwrap_or_default(),
+        doi: opt(&req["doi"]),
+        pmc_id: opt(&req["pmc_id"]),
+        identifier: opt(&req["identifier"]),
+        fulltext_sources: req["fulltext_sources"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| serde_json::from_value(e.clone()).unwrap())
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+    let result = svc.fetch_fulltext(&request);
+    chmod_dirs(&lib, 0o755);
+    let result = result.unwrap_or_else(|e| panic!("{name}: {e}"));
+
+    let want = &scenario["expect"];
+    assert_eq!(result.source, want["source"].as_str().unwrap(), "{name}");
+    assert_eq!(
+        result.content_kind.as_str(),
+        want["content_kind"].as_str().unwrap(),
+        "{name}"
+    );
+    let kinds: Vec<&str> = result
+        .library_files
+        .iter()
+        .map(|f| f.kind.as_str())
+        .collect();
+    let want_kinds: Vec<&str> = want["library_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k.as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, want_kinds, "{name}");
+    match want["library_failure"].as_str() {
+        None => assert_eq!(result.library_failure, None, "{name}"),
+        Some(part) => assert!(
+            result
+                .library_failure
+                .as_deref()
+                .unwrap_or_default()
+                .contains(part),
+            "{name}: {:?}",
+            result.library_failure
+        ),
+    }
+    let requests = client.requests.lock().unwrap().clone();
+    let patterns = want["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), patterns.len(), "{name}: {requests:?}");
+    for (url, pattern) in requests.iter().zip(patterns) {
+        assert!(
+            url.contains(pattern.as_str().unwrap()),
+            "{name}: {requests:?}"
+        );
+    }
+    let (folders, names) = folder_kinds(&lib);
+    let want_folders: Vec<Vec<String>> = serde_json::from_value(want["folders"].clone()).unwrap();
+    assert_eq!(folders, want_folders, "{name}");
+    if let Some(part) = want["folder_name_contains"].as_str() {
+        assert!(names.iter().all(|n| n.contains(part)), "{name}: {names:?}");
+    }
+    let id = request.identifier.as_deref().map(sanitize_identifier);
+    let mut entries = Vec::new();
+    if let Some(id) = id.as_deref() {
+        if cache.get_jats(id).unwrap().is_some() {
+            entries.push("jats");
+        }
+        if cache.has_html(id) {
+            entries.push("html");
+        }
+        if cache.get_pdf(id).is_some() {
+            entries.push("pdf");
+        }
+    }
+    let want_cache: Vec<&str> = want["cache"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k.as_str().unwrap())
+        .collect();
+    assert_eq!(entries, want_cache, "{name}");
+    let _ = fs::remove_dir_all(&dir);
+    true
+}
+
+#[test]
+fn library_scenarios() {
+    let fixture: serde_json::Value = serde_json::from_slice(
+        &fs::read(fixtures().join("fulltext_library_scenarios.json")).unwrap(),
+    )
+    .unwrap();
+    let probe_dir = scratch("probe");
+    let enforced = permissions_enforced(&probe_dir);
+    let _ = fs::remove_dir_all(&probe_dir);
+    let mut failed = Vec::new();
+    for scenario in fixture["scenarios"].as_array().unwrap() {
+        let name = scenario["name"].as_str().unwrap().to_string();
+        if std::panic::catch_unwind(|| run_scenario(scenario, enforced)).is_err() {
+            failed.push(name);
+        }
+    }
+    assert!(failed.is_empty(), "failed: {failed:?}");
 }

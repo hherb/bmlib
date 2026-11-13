@@ -1,0 +1,179 @@
+{
+  "_comment": [
+    "The full-text service saving to the shared library and taking its PDF in place of a download (design §4.5).",
+    "Run by tests/test_fulltext_service_library.py and rust/bmlib/tests/service_library.rs, with the same expectations.",
+    "library: files another installation (app, id bbbb, device Mac) saves first; file names a fixture in tests/fixtures.",
+    "request: fetch_fulltext's arguments; fulltext_sources entries are {url, format, source}.",
+    "service: fetch_pdf_with_jats. The service reads the library as studyanalyzer/aaaa/Mac, with a cache.",
+    "network: the first entry whose pattern is a substring of the URL answers, with a fixture file (200) or a status and no body; any other URL is answered 404.",
+    "read_only_after: once the service has saved this many files, the library's folders turn read-only at the next request.",
+    "expect.requests: one pattern per URL requested, in order. expect.folders: each folder's file kinds, sorted, folders sorted. expect.cache: the identifier's cache entries among jats, html and pdf."
+  ],
+  "scenarios": [
+    {
+      "name": "1 empty library, Europe PMC JATS",
+      "library": [],
+      "request": {"pmid": "34567890", "doi": null, "pmc_id": "PMC7614751", "identifier": "s1"},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [{"pattern": "/PMC7614751/fullTextXML", "file": "sample_article.xml"}],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": ["jats"],
+        "library_failure": null,
+        "requests": ["/PMC7614751/fullTextXML"],
+        "folders": [["jats"]],
+        "folder_name_contains": "Effects of Novel Compound X",
+        "cache": []
+      }
+    },
+    {
+      "name": "2 empty library, JATS and the Open Data PDF, no identifier",
+      "library": [],
+      "request": {"pmid": null, "doi": null, "pmc_id": "PMC123", "identifier": null},
+      "service": {"fetch_pdf_with_jats": true},
+      "network": [
+        {"pattern": "/PMC123/fullTextXML", "file": "sample_article.xml"},
+        {"pattern": "list-type=2", "file": "pmc_open_data_versions.xml"},
+        {"pattern": "/PMC123.10/PMC123.10.json", "file": "pmc_open_data_record.json"},
+        {"pattern": "/PMC123.10/PMC123.10.pdf", "file": "textless.pdf"}
+      ],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": ["jats", "pdf"],
+        "library_failure": null,
+        "requests": [
+          "/PMC123/fullTextXML",
+          "list-type=2",
+          "/PMC123.10/PMC123.10.json",
+          "/PMC123.10/PMC123.10.pdf"
+        ],
+        "folders": [["jats", "pdf"]],
+        "folder_name_contains": "Effects of Novel Compound X",
+        "cache": []
+      }
+    },
+    {
+      "name": "3 the library holds only a PDF, the network has JATS",
+      "library": [{"kind": "pdf", "file": "textless.pdf", "ids": {"pmid": "34567890"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "34567890", "doi": null, "pmc_id": "PMC7614751", "identifier": null},
+      "service": {"fetch_pdf_with_jats": true},
+      "network": [{"pattern": "/PMC7614751/fullTextXML", "file": "sample_article.xml"}],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": ["jats", "pdf"],
+        "library_failure": null,
+        "requests": ["/PMC7614751/fullTextXML"],
+        "folders": [["jats", "pdf"]],
+        "folder_name_contains": null,
+        "cache": []
+      }
+    },
+    {
+      "name": "4 the library holds only a PDF, the network has no JATS",
+      "library": [{"kind": "pdf", "file": "textless.pdf", "ids": {"pmid": "34567890"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "34567890", "doi": "10.1/four", "pmc_id": null, "identifier": null},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [
+        {"pattern": "/search?", "file": "europepmc_search_pmc123_pdf.json"},
+        {"pattern": "render/PMC123.pdf", "file": "textless.pdf"},
+        {"pattern": "api.unpaywall.org", "file": "unpaywall_pdf.json"}
+      ],
+      "read_only_after": null,
+      "expect": {
+        "source": "library",
+        "content_kind": "none",
+        "library_files": ["pdf"],
+        "library_failure": null,
+        "requests": ["/search?", "/PMC123/fullTextXML", "efetch.fcgi", "list-type=2"],
+        "folders": [["pdf"]],
+        "folder_name_contains": null,
+        "cache": []
+      }
+    },
+    {
+      "name": "5 a split paper: the PDF in a DOI-only folder, a PMID-only request downloads the same bytes",
+      "library": [{"kind": "pdf", "file": "textless.pdf", "ids": {"doi": "10.1/split"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "34567890", "doi": null, "pmc_id": null, "identifier": null},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [
+        {"pattern": "/search?", "file": "europepmc_search_pmc123_pdf.json"},
+        {"pattern": "render/PMC123.pdf", "file": "textless.pdf"}
+      ],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc_pdf",
+        "content_kind": "none",
+        "library_files": ["pdf"],
+        "library_failure": null,
+        "requests": [
+          "/search?",
+          "/PMC123/fullTextXML",
+          "efetch.fcgi",
+          "list-type=2",
+          "render/PMC123.pdf"
+        ],
+        "folders": [["pdf"]],
+        "folder_name_contains": null,
+        "cache": []
+      }
+    },
+    {
+      "name": "6 the library turns read-only after the JATS is saved",
+      "library": [],
+      "request": {"pmid": null, "doi": null, "pmc_id": "PMC123", "identifier": "s6"},
+      "service": {"fetch_pdf_with_jats": true},
+      "network": [
+        {"pattern": "/PMC123/fullTextXML", "file": "sample_article.xml"},
+        {"pattern": "list-type=2", "file": "pmc_open_data_versions.xml"},
+        {"pattern": "/PMC123.10/PMC123.10.json", "file": "pmc_open_data_record.json"},
+        {"pattern": "/PMC123.10/PMC123.10.pdf", "file": "textless.pdf"}
+      ],
+      "read_only_after": 1,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": ["jats"],
+        "library_failure": "read-only",
+        "requests": [
+          "/PMC123/fullTextXML",
+          "list-type=2",
+          "/PMC123.10/PMC123.10.json",
+          "/PMC123.10/PMC123.10.pdf"
+        ],
+        "folders": [["jats"]],
+        "folder_name_contains": null,
+        "cache": ["pdf"]
+      }
+    },
+    {
+      "name": "7 an identifier and no PMID, DOI or PMC ID leaves the library untouched",
+      "library": [],
+      "request": {
+        "pmid": null,
+        "doi": null,
+        "pmc_id": null,
+        "identifier": "s7",
+        "fulltext_sources": [{"url": "https://example.org/s7.xml", "format": "xml", "source": "publisher"}]
+      },
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [{"pattern": "example.org/s7.xml", "file": "sample_article.xml"}],
+      "read_only_after": null,
+      "expect": {
+        "source": "publisher",
+        "content_kind": "fulltext",
+        "library_files": [],
+        "library_failure": null,
+        "requests": ["example.org/s7.xml"],
+        "folders": [],
+        "folder_name_contains": null,
+        "cache": ["jats", "html"]
+      }
+    }
+  ]
+}
