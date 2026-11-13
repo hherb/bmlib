@@ -248,3 +248,53 @@ fn unreachable_library_falls_back_to_the_cache() {
     );
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_pmc_id_given_as_the_pmid_reads_the_library() {
+    let dir = scratch("pmcpmid");
+    let ids = PaperIds::canonical(None, None, Some("PMC7614751")).unwrap();
+    saved_by_other(&dir, &sample_info(ids), SAMPLE.as_bytes(), SourceKind::Jats);
+    let client = ScriptedClient::new(vec![]);
+    let svc = service(&dir, client.clone());
+    let result = svc.fetch_fulltext(&by_pmid(" PMC7614751 ")).unwrap();
+    assert_eq!(client.call_count(), 0, "{:?}", client.requests());
+    assert_eq!(result.source, LIBRARY_SOURCE);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Whether `svc` logged that it holds a library PDF for the chain.
+fn holds_a_library_pdf(svc: &FullTextService) -> bool {
+    svc.log_lines()
+        .iter()
+        .any(|line| line.message.starts_with("Holding the library's PDF"))
+}
+
+#[test]
+fn the_pdf_beside_a_jats_of_another_paper_is_not_held() {
+    let dir = scratch("otherpdf");
+    let paper = sample_info(pmid_ids("999"));
+    saved_by_other(&dir, &paper, SAMPLE.as_bytes(), SourceKind::Jats);
+    saved_by_other(&dir, &paper, b"%PDF-1.4 sample", SourceKind::Pdf);
+    let client = ScriptedClient::always(HttpResponse::from_bytes(404, Vec::new()));
+    let svc = service(&dir, client);
+    let result = svc.fetch_fulltext(&by_pmid("999")).unwrap();
+    assert_ne!(result.source, LIBRARY_SOURCE);
+    assert!(!holds_a_library_pdf(&svc), "{:?}", svc.log_lines());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_library_pdf_without_jats_is_held_for_the_chain() {
+    let dir = scratch("pdfonly");
+    saved_by_other(
+        &dir,
+        &sample_info(pmid_ids("999")),
+        b"%PDF-1.4 sample",
+        SourceKind::Pdf,
+    );
+    let client = ScriptedClient::always(HttpResponse::from_bytes(404, Vec::new()));
+    let svc = service(&dir, client);
+    svc.fetch_fulltext(&by_pmid("999")).unwrap();
+    assert!(holds_a_library_pdf(&svc), "{:?}", svc.log_lines());
+    let _ = fs::remove_dir_all(&dir);
+}

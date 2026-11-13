@@ -1463,6 +1463,41 @@ struct FromLibrary {
     failure: Option<String>,
 }
 
+/// What [`FullTextService::usable_library_jats`] made of the library's JATS.
+enum LibraryJats {
+    /// It may be served.
+    Usable(Box<JATSArticle>),
+    /// One of its own identifiers contradicts the request's: another paper.
+    WrongPaper,
+    /// It does not parse or has no body.
+    Unusable,
+}
+
+/// The request's `pmid`, `doi` and `pmc_id` as Python's `fetch_fulltext` has
+/// read them when it looks the paper up in the library, so both languages make
+/// the same lookup and log the same library warnings.
+///
+/// The PMID is stripped and kept only when it is ASCII digits, not all zeros
+/// (Python's `_normalise_pmid`; it refuses anything else, with its own
+/// warning). A PMC ID given as the PMID (`PMC` and ASCII digits, #478) is used
+/// as the `pmc_id` when none was given. The DOI is stripped (`_normalise_doi`);
+/// the PMC ID is passed as given.
+fn library_request_ids(request: &FullTextRequest) -> (&str, Option<&str>, Option<&str>) {
+    let pmid = python_strip(&request.pmid);
+    let usable_pmid = !pmid.is_empty()
+        && pmid.bytes().all(|b| b.is_ascii_digit())
+        && pmid.bytes().any(|b| b != b'0');
+    let given_pmc_id = request.pmc_id.as_deref().filter(|id| !id.is_empty());
+    let pmc_id =
+        given_pmc_id.or_else(|| (!usable_pmid && pmc_id_pattern().is_match(pmid)).then_some(pmid));
+    let doi = request
+        .doi
+        .as_deref()
+        .map(python_strip)
+        .filter(|doi| !doi.is_empty());
+    (if usable_pmid { pmid } else { "" }, doi, pmc_id)
+}
+
 /// What [`FullTextService::save_pdf_to_cache`] did with the bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PdfSaveOutcome {
@@ -1812,7 +1847,9 @@ impl FullTextService {
     /// [`FullTextError::Other`] when no identifiers at all were given, and
     /// [`FullTextError::Exhausted`] when the chain exhausted with no link to
     /// degrade to. A tier failing never aborts the chain; it is recorded on the
-    /// exhaustion report instead.
+    /// exhaustion report instead. A library failure met before the chain ends in
+    /// an error is logged at WARNING, but no result carries it as
+    /// [`FullTextResult::library_failure`].
     pub fn fetch_fulltext(
         &self,
         request: &FullTextRequest,
@@ -1892,11 +1929,8 @@ impl FullTextService {
         let Some(store) = self.library.as_ref() else {
             return out;
         };
-        let (ids, dropped) = library_ids(
-            &request.pmid,
-            request.doi.as_deref(),
-            request.pmc_id.as_deref(),
-        );
+        let (pmid, doi, pmc_id) = library_request_ids(request);
+        let (ids, dropped) = library_ids(pmid, doi, pmc_id);
         for field in dropped {
             self.warn(format!(
                 "The request's {field} is not an identifier the library accepts; looking the paper up in the library without it."
@@ -1909,9 +1943,16 @@ impl FullTextService {
             Ok(jats) => jats,
             Err(error) => return self.library_failed(out, &error),
         };
-        let article = jats
+        let article = match jats
             .as_ref()
-            .and_then(|held| self.usable_library_jats(held, &ids));
+            .map(|held| self.usable_library_jats(held, &ids))
+        {
+            // The folder's record claimed a paper its JATS is not (design §4.4: a
+            // record is a claim, not proof), so its PDF is not trusted either.
+            Some(LibraryJats::WrongPaper) => return out,
+            Some(LibraryJats::Usable(article)) => Some(*article),
+            Some(LibraryJats::Unusable) | None => None,
+        };
         let pdf = match store.find_source(&ids, SourceKind::Pdf) {
             Ok(pdf) => pdf,
             Err(error) => {
@@ -1920,6 +1961,12 @@ impl FullTextService {
             }
         };
         let (Some(jats), Some(article)) = (jats, article) else {
+            if let Some(pdf) = &pdf {
+                self.info(format!(
+                    "Holding the library's PDF {}/{} for the chain",
+                    pdf.file.folder, pdf.file.name
+                ));
+            }
             out.pdf = pdf;
             return out;
         };
@@ -1964,9 +2011,9 @@ impl FullTextService {
 
     /// The library's JATS `held`, parsed, when it may be served for `ids`: it
     /// parses, has a body, and its own identifiers agree with `ids`. Otherwise
-    /// a WARNING says why (naming both values of a contradicting identifier)
-    /// and `None`.
-    fn usable_library_jats(&self, held: &Held, ids: &PaperIds) -> Option<JATSArticle> {
+    /// a WARNING says why (naming both values of a contradicting identifier),
+    /// and the answer says whether the file is another paper or only unusable.
+    fn usable_library_jats(&self, held: &Held, ids: &PaperIds) -> LibraryJats {
         let at = format!("{}/{}", held.file.folder, held.file.name);
         let parsed = std::str::from_utf8(&held.bytes)
             .map_err(|error| error.to_string())
@@ -1977,7 +2024,7 @@ impl FullTextService {
                 self.warn(format!(
                     "Not serving the library's JATS {at}: it does not parse ({error}); looking further."
                 ));
-                return None;
+                return LibraryJats::Unusable;
             }
         };
         let (own, _) = library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id));
@@ -1991,7 +2038,7 @@ impl FullTextService {
                     self.warn(format!(
                         "Not serving the library's JATS {at}: its own {field} {theirs} is not the request's {ours}; looking further."
                     ));
-                    return None;
+                    return LibraryJats::WrongPaper;
                 }
             }
         }
@@ -1999,9 +2046,9 @@ impl FullTextService {
             self.warn(format!(
                 "Not serving the library's JATS {at}: it has no body; looking further."
             ));
-            return None;
+            return LibraryJats::Unusable;
         }
-        Some(article)
+        LibraryJats::Usable(Box::new(article))
     }
 
     /// The tier chain. Every return is an exit a caller can observe.

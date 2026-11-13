@@ -42,7 +42,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Literal, SupportsIndex, TypeGuard
 from urllib.parse import quote
-from xml.sax import SAXException
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
     import httpx
@@ -922,6 +921,9 @@ class FullTextService:
             calls a method on it needs a ``None`` check; code that supplied
             the cache can reason that the branch is unreachable, but the type
             no longer records that, so the check is still required to type.
+        library: The shared library and the installation reading it
+            (:class:`~bmlib.fulltext.library_store.LibraryStore`), read before
+            the cache, or ``None`` when no *library* was given.
     """
 
     def __init__(
@@ -1088,7 +1090,8 @@ class FullTextService:
                 refused *pmid* or *doi*, or a malformed *pmc_id*, given
                 alone. Its ``faults`` say whether anything failed (#565).
                 Every tier failure is swallowed and counted on the exhaustion
-                report.
+                report. A library failure met before is logged at WARNING, but
+                no result carries it as ``library_failure``.
 
         Tries:
           Cache: check disk cache for HTML/PDF (if identifier given). Where
@@ -1313,13 +1316,21 @@ class FullTextService:
             jats = store.find_source(ids, SourceKind.JATS)
         except LibraryStoreFailure as exc:
             return self._library_failed(out, exc)
-        parsed = self._usable_library_jats(jats, ids) if jats is not None else None
+        parsed = self._usable_library_jats(jats, ids) if jats is not None else "unusable"
+        if parsed == "wrong-paper":
+            # The folder's record claimed a paper its JATS is not (design §4.4: a
+            # record is a claim, not proof), so its PDF is not trusted either.
+            return out
         pdf: Held | None = None
         try:
             pdf = store.find_source(ids, SourceKind.PDF)
         except LibraryStoreFailure as exc:
             out = self._library_failed(out, exc)
-        if jats is None or parsed is None:
+        if jats is None or parsed == "unusable":
+            if pdf is not None:
+                logger.info(
+                    "Holding the library's PDF %s/%s for the chain", pdf.file.folder, pdf.file.name
+                )
             out.pdf = pdf
             return out
         article, html = parsed
@@ -1358,20 +1369,26 @@ class FullTextService:
         return out
 
     @staticmethod
-    def _usable_library_jats(held: Held, ids: PaperIds) -> tuple[JATSArticle, str] | None:
+    def _usable_library_jats(
+        held: Held, ids: PaperIds
+    ) -> tuple[JATSArticle, str] | Literal["wrong-paper", "unusable"]:
         """The library's JATS *held*, parsed and rendered, when it may be served for *ids*: it
         parses, has a body, and its own identifiers agree with *ids*. Otherwise a WARNING says
-        why (naming both values of a contradicting identifier) and ``None``."""
+        why (naming both values of a contradicting identifier), and the answer says whether the
+        file is another paper (``"wrong-paper"``) or only unusable (``"unusable"``)."""
         at = f"{held.file.folder}/{held.file.name}"
         try:
             article, html = JATSParser(held.bytes).parse_with_html()
-        except SAXException as exc:
+        except Exception as exc:
+            # Broad on purpose: another app wrote this file, and nothing the parser or the
+            # renderer raises on it may escape fetch_fulltext.
             logger.warning(
-                "Not serving the library's JATS %s: it does not parse (%s); looking further.",
+                "Not serving the library's JATS %s: it does not parse (%s: %s); looking further.",
                 at,
+                type(exc).__name__,
                 exc,
             )
-            return None
+            return "unusable"
         own, _ = library_ids(article.pmid, article.doi, article.pmc_id)
         for name, theirs, ours in (
             ("pmid", own.pmid, ids.pmid),
@@ -1387,12 +1404,12 @@ class FullTextService:
                     theirs,
                     ours,
                 )
-                return None
+                return "wrong-paper"
         if not article.has_body:
             logger.warning(
                 "Not serving the library's JATS %s: it has no body; looking further.", at
             )
-            return None
+            return "unusable"
         return article, html
 
     def _retrieve_over_stale(

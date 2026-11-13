@@ -197,3 +197,70 @@ def test_library_and_installation_come_together(tmp_path: Path) -> None:
         )
     with pytest.raises(ValueError, match="library"):
         FullTextService(email="e@x", cache=FullTextCache(cache_dir=tmp_path), installation=_ME)
+
+
+def test_a_pmc_id_given_as_the_pmid_reads_the_library(tmp_path: Path) -> None:
+    ids = canonical_ids(None, None, "PMC7614751")
+    _saved_by_other(tmp_path, _sample_info(ids), _SAMPLE, SourceKind.JATS)
+    service = _service(tmp_path)
+    with patch.object(service, "_http_get", side_effect=AssertionError("no request")) as get:
+        result = service.fetch_fulltext(pmid=" PMC7614751 ")
+    get.assert_not_called()
+    assert result.source == LIBRARY_SOURCE
+
+
+def test_a_jats_the_parser_raises_on_is_not_served(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _saved_by_other(tmp_path, _sample_info(canonical_ids(_SAMPLE_PMID)), _SAMPLE, SourceKind.JATS)
+    service = _service(tmp_path)
+    with (
+        caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        patch(
+            "bmlib.fulltext.service.JATSParser.parse_with_html", side_effect=RuntimeError("boom")
+        ),
+        patch.object(service, "_http_get", side_effect=_not_found) as get,
+    ):
+        result = service.fetch_fulltext(pmid=_SAMPLE_PMID)
+    assert get.call_count > 0, "the chain ran"
+    assert result.source != LIBRARY_SOURCE
+    assert result.library_failure is None
+    assert any(
+        "RuntimeError" in r.getMessage() and "boom" in r.getMessage() for r in caplog.records
+    ), caplog.text
+
+
+def _holds_a_library_pdf(caplog: pytest.LogCaptureFixture) -> bool:
+    """Whether the service logged that it holds a library PDF for the chain."""
+    return any(r.getMessage().startswith("Holding the library's PDF") for r in caplog.records)
+
+
+def test_the_pdf_beside_a_jats_of_another_paper_is_not_held(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    paper = _sample_info(canonical_ids("999"))
+    _saved_by_other(tmp_path, paper, _SAMPLE, SourceKind.JATS)
+    _saved_by_other(tmp_path, paper, b"%PDF-1.4 sample", SourceKind.PDF)
+    service = _service(tmp_path)
+    with (
+        caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"),
+        patch.object(service, "_http_get", side_effect=_not_found),
+    ):
+        result = service.fetch_fulltext(pmid="999")
+    assert result.source != LIBRARY_SOURCE
+    assert not _holds_a_library_pdf(caplog), caplog.text
+
+
+def test_a_library_pdf_without_jats_is_held_for_the_chain(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _saved_by_other(
+        tmp_path, _sample_info(canonical_ids("999")), b"%PDF-1.4 sample", SourceKind.PDF
+    )
+    service = _service(tmp_path)
+    with (
+        caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"),
+        patch.object(service, "_http_get", side_effect=_not_found),
+    ):
+        service.fetch_fulltext(pmid="999")
+    assert _holds_a_library_pdf(caplog), caplog.text
