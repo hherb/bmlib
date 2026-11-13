@@ -4,5 +4,32 @@
       "Bash(git config:*)",
       "Bash(git push:*)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/hherb/src/bmlib/.claude/hooks/ci-watch.sh session",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/hherb/src/bmlib/.claude/hooks/ci-watch.sh push",
+            "asyncRewake": true,
+            "timeout": 3600
+          }
+        ]
+      }
+    ]
   }
 }
