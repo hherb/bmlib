@@ -1501,7 +1501,9 @@ enum LibraryJats {
     /// It may be served.
     Usable(Box<JATSArticle>),
     /// One of its own identifiers contradicts the request's: another paper.
-    WrongPaper,
+    /// The message names the file and both values, for the lookup's
+    /// [`FullTextResult::library_failure`].
+    WrongPaper(String),
     /// It does not parse or has no body.
     Unusable,
 }
@@ -1958,9 +1960,12 @@ impl FullTextService {
     /// library's PDF goes beside it, and each file used is noted in this
     /// installation's record. A JATS that has no body or does not parse is
     /// warned of and not served, and the library's PDF is held for the chain
-    /// instead. A JATS that is the wrong paper is warned of and not served,
-    /// and no PDF of its folder is held. The first library error is warned of
-    /// and kept as the failure, and the rest of the call uses no library.
+    /// instead. A JATS that is the wrong paper is not served and is the
+    /// lookup's library failure (warned of once): no PDF of its folder is
+    /// held, and nothing is kept in the library, since the request's
+    /// identifiers would file it in that folder. The first library error is
+    /// warned of and kept as the failure, and the rest of the call uses no
+    /// library.
     fn read_library(&self, request: &FullTextRequest) -> FromLibrary {
         let mut out = FromLibrary::default();
         let Some(store) = self.library.as_ref() else {
@@ -1989,8 +1994,12 @@ impl FullTextService {
             .map(|held| self.usable_library_jats(held, &ids))
         {
             // The folder's record claimed a paper its JATS is not (design §4.4: a
-            // record is a claim, not proof), so its PDF is not trusted either.
-            Some(LibraryJats::WrongPaper) => return out,
+            // record is a claim, not proof), so its PDF is not trusted either, and
+            // nothing is kept: the request's identifiers would file it there.
+            Some(LibraryJats::WrongPaper(message)) => {
+                self.library_failed(&mut out, &message);
+                return out;
+            }
             Some(LibraryJats::Usable(article)) => Some(*article),
             Some(LibraryJats::Unusable) | None => None,
         };
@@ -2064,7 +2073,8 @@ impl FullTextService {
     ///
     /// The paper is filed under the request's identifiers, with the title,
     /// year, first author and missing identifiers read from `xml` (parsed as
-    /// the tier parsed it, with `known_pmc_id`). The saved file goes on
+    /// the tier parsed it, with `known_pmc_id`; if that parse fails it is warned
+    /// of and the identifiers alone are used). The saved file goes on
     /// `library.files`. A library error is warned of and recorded, and the
     /// JATS is cached instead.
     fn keep_jats(
@@ -2077,9 +2087,20 @@ impl FullTextService {
         library: &mut FromLibrary,
     ) {
         if let Some(store) = self.keeper(library) {
-            let article = std::str::from_utf8(xml)
-                .ok()
-                .and_then(|text| parse_with_pmc_id(text, known_pmc_id).ok());
+            let parsed = std::str::from_utf8(xml)
+                .map_err(|error| error.to_string())
+                .and_then(|text| {
+                    parse_with_pmc_id(text, known_pmc_id).map_err(|error| error.to_string())
+                });
+            let article = match parsed {
+                Ok(article) => Some(article),
+                Err(error) => {
+                    self.warn(format!(
+                        "Could not read the JATS from {source} again to file it in the library ({error}); filing it under the request's identifiers alone."
+                    ));
+                    None
+                }
+            };
             let paper = paper_info(library.ids.clone(), article.as_ref());
             match store.keep(&paper, xml, SourceKind::Jats, source) {
                 Ok(file) => {
@@ -2108,14 +2129,16 @@ impl FullTextService {
         url: &str,
         library: &mut FromLibrary,
     ) -> Option<PathBuf> {
-        let kept = store
+        // The file goes on `files` once kept, even if its path then fails.
+        let path = store
             .keep(&library.pdf_paper(), bytes, SourceKind::Pdf, url)
-            .and_then(|file| store.path_of(&file).map(|path| (file, path)));
-        match kept {
-            Ok((file, path)) => {
+            .and_then(|file| {
+                let path = store.path_of(&file);
                 library.files.push(file);
-                Some(path)
-            }
+                path
+            });
+        match path {
+            Ok(path) => Some(path),
             Err(error) => {
                 self.library_failed(library, &error);
                 None
@@ -2152,9 +2175,10 @@ impl FullTextService {
     }
 
     /// The library's JATS `held`, parsed, when it may be served for `ids`: it
-    /// parses, has a body, and its own identifiers agree with `ids`. Otherwise
-    /// a WARNING says why (naming both values of a contradicting identifier),
-    /// and the answer says whether the file is another paper or only unusable.
+    /// parses, has a body, and its own identifiers agree with `ids`. A file
+    /// that is only unusable is warned of here; a file of another paper is
+    /// returned with a message naming both values of the contradicting
+    /// identifier, which the caller warns of once as the lookup's failure.
     fn usable_library_jats(&self, held: &Held, ids: &PaperIds) -> LibraryJats {
         let at = format!("{}/{}", held.file.folder, held.file.name);
         let parsed = std::str::from_utf8(&held.bytes)
@@ -2177,10 +2201,9 @@ impl FullTextService {
         ] {
             if let (Some(theirs), Some(ours)) = (theirs, ours) {
                 if theirs != ours {
-                    self.warn(format!(
-                        "Not serving the library's JATS {at}: its own {field} {theirs} is not the request's {ours}; looking further."
+                    return LibraryJats::WrongPaper(format!(
+                        "the library's JATS {at} is another paper's: its own {field} {theirs} is not the request's {ours}, so nothing is kept in the library in this lookup"
                     ));
-                    return LibraryJats::WrongPaper;
                 }
             }
         }
@@ -2982,7 +3005,9 @@ impl FullTextService {
     /// the first whose download failed (`pdf_download_failure` set). It ends
     /// nothing either (#739): JATS is better to process than a PDF's text, and a
     /// PDF better to show, so the caller keeps looking for JATS and puts that
-    /// PDF, saved or failed, on any JATS it finds.
+    /// PDF, saved or failed, on any JATS it finds. While `library` holds the
+    /// paper's PDF no pdf entry is downloaded: the library's serves in its
+    /// place.
     fn try_known_sources(
         &self,
         sources: &[FullTextSourceEntry],
@@ -3007,6 +3032,13 @@ impl FullTextService {
         let mut abstract_only: Option<FullTextResult> = None;
         let mut held_link: Option<FullTextSourceEntry> = None;
         let mut pdf: Option<FullTextResult> = None;
+        // The library's PDF serves in place of the caller's (design §4.5).
+        let library_pdf = library.pdf.is_some() && self.keeper(library).is_some();
+        if library_pdf && sorted.iter().any(|entry| entry.format == "pdf") {
+            self.info(
+                "The library holds the paper's PDF, so the caller's PDF sources are not downloaded",
+            );
+        }
         for entry in sorted {
             if entry.format == "xml" {
                 match self.fetch_jats_xml(&entry.url) {
@@ -3043,9 +3075,10 @@ impl FullTextService {
                     }
                 }
             } else if entry.format == "pdf" {
-                if pdf
-                    .as_ref()
-                    .is_some_and(|held| held.pdf_download_failure.is_none())
+                if library_pdf
+                    || pdf
+                        .as_ref()
+                        .is_some_and(|held| held.pdf_download_failure.is_none())
                 {
                     continue; // one PDF in hand is enough
                 }

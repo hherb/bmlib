@@ -897,6 +897,14 @@ def _with_pdf(result: FullTextResult, pdf: FullTextResult | None) -> FullTextRes
     return result
 
 
+@dataclass(frozen=True)
+class _WrongPaper:
+    """The library's JATS is another paper's (:meth:`FullTextService._usable_library_jats`)."""
+
+    # Names the file and both values of the contradicting identifier, for ``library_failure``.
+    reason: str
+
+
 @dataclass
 class _FromLibrary:
     """The shared library's part in one lookup: what it gave before the cache and the chain
@@ -1329,10 +1337,12 @@ class FullTextService:
         own identifiers contradicts the request's (an identifier absent on either side agrees);
         the library's PDF goes beside it, and each file used is noted in this installation's
         record. A JATS that has no body or does not parse is warned of and not served, and the
-        library's PDF is held for the chain instead. A JATS that is the wrong paper is warned of
-        and not served, and no PDF of its folder is held. The first library error is warned of
-        and kept as the failure, and the rest of the call uses no library. Never raises a library
-        error. Rust's ``read_library`` is the same.
+        library's PDF is held for the chain instead. A JATS that is the wrong paper is not served
+        and is the lookup's library failure (warned of once): no PDF of its folder is held, and
+        nothing is kept in the library, since the request's identifiers would file it in that
+        folder. The first library error is warned of and kept as the failure, and the rest of
+        the call uses no library. Never raises a library error. Rust's ``read_library`` is the
+        same.
         """
         out = _FromLibrary()
         store = self.library
@@ -1354,9 +1364,11 @@ class FullTextService:
             self._library_failed(out, exc)
             return out
         parsed = self._usable_library_jats(jats, ids) if jats is not None else "unusable"
-        if parsed == "wrong-paper":
+        if isinstance(parsed, _WrongPaper):
             # The folder's record claimed a paper its JATS is not (design §4.4: a
-            # record is a claim, not proof), so its PDF is not trusted either.
+            # record is a claim, not proof), so its PDF is not trusted either, and
+            # nothing is kept: the request's identifiers would file it there.
+            self._library_failed(out, parsed.reason)
             return out
         pdf: Held | None = None
         try:
@@ -1395,9 +1407,9 @@ class FullTextService:
         return out
 
     @staticmethod
-    def _library_failed(out: _FromLibrary, exc: LibraryStoreFailure) -> None:
-        """Record *exc* as the library's failure in this lookup, warned of; the rest of the
-        lookup uses no library."""
+    def _library_failed(out: _FromLibrary, exc: LibraryStoreFailure | str) -> None:
+        """Record *exc* (an error, or a message saying why) as the library's failure in this
+        lookup, warned of; the rest of the lookup uses no library."""
         logger.warning("Could not use the library (%s); going on without it.", exc)
         out.failure = str(exc)
 
@@ -1423,12 +1435,26 @@ class FullTextService:
 
         The paper is filed under the request's identifiers, with the title, year, first author
         and missing identifiers read from *xml* (parsed as the tier parsed it, with
-        *known_pmc_id*). The saved file goes on ``library.files``. A library error is warned of
-        and recorded, and the JATS is cached instead.
+        *known_pmc_id*; if that parse fails it is warned of and the identifiers alone are used).
+        The saved file goes on ``library.files``. A library error is warned of and recorded, and
+        the JATS is cached instead.
         """
         store = self._keeper(library)
         if store is not None:
-            paper = paper_info(library.ids, JATSParser(xml, known_pmc_id=known_pmc_id).parse())
+            article: JATSArticle | None = None
+            try:
+                article = JATSParser(xml, known_pmc_id=known_pmc_id).parse()
+            except Exception as exc:
+                # Broad on purpose: the tier has parsed these bytes already, and nothing a
+                # second parse raises may escape fetch_fulltext.
+                logger.warning(
+                    "Could not read the JATS from %s again to file it in the library (%s: %s); "
+                    "filing it under the request's identifiers alone.",
+                    source,
+                    type(exc).__name__,
+                    exc,
+                )
+            paper = paper_info(library.ids, article)
             try:
                 file = store.keep(paper, xml, SourceKind.JATS, source)
             except LibraryStoreFailure as exc:
@@ -1454,11 +1480,12 @@ class FullTextService:
         """
         try:
             file = store.keep(library.pdf_paper(), data, SourceKind.PDF, url)
+            # On ``files`` once kept, even if its path then fails.
+            library.files.append(file)
             path = store.path_of(file)
         except LibraryStoreFailure as exc:
             self._library_failed(library, exc)
             return None
-        library.files.append(file)
         return str(path)
 
     def _use_library_pdf(self, library: _FromLibrary) -> str | None:
@@ -1485,11 +1512,12 @@ class FullTextService:
     @staticmethod
     def _usable_library_jats(
         held: Held, ids: PaperIds
-    ) -> tuple[JATSArticle, str] | Literal["wrong-paper", "unusable"]:
+    ) -> tuple[JATSArticle, str] | _WrongPaper | Literal["unusable"]:
         """The library's JATS *held*, parsed and rendered, when it may be served for *ids*: it
-        parses, has a body, and its own identifiers agree with *ids*. Otherwise a WARNING says
-        why (naming both values of a contradicting identifier), and the answer says whether the
-        file is another paper (``"wrong-paper"``) or only unusable (``"unusable"``)."""
+        parses, has a body, and its own identifiers agree with *ids*. A file that is only
+        unusable is warned of here (``"unusable"``); a file of another paper is returned as
+        :class:`_WrongPaper`, its reason naming both values of the contradicting identifier,
+        which the caller warns of once as the lookup's failure."""
         at = f"{held.file.folder}/{held.file.name}"
         try:
             article, html = JATSParser(held.bytes).parse_with_html()
@@ -1510,15 +1538,10 @@ class FullTextService:
             ("pmc_id", own.pmcid, ids.pmcid),
         ):
             if theirs and ours and theirs != ours:
-                logger.warning(
-                    "Not serving the library's JATS %s: its own %s %s is not the request's %s; "
-                    "looking further.",
-                    at,
-                    name,
-                    theirs,
-                    ours,
+                return _WrongPaper(
+                    f"the library's JATS {at} is another paper's: its own {name} {theirs} is "
+                    f"not the request's {ours}, so nothing is kept in the library in this lookup"
                 )
-                return "wrong-paper"
         if not article.has_body:
             logger.warning(
                 "Not serving the library's JATS %s: it has no body; looking further.", at
@@ -2551,7 +2574,8 @@ class FullTextService:
             ``None``. It ends nothing either (#739): JATS is better to process
             than a PDF's text, and a PDF better to show, so the caller keeps
             looking for JATS and puts that PDF, saved or failed, on any JATS
-            it finds.
+            it finds. While *library* holds the paper's PDF no ``pdf`` entry
+            is downloaded: the library's serves in its place.
         """
         priority = {"xml": 0, "pdf": 1, "html": 2}
         sorted_sources = sorted(
@@ -2562,6 +2586,12 @@ class FullTextService:
         abstract_only: FullTextResult | None = None
         held_link: FullTextSourceEntry | None = None
         pdf: FullTextResult | None = None
+        # The library's PDF serves in place of the caller's (design §4.5).
+        library_pdf = library.pdf is not None and self._keeper(library) is not None
+        if library_pdf and any(e.format == "pdf" for e in sorted_sources):
+            logger.info(
+                "The library holds the paper's PDF, so the caller's PDF sources are not downloaded"
+            )
         for entry in sorted_sources:
             try:
                 if entry.format == "xml":
@@ -2601,7 +2631,7 @@ class FullTextService:
                         pdf,
                     )
                 elif entry.format == "pdf":
-                    if pdf is not None and pdf.pdf_download_failure is None:
+                    if library_pdf or (pdf is not None and pdf.pdf_download_failure is None):
                         continue  # one PDF in hand is enough
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)

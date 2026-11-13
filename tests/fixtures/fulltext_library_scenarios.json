@@ -3,6 +3,7 @@
     "The full-text service saving to the shared library and taking its PDF in place of a download (design §4.5).",
     "Run by tests/test_fulltext_service_library.py and rust/bmlib/tests/service_library.rs, with the same expectations.",
     "library: files another installation (app, id bbbb, device Mac) saves first; file names a fixture in tests/fixtures.",
+    "fulltext_library_other_article.xml is sample_article.xml with other identifiers (PMID 999, PMC123, DOI 10.1234/jbr.2024.999): another paper's JATS.",
     "request: fetch_fulltext's arguments; fulltext_sources entries are {url, format, source}.",
     "service: fetch_pdf_with_jats. The service reads the library as studyanalyzer/aaaa/Mac, with a cache.",
     "network: the first entry whose pattern is a substring of the URL answers, with a fixture file (200) or a status and no body; any other URL is answered 404.",
@@ -173,6 +174,42 @@
         "folders": [],
         "folder_name_contains": null,
         "cache": ["jats", "html"]
+      }
+    },
+    {
+      "name": "8 the library's JATS is another paper's: nothing is kept in the library",
+      "library": [{"kind": "jats", "file": "sample_article.xml", "ids": {"pmid": "999"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "999", "doi": null, "pmc_id": "PMC123", "identifier": "s8"},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [{"pattern": "/PMC123/fullTextXML", "file": "fulltext_library_other_article.xml"}],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": [],
+        "library_failure": "another paper",
+        "requests": ["/PMC123/fullTextXML"],
+        "folders": [["jats"]],
+        "folder_name_contains": null,
+        "cache": ["jats", "html"]
+      }
+    },
+    {
+      "name": "9 the library holds a PDF: the caller's PDF source is not downloaded",
+      "library": [{"kind": "pdf", "file": "textless.pdf", "ids": {"pmid": "34567890"}, "app": "medicalfactchecker"}],
+      "request": {"pmid": "34567890", "doi": null, "pmc_id": "PMC7614751", "identifier": null, "fulltext_sources": [{"url": "https://example.org/s9.pdf", "format": "pdf", "source": "publisher"}]},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [{"pattern": "/PMC7614751/fullTextXML", "file": "sample_article.xml"}, {"pattern": "example.org/s9.pdf", "file": "textless.pdf"}],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": ["jats", "pdf"],
+        "library_failure": null,
+        "requests": ["/PMC7614751/fullTextXML"],
+        "folders": [["jats", "pdf"]],
+        "folder_name_contains": null,
+        "cache": []
       }
     }
   ]

@@ -188,14 +188,18 @@ fn jats_of_another_paper_is_not_served() {
     let result = svc.fetch_fulltext(&by_pmid("999")).unwrap();
     assert!(client.call_count() > 0, "the chain ran");
     assert_ne!(result.source, LIBRARY_SOURCE);
-    assert_eq!(result.library_failure, None);
+    // Another paper's JATS is the lookup's library failure: nothing is kept.
+    let failure = result.library_failure.unwrap();
     assert!(
-        svc.warnings()
-            .iter()
-            .any(|w| w.contains("999") && w.contains(SAMPLE_PMID)),
-        "{:?}",
-        svc.warnings()
+        failure.contains("999") && failure.contains(SAMPLE_PMID),
+        "{failure}"
     );
+    let named: Vec<String> = svc
+        .warnings()
+        .into_iter()
+        .filter(|w| w.contains("999") && w.contains(SAMPLE_PMID))
+        .collect();
+    assert_eq!(named.len(), 1, "one warning: {:?}", svc.warnings());
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -337,6 +341,16 @@ fn chmod_dirs(root: &Path, mode: u32) {
     }
     #[cfg(not(unix))]
     let _ = (root, mode);
+}
+
+/// Opens the library at its path up again when dropped, so a panic in the
+/// lookup leaves no read-only scratch directory behind.
+struct Unlock<'a>(&'a Path);
+
+impl Drop for Unlock<'_> {
+    fn drop(&mut self) {
+        chmod_dirs(self.0, 0o755);
+    }
 }
 
 /// Whether this process is refused a write into a read-only directory (not
@@ -495,8 +509,10 @@ fn run_scenario(scenario: &serde_json::Value, enforced: bool) -> bool {
             })
             .unwrap_or_default(),
     };
-    let result = svc.fetch_fulltext(&request);
-    chmod_dirs(&lib, 0o755);
+    let result = {
+        let _unlock = Unlock(&lib);
+        svc.fetch_fulltext(&request)
+    };
     let result = result.unwrap_or_else(|e| panic!("{name}: {e}"));
 
     let want = &scenario["expect"];

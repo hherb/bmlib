@@ -154,11 +154,17 @@ def test_jats_of_another_paper_is_not_served(
         result = service.fetch_fulltext(pmid="999")
     assert get.call_count > 0, "the chain ran"
     assert result.source != LIBRARY_SOURCE
-    assert result.library_failure is None
-    assert any(
-        r.levelno == logging.WARNING and "999" in r.getMessage() and _SAMPLE_PMID in r.getMessage()
+    # Another paper's JATS is the lookup's library failure: nothing is kept.
+    assert result.library_failure is not None
+    assert "999" in result.library_failure and _SAMPLE_PMID in result.library_failure
+    named = [
+        r
         for r in caplog.records
-    ), caplog.text
+        if r.levelno == logging.WARNING
+        and "999" in r.getMessage()
+        and _SAMPLE_PMID in r.getMessage()
+    ]
+    assert len(named) == 1, caplog.text
 
 
 def _cached(service: FullTextService, identifier: str) -> None:
