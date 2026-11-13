@@ -2087,6 +2087,108 @@
     ],
     "records": {}
    }
+  },
+  {
+   "name": "remove_file of a file already removed is missing",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_file",
+     "of": 0
+    },
+    {
+     "op": "remove_file",
+     "of": 0,
+     "expect": "missing"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": "10.1/x",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "1361ac06c419ffaeea9b011999434601765e50da97904ea3890dd9ce896d969d",
+        "kind": "pdf",
+        "name": "pdf-1361ac06c419.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "remove_folder of a folder already removed is missing",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "doi": "10.1/x",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "2024 Smith – Metformin (PMID 111)"
+    },
+    {
+     "op": "remove_folder",
+     "folder": "2024 Smith – Metformin (PMID 111)",
+     "expect": "missing"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
   }
  ]
 }

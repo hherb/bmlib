@@ -126,6 +126,8 @@ fn save_never_overwrites_other_bytes() {
 #[test]
 fn newer_own_record_is_not_downgraded() {
     let (dir, lib) = scratch("newer");
+    // Another installation's readable record keeps the folder findable.
+    save(&lib, &you(), &paper(), BYTES);
     let first = save(&lib, &me(), &paper(), BYTES);
     let path = record_path(&dir, &me(), &first.folder);
     let newer = fs::read_to_string(&path)
@@ -273,14 +275,95 @@ fn the_manual_clear_refuses_paths_in_names() {
 }
 
 #[test]
-fn removing_what_is_not_there_is_not_an_error() {
+fn removing_what_is_not_there_is_missing() {
     let (dir, lib) = scratch("absent");
     let first = save(&lib, &me(), &paper(), BYTES);
     lib.remove_file(&first).unwrap();
-    lib.remove_file(&first).unwrap();
+    assert!(matches!(
+        lib.remove_file(&first),
+        Err(LibraryError::Missing { .. })
+    ));
     lib.remove_folder(&first.folder).unwrap();
-    lib.remove_folder(&first.folder).unwrap();
+    assert!(matches!(
+        lib.remove_folder(&first.folder),
+        Err(LibraryError::Missing { .. })
+    ));
     assert!(lib.scan().unwrap().folders.is_empty());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn remove_folder_of_a_regular_file_is_missing() {
+    let (dir, lib) = scratch("stray");
+    fs::write(dir.join("papers").join("stray"), "x").unwrap();
+    assert!(matches!(
+        lib.remove_folder("stray"),
+        Err(LibraryError::Missing { .. })
+    ));
+    assert!(dir.join("papers").join("stray").exists());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn release_of_an_unlisted_file_or_without_a_record_is_fine() {
+    let (dir, lib) = scratch("unlisted");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    lib.release(&you(), &first).unwrap();
+    lib.release(&me(), &first).unwrap();
+    lib.release(&me(), &first).unwrap();
+    assert_eq!(lib.read(&first).unwrap(), BYTES);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_folder_with_only_a_newer_record_is_not_reused() {
+    let (dir, lib) = scratch("newer-only");
+    let first = save(&lib, &you(), &paper(), BYTES);
+    let path = record_path(&dir, &you(), &first.folder);
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.replace("\"version\": 1", "\"version\": 2")).unwrap();
+    // Its identifiers are unreadable to us, so nothing proves it is the same paper.
+    let got = save(&lib, &me(), &paper(), b"other");
+    assert_ne!(got.folder, first.folder);
+    assert!(got.folder.ends_with("(2)"), "{}", got.folder);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn two_threads_of_one_installation_both_land_in_the_record() {
+    let (dir, lib) = scratch("one-installation");
+    let lib = Arc::new(lib);
+    for i in 0..25_usize {
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = [(SourceKind::Pdf, "pdf"), (SourceKind::Text, "text")]
+            .into_iter()
+            .map(|(kind, label)| {
+                let (lib, barrier) = (Arc::clone(&lib), Arc::clone(&barrier));
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    lib.save(
+                        &me(),
+                        &paper(),
+                        format!("{label} {i}").as_bytes(),
+                        kind,
+                        "t",
+                    )
+                    .unwrap();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let scan = lib.scan().unwrap();
+        assert_eq!(scan.folders.len(), 1);
+        assert_eq!(scan.folders[0].records.len(), 1);
+        assert_eq!(
+            scan.folders[0].records[0].files.len(),
+            2 * (i + 1),
+            "round {i}"
+        );
+    }
     fs::remove_dir_all(dir).unwrap();
 }
 

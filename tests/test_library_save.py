@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,7 @@ from bmlib.library import (
     FileRef,
     Installation,
     Library,
+    Missing,
     NewerRecord,
     PaperInfo,
     ReadOnly,
@@ -99,6 +101,8 @@ def test_save_never_overwrites_other_bytes(lib: Library) -> None:
 
 
 def test_newer_own_record_is_not_downgraded(lib: Library) -> None:
+    # YOU's readable record keeps the folder findable once ME's record is unreadable to us.
+    lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "t")
     first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
     path = _record_path(lib, _ME, first.folder)
     newer = path.read_text(encoding="utf-8").replace('"version": 1', '"version": 2')
@@ -191,13 +195,63 @@ def test_the_manual_clear_refuses_paths_in_names(lib: Library) -> None:
     assert lib.read(first) == _BYTES
 
 
-def test_removing_what_is_not_there_is_not_an_error(lib: Library) -> None:
+def test_removing_what_is_not_there_is_missing(lib: Library) -> None:
     first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
     lib.remove_file(first)
-    lib.remove_file(first)
+    with pytest.raises(Missing):
+        lib.remove_file(first)
     lib.remove_folder(first.folder)
-    lib.remove_folder(first.folder)
+    with pytest.raises(Missing):
+        lib.remove_folder(first.folder)
     assert lib.scan().folders == ()
+
+
+def test_remove_folder_of_a_regular_file_is_missing(lib: Library) -> None:
+    (lib.root / "papers" / "stray").write_text("x", encoding="utf-8")
+    with pytest.raises(Missing):
+        lib.remove_folder("stray")
+    assert (lib.root / "papers" / "stray").exists()
+
+
+def test_release_of_an_unlisted_file_or_without_a_record_is_fine(lib: Library) -> None:
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    lib.release(_YOU, first)  # no record of YOU
+    lib.release(_ME, first)
+    lib.release(_ME, first)  # no longer listed
+    assert lib.read(first) == _BYTES
+
+
+def test_a_folder_with_only_a_newer_record_is_not_reused(lib: Library) -> None:
+    first = lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "t")
+    path = _record_path(lib, _YOU, first.folder)
+    path.write_text(path.read_text(encoding="utf-8").replace('"version": 1', '"version": 2'))
+    # Its identifiers are unreadable to us, so nothing proves it is the same paper.
+    got = lib.save(_ME, _PAPER, b"other", SourceKind.PDF, "t")
+    assert got.folder != first.folder
+    assert got.folder.endswith("(2)")
+
+
+def _save_one(lib: Library, name: bytes, kind: SourceKind, barrier: threading.Barrier) -> None:
+    barrier.wait()
+    lib.save(_ME, _PAPER, name, kind, "thread")
+
+
+def test_two_threads_of_one_installation_both_land_in_the_record(lib: Library) -> None:
+    for i in range(25):
+        barrier = threading.Barrier(2)
+        a = threading.Thread(
+            target=_save_one, args=(lib, f"pdf {i}".encode(), SourceKind.PDF, barrier)
+        )
+        b = threading.Thread(
+            target=_save_one, args=(lib, f"text {i}".encode(), SourceKind.TEXT, barrier)
+        )
+        a.start()
+        b.start()
+        a.join()
+        b.join()
+        (folder,) = lib.scan().folders
+        (rec,) = folder.records
+        assert len(rec.files) == 2 * (i + 1)
 
 
 def test_the_saved_ref_carries_the_full_digest(lib: Library) -> None:

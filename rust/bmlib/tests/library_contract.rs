@@ -537,11 +537,20 @@ fn save_scenarios_match_the_fixture() {
                     );
                 }
                 "release" => lib.release(&installation(step), &of(step)).unwrap(),
-                "remove_file" => lib.remove_file(&of(step)).unwrap(),
+                "remove_file" => {
+                    let got = lib.remove_file(&of(step));
+                    if step["expect"] == "missing" {
+                        assert!(matches!(got, Err(LibraryError::Missing { .. })), "{name}");
+                    } else {
+                        got.unwrap();
+                    }
+                }
                 "remove_folder" => {
                     let got = lib.remove_folder(step["folder"].as_str().unwrap());
                     if step["expect"] == "bad_name" {
                         assert!(matches!(got, Err(LibraryError::BadName { .. })), "{name}");
+                    } else if step["expect"] == "missing" {
+                        assert!(matches!(got, Err(LibraryError::Missing { .. })), "{name}");
                     } else {
                         got.unwrap();
                     }

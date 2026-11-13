@@ -23,6 +23,7 @@
 //! end with one file and both records.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -30,12 +31,23 @@ use super::files::{
     component, create_dir_all, create_dir_new, exists, io_error, is_dir, list_names, read_bytes,
     remove_dir_all, remove_file, rename, sha256_hex, write_once, write_replace,
 };
-use super::scan::scan_folder;
+use super::scan::{scan_folder, Problem};
 use super::{
     find, find_digest, folder_name, folder_name_numbered, parse_record, render_record, FileEntry,
     FileRef, Installation, Library, LibraryError, PaperInfo, Record, RecordProblem, SourceKind,
     CORRUPT_SUFFIX, DIGEST_PREFIX_HEX, MAX_NAME_SUFFIX, PAPERS_DIR, RECORDS_DIR,
 };
+
+/// Serialises the read-merge-write of records (and keeping one aside) within
+/// this process, so two threads of one installation never lose each other's
+/// update. One lock for all records: a record write is short, and separate
+/// processes of one installation are out of scope.
+static RECORD_LOCK: Mutex<()> = Mutex::new(());
+
+/// Take [`RECORD_LOCK`]; a panic in another holder does not poison it for good.
+fn record_guard() -> MutexGuard<'static, ()> {
+    RECORD_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// The log target (Python's logger name) for this module's warnings.
 const LOG_TARGET: &str = "bmlib.library.save";
@@ -58,10 +70,18 @@ fn same_name_as(papers: &Path, candidate: &str) -> Result<Vec<String>, LibraryEr
 
 /// Whether the folder `name` may take `paper`: some record there shares an
 /// identifier with it, or no record there is readable yet (another writer has
-/// claimed the folder, or a crash left it empty).
+/// claimed the folder, or a crash left it empty). A folder whose only records
+/// are newer than this code counts as holding another paper: their identifiers
+/// cannot be read (R14).
 fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> bool {
-    let found = scan_folder(&papers.join(name), name, &mut Vec::new());
-    found.records.is_empty() || found.ids().shares_any(&paper.ids)
+    let mut problems = Vec::new();
+    let found = scan_folder(&papers.join(name), name, &mut problems);
+    if found.records.is_empty() {
+        return !problems
+            .iter()
+            .any(|p| matches!(p, Problem::NewerRecord { .. }));
+    }
+    found.ids().shares_any(&paper.ids)
 }
 
 /// The folder `paper` goes in when no folder holds it yet: a new one, or one a
@@ -193,6 +213,10 @@ impl Library {
     /// The file is written first, then the record, so a crash between leaves
     /// only an unrecorded file, which saving the same bytes again records.
     ///
+    /// Within one process the update of a record is serialised, so threads of
+    /// one installation never lose each other's entries; separate processes of
+    /// one installation are out of scope.
+    ///
     /// # Errors
     ///
     /// [`LibraryError::FileClash`] when a file of that name holds other bytes
@@ -238,6 +262,7 @@ impl Library {
             size: bytes.len() as u64,
             saved_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         };
+        let _guard = record_guard();
         let record = match load_own_record(&path, &folder)? {
             Some(mut record) => {
                 if !record.files.iter().any(|f| f.sha256 == digest) {
@@ -261,7 +286,9 @@ impl Library {
     }
 
     /// Drop `file` from `who`'s record. The file stays, and so do the other
-    /// installations' records.
+    /// installations' records. A file the record does not list (or no record) is
+    /// already not used, so that is `Ok`. Serialised with [`Library::save`] in
+    /// this process.
     ///
     /// # Errors
     ///
@@ -270,6 +297,7 @@ impl Library {
     pub fn release(&self, who: &Installation, file: &FileRef) -> Result<(), LibraryError> {
         let (dir, _) = locate(self.root(), file)?;
         let path = dir.join(RECORDS_DIR).join(who.record_file_name());
+        let _guard = record_guard();
         let bytes = match read_bytes(&path) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -296,32 +324,39 @@ impl Library {
     }
 
     /// Delete one source file (the manual clear). Other installations' records
-    /// are left as they are and will read [`LibraryError::Missing`]. A file that
-    /// is not there is already cleared.
+    /// are left as they are and will read [`LibraryError::Missing`].
     ///
     /// # Errors
     ///
     /// [`LibraryError::BadName`] for a folder or file name that is not one path
-    /// component; [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
+    /// component; [`LibraryError::Missing`] when the file is not there;
+    /// [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn remove_file(&self, file: &FileRef) -> Result<(), LibraryError> {
         let (_, path) = locate(self.root(), file)?;
         match remove_file(&path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(io_error(&path, &e, true)),
-            _ => Ok(()),
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(LibraryError::Missing {
+                folder: file.folder.clone(),
+                name: file.name.clone(),
+            }),
+            Err(e) => Err(io_error(&path, &e, true)),
         }
     }
 
-    /// Delete a paper's whole folder, records included (the manual clear). A
-    /// folder that is not there is already cleared.
+    /// Delete a paper's whole folder, records included (the manual clear).
     ///
     /// # Errors
     ///
     /// [`LibraryError::BadName`] when `folder` is not one path component;
+    /// [`LibraryError::Missing`] when there is no such folder (or it is a file);
     /// [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn remove_folder(&self, folder: &str) -> Result<(), LibraryError> {
         let dir = self.root().join(PAPERS_DIR).join(component(folder)?);
         if !is_dir(&dir) {
-            return Ok(());
+            return Err(LibraryError::Missing {
+                folder: PAPERS_DIR.to_owned(),
+                name: folder.to_owned(),
+            });
         }
         remove_dir_all(&dir).map_err(|e| io_error(&dir, &e, true))
     }

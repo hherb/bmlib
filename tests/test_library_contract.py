@@ -339,10 +339,17 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
         elif op == "remove_file":
             ref = saved[step["of"]]
             assert ref is not None
-            lib.remove_file(ref)
+            if step.get("expect") == "missing":
+                with pytest.raises(Missing):
+                    lib.remove_file(ref)
+            else:
+                lib.remove_file(ref)
         elif op == "remove_folder":
             if step.get("expect") == "bad_name":
                 with pytest.raises(BadName):
+                    lib.remove_folder(step["folder"])
+            elif step.get("expect") == "missing":
+                with pytest.raises(Missing):
                     lib.remove_folder(step["folder"])
             else:
                 lib.remove_folder(step["folder"])

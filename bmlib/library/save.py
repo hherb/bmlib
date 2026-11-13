@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +38,7 @@ from bmlib.library.constants import (
     PAPERS_DIR,
     RECORDS_DIR,
 )
-from bmlib.library.errors import Io, NewerRecord
+from bmlib.library.errors import Io, Missing, NewerRecord
 from bmlib.library.files import (
     component,
     create_dir_all,
@@ -57,9 +58,14 @@ from bmlib.library.files import (
 from bmlib.library.ids import Installation, PaperInfo, SourceKind
 from bmlib.library.names import folder_name, folder_name_numbered
 from bmlib.library.records import FileEntry, Record, RecordProblem, parse_record, render_record
-from bmlib.library.scan import FileRef, _scan_folder, find, find_digest, scan_library
+from bmlib.library.scan import FileRef, Problem, _scan_folder, find, find_digest, scan_library
 
 logger = logging.getLogger(__name__)
+
+# Serialises the read-merge-write of records (and keeping one aside) within this process, so
+# two threads of one installation never lose each other's update. One lock for all records:
+# a record write is short, and separate processes of one installation are out of scope.
+_RECORD_LOCK = threading.Lock()
 
 
 def _folded(name: str) -> str:
@@ -81,9 +87,13 @@ def _same_name_as(papers: Path, candidate: str) -> list[str]:
 def _belongs_to(papers: Path, name: str, paper: PaperInfo) -> bool:
     """Whether the folder *name* may take *paper*: some record there shares an identifier with
     it, or no record there is readable yet (another writer has claimed the folder, or a crash
-    left it empty)."""
-    found = _scan_folder(papers / name, name, [])
-    return not found.records or found.ids().shares_any(paper.ids)
+    left it empty). A folder whose only records are newer than this code counts as holding
+    another paper: their identifiers cannot be read."""
+    problems: list[Problem] = []
+    found = _scan_folder(papers / name, name, problems)
+    if not found.records:
+        return not any(p.kind == "newer_record" for p in problems)
+    return found.ids().shares_any(paper.ids)
 
 
 def _claim_folder(papers: Path, paper: PaperInfo) -> str:
@@ -197,6 +207,9 @@ def save_file(
     without regard to case). The file is written first, then the record, so a crash between
     leaves only an unrecorded file, which saving the same bytes again records.
 
+    Within one process the update of a record is serialised, so threads of one installation
+    never lose each other's entries; separate processes of one installation are out of scope.
+
     :raises FileClash: a file of that name holds other bytes (nothing is overwritten).
     :raises NewerRecord: *who*'s record is from a newer layout.
     :raises ReadOnly: the library cannot be written.
@@ -224,20 +237,24 @@ def save_file(
     entry = FileEntry(
         digest, kind, name, origin, len(data), datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
-    record = _load_own_record(path, folder)
-    if record is None:
-        record = Record(who, paper, (entry,))
-    else:
-        files = record.files
-        if all(f.sha256 != digest for f in files):
-            files = (*files, entry)
-        record = _merge_paper(dataclasses.replace(record, files=files), paper, path)
-    _store_record(path, record)
+    with _RECORD_LOCK:
+        record = _load_own_record(path, folder)
+        if record is None:
+            record = Record(who, paper, (entry,))
+        else:
+            files = record.files
+            if all(f.sha256 != digest for f in files):
+                files = (*files, entry)
+            record = _merge_paper(dataclasses.replace(record, files=files), paper, path)
+        _store_record(path, record)
     return FileRef(folder, name, digest, kind)
 
 
 def release_file(root: Path, who: Installation, file: FileRef) -> None:
     """Drop *file* from *who*'s record. The file stays, and so do the other records.
+
+    A file the record does not list (or no record) is already not used, so that is fine.
+    Serialised with :func:`save_file` in this process.
 
     :raises BadName: a name that is not one path component.
     :raises NewerRecord: the record is from a newer layout.
@@ -245,50 +262,52 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
     """
     directory, _ = _locate(root, file)
     path = directory / RECORDS_DIR / who.record_file_name()
-    try:
-        text = read_bytes(path).decode("utf-8")
-    except FileNotFoundError:
-        return
-    except (OSError, UnicodeDecodeError) as e:
-        raise Io(path, f"the record is not readable: {e}") from e
-    try:
-        record = parse_record(text)
-    except RecordProblem as p:
-        if p.kind == "newer":
-            raise NewerRecord(file.folder, path.name, p.version) from p
-        raise Io(path, f"the record is not readable: {p.reason}") from p
-    kept = tuple(f for f in record.files if f.sha256 != file.sha256)
-    _store_record(path, dataclasses.replace(record, files=kept))
+    with _RECORD_LOCK:
+        try:
+            text = read_bytes(path).decode("utf-8")
+        except FileNotFoundError:
+            return
+        except (OSError, UnicodeDecodeError) as e:
+            raise Io(path, f"the record is not readable: {e}") from e
+        try:
+            record = parse_record(text)
+        except RecordProblem as p:
+            if p.kind == "newer":
+                raise NewerRecord(file.folder, path.name, p.version) from p
+            raise Io(path, f"the record is not readable: {p.reason}") from p
+        kept = tuple(f for f in record.files if f.sha256 != file.sha256)
+        _store_record(path, dataclasses.replace(record, files=kept))
 
 
 def remove_source_file(root: Path, file: FileRef) -> None:
     """Delete one source file (the manual clear). Other installations' records are left as they
-    are and will read ``Missing``. A file that is not there is already cleared.
+    are and will read ``Missing``.
 
     :raises BadName: a name that is not one path component.
+    :raises Missing: the file is not there.
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
     _, path = _locate(root, file)
     try:
         remove_file(path)
-    except FileNotFoundError:
-        return
+    except FileNotFoundError as e:
+        raise Missing(file.folder, file.name) from e
     except OSError as e:
         raise io_error(path, e, write=True) from e
 
 
 def remove_paper_folder(root: Path, folder: str) -> None:
-    """Delete a paper's whole folder, records included (the manual clear). A folder that is
-    not there is already cleared.
+    """Delete a paper's whole folder, records included (the manual clear).
 
     :raises BadName: *folder* is not one path component.
+    :raises Missing: there is no such folder (or it is a file).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
     directory = root / PAPERS_DIR / component(folder)
     if not is_dir(directory):
-        return
+        raise Missing(PAPERS_DIR, folder)
     try:
         remove_dir_all(directory)
     except OSError as e:
