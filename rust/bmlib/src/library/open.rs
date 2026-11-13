@@ -20,7 +20,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::files::{create_dir_new, io_error, list_names, read_bytes};
+use super::files::{
+    create_dir_new, exists, first_user_entry, io_error, is_dir, read_bytes, sha256_hex, write_once,
+};
 use super::{LibraryError, LIBRARY_FORMAT, LIBRARY_VERSION, MARKER_FILE, PAPERS_DIR};
 
 /// A user-chosen folder of papers, opened and checked.
@@ -36,6 +38,42 @@ struct Marker {
     version: u32,
 }
 
+fn not_a_library(root: &Path, reason: String) -> LibraryError {
+    LibraryError::NotALibrary {
+        path: root.to_owned(),
+        reason,
+    }
+}
+
+/// Validate a marker's bytes: JSON, the right format, and a version that is a
+/// positive integer within `u32` (the rule records use) no newer than ours.
+fn check_marker(root: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|e| not_a_library(root, format!("{MARKER_FILE} is not JSON: {e}")))?;
+    if value["format"].as_str() != Some(LIBRARY_FORMAT) {
+        return Err(not_a_library(
+            root,
+            format!("{MARKER_FILE} is not a {LIBRARY_FORMAT} marker"),
+        ));
+    }
+    let version = value["version"]
+        .as_u64()
+        .and_then(|v| u32::try_from(v).ok())
+        .filter(|v| *v >= 1)
+        .ok_or_else(|| {
+            not_a_library(
+                root,
+                format!("{MARKER_FILE}: version must be a positive integer"),
+            )
+        })?;
+    if version > LIBRARY_VERSION {
+        return Err(LibraryError::NewerLibrary {
+            version: u64::from(version),
+        });
+    }
+    Ok(())
+}
+
 impl Library {
     /// Open the library at `root`, creating the marker and `papers/` in an empty folder.
     ///
@@ -47,43 +85,29 @@ impl Library {
     /// version is newer than [`LIBRARY_VERSION`]; [`LibraryError::ReadOnly`] or
     /// [`LibraryError::Io`] when the marker or `papers/` cannot be written.
     pub fn open(root: &Path) -> Result<Library, LibraryError> {
-        let unreachable = |reason: String| LibraryError::Unreachable {
-            path: root.to_owned(),
-            reason,
-        };
-        let meta = std::fs::metadata(root).map_err(|e| unreachable(e.to_string()))?;
-        if !meta.is_dir() {
-            return Err(unreachable("not a folder".to_owned()));
+        if !is_dir(root) {
+            let reason = if exists(root) {
+                "not a folder"
+            } else {
+                "no such folder"
+            };
+            return Err(LibraryError::Unreachable {
+                path: root.to_owned(),
+                reason: reason.to_owned(),
+            });
         }
-        let not_a_library = |reason: String| LibraryError::NotALibrary {
-            path: root.to_owned(),
-            reason,
-        };
         let marker = root.join(MARKER_FILE);
-        if marker.exists() {
-            let bytes = read_bytes(&marker).map_err(|e| io_error(&marker, &e, false))?;
-            let value: serde_json::Value = serde_json::from_slice(&bytes)
-                .map_err(|e| not_a_library(format!("{MARKER_FILE} is not JSON: {e}")))?;
-            if value["format"].as_str() != Some(LIBRARY_FORMAT) {
-                return Err(not_a_library(format!(
-                    "{MARKER_FILE} is not a {LIBRARY_FORMAT} marker"
-                )));
-            }
-            match value["version"].as_u64() {
-                Some(v) if v > u64::from(LIBRARY_VERSION) => {
-                    return Err(LibraryError::NewerLibrary { version: v })
-                }
-                Some(_) => {}
-                None => {
-                    return Err(not_a_library(format!("{MARKER_FILE} has no version")));
-                }
-            }
+        if exists(&marker) {
+            check_marker(
+                root,
+                &read_bytes(&marker).map_err(|e| io_error(&marker, &e, false))?,
+            )?;
         } else {
-            let names = list_names(root).map_err(|e| io_error(root, &e, false))?;
-            if let Some(first) = names.first() {
-                return Err(not_a_library(format!(
-                    "the folder is not empty (found {first}) and has no {MARKER_FILE}"
-                )));
+            if let Some(first) = first_user_entry(root).map_err(|e| io_error(root, &e, false))? {
+                return Err(not_a_library(
+                    root,
+                    format!("the folder is not empty (found {first}) and has no {MARKER_FILE}"),
+                ));
             }
             let mut text = serde_json::to_string_pretty(&Marker {
                 format: LIBRARY_FORMAT,
@@ -91,8 +115,17 @@ impl Library {
             })
             .expect("marker serialises");
             text.push('\n');
-            crate::atomic::atomic_write(&marker, text.as_bytes())
-                .map_err(|e| io_error(&marker, &e, true))?;
+            match write_once(&marker, text.as_bytes(), &sha256_hex(text.as_bytes())) {
+                Ok(_) => {}
+                // Another opener published a marker first: it decides, not ours.
+                Err(LibraryError::FileClash { .. }) => {
+                    check_marker(
+                        root,
+                        &read_bytes(&marker).map_err(|e| io_error(&marker, &e, false))?,
+                    )?;
+                }
+                Err(e) => return Err(e),
+            }
         }
         let papers = root.join(PAPERS_DIR);
         create_dir_new(&papers).map_err(|e| io_error(&papers, &e, true))?;

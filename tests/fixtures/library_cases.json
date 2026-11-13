@@ -821,6 +821,112 @@
       "name": "root_missing",
       "entries": null,
       "expect": "unreachable"
+    },
+    {
+      "name": "marker_version_negative",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": -1}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_zero",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 0}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_float",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 1.0}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_2_pow_32",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 4294967296}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_2_pow_32_minus_1",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 4294967295}"
+        }
+      ],
+      "expect": "newer",
+      "version": 4294967295
+    },
+    {
+      "name": "marker_version_2_pow_64",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": 18446744073709551616}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_missing",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\"}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "marker_version_string",
+      "entries": [
+        {
+          "file": "bmlib-library.json",
+          "text": "{\"format\": \"bmlib-library\", \"version\": \"1\"}"
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "only_icloud_placeholder",
+      "entries": [
+        {
+          "file": ".paper.pdf.icloud",
+          "text": ""
+        }
+      ],
+      "expect": "not_a_library"
+    },
+    {
+      "name": "only_dotfiles",
+      "entries": [
+        {
+          "file": ".hidden",
+          "text": ""
+        },
+        {
+          "file": "Thumbs.db",
+          "text": ""
+        }
+      ],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
     }
   ]
 }

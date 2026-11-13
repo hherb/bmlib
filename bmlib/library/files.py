@@ -67,10 +67,45 @@ def io_error(path: Path, err: OSError, *, write: bool) -> LibraryError:
     return Io(path, str(err))
 
 
+def _entries(directory: Path) -> list[str]:
+    """Every name in *directory*, sorted by its raw bytes.
+
+    A name that is not UTF-8 comes back surrogate-escaped (``os.listdir``'s way); it is only
+    ever shown or compared, never turned into a path again except through ``os.fsencode``.
+    """
+    return sorted(os.listdir(directory), key=os.fsencode)
+
+
 def list_names(directory: Path) -> list[str]:
     """Return the names in *directory*, sorted by bytes, without ignored or dot names."""
-    names = [n for n in os.listdir(directory) if not n.startswith(".") and n not in IGNORED_NAMES]
-    return sorted(names, key=lambda n: n.encode())
+    return [n for n in _entries(directory) if not n.startswith(".") and n not in IGNORED_NAMES]
+
+
+def _is_placeholder_name(name: str) -> bool:
+    """Whether *name* is an iCloud placeholder, ``.<something>.icloud``."""
+    return len(name) > len(".icloud") + 1 and name.startswith(".") and name.endswith(".icloud")
+
+
+def first_user_entry(directory: Path) -> str | None:
+    """Return the first entry of *directory* that belongs to the user, or ``None``.
+
+    Ignored names and dotfiles do not count, but an iCloud placeholder does (it stands for a
+    real file), and so does a name that is not UTF-8.
+    """
+    for n in _entries(directory):
+        if _is_placeholder_name(n) or (not n.startswith(".") and n not in IGNORED_NAMES):
+            return n
+    return None
+
+
+def is_dir(path: Path) -> bool:
+    """Whether *path* is an existing directory."""
+    return path.is_dir()
+
+
+def exists(path: Path) -> bool:
+    """Whether anything exists at *path*."""
+    return path.exists()
 
 
 def has_placeholder(directory: Path, name: str) -> bool:

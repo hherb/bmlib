@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -29,6 +30,7 @@ from bmlib.library.files import (
     Written,
     component,
     create_dir_new,
+    first_user_entry,
     has_placeholder,
     list_names,
     sha256_hex,
@@ -88,3 +90,21 @@ def test_sha256_hex() -> None:
     assert sha256_hex(b"abc") == (
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
+
+
+def test_first_user_entry_counts_placeholders_not_dotfiles(tmp_path: Path) -> None:
+    for n in [".DS_Store", ".hidden", "Thumbs.db"]:
+        (tmp_path / n).write_bytes(b"")
+    assert first_user_entry(tmp_path) is None
+    (tmp_path / ".x.pdf.icloud").write_bytes(b"")
+    assert first_user_entry(tmp_path) == ".x.pdf.icloud"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="APFS and NTFS refuse non-UTF-8 names")
+def test_non_utf8_name_is_a_user_entry(tmp_path: Path) -> None:
+    try:
+        (tmp_path / os.fsdecode(b"caf\xe9.pdf")).write_bytes(b"")
+    except OSError:
+        pytest.skip("this file system refuses non-UTF-8 names")
+    assert first_user_entry(tmp_path) is not None
+    assert len(list_names(tmp_path)) == 1

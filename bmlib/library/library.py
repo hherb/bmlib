@@ -21,10 +21,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from bmlib._atomic import atomic_write
+from bmlib._strict_json import strict_json_loads
 from bmlib.library.constants import LIBRARY_FORMAT, LIBRARY_VERSION, MARKER_FILE, PAPERS_DIR
-from bmlib.library.errors import NewerLibrary, NotALibrary, Unreachable
-from bmlib.library.files import create_dir_new, io_error, list_names, read_bytes
+from bmlib.library.errors import FileClash, NewerLibrary, NotALibrary, Unreachable
+from bmlib.library.files import (
+    create_dir_new,
+    exists,
+    first_user_entry,
+    io_error,
+    is_dir,
+    read_bytes,
+    sha256_hex,
+    write_once,
+)
+
+_U32_MAX = 2**32 - 1
 
 
 class Library:
@@ -39,6 +50,29 @@ class Library:
         return self._root
 
 
+def _check_marker(root: Path, data: bytes) -> None:
+    """Validate a marker's bytes: JSON, the right format, and a version that is a positive
+    integer within ``u32`` (the rule records use) no newer than ours."""
+    try:
+        value = strict_json_loads(data.decode("utf-8"))
+    except ValueError as e:
+        raise NotALibrary(root, f"{MARKER_FILE} is not JSON: {e}") from e
+    if not isinstance(value, dict) or value.get("format") != LIBRARY_FORMAT:
+        raise NotALibrary(root, f"{MARKER_FILE} is not a {LIBRARY_FORMAT} marker")
+    version = value.get("version")
+    if not isinstance(version, int) or isinstance(version, bool) or not 1 <= version <= _U32_MAX:
+        raise NotALibrary(root, f"{MARKER_FILE}: version must be a positive integer")
+    if version > LIBRARY_VERSION:
+        raise NewerLibrary(version)
+
+
+def _read_marker(marker: Path) -> bytes:
+    try:
+        return read_bytes(marker)
+    except OSError as e:
+        raise io_error(marker, e, write=False) from e
+
+
 def open_library(root: Path) -> Library:
     """Open the library at *root*, creating the marker and ``papers/`` in an empty folder.
 
@@ -47,40 +81,29 @@ def open_library(root: Path) -> Library:
     :raises NewerLibrary: the marker's version is newer than ``LIBRARY_VERSION``.
     :raises ReadOnly: the marker or ``papers/`` cannot be written.
     """
-    if not root.is_dir():
-        reason = "not a folder" if root.exists() else "no such folder"
-        raise Unreachable(root, reason)
+    if not is_dir(root):
+        raise Unreachable(root, "not a folder" if exists(root) else "no such folder")
     marker = root / MARKER_FILE
-    if marker.exists():
-        try:
-            value = json.loads(read_bytes(marker))
-        except ValueError as e:
-            raise NotALibrary(root, f"{MARKER_FILE} is not JSON: {e}") from e
-        except OSError as e:
-            raise io_error(marker, e, write=False) from e
-        if not isinstance(value, dict) or value.get("format") != LIBRARY_FORMAT:
-            raise NotALibrary(root, f"{MARKER_FILE} is not a {LIBRARY_FORMAT} marker")
-        version = value.get("version")
-        if not isinstance(version, int) or isinstance(version, bool):
-            raise NotALibrary(root, f"{MARKER_FILE} has no version")
-        if version > LIBRARY_VERSION:
-            raise NewerLibrary(version)
+    if exists(marker):
+        _check_marker(root, _read_marker(marker))
     else:
         try:
-            names = list_names(root)
+            first = first_user_entry(root)
         except OSError as e:
             raise io_error(root, e, write=False) from e
-        if names:
+        if first is not None:
             raise NotALibrary(
-                root, f"the folder is not empty (found {names[0]}) and has no {MARKER_FILE}"
+                root, f"the folder is not empty (found {first}) and has no {MARKER_FILE}"
             )
         text = json.dumps(
             {"format": LIBRARY_FORMAT, "version": LIBRARY_VERSION}, indent=2, ensure_ascii=False
         )
+        data = (text + "\n").encode("utf-8")
         try:
-            atomic_write(marker, (text + "\n").encode("utf-8"))
-        except OSError as e:
-            raise io_error(marker, e, write=True) from e
+            write_once(marker, data, sha256_hex(data))
+        except FileClash:
+            # Another opener published a marker first: it decides, not ours.
+            _check_marker(root, _read_marker(marker))
     papers = root / PAPERS_DIR
     try:
         create_dir_new(papers)

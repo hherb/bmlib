@@ -82,18 +82,54 @@ pub(crate) fn io_error(path: &Path, err: &io::Error, write: bool) -> LibraryErro
     }
 }
 
-/// The names in `dir`, sorted by bytes, leaving out [`IGNORED_NAMES`] and any
-/// name starting with `.`.
-pub(crate) fn list_names(dir: &Path) -> io::Result<Vec<String>> {
-    let mut names = Vec::new();
+/// Every entry of `dir` as (raw bytes, display name), sorted by the raw bytes.
+///
+/// The display name is a lossy UTF-8 conversion (a name that is not UTF-8 shows
+/// U+FFFD); it is only ever shown or compared for prefixes, never used as a path.
+fn entries(dir: &Path) -> io::Result<Vec<(Vec<u8>, String)>> {
+    let mut all = Vec::new();
     for entry in fs::read_dir(dir)? {
-        let name = entry?.file_name().to_string_lossy().into_owned();
-        if !name.starts_with('.') && !IGNORED_NAMES.contains(&name.as_str()) {
-            names.push(name);
-        }
+        let os = entry?.file_name();
+        all.push((
+            os.as_encoded_bytes().to_vec(),
+            os.to_string_lossy().into_owned(),
+        ));
     }
-    names.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
-    Ok(names)
+    all.sort();
+    Ok(all)
+}
+
+/// The names in `dir`, sorted by bytes, leaving out [`IGNORED_NAMES`] and any
+/// name starting with `.`. A name that is not UTF-8 is kept, shown lossily.
+pub(crate) fn list_names(dir: &Path) -> io::Result<Vec<String>> {
+    Ok(entries(dir)?
+        .into_iter()
+        .map(|(_, name)| name)
+        .filter(|n| !n.starts_with('.') && !IGNORED_NAMES.contains(&n.as_str()))
+        .collect())
+}
+
+/// Whether `name` is an iCloud placeholder, `.<something>.icloud`.
+fn is_placeholder_name(name: &str) -> bool {
+    name.len() > ".icloud".len() + 1 && name.starts_with('.') && name.ends_with(".icloud")
+}
+
+/// The first entry of `dir` that belongs to the user: not an ignored name or
+/// dotfile, but an iCloud placeholder does count (it stands for a real file).
+pub(crate) fn first_user_entry(dir: &Path) -> io::Result<Option<String>> {
+    Ok(entries(dir)?.into_iter().map(|(_, name)| name).find(|n| {
+        is_placeholder_name(n) || (!n.starts_with('.') && !IGNORED_NAMES.contains(&n.as_str()))
+    }))
+}
+
+/// Whether `path` is an existing directory.
+pub(crate) fn is_dir(path: &Path) -> bool {
+    path.is_dir()
+}
+
+/// Whether anything exists at `path`.
+pub(crate) fn exists(path: &Path) -> bool {
+    path.exists()
 }
 
 /// Whether `dir` holds iCloud's online-only placeholder for `name`.
@@ -205,6 +241,36 @@ mod tests {
         fs::write(dir.join(".x.pdf.icloud"), b"").unwrap();
         assert!(has_placeholder(&dir, "x.pdf"));
         assert!(!has_placeholder(&dir, "y.pdf"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn first_user_entry_counts_placeholders_not_dotfiles() {
+        let dir = scratch("user");
+        for n in [".DS_Store", ".hidden", "Thumbs.db"] {
+            fs::write(dir.join(n), b"").unwrap();
+        }
+        assert_eq!(first_user_entry(&dir).unwrap(), None);
+        fs::write(dir.join(".x.pdf.icloud"), b"").unwrap();
+        assert_eq!(
+            first_user_entry(&dir).unwrap().as_deref(),
+            Some(".x.pdf.icloud")
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A non-UTF-8 name counts as a user entry. Skipped where the file system
+    /// refuses such names (macOS/APFS, Windows).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn non_utf8_name_is_a_user_entry() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = scratch("nonutf8");
+        let name = std::ffi::OsStr::from_bytes(b"caf\xe9.pdf");
+        if fs::write(dir.join(name), b"").is_ok() {
+            assert!(first_user_entry(&dir).unwrap().is_some());
+            assert_eq!(list_names(&dir).unwrap().len(), 1);
+        }
         fs::remove_dir_all(&dir).unwrap();
     }
 
