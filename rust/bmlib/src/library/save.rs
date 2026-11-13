@@ -347,9 +347,10 @@ fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryErro
 impl Library {
     /// Save `bytes` of kind `kind` for `paper` and note it in `who`'s record.
     ///
-    /// The paper's folder is the first folder holding a record that shares an
-    /// identifier with it; with no identifiers, the folder already holding
-    /// these bytes; otherwise a new folder, named by [`folder_name`] (with
+    /// The paper's folder is the folder already holding these bytes, even when
+    /// the identifiers find another (the bytes are kept once); otherwise the
+    /// first folder holding a record that shares an identifier with it;
+    /// otherwise a new folder, named by [`folder_name`] (with
     /// ` (2)`, ` (3)` … when another paper has the name, compared without
     /// regard to case). The file is written first, then the record (by the same
     /// merge as [`Library::record_use`]), so a crash between leaves only an
@@ -401,11 +402,11 @@ impl Library {
         // download or libraries pass ~5,000 papers, let the caller pass its Scan.
         let scan = self.scan()?;
         let papers = self.root().join(PAPERS_DIR);
-        let existing = match find(&scan, &paper.ids).first() {
-            Some(f) => Some(f.folder.clone()),
-            None if paper.ids.is_empty() => find_digest(&scan, &digest).map(|r| r.folder),
-            None => None,
-        };
+        // Bytes are kept once: the folder already holding them wins over the
+        // identifiers, which may name another folder (a split paper).
+        let existing = find_digest(&scan, &digest)
+            .map(|r| r.folder)
+            .or_else(|| find(&scan, &paper.ids).first().map(|f| f.folder.clone()));
         let folder = match existing {
             Some(f) => f,
             None => claim_folder(&papers, paper)?,

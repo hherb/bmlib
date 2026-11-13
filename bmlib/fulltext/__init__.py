@@ -61,6 +61,7 @@ from bmlib.fulltext.pdf_converter import (
 from bmlib.fulltext.segmenter import SectionSegmenter
 
 if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
+    from bmlib.fulltext.library_store import LibraryStore, library_ids
     from bmlib.fulltext.service import (
         FullTextError,
         FullTextExhaustedError,
@@ -72,6 +73,10 @@ if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
 _LAZY_EXPORTS = frozenset(
     {"FullTextError", "FullTextExhaustedError", "FullTextService", "FullTextUnavailableError"}
 )
+
+#: Names living in ``library_store``, resolved on first access: ``bmlib.library`` imports
+#: ``bmlib.publications``, which imports this package, so an eager import would be circular.
+_LIBRARY_STORE_EXPORTS = frozenset({"LibraryStore", "library_ids"})
 
 
 def __getattr__(name: str) -> Any:
@@ -97,6 +102,12 @@ def __getattr__(name: str) -> Any:
         value = getattr(service, name)
         # Bind it, so later accesses skip this function entirely (:pep:`562`'s
         # own recommendation) and the name shows up in ``globals()``.
+        globals()[name] = value
+        return value
+    if name in _LIBRARY_STORE_EXPORTS:
+        from bmlib.fulltext import library_store
+
+        value = getattr(library_store, name)
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -132,6 +143,7 @@ __all__ = [
     "JATSFundingAward",
     "JATSFundingSource",
     "JATSParser",
+    "LibraryStore",
     "JATSReferenceInfo",
     "JATSTableInfo",
     "LayoutExtractor",
@@ -149,6 +161,7 @@ __all__ = [
     "TextBlock",
     "get_converter",
     "is_about_the_file",
+    "library_ids",
     "list_converters",
     "render_html",
 ]

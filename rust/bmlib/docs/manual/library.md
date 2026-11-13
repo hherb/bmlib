@@ -130,14 +130,16 @@ from a record's `FileEntry`.
   scan reports as `Problem::UnrecordedFile`; saving the same bytes again records
   it.
 - **Choosing the folder.** `save` uses the first folder holding a record that
-  shares an identifier with the paper. A paper with no identifier goes to the
-  folder already holding its bytes, or a new one. A new folder takes
-  `folder_name`; if another paper already has that name, compared without regard
-  to case, it takes ` (2)`, ` (3)` and so on, fitted so the whole name stays
-  within 150 bytes. A same-named folder that is the same paper, or has no
-  readable record yet (another app's claim in progress), is reused. A folder
-  whose records are all from a newer layout is not reused and not skipped:
-  `save` fails with `NewerRecord` rather than make a second, silent copy.
+  shares an identifier with the paper, except that bytes are kept once: if the
+  library already holds these bytes, the save goes into that folder even when
+  the identifiers find another. A paper found by neither goes to a new folder.
+  A new folder takes `folder_name`; if another paper already has that name,
+  compared without regard to case, it takes ` (2)`, ` (3)` and so on, fitted so
+  the whole name stays within 150 bytes. A same-named folder that is the same
+  paper, or has no readable record yet (another app's claim in progress), is
+  reused. A folder whose records are all from a newer layout is not reused and
+  not skipped: `save` fails with `NewerRecord` rather than make a second,
+  silent copy.
 - **Names are checked.** A Windows device name (`con`, `nul`, `com1` …) as a
   folder name gets a `_` in front, after the length is fitted. A folder or file
   name that is not one plain path component is `BadName`.

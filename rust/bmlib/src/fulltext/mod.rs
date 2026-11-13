@@ -23,6 +23,7 @@
 //! | `fulltext/_parse_audit.py` | [`parse_audit`] | ported |
 //! | `fulltext/models.py` | [`models`] | ported |
 //! | `fulltext/cache.py` | [`cache`] | ported |
+//! | (new, Rust and Python together) | [`library_store`] | the shared library as a store |
 //! | `fulltext/service.py` | [`service`] | ported |
 //! | `fulltext/pdf_converter.py`'s pure half | [`pdf_text`] | ported |
 //! | `fulltext/pdf_converter.py`'s PyMuPDF backend | `mupdf_backend` | ported, behind the `pdf` feature |
@@ -34,6 +35,7 @@ pub mod cache;
 pub mod canonical;
 pub mod jats_reader;
 pub mod jats_text;
+pub mod library_store;
 pub mod models;
 #[cfg(feature = "pdf")]
 pub mod mupdf_backend;
@@ -58,6 +60,7 @@ pub use jats_text::{
     delimiter_pair, elocation_part_continues, latex_expression, normalize_whitespace,
     pad_as_deposited, pad_row, render_formula, without_whitespace, LATEX_DELIMITERS,
 };
+pub use library_store::{library_ids, LibraryStore};
 pub use models::{
     ContentKind, FullTextResult, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,
