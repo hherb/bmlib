@@ -25,11 +25,13 @@
 mod error;
 mod ids;
 mod names;
+mod record;
 
 pub use crate::fulltext::CORRUPT_SUFFIX;
 pub use error::LibraryError;
 pub use ids::{Installation, PaperIds, PaperInfo, SourceKind};
 pub use names::folder_name;
+pub use record::{parse_record, render_record, FileEntry, Record, RecordProblem};
 
 /// The `format` value of a library's marker file.
 pub const LIBRARY_FORMAT: &str = "bmlib-library";

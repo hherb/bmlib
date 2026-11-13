@@ -64,6 +64,13 @@ from bmlib.library.ids import (
     canonical_ids,
 )
 from bmlib.library.names import folder_name
+from bmlib.library.records import (
+    FileEntry,
+    Record,
+    RecordProblem,
+    parse_record,
+    render_record,
+)
 
 __all__ = [
     "BadIdentifier",
@@ -75,6 +82,7 @@ __all__ = [
     "FileClash",
     "ICLOUD_PLACEHOLDER",
     "IGNORED_NAMES",
+    "FileEntry",
     "Installation",
     "Io",
     "LIBRARY_FORMAT",
@@ -95,6 +103,8 @@ __all__ = [
     "PaperIds",
     "PaperInfo",
     "RECORDS_DIR",
+    "Record",
+    "RecordProblem",
     "RECORD_FORMAT",
     "RECORD_VERSION",
     "ReadOnly",
@@ -102,4 +112,6 @@ __all__ = [
     "Unreachable",
     "canonical_ids",
     "folder_name",
+    "parse_record",
+    "render_record",
 ]

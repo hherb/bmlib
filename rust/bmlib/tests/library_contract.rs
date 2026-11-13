@@ -19,8 +19,8 @@
 //! Python's `tests/test_library_contract.py` asserts against.
 
 use bmlib::library::{
-    folder_name, Installation, LibraryError, PaperIds, PaperInfo, SourceKind, CORRUPT_SUFFIX,
-    MAX_FOLDER_NAME_BYTES,
+    folder_name, parse_record, render_record, Installation, LibraryError, PaperIds, PaperInfo,
+    RecordProblem, SourceKind, CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
 };
 use serde_json::Value;
 
@@ -162,4 +162,43 @@ fn merging_fills_gaps_and_names_conflicts() {
     assert_eq!(conflicts, vec!["pmid"]);
     assert!(!a.shares_any(&PaperIds::default()));
     assert!(PaperIds::default().is_empty());
+}
+
+#[test]
+fn records_match_the_fixture() {
+    for case in section("records") {
+        let name = case["name"].as_str().unwrap();
+        let got = parse_record(case["text"].as_str().unwrap());
+        match (case["expect"].as_str().unwrap(), got) {
+            ("ok", Ok(rec)) => {
+                assert_eq!(
+                    rec.files.len() as u64,
+                    case["files"].as_u64().unwrap(),
+                    "{name}"
+                );
+                assert_eq!(
+                    render_record(&rec),
+                    case["rendered"].as_str().unwrap(),
+                    "{name}"
+                );
+            }
+            ("newer", Err(RecordProblem::Newer(v))) => {
+                assert_eq!(u64::from(v), case["version"].as_u64().unwrap(), "{name}");
+            }
+            ("unreadable", Err(RecordProblem::Unreadable(why))) => {
+                assert!(!why.is_empty(), "{name}: a reason is given");
+            }
+            (want, got) => panic!("{name}: wanted {want}, got {got:?}"),
+        }
+    }
+}
+
+#[test]
+fn render_then_parse_round_trips() {
+    for case in section("records") {
+        if case["expect"] == "ok" {
+            let rec = parse_record(case["text"].as_str().unwrap()).unwrap();
+            assert_eq!(parse_record(&render_record(&rec)).unwrap(), rec);
+        }
+    }
 }

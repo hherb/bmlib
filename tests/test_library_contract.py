@@ -35,9 +35,12 @@ from bmlib.library import (
     Installation,
     PaperIds,
     PaperInfo,
+    RecordProblem,
     SourceKind,
     canonical_ids,
     folder_name,
+    parse_record,
+    render_record,
 )
 
 _FIXTURE = json.loads(
@@ -115,3 +118,21 @@ def test_merging_fills_gaps_and_names_conflicts() -> None:
     assert conflicts == ["pmid"]
     assert not a.shares_any(PaperIds())
     assert PaperIds().is_empty()
+
+
+@pytest.mark.parametrize("case", _cases("records"))
+def test_records(case: dict[str, Any]) -> None:
+    if case["expect"] == "ok":
+        rec = parse_record(case["text"])
+        assert len(rec.files) == case["files"]
+        # The same bytes Rust renders: the fixture holds the expected text.
+        assert render_record(rec) == case["rendered"]
+        assert parse_record(render_record(rec)) == rec
+        return
+    with pytest.raises(RecordProblem) as err:
+        parse_record(case["text"])
+    assert err.value.kind == case["expect"]
+    if case["expect"] == "newer":
+        assert err.value.version == case["version"]
+    else:
+        assert err.value.reason

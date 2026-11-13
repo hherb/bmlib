@@ -532,5 +532,135 @@
    "pmcid": null,
    "expect": "2024 Wang – 漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
   }
+ ],
+ "records": [
+  {
+   "name": "example parses and renders",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "minimal record, absent optionals",
+   "text": "{\"format\": \"bmlib-library-record\", \"version\": 1, \"installation\": {\"app\": \"studyanalyzer\", \"id\": \"7c1e0b2a\", \"label\": \"StudyAnalyzer on Horst's MacBook \\u00e9\"}, \"paper\": {}, \"files\": []}",
+   "expect": "ok",
+   "files": 0,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": null,\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": null,\n    \"year\": null,\n    \"first_author\": null\n  },\n  \"files\": []\n}\n"
+  },
+  {
+   "name": "unknown fields ignored",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\",\n    \"extra\": [\n      1\n    ]\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ],\n  \"extra\": 1\n}\n",
+   "expect": "ok",
+   "files": 1,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "version 2 is newer",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 2,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "newer",
+   "version": 2
+  },
+  {
+   "name": "newer wins over other faults",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 3,\n  \"installation\": {},\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "newer",
+   "version": 3
+  },
+  {
+   "name": "wrong format",
+   "text": "{\n  \"format\": \"x\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version zero",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 0,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version a float",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1.5,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "version a string",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": \"1\",\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "bad installation",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"Bad\",\n    \"id\": \"x\",\n    \"label\": \"L\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "pmid not canonical",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"007\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "doi not canonical",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/X\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "blank pmid not canonical",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "year a string",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": \"2024\",\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "kind docx",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"docx\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "sha uppercase",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-AAAAAAAAAAAA.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "sha short",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "name hex differs from digest",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-bbbbbbbbbbbb.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "name wrong extension",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.xml\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "duplicated file",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    },\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "negative size",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": -1,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "unreadable"
+  },
+  {
+   "name": "files missing",
+   "text": "{\"format\": \"bmlib-library-record\", \"version\": 1, \"installation\": {\"app\": \"studyanalyzer\", \"id\": \"7c1e0b2a\", \"label\": \"StudyAnalyzer on Horst's MacBook \\u00e9\"}, \"paper\": {\"pmid\": \"38012345\", \"doi\": \"10.1/x\", \"pmcid\": null, \"title\": \"A trial of \\\"x\\\" \\u2013 \\u00fc\", \"year\": 2024, \"first_author\": \"Smith\"}}",
+   "expect": "unreadable"
+  },
+  {
+   "name": "malformed JSON",
+   "text": "{\"format\": ",
+   "expect": "unreadable"
+  },
+  {
+   "name": "not an object",
+   "text": "[]",
+   "expect": "unreadable"
+  }
  ]
 }
