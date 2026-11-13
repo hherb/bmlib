@@ -454,3 +454,36 @@ fn one_installations_stub_for_two_papers_serves_the_second_nothing() {
     let two = PaperIds::canonical(Some("2"), None, None).unwrap();
     assert!(store.find_source(&two, SourceKind::Pdf).unwrap().is_none());
 }
+
+#[test]
+fn find_source_in_and_note_use_in_read_the_scan_given() {
+    let (_d, store) = scratch("scanin");
+    let paper = info(Some("40"), None);
+    let before = store.scan(&paper.ids).unwrap();
+    let file = store
+        .library
+        .save(
+            &app("medicalfactchecker", "bbbb"),
+            &paper,
+            b"%PDF-40",
+            SourceKind::Pdf,
+            "t",
+        )
+        .unwrap();
+    assert!(store
+        .find_source_in(&before, &paper.ids, SourceKind::Pdf)
+        .unwrap()
+        .is_none());
+    let after = store.scan(&paper.ids).unwrap();
+    let held = store
+        .find_source_in(&after, &paper.ids, SourceKind::Pdf)
+        .unwrap()
+        .unwrap();
+    assert_eq!(held.file, file);
+    // true: a use was written.
+    assert!(store.note_use_in(&after, &paper, &file).unwrap());
+    // The scan given still says this installation does not list it: noted again, harmlessly.
+    assert!(store.note_use_in(&after, &paper, &file).unwrap());
+    let fresh = store.scan(&paper.ids).unwrap();
+    assert!(!store.note_use_in(&fresh, &paper, &file).unwrap());
+}

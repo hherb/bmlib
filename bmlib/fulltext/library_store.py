@@ -221,28 +221,39 @@ class LibraryStore:
         except LibraryError as e:
             raise _failure(paper.ids, None, e) from e
 
-    def note_use(self, paper: PaperInfo, file: FileRef) -> None:
-        """Note in this installation's record that it uses *file*, unless that record (in the
-        file's folder) already lists the digest, in which case nothing is written.
+    def note_use(self, paper: PaperInfo, file: FileRef) -> bool:
+        """Note in this installation's record that it uses *file*: one scan of the library, then
+        :meth:`note_use_in`.
 
         :raises LibraryStoreFailure: the scan or the write failed; the message names the paper,
             the file and the cause.
         """
-        at = (file.folder, file.name)
+        return self.note_use_in(self.scan(paper.ids), paper, file)
+
+    def note_use_in(self, scan: Scan, paper: PaperInfo, file: FileRef) -> bool:
+        """Note in this installation's record that it uses *file*, unless that record (in the
+        file's folder) already lists the digest in *scan*, in which case nothing is written.
+        Returns whether a use was written. A *scan* older than the record only costs a write
+        that changes nothing.
+
+        :raises LibraryStoreFailure: the write failed; the message names the paper, the file and
+            the cause.
+        """
+        already = any(
+            r.installation.app == self.who.app
+            and r.installation.id == self.who.id
+            and any(e.sha256 == file.sha256 for e in r.files)
+            for f in scan.folders
+            if f.folder == file.folder
+            for r in f.records
+        )
+        if already:
+            return False
         try:
-            scan = self.library.scan()
-            already = any(
-                r.installation.app == self.who.app
-                and r.installation.id == self.who.id
-                and any(e.sha256 == file.sha256 for e in r.files)
-                for f in scan.folders
-                if f.folder == file.folder
-                for r in f.records
-            )
-            if not already:
-                self.library.record_use(self.who, paper, file)
+            self.library.record_use(self.who, paper, file)
         except LibraryError as e:
-            raise _failure(paper.ids, at, e) from e
+            raise _failure(paper.ids, (file.folder, file.name), e) from e
+        return True
 
     def path_of(self, file: FileRef) -> Path:
         """The path of *file* inside the library: ``root/papers/<folder>/<name>``.

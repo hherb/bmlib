@@ -283,19 +283,30 @@ impl LibraryStore {
             .map_err(|e| failure(&paper.ids, None, &e))
     }
 
-    /// Note in this installation's record that it uses `file`, unless that record
-    /// (in the file's folder) already lists the digest, in which case nothing is
-    /// written.
+    /// Note in this installation's record that it uses `file`: one scan of the
+    /// library, then [`LibraryStore::note_use_in`].
     ///
     /// # Errors
     ///
     /// A message naming the paper, the file and the library's error.
-    pub fn note_use(&self, paper: &PaperInfo, file: &FileRef) -> Result<(), String> {
-        let at = Some((file.folder.as_str(), file.name.as_str()));
-        let scan = self
-            .library
-            .scan()
-            .map_err(|e| failure(&paper.ids, at, &e))?;
+    pub fn note_use(&self, paper: &PaperInfo, file: &FileRef) -> Result<bool, String> {
+        self.note_use_in(&self.scan(&paper.ids)?, paper, file)
+    }
+
+    /// Note in this installation's record that it uses `file`, unless that record
+    /// (in the file's folder) already lists the digest in `scan`, in which case
+    /// nothing is written. Returns whether a use was written. A `scan` older
+    /// than the record only costs a write that changes nothing.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the paper, the file and the library's error.
+    pub fn note_use_in(
+        &self,
+        scan: &Scan,
+        paper: &PaperInfo,
+        file: &FileRef,
+    ) -> Result<bool, String> {
         let already = scan
             .folders
             .iter()
@@ -308,11 +319,12 @@ impl LibraryStore {
                 })
             });
         if already {
-            return Ok(());
+            return Ok(false);
         }
         self.library
             .record_use(&self.who, paper, file)
-            .map_err(|e| failure(&paper.ids, at, &e))
+            .map_err(|e| failure(&paper.ids, Some((&file.folder, &file.name)), &e))?;
+        Ok(true)
     }
 
     /// The path of `file` inside the library: `root/papers/<folder>/<name>`.

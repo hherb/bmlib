@@ -1982,8 +1982,13 @@ impl FullTextService {
             return out;
         }
         out.ids = ids.clone();
-        let jats = match store.find_source(&ids, SourceKind::Jats) {
-            Ok(jats) => jats,
+        // One scan serves both lookups and the notes below.
+        let found = store.scan(&ids).and_then(|scan| {
+            let jats = store.find_source_in(&scan, &ids, SourceKind::Jats)?;
+            Ok((scan, jats))
+        });
+        let (scan, jats) = match found {
+            Ok(found) => found,
             Err(error) => {
                 self.library_failed(&mut out, &error);
                 return out;
@@ -2003,7 +2008,7 @@ impl FullTextService {
             Some(LibraryJats::Usable(article)) => Some(*article),
             Some(LibraryJats::Unusable) | None => None,
         };
-        let pdf = match store.find_source(&ids, SourceKind::Pdf) {
+        let pdf = match store.find_source_in(&scan, &ids, SourceKind::Pdf) {
             Ok(pdf) => pdf,
             Err(error) => {
                 self.library_failed(&mut out, &error);
@@ -2039,7 +2044,7 @@ impl FullTextService {
         let paper = paper_info(ids, Some(&article));
         if out.failure.is_none() {
             for file in &out.files {
-                if let Err(error) = store.note_use(&paper, file) {
+                if let Err(error) = store.note_use_in(&scan, &paper, file) {
                     self.library_failed(&mut out, &error);
                     break;
                 }

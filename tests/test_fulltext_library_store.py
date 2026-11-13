@@ -293,3 +293,20 @@ def test_a_value_that_is_not_text_is_refused() -> None:
     ids, dropped = library_ids("1", "10.1/x", 12345)  # type: ignore[arg-type]
     assert ids == PaperIds(pmid="1", doi="10.1/x")
     assert dropped == ["pmc_id"]
+
+
+def test_find_source_in_and_note_use_in_read_the_scan_given(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    other = Installation.new("medicalfactchecker", "bbbb", "Mac")
+    paper = _info("40")
+    before = store.scan(paper.ids)
+    file = store.library.save(other, paper, b"%PDF-40", SourceKind.PDF, "t")
+    assert store.find_source_in(before, paper.ids, SourceKind.PDF) is None
+    after = store.scan(paper.ids)
+    held = store.find_source_in(after, paper.ids, SourceKind.PDF)
+    assert held is not None and held.file == file
+    # True: a use was written.
+    assert store.note_use_in(after, paper, file) is True
+    # The scan given still says this installation does not list it: noted again, harmlessly.
+    assert store.note_use_in(after, paper, file) is True
+    assert store.note_use_in(store.scan(paper.ids), paper, file) is False

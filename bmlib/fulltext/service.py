@@ -1360,7 +1360,9 @@ class FullTextService:
             return out
         out.ids = ids
         try:
-            jats = store.find_source(ids, SourceKind.JATS)
+            # One scan serves both lookups and the notes below.
+            scan = store.scan(ids)
+            jats = store.find_source_in(scan, ids, SourceKind.JATS)
         except LibraryStoreFailure as exc:
             self._library_failed(out, exc)
             return out
@@ -1373,7 +1375,7 @@ class FullTextService:
             return out
         pdf: Held | None = None
         try:
-            pdf = store.find_source(ids, SourceKind.PDF)
+            pdf = store.find_source_in(scan, ids, SourceKind.PDF)
         except LibraryStoreFailure as exc:
             self._library_failed(out, exc)
         if jats is None or parsed == "unusable":
@@ -1399,7 +1401,7 @@ class FullTextService:
         if out.failure is None:
             for file in out.files:
                 try:
-                    store.note_use(paper, file)
+                    store.note_use_in(scan, paper, file)
                 except LibraryStoreFailure as exc:
                     self._library_failed(out, exc)
                     break

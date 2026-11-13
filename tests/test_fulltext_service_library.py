@@ -395,3 +395,18 @@ def test_a_pmc_id_that_is_not_text_is_not_raised(tmp_path: Path) -> None:
     with patch.object(service, "_http_get", side_effect=_not_found):
         result = service.fetch_fulltext(pmc_id=12345, doi="10.1/x")  # type: ignore[arg-type]
     assert result.library_failure is None
+
+
+def test_a_library_hit_scans_the_library_once(tmp_path: Path) -> None:
+    paper = _sample_info(canonical_ids(_SAMPLE_PMID))
+    _saved_by_other(tmp_path, paper, _SAMPLE, SourceKind.JATS)
+    _saved_by_other(tmp_path, paper, b"%PDF-1.4 sample", SourceKind.PDF)
+    service = _service(tmp_path)
+    with (
+        patch.object(service, "_http_get", side_effect=_not_found),
+        patch.object(Library, "scan", autospec=True, side_effect=Library.scan) as scan,
+    ):
+        result = service.fetch_fulltext(pmid=_SAMPLE_PMID)
+    assert result.source == LIBRARY_SOURCE
+    assert [f.kind for f in result.library_files] == [SourceKind.JATS, SourceKind.PDF]
+    assert scan.call_count == 1
