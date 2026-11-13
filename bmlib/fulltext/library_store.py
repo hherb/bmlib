@@ -55,15 +55,20 @@ def library_ids(
     Each of *pmid*, *doi* and *pmc_id* goes alone through :func:`canonical_ids` (a blank one is
     simply absent). A field it refuses is left out of the result and its name (``"pmid"``,
     ``"doi"`` or ``"pmc_id"``, the request's parameter names) is returned in the list, in that
-    order. This function only reports; the caller logs the warning.
+    order. A value that is not text (an untyped caller's number, say) is refused the same way;
+    Rust's ``&str`` cannot hold one. This function only reports; the caller logs the warning.
     """
     picked: dict[str, str | None] = {}
     dropped: list[str] = []
-    for field, key, args in (
-        ("pmid", "pmid", (pmid, None, None)),
-        ("doi", "doi", (None, doi, None)),
-        ("pmc_id", "pmcid", (None, None, pmc_id)),
+    for field, key, value, args in (
+        ("pmid", "pmid", pmid, (pmid, None, None)),
+        ("doi", "doi", doi, (None, doi, None)),
+        ("pmc_id", "pmcid", pmc_id, (None, None, pmc_id)),
     ):
+        # The real type, not ``isinstance``, which a faked ``__class__`` passes (#500).
+        if value is not None and not issubclass(type(value), str):
+            dropped.append(field)
+            continue
         try:
             picked[key] = getattr(canonical_ids(*args), key)
         except BadIdentifier:

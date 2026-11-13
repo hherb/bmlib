@@ -286,3 +286,10 @@ def test_one_installation_s_stub_for_two_papers_serves_the_second_nothing(tmp_pa
     store.keep(_info("2"), b"%PDF-1.4 stub", SourceKind.PDF, "u2")
     store.keep(_info("1"), b"%PDF-1.4 the real paper 1", SourceKind.PDF, "u3")
     assert store.find_source(canonical_ids("2"), SourceKind.PDF) is None
+
+
+def test_a_value_that_is_not_text_is_refused() -> None:
+    # Python only: Rust's ``&str`` cannot hold a number (a typing difference, not a rule one).
+    ids, dropped = library_ids("1", "10.1/x", 12345)  # type: ignore[arg-type]
+    assert ids == PaperIds(pmid="1", doi="10.1/x")
+    assert dropped == ["pmc_id"]

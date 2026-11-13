@@ -387,3 +387,11 @@ def test_library_scenario(tmp_path: Path, scenario: dict[str, Any]) -> None:
         entries += ["html"] if cache.has_html(key) else []
         entries += ["pdf"] if cache.get_pdf(key) is not None else []
     assert entries == want["cache"]
+
+
+def test_a_pmc_id_that_is_not_text_is_not_raised(tmp_path: Path) -> None:
+    # Python only (Rust's request holds text): an untyped caller's number, as without a library.
+    service = _service(tmp_path)
+    with patch.object(service, "_http_get", side_effect=_not_found):
+        result = service.fetch_fulltext(pmc_id=12345, doi="10.1/x")  # type: ignore[arg-type]
+    assert result.library_failure is None
