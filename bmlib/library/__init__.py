@@ -66,7 +66,7 @@ from bmlib.library.ids import (
     canonical_ids,
 )
 from bmlib.library.library import Library, open_library
-from bmlib.library.names import folder_name
+from bmlib.library.names import folder_name, folder_name_numbered
 from bmlib.library.records import (
     FileEntry,
     Record,
@@ -133,6 +133,7 @@ __all__ = [
     "Unreachable",
     "canonical_ids",
     "folder_name",
+    "folder_name_numbered",
     "open_library",
     "parse_record",
     "render_record",

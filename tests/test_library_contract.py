@@ -54,6 +54,7 @@ from bmlib.library import (
     find,
     find_digest,
     folder_name,
+    folder_name_numbered,
     group,
     open_library,
     parse_record,
@@ -101,15 +102,22 @@ def _info(case: dict[str, Any]) -> PaperInfo:
     )
 
 
+def _name(case: dict[str, Any]) -> str:
+    """The case's name: numbered when it has an ``n``, else the plain one."""
+    if "n" in case:
+        return folder_name_numbered(_info(case), case["n"])
+    return folder_name(_info(case))
+
+
 @pytest.mark.parametrize("case", _cases("folder_names"))
 def test_folder_names(case: dict[str, Any]) -> None:
-    assert folder_name(_info(case)) == case["expect"]
+    assert _name(case) == case["expect"]
 
 
 @pytest.mark.parametrize("case", _cases("folder_names"))
 def test_folder_name_is_at_most_150_bytes(case: dict[str, Any]) -> None:
     assert MAX_FOLDER_NAME_BYTES == 150
-    assert len(folder_name(_info(case)).encode("utf-8")) <= MAX_FOLDER_NAME_BYTES
+    assert len(_name(case).encode("utf-8")) <= MAX_FOLDER_NAME_BYTES
 
 
 def test_source_kinds_round_trip() -> None:
@@ -362,3 +370,8 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
         for entry in got["files"]:
             assert _SAVED_AT.fullmatch(entry.pop("saved_at"))
         assert got == record, rel
+
+
+def test_numbered_one_is_the_plain_name() -> None:
+    info = _info(_FIXTURE["folder_names"][0])
+    assert folder_name_numbered(info, 1) == folder_name(info)

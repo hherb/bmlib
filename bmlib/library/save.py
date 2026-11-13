@@ -55,7 +55,7 @@ from bmlib.library.files import (
     write_replace,
 )
 from bmlib.library.ids import Installation, PaperInfo, SourceKind
-from bmlib.library.names import folder_name
+from bmlib.library.names import folder_name, folder_name_numbered
 from bmlib.library.records import FileEntry, Record, RecordProblem, parse_record, render_record
 from bmlib.library.scan import FileRef, _scan_folder, find, find_digest, scan_library
 
@@ -91,7 +91,7 @@ def _claim_folder(papers: Path, paper: PaperInfo) -> str:
     writer of the same paper just made."""
     base = folder_name(paper)
     for n in range(1, MAX_NAME_SUFFIX + 1):
-        candidate = base if n == 1 else f"{base} ({n})"
+        candidate = folder_name_numbered(paper, n)
         for _ in range(2):  # the second round re-reads the names after losing a create race
             same = _same_name_as(papers, candidate)
             if same:

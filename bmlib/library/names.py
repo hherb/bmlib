@@ -66,6 +66,20 @@ def folder_name(info: PaperInfo) -> str:
     fitted first; a Windows device name (``con.x``) in the fitted name then gets a ``_``
     prefix, for which one byte of the budget is kept.
     """
+    return _named(info, 1)
+
+
+def folder_name_numbered(info: PaperInfo, n: int) -> str:
+    """The folder name for the ``n``th paper to want :func:`folder_name`'s name.
+
+    The same name ending `` (n)``, still at most ``MAX_FOLDER_NAME_BYTES`` bytes (the body is
+    cut to make room). ``n`` below 2 gives :func:`folder_name` itself.
+    """
+    return _named(info, n)
+
+
+def _named(info: PaperInfo, n: int) -> str:
+    """The shared fitting code behind both; ``n`` of 1 or less adds no number."""
     ids = info.ids
     if ids.pmid:
         ident = f"PMID {ids.pmid}"
@@ -82,6 +96,8 @@ def folder_name(info: PaperInfo) -> str:
     body = _sanitise(f"{head} – {title}" if head and title else head or title)
     ident = _sanitise(ident)
     suffix = f"({ident})" if not body else f" ({ident})"
+    if n > 1:
+        suffix += f" ({n})"
     # Length first, then the reserved-name check on the final name: a fit that
     # is reserved is redone one byte shorter so the "_" still keeps it in budget.
     name = _fit(body, suffix, MAX_FOLDER_NAME_BYTES)

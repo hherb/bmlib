@@ -19,9 +19,9 @@
 //! Python's `tests/test_library_contract.py` asserts against.
 
 use bmlib::library::{
-    find, find_digest, folder_name, group, parse_record, render_record, sha256_hex, FileRef,
-    Installation, Library, LibraryError, PaperIds, PaperInfo, Problem, RecordProblem, SourceKind,
-    CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
+    find, find_digest, folder_name, folder_name_numbered, group, parse_record, render_record,
+    sha256_hex, FileRef, Installation, Library, LibraryError, PaperIds, PaperInfo, Problem,
+    RecordProblem, SourceKind, CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
 };
 use serde_json::Value;
 
@@ -111,11 +111,25 @@ fn folder_cases() -> Vec<(Value, PaperInfo)> {
         .collect()
 }
 
+/// The case's name: numbered when it has an `n`, else the plain one.
+fn plain_or_numbered(case: &Value, info: &PaperInfo) -> String {
+    match case["n"].as_u64() {
+        Some(n) => folder_name_numbered(info, n as u32),
+        None => folder_name(info),
+    }
+}
+
+#[test]
+fn numbered_one_is_the_plain_name() {
+    let (_, info) = folder_cases().remove(0);
+    assert_eq!(folder_name_numbered(&info, 1), folder_name(&info));
+}
+
 #[test]
 fn folder_names_match_the_fixture() {
     for (case, info) in folder_cases() {
         assert_eq!(
-            folder_name(&info),
+            plain_or_numbered(&case, &info),
             case["expect"].as_str().unwrap(),
             "{}",
             case["name"]
@@ -128,7 +142,7 @@ fn folder_name_is_at_most_150_bytes() {
     assert_eq!(MAX_FOLDER_NAME_BYTES, 150);
     for (case, info) in folder_cases() {
         assert!(
-            folder_name(&info).len() <= MAX_FOLDER_NAME_BYTES,
+            plain_or_numbered(&case, &info).len() <= MAX_FOLDER_NAME_BYTES,
             "{}",
             case["name"]
         );

@@ -35,7 +35,7 @@ pub use crate::fulltext::CORRUPT_SUFFIX;
 pub use error::LibraryError;
 pub use files::sha256_hex;
 pub use ids::{Installation, PaperIds, PaperInfo, SourceKind};
-pub use names::folder_name;
+pub use names::{folder_name, folder_name_numbered};
 pub use open::Library;
 pub use record::{parse_record, render_record, FileEntry, Record, RecordProblem};
 pub use scan::{find, find_digest, group, FileRef, PaperFolder, Problem, Scan};

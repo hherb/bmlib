@@ -32,9 +32,9 @@ use super::files::{
 };
 use super::scan::scan_folder;
 use super::{
-    find, find_digest, folder_name, parse_record, render_record, FileEntry, FileRef, Installation,
-    Library, LibraryError, PaperInfo, Record, RecordProblem, SourceKind, CORRUPT_SUFFIX,
-    DIGEST_PREFIX_HEX, MAX_NAME_SUFFIX, PAPERS_DIR, RECORDS_DIR,
+    find, find_digest, folder_name, folder_name_numbered, parse_record, render_record, FileEntry,
+    FileRef, Installation, Library, LibraryError, PaperInfo, Record, RecordProblem, SourceKind,
+    CORRUPT_SUFFIX, DIGEST_PREFIX_HEX, MAX_NAME_SUFFIX, PAPERS_DIR, RECORDS_DIR,
 };
 
 /// The log target (Python's logger name) for this module's warnings.
@@ -69,11 +69,7 @@ fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> bool {
 fn claim_folder(papers: &Path, paper: &PaperInfo) -> Result<String, LibraryError> {
     let base = folder_name(paper);
     for n in 1..=MAX_NAME_SUFFIX {
-        let candidate = if n == 1 {
-            base.clone()
-        } else {
-            format!("{base} ({n})")
-        };
+        let candidate = folder_name_numbered(paper, n);
         // The second round re-reads the names after losing a create race.
         for _ in 0..2 {
             let same = same_name_as(papers, &candidate)?;

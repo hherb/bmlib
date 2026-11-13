@@ -531,6 +531,39 @@
    "doi": null,
    "pmcid": null,
    "expect": "2024 Wang – 漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  },
+  {
+   "name": "numbered short name",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": "Metformin",
+   "pmid": "111",
+   "doi": null,
+   "pmcid": null,
+   "n": 2,
+   "expect": "2024 Smith – Metformin (PMID 111) (2)"
+  },
+  {
+   "name": "numbered name that forces a body cut",
+   "year": 2024,
+   "first_author": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "title": "Effects of long term metformin therapy on cognitive decline in older adults with type two diabetes",
+   "pmid": null,
+   "doi": "10.1234/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "pmcid": null,
+   "n": 7,
+   "expect": "2024 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA – E (DOI 10.1234 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) (7)"
+  },
+  {
+   "name": "numbered 1000",
+   "year": 2024,
+   "first_author": "Smith",
+   "title": "Metformin",
+   "pmid": "111",
+   "doi": null,
+   "pmcid": null,
+   "n": 1000,
+   "expect": "2024 Smith – Metformin (PMID 111) (1000)"
   }
  ],
  "records": [

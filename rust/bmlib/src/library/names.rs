@@ -69,6 +69,19 @@ fn sanitise(s: &str) -> String {
 /// a `_` prefix, for which one byte of the budget is kept.
 #[must_use]
 pub fn folder_name(info: &PaperInfo) -> String {
+    named(info, 1)
+}
+
+/// The folder name for the `n`th paper to want [`folder_name`]'s name: the same
+/// name ending ` (n)`, still at most [`MAX_FOLDER_NAME_BYTES`] bytes (the body
+/// is cut to make room). `n` below 2 gives [`folder_name`] itself.
+#[must_use]
+pub fn folder_name_numbered(info: &PaperInfo, n: u32) -> String {
+    named(info, n)
+}
+
+/// The shared fitting code behind both; `n` of 1 or less adds no number.
+fn named(info: &PaperInfo, n: u32) -> String {
     let ids = &info.ids;
     let id = if let Some(p) = &ids.pmid {
         format!("PMID {p}")
@@ -106,11 +119,14 @@ pub fn folder_name(info: &PaperInfo) -> String {
     };
     let body = sanitise(&body);
     let id = sanitise(&id);
-    let suffix = if body.is_empty() {
+    let mut suffix = if body.is_empty() {
         format!("({id})")
     } else {
         format!(" ({id})")
     };
+    if n > 1 {
+        suffix.push_str(&format!(" ({n})"));
+    }
     // Length first, then the reserved-name check on the final name: a fit that
     // is reserved is redone one byte shorter so the `_` still keeps it in budget.
     let name = fit(&body, &suffix, MAX_FOLDER_NAME_BYTES);
