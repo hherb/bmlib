@@ -2428,11 +2428,10 @@ class TestIDConverter:
         resp = MagicMock()
         resp.status_code = 200
         resp.content = b"not json"
+        failures = _TierFailures.unreported()
         with patch.object(service, "_http_get", return_value=resp):
-            assert (
-                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
-                is None
-            )
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=failures) is None
+        assert failures.faults == ["JSONDecodeError"]  # a fault, not an absence
 
     def test_the_api_key_is_sent_only_when_configured(self):
         without = FullTextService(email="test@example.com")
@@ -7700,6 +7699,10 @@ class TestJsonBodiesAreReadAsSerdeJsonReadsThem:
         ),
         pytest.param(b'{"x": NaN, "resultList": {"result": []}, "records": []}', id="nan"),
         pytest.param(b'{"x": 1e999, "resultList": {"result": []}, "records": []}', id="overflow"),
+        pytest.param(
+            b'{"x": ' + b"[" * 200 + b"]" * 200 + b', "resultList": {"result": []}, "records": []}',
+            id="deep",
+        ),
     ]
 
     @staticmethod
@@ -7740,6 +7743,15 @@ class TestJsonBodiesAreReadAsSerdeJsonReadsThem:
         assert result.source == "doi"
         assert get.call_count == 3
         assert result.tier_faults == ["JSONDecodeError"] * 3
+
+    def test_a_body_that_is_not_utf8_has_one_name_in_both(self):
+        # As the same Rust test's `not_utf8`: one fault name in both languages.
+        body = b'{"x": "\xff", "resultList": {"result": []}, "records": []}'
+        service, resp = self._service(body)
+        with patch.object(service, "_http_get", return_value=resp):
+            result = service.fetch_fulltext(doi="10.1/x")
+        assert result.source == "doi"
+        assert result.tier_faults == ["UnicodeDecodeError"] * 3
 
     def test_a_readable_body_is_still_read(self):
         # The control: the same shape, readable, is an absence at each decode.

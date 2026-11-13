@@ -3940,8 +3940,14 @@ impl FullTextService {
     }
 
     /// One response body decoded as JSON.
+    ///
+    /// A body that is not UTF-8 is a `UnicodeDecodeError`, the name Python's
+    /// `resp.content.decode("utf-8")` gives it, not `response_text`'s
+    /// `TransportError`: `tier_faults` carries Python's names (#753).
     fn json_body(&self, response: &HttpResponse) -> Result<Value, TierFault> {
-        serde_json::from_str(response_text(response)?)
+        let text = std::str::from_utf8(&response.body)
+            .map_err(|error| TierFault::fault("UnicodeDecodeError", error.to_string()))?;
+        serde_json::from_str(text)
             .map_err(|error| TierFault::fault("JSONDecodeError", error.to_string()))
     }
 }

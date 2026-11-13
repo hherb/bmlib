@@ -4115,16 +4115,20 @@ fn a_pmc_open_data_record_that_cannot_be_read_is_a_failure() {
 }
 
 /// **The search, the ID Converter and Unpaywall refuse what `serde_json`
-/// refuses** (#753): a BOM, a lone surrogate escape, `NaN` and a number past
-/// `f64`, each in a body otherwise of the expected shape. Python read all
-/// four as answers through httpx's `json()`; it now reads them as this does,
-/// and `tests/test_fulltext_service.py`'s
+/// refuses** (#753): a BOM, a lone surrogate escape, `NaN`, a number past
+/// `f64` and nesting 200 deep, each in a body otherwise of the expected
+/// shape. Python read all five as answers through httpx's `json()`; it now
+/// reads them as this does, and `tests/test_fulltext_service.py`'s
 /// `TestJsonBodiesAreReadAsSerdeJsonReadsThem` holds it to the same bodies.
 #[test]
 fn the_three_json_bodies_are_refused_as_python_refuses_them() {
     let rest = r#""resultList": {"result": []}, "records": []}"#;
-    let chain = |body: String| {
-        let client = ScriptedClient::new(vec![ok(body.clone()), ok(body.clone()), ok(body)]);
+    let chain = |body: Vec<u8>| {
+        let client = ScriptedClient::new(vec![
+            ok_bytes(body.clone()),
+            ok_bytes(body.clone()),
+            ok_bytes(body),
+        ]);
         let mut request = request();
         request.doi = Some("10.1/x".to_string());
         let result = service(client.clone())
@@ -4139,9 +4143,18 @@ fn the_three_json_bodies_are_refused_as_python_refuses_them() {
         format!(r#"{{"x": "\ud800", {rest}"#),
         format!(r#"{{"x": NaN, {rest}"#),
         format!(r#"{{"x": 1e999, {rest}"#),
+        format!(r#"{{"x": {}{}, {rest}"#, "[".repeat(200), "]".repeat(200)),
     ] {
-        assert_eq!(chain(bad.clone()), ["JSONDecodeError"; 3], "{bad}");
+        assert_eq!(
+            chain(bad.clone().into_bytes()),
+            ["JSONDecodeError"; 3],
+            "{bad}"
+        );
     }
+    // A body that is not UTF-8 is named as Python's `.decode("utf-8")` names it.
+    let mut not_utf8 = format!(r#"{{"x": "?", {rest}"#).into_bytes();
+    not_utf8[7] = 0xff;
+    assert_eq!(chain(not_utf8), ["UnicodeDecodeError"; 3]);
     // The control: the same shape, readable, is an absence at each.
-    assert!(chain(format!(r#"{{"x": "é", {rest}"#)).is_empty());
+    assert!(chain(format!(r#"{{"x": "é", {rest}"#).into_bytes()).is_empty());
 }

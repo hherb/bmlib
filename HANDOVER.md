@@ -15,9 +15,11 @@ has since #752; a BOM, `NaN`, a number past `f64` or a lone surrogate is a
 `resp.json.return_value` to real `content` bytes, so a new full-text test
 must script `content`, not `json()`. Pinned by
 `TestJsonBodiesAreReadAsSerdeJsonReadsThem` and Rust's
-`the_three_json_bodies_are_refused_as_python_refuses_them`. Left as it was: a
-body that is not UTF-8 is `UnicodeDecodeError` in Python and
-`TransportError` in Rust (`HttpResponse::text`), a fault in both.
+`the_three_json_bodies_are_refused_as_python_refuses_them`. A body that is
+not UTF-8 is a `UnicodeDecodeError` fault in both (Rust's `json_body` no
+longer names it `TransportError`). Nesting deep enough to overflow Python's
+recursion limit (~100,000) is still `RecursionError` here and
+`JSONDecodeError` in Rust: **#758** (`strict_json_loads`' 13 callers).
 
 ## The shared paper library, step 1a (merged as PR #754)
 
@@ -67,8 +69,9 @@ review's fixes are in the CHANGELOG; review follow-ups are #755.
   1c's third source is the bucket's JATS (`source` `"pmc_open_data"`). The
   record fixtures' md5s are those of `sample_article.xml` and `textless.pdf`:
   edit either file and update them. Not done: one record per fetch, the
-  bucket's `.txt`, `is_retracted` into `retraction_status`, Rust gives a transport failure as
-  `FullTextError::Other` where Python raises `httpx.HTTPError`.
+  bucket's `.txt`, `is_retracted` into `retraction_status`. Rust gives a
+  transport failure as `FullTextError::Other` where Python raises
+  `httpx.HTTPError`.
 - **#749 (#748), #747 (#746)**: a `pmc_open_data` PDF candidate by the
   JATS's own PMC ID; `http-408` may pass, and the result carries the first
   failure that may pass, else `"search-failed"`, else the first.
@@ -155,9 +158,10 @@ crate's `[0.4.0]`. The points an app must act on:
   threshold back to 0.95-0.97, `prepare` once per paper, retry only
   `extract_prepared`, one window, stop flag and `condense_config` for all.
 - **PDF segmenter and full-text faults** (PRs #614-#637): residuals **#605**,
-  **#623**, **#628**. → read `pdf_extraction_failure` `"encrypted"` /
-  `"unreadable"` as `invalid_input`, `"engine"` as a retry; bmlibrarian_lite
-  re-pins `BmlibFFI.pin.json` (#621).
+  **#623**, **#628**. The title corpus's `median_font_size` rows are line
+  medians, so its next top-up bumps `ROW_DEFINITIONS_VERSION`. → read
+  `pdf_extraction_failure` `"encrypted"` / `"unreadable"` as `invalid_input`,
+  `"engine"` as a retry; bmlibrarian_lite re-pins `BmlibFFI.pin.json` (#621).
 
 ## Rules carried forward, and previous sessions
 
@@ -244,9 +248,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/753-strict-json-fulltext`** (2026-11-14, no PostgreSQL
-  DSN): Python 10,667 passed + 171 skipped; Rust's `tests/service.rs` 120. The
-  next bullet is the PostgreSQL-DSN run of `feat/pmc-open-data-json`.
+- **Tests on `fix/753-strict-json-fulltext`** (2026-11-14, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,823 passed + 20
+  skipped; Rust's `tests/service.rs` 120. The next bullet is the run of
+  `feat/pmc-open-data-json`.
 - **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
   `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,730 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
@@ -315,49 +320,61 @@ Measurement: the 2026-11-14 comment on #341.
 
 ### Open GitHub issues
 
-**119 open** before this PR closes #753, #755 among them (#754's review follow-ups) (#734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays open for its point 3, which PR #696 left open) (`gh issue list --state open --limit 300 --json number`,
-2026-11-13); #651 is #632's residual; #556–#734 are not yet
-sorted into the lists below). **PR #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618 (a part not reported may now have a blank description; fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review residuals: indent misses, a numbered quantity read as a subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page is more than a warning; the maintainer's call) and **#595** (`render_html`'s weaker
-furniture rule; measure the move by diffing before choosing) and **#628**'s
-remaining causes are the PDF path's open work. **#528** and
-**#529** are PR #526's review's, both `find_passage` decisions: a superscript
-digit makes different numbers match exactly (`10³` vs `103`), and a quote
-whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a non-ISO evidence date needs `retraction_status` to return a `Result`, an app API change); **#520** is the Rust store's import, which owes #522's nature rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI
-spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
-deep nesting). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures) and #436 (follow #172), and the Python list: #92, #94, #128, #137, #142, #143, #144,
-#150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
-#201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
-#244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
-#281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
-#465 (three local transport classes stay `transport-`; a decision),
-**#480** (render affiliations in the cached HTML? a decision), **#481**
-(strip an affiliation's trailing `;`/`,`? a decision), and — **not filed**,
-open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —
-whether a malformed `pmc_id` should WARN rather than DEBUG (#304's level),
-#456 (a Rust regex-engine error still yields a determinate answer; a design
-decision), #451 (label the phrase-search strata's protocols and
-phase-specific trials, a decision), #454 (full-text study typing reads a cited trial; a
-design question),
-#393 (an element-only citation whose text sits only in unread
+**120 open**, #753 (this PR's), #755 (#754's review follow-ups) and **#758**
+(#753's review residual, `RecursionError`) among them (#734, #733,
+#731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays
+open for its point 3, which PR #696 left open)
+(`gh issue list --state open --limit 300 --json number`, 2026-11-14); #651 is
+#632's residual; #556–#734 are not yet sorted into the lists below). **PR
+#615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
+(a part not reported may now have a blank description; fixed with #577 in PR
+#696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review
+residuals: indent misses, a numbered quantity read as a subsection, the Rust
+failed-`/Title` test), **#605** (whether a truncated page is more than a
+warning; the maintainer's call) and **#595** (`render_html`'s weaker furniture
+rule; measure the move by diffing before choosing) and **#628**'s remaining
+causes are the PDF path's open work. **#528** and **#529** are PR #526's
+review's, both `find_passage` decisions: a superscript digit makes different
+numbers match exactly (`10³` vs `103`), and a quote whose seeds are all too
+common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a
+non-ISO evidence date needs `retraction_status` to return a `Result`, an app
+API change); **#520** is the Rust store's import, which owes #522's nature
+rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI
+spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element
+recursion aborts on deep nesting). They are: the Rust audit's #314 (a
+decision), the Rust side's #332, **#467** (follow #463's port parity),
+**#468** (follow #227), **#471** (follow #470), **#476** (follow #474),
+**#483** (follow #475), #409 (follow #406), #411 (follow #407), #416 (follow
+#413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429;
+now also #145's five Python-only fixtures) and #436 (follow #172), and the
+Python list: #92, #94, #128, #137, #142, #143, #144, #150, #154, #156, #157,
+#173, #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #222,
+#233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253, #260, #273,
+#275, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
+#465 (three local transport classes stay `transport-`; a decision), **#480**
+(render affiliations in the cached HTML? a decision), **#481** (strip an
+affiliation's trailing `;`/`,`? a decision), and — **not filed**, open by
+decision since PR #479 and recorded only in `docs/DECISIONS.md` — whether a
+malformed `pmc_id` should WARN rather than DEBUG (#304's level), #456 (a Rust
+regex-engine error still yields a determinate answer; a design decision), #451
+(label the phrase-search strata's protocols and phase-specific trials, a
+decision), #454 (full-text study typing reads a cited trial; a design
+question), #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
-counter), #419 and #420
-(PR #418's review: count a replaced first page, count a partly tagged
-`<string-name>`'s bare text — both "count it?" decisions), #424 (#224's
-WARNING calls a citation note's `<p>` missing; measured 0), #430 (a
-`<collab>`'s directly held `<email>`/`<ext-link>`/`<on-behalf-of>` welds into
-its name; a per-element decision), #431 (a `contrib-type="collab"`
-contributor, a consortium or its members, is not an author; a role
-decision), #434 (a cited roster's members become cited authors ahead of
-the group, and the `citation` string carries one spelling of a member and not
-the other), #435 (a double space where a roster sits mid-name), **#439**
-(an element-only citation printed in prose — every one an eLife dataset
-citation — is counted but its DOI reaches no field; a decision), #441 (a
-`<citation-alternatives>` group of two typeset renditions prints both) and
-#442 (an element-only citation inside a related work in prose prints its
-fields run together; invalid JATS), both decisions from PR #440's review.
-Re-count against `gh`.
+counter), #419 and #420 (PR #418's review: count a replaced first page, count
+a partly tagged `<string-name>`'s bare text — both "count it?" decisions),
+#424 (#224's WARNING calls a citation note's `<p>` missing; measured 0), #430
+(a `<collab>`'s directly held `<email>`/`<ext-link>`/`<on-behalf-of>` welds
+into its name; a per-element decision), #431 (a `contrib-type="collab"`
+contributor, a consortium or its members, is not an author; a role decision),
+#434 (a cited roster's members become cited authors ahead of the group, and
+the `citation` string carries one spelling of a member and not the other),
+#435 (a double space where a roster sits mid-name), **#439** (an element-only
+citation printed in prose — every one an eLife dataset citation — is counted
+but its DOI reaches no field; a decision), #441 (a `<citation-alternatives>`
+group of two typeset renditions prints both) and #442 (an element-only
+citation inside a related work in prose prints its fields run together;
+invalid JATS), both decisions from PR #440's review. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
