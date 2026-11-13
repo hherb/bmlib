@@ -6507,6 +6507,13 @@ undo.
   that replaces the real one when it is downloaded. The cost is that a save
   waits for iCloud. macOS 14 and later evict to dataless files with the real
   name rather than `.icloud` names; that is checked on a device in step 2.
+- **An atomic write's temporary is reported, never deleted.** Both languages'
+  temporaries (Rust's `{name}.bmlib-tmp-uuid4hex…`, Python's
+  `.{name}.{hex}.tmp`) are left out of every listing, so they are neither
+  source files nor records nor a reason for `open` to call a folder taken, and
+  a scan reports each as `LeftoverTemp`. Any one is reported, not only a stale
+  one: telling an in-flight write from a crash's leftover would need a clock
+  rule, and the app can show it as harmless.
 - **A scan never fails on one bad folder and drops nothing.** Every oddity is a
   `Problem` (unreadable or newer or misnamed record, an unrecorded file, an
   unreadable folder, a stray entry) for the app to show.

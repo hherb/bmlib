@@ -172,6 +172,7 @@ versions, so some will be real).
 | `MisnamedRecord` | A valid record whose file name is not its installation's (a "copy of" by a sync conflict) |
 | `ConflictingIds` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `UnrecordedFile` | A source file no record lists (a crash, or a record lost) |
+| `LeftoverTemp` | A temporary of an atomic write, in flight or left by a crash; never deleted, and never a user's file |
 | `StrayEntry` | Something in `papers/` that is not a folder |
 
 ## Errors and what to tell the user

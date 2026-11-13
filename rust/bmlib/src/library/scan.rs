@@ -26,8 +26,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::files::{
-    component, exists, has_placeholder, io_error, is_dir, list_names, listing, read_bytes,
-    sha256_hex,
+    component, exists, has_placeholder, io_error, is_dir, listing, read_bytes, sha256_hex,
 };
 use super::{
     parse_record, Installation, Library, LibraryError, PaperIds, Record, RecordProblem, SourceKind,
@@ -118,6 +117,14 @@ pub enum Problem {
         folder: String,
         /// The record file it stands for.
         file: String,
+    },
+    /// A temporary file of `atomic_write`, from a write in flight or one a crash
+    /// interrupted. It is left alone, never deleted (R20).
+    LeftoverTemp {
+        /// The paper's folder.
+        folder: String,
+        /// The file, as `records/<name>` when it is in `records/`.
+        name: String,
     },
     /// A valid record whose file name is not its installation's.
     MisnamedRecord {
@@ -228,6 +235,12 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                         });
                     }
                 }
+                for name in found.temps {
+                    problems.push(Problem::LeftoverTemp {
+                        folder: folder.to_owned(),
+                        name: format!("{RECORDS_DIR}/{name}"),
+                    });
+                }
             }
         }
     }
@@ -246,11 +259,20 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
             }
         }
     }
-    let files_on_disk = match list_names(dir) {
-        Ok(names) => names
-            .into_iter()
-            .filter(|n| n != RECORDS_DIR && !is_dir(&dir.join(n)))
-            .collect(),
+    let files_on_disk = match listing(dir) {
+        Ok(found) => {
+            for name in found.temps {
+                problems.push(Problem::LeftoverTemp {
+                    folder: folder.to_owned(),
+                    name,
+                });
+            }
+            found
+                .names
+                .into_iter()
+                .filter(|n| n != RECORDS_DIR && !is_dir(&dir.join(n)))
+                .collect()
+        }
         Err(e) => {
             problems.push(unreadable_folder(e.to_string()));
             Vec::new()
@@ -283,9 +305,9 @@ impl Library {
     /// a folder is a [`Problem`] in the result instead.
     pub fn scan(&self) -> Result<Scan, LibraryError> {
         let papers = self.root().join(PAPERS_DIR);
-        let names = list_names(&papers).map_err(|e| io_error(&papers, &e, false))?;
+        let found = listing(&papers).map_err(|e| io_error(&papers, &e, false))?;
         let (mut folders, mut problems) = (Vec::new(), Vec::new());
-        for name in names {
+        for name in found.names {
             let dir = papers.join(&name);
             if is_dir(&dir) {
                 folders.push(scan_folder(&dir, &name, &mut problems));
@@ -293,6 +315,13 @@ impl Library {
                 problems.push(Problem::StrayEntry { name });
             }
         }
+        // Nothing writes a file into `papers/` itself; a temporary there is stray.
+        problems.extend(
+            found
+                .temps
+                .into_iter()
+                .map(|name| Problem::StrayEntry { name }),
+        );
         Ok(Scan { folders, problems })
     }
 

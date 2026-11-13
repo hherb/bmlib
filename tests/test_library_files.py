@@ -32,6 +32,7 @@ from bmlib.library.files import (
     create_dir_new,
     first_user_entry,
     has_placeholder,
+    is_temp_name,
     list_names,
     sha256_hex,
     write_once,
@@ -127,3 +128,17 @@ def test_non_utf8_name_is_a_user_entry(tmp_path: Path) -> None:
         pytest.skip("this file system refuses non-UTF-8 names")
     assert first_user_entry(tmp_path) is not None
     assert len(list_names(tmp_path)) == 1
+
+
+def test_temp_names_of_both_languages_are_recognised() -> None:
+    rust = "a.pdf.bmlib-tmp-uuid4hex" + "0" * 42
+    assert is_temp_name(rust)
+    assert is_temp_name(".a.pdf.0123456789abcdef0123456789abcdef.tmp")
+    for name in [
+        "a.pdf",
+        rust[:-1],
+        ".a.pdf.0123456789ABCDEF0123456789abcdef.tmp",
+        "a.pdf.0123456789abcdef0123456789abcdef.tmp",
+        ".0123456789abcdef0123456789abcdef.tmp",
+    ]:
+        assert not is_temp_name(name), name

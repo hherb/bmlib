@@ -35,7 +35,6 @@ from bmlib.library.files import (
     has_placeholder,
     io_error,
     is_dir,
-    list_names,
     listing,
     read_bytes,
     sha256_hex,
@@ -90,6 +89,9 @@ class Problem:
     - ``newer_record`` (``folder``, ``file``, ``version``);
     - ``record_not_downloaded`` (``folder``, ``file``): the record is only an iCloud
       placeholder, so its installation's uses are unknown;
+    - ``leftover_temp`` (``folder``, ``name``, as ``records/<name>`` when in ``records/``): a
+      temporary of ``atomic_write`` from a write in flight or one a crash interrupted; it is
+      left alone, never deleted;
     - ``misnamed_record`` (``folder``, ``file``);
     - ``conflicting_ids`` (``folder``, ``field``): two records hold different values for it;
       both count for :func:`find` and :func:`group`;
@@ -169,6 +171,9 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
             for f in found.placeholders
             if f not in found.names
         )
+        problems.extend(
+            Problem("leftover_temp", folder=folder, name=f"{RECORDS_DIR}/{t}") for t in found.temps
+        )
     acc = PaperIds()
     conflicts: list[str] = []
     for r in records:
@@ -178,9 +183,9 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
                 conflicts.append(field)
                 problems.append(Problem("conflicting_ids", folder=folder, field=field))
     try:
-        on_disk = [
-            n for n in list_names(directory) if n != RECORDS_DIR and not is_dir(directory / n)
-        ]
+        here = listing(directory)
+        problems.extend(Problem("leftover_temp", folder=folder, name=t) for t in here.temps)
+        on_disk = [n for n in here.names if n != RECORDS_DIR and not is_dir(directory / n)]
     except OSError as e:
         on_disk = []
         problems.append(Problem("unreadable_folder", folder=folder, reason=str(e)))
@@ -199,16 +204,18 @@ def scan_library(root: Path) -> Scan:
     """
     papers = root / PAPERS_DIR
     try:
-        names = list_names(papers)
+        found = listing(papers)
     except OSError as e:
         raise io_error(papers, e, write=False) from e
     folders: list[PaperFolder] = []
     problems: list[Problem] = []
-    for name in names:
+    for name in found.names:
         if is_dir(papers / name):
             folders.append(_scan_folder(papers / name, name, problems))
         else:
             problems.append(Problem("stray_entry", name=name))
+    # Nothing writes a file into papers/ itself; a temporary there is stray.
+    problems.extend(Problem("stray_entry", name=t) for t in found.temps)
     return Scan(tuple(folders), tuple(problems))
 
 

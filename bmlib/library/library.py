@@ -132,17 +132,19 @@ def open_library(root: Path) -> Library:
     if not is_dir(root):
         raise Unreachable(root, "not a folder" if exists(root) else "no such folder")
     marker = root / MARKER_FILE
-    if exists(marker):
-        _check_marker(root, _read_marker(marker))
-    else:
+    first = None
+    if not exists(marker):
         try:
             first = first_user_entry(root)
         except OSError as e:
             raise io_error(root, e, write=False) from e
-        if first is not None:
-            raise NotALibrary(
-                root, f"the folder is not empty (found {first}) and has no {MARKER_FILE}"
-            )
+    # The marker is looked at again after the folder seemed taken: another opener may have
+    # published it (and papers/) in between.
+    if exists(marker):
+        _check_marker(root, _read_marker(marker))
+    elif first is not None:
+        raise NotALibrary(root, f"the folder is not empty (found {first}) and has no {MARKER_FILE}")
+    else:
         text = json.dumps(
             {"format": LIBRARY_FORMAT, "version": LIBRARY_VERSION}, indent=2, ensure_ascii=False
         )

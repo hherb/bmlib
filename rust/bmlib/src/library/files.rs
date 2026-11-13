@@ -28,6 +28,7 @@ use sha2::{Digest, Sha256};
 
 use super::names::is_reserved;
 use super::{LibraryError, ICLOUD_PLACEHOLDER, IGNORED_NAMES};
+use crate::atomic::{TEMP_SUFFIX, TEMP_SUFFIX_LEN};
 
 /// Whether `write_once` made the file or found the same bytes already there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +108,37 @@ fn entries(dir: &Path) -> io::Result<Vec<(Vec<u8>, String)>> {
     Ok(all)
 }
 
+/// The hex digits in the temporary name Python's `atomic_write` uses,
+/// `.{name}.{uuid4 hex}.tmp`.
+const PY_TEMP_HEX: usize = 32;
+/// The extension of Python's `atomic_write` temporaries.
+const PY_TEMP_EXT: &str = ".tmp";
+
+/// Whether `name` is a temporary of either language's `atomic_write`: Rust's
+/// `{name}{TEMP_SUFFIX}{42-character token}` or Python's
+/// `.{name}.{32 hex}.tmp`. One is there while a write is in flight, and stays
+/// after a crash; it is never a user's file and never a paper's.
+pub(crate) fn is_temp_name(name: &str) -> bool {
+    let token = TEMP_SUFFIX_LEN - TEMP_SUFFIX.len();
+    let rust = name.len() > TEMP_SUFFIX_LEN
+        && name
+            .get(..name.len() - token)
+            .is_some_and(|head| head.ends_with(TEMP_SUFFIX));
+    let python = name.starts_with('.')
+        && name.strip_suffix(PY_TEMP_EXT).is_some_and(|stem| {
+            stem.len() > PY_TEMP_HEX + 2
+                && stem
+                    .get(stem.len() - PY_TEMP_HEX - 1..)
+                    .is_some_and(|tail| {
+                        tail.starts_with('.')
+                            && tail[1..]
+                                .bytes()
+                                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+                    })
+        });
+    rust || python
+}
+
 /// What [`listing`] found in a folder, each list sorted by bytes.
 #[derive(Debug, Default)]
 pub(crate) struct Listing {
@@ -115,6 +147,8 @@ pub(crate) struct Listing {
     /// Files present only as an iCloud placeholder, by their own name
     /// (`.x.pdf.icloud` gives `x.pdf`).
     pub(crate) placeholders: Vec<String>,
+    /// Temporaries of `atomic_write` ([`is_temp_name`]), in flight or left by a crash.
+    pub(crate) temps: Vec<String>,
 }
 
 /// The entries of `dir`, sorted into a [`Listing`]. A name that is not UTF-8
@@ -122,7 +156,9 @@ pub(crate) struct Listing {
 pub(crate) fn listing(dir: &Path) -> io::Result<Listing> {
     let mut out = Listing::default();
     for (_, name) in entries(dir)? {
-        if let Some(own) = placeholder_for(&name) {
+        if is_temp_name(&name) {
+            out.temps.push(name);
+        } else if let Some(own) = placeholder_for(&name) {
             out.placeholders.push(own.to_owned());
         } else if !name.starts_with('.') && !IGNORED_NAMES.contains(&name.as_str()) {
             out.names.push(name);
@@ -131,8 +167,9 @@ pub(crate) fn listing(dir: &Path) -> io::Result<Listing> {
     Ok(out)
 }
 
-/// The names in `dir`, sorted by bytes, leaving out [`IGNORED_NAMES`] and any
-/// name starting with `.`. A name that is not UTF-8 is kept, shown lossily.
+/// The names in `dir`, sorted by bytes, leaving out [`IGNORED_NAMES`], any
+/// name starting with `.` and `atomic_write` temporaries. A name that is not
+/// UTF-8 is kept, shown lossily.
 pub(crate) fn list_names(dir: &Path) -> io::Result<Vec<String>> {
     Ok(listing(dir)?.names)
 }
@@ -152,11 +189,14 @@ fn is_placeholder_name(name: &str) -> bool {
     placeholder_for(name).is_some()
 }
 
-/// The first entry of `dir` that belongs to the user: not an ignored name or
-/// dotfile, but an iCloud placeholder does count (it stands for a real file).
+/// The first entry of `dir` that belongs to the user: not an ignored name,
+/// dotfile or `atomic_write` temporary, but an iCloud placeholder does count
+/// (it stands for a real file).
 pub(crate) fn first_user_entry(dir: &Path) -> io::Result<Option<String>> {
     Ok(entries(dir)?.into_iter().map(|(_, name)| name).find(|n| {
-        is_placeholder_name(n) || (!n.starts_with('.') && !IGNORED_NAMES.contains(&n.as_str()))
+        !is_temp_name(n)
+            && (is_placeholder_name(n)
+                || (!n.starts_with('.') && !IGNORED_NAMES.contains(&n.as_str())))
     }))
 }
 
@@ -338,6 +378,25 @@ mod tests {
         assert!(create_dir_new(&sub).unwrap());
         assert!(!create_dir_new(&sub).unwrap());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn temp_names_of_both_languages_are_recognised() {
+        let rust = format!(
+            "a.pdf{TEMP_SUFFIX}{}",
+            "0".repeat(TEMP_SUFFIX_LEN - TEMP_SUFFIX.len())
+        );
+        assert!(is_temp_name(&rust));
+        assert!(is_temp_name(".a.pdf.0123456789abcdef0123456789abcdef.tmp"));
+        for not in [
+            "a.pdf",
+            &rust[..rust.len() - 1],
+            ".a.pdf.0123456789ABCDEF0123456789abcdef.tmp",
+            "a.pdf.0123456789abcdef0123456789abcdef.tmp",
+            ".0123456789abcdef0123456789abcdef.tmp",
+        ] {
+            assert!(!is_temp_name(not), "{not}");
+        }
     }
 
     #[test]

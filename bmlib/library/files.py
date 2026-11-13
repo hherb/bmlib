@@ -32,7 +32,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bmlib._atomic import atomic_write
-from bmlib.library.constants import ICLOUD_PLACEHOLDER, IGNORED_NAMES
+from bmlib.library.constants import (
+    ICLOUD_PLACEHOLDER,
+    IGNORED_NAMES,
+    PY_TEMP_EXT,
+    PY_TEMP_HEX,
+    RUST_TEMP_SUFFIX,
+    RUST_TEMP_TOKEN_LEN,
+)
 from bmlib.library.errors import BadName, FileClash, Io, LibraryError, ReadOnly
 from bmlib.library.names import is_reserved
 
@@ -88,17 +95,45 @@ def _entries(directory: Path) -> list[str]:
     return sorted(os.listdir(directory), key=os.fsencode)
 
 
+_HEX = frozenset("0123456789abcdef")
+
+
+def is_temp_name(name: str) -> bool:
+    """Whether *name* is a temporary of either language's ``atomic_write``.
+
+    Rust's is ``{name}{RUST_TEMP_SUFFIX}{42-character token}``, Python's
+    ``.{name}.{32 hex}.tmp``. One is there while a write is in flight, and stays after a
+    crash; it is never a user's file and never a paper's.
+    """
+    head = name[: len(name) - RUST_TEMP_TOKEN_LEN]
+    rust = len(name) > len(RUST_TEMP_SUFFIX) + RUST_TEMP_TOKEN_LEN and head.endswith(
+        RUST_TEMP_SUFFIX
+    )
+    stem = name[: -len(PY_TEMP_EXT)]
+    tail = stem[-PY_TEMP_HEX - 1 :]
+    python = (
+        name.startswith(".")
+        and name.endswith(PY_TEMP_EXT)
+        and len(stem) > PY_TEMP_HEX + 2
+        and tail.startswith(".")
+        and set(tail[1:]) <= _HEX
+    )
+    return rust or python
+
+
 @dataclass(frozen=True)
 class Listing:
     """What :func:`listing` found in a folder, each list sorted by bytes.
 
     ``names`` are those a scan looks at (not ignored, not starting with ``.``);
     ``placeholders`` the files present only as an iCloud placeholder, by their own name
-    (``.x.pdf.icloud`` gives ``x.pdf``).
+    (``.x.pdf.icloud`` gives ``x.pdf``); ``temps`` the ``atomic_write`` temporaries
+    (:func:`is_temp_name`), in flight or left by a crash.
     """
 
     names: list[str] = field(default_factory=list)
     placeholders: list[str] = field(default_factory=list)
+    temps: list[str] = field(default_factory=list)
 
 
 def listing(directory: Path) -> Listing:
@@ -106,7 +141,9 @@ def listing(directory: Path) -> Listing:
     out = Listing()
     for n in _entries(directory):
         own = _placeholder_for(n)
-        if own is not None:
+        if is_temp_name(n):
+            out.temps.append(n)
+        elif own is not None:
             out.placeholders.append(own)
         elif not n.startswith(".") and n not in IGNORED_NAMES:
             out.names.append(n)
@@ -114,7 +151,8 @@ def listing(directory: Path) -> Listing:
 
 
 def list_names(directory: Path) -> list[str]:
-    """Return the names in *directory*, sorted by bytes, without ignored or dot names."""
+    """Return the names in *directory*, sorted by bytes, without ignored or dot names or
+    ``atomic_write`` temporaries."""
     return listing(directory).names
 
 
@@ -134,10 +172,12 @@ def _is_placeholder_name(name: str) -> bool:
 def first_user_entry(directory: Path) -> str | None:
     """Return the first entry of *directory* that belongs to the user, or ``None``.
 
-    Ignored names and dotfiles do not count, but an iCloud placeholder does (it stands for a
-    real file), and so does a name that is not UTF-8.
+    Ignored names, dotfiles and ``atomic_write`` temporaries do not count, but an iCloud
+    placeholder does (it stands for a real file), and so does a name that is not UTF-8.
     """
     for n in _entries(directory):
+        if is_temp_name(n):
+            continue
         if _is_placeholder_name(n) or (not n.startswith(".") and n not in IGNORED_NAMES):
             return n
     return None

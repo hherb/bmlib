@@ -340,6 +340,9 @@ fn scan_matches_the_fixture() {
                 serde_json::json!({"kind": "unreadable_record", "folder": folder, "file": file})
             }
             Problem::UnreadableFolder { .. } => panic!("no unreadable folder in the sample"),
+            Problem::LeftoverTemp { folder, name } => {
+                serde_json::json!({"kind": "leftover_temp", "folder": folder, "name": name})
+            }
             Problem::RecordNotDownloaded { folder, file } => {
                 serde_json::json!({"kind": "record_not_downloaded", "folder": folder, "file": file})
             }

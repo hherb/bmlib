@@ -53,3 +53,11 @@ CORRUPT_SUFFIX = ".corrupt"
 
 Defined here because Python's fulltext cache spells it inline.
 """
+RUST_TEMP_SUFFIX = ".bmlib-tmp-uuid4hex"
+"""The mark in a temporary name of Rust's ``atomic_write`` (``atomic::TEMP_SUFFIX``)."""
+RUST_TEMP_TOKEN_LEN = 42
+"""The length of the unique token after :data:`RUST_TEMP_SUFFIX` in such a name."""
+PY_TEMP_HEX = 32
+"""The hex digits in a temporary name of Python's ``atomic_write``, ``.{name}.{hex}.tmp``."""
+PY_TEMP_EXT = ".tmp"
+"""The extension of Python's ``atomic_write`` temporaries."""

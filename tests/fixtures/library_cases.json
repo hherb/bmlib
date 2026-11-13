@@ -960,6 +960,21 @@
       ],
       "expect": "created",
       "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
+    },
+    {
+      "name": "only_leftover_temporaries",
+      "entries": [
+        {
+          "file": "bmlib-library.json.bmlib-tmp-uuid4hex0000000000000000-00000000-0000000000000000",
+          "text": "{"
+        },
+        {
+          "file": ".bmlib-library.json.0123456789abcdef0123456789abcdef.tmp",
+          "text": "{"
+        }
+      ],
+      "expect": "created",
+      "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
     }
   ],
   "scan": [
@@ -1116,6 +1131,16 @@
             "kind": "unrecorded_file",
             "folder": "2023 Lee – Statins (PMID 111)",
             "name": "text-7fefb7d6548e.txt"
+          },
+          {
+            "kind": "leftover_temp",
+            "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+            "name": "records/.studyanalyzer-aaaa.json.0123456789abcdef0123456789abcdef.tmp"
+          },
+          {
+            "kind": "leftover_temp",
+            "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+            "name": "pdf-9b101e6bb96e.pdf.bmlib-tmp-uuid4hex0000000000000000-00000000-0000000000000000"
           },
           {
             "kind": "conflicting_ids",

@@ -97,18 +97,24 @@ impl Library {
             });
         }
         let marker = root.join(MARKER_FILE);
+        let user_entry = if exists(&marker) {
+            None
+        } else {
+            first_user_entry(root).map_err(|e| io_error(root, &e, false))?
+        };
+        // The marker is looked at again after the folder seemed taken: another
+        // opener may have published it (and `papers/`) in between.
         if exists(&marker) {
             check_marker(
                 root,
                 &read_bytes(&marker).map_err(|e| io_error(&marker, &e, false))?,
             )?;
+        } else if let Some(first) = user_entry {
+            return Err(not_a_library(
+                root,
+                format!("the folder is not empty (found {first}) and has no {MARKER_FILE}"),
+            ));
         } else {
-            if let Some(first) = first_user_entry(root).map_err(|e| io_error(root, &e, false))? {
-                return Err(not_a_library(
-                    root,
-                    format!("the folder is not empty (found {first}) and has no {MARKER_FILE}"),
-                ));
-            }
             let mut text = serde_json::to_string_pretty(&Marker {
                 format: LIBRARY_FORMAT,
                 version: LIBRARY_VERSION,
