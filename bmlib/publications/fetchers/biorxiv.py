@@ -17,21 +17,22 @@
 """Fetcher for bioRxiv and medRxiv preprint records.
 
 Uses the bioRxiv API (https://api.biorxiv.org) to retrieve preprint metadata
-for a given date.  The same endpoint serves both bioRxiv and medRxiv data,
-controlled by the ``server`` parameter.
+for a given date.  The same API serves both bioRxiv and medRxiv data,
+controlled by the ``server`` parameter, through two endpoints that list
+different populations (#341):
 
-**The endpoint is ``/pubs``, and a day means the day a preprint's journal
-version appeared** (#325). ``/details``, which lists the preprints *posted* on
-a day, answered HTTP 200 with a zero-byte body on every URL shape on
-2026-09-26 and early on 2026-09-27, so every bioRxiv day failed and the
-fetcher moved. It came back later on 2026-09-27 and serves JSON again
-(re-probed 2026-09-29 and 2026-10-01, #386), so the fetcher reads ``/pubs``
-by choice and no longer for want of an alternative: which population a
-preprint source collects is #341's decision. ``/pubs`` pairs a preprint with
-its publication, which makes it a narrower population — a preprint that is
-never published is never collected here — and one that fills in late: bioRxiv
-learns of a publication weeks after it appears. See :data:`BASE_URL` and
-:data:`BIORXIV_SETTLE_DAYS`.
+- ``"pubs"`` (:data:`BASE_URL`, the default, registered as ``biorxiv`` and
+  ``medrxiv``): a day means the day a preprint's **journal version**
+  appeared (#325). Only preprints bioRxiv has paired with a publication are
+  listed, and a day fills in for weeks (:data:`BIORXIV_SETTLE_DAYS`).
+- ``"details"`` (:data:`DETAILS_BASE_URL`, registered as ``biorxiv-details``
+  and ``medrxiv-details``): a day means the day a version was **posted**.
+  Every posting is listed, one record per version, each with its ``jatsxml``
+  and ``version`` (:data:`DETAILS_SETTLE_DAYS`).
+
+The two are separate registered sources rather than one source with a
+setting because ``download_days`` is keyed by the source's name: a day
+completed under ``/pubs`` must not read as completed for ``/details``.
 """
 
 from __future__ import annotations
@@ -68,22 +69,43 @@ live suite, which had been asserting it dead), and it has served JSON on every
 probe since: re-probed 2026-10-01, the date-interval shape the fetcher builds
 answers 64,657 bytes for bioRxiv 2024-01-15, declaring 207 records against
 ``/pubs``' 34, and 75,608 bytes for medRxiv (#386). So this is a choice between
-two endpoints that both answer, and the cost below is why it stands; reading
-``/details`` again is #341's product decision, not a repair.
+two endpoints that both answer, and both are read: ``/details`` through
+:data:`DETAILS_BASE_URL` (#341).
 
-**It is a different population, and the switch is a decision rather than a
-repair** (the maintainer's, on #325). ``/pubs`` serves only preprints bioRxiv
-has paired with a journal publication, filed under the date that publication
-appeared: about 500 bioRxiv and 120 medRxiv records a week, a small fraction
-of the postings (#325 puts bioRxiv's at several hundred a day, not
-re-measured). A preprint that is never published is not collected, and a
-source for those (bioRxiv's TDM bucket, an OAI-PMH feed or Crossref's
-posted-content records) is open work, #341.
+**It is a different population from ``/details``.** ``/pubs`` serves only
+preprints bioRxiv has paired with a journal publication, filed under the date
+that publication appeared: about 500 bioRxiv and 120 medRxiv records a week, a
+small fraction of the postings. A preprint that is never published is not
+collected here; the ``*-details`` sources collect it.
+"""
+
+DETAILS_BASE_URL = "https://api.biorxiv.org/details"
+"""bioRxiv's *"content detail"* endpoint: the versions **posted** on a day (#341).
+
+One record per posted version, each carrying ``version``, ``date`` (the
+posting date), ``jatsxml`` and ``published`` (the journal DOI, or ``"NA"``).
+Measured 2026-11-13 against ``/pubs``: medRxiv 2024-01-15 declares 28
+against 10, bioRxiv 207 against 34, and recent weekdays 55-99 medRxiv and
+190-440 bioRxiv postings a day.
 """
 
 PAGE_SIZE = 100
 """Records per ``/pubs`` page: bioRxiv's documentation says 100, and
-2026-07-29 served 100 of its 105 on the first page (probed 2026-09-27)."""
+2026-07-29 served 100 of its 105 on the first page (probed 2026-09-27, and
+again 2026-11-13)."""
+
+DETAILS_PAGE_SIZE = 30
+"""Records per ``/details`` page, **not** ``/pubs``' 100 (measured 2026-11-13).
+
+bioRxiv 2026-11-04 declared 378: pages at cursors 0, 30, ..., 330 held 30
+each, cursor 360 held 18, and the 378 were distinct; cursor 100 served
+records 100-129, so the cursor is a record offset. A walk that took 100 as
+the page size would read a 30-record first page as the last one and stop,
+and reconciliation lets that complete, with only a WARNING and a note, for
+any day of 60 or fewer (30 of 60 is not below half). A page longer than the
+size fails its day, because the next page would overlap it. Rust's gated
+live suite asserts the size.
+"""
 
 RATE_LIMIT_SECONDS = 0.5
 
@@ -104,6 +126,24 @@ day observed twice, months apart.
 Read by the registry into :attr:`SourceDescriptor.settle_days`; see that
 attribute for what ``sync()`` does with it.
 """
+
+DETAILS_SETTLE_DAYS = 7
+"""How long after a day ends ``/details`` may still be adding records to it.
+
+**A bound, not a measurement.** ``/details`` files a version under the date
+it was posted, so a day should be whole soon after it ends, and the old days
+probed hold their counts: bioRxiv 2024-01-15 and 2025-06-01 declared 207 and
+195, medRxiv 28 and 26, on both 2026-09-27 and 2026-11-13. How soon a day is
+whole after it ends was not measured (that needs one day observed at several
+ages, #759). A day recorded too early is never offered again, while each
+day of margin costs one re-fetch of a day per run, so the bound is generous.
+"""
+
+_ENDPOINTS: dict[str, tuple[str, int]] = {
+    "pubs": (BASE_URL, PAGE_SIZE),
+    "details": (DETAILS_BASE_URL, DETAILS_PAGE_SIZE),
+}
+"""Each endpoint's base URL and page size, by the name ``fetch_biorxiv`` takes."""
 
 
 # ---------------------------------------------------------------------------
@@ -129,12 +169,21 @@ def _field(raw: dict[str, Any], pubs_name: str, details_name: str) -> Any:
     return value if value else raw.get(details_name, "")
 
 
+def _record_version(raw: dict[str, Any]) -> str | None:
+    """The record's own version, or None where it names none (``/pubs``)."""
+    return str(raw.get("version") or "").strip() or None
+
+
 def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
     """Convert a raw bioRxiv/medRxiv API record to a :class:`FetchedRecord`.
 
     Reads a ``/pubs`` record, and a ``/details`` one for the fields the two
     share (see :func:`_field`). ``/pubs`` carries no ``version`` and no
-    ``jatsxml``, so its PDF URL names ``v1`` and it yields no XML source.
+    ``jatsxml``, so its PDF URL names ``v1``, it yields no XML source, and its
+    sources' ``version`` is ``None``. A ``/details`` record's ``version`` is
+    its sources' ``version``, which is how a v2 posting stored over a v1 row
+    is told apart: each version's URLs differ, so both versions' sources are
+    kept.
     ``publication_date`` is the preprint's own date, which for ``/pubs`` is
     usually months before the day it was fetched for; that day is
     ``extras["published_date"]``.
@@ -146,17 +195,19 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
     # Build full-text sources
     fulltext_sources: list[FullTextSourceEntry] = []
 
+    version = _record_version(raw)
+
     # PDF URL derived from DOI. Use the record's actual version rather than a
     # hard-coded "v1", which 404s / points to the wrong revision for v2+.
     if doi:
-        version = str(raw.get("version") or "1").strip() or "1"
-        pdf_url = f"https://www.{server}.org/content/{doi}v{version}.full.pdf"
+        pdf_url = f"https://www.{server}.org/content/{doi}v{version or '1'}.full.pdf"
         fulltext_sources.append(
             FullTextSourceEntry(
                 url=pdf_url,
                 format="pdf",
                 source=server,
                 open_access=True,
+                version=version,
             )
         )
 
@@ -169,8 +220,16 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
                 format="xml",
                 source=server,
                 open_access=True,
+                version=version,
             )
         )
+
+    # The journal version's DOI: `published_doi` on /pubs, a bare `published`
+    # on /details, which sends "NA" for a preprint with none (#341). "NA" is
+    # no DOI, so it is stored as the field's empty value.
+    published = _field(raw, "published_doi", "published")
+    if published == "NA":
+        published = ""
 
     return FetchedRecord(
         title=_field(raw, "preprint_title", "title"),
@@ -186,9 +245,7 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
         fulltext_sources=fulltext_sources,
         extras={
             "category": _field(raw, "preprint_category", "category"),
-            # The journal version's DOI: `published_doi` on /pubs, a bare
-            # `published` on /details.
-            "published": _field(raw, "published_doi", "published"),
+            "published": published,
             "published_journal": raw.get("published_journal") or "",
             "published_date": raw.get("published_date") or "",
             "server": raw.get("server", server),
@@ -209,6 +266,7 @@ def fetch_biorxiv(
     on_progress: Callable[[SyncProgress], None] | None = None,
     server: str = "biorxiv",
     api_key: str | None = None,
+    endpoint: str = "pubs",
 ) -> FetchResult:
     """Fetch preprint records from the bioRxiv/medRxiv API for a single date.
 
@@ -228,12 +286,31 @@ def fetch_biorxiv(
         ``"biorxiv"`` (default) or ``"medrxiv"``.
     api_key:
         Unused; reserved for future API authentication.
+    endpoint:
+        ``"pubs"`` (default; preprints by the day their journal version
+        appeared) or ``"details"`` (every version, by the day it was
+        posted). See the module docstring.
 
     Returns
     -------
     FetchResult
         Summary of the fetch operation.
+
+    Raises
+    ------
+    ValueError
+        *endpoint* is neither ``"pubs"`` nor ``"details"``. Raised, not
+        returned as a failed day: it is the caller's mistake, on every day.
     """
+    if endpoint not in _ENDPOINTS:
+        raise ValueError(
+            f"unknown bioRxiv endpoint {endpoint!r}; expected one of {sorted(_ENDPOINTS)}"
+        )
+    base_url, page_size = _ENDPOINTS[endpoint]
+    # The registered source's name, for logs, progress and the result: sync()
+    # walks `medrxiv` and `medrxiv-details` for the same day. Records keep the
+    # server as their source.
+    name = server if endpoint == "pubs" else f"{server}-details"
     date_str = target_date.isoformat()
     cursor = 0
     total_fetched = 0
@@ -242,7 +319,7 @@ def fetch_biorxiv(
 
     try:
         while True:
-            url = f"{BASE_URL}/{server}/{date_str}/{date_str}/{cursor}"
+            url = f"{base_url}/{server}/{date_str}/{date_str}/{cursor}"
             response = client.get(url)
             response.raise_for_status()
 
@@ -306,6 +383,16 @@ def fetch_biorxiv(
                             f" {first['total']!r} for {date_str}"
                         ) from exc
 
+            # The cursor is a record offset, so a page longer than the step
+            # overlaps the next one, and every repeat would count as delivered:
+            # a stall would then read as a whole day.
+            if len(collection) > page_size:
+                raise ValueError(
+                    f"{server} served {len(collection)} records on one {endpoint} page"
+                    f" for {date_str}, more than the {page_size} the walk steps by, so"
+                    " the next page would overlap it"
+                )
+
             if not collection:
                 # An empty page while the source's own total says records
                 # remain is a walk that stopped serving them, not the end.
@@ -325,6 +412,14 @@ def fetch_biorxiv(
                         f"{server} served a record for {date_str} carrying no DOI"
                         " under either spelling (preprint_doi, doi)"
                     )
+                if endpoint == "details" and _record_version(raw_record) is None:
+                    # Every posting names its version. One that does not takes
+                    # v1's URLs, which a stored v1 row already holds, so its
+                    # sources would be dropped as duplicates.
+                    raise ValueError(
+                        f"{server} served a details record for {date_str}"
+                        f" ({normalized.doi}) carrying no version"
+                    )
                 on_record(normalized)
                 total_fetched += 1
 
@@ -332,7 +427,7 @@ def fetch_biorxiv(
             if on_progress is not None:
                 on_progress(
                     SyncProgress(
-                        source=server,
+                        source=name,
                         date=date_str,
                         records_processed=total_fetched,
                         records_total=records_total or total_fetched,
@@ -341,19 +436,19 @@ def fetch_biorxiv(
                 )
 
             # Stop if this was the last page
-            if len(collection) < PAGE_SIZE:
+            if len(collection) < page_size:
                 break
 
-            cursor += PAGE_SIZE
+            cursor += page_size
             time.sleep(RATE_LIMIT_SECONDS)
 
     except Exception as exc:
         # Logged here as well as returned: the type is what separates a bmlib
         # defect from a bad response, and `FetchResult.error` alone reaches
         # only callers that inspect it.
-        logger.error("%s fetch failed for %s: %s: %s", server, date_str, type(exc).__name__, exc)
+        logger.error("%s fetch failed for %s: %s: %s", name, date_str, type(exc).__name__, exc)
         return FetchResult(
-            source=server,
+            source=name,
             date=date_str,
             record_count=total_fetched,
             status="failed",
@@ -363,7 +458,7 @@ def fetch_biorxiv(
     # Not `records_total or 0` — see reconcile_delivery's `promised` docstring:
     # None and 0 are different claims and collapsing them disables the rules.
     verdict = reconcile_delivery(
-        server,
+        name,
         date_str,
         delivered=total_fetched,
         promised=records_total,
@@ -371,7 +466,7 @@ def fetch_biorxiv(
     )
     if verdict.failure is not None:
         return FetchResult(
-            source=server,
+            source=name,
             date=date_str,
             record_count=total_fetched,
             status="failed",
@@ -379,7 +474,7 @@ def fetch_biorxiv(
         )
 
     return FetchResult(
-        source=server,
+        source=name,
         date=date_str,
         record_count=total_fetched,
         status="completed",

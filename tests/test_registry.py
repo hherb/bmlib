@@ -336,3 +336,19 @@ class TestARegistrationDeclaringASettlePeriodIsChecked:
 
     def test_a_descriptor_settles_at_once_by_default(self):
         assert SourceDescriptor("n", "N", "d").settle_days == 0
+
+
+def test_all_sources_names_every_builtin_source():
+    """``ALL_SOURCES`` is documented as the built-in list; it must not drift from the registry."""
+    from bmlib.publications.fetchers import ALL_SOURCES
+    from bmlib.publications.fetchers.registry import _REGISTRY, _put, _register_builtins
+
+    saved = dict(_REGISTRY)
+    try:
+        _REGISTRY.clear()
+        _register_builtins()
+        assert sorted(ALL_SOURCES) == sorted(_REGISTRY)
+    finally:
+        _REGISTRY.clear()
+        for descriptor, fetcher in saved.values():
+            _put(descriptor, fetcher)

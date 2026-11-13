@@ -359,6 +359,32 @@ class TestStorage:
         assert add_fulltext_source(backend_conn, pub_id, "epmc", "http://x/1", "xml") is True
         assert add_fulltext_source(backend_conn, pub_id, "epmc", "http://x/1", "xml") is False
 
+    def test_a_version_labels_the_same_sources_unversioned_row_only(self, backend_conn):
+        # /pubs stores bioRxiv's v1 PDF with no version; /details later sends
+        # the same URL as version "1" (#341). Another source's row, or one
+        # already labelled, is left as it stands.
+        store_publication(backend_conn, _pub(doi="10.1234/abc"))
+        pub_id = get_publication_by_doi(backend_conn, "10.1234/abc").id
+        add_fulltext_source(backend_conn, pub_id, "medrxiv", "http://x/v1.pdf", "pdf")
+        add_fulltext_source(backend_conn, pub_id, "openalex", "http://x/oa", "pdf")
+        add_fulltext_source(backend_conn, pub_id, "medrxiv", "http://x/v2.pdf", "pdf", "2")
+
+        # Each returns False: a label is not an insert.
+        for url, version in [("v1.pdf", "1"), ("oa", "1"), ("v2.pdf", "3"), ("v1.pdf", None)]:
+            assert not add_fulltext_source(
+                backend_conn, pub_id, "medrxiv", f"http://x/{url}", "pdf", version
+            )
+
+        rows = fetch_all(
+            backend_conn,
+            "SELECT source, url, version FROM fulltext_sources ORDER BY url",
+        )
+        assert [(r["source"], r["url"], r["version"]) for r in rows] == [
+            ("openalex", "http://x/oa", None),
+            ("medrxiv", "http://x/v1.pdf", "1"),
+            ("medrxiv", "http://x/v2.pdf", "2"),
+        ]
+
     def test_store_publication_persists_fulltext_sources(self, backend_conn):
         store_publication(
             backend_conn,

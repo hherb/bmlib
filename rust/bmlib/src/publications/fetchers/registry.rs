@@ -49,7 +49,7 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
-use crate::publications::fetchers::biorxiv::BIORXIV_SETTLE_DAYS;
+use crate::publications::fetchers::biorxiv::{BIORXIV_SETTLE_DAYS, DETAILS_SETTLE_DAYS};
 use crate::publications::models::{
     FetchResult, FetchedRecord, PartCheckpoint, SettleDaysError, SourceDescriptor, SourceParam,
 };
@@ -808,6 +808,21 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             settle_days: BIORXIV_SETTLE_DAYS,
         },
         SourceDescriptor {
+            name: "biorxiv-details".to_string(),
+            display_name: "bioRxiv (all postings)".to_string(),
+            description: "Preprint server for biology (every version, by the day it was posted)"
+                .to_string(),
+            params: vec![SourceParam {
+                name: "api_key".to_string(),
+                description: "API key (reserved)".to_string(),
+                required: false,
+                default: None,
+                secret: true,
+            }],
+            resumable: false,
+            settle_days: DETAILS_SETTLE_DAYS,
+        },
+        SourceDescriptor {
             name: "medrxiv".to_string(),
             display_name: "medRxiv".to_string(),
             description: "Preprint server for health sciences".to_string(),
@@ -820,6 +835,22 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: BIORXIV_SETTLE_DAYS,
+        },
+        SourceDescriptor {
+            name: "medrxiv-details".to_string(),
+            display_name: "medRxiv (all postings)".to_string(),
+            description:
+                "Preprint server for health sciences (every version, by the day it was posted)"
+                    .to_string(),
+            params: vec![SourceParam {
+                name: "api_key".to_string(),
+                description: "API key (reserved)".to_string(),
+                required: false,
+                default: None,
+                secret: true,
+            }],
+            resumable: false,
+            settle_days: DETAILS_SETTLE_DAYS,
         },
         SourceDescriptor {
             name: "openalex".to_string(),
@@ -887,6 +918,15 @@ pub fn builtin_registry(
                     &descriptor.name,
                 ))
             }
+            // The same servers through `/details` (#341): a name of its own, so
+            // the day ledger keeps the two populations apart.
+            "biorxiv-details" | "medrxiv-details" => Box::new(
+                crate::publications::fetchers::biorxiv::BiorxivFetcher::new(
+                    client.clone(),
+                    descriptor.name.trim_end_matches("-details"),
+                )
+                .with_endpoint(crate::publications::fetchers::biorxiv::Endpoint::Details),
+            ),
             "openalex" => Box::new(crate::publications::fetchers::openalex::OpenAlexFetcher {
                 client: client.clone(),
             }),
@@ -899,7 +939,7 @@ pub fn builtin_registry(
     Ok(registry)
 }
 
-/// A registry with only the four built-in descriptors and no fetchers.
+/// A registry with only the built-in descriptors and no fetchers.
 ///
 /// For a caller that wants the metadata — [`Registry::descriptor`] and
 /// [`Registry::list_sources`] answer without one — and for the tests that diff the

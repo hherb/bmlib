@@ -573,6 +573,73 @@ fn fulltext_sources_accumulate_and_dedupe_on_url() {
     );
 }
 
+/// `/pubs` stores bioRxiv's v1 PDF with no version; `/details` later sends the
+/// same URL as version "1" (#341), and the row takes it. Another source's row,
+/// or one already labelled, is left as it stands, and none of it is an insert.
+#[test]
+fn a_version_labels_the_same_sources_unversioned_row_only() {
+    use bmlib::db::fetch_all;
+    use bmlib::publications::storage::add_fulltext_source;
+
+    let mut db = db();
+    let mut p = pub_with("T", "s");
+    p.doi = Some("10.1/x".to_string());
+    store_publication(&mut *db, &mut p, &[], &[], &[]).expect("store");
+    let id = get_publication_by_doi(&mut *db, "10.1/x")
+        .expect("lookup")
+        .expect("found")
+        .id
+        .expect("id");
+    let add = |db: &mut dyn Db, source: &str, url: &str, version: Option<&str>| {
+        add_fulltext_source(db, id, source, url, "pdf", version).expect("add")
+    };
+    assert!(add(&mut *db, "medrxiv", "http://x/v1.pdf", None));
+    assert!(add(&mut *db, "openalex", "http://x/oa", None));
+    assert!(add(&mut *db, "medrxiv", "http://x/v2.pdf", Some("2")));
+
+    for (url, version) in [
+        ("v1.pdf", Some("1")),
+        ("oa", Some("1")),
+        ("v2.pdf", Some("3")),
+        ("v1.pdf", None),
+    ] {
+        assert!(!add(
+            &mut *db,
+            "medrxiv",
+            &format!("http://x/{url}"),
+            version
+        ));
+    }
+
+    let rows: Vec<(String, String, Option<String>)> = fetch_all(
+        &mut *db,
+        "SELECT source, url, version FROM fulltext_sources ORDER BY url",
+        &[],
+    )
+    .expect("rows")
+    .iter()
+    .map(|row| {
+        (
+            row.get_str("source").expect("source").to_string(),
+            row.get_str("url").expect("url").to_string(),
+            row.get("version")
+                .expect("version")
+                .as_str()
+                .map(str::to_string),
+        )
+    })
+    .collect();
+    assert_eq!(
+        rows,
+        [
+            ("openalex", "http://x/oa", None),
+            ("medrxiv", "http://x/v1.pdf", Some("1")),
+            ("medrxiv", "http://x/v2.pdf", Some("2")),
+        ]
+        .map(|(s, u, v)| (s.to_string(), u.to_string(), v.map(str::to_string)))
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Lookup
 // ---------------------------------------------------------------------------

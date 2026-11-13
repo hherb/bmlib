@@ -1,12 +1,47 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**#753 on `fix/753-strict-json-fulltext`**).
-Merged since the last update: #756 (the #341 request below) and #754 (the
-shared library, step 1a). Before them: #752 (#750, #751), #749, #747, #745.
+_Last updated: 2026-11-14 (**#341 on `feat/341-biorxiv-details`**). Merged
+since the last update: #757 (#753). Before it: #756, #754 (the shared library,
+step 1a), #752 (#750, #751), #749, #747, #745.
 **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
 **the Rust crate 0.4.0 on crates.io** from the same commit._
 
-## This session: full text's JSON read as Rust reads it (#753)
+## This session: every bioRxiv/medRxiv posting, through `/details` (#341)
+
+BMLibrarian's request (its installer piece 3, Task 0 of
+`docs/superpowers/plans/2026-11-14-library-pipeline.md` in hherb/bmlibrarian).
+Python and Rust together.
+
+- **Two new built-in sources**, `biorxiv-details` and `medrxiv-details`.
+  `biorxiv` and `medrxiv` still read `/pubs`. The new sources are separate
+  names rather than a config key because `download_days` is keyed by the
+  name. Records keep `source` `"biorxiv"`/`"medrxiv"`, so both populations
+  meet on one row per DOI. **`sync(sources=None)` includes them** (the
+  maintainer's call), and so does `ALL_SOURCES`.
+- **`/details` pages hold 30, not 100** (`DETAILS_PAGE_SIZE`, measured
+  2026-11-13 by walking a 378-posting day). Taking 100 as the page size would
+  complete a 60-posting day holding 30, with only a note. The gated live
+  suite now asserts the size and walks bioRxiv 2024-01-15 whole (207).
+- Each full-text source carries the record's `version` (`None` for `/pubs`).
+  A `/pubs` row of the same URL takes the version when `/details` sends it
+  (`add_fulltext_source`, both languages). `extras["published"]` is `""` where
+  `/details` sends `"NA"`.
+- Review (finalcheck): a page longer than the walk's step fails the day in
+  both languages (the cursor is a record offset, so the next page would
+  overlap and its repeats would count as delivered); a `/details` record with
+  no version fails its day; the `*-details` walk logs, reports progress and
+  reconciles under its own source name.
+- **`DETAILS_SETTLE_DAYS` = 7 is a bound**; measuring it is **#759**.
+- **Downstream**: BMLibrarian bumps its pin once this is released (it is
+  under Unreleased; nothing is versioned yet) and syncs `medrxiv-details`.
+  Its plan's "a later version merges into the same publication row and
+  updates the sources' `version`" holds as: the v2 sources are added beside
+  v1's (each version's URLs differ), so the newest is the highest `version`,
+  compared as an integer (the column is text), among the rows with `source`
+  `medrxiv`. MECA bulk is the expected next
+  request.
+
+## Earlier: full text's JSON read as Rust reads it (#753, merged as PR #757)
 
 The Europe PMC search, NCBI's ID Converter and Unpaywall now decode through
 `strict_json_loads(resp.content.decode("utf-8"))`, as PMC Open Data's record
@@ -171,7 +206,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): this session (#753, full text's JSON as `serde_json` reads it), PR #754 (the shared library, step 1a), PR #752 (#750/#751, PMC Open Data's record and JATS), PR #749 (#748), PR #747 (#746), PR #745 (#744), PR #741 (#739), PR #740 (#656, the `<` cap), PR #738 (#726, the HTML limits measured), PR #736 (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): this session (#341, the `*-details` sources), PR #757 (#753, full text's JSON as `serde_json` reads it), PR #754 (the shared library, step 1a), PR #752 (#750/#751, PMC Open Data's record and JATS), PR #749 (#748), PR #747 (#746), PR #745 (#744), PR #741 (#739), PR #740 (#656, the `<` cap), PR #738 (#726, the HTML limits measured), PR #736 (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -248,10 +283,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/753-strict-json-fulltext`** (2026-11-14, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,823 passed + 20
-  skipped; Rust's `tests/service.rs` 120. The next bullet is the run of
-  `feat/pmc-open-data-json`.
+- **Tests on `feat/341-biorxiv-details`** (2026-11-14, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,841 passed + 20 skipped; Rust 1,788 (`cargo test --workspace`, clippy clean). The next bullet is the run of `feat/pmc-open-data-json`.
 - **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
   `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,730 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in
@@ -280,48 +313,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Next up
 
-### Downstream request: bioRxiv/medRxiv `/details/` mode (#341), Python + Rust
-
-BMLibrarian's installer (piece 3, the medRxiv library pipeline) needs every
-medRxiv posting. Its owner (also this repo's maintainer) decided on
-2026-11-14 that **bmlib gains a `/details/` mode**, landing in Python and
-Rust together, and that BMLibrarian then bumps its pin. BMLibrarian's piece 3
-waits on this. Plan, Task 0:
-`docs/superpowers/plans/2026-11-14-library-pipeline.md` in hherb/bmlibrarian.
-Measurement: the 2026-11-14 comment on #341.
-
-- **Why:** `/pubs/` lists only preprints later published in a journal, filed
-  under the publication date (medRxiv 2024-01-15: `/pubs/` 10, `/details/`
-  28). It also carries no `jatsxml` and no `version`, so `normalize` stores
-  only a `v1` PDF URL and JATS is never offered.
-- **Measured 2026-11-14:** `/details/` answers in full, with one record per
-  posted version (21 v1 + 7 v2 that day). Each record has `jatsxml`,
-  `version` and `date` (posting date), and `messages[0].total` gives the
-  count to reconcile against. The fetcher's and `BASE_URL`'s doc comments
-  still say `/details` is dead.
-- **To decide while building:**
-  - opt-in (a source config key or a separate registry source) versus making
-    `/details/` the default for every consumer (StudyAnalyzer,
-    BioMedicalNews; the maintainer's call);
-  - `settle_days` for `/details/`, measured, since postings are filed under
-    their posting date rather than months later;
-  - `jatsxml` as an `xml` source, and the record's `version` in
-    `FullTextSourceEntry.version` (the `fulltext_sources.version` column
-    exists and is always empty today);
-  - how a v2 record merges into the v1 row and updates the sources' version.
-- **Tests:** shared fixtures for a `/details/` page (with a v2 record and a
-  quiet day). The gated live suite already measures `/details` against
-  `/pubs`.
-- **Related, not this item:** `www.medrxiv.org` answered 429 after about 10
-  requests at 1.5 s spacing and blocked most PDFs with a Cloudflare 403.
-  This is why BMLibrarian moves MECA bulk (requester-pays S3, a new bmlib
-  reader in Python + Rust) up to right after piece 3. Expect that request
-  next.
-
 ### Open GitHub issues
 
-**120 open**, #753 (this PR's), #755 (#754's review follow-ups) and **#758**
-(#753's review residual, `RecursionError`) among them (#734, #733,
+**120 open**, #341 (this PR's), **#759** (this PR's: measure the `/details`
+settle period), #755 (#754's review follow-ups) and **#758** (#753's review
+residual, `RecursionError`) among them (#734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays
 open for its point 3, which PR #696 left open)
 (`gh issue list --state open --limit 300 --json number`, 2026-11-14); #651 is
@@ -350,7 +346,7 @@ now also #145's five Python-only fixtures) and #436 (follow #172), and the
 Python list: #92, #94, #128, #137, #142, #143, #144, #150, #154, #156, #157,
 #173, #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #222,
 #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253, #260, #273,
-#275, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
+#275, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #342,
 #465 (three local transport classes stay `transport-`; a decision), **#480**
 (render affiliations in the cached HTML? a decision), **#481** (strip an
 affiliation's trailing `;`/`,`? a decision), and — **not filed**, open by

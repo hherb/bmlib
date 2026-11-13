@@ -16,8 +16,15 @@
 
 //! bioRxiv and medRxiv preprint fetcher.
 //!
-//! A port of `bmlib/publications/fetchers/biorxiv.py`. One endpoint serves both
-//! servers, controlled by a parameter.
+//! A port of `bmlib/publications/fetchers/biorxiv.py`. One API serves both
+//! servers, controlled by a parameter, through two [`Endpoint`]s that list
+//! different populations (#341): [`Endpoint::Pubs`] (the default, registered as
+//! `biorxiv` and `medrxiv`) lists preprints by the day their journal version
+//! appeared, and [`Endpoint::Details`] (registered as `biorxiv-details` and
+//! `medrxiv-details`) lists every version by the day it was posted. They are
+//! separate registered sources rather than one source with a setting because
+//! `download_days` is keyed by the source's name: a day completed under `/pubs`
+//! must not read as completed for `/details`.
 //!
 //! # Three guards that all exist for the same failure
 //!
@@ -53,7 +60,7 @@ use crate::publications::fetchers::registry::{
 };
 use crate::publications::models::{FetchedRecord, FullTextSourceEntry};
 use crate::pyvalue::truthy;
-use crate::pyvalue::{json_type_name, python_repr};
+use crate::pyvalue::{json_type_name, python_repr, python_str, python_strip};
 
 /// The bioRxiv endpoint the fetcher reads.
 ///
@@ -68,9 +75,9 @@ use crate::pyvalue::{json_type_name, python_repr};
 /// (`tests/live_network.rs`), which had been asserting the endpoint was dead: a run
 /// earlier that day still saw it empty, and the next read 64,657 bytes of JSON.
 /// Re-probed 2026-09-29, eight of eight combinations served JSON again — bioRxiv
-/// and medRxiv, 2024-01-15 and 2025-06-01, twice each. So this is now a **choice
-/// between two endpoints that both answer**; the cost below is why it still
-/// stands.
+/// and medRxiv, 2024-01-15 and 2025-06-01, twice each. So these are two
+/// endpoints that both answer, and both are read: `/details/` through
+/// [`Endpoint::Details`] (#341).
 ///
 /// # This is a **population change**, not a path change, and it is a real cost
 ///
@@ -84,15 +91,22 @@ use crate::pyvalue::{json_type_name, python_repr};
 /// **publication** window, and a preprint that is never published may never appear
 /// at all.
 ///
-/// That is a genuine narrowing of what a sync collects, and it is recorded rather
-/// than hidden because it is the kind of change a downstream notices as a fall in
-/// volume long after. Reading `/details/` again is **open work with a product
-/// decision attached** (#341), not a porting change: the port follows Python, which
-/// reads `/pubs`. The gated live suite (`BMLIB_LIVE_TESTS=1`, which no CI job
-/// sets) fails if `/details/` stops declaring at least as many records as `/pubs/`
-/// for 2024-01-15, so a maintainer's live run notices a third party changing the
-/// answer; a default `cargo test` does not.
+/// That is a genuine narrowing of what a sync collects, which is why `/details/`
+/// is read too, through [`DETAILS_BASE_URL`] (#341). The gated live suite
+/// (`BMLIB_LIVE_TESTS=1`, which no CI job sets) fails if `/details/` stops
+/// declaring at least as many records as `/pubs/` for 2024-01-15, so a
+/// maintainer's live run notices a third party changing the answer; a default
+/// `cargo test` does not.
 pub const BASE_URL: &str = "https://api.biorxiv.org/pubs";
+
+/// bioRxiv's *"content detail"* endpoint: the versions **posted** on a day (#341).
+///
+/// One record per posted version, each carrying `version`, `date` (the posting
+/// date), `jatsxml` and `published` (the journal DOI, or `"NA"`). Measured
+/// 2026-11-13 against `/pubs`: medRxiv 2024-01-15 declares 28 against 10,
+/// bioRxiv 207 against 34, and recent weekdays 55-99 medRxiv and 190-440
+/// bioRxiv postings a day.
+pub const DETAILS_BASE_URL: &str = "https://api.biorxiv.org/details";
 
 /// How many days after a day has ended bioRxiv and medRxiv may still add to it.
 ///
@@ -103,39 +117,92 @@ pub const BASE_URL: &str = "https://api.biorxiv.org/pubs";
 /// day selection's re-offering stays bounded.
 pub const BIORXIV_SETTLE_DAYS: u32 = 90;
 
-/// How many records a full page carries.
+/// How many days after a day has ended `/details` may still add to it.
+///
+/// **A bound, not a measurement.** `/details` files a version under the date it
+/// was posted, so a day should be whole soon after it ends, and the old days
+/// probed hold their counts (2024-01-15 and 2025-06-01, the same on 2026-09-27
+/// and 2026-11-13). How soon a day is whole was not measured (#759); a day
+/// recorded too early is never offered again, and each day of margin costs one
+/// re-fetch of a day per run, so the bound is generous.
+pub const DETAILS_SETTLE_DAYS: u32 = 7;
+
+/// How many records a full `/pubs` page carries.
 pub const PAGE_SIZE: usize = 100;
+
+/// How many records a full `/details` page carries: **30, not `/pubs`' 100**.
+///
+/// Measured 2026-11-13: bioRxiv 2026-11-04 declared 378, pages at cursors 0 to
+/// 330 held 30 each and cursor 360 held 18, all distinct; cursor 100 served
+/// records 100-129, so the cursor is a record offset. Taking 100 as the page
+/// size reads a 30-record first page as the last, and reconciliation lets that
+/// complete, with only a WARNING and a note, for any day of 60 or fewer. A page
+/// longer than the size fails its day, because the next page would overlap it. `tests/live_network.rs` asserts it.
+pub const DETAILS_PAGE_SIZE: usize = 30;
+
+/// Which bioRxiv endpoint a walk reads (#341).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Endpoint {
+    /// `/pubs/`: preprints by the day their journal version appeared.
+    #[default]
+    Pubs,
+    /// `/details/`: every version, by the day it was posted.
+    Details,
+}
+
+impl Endpoint {
+    /// The endpoint's base URL.
+    #[must_use]
+    pub const fn base_url(self) -> &'static str {
+        match self {
+            Endpoint::Pubs => BASE_URL,
+            Endpoint::Details => DETAILS_BASE_URL,
+        }
+    }
+
+    /// How many records a full page of this endpoint carries.
+    #[must_use]
+    pub const fn page_size(self) -> usize {
+        match self {
+            Endpoint::Pubs => PAGE_SIZE,
+            Endpoint::Details => DETAILS_PAGE_SIZE,
+        }
+    }
+
+    /// The URL of one page of this endpoint.
+    #[must_use]
+    pub fn page_url(self, server: &str, date: &str, cursor: usize) -> String {
+        format!("{}/{server}/{date}/{date}/{cursor}", self.base_url())
+    }
+}
 
 /// The pause between pages, in seconds.
 pub const RATE_LIMIT_SECONDS: f64 = 0.5;
 
-/// Build the URL for one page.
+/// Build the URL for one `/pubs` page; [`Endpoint::page_url`] for either.
 #[must_use]
 pub fn page_url(server: &str, date: &str, cursor: usize) -> String {
-    format!("{BASE_URL}/{server}/{date}/{date}/{cursor}")
+    Endpoint::Pubs.page_url(server, date, cursor)
+}
+
+/// The record's own version, as Python's `str(raw.get("version") or "").strip()
+/// or None` reads it: a falsy value names none, and anything else is its Python
+/// `str()`, stripped.
+fn record_version(version: Option<&serde_json::Value>) -> Option<String> {
+    let value = version.filter(|value| truthy(value))?;
+    let text = python_str(value);
+    let stripped = python_strip(&text);
+    (!stripped.is_empty()).then(|| stripped.to_string())
 }
 
 /// The PDF URL for a preprint, from its DOI and version.
 ///
 /// The **record's own version**, not a hard-coded `v1`: a v2+ preprint's `v1`
-/// URL 404s or points at the wrong revision.
+/// URL 404s or points at the wrong revision. A record naming none (`/pubs`, or a
+/// falsy value) gets `v1`.
 #[must_use]
 pub fn pdf_url(server: &str, doi: &str, version: Option<&serde_json::Value>) -> String {
-    let version = match version {
-        None | Some(serde_json::Value::Null) => "1".to_string(),
-        Some(v) => {
-            let text = match v {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
-                "1".to_string()
-            } else {
-                trimmed.to_string()
-            }
-        }
-    };
+    let version = record_version(version).unwrap_or_else(|| "1".to_string());
     format!("https://www.{server}.org/content/{doi}v{version}.full.pdf")
 }
 
@@ -222,6 +289,10 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
         })
         .unwrap_or_default();
 
+    // The record's own version on both sources, so a v2 posting stored over a v1
+    // row is told apart by its sources (each version's URLs differ). `None` for
+    // a `/pubs` record, which names no version.
+    let version = record_version(raw.get("version"));
     let mut fulltext_sources: Vec<FullTextSourceEntry> = Vec::new();
     if let Some(doi) = doi.as_deref() {
         fulltext_sources.push(FullTextSourceEntry {
@@ -229,7 +300,7 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
             format: "pdf".to_string(),
             source: server.to_string(),
             open_access: true,
-            version: None,
+            version: version.clone(),
         });
     }
     if let Some(jatsxml) = text(raw, "jatsxml") {
@@ -238,7 +309,7 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
             format: "xml".to_string(),
             source: server.to_string(),
             open_access: true,
-            version: None,
+            version,
         });
     }
 
@@ -261,12 +332,19 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
         "category".to_string(),
         field_value(raw, "preprint_category", "category"),
     );
-    // `/pubs/` names the publication's DOI `published_doi`; `/details/` used a bare
+    // `/pubs/` names the publication's DOI `published_doi`; `/details/` uses a bare
     // `published`. The narrower name is read first, and neither is invented when
     // both are absent — an unrecognised publication is not a publication.
+    // `/details/` sends `"NA"` for a preprint with none (#341), which is no DOI,
+    // so it is stored as the field's empty value.
+    let published = field_value(raw, "published_doi", "published");
     record.extras.insert(
         "published".to_string(),
-        field_value(raw, "published_doi", "published"),
+        if published == "NA" {
+            serde_json::Value::String(String::new())
+        } else {
+            published
+        },
     );
     // `/pubs/` files a record under the date its *publication* appeared, and names
     // the journal it appeared in. Both are read under one name, `or ""` rather
@@ -390,6 +468,12 @@ pub trait PageSource {
         date: &str,
         cursor: usize,
     ) -> Result<serde_json::Value, FetchError>;
+
+    /// The endpoint the pages come from, which fixes the page size the walk
+    /// reads a short page against. `/pubs` unless a source says otherwise.
+    fn endpoint(&self) -> Endpoint {
+        Endpoint::Pubs
+    }
 }
 
 /// Walk every page for one day, handing each record to `sink` as it is read.
@@ -429,6 +513,15 @@ fn walk_counted(
     sink: &mut CountingSink<'_>,
 ) -> Result<FetchOutcome, FetchError> {
     let date_str = date.format("%Y-%m-%d").to_string();
+    let endpoint = source.endpoint();
+    let page_size = endpoint.page_size();
+    // The registered source's name, for the reconciliation's messages: `sync()`
+    // walks `medrxiv` and `medrxiv-details` for the same day. Records keep the
+    // server as their source.
+    let name = match endpoint {
+        Endpoint::Pubs => server.to_string(),
+        Endpoint::Details => format!("{server}-details"),
+    };
     let mut cursor = 0usize;
     let mut promised: Option<i64> = None;
     let mut stalled = false;
@@ -441,6 +534,21 @@ fn walk_counted(
         // override it.
         if promised.is_none() {
             promised = body.total;
+        }
+
+        // The cursor is a record offset, so a page longer than the step overlaps
+        // the next one, and every repeat would count as delivered: a stall would
+        // then read as a whole day.
+        if body.collection.len() > page_size {
+            let endpoint_name = match endpoint {
+                Endpoint::Pubs => "pubs",
+                Endpoint::Details => "details",
+            };
+            return Err(FetchError::Malformed(format!(
+                "{server} served {} records on one {endpoint_name} page for {date_str}, more \
+                 than the {page_size} the walk steps by, so the next page would overlap it",
+                body.collection.len()
+            )));
         }
 
         if body.collection.is_empty() {
@@ -468,6 +576,15 @@ fn walk_counted(
                      spelling (preprint_doi, doi)"
                 )));
             }
+            if endpoint == Endpoint::Details && record_version(raw.get("version")).is_none() {
+                // Every posting names its version. One that does not takes v1's
+                // URLs, which a stored v1 row already holds, so its sources would
+                // be dropped as duplicates.
+                return Err(FetchError::Malformed(format!(
+                    "{server} served a details record for {date_str} ({}) carrying no version",
+                    record.doi.as_deref().unwrap_or_default()
+                )));
+            }
             sink.record(record);
         }
 
@@ -477,14 +594,14 @@ fn walk_counted(
         });
 
         // A short page is the last page.
-        if body.collection.len() < PAGE_SIZE {
+        if body.collection.len() < page_size {
             break;
         }
 
-        cursor += PAGE_SIZE;
+        cursor += page_size;
     }
 
-    let verdict = reconcile_delivery(server, &date_str, sink.delivered(), promised, stalled);
+    let verdict = reconcile_delivery(&name, &date_str, sink.delivered(), promised, stalled);
     Ok(FetchOutcome {
         record_count: sink.delivered(),
         status: if verdict.is_failure() {
@@ -561,16 +678,26 @@ pub struct BiorxivFetcher {
     pub client: std::sync::Arc<dyn HttpClient + Send + Sync>,
     /// `"biorxiv"` or `"medrxiv"`.
     pub server: String,
+    /// The endpoint read.
+    pub endpoint: Endpoint,
 }
 
 impl BiorxivFetcher {
-    /// A fetcher for one of the two servers.
+    /// A fetcher for one of the two servers, reading `/pubs`.
     #[must_use]
     pub fn new(client: std::sync::Arc<dyn HttpClient + Send + Sync>, server: &str) -> Self {
         BiorxivFetcher {
             client,
             server: server.to_string(),
+            endpoint: Endpoint::Pubs,
         }
+    }
+
+    /// The same fetcher reading `endpoint` instead.
+    #[must_use]
+    pub fn with_endpoint(mut self, endpoint: Endpoint) -> Self {
+        self.endpoint = endpoint;
+        self
     }
 }
 
@@ -578,6 +705,8 @@ impl BiorxivFetcher {
 pub struct HttpPageSource {
     /// The transport.
     pub client: std::sync::Arc<dyn HttpClient + Send + Sync>,
+    /// The endpoint the pages are asked of.
+    pub endpoint: Endpoint,
 }
 
 impl PageSource for HttpPageSource {
@@ -587,7 +716,7 @@ impl PageSource for HttpPageSource {
         date: &str,
         cursor: usize,
     ) -> Result<serde_json::Value, FetchError> {
-        let url = page_url(server, date, cursor);
+        let url = self.endpoint.page_url(server, date, cursor);
         let response = self.client.get(&url)?;
         // A non-success status is the answer the source gave, not a failed
         // request, so it is refused as `HttpStatus` — Python's
@@ -600,6 +729,10 @@ impl PageSource for HttpPageSource {
         }
         response.json(&url)
     }
+
+    fn endpoint(&self) -> Endpoint {
+        self.endpoint
+    }
 }
 
 impl Fetcher for BiorxivFetcher {
@@ -610,6 +743,7 @@ impl Fetcher for BiorxivFetcher {
     ) -> Result<FetchOutcome, FetchError> {
         let source = HttpPageSource {
             client: self.client.clone(),
+            endpoint: self.endpoint,
         };
         Ok(fetch_biorxiv(&source, &self.server, request.date, sink))
     }

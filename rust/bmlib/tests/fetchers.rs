@@ -16,11 +16,11 @@
 
 //! Fetcher shared rules — the oracle and the named tests.
 //!
-//! The corpus (24 cases) diffs the reconciliation rule and the four built-in
+//! The corpus (24 cases) diffs the reconciliation rule and the six built-in
 //! descriptors against Python. The named tests state why each rule exists,
 //! which is the part a corpus of messages cannot say.
 
-use bmlib::publications::fetchers::biorxiv::BIORXIV_SETTLE_DAYS;
+use bmlib::publications::fetchers::biorxiv::{BIORXIV_SETTLE_DAYS, DETAILS_SETTLE_DAYS};
 use std::sync::Arc;
 
 use bmlib::publications::fetchers::{
@@ -145,6 +145,70 @@ fn the_builtin_registry_wires_every_descriptor_to_a_fetcher() {
         Ok(true),
         "PubMed is the partitioned source, so its fetcher must take resume state"
     );
+}
+
+/// Answers every request with bioRxiv's quiet day, recording the URL asked.
+struct QuietDayClient {
+    asked: std::sync::Mutex<Vec<String>>,
+}
+
+impl HttpClient for QuietDayClient {
+    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
+        self.asked
+            .lock()
+            .expect("not poisoned")
+            .push(url.to_string());
+        Ok(HttpResponse::ok(
+            r#"{"messages":[{"status":"no posts found"}],"collection":[]}"#,
+        ))
+    }
+}
+
+/// **Each bioRxiv source reads its own endpoint, and declares its own settle
+/// period** (#341). The `*-details` names exist because the day ledger is keyed
+/// by name; a wiring that sent one to the other's endpoint would fill one
+/// population's ledger with the other's days.
+#[test]
+fn each_biorxiv_source_reads_its_own_endpoint() {
+    for (name, prefix, settle_days) in [
+        ("biorxiv", "https://api.biorxiv.org/pubs/biorxiv/", 90),
+        ("medrxiv", "https://api.biorxiv.org/pubs/medrxiv/", 90),
+        (
+            "biorxiv-details",
+            "https://api.biorxiv.org/details/biorxiv/",
+            7,
+        ),
+        (
+            "medrxiv-details",
+            "https://api.biorxiv.org/details/medrxiv/",
+            7,
+        ),
+    ] {
+        let client = Arc::new(QuietDayClient {
+            asked: std::sync::Mutex::new(Vec::new()),
+        });
+        let registry = builtin_registry(client.clone()).expect("the built-ins register");
+        let mut sink = RecordingSink::new();
+        let date = NaiveDate::from_ymd_opt(2026, 11, 4).expect("a date");
+        let outcome = registry
+            .fetcher(name)
+            .expect("registered")
+            .fetch(&FetchRequest::new(date), &mut sink)
+            .expect("an outcome");
+
+        assert_eq!(outcome.status, "completed", "{name}: {outcome:?}");
+        let asked = client.asked.lock().expect("not poisoned").clone();
+        assert_eq!(
+            asked,
+            vec![format!("{prefix}2026-11-04/2026-11-04/0")],
+            "{name}"
+        );
+        assert_eq!(
+            registry.descriptor(name).map(|d| d.settle_days),
+            Ok(settle_days),
+            "{name}"
+        );
+    }
 }
 
 /// A fetcher that returns a fixed outcome, for exercising the registry.
@@ -497,14 +561,14 @@ fn an_unknown_source_is_not_resumable_rather_than_an_error() {
     assert!(registry.descriptor("never-registered").is_err());
 }
 
-/// The four built-in descriptors, diffed against Python in the corpus, are
+/// The six built-in descriptors, diffed against Python in the corpus, are
 /// checked here for the two facts the corpus cannot express: PubMed is the only
 /// **resumable** one, and OpenAlex is the only one with a **required**
 /// parameter.
 #[test]
 fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
     let descriptors = builtin_descriptors();
-    assert_eq!(descriptors.len(), 4);
+    assert_eq!(descriptors.len(), 6);
 
     let resumable: Vec<&str> = descriptors
         .iter()
@@ -530,7 +594,8 @@ fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
 
     // The settle period is read by day selection, outside every per-day handler,
     // so a built-in that declared an unusable one would cost a whole run its
-    // report. Two declare it: `/pubs` fills a day in weeks late.
+    // report. Four declare it: `/pubs` fills a day in weeks late, and `/details`
+    // is given a short margin (#341).
     let settling: Vec<(&str, u32)> = descriptors
         .iter()
         .filter(|d| d.settle_days > 0)
@@ -540,7 +605,9 @@ fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
         settling,
         vec![
             ("biorxiv", BIORXIV_SETTLE_DAYS),
-            ("medrxiv", BIORXIV_SETTLE_DAYS)
+            ("biorxiv-details", DETAILS_SETTLE_DAYS),
+            ("medrxiv", BIORXIV_SETTLE_DAYS),
+            ("medrxiv-details", DETAILS_SETTLE_DAYS),
         ]
     );
     for descriptor in &descriptors {
