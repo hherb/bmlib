@@ -34,12 +34,13 @@ from bmlib.library.files import (
     sha256_hex,
     write_once,
 )
+from bmlib.library.scan import FileRef, Scan, read_file, scan_library
 
 _U32_MAX = 2**32 - 1
 
 
 class Library:
-    """An opened library folder; later tasks add scan, read, save and remove."""
+    """An opened library folder; later tasks add save and remove."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -48,6 +49,14 @@ class Library:
     def root(self) -> Path:
         """The library's folder."""
         return self._root
+
+    def scan(self) -> Scan:
+        """Read every paper folder; trouble inside one is a :class:`Problem`. Never writes."""
+        return scan_library(self._root)
+
+    def read(self, file: FileRef) -> bytes:
+        """Read a file's bytes, checking them against ``file.sha256`` (see :func:`read_file`)."""
+        return read_file(self._root, file)
 
 
 def _check_marker(root: Path, data: bytes) -> None:

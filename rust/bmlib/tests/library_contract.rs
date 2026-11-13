@@ -19,8 +19,9 @@
 //! Python's `tests/test_library_contract.py` asserts against.
 
 use bmlib::library::{
-    folder_name, parse_record, render_record, Installation, Library, LibraryError, PaperIds,
-    PaperInfo, RecordProblem, SourceKind, CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
+    find, find_digest, folder_name, group, parse_record, render_record, sha256_hex, FileRef,
+    Installation, Library, LibraryError, PaperIds, PaperInfo, Problem, RecordProblem, SourceKind,
+    CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
 };
 use serde_json::Value;
 
@@ -243,4 +244,194 @@ fn open_matches_the_fixture() {
         }
         let _ = std::fs::remove_dir_all(&base);
     }
+}
+
+/// The sample library copied to a fresh temporary directory (nothing writes into the fixture).
+/// Returns the base directory to remove and the opened library.
+fn sample_library(tag: &str) -> (std::path::PathBuf, Library) {
+    fn copy(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    let base = std::env::temp_dir().join(format!("bmlib-sample-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("sample");
+    copy(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/library/sample"),
+        &root,
+    );
+    let lib = Library::open(&root).unwrap();
+    (base, lib)
+}
+
+fn id_value(ids: &PaperIds) -> Value {
+    serde_json::json!({"pmid": ids.pmid, "doi": ids.doi, "pmcid": ids.pmcid})
+}
+
+#[test]
+fn scan_matches_the_fixture() {
+    let (base, lib) = sample_library("scan");
+    let scan = lib.scan().unwrap();
+    let want = &section("scan")[0]["expect"];
+    let folders: Vec<Value> = scan
+        .folders
+        .iter()
+        .map(|f| {
+            let used_by: serde_json::Map<String, Value> = f
+                .records
+                .iter()
+                .flat_map(|r| r.files.iter())
+                .map(|e| {
+                    let who: Vec<String> = f
+                        .used_by(&e.sha256)
+                        .iter()
+                        .map(|i| format!("{}-{}", i.app, i.id))
+                        .collect();
+                    (e.sha256.clone(), serde_json::json!(who))
+                })
+                .collect();
+            serde_json::json!({
+                "folder": f.folder,
+                "ids": id_value(&f.ids()),
+                "records": f.records.iter().map(|r| serde_json::json!({
+                    "app": r.installation.app,
+                    "id": r.installation.id,
+                    "files": r.files.iter().map(|e| e.name.clone()).collect::<Vec<_>>(),
+                })).collect::<Vec<_>>(),
+                "files_on_disk": f.files_on_disk,
+                "used_by": used_by,
+            })
+        })
+        .collect();
+    assert_eq!(Value::Array(folders), want["folders"]);
+    let problems: Vec<Value> = scan
+        .problems
+        .iter()
+        .map(|p| match p {
+            Problem::UnreadableRecord {
+                folder,
+                file,
+                reason,
+            } => {
+                assert!(!reason.is_empty());
+                serde_json::json!({"kind": "unreadable_record", "folder": folder, "file": file})
+            }
+            Problem::NewerRecord {
+                folder,
+                file,
+                version,
+            } => serde_json::json!(
+                {"kind": "newer_record", "folder": folder, "file": file, "version": version}
+            ),
+            Problem::MisnamedRecord { folder, file } => {
+                serde_json::json!({"kind": "misnamed_record", "folder": folder, "file": file})
+            }
+            Problem::UnrecordedFile { folder, name } => {
+                serde_json::json!({"kind": "unrecorded_file", "folder": folder, "name": name})
+            }
+            Problem::StrayEntry { name } => {
+                serde_json::json!({"kind": "stray_entry", "name": name})
+            }
+        })
+        .collect();
+    assert_eq!(Value::Array(problems), want["problems"]);
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn find_matches_the_fixture() {
+    let (base, lib) = sample_library("find");
+    let scan = lib.scan().unwrap();
+    for case in section("find") {
+        let ids = PaperIds::canonical(
+            case["pmid"].as_str(),
+            case["doi"].as_str(),
+            case["pmcid"].as_str(),
+        )
+        .unwrap();
+        let got: Vec<&str> = find(&scan, &ids)
+            .iter()
+            .map(|f| f.folder.as_str())
+            .collect();
+        let want: Vec<&str> = case["expect"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(got, want, "{}", case["name"]);
+    }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn find_digest_matches_the_fixture() {
+    let (base, lib) = sample_library("find-digest");
+    let scan = lib.scan().unwrap();
+    for case in section("find_digest") {
+        let sha = case["sha256"].as_str().unwrap();
+        let got = find_digest(&scan, sha);
+        let want = case["expect"].as_object().map(|w| FileRef {
+            folder: w["folder"].as_str().unwrap().to_owned(),
+            name: w["name"].as_str().unwrap().to_owned(),
+            sha256: sha.to_owned(),
+            kind: SourceKind::parse(w["kind"].as_str().unwrap()).unwrap(),
+        });
+        assert_eq!(got, want, "{}", case["name"]);
+    }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn group_matches_the_fixture() {
+    let (base, lib) = sample_library("group");
+    let scan = lib.scan().unwrap();
+    for case in section("group") {
+        let got: Value = serde_json::json!(group(&scan));
+        assert_eq!(got, case["expect"], "{}", case["name"]);
+    }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn read_matches_the_fixture() {
+    let (base, lib) = sample_library("read");
+    for case in section("read") {
+        let f = &case["file"];
+        let file = FileRef {
+            folder: f["folder"].as_str().unwrap().to_owned(),
+            name: f["name"].as_str().unwrap().to_owned(),
+            sha256: f["sha256"].as_str().unwrap().to_owned(),
+            kind: SourceKind::parse(f["kind"].as_str().unwrap()).unwrap(),
+        };
+        let name = &case["name"];
+        match (case["expect"].as_str().unwrap(), lib.read(&file)) {
+            ("ok", Ok(bytes)) => {
+                assert_eq!(sha256_hex(&bytes), case["bytes_sha256"], "{name}");
+            }
+            (
+                "digest_mismatch",
+                Err(LibraryError::DigestMismatch {
+                    expected, found, ..
+                }),
+            ) => {
+                assert_eq!(expected, case["expected"].as_str().unwrap(), "{name}");
+                assert_eq!(found, case["found"].as_str().unwrap(), "{name}");
+            }
+            ("not_downloaded", Err(LibraryError::NotDownloaded { .. }))
+            | ("missing", Err(LibraryError::Missing { .. }))
+            | ("bad_name", Err(LibraryError::BadName { .. })) => {}
+            (want, got) => panic!("{name}: wanted {want}, got {got:?}"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(base);
 }

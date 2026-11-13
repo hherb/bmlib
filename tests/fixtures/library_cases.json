@@ -928,5 +928,304 @@
       "expect": "created",
       "marker": "{\n  \"format\": \"bmlib-library\",\n  \"version\": 1\n}\n"
     }
+  ],
+  "scan": [
+    {
+      "name": "sample tree",
+      "expect": {
+        "folders": [
+          {
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "ids": {
+              "pmid": "111",
+              "doi": null,
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "studyanalyzer",
+                "id": "eeee",
+                "files": [
+                  "pdf-0ad7ce4adfea.pdf"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "pdf-0ad7ce4adfea.pdf",
+              "text-7fefb7d6548e.txt"
+            ],
+            "used_by": {
+              "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2": [
+                "studyanalyzer-eeee"
+              ]
+            }
+          },
+          {
+            "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+            "ids": {
+              "pmid": "38012345",
+              "doi": "10.1/x",
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "medicalfactchecker",
+                "id": "bbbb",
+                "files": [
+                  "pdf-9b101e6bb96e.pdf"
+                ]
+              },
+              {
+                "app": "studyanalyzer",
+                "id": "aaaa",
+                "files": [
+                  "pdf-9b101e6bb96e.pdf",
+                  "jats-354be1cb35ec.xml"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "jats-354be1cb35ec.xml",
+              "pdf-9b101e6bb96e.pdf"
+            ],
+            "used_by": {
+              "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1": [
+                "medicalfactchecker-bbbb",
+                "studyanalyzer-aaaa"
+              ],
+              "354be1cb35ec8788619e2bc3dba7943f8d722b85a3d684e09b0a1eea539e8cca": [
+                "studyanalyzer-aaaa"
+              ]
+            }
+          },
+          {
+            "folder": "Smith – Metformin and cognition (DOI 10.1 x)",
+            "ids": {
+              "pmid": null,
+              "doi": "10.1/x",
+              "pmcid": null
+            },
+            "records": [
+              {
+                "app": "studyanalyzer",
+                "id": "dddd",
+                "files": [
+                  "html-17fcaf45974b.html"
+                ]
+              }
+            ],
+            "files_on_disk": [
+              "html-17fcaf45974b.html"
+            ],
+            "used_by": {
+              "17fcaf45974bd3b6594c78a308d832e0b08139eb60693c4307f318ad7879bfe7": [
+                "studyanalyzer-dddd"
+              ]
+            }
+          }
+        ],
+        "problems": [
+          {
+            "kind": "unreadable_record",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "broken.json"
+          },
+          {
+            "kind": "misnamed_record",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "copy of studyanalyzer-ffff.json"
+          },
+          {
+            "kind": "newer_record",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "file": "studyanalyzer-future.json",
+            "version": 2
+          },
+          {
+            "kind": "unrecorded_file",
+            "folder": "2023 Lee – Statins (PMID 111)",
+            "name": "text-7fefb7d6548e.txt"
+          },
+          {
+            "kind": "stray_entry",
+            "name": "stray.txt"
+          }
+        ]
+      }
+    }
+  ],
+  "find": [
+    {
+      "name": "pmid alone finds only the folder whose records hold it",
+      "pmid": "38012345",
+      "expect": [
+        "2024 Smith – Metformin and cognition (PMID 38012345)"
+      ]
+    },
+    {
+      "name": "pmid and doi together find both halves of the split",
+      "pmid": "38012345",
+      "doi": "10.1/x",
+      "expect": [
+        "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "Smith – Metformin and cognition (DOI 10.1 x)"
+      ]
+    },
+    {
+      "name": "doi finds both split folders",
+      "doi": "10.1/x",
+      "expect": [
+        "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "Smith – Metformin and cognition (DOI 10.1 x)"
+      ]
+    },
+    {
+      "name": "pmid finds Lee",
+      "pmid": "111",
+      "expect": [
+        "2023 Lee – Statins (PMID 111)"
+      ]
+    },
+    {
+      "name": "unknown pmcid finds none",
+      "pmcid": "PMC9",
+      "expect": []
+    },
+    {
+      "name": "no identifiers finds none",
+      "expect": []
+    }
+  ],
+  "find_digest": [
+    {
+      "name": "the Smith PDF",
+      "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+      "expect": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "pdf-9b101e6bb96e.pdf",
+        "kind": "pdf"
+      }
+    },
+    {
+      "name": "the Smith JATS",
+      "sha256": "354be1cb35ec8788619e2bc3dba7943f8d722b85a3d684e09b0a1eea539e8cca",
+      "expect": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "jats-354be1cb35ec.xml",
+        "kind": "jats"
+      }
+    },
+    {
+      "name": "the html in the split folder",
+      "sha256": "17fcaf45974bd3b6594c78a308d832e0b08139eb60693c4307f318ad7879bfe7",
+      "expect": {
+        "folder": "Smith – Metformin and cognition (DOI 10.1 x)",
+        "name": "html-17fcaf45974b.html",
+        "kind": "html"
+      }
+    },
+    {
+      "name": "the unrecorded text file is still found",
+      "sha256": "7fefb7d6548e817ea671dc0efc628ad0e26d8aa6618f73a88db2625a8378cf41",
+      "expect": {
+        "folder": "2023 Lee – Statins (PMID 111)",
+        "name": "text-7fefb7d6548e.txt",
+        "kind": "text"
+      }
+    },
+    {
+      "name": "an unknown digest",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expect": null
+    },
+    {
+      "name": "a digest that is not 64 hex digits",
+      "sha256": "abc",
+      "expect": null
+    },
+    {
+      "name": "a placeholder is not a file",
+      "sha256": "a07fba7957bd20c6151bd11d24640c993f2af5b3bd227f7dd423c4558ac6c2d9",
+      "expect": null
+    }
+  ],
+  "group": [
+    {
+      "name": "Smith splits join, Lee stands alone",
+      "expect": [
+        [
+          0
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    }
+  ],
+  "read": [
+    {
+      "name": "a good file",
+      "file": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "pdf-9b101e6bb96e.pdf",
+        "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+        "kind": "pdf"
+      },
+      "expect": "ok",
+      "bytes_sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1"
+    },
+    {
+      "name": "bytes that do not match",
+      "file": {
+        "folder": "2023 Lee – Statins (PMID 111)",
+        "name": "pdf-0ad7ce4adfea.pdf",
+        "sha256": "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2",
+        "kind": "pdf"
+      },
+      "expect": "digest_mismatch",
+      "expected": "0ad7ce4adfea113487da4eae95cc77a715e3ba120cba83cfe6dc931a984f12d2",
+      "found": "bfc4af50aa75dd3b0599b39fd3479a3f3b506fa9d831b4947cddaf9cf95cb39d"
+    },
+    {
+      "name": "an online-only placeholder",
+      "file": {
+        "folder": "2023 Lee – Statins (PMID 111)",
+        "name": "pdf-a07fba7957bd.pdf",
+        "sha256": "a07fba7957bd20c6151bd11d24640c993f2af5b3bd227f7dd423c4558ac6c2d9",
+        "kind": "pdf"
+      },
+      "expect": "not_downloaded"
+    },
+    {
+      "name": "a missing file",
+      "file": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "pdf-000000000000.pdf",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "kind": "pdf"
+      },
+      "expect": "missing"
+    },
+    {
+      "name": "a folder that climbs out",
+      "file": {
+        "folder": "..",
+        "name": "pdf-9b101e6bb96e.pdf",
+        "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+        "kind": "pdf"
+      },
+      "expect": "bad_name"
+    },
+    {
+      "name": "a file name with a slash",
+      "file": {
+        "folder": "2024 Smith – Metformin and cognition (PMID 38012345)",
+        "name": "records/studyanalyzer-aaaa.json",
+        "sha256": "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1",
+        "kind": "pdf"
+      },
+      "expect": "bad_name"
+    }
   ]
 }

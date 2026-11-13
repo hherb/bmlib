@@ -22,6 +22,7 @@ Asserts against ``tests/fixtures/library_cases.json``, the file Rust's
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -32,20 +33,30 @@ from bmlib.library import (
     MAX_FOLDER_NAME_BYTES,
     BadIdentifier,
     BadInstallation,
+    BadName,
+    DigestMismatch,
+    FileRef,
     Installation,
+    Library,
     LibraryError,
+    Missing,
     NewerLibrary,
     NotALibrary,
+    NotDownloaded,
     PaperIds,
     PaperInfo,
     RecordProblem,
     SourceKind,
     Unreachable,
     canonical_ids,
+    find,
+    find_digest,
     folder_name,
+    group,
     open_library,
     parse_record,
     render_record,
+    sha256_hex,
 )
 
 _FIXTURE = json.loads(
@@ -170,3 +181,106 @@ def test_open(case: dict[str, Any], tmp_path: Path) -> None:
         open_library(root)
     if expect == "newer":
         assert err.value.version == case["version"]  # type: ignore[attr-defined]
+
+
+_SAMPLE = Path(__file__).parent / "fixtures" / "library" / "sample"
+
+
+@pytest.fixture
+def sample(tmp_path: Path) -> Library:
+    """The sample library copied to a temporary directory, so nothing writes into the fixture."""
+    root = tmp_path / "sample"
+    shutil.copytree(_SAMPLE, root)
+    return open_library(root)
+
+
+def test_scan_matches_the_fixture(sample: Library) -> None:
+    scan = sample.scan()
+    want = _FIXTURE["scan"][0]["expect"]
+    got_folders = [
+        {
+            "folder": f.folder,
+            "ids": {"pmid": f.ids().pmid, "doi": f.ids().doi, "pmcid": f.ids().pmcid},
+            "records": [
+                {
+                    "app": r.installation.app,
+                    "id": r.installation.id,
+                    "files": [e.name for e in r.files],
+                }
+                for r in f.records
+            ],
+            "files_on_disk": list(f.files_on_disk),
+            "used_by": {
+                e.sha256: [f"{i.app}-{i.id}" for i in f.used_by(e.sha256)]
+                for r in f.records
+                for e in r.files
+            },
+        }
+        for f in scan.folders
+    ]
+    assert got_folders == want["folders"]
+    got_problems = []
+    for p in scan.problems:
+        d: dict[str, Any] = {"kind": p.kind}
+        for key in ("folder", "file", "name"):
+            if getattr(p, key) is not None:
+                d[key] = getattr(p, key)
+        if p.kind == "newer_record":
+            d["version"] = p.version
+        else:
+            assert p.version is None
+        if p.kind == "unreadable_record":
+            assert p.reason
+        got_problems.append(d)
+    assert got_problems == want["problems"]
+
+
+@pytest.mark.parametrize("case", _cases("find"))
+def test_find_matches_the_fixture(case: dict[str, Any], sample: Library) -> None:
+    ids = canonical_ids(case.get("pmid"), case.get("doi"), case.get("pmcid"))
+    hits = find(sample.scan(), ids)
+    assert [h.folder for h in hits] == case["expect"]
+
+
+@pytest.mark.parametrize("case", _cases("find_digest"))
+def test_find_digest_matches_the_fixture(case: dict[str, Any], sample: Library) -> None:
+    got = find_digest(sample.scan(), case["sha256"])
+    want = case["expect"]
+    if want is None:
+        assert got is None
+    else:
+        assert got == FileRef(
+            want["folder"], want["name"], case["sha256"], SourceKind(want["kind"])
+        )
+
+
+@pytest.mark.parametrize("case", _cases("group"))
+def test_group_matches_the_fixture(case: dict[str, Any], sample: Library) -> None:
+    assert group(sample.scan()) == case["expect"]
+
+
+@pytest.mark.parametrize("case", _cases("read"))
+def test_read_matches_the_fixture(case: dict[str, Any], sample: Library) -> None:
+    f = case["file"]
+    ref = FileRef(f["folder"], f["name"], f["sha256"], SourceKind(f["kind"]))
+    expect = case["expect"]
+    if expect == "ok":
+        assert sha256_hex(sample.read(ref)) == case["bytes_sha256"]
+        return
+    kinds: dict[str, type[LibraryError]] = {
+        "digest_mismatch": DigestMismatch,
+        "not_downloaded": NotDownloaded,
+        "missing": Missing,
+        "bad_name": BadName,
+    }
+    with pytest.raises(kinds[expect]) as err:
+        sample.read(ref)
+    if expect == "digest_mismatch":
+        assert err.value.expected == case["expected"]  # type: ignore[attr-defined]
+        assert err.value.found == case["found"]  # type: ignore[attr-defined]
+
+
+def test_scan_never_writes_into_the_library(sample: Library) -> None:
+    before = sorted(str(p) for p in sample.root.rglob("*"))
+    sample.scan()
+    assert sorted(str(p) for p in sample.root.rglob("*")) == before

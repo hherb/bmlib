@@ -16,8 +16,8 @@
 
 """A shared folder of research papers that several apps read and write.
 
-The pure, file-system-free foundation: identifiers, source kinds,
-installations and folder names. Rust's ``bmlib::library`` is its twin, held
+Identifiers, source kinds, installations, folder names, and reading a library
+(scan, find, group, read). Rust's ``bmlib::library`` is its twin, held
 to it by ``tests/fixtures/library_cases.json``.
 """
 
@@ -57,6 +57,7 @@ from bmlib.library.errors import (
     ReadOnly,
     Unreachable,
 )
+from bmlib.library.files import sha256_hex
 from bmlib.library.ids import (
     Installation,
     PaperIds,
@@ -73,8 +74,25 @@ from bmlib.library.records import (
     parse_record,
     render_record,
 )
+from bmlib.library.scan import (
+    FileRef,
+    PaperFolder,
+    Problem,
+    Scan,
+    find,
+    find_digest,
+    group,
+)
 
 __all__ = [
+    "sha256_hex",
+    "group",
+    "find_digest",
+    "find",
+    "Scan",
+    "Problem",
+    "PaperFolder",
+    "FileRef",
     "BadIdentifier",
     "BadInstallation",
     "BadName",

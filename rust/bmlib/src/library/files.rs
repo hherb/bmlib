@@ -19,7 +19,7 @@
 //!
 //! Nothing here overwrites: [`write_once`] publishes with
 //! [`crate::atomic::atomic_write`] and refuses a different file of the same name.
-// Task 4 and 5 use the rest; drop this allow when they do.
+// Task 5 uses the writers; drop this allow when it does.
 #![allow(dead_code)]
 
 use std::fs;
@@ -40,7 +40,7 @@ pub(crate) enum Written {
 }
 
 /// The lowercase hex SHA-256 of `bytes`.
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
