@@ -24,9 +24,9 @@ use to share one folder of papers. Built in both languages, in a worktree
   `tests/fixtures/library/sample/`; manuals `docs/manual/library.md` and
   `rust/bmlib/docs/manual/library.md` (the Rust one is doc-tested). PR #754.
   Review follow-ups: #755.
-- **The final review's fixes** (rulings R18-R21 in the session ledger): save,
-  record_use and release validate `who` and the ids before writing (a record
-  `parse_record` refuses was being written); `component()` refuses names
+- **The final review's fixes**: save, record_use and release validate `who`
+  and the ids before writing (a record `parse_record` refuses was being
+  written); `component()` refuses names
   Windows resolves elsewhere (`...`, `x.`, `C:`, `con`); every record's ids
   count for find and group, a conflict is `ConflictingIds`; `group` is linear;
   an evicted own record is `NotDownloaded` (`RecordNotDownloaded` in a scan);
@@ -48,9 +48,9 @@ use to share one folder of papers. Built in both languages, in a worktree
   over an open file fails on Windows; retry with backoff, and stop mapping a
   rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
   limit: a 150-byte folder name plus `records/` and an atomic write's temporary
-  name can pass 260 characters; (3) the Windows-only gaps deferred by R21
-  (superscript `COM¹`-style device names, U+001C-U+001F as whitespace in
-  Python only).
+  name can pass 260 characters; (3) the Windows-only gaps the final review
+  deferred (superscript `COM¹`-style device names, U+001C-U+001F as
+  whitespace in Python only).
 - **Owed by 1c (FFI)**: the conversion list: `find` / `used_by` return
   borrowed values, `PaperIds::merged` a tuple, errors hold `&'static str` and
   `PathBuf`, `RecordProblem` has tuple variants; every conversion must call the

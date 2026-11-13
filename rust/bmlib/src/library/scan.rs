@@ -121,7 +121,7 @@ pub enum Problem {
         file: String,
     },
     /// A temporary file of `atomic_write`, from a write in flight or one a
-    /// crash interrupted. It is left alone, never deleted (R20).
+    /// crash interrupted. It is left alone, never deleted.
     LeftoverTemp {
         /// The paper's folder.
         folder: String,

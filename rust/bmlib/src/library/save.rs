@@ -53,7 +53,7 @@ fn record_guard() -> MutexGuard<'static, ()> {
 /// The log target (Python's logger name) for this module's warnings.
 const LOG_TARGET: &str = "bmlib.library.save";
 
-/// A folder name as the code compares it (R4): NFC, then lowercase, so the
+/// A folder name as the code compares it: NFC, then lowercase, so the
 /// outcome is the same on a case-sensitive and a case-insensitive disk.
 fn folded(name: &str) -> String {
     name.nfc().collect::<String>().to_lowercase()
@@ -74,7 +74,7 @@ fn same_name_as(papers: &Path, candidate: &str) -> Result<Vec<String>, LibraryEr
 /// claimed the folder, or a crash left it empty). A folder whose records are
 /// all newer than this code is neither: its identifiers cannot be read, and a
 /// second folder beside a newer app's paper would be a silent second store, so
-/// that is [`LibraryError::NewerRecord`] (R16).
+/// that is [`LibraryError::NewerRecord`].
 fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, LibraryError> {
     let mut problems = Vec::new();
     let found = scan_folder(&papers.join(name), name, &mut problems);
@@ -153,7 +153,7 @@ fn keep_aside(path: &Path) -> Result<PathBuf, LibraryError> {
 
 /// Refuse to go on when this installation's record at `path` is absent but
 /// iCloud holds a placeholder for it: a fresh record written now would replace
-/// the real one when it is downloaded, and its entries would be lost (R19).
+/// the real one when it is downloaded, and its entries would be lost.
 fn check_not_evicted(path: &Path, folder: &str) -> Result<(), LibraryError> {
     let name = file_name(path);
     match path.parent() {
