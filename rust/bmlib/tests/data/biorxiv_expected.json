@@ -2440,5 +2440,190 @@
       "source": "medrxiv",
       "title": "T"
     }
+  },
+  {
+    "name": "fetch/details-page-longer-than-the-step-fails",
+    "ok": true,
+    "value": {
+      "error": "ValueError: medrxiv served 31 records on one details page for 2024-06-10, more than the 30 the walk steps by, so the next page would overlap it",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "fetch/pubs-page-longer-than-the-step-fails",
+    "ok": true,
+    "value": {
+      "error": "ValueError: biorxiv served 101 records on one pubs page for 2024-06-10, more than the 100 the walk steps by, so the next page would overlap it",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-record-without-version-fails",
+    "ok": true,
+    "value": {
+      "error": "ValueError: medrxiv served a details record for 2024-06-10 (10.1101/2026.11.04.000001) carrying no version",
+      "note": null,
+      "progress": [],
+      "record_count": 1,
+      "records": [
+        "P0"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-record-with-empty-version-fails",
+    "ok": true,
+    "value": {
+      "error": "ValueError: biorxiv served a details record for 2024-06-10 (10.1101/2026.11.04.000000) carrying no version",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-shortfall-names-the-details-source",
+    "ok": true,
+    "value": {
+      "error": null,
+      "note": "medrxiv-details delivered 9 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)",
+      "progress": [
+        [
+          9,
+          10,
+          "in_progress"
+        ]
+      ],
+      "record_count": 9,
+      "records": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "normalize/version-false-names-none",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1/x",
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://www.biorxiv.org/content/10.1/xv1.full.pdf"
+        },
+        {
+          "format": "xml",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://x/j"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-string-zero-kept",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1/x",
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://www.biorxiv.org/content/10.1/xv0.full.pdf",
+          "version": "0"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-float",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1/x",
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://www.biorxiv.org/content/10.1/xv2.0.full.pdf",
+          "version": "2.0"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
   }
 ]

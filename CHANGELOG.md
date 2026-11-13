@@ -8,6 +8,10 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed — breaking
 
+- **`sync(sources=None)` and `ALL_SOURCES` include `biorxiv-details` and
+  `medrxiv-details`** (#341, see Added): a caller that syncs every source now
+  fetches every bioRxiv and medRxiv posting, several hundred more records and
+  about ten more pages a day. A caller listing its sources is unaffected.
 - **`canonical_from_html` caps a page's `<` count, not its length** (#656;
   both languages). A page holding more than `HTML_MAX_TAGS` (666,666) `<` is
   refused unparsed; a page of any length under it is parsed. `HTML_MAX_CHARS`
@@ -130,7 +134,16 @@ All notable changes to bmlib are documented here. The format is based on
   (`preprint`, `accepted`, `published`), so read it with the row's `source`. A
   v2 posting stored over its v1 row keeps both versions' sources, since each
   version's URLs differ; which is newest is the caller's to read from
-  `version`.
+  `version`. `add_fulltext_source` gives an existing row of the same source
+  that names no version the version it is now sent, so a v1 PDF `/pubs` stored
+  first takes `"1"` from `/details`; a labelled row keeps its label (both
+  languages).
+- **A bioRxiv/medRxiv page longer than the walk's step fails its day** (#341
+  review, both endpoints, both languages). The cursor is a record offset, so
+  the next page would overlap it, and the repeats counted as delivered would
+  hide a stall from reconciliation. A `/details` record that names no version
+  fails its day too, since it would take v1's URLs, and a `*-details` walk
+  logs, reports progress and reconciles under its own source name.
 
 - **`bmlib.library` / `bmlib::library`: a shared folder of research papers**
   (both languages, held together by `tests/fixtures/library_cases.json` and the

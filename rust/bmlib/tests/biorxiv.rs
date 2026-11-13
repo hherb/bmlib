@@ -444,7 +444,10 @@ fn an_absent_total_stays_none() {
 /// is no longer an example of a normal record.
 fn full_page(count: usize) -> Vec<Value> {
     (0..count)
-        .map(|i| json!({"title": format!("R{i}"), "preprint_doi": format!("10.1101/{i}")}))
+        // A version, as every `/details` posting names one; `/pubs` ignores it.
+        .map(|i| {
+            json!({"title": format!("R{i}"), "preprint_doi": format!("10.1101/{i}"), "version": "1"})
+        })
         .collect()
 }
 
@@ -705,6 +708,19 @@ fn a_short_page_ends_the_walk() {
     let result = run_walk(pages, "biorxiv", "2024-06-10");
     assert_eq!(result["status"], "completed");
     assert_eq!(result["urls"].as_array().expect("urls").len(), 1);
+}
+
+/// A `PageSource` that names no endpoint reads `/pubs`, so an implementation
+/// written before #341 keeps walking in pages of 100.
+#[test]
+fn a_page_source_that_names_no_endpoint_reads_pubs() {
+    struct Unnamed;
+    impl PageSource for Unnamed {
+        fn page(&self, _: &str, _: &str, _: usize) -> Result<Value, FetchError> {
+            Ok(json!({"collection": [], "messages": []}))
+        }
+    }
+    assert_eq!(Unnamed.endpoint(), Endpoint::Pubs);
 }
 
 /// A full page continues, and the cursor advances by the page size.

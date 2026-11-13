@@ -656,10 +656,14 @@ def add_fulltext_source(
     otherwise (see the module docstring).
 
     Returns ``True`` if the record was inserted, ``False`` if the
-    (publication_id, url) pair already exists.
+    (publication_id, url) pair already exists. An existing row of the same
+    *source* that names no version takes *version*: bioRxiv's ``/pubs`` stores
+    a v1 PDF unversioned, and ``/details`` later sends the same URL as ``"1"``
+    (#341). A row already labelled keeps its label.
     """
     now = _now_iso()
     params = (publication_id, source, url, fmt, version, now)
+    ph = placeholder(conn)
     with transaction(conn):
         cur = execute(
             conn,
@@ -669,4 +673,13 @@ def add_fulltext_source(
             " ON CONFLICT (publication_id, url) DO NOTHING",
             params,
         )
-    return cur.rowcount > 0
+        inserted = cur.rowcount > 0
+        if not inserted and version is not None:
+            execute(
+                conn,
+                f"UPDATE fulltext_sources SET version = {ph}"
+                f" WHERE publication_id = {ph} AND url = {ph} AND source = {ph}"
+                " AND version IS NULL",
+                (version, publication_id, url, source),
+            )
+    return inserted

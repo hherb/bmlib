@@ -927,7 +927,10 @@ pub fn get_publication_by_pmid(
 /// Add a full-text source for a publication.
 ///
 /// Returns `true` if the record was inserted, `false` if the
-/// `(publication_id, url)` pair already exists.
+/// `(publication_id, url)` pair already exists. An existing row of the same
+/// `source` that names no version takes `version`: bioRxiv's `/pubs` stores a v1
+/// PDF unversioned, and `/details` later sends the same URL as `"1"` (#341). A
+/// row already labelled keeps its label.
 ///
 /// # Errors
 ///
@@ -961,6 +964,23 @@ pub fn add_fulltext_source(
         ),
         &params,
     )?;
+    let inserted = affected > 0;
+    if let (false, Some(version)) = (inserted, version) {
+        execute(
+            &mut *tx,
+            concat!(
+                "UPDATE fulltext_sources SET version = ?",
+                " WHERE publication_id = ? AND url = ? AND source = ?",
+                " AND version IS NULL"
+            ),
+            &[
+                DbValue::Text(version.to_string()),
+                DbValue::Int(publication_id),
+                DbValue::Text(url.to_string()),
+                DbValue::Text(source.to_string()),
+            ],
+        )?;
+    }
     tx.commit()?;
-    Ok(affected > 0)
+    Ok(inserted)
 }

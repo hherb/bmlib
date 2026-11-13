@@ -5734,6 +5734,10 @@ and read 0 moves again.
   10 on a short page) into a further request and a stall — a tightening of
   #92's rule that needs its sampler first. The gated live suite asserts the
   `/details` size instead (`the_biorxiv_path_fetches_from_the_live_endpoint`).
+  A page *longer* than the size fails its day (PR #760's review): the cursor
+  is a record offset, so the next page would overlap it, and the repeats,
+  counted as delivered, would hide a stall from reconciliation
+  (`test_a_page_longer_than_the_step_fails_the_day`).
 - **`_normalize` reads both field spellings, the `/pubs` one first.** It is
   not dead code: the `*-details` sources read `/details` (#341). It keeps
   every `/details` fixture in the suite meaningful, and a present-but-empty `/pubs` value falls

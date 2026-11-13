@@ -23,14 +23,22 @@ Python and Rust together.
   complete a 60-posting day holding 30, with only a note. The gated live
   suite now asserts the size and walks bioRxiv 2024-01-15 whole (207).
 - Each full-text source carries the record's `version` (`None` for `/pubs`).
-  `extras["published"]` is `""` where `/details` sends `"NA"`.
+  A `/pubs` row of the same URL takes the version when `/details` sends it
+  (`add_fulltext_source`, both languages). `extras["published"]` is `""` where
+  `/details` sends `"NA"`.
+- Review (finalcheck): a page longer than the walk's step fails the day in
+  both languages (the cursor is a record offset, so the next page would
+  overlap and its repeats would count as delivered); a `/details` record with
+  no version fails its day; the `*-details` walk logs, reports progress and
+  reconciles under its own source name.
 - **`DETAILS_SETTLE_DAYS` = 7 is a bound**; measuring it is **#759**.
 - **Downstream**: BMLibrarian bumps its pin once this is released (it is
   under Unreleased; nothing is versioned yet) and syncs `medrxiv-details`.
   Its plan's "a later version merges into the same publication row and
   updates the sources' `version`" holds as: the v2 sources are added beside
-  v1's (each version's URLs differ), so the newest is the highest `version`
-  among the rows with `source` `medrxiv`. MECA bulk is the expected next
+  v1's (each version's URLs differ), so the newest is the highest `version`,
+  compared as an integer (the column is text), among the rows with `source`
+  `medrxiv`. MECA bulk is the expected next
   request.
 
 ## Earlier: full text's JSON read as Rust reads it (#753, merged as PR #757)
@@ -276,7 +284,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `feat/341-biorxiv-details`** (2026-11-14, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,835 passed + 20 skipped; Rust 1,786 (`cargo test --workspace`, clippy clean). The next bullet is the run of `feat/pmc-open-data-json`.
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,841 passed + 20 skipped; Rust 1,788 (`cargo test --workspace`, clippy clean). The next bullet is the run of `feat/pmc-open-data-json`.
 - **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
   `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,730 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
   without `BMLIB_EMBED_MODEL` — the GGUF files are in

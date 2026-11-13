@@ -28,6 +28,7 @@ import pytest
 from bmlib.db import connect_sqlite, execute, fetch_one, table_exists
 from bmlib.publications.fetchers.biorxiv import (
     BIORXIV_SETTLE_DAYS,
+    DETAILS_PAGE_SIZE,
     DETAILS_SETTLE_DAYS,
     PAGE_SIZE,
     _normalize,
@@ -998,8 +999,8 @@ def _pubs_record():
 class TestTheFetcherReadsThePubsEndpoint:
     """#325: ``/details`` served an empty 200, so the fetcher reads ``/pubs``.
 
-    It answers again since later on 2026-09-27 (#386); staying on ``/pubs``
-    is #341's decision.
+    It answers again since later on 2026-09-27 (#386); #341 reads it beside
+    ``/pubs``, through the ``*-details`` sources.
 
     ``/pubs`` prefixes every preprint field, so re-pointing the URL alone
     would have stored a titleless, authorless record per preprint with
@@ -1673,6 +1674,71 @@ class TestTheDetailsEndpoint:
             f"https://api.biorxiv.org/details/medrxiv/2026-11-04/2026-11-04/{cursor}"
             for cursor in (0, 30, 60)
         ]
+
+    @pytest.mark.parametrize(
+        ("endpoint", "page_size"), [("details", DETAILS_PAGE_SIZE), ("pubs", PAGE_SIZE)]
+    )
+    def test_a_page_longer_than_the_step_fails_the_day(self, endpoint, page_size):
+        # The cursor is a record offset, so a longer page overlaps the next
+        # one: every repeat would count as delivered and hide a stall.
+        records = [
+            _details_record(f"10.1101/2026.11.04.{i:06d}", "1", "2026-11-04")
+            for i in range(page_size + 1)
+        ]
+        client = self._client(_make_api_response(records, total=page_size + 1))
+        collected = []
+
+        result = fetch_biorxiv(
+            client, date(2026, 11, 4), on_record=collected.append, endpoint=endpoint
+        )
+
+        assert (result.status, result.record_count, collected) == ("failed", 0, [])
+        assert result.error == (
+            f"ValueError: biorxiv served {page_size + 1} records on one {endpoint} page"
+            f" for 2026-11-04, more than the {page_size} the walk steps by, so the"
+            " next page would overlap it"
+        )
+
+    def test_a_details_record_without_a_version_fails_the_day(self):
+        # Every posting names its version; one that does not would take v1's
+        # URLs and be dropped as a duplicate of the v1 row.
+        record = _details_record("10.1101/2026.11.04.000000", "1", "2026-11-04")
+        del record["version"]
+        client = self._client(_make_api_response([record], total=1))
+
+        result = fetch_biorxiv(client, date(2026, 11, 4), on_record=MagicMock(), endpoint="details")
+
+        assert (result.status, result.record_count) == ("failed", 0)
+        assert result.error == (
+            "ValueError: biorxiv served a details record for 2026-11-04"
+            " (10.1101/2026.11.04.000000) carrying no version"
+        )
+
+    def test_a_details_walk_reports_under_its_source_name(self):
+        # sync() walks `medrxiv` and `medrxiv-details` for the same day, so
+        # progress and the reconciliation's note must say which.
+        records = [
+            _details_record(f"10.1101/2026.11.04.{i:06d}", "1", "2026-11-04") for i in range(9)
+        ]
+        client = self._client(_make_api_response(records, total=10))
+        progress = []
+
+        result = fetch_biorxiv(
+            client,
+            date(2026, 11, 4),
+            on_record=MagicMock(),
+            on_progress=progress.append,
+            server="medrxiv",
+            endpoint="details",
+        )
+
+        assert (result.source, result.status) == ("medrxiv-details", "completed")
+        assert result.note == (
+            "medrxiv-details delivered 9 of 10 records for 2026-11-04; recording the day as"
+            " completed, since a shortfall this small has benign causes (a record withdrawn"
+            " between search and fetch, an index updated mid-walk)"
+        )
+        assert [p.source for p in progress] == ["medrxiv-details"]
 
     def test_the_quiet_day_as_served_completes_empty(self):
         quiet = MagicMock()

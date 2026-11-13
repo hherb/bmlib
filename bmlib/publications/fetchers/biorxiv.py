@@ -101,8 +101,10 @@ bioRxiv 2026-11-04 declared 378: pages at cursors 0, 30, ..., 330 held 30
 each, cursor 360 held 18, and the 378 were distinct; cursor 100 served
 records 100-129, so the cursor is a record offset. A walk that took 100 as
 the page size would read a 30-record first page as the last one and stop,
-and reconciliation tolerates that silently for any day of 60 or fewer
-(30 of 60 is not below half). Rust's gated live suite asserts the size.
+and reconciliation lets that complete, with only a WARNING and a note, for
+any day of 60 or fewer (30 of 60 is not below half). A page longer than the
+size fails its day, because the next page would overlap it. Rust's gated
+live suite asserts the size.
 """
 
 RATE_LIMIT_SECONDS = 0.5
@@ -167,6 +169,11 @@ def _field(raw: dict[str, Any], pubs_name: str, details_name: str) -> Any:
     return value if value else raw.get(details_name, "")
 
 
+def _record_version(raw: dict[str, Any]) -> str | None:
+    """The record's own version, or None where it names none (``/pubs``)."""
+    return str(raw.get("version") or "").strip() or None
+
+
 def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
     """Convert a raw bioRxiv/medRxiv API record to a :class:`FetchedRecord`.
 
@@ -188,8 +195,7 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
     # Build full-text sources
     fulltext_sources: list[FullTextSourceEntry] = []
 
-    # The record's own version, or None where the record names none (/pubs).
-    version = str(raw.get("version") or "").strip() or None
+    version = _record_version(raw)
 
     # PDF URL derived from DOI. Use the record's actual version rather than a
     # hard-coded "v1", which 404s / points to the wrong revision for v2+.
@@ -301,6 +307,10 @@ def fetch_biorxiv(
             f"unknown bioRxiv endpoint {endpoint!r}; expected one of {sorted(_ENDPOINTS)}"
         )
     base_url, page_size = _ENDPOINTS[endpoint]
+    # The registered source's name, for logs, progress and the result: sync()
+    # walks `medrxiv` and `medrxiv-details` for the same day. Records keep the
+    # server as their source.
+    name = server if endpoint == "pubs" else f"{server}-details"
     date_str = target_date.isoformat()
     cursor = 0
     total_fetched = 0
@@ -373,6 +383,16 @@ def fetch_biorxiv(
                             f" {first['total']!r} for {date_str}"
                         ) from exc
 
+            # The cursor is a record offset, so a page longer than the step
+            # overlaps the next one, and every repeat would count as delivered:
+            # a stall would then read as a whole day.
+            if len(collection) > page_size:
+                raise ValueError(
+                    f"{server} served {len(collection)} records on one {endpoint} page"
+                    f" for {date_str}, more than the {page_size} the walk steps by, so"
+                    " the next page would overlap it"
+                )
+
             if not collection:
                 # An empty page while the source's own total says records
                 # remain is a walk that stopped serving them, not the end.
@@ -392,6 +412,14 @@ def fetch_biorxiv(
                         f"{server} served a record for {date_str} carrying no DOI"
                         " under either spelling (preprint_doi, doi)"
                     )
+                if endpoint == "details" and _record_version(raw_record) is None:
+                    # Every posting names its version. One that does not takes
+                    # v1's URLs, which a stored v1 row already holds, so its
+                    # sources would be dropped as duplicates.
+                    raise ValueError(
+                        f"{server} served a details record for {date_str}"
+                        f" ({normalized.doi}) carrying no version"
+                    )
                 on_record(normalized)
                 total_fetched += 1
 
@@ -399,7 +427,7 @@ def fetch_biorxiv(
             if on_progress is not None:
                 on_progress(
                     SyncProgress(
-                        source=server,
+                        source=name,
                         date=date_str,
                         records_processed=total_fetched,
                         records_total=records_total or total_fetched,
@@ -418,9 +446,9 @@ def fetch_biorxiv(
         # Logged here as well as returned: the type is what separates a bmlib
         # defect from a bad response, and `FetchResult.error` alone reaches
         # only callers that inspect it.
-        logger.error("%s fetch failed for %s: %s: %s", server, date_str, type(exc).__name__, exc)
+        logger.error("%s fetch failed for %s: %s: %s", name, date_str, type(exc).__name__, exc)
         return FetchResult(
-            source=server,
+            source=name,
             date=date_str,
             record_count=total_fetched,
             status="failed",
@@ -430,7 +458,7 @@ def fetch_biorxiv(
     # Not `records_total or 0` — see reconcile_delivery's `promised` docstring:
     # None and 0 are different claims and collapsing them disables the rules.
     verdict = reconcile_delivery(
-        server,
+        name,
         date_str,
         delivered=total_fetched,
         promised=records_total,
@@ -438,7 +466,7 @@ def fetch_biorxiv(
     )
     if verdict.failure is not None:
         return FetchResult(
-            source=server,
+            source=name,
             date=date_str,
             record_count=total_fetched,
             status="failed",
@@ -446,7 +474,7 @@ def fetch_biorxiv(
         )
 
     return FetchResult(
-        source=server,
+        source=name,
         date=date_str,
         record_count=total_fetched,
         status="completed",

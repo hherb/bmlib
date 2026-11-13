@@ -296,7 +296,7 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
     // bytes of JSON. Measured then across two servers and two days —
     // biorxiv 2024-01-15 declares 207 against `/pubs`' 34, 2025-06-01 declares 195
     // against 6, medrxiv 2024-01-15 28 against 10 and 2025-06-01 26 against 3 — so
-    // the narrowing is real and the question `#325`/`#341` record is open again.
+    // the narrowing is real, which is why #341 added the `*-details` sources.
     //
     // The `biorxiv` and `medrxiv` sources still read `/pubs`; the `*-details` ones
     // read `/details`. What this checks is the gap itself, so a live run keeps
@@ -327,8 +327,8 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
          `#325`/`#341` record may have to be reopened"
     );
     // **A `/details` page holds 30** (measured 2026-11-13). The walk reads a page
-    // shorter than `DETAILS_PAGE_SIZE` as the last, so a larger page would still be
-    // read whole, but a smaller one would end the walk early.
+    // shorter than `DETAILS_PAGE_SIZE` as the last, so a smaller page would end the
+    // walk early, and it fails a longer one, which the next page would overlap.
     let first_page = wider_value["collection"]
         .as_array()
         .expect("a collection array");

@@ -75,9 +75,9 @@ use crate::pyvalue::{json_type_name, python_repr, python_str, python_strip};
 /// (`tests/live_network.rs`), which had been asserting the endpoint was dead: a run
 /// earlier that day still saw it empty, and the next read 64,657 bytes of JSON.
 /// Re-probed 2026-09-29, eight of eight combinations served JSON again — bioRxiv
-/// and medRxiv, 2024-01-15 and 2025-06-01, twice each. So this is now a **choice
-/// between two endpoints that both answer**; the cost below is why it still
-/// stands.
+/// and medRxiv, 2024-01-15 and 2025-06-01, twice each. So these are two
+/// endpoints that both answer, and both are read: `/details/` through
+/// [`Endpoint::Details`] (#341).
 ///
 /// # This is a **population change**, not a path change, and it is a real cost
 ///
@@ -135,8 +135,9 @@ pub const PAGE_SIZE: usize = 100;
 /// Measured 2026-11-13: bioRxiv 2026-11-04 declared 378, pages at cursors 0 to
 /// 330 held 30 each and cursor 360 held 18, all distinct; cursor 100 served
 /// records 100-129, so the cursor is a record offset. Taking 100 as the page
-/// size reads a 30-record first page as the last, and reconciliation tolerates
-/// that silently for any day of 60 or fewer. `tests/live_network.rs` asserts it.
+/// size reads a 30-record first page as the last, and reconciliation lets that
+/// complete, with only a WARNING and a note, for any day of 60 or fewer. A page
+/// longer than the size fails its day, because the next page would overlap it. `tests/live_network.rs` asserts it.
 pub const DETAILS_PAGE_SIZE: usize = 30;
 
 /// Which bioRxiv endpoint a walk reads (#341).
@@ -512,7 +513,15 @@ fn walk_counted(
     sink: &mut CountingSink<'_>,
 ) -> Result<FetchOutcome, FetchError> {
     let date_str = date.format("%Y-%m-%d").to_string();
-    let page_size = source.endpoint().page_size();
+    let endpoint = source.endpoint();
+    let page_size = endpoint.page_size();
+    // The registered source's name, for the reconciliation's messages: `sync()`
+    // walks `medrxiv` and `medrxiv-details` for the same day. Records keep the
+    // server as their source.
+    let name = match endpoint {
+        Endpoint::Pubs => server.to_string(),
+        Endpoint::Details => format!("{server}-details"),
+    };
     let mut cursor = 0usize;
     let mut promised: Option<i64> = None;
     let mut stalled = false;
@@ -525,6 +534,21 @@ fn walk_counted(
         // override it.
         if promised.is_none() {
             promised = body.total;
+        }
+
+        // The cursor is a record offset, so a page longer than the step overlaps
+        // the next one, and every repeat would count as delivered: a stall would
+        // then read as a whole day.
+        if body.collection.len() > page_size {
+            let endpoint_name = match endpoint {
+                Endpoint::Pubs => "pubs",
+                Endpoint::Details => "details",
+            };
+            return Err(FetchError::Malformed(format!(
+                "{server} served {} records on one {endpoint_name} page for {date_str}, more \
+                 than the {page_size} the walk steps by, so the next page would overlap it",
+                body.collection.len()
+            )));
         }
 
         if body.collection.is_empty() {
@@ -552,6 +576,15 @@ fn walk_counted(
                      spelling (preprint_doi, doi)"
                 )));
             }
+            if endpoint == Endpoint::Details && record_version(raw.get("version")).is_none() {
+                // Every posting names its version. One that does not takes v1's
+                // URLs, which a stored v1 row already holds, so its sources would
+                // be dropped as duplicates.
+                return Err(FetchError::Malformed(format!(
+                    "{server} served a details record for {date_str} ({}) carrying no version",
+                    record.doi.as_deref().unwrap_or_default()
+                )));
+            }
             sink.record(record);
         }
 
@@ -568,7 +601,7 @@ fn walk_counted(
         cursor += page_size;
     }
 
-    let verdict = reconcile_delivery(server, &date_str, sink.delivered(), promised, stalled);
+    let verdict = reconcile_delivery(&name, &date_str, sink.delivered(), promised, stalled);
     Ok(FetchOutcome {
         record_count: sink.delivered(),
         status: if verdict.is_failure() {
