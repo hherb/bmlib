@@ -42,6 +42,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Literal, SupportsIndex, TypeGuard
 from urllib.parse import quote
+from xml.sax import SAXException
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
     import httpx
@@ -53,18 +54,27 @@ from bmlib._strict_json import strict_json_loads
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.cache import sanitize_identifier as _sanitize_identifier
 from bmlib.fulltext.jats_parser import RENDERER_VERSION, JATSParser
+from bmlib.fulltext.library_store import (
+    Held,
+    LibraryStore,
+    LibraryStoreFailure,
+    library_ids,
+    paper_info,
+)
 from bmlib.fulltext.models import (
     PDF_CHECKSUM_MISMATCH,
     PDF_SEARCH_FAILED,
     ContentKind,
     FullTextResult,
     FullTextSourceEntry,
+    JATSArticle,
     PmcOpenDataRecord,
 )
 
 # Imported eagerly — pdf_converter loads its PyMuPDF backend lazily, so this
 # costs nothing when the optional ``bmlib[pdf]`` extra is absent.
 from bmlib.fulltext.pdf_converter import PDFErrorKind, get_converter, render_html
+from bmlib.library import Installation, Library, PaperIds, SourceKind
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +123,9 @@ PDF_RETRY_DELAY = 1.0
 # a refused Unpaywall email) costs a bounded number of lookups. A hit tries
 # each candidate once: the mark is the retry across lookups.
 PDF_SEEK_AGAIN_LIMIT = 3
+
+# The `source` of a result served from the shared library (design §4.5).
+LIBRARY_SOURCE = "library"
 
 # A PMC ID reaches a URL path in two fetch helpers, and one of its sources is
 # third-party JSON. Validated where it is used rather than where it arrives,
@@ -885,6 +898,20 @@ def _with_pdf(result: FullTextResult, pdf: FullTextResult | None) -> FullTextRes
     return result
 
 
+@dataclass
+class _FromLibrary:
+    """What the shared library gave one lookup, before the cache and the chain
+    (:meth:`FullTextService._read_library`)."""
+
+    # The library's JATS, rendered: it ends the lookup.
+    served: FullTextResult | None = None
+    # The library's PDF when no JATS was served, held for the chain.
+    pdf: Held | None = None
+    # The library error that stopped its use in this lookup, for the result's
+    # ``library_failure``.
+    failure: str | None = None
+
+
 class FullTextService:
     """Retrieves full text from multiple sources with fallback.
 
@@ -905,6 +932,8 @@ class FullTextService:
         convert_pdfs: bool = True,
         ncbi_api_key: str | None = None,
         fetch_pdf_with_jats: bool = False,
+        library: Library | None = None,
+        installation: Installation | None = None,
     ) -> None:
         """Initialise the service.
 
@@ -951,8 +980,23 @@ class FullTextService:
                 tried again with backoff (:data:`PDF_BESIDE_JATS_ATTEMPTS`),
                 and when no PDF is saved and any failure may pass the cache
                 marks the JATS, so a later hit seeks the PDF again (#744); any
-                other cached JATS hit is served as it is. Declared last so
-                positional construction stays stable.
+                other cached JATS hit is served as it is. Declared after the
+                older arguments so positional construction stays stable.
+            library: The shared library, read before the cache (design §4.5).
+                A lookup with a valid *pmid*, *doi* or *pmc_id* then asks the
+                network nothing when the library holds the paper's JATS (with
+                a body, and no identifier of its own contradicting the
+                request's): the result's ``source`` is :data:`LIBRARY_SOURCE`,
+                it lists the files it used in
+                :attr:`FullTextResult.library_files`, and the library's PDF, if
+                any, is its ``file_path``. Each file used is noted in
+                *installation*'s record. A library that cannot be read does not
+                stop the lookup: it is warned of, named in
+                :attr:`FullTextResult.library_failure`, and the cache and the
+                chain run as without a library. ``None`` (the default) runs the
+                service as it ran before there was one.
+            installation: The installation reading *library*, whose record
+                notes the files it uses. Given exactly when *library* is.
 
         Raises:
             ImportError: If httpx cannot be imported, naming the extra that
@@ -961,8 +1005,12 @@ class FullTextService:
                 cache directory behind. The module is not retained; the check
                 is here so the failure lands at construction rather than on
                 the first request.
+            ValueError: If exactly one of *library* and *installation* is
+                given.
         """
         _require_httpx()
+        if (library is None) != (installation is None):
+            raise ValueError("library and installation are given together or not at all")
 
         self.email = email
         self.timeout = timeout
@@ -970,6 +1018,12 @@ class FullTextService:
         self.convert_pdfs = convert_pdfs
         self.ncbi_api_key = ncbi_api_key
         self.fetch_pdf_with_jats = fetch_pdf_with_jats
+        # The shared library and the installation reading it, or None.
+        self.library: LibraryStore | None = (
+            LibraryStore(library, installation)
+            if library is not None and installation is not None
+            else None
+        )
         # The wait before a PDF beside JATS is tried again, doubling for each
         # later try (#744). An attribute, not an argument, so a test can set
         # it to 0 and not spend the backoff.
@@ -1115,6 +1169,22 @@ class FullTextService:
         if key_refusal is not None:
             logger.warning("%s; continuing without the cache (%s)", key_refusal, also_given)
 
+        # The library first (design §4.5): its JATS ends the lookup. Its failure
+        # is carried onto whatever the cache or the chain returns.
+        from_library = self._read_library(pmid=usable_pmid, doi=doi, pmc_id=pmc_id)
+        if from_library.served is not None:
+            if not (cache_id and self.cache is not None):
+                return from_library.served
+            # No PDF in the library: the cache's PDF mark (#744) still applies.
+            return self._seek_pdf_again(
+                from_library.served,
+                cache=self.cache,
+                cache_id=cache_id,
+                sources=fulltext_sources or [],
+                doi=doi,
+                pmid=usable_pmid,
+            )
+
         # Cache check — return immediately if content already on disk
         stale = False
         if cache_id and self.cache is not None:
@@ -1166,7 +1236,7 @@ class FullTextService:
                 self._quarantine_cache_entry(self.cache, cache_id)
                 cached = None
             if cached is not None:
-                return self._seek_pdf_again(
+                hit = self._seek_pdf_again(
                     cached,
                     cache=self.cache,
                     cache_id=cache_id,
@@ -1174,6 +1244,8 @@ class FullTextService:
                     doi=doi,
                     pmid=usable_pmid,
                 )
+                hit.library_failure = from_library.failure
+                return hit
 
         # Every tier swallows its own exception so the next one still runs;
         # this is what remembers that they did. Made out here, not inside
@@ -1190,6 +1262,7 @@ class FullTextService:
                 refusals=tuple(refusals),
                 cache_id=cache_id,
                 failures=failures,
+                library_pdf=from_library.pdf,
             )
 
         if stale and cache_id and self.cache is not None:
@@ -1207,7 +1280,120 @@ class FullTextService:
         else:
             result = retrieve()
         result.tier_faults = list(failures.faults)
+        result.library_failure = from_library.failure
         return result
+
+    def _read_library(self, *, pmid: str, doi: str | None, pmc_id: str | None) -> _FromLibrary:
+        """What the library holds for the request, read before the cache (design §4.5).
+
+        Keyed by the request's *pmid*, *doi* and *pmc_id* (:func:`library_ids`); a field the
+        library refuses is warned of and left out, and a request with none left skips the library
+        without a failure. The paper's JATS is served when it parses, has a body, and none of its
+        own identifiers contradicts the request's (an identifier absent on either side agrees);
+        the library's PDF goes beside it, and each file used is noted in this installation's
+        record. A JATS that is the wrong paper, has no body or does not parse is warned of and
+        not served, and the library's PDF is held for the chain instead. The first library error
+        is warned of and kept as the failure, and the rest of the call uses no library. Never
+        raises a library error. Rust's ``read_library`` is the same.
+        """
+        out = _FromLibrary()
+        store = self.library
+        if store is None:
+            return out
+        ids, dropped = library_ids(pmid, doi, pmc_id)
+        for name in dropped:
+            logger.warning(
+                "The request's %s is not an identifier the library accepts; looking the paper "
+                "up in the library without it.",
+                name,
+            )
+        if ids.is_empty():
+            return out
+        try:
+            jats = store.find_source(ids, SourceKind.JATS)
+        except LibraryStoreFailure as exc:
+            return self._library_failed(out, exc)
+        parsed = self._usable_library_jats(jats, ids) if jats is not None else None
+        pdf: Held | None = None
+        try:
+            pdf = store.find_source(ids, SourceKind.PDF)
+        except LibraryStoreFailure as exc:
+            out = self._library_failed(out, exc)
+        if jats is None or parsed is None:
+            out.pdf = pdf
+            return out
+        article, html = parsed
+        logger.info("Full text from the library's JATS (%s/%s)", jats.file.folder, jats.file.name)
+        result = FullTextResult(
+            source=LIBRARY_SOURCE,
+            html=html,
+            content_kind="fulltext",
+            jats_xml=jats.bytes,
+            library_files=[jats.file],
+        )
+        if pdf is not None:
+            try:
+                result.file_path = str(store.path_of(pdf.file))
+                result.library_files.append(pdf.file)
+            except LibraryStoreFailure as exc:
+                out = self._library_failed(out, exc)
+        if out.failure is None:
+            paper = paper_info(ids, article)
+            for file in result.library_files:
+                try:
+                    store.note_use(paper, file)
+                except LibraryStoreFailure as exc:
+                    out = self._library_failed(out, exc)
+                    break
+        result.library_failure = out.failure
+        out.failure = None
+        out.served = result
+        return out
+
+    @staticmethod
+    def _library_failed(out: _FromLibrary, exc: LibraryStoreFailure) -> _FromLibrary:
+        """*out* with *exc* as the library's failure in this lookup, warned of."""
+        logger.warning("Could not use the library (%s); going on without it.", exc)
+        out.failure = str(exc)
+        return out
+
+    @staticmethod
+    def _usable_library_jats(held: Held, ids: PaperIds) -> tuple[JATSArticle, str] | None:
+        """The library's JATS *held*, parsed and rendered, when it may be served for *ids*: it
+        parses, has a body, and its own identifiers agree with *ids*. Otherwise a WARNING says
+        why (naming both values of a contradicting identifier) and ``None``."""
+        at = f"{held.file.folder}/{held.file.name}"
+        try:
+            article, html = JATSParser(held.bytes).parse_with_html()
+        except SAXException as exc:
+            logger.warning(
+                "Not serving the library's JATS %s: it does not parse (%s); looking further.",
+                at,
+                exc,
+            )
+            return None
+        own, _ = library_ids(article.pmid, article.doi, article.pmc_id)
+        for name, theirs, ours in (
+            ("pmid", own.pmid, ids.pmid),
+            ("doi", own.doi, ids.doi),
+            ("pmc_id", own.pmcid, ids.pmcid),
+        ):
+            if theirs and ours and theirs != ours:
+                logger.warning(
+                    "Not serving the library's JATS %s: its own %s %s is not the request's %s; "
+                    "looking further.",
+                    at,
+                    name,
+                    theirs,
+                    ours,
+                )
+                return None
+        if not article.has_body:
+            logger.warning(
+                "Not serving the library's JATS %s: it has no body; looking further.", at
+            )
+            return None
+        return article, html
 
     def _retrieve_over_stale(
         self,
@@ -1426,6 +1612,7 @@ class FullTextService:
         refusals: tuple[FullTextError, ...],
         cache_id: str | None,
         failures: _TierFailures,
+        library_pdf: Held | None = None,
     ) -> FullTextResult:
         """The retrieval chain behind the cache check, as :meth:`fetch_fulltext` documents it.
 
@@ -1433,8 +1620,11 @@ class FullTextService:
         :meth:`fetch_fulltext` having read the caller's; *refusals* says why
         either was set aside, if it was. *failures* is filled as the tiers
         run, so the caller can put its faults on the result whichever tier
-        returns it.
+        returns it. *library_pdf* is the library's PDF for the paper when the
+        library held no JATS it could serve (design §4.5); the chain does not
+        use it yet.
         """
+        del library_pdf  # carried for the library's PDF tier, not used yet
         # A body-less JATS rendering picked up along the way. Held back as a
         # last resort rather than returned, since it carries only the
         # abstract while a later tier may still find the whole article.

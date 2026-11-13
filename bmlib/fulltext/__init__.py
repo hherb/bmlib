@@ -69,6 +69,7 @@ if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
         paper_info,
     )
     from bmlib.fulltext.service import (
+        LIBRARY_SOURCE,
         FullTextError,
         FullTextExhaustedError,
         FullTextService,
@@ -77,7 +78,13 @@ if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
 
 #: Names living in ``service``, resolved on first access.
 _LAZY_EXPORTS = frozenset(
-    {"FullTextError", "FullTextExhaustedError", "FullTextService", "FullTextUnavailableError"}
+    {
+        "FullTextError",
+        "FullTextExhaustedError",
+        "FullTextService",
+        "FullTextUnavailableError",
+        "LIBRARY_SOURCE",
+    }
 )
 
 #: Names living in ``library_store``, resolved on first access: ``bmlib.library`` imports
@@ -154,6 +161,7 @@ __all__ = [
     "JATSParser",
     "JATSReferenceInfo",
     "JATSTableInfo",
+    "LIBRARY_SOURCE",
     "LayoutExtractor",
     "LibraryStore",
     "LibraryStoreFailure",

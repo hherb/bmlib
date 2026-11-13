@@ -16,12 +16,16 @@
 
 //! Source kinds, canonical identifiers and installations.
 
+use serde::{Deserialize, Serialize};
+
 use super::error::LibraryError;
 use super::MAX_LABEL_CHARS;
 use crate::publications::storage::normalize_doi;
 
-/// What a stored source file is. The names are the hand-off format's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// What a stored source file is. The names are the hand-off format's, and
+/// serde writes them the same ([`SourceKind::as_str`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SourceKind {
     /// A PDF.
     Pdf,

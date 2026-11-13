@@ -32,7 +32,6 @@ use bmlib::fulltext::{
 };
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use serde_json::{json, Map, Value};
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -41,69 +40,9 @@ use std::time::Duration;
 // Harness
 // ---------------------------------------------------------------------------
 
-/// One scripted answer: a response, or the transport failing.
-type Answer = Result<HttpResponse, FetchError>;
-
-/// A transport that answers from a script and records what it was asked.
-struct ScriptedClient {
-    script: Mutex<VecDeque<Answer>>,
-    repeat: Option<Answer>,
-    requests: Mutex<Vec<String>>,
-}
-
-impl ScriptedClient {
-    fn new(script: Vec<Answer>) -> Arc<Self> {
-        Arc::new(ScriptedClient {
-            script: Mutex::new(script.into()),
-            repeat: None,
-            requests: Mutex::new(Vec::new()),
-        })
-    }
-
-    /// Answer every request with the same response.
-    fn always(response: HttpResponse) -> Arc<Self> {
-        Arc::new(ScriptedClient {
-            script: Mutex::new(VecDeque::new()),
-            repeat: Some(Ok(response)),
-            requests: Mutex::new(Vec::new()),
-        })
-    }
-
-    /// Answer from `script`, then every later request with `response`.
-    fn then_always(script: Vec<Answer>, response: HttpResponse) -> Arc<Self> {
-        Arc::new(ScriptedClient {
-            script: Mutex::new(script.into()),
-            repeat: Some(Ok(response)),
-            requests: Mutex::new(Vec::new()),
-        })
-    }
-
-    /// The URLs requested, in order.
-    fn requests(&self) -> Vec<String> {
-        self.requests.lock().expect("lock").clone()
-    }
-
-    fn call_count(&self) -> usize {
-        self.requests.lock().expect("lock").len()
-    }
-}
-
-impl HttpClient for ScriptedClient {
-    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
-        self.requests.lock().expect("lock").push(url.to_string());
-        if let Some(answer) = self.script.lock().expect("lock").pop_front() {
-            return answer;
-        }
-        match &self.repeat {
-            Some(answer) => answer.clone(),
-            // Exhausting the script is a test error, not a quiet 404: it makes
-            // an over-run a recorded transport fault.
-            None => Err(FetchError::Transport(format!(
-                "scripted client exhausted at {url}"
-            ))),
-        }
-    }
-}
+#[path = "common/scripted_http.rs"]
+mod scripted_http;
+use scripted_http::{Answer, ScriptedClient};
 
 /// A temporary directory that cleans up after itself.
 struct TempDir(PathBuf);
