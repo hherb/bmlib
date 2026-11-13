@@ -64,6 +64,7 @@ class SourceKind(str, Enum):  # noqa: UP042 (the brief fixes str + Enum)
 
 
 def _ascii_digits(s: str) -> bool:
+    """True when *s* is one or more ASCII digits (``str.isdigit`` alone admits others)."""
     return s != "" and s.isascii() and s.isdigit()
 
 
@@ -75,6 +76,12 @@ def _digits_without_zeros(s: str) -> str | None:
 
 
 def _canonical_pmid(raw: str) -> str:
+    """A PMID in canonical form: ASCII digits without leading zeros, or a preprint's ``PPR``
+    (any case in, upper case out) and digits. Surrounding space is trimmed.
+
+    Raises:
+        BadIdentifier: the value is neither.
+    """
     s = raw.strip()
     if s[:3].isascii() and s[:3].upper() == "PPR":
         if not _ascii_digits(s[3:]):
@@ -87,6 +94,12 @@ def _canonical_pmid(raw: str) -> str:
 
 
 def _canonical_pmcid(raw: str) -> str:
+    """A PMCID in canonical form, ``PMC`` and digits without leading zeros; the ``PMC`` prefix
+    may be missing or in any case. Surrounding space is trimmed.
+
+    Raises:
+        BadIdentifier: the value is not one.
+    """
     s = raw.strip()
     if s[:3].isascii() and s[:3].upper() == "PMC":
         s = s[3:]
@@ -97,6 +110,12 @@ def _canonical_pmcid(raw: str) -> str:
 
 
 def _canonical_doi(raw: str) -> str | None:
+    """A DOI as publications' ``_normalize_doi`` gives it (lower case, no resolver prefix),
+    which must then start ``10.`` and hold a ``/``; ``None`` when it is blank.
+
+    Raises:
+        BadIdentifier: the normalised value is not a DOI.
+    """
     doi = _normalize_doi(raw)
     if doi is None:
         return None
@@ -150,6 +169,7 @@ def canonical_ids(
     """
 
     def present(v: str | None) -> str | None:
+        """*v* unless it is absent or only whitespace."""
         return v if v is not None and v.strip() else None
 
     p, d, c = present(pmid), present(doi), present(pmcid)

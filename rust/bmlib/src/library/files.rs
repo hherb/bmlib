@@ -18,7 +18,8 @@
 //! without ordinary paths (phase 4's Android) swaps this one file.
 //!
 //! Nothing here overwrites: [`write_once`] publishes with
-//! [`crate::atomic::atomic_write`] and refuses a different file of the same name.
+//! [`crate::atomic::atomic_write`] and refuses a different file of the same
+//! name.
 
 use std::fs;
 use std::io;
@@ -72,7 +73,8 @@ pub(crate) fn component(name: &str) -> Result<&str, LibraryError> {
 }
 
 /// Turn an I/O failure at `path` into the library's error: a refused or
-/// read-only write is [`LibraryError::ReadOnly`], anything else [`LibraryError::Io`].
+/// read-only write is [`LibraryError::ReadOnly`], anything else
+/// [`LibraryError::Io`].
 pub(crate) fn io_error(path: &Path, err: &io::Error, write: bool) -> LibraryError {
     let read_only = write
         && matches!(
@@ -94,7 +96,8 @@ pub(crate) fn io_error(path: &Path, err: &io::Error, write: bool) -> LibraryErro
 /// Every entry of `dir` as (raw bytes, display name), sorted by the raw bytes.
 ///
 /// The display name is a lossy UTF-8 conversion (a name that is not UTF-8 shows
-/// U+FFFD); it is only ever shown or compared for prefixes, never used as a path.
+/// U+FFFD); it is only ever shown or compared for prefixes, never used as a
+/// path.
 fn entries(dir: &Path) -> io::Result<Vec<(Vec<u8>, String)>> {
     let mut all = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -147,7 +150,8 @@ pub(crate) struct Listing {
     /// Files present only as an iCloud placeholder, by their own name
     /// (`.x.pdf.icloud` gives `x.pdf`).
     pub(crate) placeholders: Vec<String>,
-    /// Temporaries of `atomic_write` ([`is_temp_name`]), in flight or left by a crash.
+    /// Temporaries of `atomic_write` ([`is_temp_name`]), in flight or left by a
+    /// crash.
     pub(crate) temps: Vec<String>,
 }
 
@@ -174,7 +178,8 @@ pub(crate) fn list_names(dir: &Path) -> io::Result<Vec<String>> {
     Ok(listing(dir)?.names)
 }
 
-/// The file an iCloud placeholder name (`.<name>.icloud`) stands for, if it is one.
+/// The file an iCloud placeholder name (`.<name>.icloud`) stands for, if it is
+/// one.
 fn placeholder_for(name: &str) -> Option<&str> {
     let (pre, post) = ICLOUD_PLACEHOLDER
         .split_once("{name}")
@@ -249,7 +254,8 @@ pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Writ
     Ok(Written::New)
 }
 
-/// Make the directory `path` (its parent must exist); `false` when it already exists.
+/// Make the directory `path` (its parent must exist); `false` when it already
+/// exists.
 pub(crate) fn create_dir_new(path: &Path) -> io::Result<bool> {
     match fs::create_dir(path) {
         Ok(()) => Ok(true),
@@ -288,7 +294,8 @@ pub(crate) fn remove_dir_all(path: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    /// A fresh empty directory under the system temp dir, removed by the caller.
+    /// A fresh empty directory under the system temp dir, removed by the
+    /// caller.
     fn scratch(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("bmlib-files-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);

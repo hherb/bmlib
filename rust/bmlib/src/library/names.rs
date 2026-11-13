@@ -27,7 +27,8 @@ const RESERVED: [&str; 22] = [
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
-/// The longest prefix of `s` that is at most `max` bytes, on a character boundary.
+/// The longest prefix of `s` that is at most `max` bytes, on a character
+/// boundary.
 fn cut_bytes(s: &str, max: usize) -> &str {
     let mut end = max.min(s.len());
     while !s.is_char_boundary(end) {
@@ -64,9 +65,9 @@ fn sanitise(s: &str) -> String {
 }
 
 /// The folder name for a paper: `year author – title (ID)`, at most
-/// [`MAX_FOLDER_NAME_BYTES`] bytes, safe on macOS, Windows and Linux. The length
-/// is fitted first; a Windows device name (`con.x`) in the fitted name then gets
-/// a `_` prefix, for which one byte of the budget is kept.
+/// [`MAX_FOLDER_NAME_BYTES`] bytes, safe on macOS, Windows and Linux. The
+/// length is fitted first; a Windows device name (`con.x`) in the fitted name
+/// then gets a `_` prefix, for which one byte of the budget is kept.
 #[must_use]
 pub fn folder_name(info: &PaperInfo) -> String {
     named(info, 1)

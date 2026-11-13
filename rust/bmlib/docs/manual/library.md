@@ -37,10 +37,11 @@ My Papers/
 - **Each installation writes only its own record**, so two apps never write the
   same file and a sync service has nothing to merge. A record names the
   installation, the paper (identifiers, title, year, first author) and the files
-  that installation uses (digest, kind, name, origin, size, time saved).
-  An *installation* is one app on one machine: `Installation::new("studyanalyzer",
-  "aaaa", "Horst's Mac")` (app `[a-z0-9]{1,40}`, id `[a-z0-9-]{1,64}`, a label
-  of 1 to 200 characters a person recognises).
+  that installation uses (digest, kind, name, origin, size, time saved). An
+  *installation* is one app on one machine:
+  `Installation::new("studyanalyzer", "aaaa", "Horst's Mac")` (app
+  `[a-z0-9]{1,40}`, id `[a-z0-9-]{1,64}`, a label of 1 to 200 characters a
+  person recognises).
 - **A paper is the union of folders whose records share an identifier.** If two
   apps each created a folder before either knew the other's identifier, `find`
   and `group` still see one paper. Every record's identifiers count, so a value
@@ -120,10 +121,10 @@ from a record's `FileEntry`.
   `save` returns `FileClash`. The name has 48 bits of the digest in it, so this
   means a damaged file, not a collision.
 - **Nothing is deleted automatically.** The library never evicts, expires or
-  cleans. `release` forgets one installation's use of a file and leaves the file;
-  only `remove_file` and `remove_folder`, which an app calls when the user asks,
-  delete anything. Other installations' records for a removed file then read
-  `Missing`, which the app can show as "this file was removed".
+  cleans. `release` forgets one installation's use of a file and leaves the
+  file; only `remove_file` and `remove_folder`, which an app calls when the user
+  asks, delete anything. Other installations' records for a removed file then
+  read `Missing`, which the app can show as "this file was removed".
 - **A crash between the file and the record is harmless.** `save` writes the
   file first and the record second. A crash leaves an unrecorded file, which a
   scan reports as `Problem::UnrecordedFile`; saving the same bytes again records
@@ -187,7 +188,7 @@ Every fallible call returns `Result<_, LibraryError>`. The variants:
 | `ReadOnly` | The library cannot be written | "The library is read-only"; reading still works |
 | `BadIdentifier` | A PMID, DOI or PMCID is not valid | Name the field and the value |
 | `BadInstallation` | An app, id or label is not acceptable | A programming error, or an id from outside |
-| `BadName` | A folder or file name is not one path component | A damaged record; do not follow it |
+| `BadName` | A folder or file name given to the library is not one plain path component (or a `FileRef` name that is not the library's name for those bytes) | A programming error, or a name from outside; nothing was touched |
 | `Missing` | The named file or folder is not there | "That file was removed"; offer to fetch it again |
 | `NotDownloaded` | Only an iCloud placeholder is present | "Download the file first" (open it in Finder) |
 | `DigestMismatch` | The bytes differ from the recorded digest | "The file is damaged or changed"; never use its contents |

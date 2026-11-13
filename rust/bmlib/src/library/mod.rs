@@ -16,11 +16,16 @@
 
 //! A shared folder of research papers that several apps read and write.
 //!
-//! This is the pure, file-system-free foundation: identifiers, source kinds,
-//! installations and folder names. The module needs no feature gate, so it
-//! builds with `default-features = false` (bmlib-ffi's configuration). Python's
-//! `bmlib.library` is its twin, held to it by
-//! `tests/fixtures/library_cases.json`.
+//! Identifiers, source kinds, installations and folder names; records; opening
+//! a library ([`Library::open`]); reading it ([`Library::scan`], [`find`],
+//! [`find_digest`], [`group`], [`Library::read`]); and writing it
+//! ([`Library::save`], [`Library::record_use`], [`Library::release`] and the
+//! manual clear, [`Library::remove_file`] and [`Library::remove_folder`]).
+//! Only the private `files` module touches the file system. The module needs no
+//! feature gate, so it builds with `default-features = false` (bmlib-ffi's
+//! configuration). Python's `bmlib.library` is its twin, held to it by
+//! `tests/fixtures/library_cases.json` and the sample library under
+//! `tests/fixtures/library/sample/`.
 
 mod error;
 mod files;

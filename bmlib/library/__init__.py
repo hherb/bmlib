@@ -16,9 +16,13 @@
 
 """A shared folder of research papers that several apps read and write.
 
-Identifiers, source kinds, installations, folder names, and reading a library
-(scan, find, group, read). Rust's ``bmlib::library`` is its twin, held
-to it by ``tests/fixtures/library_cases.json``.
+Identifiers, source kinds, installations and folder names; records; opening a library
+(:func:`open_library`); reading it (``Library.scan``, :func:`find`, :func:`find_digest`,
+:func:`group`, ``Library.read``); and writing it (``Library.save``, ``Library.record_use``,
+``Library.release`` and the manual clear, ``Library.remove_file`` and
+``Library.remove_folder``). Rust's ``bmlib::library`` is its twin, held to it by
+``tests/fixtures/library_cases.json`` and the sample library under
+``tests/fixtures/library/sample/``.
 """
 
 from __future__ import annotations

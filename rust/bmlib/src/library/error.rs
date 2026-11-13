@@ -104,7 +104,7 @@ pub enum LibraryError {
         /// The record file.
         file: String,
         /// The record version found.
-        version: u64,
+        version: u32,
     },
     /// A file-system operation failed.
     Io {

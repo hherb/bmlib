@@ -38,6 +38,7 @@ struct Marker {
     version: u32,
 }
 
+/// [`LibraryError::NotALibrary`] for `root`, saying why.
 fn not_a_library(root: &Path, reason: String) -> LibraryError {
     LibraryError::NotALibrary {
         path: root.to_owned(),
@@ -75,15 +76,17 @@ fn check_marker(root: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
 }
 
 impl Library {
-    /// Open the library at `root`, creating the marker and `papers/` in an empty folder.
+    /// Open the library at `root`, creating the marker and `papers/` in an
+    /// empty folder.
     ///
     /// # Errors
     ///
     /// [`LibraryError::Unreachable`] when `root` is missing or not a folder;
     /// [`LibraryError::NotALibrary`] when it holds anything but a valid marker
-    /// (or only ignored names); [`LibraryError::NewerLibrary`] when the marker's
-    /// version is newer than [`LIBRARY_VERSION`]; [`LibraryError::ReadOnly`] or
-    /// [`LibraryError::Io`] when the marker or `papers/` cannot be written.
+    /// (or only ignored names); [`LibraryError::NewerLibrary`] when the
+    /// marker's version is newer than [`LIBRARY_VERSION`];
+    /// [`LibraryError::ReadOnly`] or [`LibraryError::Io`] when the marker or
+    /// `papers/` cannot be written.
     pub fn open(root: &Path) -> Result<Library, LibraryError> {
         if !is_dir(root) {
             let reason = if exists(root) {

@@ -95,6 +95,7 @@ fn digits_without_zeros(s: &str) -> Option<&str> {
     (!t.is_empty()).then_some(t)
 }
 
+/// [`LibraryError::BadIdentifier`] for `field`, quoting the raw `value` refused.
 fn bad(field: &'static str, value: &str) -> LibraryError {
     LibraryError::BadIdentifier {
         field,
@@ -102,6 +103,8 @@ fn bad(field: &'static str, value: &str) -> LibraryError {
     }
 }
 
+/// A PMID in canonical form: ASCII digits without leading zeros, or a preprint's
+/// `PPR` (any case in, upper case out) and digits. Surrounding space is trimmed.
 fn canonical_pmid(raw: &str) -> Result<String, LibraryError> {
     let s = raw.trim();
     if let Some(rest) = s
@@ -119,6 +122,8 @@ fn canonical_pmid(raw: &str) -> Result<String, LibraryError> {
         .ok_or_else(|| bad("pmid", raw))
 }
 
+/// A PMCID in canonical form, `PMC` and digits without leading zeros; the `PMC`
+/// prefix may be missing or in any case. Surrounding space is trimmed.
 fn canonical_pmcid(raw: &str) -> Result<String, LibraryError> {
     let s = raw.trim();
     let digits = match s.get(..3) {
@@ -130,6 +135,8 @@ fn canonical_pmcid(raw: &str) -> Result<String, LibraryError> {
         .ok_or_else(|| bad("pmcid", raw))
 }
 
+/// A DOI as publications' `normalize_doi` gives it (lower case, no resolver
+/// prefix), which must then start `10.` and hold a `/`; `None` when it is blank.
 fn canonical_doi(raw: &str) -> Result<Option<String>, LibraryError> {
     match normalize_doi(Some(raw)) {
         None => Ok(None),
@@ -148,6 +155,7 @@ impl PaperIds {
         doi: Option<&str>,
         pmcid: Option<&str>,
     ) -> Result<Self, LibraryError> {
+        /// `v` unless it is absent or only whitespace.
         fn present(v: Option<&str>) -> Option<&str> {
             v.filter(|s| !s.trim().is_empty())
         }
@@ -224,6 +232,7 @@ pub(super) fn is_bidi_control(c: char) -> bool {
     matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
+/// [`LibraryError::BadInstallation`] for `field`, saying why.
 fn bad_inst(field: &'static str, reason: &str) -> LibraryError {
     LibraryError::BadInstallation {
         field,

@@ -255,6 +255,7 @@ def find(scan: Scan, ids: PaperIds) -> list[PaperFolder]:
 
 
 def _is_digest(s: str) -> bool:
+    """True when *s* is a SHA-256 as the library writes it: 64 lowercase hex digits."""
     return len(s) == 64 and all(c in "0123456789abcdef" for c in s)
 
 
@@ -285,6 +286,7 @@ def group(scan: Scan) -> list[list[int]]:
     parent = list(range(len(scan.folders)))
 
     def root(i: int) -> int:
+        """The representative of *i*'s set, halving the path on the way."""
         while parent[i] != i:
             parent[i] = parent[parent[i]]
             i = parent[i]

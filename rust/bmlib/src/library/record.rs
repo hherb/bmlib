@@ -70,10 +70,13 @@ fn whole(v: &Value) -> Option<i64> {
     })
 }
 
+/// Refuse the record as [`RecordProblem::Unreadable`] with `reason`.
 fn bad<T>(reason: impl Into<String>) -> Result<T, RecordProblem> {
     Err(RecordProblem::Unreadable(reason.into()))
 }
 
+/// The string at `obj[key]`; anything else (absent, null, another type) is
+/// refused, naming it as `{what}.{key}`.
 fn string<'a>(obj: &'a Value, key: &str, what: &str) -> Result<&'a str, RecordProblem> {
     match obj.get(key) {
         Some(Value::String(s)) => Ok(s),
@@ -90,6 +93,8 @@ fn opt_string(obj: &Value, key: &str) -> Result<Option<String>, RecordProblem> {
     }
 }
 
+/// The record's `paper` object: identifiers that must already be canonical,
+/// and an optional title, year (an `i32`) and first author.
 fn parse_paper(paper: &Value) -> Result<PaperInfo, RecordProblem> {
     if !paper.is_object() {
         return bad("paper must be an object");
@@ -119,6 +124,8 @@ fn parse_paper(paper: &Value) -> Result<PaperInfo, RecordProblem> {
     })
 }
 
+/// One entry of `files`: a 64-hex digest, a known kind, the name those two
+/// give, an origin, a non-negative size and the time it was saved.
 fn parse_file(file: &Value) -> Result<FileEntry, RecordProblem> {
     if !file.is_object() {
         return bad("a file entry must be an object");
@@ -218,6 +225,7 @@ pub fn parse_record(text: &str) -> Result<Record, RecordProblem> {
 }
 
 // Field order here is the order in the written JSON.
+/// The `installation` object as written.
 #[derive(Serialize)]
 struct OutInstallation<'a> {
     app: &'a str,
@@ -225,6 +233,7 @@ struct OutInstallation<'a> {
     label: &'a str,
 }
 
+/// The `paper` object as written; an absent value is `null`.
 #[derive(Serialize)]
 struct OutPaper<'a> {
     pmid: Option<&'a str>,
@@ -235,6 +244,7 @@ struct OutPaper<'a> {
     first_author: Option<&'a str>,
 }
 
+/// One entry of `files` as written.
 #[derive(Serialize)]
 struct OutFile<'a> {
     sha256: &'a str,
@@ -245,6 +255,7 @@ struct OutFile<'a> {
     saved_at: &'a str,
 }
 
+/// The whole record as written.
 #[derive(Serialize)]
 struct OutRecord<'a> {
     format: &'static str,

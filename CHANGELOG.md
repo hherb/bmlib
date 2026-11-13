@@ -106,18 +106,27 @@ All notable changes to bmlib are documented here. The format is based on
   installation, so two apps never write the same file. `open_library` /
   `Library::open`, `scan`, `find` (the whole group of folders linked by a shared
   identifier), `find_digest`, `group`, `read` (checked against the recorded
-  digest), `save`, `release`, `remove_file`, `remove_folder`, `folder_name`,
-  `canonical_ids` / `PaperIds::canonical`. Nothing is deleted automatically;
-  only the two `remove_*` calls, made when the user asks, delete anything. A
-  scan reports every oddity as a `Problem` and drops none. A new paper folder
-  whose name another has (compared without regard to case) is numbered ` (2)`
-  within 150 bytes, and a folder whose records are all from a newer layout
-  fails the save with `NewerRecord` rather than fork the paper. Windows device
-  names are prefixed `_`. Record updates are serialised within a process;
-  separate processes of one installation are out of scope. Needs no feature
-  flag (it builds with `default-features = false`) and no extra. Manuals:
-  `docs/manual/library.md`, `rust/bmlib/docs/manual/library.md`. 1b (`FullTextService`
-  reading and filling a library) and 1c (the `bmlib-ffi` surface) follow.
+  digest), `save`, `record_use` (note a file another app saved), `release`,
+  `remove_file`, `remove_folder`, `folder_name`, `canonical_ids` /
+  `PaperIds::canonical`. Nothing is deleted automatically; only the two
+  `remove_*` calls, made when the user asks, delete anything. A scan reports
+  every oddity as a `Problem` and drops none, among them a record present only
+  as an iCloud placeholder, two records of one folder disagreeing on an
+  identifier (both values still find the folder) and an atomic write's leftover
+  temporary (never deleted). `save`, `record_use` and `release` refuse an
+  `Installation` or identifiers the validating constructors would refuse, and an
+  own record evicted by iCloud (`NotDownloaded`), before writing anything; a
+  caller's folder or file name that Windows would resolve elsewhere (`...`,
+  `x.`, `C:`, `con`) is `BadName` on every platform. A new paper folder whose
+  name another has (compared without regard to case) is numbered ` (2)` within
+  150 bytes, and a folder whose records are all from a newer layout fails the
+  save with `NewerRecord` rather than fork the paper. Windows device names are
+  prefixed `_`. Record updates are serialised within a process; separate
+  processes of one installation are out of scope. Needs no feature flag (it
+  builds with `default-features = false`) and no extra. Manuals:
+  `docs/manual/library.md`, `rust/bmlib/docs/manual/library.md`. 1b
+  (`FullTextService` reading and filling a library) and 1c (the `bmlib-ffi`
+  surface) follow.
 
 - **PMC Open Data's JATS after NCBI's** (#751; both languages). When Europe
   PMC and NCBI give no body for a PMC ID, Tier 1c asks the bucket: the latest

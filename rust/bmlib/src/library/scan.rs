@@ -49,14 +49,15 @@ pub struct PaperFolder {
     pub folder: String,
     /// The valid, correctly named records, by file name (bytes).
     pub records: Vec<Record>,
-    /// The source files present, by name (bytes); placeholders and `records/` are left out.
+    /// The source files present, by name (bytes); placeholders and `records/`
+    /// are left out.
     pub files_on_disk: Vec<String>,
 }
 
 impl PaperFolder {
     /// The union of the records' identifiers; the first record wins a conflict
-    /// (a scan reports it as [`Problem::ConflictingIds`]). To match a query, use
-    /// [`PaperFolder::shares_any`], which sees every record's value.
+    /// (a scan reports it as [`Problem::ConflictingIds`]). To match a query,
+    /// use [`PaperFolder::shares_any`], which sees every record's value.
     #[must_use]
     pub fn ids(&self) -> PaperIds {
         self.records
@@ -64,8 +65,9 @@ impl PaperFolder {
             .fold(PaperIds::default(), |acc, r| acc.merged(&r.paper.ids).0)
     }
 
-    /// True when any record here holds the same value as `ids` for an identifier,
-    /// so a value that lost a conflict inside the folder still finds it.
+    /// True when any record here holds the same value as `ids` for an
+    /// identifier, so a value that lost a conflict inside the folder still
+    /// finds it.
     #[must_use]
     pub fn shares_any(&self, ids: &PaperIds) -> bool {
         self.records.iter().any(|r| r.paper.ids.shares_any(ids))
@@ -118,8 +120,8 @@ pub enum Problem {
         /// The record file it stands for.
         file: String,
     },
-    /// A temporary file of `atomic_write`, from a write in flight or one a crash
-    /// interrupted. It is left alone, never deleted (R20).
+    /// A temporary file of `atomic_write`, from a write in flight or one a
+    /// crash interrupted. It is left alone, never deleted (R20).
     LeftoverTemp {
         /// The paper's folder.
         folder: String,
@@ -301,8 +303,8 @@ impl Library {
     ///
     /// # Errors
     ///
-    /// [`LibraryError::Io`] when `papers/` itself cannot be listed; trouble inside
-    /// a folder is a [`Problem`] in the result instead.
+    /// [`LibraryError::Io`] when `papers/` itself cannot be listed; trouble
+    /// inside a folder is a [`Problem`] in the result instead.
     pub fn scan(&self) -> Result<Scan, LibraryError> {
         let papers = self.root().join(PAPERS_DIR);
         let found = listing(&papers).map_err(|e| io_error(&papers, &e, false))?;
@@ -330,8 +332,9 @@ impl Library {
     /// # Errors
     ///
     /// [`LibraryError::BadName`] for a folder or file name that is not one path
-    /// component; [`LibraryError::NotDownloaded`] when only an online placeholder is
-    /// here; [`LibraryError::Missing`]; [`LibraryError::DigestMismatch`]; [`LibraryError::Io`].
+    /// component; [`LibraryError::NotDownloaded`] when only an online
+    /// placeholder is here; [`LibraryError::Missing`];
+    /// [`LibraryError::DigestMismatch`]; [`LibraryError::Io`].
     pub fn read(&self, file: &FileRef) -> Result<Vec<u8>, LibraryError> {
         let dir = self.root().join(PAPERS_DIR).join(component(&file.folder)?);
         let path = dir.join(component(&file.name)?);
@@ -362,8 +365,9 @@ impl Library {
 
 /// Every folder of the paper(s) matching `ids`, in scan order.
 ///
-/// A paper is the union of folders whose records share an identifier, so this is
-/// each folder in the [`group`] of any folder with a record sharing one with `ids`.
+/// A paper is the union of folders whose records share an identifier, so this
+/// is each folder in the [`group`] of any folder with a record sharing one with
+/// `ids`.
 #[must_use]
 pub fn find<'a>(scan: &'a Scan, ids: &PaperIds) -> Vec<&'a PaperFolder> {
     let mut hit = vec![false; scan.folders.len()];
@@ -383,8 +387,8 @@ pub fn find<'a>(scan: &'a Scan, ids: &PaperIds) -> Vec<&'a PaperFolder> {
 
 /// A file on disk named for `sha256` (`{kind}-{first 12 hex}.{ext}`), if any.
 ///
-/// Only the name is looked at: [`Library::read`] checks the full digest. A digest
-/// that is not 64 lowercase hex digits finds nothing.
+/// Only the name is looked at: [`Library::read`] checks the full digest. A
+/// digest that is not 64 lowercase hex digits finds nothing.
 #[must_use]
 pub fn find_digest(scan: &Scan, sha256: &str) -> Option<FileRef> {
     let hex = |b: u8| matches!(b, b'0'..=b'9' | b'a'..=b'f');
@@ -415,6 +419,7 @@ pub fn find_digest(scan: &Scan, sha256: &str) -> Option<FileRef> {
 pub fn group(scan: &Scan) -> Vec<Vec<usize>> {
     let n = scan.folders.len();
     let mut parent: Vec<usize> = (0..n).collect();
+    /// The representative of `i`'s set, halving the path on the way.
     fn root(parent: &mut [usize], mut i: usize) -> usize {
         while parent[i] != i {
             parent[i] = parent[parent[i]];

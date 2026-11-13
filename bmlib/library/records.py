@@ -64,6 +64,7 @@ class RecordProblem(Exception):
     """
 
     def __init__(self, kind: str, reason: str = "", version: int = 0) -> None:
+        """Make the problem; the message is *reason*, or one naming *version*."""
         super().__init__(reason or f"record version {version} is newer than this bmlib reads")
         self.kind = kind
         self.reason = reason
@@ -71,10 +72,12 @@ class RecordProblem(Exception):
 
 
 def _bad(reason: str) -> NoReturn:
+    """Refuse the record as ``unreadable`` with *reason*."""
     raise RecordProblem("unreadable", reason)
 
 
 def _is_int(v: Any) -> TypeGuard[int]:
+    """True for an ``int`` that is not a ``bool`` (JSON's ``true`` is no number)."""
     return isinstance(v, int) and not isinstance(v, bool)
 
 
@@ -89,6 +92,7 @@ def _whole(v: Any) -> int | None:
 
 
 def _string(obj: dict[str, Any], key: str, what: str) -> str:
+    """The string at ``obj[key]``; anything else is refused, naming it as ``{what}.{key}``."""
     v = obj.get(key)
     if not isinstance(v, str):
         _bad(f"{what}.{key} must be a string")
@@ -96,6 +100,7 @@ def _string(obj: dict[str, Any], key: str, what: str) -> str:
 
 
 def _opt_string(obj: dict[str, Any], key: str) -> str | None:
+    """A string, or null/absent as ``None``; anything else is refused."""
     v = obj.get(key)
     if v is not None and not isinstance(v, str):
         _bad(f"paper.{key} must be a string or null")
@@ -103,6 +108,8 @@ def _opt_string(obj: dict[str, Any], key: str) -> str | None:
 
 
 def _parse_paper(paper: Any) -> PaperInfo:
+    """The record's ``paper`` object: identifiers that must already be canonical, and an
+    optional title, year (within ``i32``) and first author."""
     if not isinstance(paper, dict):
         _bad("paper must be an object")
     stored = (_opt_string(paper, "pmid"), _opt_string(paper, "doi"), _opt_string(paper, "pmcid"))
@@ -124,6 +131,8 @@ def _parse_paper(paper: Any) -> PaperInfo:
 
 
 def _parse_file(file: Any) -> FileEntry:
+    """One entry of ``files``: a 64-hex digest, a known kind, the name those two give, an
+    origin, a non-negative size (within ``u64``) and the time it was saved."""
     if not isinstance(file, dict):
         _bad("a file entry must be an object")
     sha = _string(file, "sha256", "file")

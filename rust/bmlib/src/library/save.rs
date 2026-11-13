@@ -71,10 +71,10 @@ fn same_name_as(papers: &Path, candidate: &str) -> Result<Vec<String>, LibraryEr
 
 /// Whether the folder `name` may take `paper`: some record there shares an
 /// identifier with it, or no record there is readable yet (another writer has
-/// claimed the folder, or a crash left it empty). A folder whose records are all
-/// newer than this code is neither: its identifiers cannot be read, and a second
-/// folder beside a newer app's paper would be a silent second store, so that is
-/// [`LibraryError::NewerRecord`] (R16).
+/// claimed the folder, or a crash left it empty). A folder whose records are
+/// all newer than this code is neither: its identifiers cannot be read, and a
+/// second folder beside a newer app's paper would be a silent second store, so
+/// that is [`LibraryError::NewerRecord`] (R16).
 fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, LibraryError> {
     let mut problems = Vec::new();
     let found = scan_folder(&papers.join(name), name, &mut problems);
@@ -90,7 +90,7 @@ fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, Libr
             Some((folder, file, version)) => Err(LibraryError::NewerRecord {
                 folder,
                 file,
-                version: u64::from(version),
+                version,
             }),
             None => Ok(true),
         };
@@ -169,7 +169,8 @@ fn check_not_evicted(path: &Path, folder: &str) -> Result<(), LibraryError> {
 
 /// This installation's record at `path`: `None` when there is none, or when it
 /// was unreadable and has been kept aside. A newer record is an error, and so
-/// is one present only as an iCloud placeholder ([`LibraryError::NotDownloaded`]).
+/// is one present only as an iCloud placeholder
+/// ([`LibraryError::NotDownloaded`]).
 fn load_own_record(path: &Path, folder: &str) -> Result<Option<Record>, LibraryError> {
     let bytes = match read_bytes(path) {
         Ok(b) => b,
@@ -187,7 +188,7 @@ fn load_own_record(path: &Path, folder: &str) -> Result<Option<Record>, LibraryE
         Err(RecordProblem::Newer(version)) => Err(LibraryError::NewerRecord {
             folder: folder.to_owned(),
             file: file_name(path),
-            version: u64::from(version),
+            version,
         }),
         Err(RecordProblem::Unreadable(reason)) => {
             let aside = keep_aside(path)?;
@@ -202,6 +203,8 @@ fn load_own_record(path: &Path, folder: &str) -> Result<Option<Record>, LibraryE
     }
 }
 
+/// The last component of `path`, shown lossily if it is not UTF-8 (empty for
+/// none).
 fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -209,7 +212,8 @@ fn file_name(path: &Path) -> String {
 }
 
 /// Refuse an installation [`Installation::new`] would refuse. Its fields are
-/// public, so a caller can build one unchecked, and its record name becomes a path.
+/// public, so a caller can build one unchecked, and its record name becomes a
+/// path.
 fn check_who(who: &Installation) -> Result<(), LibraryError> {
     Installation::new(&who.app, &who.id, &who.label)?;
     component(&who.record_file_name())?;
@@ -217,7 +221,8 @@ fn check_who(who: &Installation) -> Result<(), LibraryError> {
 }
 
 /// Refuse identifiers that are not canonical: [`parse_record`] refuses them, so
-/// a record holding them would not read back and the next save would put it aside.
+/// a record holding them would not read back and the next save would put it
+/// aside.
 fn check_ids(ids: &PaperIds) -> Result<(), LibraryError> {
     let canon = PaperIds::canonical(
         ids.pmid.as_deref(),
@@ -263,8 +268,8 @@ fn store_record(path: &Path, record: &Record) -> Result<(), LibraryError> {
     write_replace(path, text.as_bytes())
 }
 
-/// `paper` folded into the record's own account of it: identifiers merged
-/// (a conflict is logged, the record's own value kept), gaps in the rest filled.
+/// `paper` folded into the record's own account of it: identifiers merged (a
+/// conflict is logged, the record's own value kept), gaps in the rest filled.
 fn merge_paper(mut record: Record, paper: &PaperInfo, path: &Path) -> Record {
     let (ids, conflicts) = record.paper.ids.merged(&paper.ids);
     for field in conflicts {
@@ -295,7 +300,8 @@ fn stored_name(kind: SourceKind, digest: &str) -> String {
     )
 }
 
-/// The time a file is noted, as records write it: `YYYY-MM-DDTHH:MM:SSZ` in UTC.
+/// The time a file is noted, as records write it: `YYYY-MM-DDTHH:MM:SSZ` in
+/// UTC.
 fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
@@ -342,12 +348,12 @@ impl Library {
     /// Save `bytes` of kind `kind` for `paper` and note it in `who`'s record.
     ///
     /// The paper's folder is the first folder holding a record that shares an
-    /// identifier with it; with no identifiers, the folder already holding these
-    /// bytes; otherwise a new folder, named by [`folder_name`] (with ` (2)`,
-    /// ` (3)` … when another paper has the name, compared without regard to case).
-    /// The file is written first, then the record (by the same merge as
-    /// [`Library::record_use`]), so a crash between leaves only an unrecorded
-    /// file, which saving the same bytes again records.
+    /// identifier with it; with no identifiers, the folder already holding
+    /// these bytes; otherwise a new folder, named by [`folder_name`] (with
+    /// ` (2)`, ` (3)` … when another paper has the name, compared without
+    /// regard to case). The file is written first, then the record (by the same
+    /// merge as [`Library::record_use`]), so a crash between leaves only an
+    /// unrecorded file, which saving the same bytes again records.
     ///
     /// Within one process the update of a record is serialised, so threads of
     /// one installation never lose each other's entries; separate processes of
@@ -355,14 +361,14 @@ impl Library {
     ///
     /// # Errors
     ///
-    /// [`LibraryError::BadInstallation`] or [`LibraryError::BadIdentifier`] for a
-    /// `who` or `paper.ids` the validating constructors would refuse (nothing is
-    /// written); [`LibraryError::FileClash`] when a file of that name holds other bytes
-    /// (nothing is overwritten); [`LibraryError::NewerRecord`] when `who`'s
-    /// record, or every record of the folder the paper would go in, is from a
-    /// newer layout (no second folder is made); [`LibraryError::NotDownloaded`]
-    /// when `who`'s record is only an iCloud placeholder (nothing is written);
-    /// [`LibraryError::ReadOnly`];
+    /// [`LibraryError::BadInstallation`] or [`LibraryError::BadIdentifier`] for
+    /// a `who` or `paper.ids` the validating constructors would refuse (nothing
+    /// is written); [`LibraryError::FileClash`] when a file of that name holds
+    /// other bytes (nothing is overwritten); [`LibraryError::NewerRecord`] when
+    /// `who`'s record, or every record of the folder the paper would go in, is
+    /// from a newer layout (no second folder is made);
+    /// [`LibraryError::NotDownloaded`] when `who`'s record is only an iCloud
+    /// placeholder (nothing is written); [`LibraryError::ReadOnly`];
     /// [`LibraryError::Io`].
     pub fn save(
         &self,
@@ -419,8 +425,9 @@ impl Library {
         })
     }
 
-    /// Note in `who`'s record that it uses `file`, a file already in the library
-    /// (such as one another installation saved), with what it knows of `paper`.
+    /// Note in `who`'s record that it uses `file`, a file already in the
+    /// library (such as one another installation saved), with what it knows of
+    /// `paper`.
     ///
     /// The file is read through [`Library::read`], so it must be present with
     /// the bytes `file.sha256` names; then it is merged into the record exactly
@@ -478,16 +485,17 @@ impl Library {
     }
 
     /// Drop `file` from `who`'s record. The file stays, and so do the other
-    /// installations' records. A file the record does not list (or no record) is
-    /// already not used, so that is `Ok`. Serialised with [`Library::save`] in
-    /// this process.
+    /// installations' records. A file the record does not list (or no record)
+    /// is already not used, so that is `Ok`. Serialised with [`Library::save`]
+    /// in this process.
     ///
     /// # Errors
     ///
-    /// [`LibraryError::BadInstallation`] for a `who` [`Installation::new`] would
-    /// refuse; [`LibraryError::BadName`]; [`LibraryError::NewerRecord`];
-    /// [`LibraryError::NotDownloaded`] when the record is only an iCloud placeholder;
-    /// [`LibraryError::Io`] for a record that cannot be read (it is not touched).
+    /// [`LibraryError::BadInstallation`] for a `who` [`Installation::new`]
+    /// would refuse; [`LibraryError::BadName`]; [`LibraryError::NewerRecord`];
+    /// [`LibraryError::NotDownloaded`] when the record is only an iCloud
+    /// placeholder; [`LibraryError::Io`] for a record that cannot be read (it
+    /// is not touched).
     pub fn release(&self, who: &Installation, file: &FileRef) -> Result<(), LibraryError> {
         check_who(who)?;
         let (dir, _) = locate(self.root(), file)?;
@@ -514,7 +522,7 @@ impl Library {
                 return Err(LibraryError::NewerRecord {
                     folder: file.folder.clone(),
                     file: file_name(&path),
-                    version: u64::from(version),
+                    version,
                 })
             }
         };
@@ -547,8 +555,8 @@ impl Library {
     /// # Errors
     ///
     /// [`LibraryError::BadName`] when `folder` is not one path component;
-    /// [`LibraryError::Missing`] when there is no such folder (or it is a file);
-    /// [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
+    /// [`LibraryError::Missing`] when there is no such folder (or it is a
+    /// file); [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn remove_folder(&self, folder: &str) -> Result<(), LibraryError> {
         let dir = self.root().join(PAPERS_DIR).join(component(folder)?);
         if !is_dir(&dir) {

@@ -51,6 +51,7 @@ class Library:
     """An opened library folder."""
 
     def __init__(self, root: Path) -> None:
+        """Wrap *root* as is; use :func:`open_library`, which checks it."""
         self._root = root
 
     @property
@@ -115,6 +116,10 @@ def _check_marker(root: Path, data: bytes) -> None:
 
 
 def _read_marker(marker: Path) -> bytes:
+    """The marker file's bytes.
+
+    :raises Io: it cannot be read.
+    """
     try:
         return read_bytes(marker)
     except OSError as e:
