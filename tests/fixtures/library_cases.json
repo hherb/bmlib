@@ -433,6 +433,26 @@
    "expect": "_con.artist (PMID 5)"
   },
   {
+   "name": "reserved name, body cut keeps the underscore in budget",
+   "year": null,
+   "first_author": null,
+   "title": "con.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+   "pmid": "7",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_con.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  },
+  {
+   "name": "unreserved over-length name fills all 150 bytes",
+   "year": null,
+   "first_author": null,
+   "title": "cox.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+   "pmid": "7",
+   "doi": null,
+   "pmcid": null,
+   "expect": "cox.xx漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢 (PMID 7)"
+  },
+  {
    "name": "reserved name as an author with a dot",
    "year": null,
    "first_author": "Nul.",

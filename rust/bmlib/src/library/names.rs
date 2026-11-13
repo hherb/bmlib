@@ -64,7 +64,9 @@ fn sanitise(s: &str) -> String {
 }
 
 /// The folder name for a paper: `year author – title (ID)`, at most
-/// [`MAX_FOLDER_NAME_BYTES`] bytes, safe on macOS, Windows and Linux.
+/// [`MAX_FOLDER_NAME_BYTES`] bytes, safe on macOS, Windows and Linux. The length
+/// is fitted first; a Windows device name (`con.x`) in the fitted name then gets
+/// a `_` prefix, for which one byte of the budget is kept.
 #[must_use]
 pub fn folder_name(info: &PaperInfo) -> String {
     let ids = &info.ids;
@@ -109,23 +111,37 @@ pub fn folder_name(info: &PaperInfo) -> String {
     } else {
         format!(" ({id})")
     };
-    let mut name = format!("{body}{suffix}");
-    if RESERVED.contains(&name.split('.').next().unwrap_or("").to_uppercase().as_str()) {
-        name.insert(0, '_');
+    // Length first, then the reserved-name check on the final name: a fit that
+    // is reserved is redone one byte shorter so the `_` still keeps it in budget.
+    let name = fit(&body, &suffix, MAX_FOLDER_NAME_BYTES);
+    if is_reserved(&name) {
+        return format!("_{}", fit(&body, &suffix, MAX_FOLDER_NAME_BYTES - 1));
     }
-    if name.len() <= MAX_FOLDER_NAME_BYTES {
+    name
+}
+
+/// True when the part before the first `.` is a Windows device name.
+fn is_reserved(name: &str) -> bool {
+    RESERVED.contains(&name.split('.').next().unwrap_or("").to_uppercase().as_str())
+}
+
+/// `body suffix` within `limit` bytes: the body is cut at a character
+/// boundary; when the suffix alone does not fit, the whole name is.
+fn fit(body: &str, suffix: &str, limit: usize) -> String {
+    let name = format!("{body}{suffix}");
+    if name.len() <= limit {
         return name;
     }
-    if suffix.len() <= MAX_FOLDER_NAME_BYTES {
-        let kept = cut_bytes(&body, MAX_FOLDER_NAME_BYTES - suffix.len()).trim_end();
+    if suffix.len() <= limit {
+        let kept = cut_bytes(body, limit - suffix.len()).trim_end();
         let suffix = if kept.is_empty() {
             suffix.trim_start()
         } else {
-            &suffix
+            suffix
         };
         return format!("{kept}{suffix}");
     }
-    cut_bytes(&name, MAX_FOLDER_NAME_BYTES)
+    cut_bytes(&name, limit)
         .trim_end_matches(['.', ' '])
         .to_owned()
 }

@@ -61,7 +61,9 @@ def _sanitise(s: str) -> str:
 def folder_name(info: PaperInfo) -> str:
     """The folder name for a paper: ``year author – title (ID)``.
 
-    At most ``MAX_FOLDER_NAME_BYTES`` bytes, safe on macOS, Windows and Linux.
+    At most ``MAX_FOLDER_NAME_BYTES`` bytes, safe on macOS, Windows and Linux. The length is
+    fitted first; a Windows device name (``con.x``) in the fitted name then gets a ``_``
+    prefix, for which one byte of the budget is kept.
     """
     ids = info.ids
     if ids.pmid:
@@ -79,13 +81,30 @@ def folder_name(info: PaperInfo) -> str:
     body = _sanitise(f"{head} – {title}" if head and title else head or title)
     ident = _sanitise(ident)
     suffix = f"({ident})" if not body else f" ({ident})"
+    # Length first, then the reserved-name check on the final name: a fit that
+    # is reserved is redone one byte shorter so the "_" still keeps it in budget.
+    name = _fit(body, suffix, MAX_FOLDER_NAME_BYTES)
+    if _is_reserved(name):
+        return "_" + _fit(body, suffix, MAX_FOLDER_NAME_BYTES - 1)
+    return name
+
+
+def _is_reserved(name: str) -> bool:
+    """True when the part before the first dot is a Windows device name."""
+    return name.split(".")[0].upper() in _RESERVED
+
+
+def _fit(body: str, suffix: str, limit: int) -> str:
+    """``body + suffix`` within ``limit`` bytes.
+
+    The body is cut at a character boundary; when the suffix alone does not fit, the whole
+    name is.
+    """
     name = body + suffix
-    if name.split(".")[0].upper() in _RESERVED:
-        name = "_" + name
-    if len(name.encode("utf-8")) <= MAX_FOLDER_NAME_BYTES:
+    if len(name.encode("utf-8")) <= limit:
         return name
-    room = MAX_FOLDER_NAME_BYTES - len(suffix.encode("utf-8"))
+    room = limit - len(suffix.encode("utf-8"))
     if room >= 0:
         kept = _cut_bytes(body, room).rstrip()
         return kept + (suffix if kept else suffix.lstrip())
-    return _cut_bytes(name, MAX_FOLDER_NAME_BYTES).rstrip(". ")
+    return _cut_bytes(name, limit).rstrip(". ")
