@@ -4113,3 +4113,35 @@ fn a_pmc_open_data_record_that_cannot_be_read_is_a_failure() {
         }
     }
 }
+
+/// **The search, the ID Converter and Unpaywall refuse what `serde_json`
+/// refuses** (#753): a BOM, a lone surrogate escape, `NaN` and a number past
+/// `f64`, each in a body otherwise of the expected shape. Python read all
+/// four as answers through httpx's `json()`; it now reads them as this does,
+/// and `tests/test_fulltext_service.py`'s
+/// `TestJsonBodiesAreReadAsSerdeJsonReadsThem` holds it to the same bodies.
+#[test]
+fn the_three_json_bodies_are_refused_as_python_refuses_them() {
+    let rest = r#""resultList": {"result": []}, "records": []}"#;
+    let chain = |body: String| {
+        let client = ScriptedClient::new(vec![ok(body.clone()), ok(body.clone()), ok(body)]);
+        let mut request = request();
+        request.doi = Some("10.1/x".to_string());
+        let result = service(client.clone())
+            .fetch_fulltext(&request)
+            .expect("the DOI link");
+        assert_eq!(result.source, "doi");
+        assert_eq!(client.call_count(), 3, "{:?}", client.requests());
+        result.tier_faults
+    };
+    for bad in [
+        format!("\u{feff}{{{rest}"),
+        format!(r#"{{"x": "\ud800", {rest}"#),
+        format!(r#"{{"x": NaN, {rest}"#),
+        format!(r#"{{"x": 1e999, {rest}"#),
+    ] {
+        assert_eq!(chain(bad.clone()), ["JSONDecodeError"; 3], "{bad}");
+    }
+    // The control: the same shape, readable, is an absence at each.
+    assert!(chain(format!(r#"{{"x": "é", {rest}"#)).is_empty());
+}

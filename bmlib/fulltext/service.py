@@ -200,8 +200,8 @@ def _plural(n: int, noun: str) -> str:
 # What is *excluded* is the load-bearing part, and two of them are counter-
 # intuitive, so they are named rather than left to be rediscovered:
 #
-#   ValueError    json.JSONDecodeError IS a ValueError — every resp.json() on
-#                 a malformed body raises one.
+#   ValueError    json.JSONDecodeError IS a ValueError — every JSON decode of
+#                 a malformed body raises one (#753: as serde_json reads it).
 #   SyntaxError   xml.etree.ElementTree.ParseError IS a SyntaxError — malformed
 #                 remote XML raises one.
 #   RuntimeError  RecursionError is one, and Path.home() raises one.
@@ -2990,7 +2990,7 @@ class FullTextService:
         if resp.status_code != 200:
             raise FullTextError(f"Europe PMC search HTTP {resp.status_code}")
 
-        data = resp.json()
+        data = strict_json_loads(resp.content.decode("utf-8"))
         results = data.get("resultList", {}).get("result", [])
         if not results:
             failures.note_absence()
@@ -3097,7 +3097,7 @@ class FullTextService:
                 # unreachable converter stops counting as an absence.
                 raise FullTextError(f"ID Converter HTTP {resp.status_code} for {ids}")
 
-            records = resp.json().get("records") or []
+            records = strict_json_loads(resp.content.decode("utf-8")).get("records") or []
             if not records:
                 failures.note_absence()
                 return None
@@ -3324,7 +3324,7 @@ class FullTextService:
         if resp.status_code != 200:
             raise FullTextError(f"Unpaywall HTTP {resp.status_code}")
 
-        pdf_url = _pick_oa_pdf_url(resp.json())
+        pdf_url = _pick_oa_pdf_url(strict_json_loads(resp.content.decode("utf-8")))
         if pdf_url:
             return pdf_url
         raise FullTextUnavailableError(f"No open-access PDF found for DOI {doi}")

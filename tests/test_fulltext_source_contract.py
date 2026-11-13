@@ -54,7 +54,6 @@ def _response(answer: dict[str, Any]) -> MagicMock:
     resp = MagicMock()
     resp.status_code = answer["status"]
     resp.content = _body(answer.get("body_file")) or b""
-    resp.json.side_effect = lambda: json.loads(resp.content)
     return resp
 
 
