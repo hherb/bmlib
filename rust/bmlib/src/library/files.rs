@@ -26,6 +26,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+use super::names::is_reserved;
 use super::{LibraryError, ICLOUD_PLACEHOLDER, IGNORED_NAMES};
 
 /// Whether `write_once` made the file or found the same bytes already there.
@@ -47,10 +48,19 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// `name` if it is one safe path component, else [`LibraryError::BadName`].
 ///
-/// Refuses the empty name, `.`, `..`, and any name holding `/`, `\` or NUL, so
-/// a name from a record or a caller can never leave its folder.
+/// Refuses, on every platform, the empty name, any name holding `/`, `\\`, NUL
+/// or `:`, a name ending in `.` or a space or starting with a space, and a
+/// Windows device name (`con`, `NUL.txt`). Windows drops trailing dots and
+/// spaces (`...` and `x.` would name `papers` itself or `x`), `C:` replaces
+/// a joined path and `a:b` names a stream, so a name from a record or a caller
+/// can never reach anything but its own entry. The library's own names never
+/// take these shapes ([`super::folder_name`] sanitises).
 pub(crate) fn component(name: &str) -> Result<&str, LibraryError> {
-    let bad = name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', '\0']);
+    let bad = name.is_empty()
+        || name.contains(['/', '\\', '\0', ':'])
+        || name.ends_with(['.', ' '])
+        || name.starts_with(' ')
+        || is_reserved(name);
     if bad {
         Err(LibraryError::BadName {
             name: name.to_owned(),
@@ -218,7 +228,10 @@ mod tests {
 
     #[test]
     fn component_refuses_paths() {
-        for bad in ["", ".", "..", "a/b", "a\\b", "../x", "x\0"] {
+        for bad in [
+            "", ".", "..", "a/b", "a\\b", "../x", "x\0", "...", " ", ". ", "x.", "C:", "a:b",
+            "con", "NUL.txt",
+        ] {
             assert!(
                 matches!(component(bad), Err(LibraryError::BadName { .. })),
                 "{bad:?}"

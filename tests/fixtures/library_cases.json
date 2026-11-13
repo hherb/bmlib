@@ -2190,5 +2190,117 @@
     "records": {}
    }
   }
- ]
+ ],
+  "component": [
+    {
+      "name": "three dots resolve to papers itself on Windows",
+      "value": "...",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a lone space",
+      "value": " ",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a dot and a space",
+      "value": ". ",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a trailing dot names x on Windows",
+      "value": "x.",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a trailing space",
+      "value": "x ",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a leading space",
+      "value": " x",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a drive letter replaces the path",
+      "value": "C:",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a colon names a stream on NTFS",
+      "value": "a:b",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name",
+      "value": "con",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name before a dot",
+      "value": "NUL.txt",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name in another case",
+      "value": "Lpt9",
+      "expect": "bad_name"
+    },
+    {
+      "name": "the empty name",
+      "value": "",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a parent step",
+      "value": "..",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a slash",
+      "value": "a/b",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a backslash",
+      "value": "a\\b",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a NUL",
+      "value": "x\u0000",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a plain name",
+      "value": "y",
+      "expect": "ok"
+    },
+    {
+      "name": "a library folder name",
+      "value": "2024 Smith – Metformin (PMID 1)",
+      "expect": "ok"
+    },
+    {
+      "name": "a prefixed device name",
+      "value": "_CON",
+      "expect": "ok"
+    },
+    {
+      "name": "a device name inside a word",
+      "value": "console",
+      "expect": "ok"
+    },
+    {
+      "name": "a dot inside",
+      "value": "a.b",
+      "expect": "ok"
+    },
+    {
+      "name": "a leading dot",
+      "value": ".hidden",
+      "expect": "ok"
+    }
+  ]
 }

@@ -33,6 +33,7 @@ from pathlib import Path
 from bmlib._atomic import atomic_write
 from bmlib.library.constants import ICLOUD_PLACEHOLDER, IGNORED_NAMES
 from bmlib.library.errors import BadName, FileClash, Io, LibraryError, ReadOnly
+from bmlib.library.names import is_reserved
 
 _READ_ONLY_ERRNOS = (errno.EROFS, errno.EACCES, errno.EPERM)
 
@@ -52,10 +53,20 @@ def sha256_hex(data: bytes) -> str:
 def component(name: str) -> str:
     """Return *name* if it is one safe path component, else raise :class:`BadName`.
 
-    Refuses the empty name, ``.``, ``..``, and any name holding ``/``, ``\\`` or
-    NUL, so a name from a record or a caller can never leave its folder.
+    Refuses, on every platform, the empty name, any name holding ``/``, ``\\``, NUL or ``:``,
+    a name ending in ``.`` or a space or starting with a space, and a Windows device name
+    (``con``, ``NUL.txt``). Windows drops trailing dots and spaces (``...`` and ``x.`` would
+    name ``papers`` itself or ``x``), ``C:`` replaces a joined path and ``a:b`` names a stream,
+    so a name from a record or a caller can never reach anything but its own entry. The
+    library's own names never take these shapes (:func:`folder_name` sanitises).
     """
-    if name in ("", ".", "..") or any(c in name for c in "/\\\0"):
+    if (
+        name == ""
+        or any(c in name for c in "/\\\0:")
+        or name.endswith((".", " "))
+        or name.startswith(" ")
+        or is_reserved(name)
+    ):
         raise BadName(name)
     return name
 

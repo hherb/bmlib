@@ -101,12 +101,12 @@ def _named(info: PaperInfo, n: int) -> str:
     # Length first, then the reserved-name check on the final name: a fit that
     # is reserved is redone one byte shorter so the "_" still keeps it in budget.
     name = _fit(body, suffix, MAX_FOLDER_NAME_BYTES)
-    if _is_reserved(name):
+    if is_reserved(name):
         return "_" + _fit(body, suffix, MAX_FOLDER_NAME_BYTES - 1)
     return name
 
 
-def _is_reserved(name: str) -> bool:
+def is_reserved(name: str) -> bool:
     """True when the part before the first dot is a Windows device name."""
     return name.split(".")[0].upper() in _RESERVED
 

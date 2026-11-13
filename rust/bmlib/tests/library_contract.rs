@@ -590,3 +590,50 @@ fn save_scenarios_match_the_fixture() {
         let _ = std::fs::remove_dir_all(&base);
     }
 }
+
+#[test]
+fn component_matches_the_fixture() {
+    // A folder the bad names could reach on Windows (`x.` is `x` there, `...` is
+    // `papers` itself) is planted; no bad name may remove or read anything.
+    let base = std::env::temp_dir().join(format!("bmlib-component-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let lib = Library::open(&base).unwrap();
+    std::fs::create_dir_all(base.join("papers/x")).unwrap();
+    std::fs::write(base.join("papers/x/keep"), "planted").unwrap();
+    let before = tree(&base);
+    for case in section("component") {
+        let (name, value) = (&case["name"], case["value"].as_str().unwrap());
+        let file = FileRef {
+            folder: value.to_owned(),
+            name: "keep".to_owned(),
+            sha256: sha256_hex(b"planted"),
+            kind: SourceKind::Text,
+        };
+        let got = (lib.remove_folder(value), lib.read(&file).map(|_| ()));
+        match case["expect"].as_str().unwrap() {
+            "bad_name" => assert!(
+                matches!(
+                    got,
+                    (
+                        Err(LibraryError::BadName { .. }),
+                        Err(LibraryError::BadName { .. })
+                    )
+                ),
+                "{name}: {got:?}"
+            ),
+            _ => assert!(
+                matches!(
+                    got,
+                    (
+                        Err(LibraryError::Missing { .. }),
+                        Err(LibraryError::Missing { .. })
+                    )
+                ),
+                "{name}: {got:?}"
+            ),
+        }
+    }
+    assert_eq!(tree(&base), before);
+    let _ = std::fs::remove_dir_all(&base);
+}

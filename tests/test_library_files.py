@@ -38,7 +38,26 @@ from bmlib.library.files import (
 )
 
 
-@pytest.mark.parametrize("bad", ["", ".", "..", "a/b", "a\\b", "../x", "x\0"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        ".",
+        "..",
+        "a/b",
+        "a\\b",
+        "../x",
+        "x\0",
+        "...",
+        " ",
+        ". ",
+        "x.",
+        "C:",
+        "a:b",
+        "con",
+        "NUL.txt",
+    ],
+)
 def test_component_refuses_paths(bad: str) -> None:
     with pytest.raises(BadName):
         component(bad)

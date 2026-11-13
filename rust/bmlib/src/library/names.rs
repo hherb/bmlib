@@ -137,7 +137,7 @@ fn named(info: &PaperInfo, n: u32) -> String {
 }
 
 /// True when the part before the first `.` is a Windows device name.
-fn is_reserved(name: &str) -> bool {
+pub(super) fn is_reserved(name: &str) -> bool {
     RESERVED.contains(&name.split('.').next().unwrap_or("").to_uppercase().as_str())
 }
 

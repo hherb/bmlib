@@ -382,3 +382,21 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
 def test_numbered_one_is_the_plain_name() -> None:
     info = _info(_FIXTURE["folder_names"][0])
     assert folder_name_numbered(info, 1) == folder_name(info)
+
+
+@pytest.mark.parametrize("case", _cases("component"))
+def test_component_matches_the_fixture(case: dict[str, Any], tmp_path: Path) -> None:
+    # A folder the bad names could reach on Windows ("x." is x there, "..." is papers itself)
+    # is planted; no bad name may remove or read anything.
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    (lib.root / "papers" / "x").mkdir()
+    (lib.root / "papers" / "x" / "keep").write_text("planted", encoding="utf-8")
+    before = _tree(lib.root)
+    ref = FileRef(case["value"], "keep", sha256_hex(b"planted"), SourceKind.TEXT)
+    want: type[LibraryError] = BadName if case["expect"] == "bad_name" else Missing
+    with pytest.raises(want):
+        lib.remove_folder(case["value"])
+    with pytest.raises(want):
+        lib.read(ref)
+    assert _tree(lib.root) == before
