@@ -522,7 +522,7 @@ class TestSync:
             _fetcher_override=overrides,
         )
 
-        # Should process yesterday and today for each of the 4 sources
+        # Yesterday and today for every built-in source, the `*-details` ones included (#341)
         assert report.days_processed == len(ALL_SOURCES) * 2
         assert set(report.sources_synced) == set(ALL_SOURCES)
 

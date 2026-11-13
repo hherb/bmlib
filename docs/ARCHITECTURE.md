@@ -364,22 +364,23 @@ what would hide a real shortfall from `reconcile_delivery`.
 
 *A day the source fills late is revisited until it settles* (#325). bioRxiv's
 `/details` served an empty 200 on 2026-09-26 and 27, so the preprint sources
-moved to `/pubs`; it has answered again since (#386), and staying is #341's
-decision. That
-endpoint files a record under its journal publication's date and learns of
-the publication weeks later: on 2026-09-27 the bioRxiv week just ended held 1
-record and every week six or more weeks old ~500. `SourceDescriptor.settle_days` (90 for
-`biorxiv`/`medrxiv`, 0 otherwise) moves the durability boundary that many
-days later, and `_days_needing_fetch`'s **rule 5** re-offers every row of such
-a source that is not final — a completed day that has not settled, or one
-whose last fetch failed — **whatever the window and however old**, because
-the default window has left the day behind by the next run. Only rows that
-exist are revisited; a failed one is included because rule 5's own revisits
-are what fail, and leaving it to the window abandoned the day (PR #343's
-review). PubMed has the same
-out-of-window gap on a smaller scale, and closing it would re-fetch every
-pre-0.10.0 day once: that is #342, a decision. `/pubs` is also a narrower
-population, published preprints only (#341); `docs/DECISIONS.md` has the rest.
+moved to `/pubs`; it has answered again since (#386), and the
+`biorxiv-details`/`medrxiv-details` sources read it beside `/pubs` (#341, with a
+7-day bound, since `/details` files a version under its posting date). The
+`/pubs` endpoint files a record under its journal publication's date and learns
+of the publication weeks later: on 2026-09-27 the bioRxiv week just ended held 1
+record and every week six or more weeks old ~500. `SourceDescriptor.settle_days`
+(90 for `biorxiv`/`medrxiv`, 7 for their `*-details` twins, 0 otherwise) moves
+the durability boundary that many days later, and `_days_needing_fetch`'s **rule
+5** re-offers every row of such a source that is not final — a completed day
+that has not settled, or one whose last fetch failed — **whatever the window and
+however old**, because the default window has left the day behind by the next
+run. Only rows that exist are revisited; a failed one is included because rule
+5's own revisits are what fail, and leaving it to the window abandoned the day
+(PR #343's review). PubMed has the same out-of-window gap on a smaller scale,
+and closing it would re-fetch every pre-0.10.0 day once: that is #342, a
+decision. `/pubs` is also a narrower population, published preprints only
+(#341); `docs/DECISIONS.md` has the rest.
 
 *A re-fetch is held to the most the day has held* (#346, rule chosen by the
 maintainer, twice). Revisiting a day for ninety days means a fetch that

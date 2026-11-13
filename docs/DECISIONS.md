@@ -5715,14 +5715,28 @@ and read 0 moves again.
   only.** The maintainer chose this on #325 (option 2), over failing loudly
   until a posting-date source exists. `/details` answered an empty 200 in every
   form when the choice was made; it came back later on 2026-09-27 and serves
-  JSON again (re-probed 2026-10-01, #386), so staying on `/pubs` is now a
-  choice between two endpoints that answer, and #341 is where it is made. The narrowing is recorded as #341, and "no
-  publication may be missed" is not satisfied for unpublished preprints until
-  that lands. Reverting to `/details` is that product decision, not a repair.
+  JSON again (re-probed 2026-10-01, #386). #341 settled it on 2026-11-14 by
+  reading both: `biorxiv`/`medrxiv` stay on `/pubs`, and the `*-details`
+  sources collect every posting, unpublished preprints included.
+- **`/details` is two more sources, not a setting on the old two** (#341).
+  `download_days` is keyed by the source's name, so an `endpoint` key in a
+  source's config would let a day completed under `/pubs` read as completed for
+  `/details`, and those postings would never be fetched. A name of its own
+  gives each population its own ledger and its own `settle_days`. The records
+  keep `source="biorxiv"`/`"medrxiv"`, so both meet on one row per DOI. The
+  maintainer chose that `sync(sources=None)` includes them, like any built-in.
+  `test_each_registered_source_reads_its_endpoint` (Rust
+  `each_biorxiv_source_reads_its_own_endpoint`) pins the wiring.
+- **The page size is per endpoint, and the walk still stops at a short page.**
+  `/details` serves 30 records a page, `/pubs` 100 (measured 2026-11-13).
+  Walking until an empty page, or until the declared total is met, would not
+  depend on the size, but it would also turn `/pubs`' tolerated shortfall (6 of
+  10 on a short page) into a further request and a stall — a tightening of
+  #92's rule that needs its sampler first. The gated live suite asserts the
+  `/details` size instead (`the_biorxiv_path_fetches_from_the_live_endpoint`).
 - **`_normalize` reads both field spellings, the `/pubs` one first.** It is
-  not dead code: `/details` answers again (#386), and reading it is #341's
-  decision. It keeps every `/details`
-  fixture in the suite meaningful, and a present-but-empty `/pubs` value falls
+  not dead code: the `*-details` sources read `/details` (#341). It keeps
+  every `/details` fixture in the suite meaningful, and a present-but-empty `/pubs` value falls
   through, so an empty prefixed field never hides a populated plain one.
   `test_the_prefixed_name_wins_where_both_are_present` and
   `test_an_empty_prefixed_value_does_not_hide_the_other_spelling` pin both

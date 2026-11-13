@@ -62,11 +62,15 @@
 #![allow(clippy::expect_used)]
 
 use bmlib::http::UreqClient;
-use bmlib::publications::fetchers::biorxiv::{normalize, page_url};
+use bmlib::publications::fetchers::biorxiv::{
+    fetch_biorxiv, normalize, page_url, Endpoint, HttpPageSource, DETAILS_PAGE_SIZE,
+};
 use bmlib::publications::fetchers::openalex::{CursorPages, HttpCursorPages};
 use bmlib::publications::fetchers::pubmed::{Eutils, HttpEutils};
 use bmlib::publications::fetchers::HttpClient;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+
+mod common;
 
 /// The process-wide request lock, so a parallel run still serialises its calls.
 fn request_lock() -> MutexGuard<'static, ()> {
@@ -283,7 +287,7 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
         "a DOI yields one PDF source; `/pubs/` carries no `jatsxml` for a second"
     );
 
-    // **The wider endpoint, which the fetcher deliberately does not read.** Its
+    // **The wider endpoint, read by the `*-details` sources (#341).** Its
     // population is the day's *postings*; `/pubs` is only the preprints bioRxiv has
     // already paired with a journal publication.
     //
@@ -294,8 +298,8 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
     // against 6, medrxiv 2024-01-15 28 against 10 and 2025-06-01 26 against 3 — so
     // the narrowing is real and the question `#325`/`#341` record is open again.
     //
-    // The fetcher still reads `/pubs`, because reverting is a **population decision**
-    // and not a porting one. What this checks is the gap itself, so a live run keeps
+    // The `biorxiv` and `medrxiv` sources still read `/pubs`; the `*-details` ones
+    // read `/details`. What this checks is the gap itself, so a live run keeps
     // measuring it and a third-party change cannot pass unnoticed a second time.
     let declared_total = |body: &serde_json::Value| -> u64 {
         let total = &body["messages"][0]["total"];
@@ -306,7 +310,7 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
             .unwrap_or_else(|| panic!("a declared total: {body}"))
     };
     let wider = client
-        .get("https://api.biorxiv.org/details/biorxiv/2024-01-15/2024-01-15/0")
+        .get(&Endpoint::Details.page_url("biorxiv", "2024-01-15", 0))
         .expect("bioRxiv answers");
     assert_eq!(wider.status, 200, "`/details` answers 200, not a 404");
     let wider_value: serde_json::Value =
@@ -321,6 +325,42 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
         "`/details` declares {wider_total} for 2024-01-15 where `/pubs` declares \
          {ours_total}: the wider endpoint is no longer wider, and the narrowing \
          `#325`/`#341` record may have to be reopened"
+    );
+    // **A `/details` page holds 30** (measured 2026-11-13). The walk reads a page
+    // shorter than `DETAILS_PAGE_SIZE` as the last, so a larger page would still be
+    // read whole, but a smaller one would end the walk early.
+    let first_page = wider_value["collection"]
+        .as_array()
+        .expect("a collection array");
+    assert_eq!(
+        first_page.len(),
+        DETAILS_PAGE_SIZE,
+        "`/details` page 0 for a day of {wider_total} holds {} records, not \
+         DETAILS_PAGE_SIZE: re-measure the page size",
+        first_page.len()
+    );
+
+    // **And the whole day through the fetcher**: every page, reconciled against
+    // the declared total. 207 on 2026-09-27 and on 2026-11-13.
+    let source = HttpPageSource {
+        client: client.clone(),
+        endpoint: Endpoint::Details,
+    };
+    let mut sink = common::sink::RecordingSink::new();
+    let date = chrono::NaiveDate::from_ymd_opt(2024, 1, 15).expect("a date");
+    let outcome = fetch_biorxiv(&source, "biorxiv", date, &mut sink);
+    assert_eq!(outcome.status, "completed", "{outcome:?}");
+    assert_eq!(outcome.note, None, "a whole day, not a tolerated shortfall");
+    assert_eq!(
+        Some(outcome.record_count),
+        outcome.promised,
+        "every declared posting delivered"
+    );
+    assert!(
+        sink.records
+            .iter()
+            .all(|r| r.fulltext_sources.iter().all(|s| s.version.is_some())),
+        "every posting names its version on its sources"
     );
 }
 

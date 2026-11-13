@@ -72,7 +72,7 @@ def normalize(raw, server):
     }
 
 
-def fetch(payloads, server="biorxiv", day="2024-06-10"):
+def fetch(payloads, server="biorxiv", day="2024-06-10", endpoint="pubs"):
     client = FakeClient(payloads)
     records = []
     progress = []
@@ -82,6 +82,7 @@ def fetch(payloads, server="biorxiv", day="2024-06-10"):
         on_record=records.append,
         on_progress=progress.append,
         server=server,
+        endpoint=endpoint,
     )
     return {
         "status": result.status,
@@ -100,7 +101,12 @@ def run(case):
     if fn == "normalize":
         return normalize(a["raw"], a.get("server", "biorxiv"))
     if fn == "fetch":
-        return fetch(a["payloads"], a.get("server", "biorxiv"), a.get("day", "2024-06-10"))
+        return fetch(
+            a["payloads"],
+            a.get("server", "biorxiv"),
+            a.get("day", "2024-06-10"),
+            a.get("endpoint", "pubs"),
+        )
     raise ValueError(f"unknown fn {fn!r}")
 
 

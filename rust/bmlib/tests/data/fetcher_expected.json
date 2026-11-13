@@ -25,6 +25,22 @@
         "settle_days": 90
       },
       {
+        "description": "Preprint server for biology (every version, by the day it was posted)",
+        "display_name": "bioRxiv (all postings)",
+        "name": "biorxiv-details",
+        "params": [
+          {
+            "default": null,
+            "description": "API key (reserved)",
+            "name": "api_key",
+            "required": false,
+            "secret": true
+          }
+        ],
+        "resumable": false,
+        "settle_days": 7
+      },
+      {
         "description": "Preprint server for health sciences",
         "display_name": "medRxiv",
         "name": "medrxiv",
@@ -39,6 +55,22 @@
         ],
         "resumable": false,
         "settle_days": 90
+      },
+      {
+        "description": "Preprint server for health sciences (every version, by the day it was posted)",
+        "display_name": "medRxiv (all postings)",
+        "name": "medrxiv-details",
+        "params": [
+          {
+            "default": null,
+            "description": "API key (reserved)",
+            "name": "api_key",
+            "required": false,
+            "secret": true
+          }
+        ],
+        "resumable": false,
+        "settle_days": 7
       },
       {
         "description": "Open catalog of scholarly works, authors, and institutions",
@@ -86,7 +118,9 @@
     "ok": true,
     "value": [
       "biorxiv",
+      "biorxiv-details",
       "medrxiv",
+      "medrxiv-details",
       "openalex",
       "pubmed"
     ]

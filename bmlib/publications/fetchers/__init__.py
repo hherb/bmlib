@@ -25,7 +25,14 @@ from bmlib.publications.fetchers.registry import (
 )
 
 # Backward compat: kept as a constant for code that reads it at module level.
-ALL_SOURCES = ["pubmed", "biorxiv", "medrxiv", "openalex"]
+ALL_SOURCES = [
+    "pubmed",
+    "biorxiv",
+    "biorxiv-details",
+    "medrxiv",
+    "medrxiv-details",
+    "openalex",
+]
 
 __all__ = [
     "ALL_SOURCES",

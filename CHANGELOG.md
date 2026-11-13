@@ -106,6 +106,32 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Every bioRxiv and medRxiv posting, through `/details`** (#341, both
+  languages). Two new built-in sources, `biorxiv-details` and
+  `medrxiv-details`, read `https://api.biorxiv.org/details/`: one record per
+  posted version, filed under the day it was posted, with its `jatsxml` (an
+  `xml` full-text source) and `version`. `biorxiv` and `medrxiv` still read
+  `/pubs`, which lists only preprints already paired with a journal
+  publication, under the publication's date: on 2024-01-15, `/details` declared
+  28 medRxiv and 207 bioRxiv records against `/pubs`' 10 and 34, and recent
+  weekdays post 55-99 medRxiv and 190-440 bioRxiv versions a day. They are
+  separate sources, not a setting, because `download_days` is keyed by the
+  source's name; the records keep `source` `"medrxiv"`/`"biorxiv"`, so the two
+  populations meet on one row per DOI. **`sync(sources=None)` now includes
+  them**, as `ALL_SOURCES` does, so a caller that syncs every source fetches
+  every posting from now on (a caller listing its sources is unaffected).
+  `fetch_biorxiv(endpoint="details")` (Rust `BiorxivFetcher::with_endpoint`,
+  `Endpoint`) is the switch; `DETAILS_PAGE_SIZE` is **30**, not 100
+  (measured: a walk at 100 would complete a 60-posting day holding 30), and
+  `DETAILS_SETTLE_DAYS` is 7, a bound rather than a measurement.
+- **A bioRxiv/medRxiv full-text source carries the record's `version`**
+  (#341): `"2"` for a second posting, `None` for a `/pubs` record, which names
+  none, where it was always `None`. OpenAlex fills the same field with a kind
+  (`preprint`, `accepted`, `published`), so read it with the row's `source`. A
+  v2 posting stored over its v1 row keeps both versions' sources, since each
+  version's URLs differ; which is newest is the caller's to read from
+  `version`.
+
 - **`bmlib.library` / `bmlib::library`: a shared folder of research papers**
   (both languages, held together by `tests/fixtures/library_cases.json` and the
   sample library under `tests/fixtures/library/sample/`; the design is

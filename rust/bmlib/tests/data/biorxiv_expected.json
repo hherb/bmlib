@@ -12,7 +12,7 @@
       "doi": "10.1101/2024.01.01.123456",
       "extras": {
         "category": "neuro",
-        "published": "NA",
+        "published": "",
         "published_date": "",
         "published_journal": "",
         "server": "biorxiv"
@@ -22,13 +22,15 @@
           "format": "pdf",
           "open_access": true,
           "source": "biorxiv",
-          "url": "https://www.biorxiv.org/content/10.1101/2024.01.01.123456v2.full.pdf"
+          "url": "https://www.biorxiv.org/content/10.1101/2024.01.01.123456v2.full.pdf",
+          "version": "2"
         },
         {
           "format": "xml",
           "open_access": true,
           "source": "biorxiv",
-          "url": "https://x/jats"
+          "url": "https://x/jats",
+          "version": "2"
         }
       ],
       "is_open_access": true,
@@ -128,7 +130,8 @@
           "format": "pdf",
           "open_access": true,
           "source": "biorxiv",
-          "url": "https://www.biorxiv.org/content/10.1/xv1.full.pdf"
+          "url": "https://www.biorxiv.org/content/10.1/xv1.full.pdf",
+          "version": "1"
         }
       ],
       "is_open_access": true,
@@ -156,7 +159,8 @@
           "format": "pdf",
           "open_access": true,
           "source": "biorxiv",
-          "url": "https://www.biorxiv.org/content/10.1/xv3.full.pdf"
+          "url": "https://www.biorxiv.org/content/10.1/xv3.full.pdf",
+          "version": "3"
         }
       ],
       "is_open_access": true,
@@ -212,7 +216,8 @@
           "format": "pdf",
           "open_access": true,
           "source": "biorxiv",
-          "url": "https://www.biorxiv.org/content/10.1/xv2.full.pdf"
+          "url": "https://www.biorxiv.org/content/10.1/xv2.full.pdf",
+          "version": "2"
         }
       ],
       "is_open_access": true,
@@ -1455,7 +1460,7 @@
       "doi": "10.1101/x",
       "extras": {
         "category": "",
-        "published": "NA",
+        "published": "",
         "published_date": "2024-03-01",
         "published_journal": "Nature",
         "server": "biorxiv"
@@ -1576,7 +1581,7 @@
       "doi": null,
       "extras": {
         "category": "neuro",
-        "published": "NA",
+        "published": "",
         "published_date": "",
         "published_journal": "",
         "server": "biorxiv"
@@ -1597,7 +1602,7 @@
       "doi": null,
       "extras": {
         "category": "neuro",
-        "published": "NA",
+        "published": "",
         "published_date": "",
         "published_journal": "",
         "server": "biorxiv"
@@ -1618,7 +1623,7 @@
       "doi": null,
       "extras": {
         "category": "neuro",
-        "published": "NA",
+        "published": "",
         "published_date": "",
         "published_journal": "",
         "server": "biorxiv"
@@ -1639,7 +1644,7 @@
       "doi": null,
       "extras": {
         "category": "neuro",
-        "published": "NA",
+        "published": "",
         "published_date": "",
         "published_journal": "",
         "server": "biorxiv"
@@ -2107,6 +2112,333 @@
         "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0",
         "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/100"
       ]
+    }
+  },
+  {
+    "name": "fetch/details-thirty-to-a-page",
+    "ok": true,
+    "value": {
+      "error": null,
+      "note": null,
+      "progress": [
+        [
+          30,
+          60,
+          "in_progress"
+        ],
+        [
+          60,
+          60,
+          "in_progress"
+        ]
+      ],
+      "record_count": 60,
+      "records": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8",
+        "P9",
+        "P10",
+        "P11",
+        "P12",
+        "P13",
+        "P14",
+        "P15",
+        "P16",
+        "P17",
+        "P18",
+        "P19",
+        "P20",
+        "P21",
+        "P22",
+        "P23",
+        "P24",
+        "P25",
+        "P26",
+        "P27",
+        "P28",
+        "P29",
+        "P30",
+        "P31",
+        "P32",
+        "P33",
+        "P34",
+        "P35",
+        "P36",
+        "P37",
+        "P38",
+        "P39",
+        "P40",
+        "P41",
+        "P42",
+        "P43",
+        "P44",
+        "P45",
+        "P46",
+        "P47",
+        "P48",
+        "P49",
+        "P50",
+        "P51",
+        "P52",
+        "P53",
+        "P54",
+        "P55",
+        "P56",
+        "P57",
+        "P58",
+        "P59"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/0",
+        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/30",
+        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/60"
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-short-page-ends-the-walk",
+    "ok": true,
+    "value": {
+      "error": null,
+      "note": null,
+      "progress": [
+        [
+          30,
+          35,
+          "in_progress"
+        ],
+        [
+          35,
+          35,
+          "in_progress"
+        ]
+      ],
+      "record_count": 35,
+      "records": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5",
+        "P6",
+        "P7",
+        "P8",
+        "P9",
+        "P10",
+        "P11",
+        "P12",
+        "P13",
+        "P14",
+        "P15",
+        "P16",
+        "P17",
+        "P18",
+        "P19",
+        "P20",
+        "P21",
+        "P22",
+        "P23",
+        "P24",
+        "P25",
+        "P26",
+        "P27",
+        "P28",
+        "P29",
+        "P30",
+        "P31",
+        "P32",
+        "P33",
+        "P34"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0",
+        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/30"
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-quiet-day-as-served",
+    "ok": true,
+    "value": {
+      "error": null,
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "completed",
+      "urls": [
+        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "normalize/details-version-2",
+    "ok": true,
+    "value": {
+      "abstract": "A",
+      "authors": [
+        "Li, J.",
+        "Egger, J."
+      ],
+      "doi": "10.1101/2024.01.10.24301101",
+      "extras": {
+        "category": "health informatics",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "medRxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "medrxiv",
+          "url": "https://www.medrxiv.org/content/10.1101/2024.01.10.24301101v2.full.pdf",
+          "version": "2"
+        },
+        {
+          "format": "xml",
+          "open_access": true,
+          "source": "medrxiv",
+          "url": "https://www.medrxiv.org/content/early/2024/01/15/2024.01.10.24301101.source.xml",
+          "version": "2"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": "2024-01-15",
+      "source": "medrxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-falsy-names-none",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1/x",
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://www.biorxiv.org/content/10.1/xv1.full.pdf"
+        },
+        {
+          "format": "xml",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://x/j"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-true-names-true",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1/x",
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://www.biorxiv.org/content/10.1/xvTrue.full.pdf",
+          "version": "True"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/details-published-doi-kept",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1101/x",
+      "extras": {
+        "category": "",
+        "published": "10.1016/j.cmpb.2024.108013",
+        "published_date": "",
+        "published_journal": "",
+        "server": "medrxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "medrxiv",
+          "url": "https://www.medrxiv.org/content/10.1101/xv1.full.pdf",
+          "version": "1"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "medrxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/details-published-na-is-empty",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1101/x",
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "medrxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "medrxiv",
+          "url": "https://www.medrxiv.org/content/10.1101/xv1.full.pdf",
+          "version": "1"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "medrxiv",
+      "title": "T"
     }
   }
 ]

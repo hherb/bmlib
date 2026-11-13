@@ -3705,5 +3705,829 @@
         }
       ]
     }
+  },
+  {
+    "name": "fetch/details-thirty-to-a-page",
+    "fn": "fetch",
+    "args": {
+      "server": "medrxiv",
+      "endpoint": "details",
+      "payloads": [
+        {
+          "messages": [
+            {
+              "status": "ok",
+              "count": 30,
+              "total": "60"
+            }
+          ],
+          "collection": [
+            {
+              "doi": "10.1101/2026.11.04.000000",
+              "title": "P0",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000000.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000001",
+              "title": "P1",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000001.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000002",
+              "title": "P2",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000002.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000003",
+              "title": "P3",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000003.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000004",
+              "title": "P4",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000004.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000005",
+              "title": "P5",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000005.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000006",
+              "title": "P6",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000006.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000007",
+              "title": "P7",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000007.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000008",
+              "title": "P8",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000008.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000009",
+              "title": "P9",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000009.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000010",
+              "title": "P10",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000010.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000011",
+              "title": "P11",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000011.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000012",
+              "title": "P12",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000012.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000013",
+              "title": "P13",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000013.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000014",
+              "title": "P14",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000014.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000015",
+              "title": "P15",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000015.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000016",
+              "title": "P16",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000016.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000017",
+              "title": "P17",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000017.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000018",
+              "title": "P18",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000018.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000019",
+              "title": "P19",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000019.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000020",
+              "title": "P20",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000020.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000021",
+              "title": "P21",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000021.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000022",
+              "title": "P22",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000022.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000023",
+              "title": "P23",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000023.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000024",
+              "title": "P24",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000024.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000025",
+              "title": "P25",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000025.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000026",
+              "title": "P26",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000026.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000027",
+              "title": "P27",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000027.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000028",
+              "title": "P28",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000028.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000029",
+              "title": "P29",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000029.source.xml"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "status": "ok",
+              "count": 30,
+              "total": "60"
+            }
+          ],
+          "collection": [
+            {
+              "doi": "10.1101/2026.11.04.000030",
+              "title": "P30",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000030.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000031",
+              "title": "P31",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000031.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000032",
+              "title": "P32",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000032.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000033",
+              "title": "P33",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000033.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000034",
+              "title": "P34",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000034.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000035",
+              "title": "P35",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000035.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000036",
+              "title": "P36",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000036.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000037",
+              "title": "P37",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000037.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000038",
+              "title": "P38",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000038.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000039",
+              "title": "P39",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000039.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000040",
+              "title": "P40",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000040.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000041",
+              "title": "P41",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000041.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000042",
+              "title": "P42",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000042.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000043",
+              "title": "P43",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000043.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000044",
+              "title": "P44",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000044.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000045",
+              "title": "P45",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000045.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000046",
+              "title": "P46",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000046.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000047",
+              "title": "P47",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000047.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000048",
+              "title": "P48",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000048.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000049",
+              "title": "P49",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000049.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000050",
+              "title": "P50",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000050.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000051",
+              "title": "P51",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000051.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000052",
+              "title": "P52",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000052.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000053",
+              "title": "P53",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000053.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000054",
+              "title": "P54",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000054.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000055",
+              "title": "P55",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000055.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000056",
+              "title": "P56",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000056.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000057",
+              "title": "P57",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000057.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000058",
+              "title": "P58",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000058.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000059",
+              "title": "P59",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000059.source.xml"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "status": "no posts found"
+            }
+          ],
+          "collection": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-short-page-ends-the-walk",
+    "fn": "fetch",
+    "args": {
+      "endpoint": "details",
+      "payloads": [
+        {
+          "messages": [
+            {
+              "status": "ok",
+              "count": 30,
+              "total": "35"
+            }
+          ],
+          "collection": [
+            {
+              "doi": "10.1101/2026.11.04.000000",
+              "title": "P0",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000000.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000001",
+              "title": "P1",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000001.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000002",
+              "title": "P2",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000002.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000003",
+              "title": "P3",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000003.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000004",
+              "title": "P4",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000004.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000005",
+              "title": "P5",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000005.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000006",
+              "title": "P6",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000006.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000007",
+              "title": "P7",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000007.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000008",
+              "title": "P8",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000008.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000009",
+              "title": "P9",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000009.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000010",
+              "title": "P10",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000010.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000011",
+              "title": "P11",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000011.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000012",
+              "title": "P12",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000012.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000013",
+              "title": "P13",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000013.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000014",
+              "title": "P14",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000014.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000015",
+              "title": "P15",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000015.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000016",
+              "title": "P16",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000016.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000017",
+              "title": "P17",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000017.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000018",
+              "title": "P18",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000018.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000019",
+              "title": "P19",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000019.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000020",
+              "title": "P20",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000020.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000021",
+              "title": "P21",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000021.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000022",
+              "title": "P22",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000022.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000023",
+              "title": "P23",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000023.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000024",
+              "title": "P24",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000024.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000025",
+              "title": "P25",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000025.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000026",
+              "title": "P26",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000026.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000027",
+              "title": "P27",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000027.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000028",
+              "title": "P28",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000028.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000029",
+              "title": "P29",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000029.source.xml"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "status": "ok",
+              "count": 5,
+              "total": "35"
+            }
+          ],
+          "collection": [
+            {
+              "doi": "10.1101/2026.11.04.000030",
+              "title": "P30",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000030.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000031",
+              "title": "P31",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000031.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000032",
+              "title": "P32",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000032.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000033",
+              "title": "P33",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000033.source.xml"
+            },
+            {
+              "doi": "10.1101/2026.11.04.000034",
+              "title": "P34",
+              "version": "1",
+              "date": "2026-11-04",
+              "jatsxml": "https://www.medrxiv.org/content/early/2026/11/04/2026.11.04.000034.source.xml"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/details-quiet-day-as-served",
+    "fn": "fetch",
+    "args": {
+      "endpoint": "details",
+      "payloads": [
+        {
+          "messages": [
+            {
+              "status": "no posts found"
+            }
+          ],
+          "collection": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "normalize/details-version-2",
+    "fn": "normalize",
+    "args": {
+      "server": "medrxiv",
+      "raw": {
+        "doi": "10.1101/2024.01.10.24301101",
+        "title": "T",
+        "authors": "Li, J.; Egger, J.",
+        "date": "2024-01-15",
+        "version": "2",
+        "type": "PUBLISHAHEADOFPRINT",
+        "license": "cc_by",
+        "category": "health informatics",
+        "jatsxml": "https://www.medrxiv.org/content/early/2024/01/15/2024.01.10.24301101.source.xml",
+        "abstract": "A",
+        "funder": "NA",
+        "published": "NA",
+        "server": "medRxiv"
+      }
+    }
+  },
+  {
+    "name": "normalize/version-falsy-names-none",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "doi": "10.1/x",
+        "title": "T",
+        "version": 0,
+        "jatsxml": "https://x/j"
+      }
+    }
+  },
+  {
+    "name": "normalize/version-true-names-true",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "doi": "10.1/x",
+        "title": "T",
+        "version": true
+      }
+    }
+  },
+  {
+    "name": "normalize/details-published-doi-kept",
+    "fn": "normalize",
+    "args": {
+      "server": "medrxiv",
+      "raw": {
+        "doi": "10.1101/x",
+        "title": "T",
+        "version": "1",
+        "published": "10.1016/j.cmpb.2024.108013"
+      }
+    }
+  },
+  {
+    "name": "normalize/details-published-na-is-empty",
+    "fn": "normalize",
+    "args": {
+      "server": "medrxiv",
+      "raw": {
+        "doi": "10.1101/x",
+        "title": "T",
+        "version": "1",
+        "published": "NA"
+      }
+    }
   }
 ]

@@ -25,6 +25,16 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`/details`: every bioRxiv and medRxiv posting** (#341, as in Python; the
+  argument is the root `CHANGELOG.md`'s). `builtin_registry` gains
+  `biorxiv-details` and `medrxiv-details` (`DETAILS_SETTLE_DAYS`, 7);
+  `Endpoint` (`Pubs`, the default, and `Details`), `DETAILS_BASE_URL`,
+  `DETAILS_PAGE_SIZE` (30), `BiorxivFetcher::with_endpoint`, and
+  `HttpPageSource::endpoint` (a new public field, so a struct literal must name
+  it). `PageSource::endpoint` has a default of `Pubs`, so an existing
+  implementation compiles unchanged. A full-text source carries the record's
+  `version` (`None` where it named none).
+
 - **PMC Open Data's record and JATS** (#750, #751, as in Python; the argument
   is the root `CHANGELOG.md`'s): `FullTextService::pmc_open_data_record`,
   `PmcOpenDataRecord`, `PDF_CHECKSUM_MISMATCH`; Tier 1c asks the bucket for the

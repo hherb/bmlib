@@ -26,7 +26,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from bmlib.db import connect_sqlite, execute, fetch_one, table_exists
-from bmlib.publications.fetchers.biorxiv import PAGE_SIZE, _normalize, fetch_biorxiv
+from bmlib.publications.fetchers.biorxiv import (
+    BIORXIV_SETTLE_DAYS,
+    DETAILS_SETTLE_DAYS,
+    PAGE_SIZE,
+    _normalize,
+    fetch_biorxiv,
+)
+from bmlib.publications.fetchers.registry import get_source
 from bmlib.publications.models import (
     AuthorAffiliation,
     DownloadDay,
@@ -48,7 +55,7 @@ from bmlib.publications.storage import (
     get_publication_by_pmid,
     store_publication,
 )
-from bmlib.publications.sync import _record_to_fulltext_sources
+from bmlib.publications.sync import _record_to_fulltext_sources, sync
 
 # ---------------------------------------------------------------------------
 # Task 1: Data model tests
@@ -1602,6 +1609,172 @@ class TestBiorxivWalkIsReconciledAgainstTheTotal:
 
         assert result.status == "failed"
         assert result.error is not None
+
+
+def _details_record(doi: str, version: str, posted: str) -> dict[str, str]:
+    """A ``/details`` record in the shape served on 2026-11-13, abstract shortened."""
+    return {
+        "doi": doi,
+        "title": f"Preprint {doi} v{version}",
+        "authors": "Li, J.; Egger, J.",
+        "author_corresponding": "Jan Egger",
+        "author_corresponding_institution": "University Hospital Essen",
+        "date": posted,
+        "version": version,
+        "type": "PUBLISHAHEADOFPRINT",
+        "license": "cc_by",
+        "category": "health informatics",
+        "jatsxml": (
+            f"https://www.medrxiv.org/content/early/{posted.replace('-', '/')}"
+            f"/{doi.removeprefix('10.1101/')}.source.xml"
+        ),
+        "abstract": "An abstract.",
+        "funder": "NA",
+        "published": "NA",
+        "server": "medRxiv",
+    }
+
+
+class TestTheDetailsEndpoint:
+    """#341: ``/details`` lists every posted version, 30 to a page."""
+
+    def _client(self, *pages):
+        client = MagicMock()
+        client.get.side_effect = list(pages)
+        return client
+
+    def test_a_details_day_is_walked_in_pages_of_thirty(self):
+        # 60 declared: read with /pubs' page size of 100, the first page of 30
+        # is "short", the walk stops, and 30 of 60 is a tolerated shortfall,
+        # so the day would complete holding half its postings.
+        records = [
+            _details_record(f"10.1101/2026.11.04.{i:06d}", "1", "2026-11-04") for i in range(60)
+        ]
+        client = self._client(
+            _make_api_response(records[:30], total=60),
+            _make_api_response(records[30:], total=60),
+            _make_api_response([], total=60),
+        )
+        collected = []
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("bmlib.publications.fetchers.biorxiv.time.sleep", lambda _s: None)
+            result = fetch_biorxiv(
+                client,
+                date(2026, 11, 4),
+                on_record=collected.append,
+                server="medrxiv",
+                endpoint="details",
+            )
+
+        assert (result.status, result.record_count, result.note) == ("completed", 60, None)
+        assert len(collected) == 60
+        assert [c.args[0] for c in client.get.call_args_list] == [
+            f"https://api.biorxiv.org/details/medrxiv/2026-11-04/2026-11-04/{cursor}"
+            for cursor in (0, 30, 60)
+        ]
+
+    def test_the_quiet_day_as_served_completes_empty(self):
+        quiet = MagicMock()
+        quiet.json.return_value = {"messages": [{"status": "no posts found"}], "collection": []}
+        quiet.raise_for_status = MagicMock()
+
+        result = fetch_biorxiv(
+            self._client(quiet), date(2026, 11, 20), on_record=MagicMock(), endpoint="details"
+        )
+
+        assert (result.status, result.record_count, result.error) == ("completed", 0, None)
+
+    def test_a_posting_carries_its_version_onto_both_sources(self):
+        record = _normalize(
+            _details_record("10.1101/2024.01.10.24301101", "2", "2024-01-15"), "medrxiv"
+        )
+
+        assert [(s.format, s.url, s.version) for s in record.fulltext_sources] == [
+            (
+                "pdf",
+                "https://www.medrxiv.org/content/10.1101/2024.01.10.24301101v2.full.pdf",
+                "2",
+            ),
+            (
+                "xml",
+                "https://www.medrxiv.org/content/early/2024/01/15/2024.01.10.24301101.source.xml",
+                "2",
+            ),
+        ]
+        assert record.publication_date == "2024-01-15"
+
+    def test_na_is_no_journal_doi(self):
+        # /details sends "NA" for a preprint never published; it is not a DOI.
+        unpublished = _details_record("10.1101/2024.01.10.24301101", "1", "2024-01-15")
+        published = {**unpublished, "published": "10.1016/j.cmpb.2024.108013"}
+
+        assert _normalize(unpublished, "medrxiv").extras["published"] == ""
+        assert _normalize(published, "medrxiv").extras["published"] == "10.1016/j.cmpb.2024.108013"
+
+    def test_a_pubs_record_names_no_version(self):
+        record = _normalize(_pubs_record(), "medrxiv")
+
+        assert [s.version for s in record.fulltext_sources] == [None]
+
+    def test_an_unknown_endpoint_is_raised_not_a_failed_day(self):
+        with pytest.raises(ValueError, match="unknown bioRxiv endpoint 'detail'"):
+            fetch_biorxiv(MagicMock(), date(2026, 11, 4), on_record=MagicMock(), endpoint="detail")
+
+    @pytest.mark.parametrize(
+        ("name", "url_prefix", "settle_days"),
+        [
+            ("biorxiv", "https://api.biorxiv.org/pubs/biorxiv/", BIORXIV_SETTLE_DAYS),
+            ("medrxiv", "https://api.biorxiv.org/pubs/medrxiv/", BIORXIV_SETTLE_DAYS),
+            ("biorxiv-details", "https://api.biorxiv.org/details/biorxiv/", DETAILS_SETTLE_DAYS),
+            ("medrxiv-details", "https://api.biorxiv.org/details/medrxiv/", DETAILS_SETTLE_DAYS),
+        ],
+    )
+    def test_each_registered_source_reads_its_endpoint(self, name, url_prefix, settle_days):
+        descriptor, fetcher = get_source(name)
+        client = self._client(_make_api_response([], total=0))
+
+        result = fetcher(client, date(2026, 11, 4), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert client.get.call_args.args[0].startswith(url_prefix)
+        assert descriptor.settle_days == settle_days
+
+    def test_a_later_version_is_stored_on_the_same_row_beside_the_first(self):
+        conn = connect_sqlite(":memory:")
+        doi = "10.1101/2024.01.10.24301101"
+        pages = {
+            "2024-01-12": [_details_record(doi, "1", "2024-01-12")],
+            "2024-01-15": [_details_record(doi, "2", "2024-01-15")],
+        }
+
+        def fetcher(_client, target_date, *, on_record, on_progress=None, **_config):
+            day = target_date.isoformat()
+            client = self._client(
+                _make_api_response(pages.get(day, []), total=len(pages.get(day, [])))
+            )
+            return fetch_biorxiv(
+                client, target_date, on_record=on_record, server="medrxiv", endpoint="details"
+            )
+
+        report = sync(
+            conn,
+            sources=["medrxiv-details"],
+            date_from=date(2024, 1, 12),
+            date_to=date(2024, 1, 15),
+            _fetcher_override={"medrxiv-details": fetcher},
+        )
+
+        assert report.errors == []
+        publication = get_publication_by_doi(conn, doi)
+        assert publication is not None
+        rows = conn.execute(
+            "SELECT format, version FROM fulltext_sources WHERE publication_id = ?"
+            " ORDER BY version, format",
+            (publication.id,),
+        ).fetchall()
+        assert [tuple(r) for r in rows] == [("pdf", "1"), ("xml", "1"), ("pdf", "2"), ("xml", "2")]
+        assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publications")["n"] == 1
 
 
 # ---------------------------------------------------------------------------

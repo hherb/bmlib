@@ -166,9 +166,34 @@ def _ensure_builtins() -> None:
     _builtins_registered = True
 
 
+def _biorxiv_fetcher(server: str, endpoint: str) -> Callable[..., Any]:
+    """One bioRxiv/medRxiv server through one endpoint, in the registry's calling convention."""
+    from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
+
+    def fetcher(
+        client: Any,
+        target_date: Any,
+        *,
+        on_record: Callable[..., Any],
+        on_progress: Callable[..., Any] | None = None,
+        **config: Any,
+    ) -> Any:
+        return fetch_biorxiv(
+            client,
+            target_date,
+            on_record=on_record,
+            on_progress=on_progress,
+            server=server,
+            api_key=config.get("api_key"),
+            endpoint=endpoint,
+        )
+
+    return fetcher
+
+
 def _register_builtins() -> None:
     """Register all built-in source fetchers."""
-    from bmlib.publications.fetchers.biorxiv import BIORXIV_SETTLE_DAYS, fetch_biorxiv
+    from bmlib.publications.fetchers.biorxiv import BIORXIV_SETTLE_DAYS, DETAILS_SETTLE_DAYS
     from bmlib.publications.fetchers.openalex import fetch_openalex
     from bmlib.publications.fetchers.pubmed import fetch_pubmed
 
@@ -185,45 +210,37 @@ def _register_builtins() -> None:
         fetch_pubmed,
     )
 
-    _put(
-        SourceDescriptor(
-            name="biorxiv",
-            display_name="bioRxiv",
-            description="Preprint server for biology",
-            params=[
-                SourceParam("api_key", "API key (reserved)", secret=True),
-            ],
-            settle_days=BIORXIV_SETTLE_DAYS,
-        ),
-        lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
-            client,
-            target_date,
-            on_record=on_record,
-            on_progress=on_progress,
-            server="biorxiv",
-            api_key=config.get("api_key"),
-        ),
-    )
-
-    _put(
-        SourceDescriptor(
-            name="medrxiv",
-            display_name="medRxiv",
-            description="Preprint server for health sciences",
-            params=[
-                SourceParam("api_key", "API key (reserved)", secret=True),
-            ],
-            settle_days=BIORXIV_SETTLE_DAYS,
-        ),
-        lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
-            client,
-            target_date,
-            on_record=on_record,
-            on_progress=on_progress,
-            server="medrxiv",
-            api_key=config.get("api_key"),
-        ),
-    )
+    # Four sources over one fetcher: each server through each endpoint. The
+    # `*-details` sources are separate names, not a setting, because the day
+    # ledger is keyed by name (see the biorxiv module docstring, #341).
+    for server, display, description in (
+        ("biorxiv", "bioRxiv", "Preprint server for biology"),
+        ("medrxiv", "medRxiv", "Preprint server for health sciences"),
+    ):
+        _put(
+            SourceDescriptor(
+                name=server,
+                display_name=display,
+                description=description,
+                params=[
+                    SourceParam("api_key", "API key (reserved)", secret=True),
+                ],
+                settle_days=BIORXIV_SETTLE_DAYS,
+            ),
+            _biorxiv_fetcher(server, "pubs"),
+        )
+        _put(
+            SourceDescriptor(
+                name=f"{server}-details",
+                display_name=f"{display} (all postings)",
+                description=f"{description} (every version, by the day it was posted)",
+                params=[
+                    SourceParam("api_key", "API key (reserved)", secret=True),
+                ],
+                settle_days=DETAILS_SETTLE_DAYS,
+            ),
+            _biorxiv_fetcher(server, "details"),
+        )
 
     _put(
         SourceDescriptor(
