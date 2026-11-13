@@ -90,9 +90,12 @@ def _named(info: PaperInfo, n: int) -> str:
     else:
         ident = "no identifier"
     year = str(info.year) if info.year is not None and 1000 <= info.year <= 9999 else ""
-    author = (info.first_author or "").strip()[:MAX_AUTHOR_CHARS_IN_NAME]
+    # NFC before any cut by characters, so NFD input (Swift, PDFKit) fits the same.
+    author = unicodedata.normalize("NFC", info.first_author or "").strip()
+    author = author[:MAX_AUTHOR_CHARS_IN_NAME]
     head = " ".join(p for p in (year, author) if p)
-    title = _cut_title((info.title or "").strip(), MAX_TITLE_CHARS_IN_NAME).rstrip()
+    title = unicodedata.normalize("NFC", info.title or "").strip()
+    title = _cut_title(title, MAX_TITLE_CHARS_IN_NAME).rstrip()
     body = _sanitise(f"{head} – {title}" if head and title else head or title)
     ident = _sanitise(ident)
     suffix = f"({ident})" if not body else f" ({ident})"

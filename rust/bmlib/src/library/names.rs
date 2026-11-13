@@ -92,7 +92,9 @@ fn named(info: &PaperInfo, n: u32) -> String {
     } else {
         "no identifier".to_owned()
     };
-    let author = info.first_author.as_deref().map(|a| {
+    // NFC before any cut by characters, so NFD input (Swift, PDFKit) fits the same.
+    let nfc = |s: &str| s.nfc().collect::<String>();
+    let author = info.first_author.as_deref().map(nfc).map(|a| {
         a.trim()
             .chars()
             .take(MAX_AUTHOR_CHARS_IN_NAME)
@@ -107,7 +109,7 @@ fn named(info: &PaperInfo, n: u32) -> String {
         .flatten()
         .filter(|s| !s.is_empty());
     let head = head.collect::<Vec<_>>().join(" ");
-    let title = info.title.as_deref().map_or(String::new(), |t| {
+    let title = info.title.as_deref().map(nfc).map_or(String::new(), |t| {
         cut_title(t.trim(), MAX_TITLE_CHARS_IN_NAME)
             .trim_end()
             .to_owned()

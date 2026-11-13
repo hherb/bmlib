@@ -564,6 +564,16 @@
    "pmcid": null,
    "n": 1000,
    "expect": "2024 Smith – Metformin (PMID 111) (1000)"
+  },
+  {
+   "name": "NFD title is normalised before the 60-character cut",
+   "year": null,
+   "first_author": null,
+   "title": "Études cliniques de la créatinine chez les âgés, une revue é",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "Études cliniques de la créatinine chez les âgés, une revue é (PMID 1)"
   }
  ],
  "records": [
