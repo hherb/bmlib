@@ -48,6 +48,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`FullTextService` reads its three remaining JSON bodies as the Rust port
+  does** (#753). The Europe PMC search, NCBI's ID Converter and Unpaywall were
+  decoded by httpx's `json()`, which accepts a UTF-8 BOM, `NaN`/`Infinity`, a
+  number past the largest float, a lone surrogate escape and nesting past 127
+  levels; `serde_json` refuses each, so one body was an answer in Python and
+  a fault in Rust. They now go through `strict_json_loads`, as PMC Open Data's
+  record has since #752. A refused body is a `JSONDecodeError` fault in
+  `tier_faults` in both languages, and the tier falls through; a body that is
+  not UTF-8 is a `UnicodeDecodeError` fault in both, where Rust had named it
+  `TransportError`. A parity fix: no such body has been seen from these
+  services. Nesting past Python's recursion limit still differs (#758).
 - **The PDF beside JATS reports the failure a later try may cure, and a 408
   may pass** (#746), in Python and the Rust port alike. With no PDF saved,
   the result carried the first failure, so a 403 from one source then a 503

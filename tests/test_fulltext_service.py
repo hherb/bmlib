@@ -72,7 +72,7 @@ def _idconv_miss() -> MagicMock:
     """NCBI's ID Converter with no record for the identifier."""
     resp = MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {"status": "ok", "records": []}
+    resp.content = json.dumps({"status": "ok", "records": []}).encode()
     return resp
 
 
@@ -112,9 +112,9 @@ class TestFetchEuropePMC:
         # Search for PDF render URL (returns no free PDF)
         mock_search_no_pdf = MagicMock()
         mock_search_no_pdf.status_code = 200
-        mock_search_no_pdf.json.return_value = {
-            "resultList": {"result": [{"pmcid": "PMC123", "inEPMC": "Y"}]}
-        }
+        mock_search_no_pdf.content = json.dumps(
+            {"resultList": {"result": [{"pmcid": "PMC123", "inEPMC": "Y"}]}}
+        ).encode()
         mock_unpaywall_404 = MagicMock()
         mock_unpaywall_404.status_code = 404
 
@@ -145,9 +145,9 @@ class TestDiscoverPMCID:
         # Search response: paper is in EPMC with a PMCID
         mock_search = MagicMock()
         mock_search.status_code = 200
-        mock_search.json.return_value = {
-            "resultList": {"result": [{"pmcid": "PMC999", "inEPMC": "Y", "doi": "10.1/test"}]}
-        }
+        mock_search.content = json.dumps(
+            {"resultList": {"result": [{"pmcid": "PMC999", "inEPMC": "Y", "doi": "10.1/test"}]}}
+        ).encode()
 
         # Fulltext XML response
         mock_xml = MagicMock()
@@ -167,9 +167,9 @@ class TestDiscoverPMCID:
 
         mock_search = MagicMock()
         mock_search.status_code = 200
-        mock_search.json.return_value = {
-            "resultList": {"result": [{"pmcid": "PMC888", "inEPMC": "Y"}]}
-        }
+        mock_search.content = json.dumps(
+            {"resultList": {"result": [{"pmcid": "PMC888", "inEPMC": "Y"}]}}
+        ).encode()
         mock_xml = MagicMock()
         mock_xml.status_code = 200
         mock_xml.content = xml_data
@@ -184,9 +184,9 @@ class TestDiscoverPMCID:
         """Paper found in search but not in EPMC -> skip to Unpaywall."""
         mock_search = MagicMock()
         mock_search.status_code = 200
-        mock_search.json.return_value = {
-            "resultList": {"result": [{"pmcid": None, "inEPMC": "N", "doi": "10.1/test"}]}
-        }
+        mock_search.content = json.dumps(
+            {"resultList": {"result": [{"pmcid": None, "inEPMC": "N", "doi": "10.1/test"}]}}
+        ).encode()
         mock_unpaywall_404 = MagicMock()
         mock_unpaywall_404.status_code = 404
 
@@ -210,9 +210,9 @@ class TestFetchUnpaywall:
         # Search for PDF render URL (returns no free PDF)
         mock_search_no_pdf = MagicMock()
         mock_search_no_pdf.status_code = 200
-        mock_search_no_pdf.json.return_value = {
-            "resultList": {"result": [{"pmcid": "PMC123", "inEPMC": "Y"}]}
-        }
+        mock_search_no_pdf.content = json.dumps(
+            {"resultList": {"result": [{"pmcid": "PMC123", "inEPMC": "Y"}]}}
+        ).encode()
 
         unpaywall_json = {
             "best_oa_location": {
@@ -224,7 +224,7 @@ class TestFetchUnpaywall:
         }
         mock_unpaywall = MagicMock()
         mock_unpaywall.status_code = 200
-        mock_unpaywall.json.return_value = unpaywall_json
+        mock_unpaywall.content = json.dumps(unpaywall_json).encode()
 
         service = FullTextService(email="test@example.com")
         with patch.object(
@@ -249,7 +249,7 @@ class TestFetchDOIFallback:
         # No PMC ID -> discovery search returns no match -> Unpaywall fails -> DOI fallback
         mock_search_empty = MagicMock()
         mock_search_empty.status_code = 200
-        mock_search_empty.json.return_value = {"resultList": {"result": []}}
+        mock_search_empty.content = json.dumps({"resultList": {"result": []}}).encode()
         mock_unpaywall_404 = MagicMock()
         mock_unpaywall_404.status_code = 404
 
@@ -560,7 +560,9 @@ class TestKnownSources:
                 return MagicMock(status_code=403)
             if url.startswith("https://api.unpaywall.org/"):
                 reply = MagicMock(status_code=200)
-                reply.json.return_value = {"best_oa_location": {"url_for_pdf": "https://repo/land"}}
+                reply.content = json.dumps(
+                    {"best_oa_location": {"url_for_pdf": "https://repo/land"}}
+                ).encode()
                 return reply
             if url == "https://repo/land":
                 return MagicMock(status_code=200, content=b"<html>landing</html>")
@@ -600,11 +602,13 @@ class TestKnownSources:
                         ]
                     }
                 reply = MagicMock(status_code=200)
-                reply.json.return_value = {"resultList": {"result": [hit]}}
+                reply.content = json.dumps({"resultList": {"result": [hit]}}).encode()
                 return reply
             if url.startswith("https://api.unpaywall.org/") and unpaywall_pdf:
                 reply = MagicMock(status_code=200)
-                reply.json.return_value = {"best_oa_location": {"url_for_pdf": unpaywall_pdf}}
+                reply.content = json.dumps(
+                    {"best_oa_location": {"url_for_pdf": unpaywall_pdf}}
+                ).encode()
                 return reply
             return MagicMock(status_code=403 if url == "https://pub/x.pdf" else 404)
 
@@ -766,9 +770,7 @@ class TestPmcOpenDataRecord:
     def _answers(*bodies: tuple[int, bytes]) -> list[MagicMock]:
         answers = []
         for status, body in bodies:
-            resp = MagicMock(status_code=status, content=body)
-            resp.json.side_effect = lambda body=body: json.loads(body)
-            answers.append(resp)
+            answers.append(MagicMock(status_code=status, content=body))
         return answers
 
     def _lookup(self, *bodies: tuple[int, bytes]) -> tuple[object, list[str]]:
@@ -979,11 +981,13 @@ class TestPdfWithJats:
                     ]
                 }
                 reply = MagicMock(status_code=200)
-                reply.json.return_value = {"resultList": {"result": [hit]}}
+                reply.content = json.dumps({"resultList": {"result": [hit]}}).encode()
                 return reply
             if url.startswith("https://api.unpaywall.org/") and unpaywall_pdf:
                 reply = MagicMock(status_code=200)
-                reply.json.return_value = {"best_oa_location": {"url_for_pdf": unpaywall_pdf}}
+                reply.content = json.dumps(
+                    {"best_oa_location": {"url_for_pdf": unpaywall_pdf}}
+                ).encode()
                 return reply
             return MagicMock(status_code=404)
 
@@ -1363,12 +1367,15 @@ class TestPdfWithJats:
         def answer(url, *args, **kwargs):
             if "/search?" in url:
                 reply = route(url)
-                hit = reply.json.return_value["resultList"]["result"][0]
-                hit["inEPMC"] = "N"
+                body = json.loads(reply.content)
+                body["resultList"]["result"][0]["inEPMC"] = "N"
+                reply.content = json.dumps(body).encode()
                 return reply
             if url == NCBI_IDCONV_URL:
                 reply = MagicMock(status_code=200)
-                reply.json.return_value = {"status": "ok", "records": [{"pmcid": "PMC123"}]}
+                reply.content = json.dumps(
+                    {"status": "ok", "records": [{"pmcid": "PMC123"}]}
+                ).encode()
                 return reply
             return route(url)
 
@@ -1637,14 +1644,14 @@ class TestCacheIntegration:
         # Europe PMC search returns nothing
         mock_search_empty = MagicMock()
         mock_search_empty.status_code = 200
-        mock_search_empty.json.return_value = {"resultList": {"result": []}}
+        mock_search_empty.content = json.dumps({"resultList": {"result": []}}).encode()
 
         # Unpaywall returns a PDF URL
         mock_unpaywall = MagicMock()
         mock_unpaywall.status_code = 200
-        mock_unpaywall.json.return_value = {
-            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
-        }
+        mock_unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}}
+        ).encode()
 
         # PDF download response
         mock_pdf = MagicMock()
@@ -1674,13 +1681,13 @@ class TestCacheIntegration:
         """If downloaded PDF data is invalid, file_path stays None but pdf_url remains."""
         mock_search_empty = MagicMock()
         mock_search_empty.status_code = 200
-        mock_search_empty.json.return_value = {"resultList": {"result": []}}
+        mock_search_empty.content = json.dumps({"resultList": {"result": []}}).encode()
 
         mock_unpaywall = MagicMock()
         mock_unpaywall.status_code = 200
-        mock_unpaywall.json.return_value = {
-            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
-        }
+        mock_unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}}
+        ).encode()
 
         # Invalid PDF data (HTML error page)
         mock_pdf = MagicMock()
@@ -1861,7 +1868,7 @@ class TestBodylessJATS:
         # XML first, then the Europe PMC search that finds nothing.
         mock_search = MagicMock()
         mock_search.status_code = 200
-        mock_search.json.return_value = {"resultList": {"result": []}}
+        mock_search.content = json.dumps({"resultList": {"result": []}}).encode()
         with patch.object(
             service, "_http_get", side_effect=[mock_xml, mock_search, _idconv_miss(), mock_search]
         ):
@@ -1888,7 +1895,7 @@ class TestBodylessJATS:
         ]
         mock_search = MagicMock()
         mock_search.status_code = 200
-        mock_search.json.return_value = {"resultList": {"result": []}}
+        mock_search.content = json.dumps({"resultList": {"result": []}}).encode()
 
         service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
         with patch.object(
@@ -1913,7 +1920,7 @@ class TestBodylessJATS:
         ]
         mock_search = MagicMock()
         mock_search.status_code = 200
-        mock_search.json.return_value = {"resultList": {"result": []}}
+        mock_search.content = json.dumps({"resultList": {"result": []}}).encode()
 
         cache = FullTextCache(cache_dir=tmp_path)
         service = FullTextService(email="test@example.com", cache=cache)
@@ -1987,7 +1994,7 @@ class TestBodylessEuropePMC:
             }
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"resultList": {"result": [hit] if hit else []}}
+        resp.content = json.dumps({"resultList": {"result": [hit] if hit else []}}).encode()
         return resp
 
     def test_known_pmc_id_falls_through_to_the_free_pdf(self, tmp_path):
@@ -2309,7 +2316,7 @@ class TestIDConverter:
         """One converter record, as the API returns it."""
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"status": "ok", "records": [fields]}
+        resp.content = json.dumps({"status": "ok", "records": [fields]}).encode()
         return resp
 
     def test_a_pmcid_is_returned(self):
@@ -2385,7 +2392,7 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"status": "ok", "records": []}
+        resp.content = json.dumps({"status": "ok", "records": []}).encode()
         with patch.object(service, "_http_get", return_value=resp):
             assert (
                 service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
@@ -2420,12 +2427,11 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.side_effect = ValueError("not json")
+        resp.content = b"not json"
+        failures = _TierFailures.unreported()
         with patch.object(service, "_http_get", return_value=resp):
-            assert (
-                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
-                is None
-            )
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=failures) is None
+        assert failures.faults == ["JSONDecodeError"]  # a fault, not an absence
 
     def test_the_api_key_is_sent_only_when_configured(self):
         without = FullTextService(email="test@example.com")
@@ -2633,7 +2639,7 @@ class TestPMCIDFallbackChain:
             }
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"resultList": {"result": [hit] if hit else []}}
+        resp.content = json.dumps({"resultList": {"result": [hit] if hit else []}}).encode()
         return resp
 
     @staticmethod
@@ -2641,7 +2647,7 @@ class TestPMCIDFallbackChain:
         resp = MagicMock()
         resp.status_code = 200
         records = [{"pmcid": pmcid}] if pmcid else []
-        resp.json.return_value = {"status": "ok", "records": records}
+        resp.content = json.dumps({"status": "ok", "records": records}).encode()
         return resp
 
     @staticmethod
@@ -3340,7 +3346,7 @@ class TestAnExhaustedChainReportsItself:
         """
         empty_search = MagicMock()
         empty_search.status_code = 200
-        empty_search.json.return_value = {"resultList": {"result": []}}
+        empty_search.content = json.dumps({"resultList": {"result": []}}).encode()
         unpaywall_404 = MagicMock()
         unpaywall_404.status_code = 404
 
@@ -3458,7 +3464,7 @@ class TestAnExhaustedChainReportsItself:
         full_text.content = (FIXTURES / "sample_article.xml").read_bytes()
         idconv_hit = MagicMock()
         idconv_hit.status_code = 200
-        idconv_hit.json.return_value = {"records": [{"pmcid": "PMC123", "live": "true"}]}
+        idconv_hit.content = json.dumps({"records": [{"pmcid": "PMC123", "live": "true"}]}).encode()
 
         service = FullTextService(email="test@example.com")
         with (
@@ -3492,26 +3498,28 @@ class TestAnExhaustedChainReportsItself:
         down.status_code = 503
         search = MagicMock()
         search.status_code = 200
-        search.json.return_value = {
-            "resultList": {
-                "result": [
-                    {
-                        "pmcid": "PMC123",
-                        "inEPMC": "N",
-                        "fullTextUrlList": {
-                            "fullTextUrl": [
-                                {
-                                    "site": "Europe_PMC",
-                                    "documentStyle": "pdf",
-                                    "availabilityCode": "OA",
-                                    "url": "https://ex/a.pdf",
-                                }
-                            ]
-                        },
-                    }
-                ]
+        search.content = json.dumps(
+            {
+                "resultList": {
+                    "result": [
+                        {
+                            "pmcid": "PMC123",
+                            "inEPMC": "N",
+                            "fullTextUrlList": {
+                                "fullTextUrl": [
+                                    {
+                                        "site": "Europe_PMC",
+                                        "documentStyle": "pdf",
+                                        "availabilityCode": "OA",
+                                        "url": "https://ex/a.pdf",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
             }
-        }
+        ).encode()
         service = FullTextService(email="test@example.com", convert_pdfs=False)
         with (
             caplog.at_level("WARNING"),
@@ -3808,12 +3816,12 @@ class TestACorruptCacheEntryHeals:
     def _resolve_via_unpaywall_pdf(self, service) -> object:
         search_empty = MagicMock()
         search_empty.status_code = 200
-        search_empty.json.return_value = {"resultList": {"result": []}}
+        search_empty.content = json.dumps({"resultList": {"result": []}}).encode()
         unpaywall = MagicMock()
         unpaywall.status_code = 200
-        unpaywall.json.return_value = {
-            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
-        }
+        unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}}
+        ).encode()
         pdf = MagicMock()
         pdf.status_code = 200
         pdf.content = self.PDF_MAGIC
@@ -3976,10 +3984,12 @@ class TestCacheWriteFailuresAreReported:
 
         empty_search = MagicMock()
         empty_search.status_code = 200
-        empty_search.json.return_value = {"resultList": {"result": []}}
+        empty_search.content = json.dumps({"resultList": {"result": []}}).encode()
         unpaywall = MagicMock()
         unpaywall.status_code = 200
-        unpaywall.json.return_value = {"best_oa_location": {"url_for_pdf": "http://x/a.pdf"}}
+        unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "http://x/a.pdf"}}
+        ).encode()
         pdf = MagicMock()
         pdf.status_code = 200
         pdf.content = b"%PDF-1.4 fake"
@@ -4006,10 +4016,12 @@ class TestCacheWriteFailuresAreReported:
 
         empty_search = MagicMock()
         empty_search.status_code = 200
-        empty_search.json.return_value = {"resultList": {"result": []}}
+        empty_search.content = json.dumps({"resultList": {"result": []}}).encode()
         unpaywall = MagicMock()
         unpaywall.status_code = 200
-        unpaywall.json.return_value = {"best_oa_location": {"url_for_pdf": "http://x/a.pdf"}}
+        unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "http://x/a.pdf"}}
+        ).encode()
         pdf = MagicMock()
         pdf.status_code = 200
         pdf.content = b"%PDF-1.4 fake"
@@ -4231,13 +4243,13 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
         """Europe PMC finds nothing; Unpaywall offers a free PDF."""
         search = MagicMock()
         search.status_code = 200
-        search.json.return_value = {"resultList": {"result": []}}
+        search.content = json.dumps({"resultList": {"result": []}}).encode()
 
         unpaywall = MagicMock()
         unpaywall.status_code = 200
-        unpaywall.json.return_value = {
-            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
-        }
+        unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}}
+        ).encode()
         return [search, _idconv_miss(), unpaywall]
 
     def test_a_pdf_left_as_a_url_does_not_blame_a_missing_identifier(
@@ -4508,7 +4520,9 @@ class TestFreePDFAvailability:
         """End to end: the tier fires where it used to fall through to a link."""
         search = MagicMock()
         search.status_code = 200
-        search.json.return_value = {"resultList": {"result": [dict(self._hit(), inEPMC="N")]}}
+        search.content = json.dumps(
+            {"resultList": {"result": [dict(self._hit(), inEPMC="N")]}}
+        ).encode()
         service = FullTextService(email="test@example.com", convert_pdfs=False)
         with patch.object(service, "_http_get", side_effect=[search, _idconv_miss()]):
             result = service.fetch_fulltext(doi="10.1/test", identifier=None)
@@ -4573,7 +4587,7 @@ class TestTier1dTakesEuropePMCsOwnCopy:
             if "/search?" in url:
                 resp = MagicMock()
                 resp.status_code = 200
-                resp.json.return_value = {"resultList": {"result": [hit]}}
+                resp.content = json.dumps({"resultList": {"result": [hit]}}).encode()
                 return resp
             return _idconv_miss()
 
@@ -4722,7 +4736,7 @@ class TestASwallowedBugDoesNotStayAtDebug:
     def _unpaywall_ok() -> MagicMock:
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"best_oa_location": {"url_for_pdf": "https://e/a.pdf"}}
+        resp.content = json.dumps({"best_oa_location": {"url_for_pdf": "https://e/a.pdf"}}).encode()
         return resp
 
     def _run(
@@ -4770,7 +4784,7 @@ class TestASwallowedBugDoesNotStayAtDebug:
         """``json.JSONDecodeError`` **is** a ``ValueError``.
 
         This is why ``ValueError`` can never be a member of ``_BUG_TYPES``:
-        every ``resp.json()`` on a malformed body raises one, and they are
+        every JSON decode of a malformed body raises one, and they are
         ordinary remote-data failures.
         """
         import json
@@ -4877,25 +4891,27 @@ class TestAFailedPDFDownloadIsReported:
     ) -> FullTextResult:
         search = MagicMock()
         search.status_code = 200
-        search.json.return_value = {
-            "resultList": {
-                "result": [
-                    {
-                        "inEPMC": "N",
-                        "fullTextUrlList": {
-                            "fullTextUrl": [
-                                {
-                                    "site": "Europe_PMC",
-                                    "documentStyle": "pdf",
-                                    "availabilityCode": "OA",
-                                    "url": "https://e/a.pdf",
-                                }
-                            ]
-                        },
-                    }
-                ]
+        search.content = json.dumps(
+            {
+                "resultList": {
+                    "result": [
+                        {
+                            "inEPMC": "N",
+                            "fullTextUrlList": {
+                                "fullTextUrl": [
+                                    {
+                                        "site": "Europe_PMC",
+                                        "documentStyle": "pdf",
+                                        "availabilityCode": "OA",
+                                        "url": "https://e/a.pdf",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                }
             }
-        }
+        ).encode()
         with (
             caplog.at_level("DEBUG"),
             patch.object(
@@ -5133,10 +5149,12 @@ class TestTheDownloadFailureKeyspaceIsBounded:
         not_found.status_code = 404
         empty_search = MagicMock()
         empty_search.status_code = 200
-        empty_search.json.return_value = {"resultList": {"result": []}}
+        empty_search.content = json.dumps({"resultList": {"result": []}}).encode()
         unpaywall = MagicMock()
         unpaywall.status_code = 200
-        unpaywall.json.return_value = {"best_oa_location": {"url_for_pdf": "https://u/a.pdf"}}
+        unpaywall.content = json.dumps(
+            {"best_oa_location": {"url_for_pdf": "https://u/a.pdf"}}
+        ).encode()
 
         with caplog.at_level("WARNING"):
             self._fetch_from(service, "The Lancet", not_found)
@@ -5633,11 +5651,10 @@ class _Remote:
         self.urls: list[str] = []
 
     @staticmethod
-    def _response(status: int, *, json: object = None, content: bytes = b"") -> MagicMock:
+    def _response(status: int, *, data: object = None, content: bytes = b"") -> MagicMock:
         resp = MagicMock()
         resp.status_code = status
-        resp.json.return_value = json
-        resp.content = content
+        resp.content = content if data is None else json.dumps(data).encode()
         return resp
 
     def __call__(self, url: str, **kwargs: object) -> MagicMock:
@@ -5664,12 +5681,12 @@ class _Remote:
                         }
                     ]
                 }
-            return self._response(200, json={"resultList": {"result": [hit] if hit else []}})
+            return self._response(200, data={"resultList": {"result": [hit] if hit else []}})
         if "efetch" in url and self.ncbi:
             return self._response(200, content=(FIXTURES / self.ncbi).read_bytes())
         if "idconv" in url:
             records = [{"pmcid": self.idconv_pmcid}] if self.idconv_pmcid else []
-            return self._response(200, json={"status": "ok", "records": records})
+            return self._response(200, data={"status": "ok", "records": records})
         if url == self.search_pdf and self.pdf_bytes is not None:
             return self._response(200, content=self.pdf_bytes)
         if self.OPEN_DATA in url:  # the bucket holds no version of any article (#751)
@@ -7026,7 +7043,7 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         """A service whose every request is recorded and finds nothing."""
         service = FullTextService(email="test@example.com")
         empty = MagicMock(status_code=200)
-        empty.json.return_value = {"resultList": {"result": []}, "records": []}
+        empty.content = json.dumps({"resultList": {"result": []}, "records": []}).encode()
 
         def get(url, **kwargs):
             params = kwargs.get("params") or {}
@@ -7162,7 +7179,7 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         missing = MagicMock(status_code=404)
         found = MagicMock(status_code=200)
         hits = [{"pmcid": search_pmcid, "inEPMC": "Y"}] if search_pmcid else []
-        found.json.return_value = {"resultList": {"result": hits}, "records": []}
+        found.content = json.dumps({"resultList": {"result": hits}, "records": []}).encode()
 
         def get(url, **kwargs):
             params = kwargs.get("params") or {}
@@ -7640,7 +7657,7 @@ class TestAPmidSearchIsWithinMedline:
     def _searched_query(**ids: str) -> str:
         service = FullTextService(email="test@example.com")
         resp = MagicMock(status_code=200)
-        resp.json.return_value = {"resultList": {"result": []}}
+        resp.content = json.dumps({"resultList": {"result": []}}).encode()
         with patch.object(service, "_http_get", return_value=resp) as mock_get:
             service._resolve_pmc_id_and_pdf_url(failures=_TierFailures.unreported(), **ids)
         url = mock_get.call_args.args[0]
@@ -7665,3 +7682,89 @@ class TestAPmidSearchIsWithinMedline:
         assert unquote(self._searched_query(pmid="879929")) == _europepmc_lookup_query(
             "879929", None
         )
+
+
+class TestJsonBodiesAreReadAsSerdeJsonReadsThem:
+    """The search, the ID Converter and Unpaywall refuse what Rust refuses (#753).
+
+    Each body is the shape the decode expects, made unreadable to
+    ``serde_json`` only by what httpx's ``json()`` accepted: read the old way,
+    each was an answer in Python and a fault in Rust.
+    """
+
+    BODIES = [
+        pytest.param(b'\xef\xbb\xbf{"resultList": {"result": []}, "records": []}', id="bom"),
+        pytest.param(
+            b'{"x": "\\ud800", "resultList": {"result": []}, "records": []}', id="surrogate"
+        ),
+        pytest.param(b'{"x": NaN, "resultList": {"result": []}, "records": []}', id="nan"),
+        pytest.param(b'{"x": 1e999, "resultList": {"result": []}, "records": []}', id="overflow"),
+        pytest.param(
+            b'{"x": ' + b"[" * 200 + b"]" * 200 + b', "resultList": {"result": []}, "records": []}',
+            id="deep",
+        ),
+    ]
+
+    @staticmethod
+    def _service(body: bytes) -> tuple[FullTextService, MagicMock]:
+        service = FullTextService(email="test@example.com")
+        return service, MagicMock(status_code=200, content=body)
+
+    @pytest.mark.parametrize("body", BODIES)
+    def test_the_search(self, body):
+        service, resp = self._service(body)
+        with patch.object(service, "_http_get", return_value=resp):
+            with pytest.raises(json.JSONDecodeError):
+                service._resolve_pmc_id_and_pdf_url(
+                    doi="10.1/x", failures=_TierFailures.unreported()
+                )
+
+    @pytest.mark.parametrize("body", BODIES)
+    def test_the_id_converter(self, body):
+        service, resp = self._service(body)
+        failures = _TierFailures.unreported()
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=failures) is None
+        assert failures.faults == ["JSONDecodeError"]  # Rust's fault name for the same body
+
+    @pytest.mark.parametrize("body", BODIES)
+    def test_unpaywall(self, body):
+        service, resp = self._service(body)
+        with patch.object(service, "_http_get", return_value=resp):
+            with pytest.raises(json.JSONDecodeError):
+                service._fetch_unpaywall("10.1/x")
+
+    @pytest.mark.parametrize("body", BODIES)
+    def test_a_chain_faults_at_all_three(self, body):
+        # As Rust's `the_three_json_bodies_are_refused_as_python_refuses_them`.
+        service, resp = self._service(body)
+        with patch.object(service, "_http_get", return_value=resp) as get:
+            result = service.fetch_fulltext(doi="10.1/x")
+        assert result.source == "doi"
+        assert get.call_count == 3
+        assert result.tier_faults == ["JSONDecodeError"] * 3
+
+    def test_a_body_that_is_not_utf8_has_one_name_in_both(self):
+        # As the same Rust test's `not_utf8`: one fault name in both languages.
+        body = b'{"x": "\xff", "resultList": {"result": []}, "records": []}'
+        service, resp = self._service(body)
+        with patch.object(service, "_http_get", return_value=resp):
+            result = service.fetch_fulltext(doi="10.1/x")
+        assert result.source == "doi"
+        assert result.tier_faults == ["UnicodeDecodeError"] * 3
+
+    def test_a_readable_body_is_still_read(self):
+        # The control: the same shape, readable, is an absence at each decode.
+        body = '{"x": "é", "resultList": {"result": []}, "records": []}'.encode()
+        service, resp = self._service(body)
+        failures = _TierFailures.unreported()
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_and_pdf_url(doi="10.1/x", failures=failures) == (
+                None,
+                None,
+                None,
+            )
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=failures) is None
+            with pytest.raises(FullTextUnavailableError):
+                service._fetch_unpaywall("10.1/x")
+        assert failures.faults == []
