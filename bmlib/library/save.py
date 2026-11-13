@@ -348,7 +348,8 @@ def save_file(
     entry = FileEntry(digest, kind, name, origin, len(data), _now())
     fresh = Record(who, paper, (entry,))
     _record_bytes(fresh, root)  # before anything is written: the record must read back
-    # shortcut: save rescans the whole library per call; when a scan's cost shows in a
+    # shortcut: save rescans the whole library per call, so a full-text lookup costs one scan
+    # plus one per file saved (and one more when it uses a held PDF); when that shows in a
     # lookup's time, let the caller pass its Scan.
     scan = scan_library(root)
     papers = root / PAPERS_DIR

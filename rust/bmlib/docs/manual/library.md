@@ -215,6 +215,7 @@ use bmlib::library::{Installation, Library, PaperIds, PaperInfo, SourceKind};
 use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 
 const JATS: &str = "<article><front><article-meta>\
+    <article-id pub-id-type=\"pmc\">PMC123</article-id>\
     <title-group><article-title>A trial</article-title></title-group>\
     </article-meta></front><body><sec><title>Results</title>\
     <p>Mortality fell.</p></sec></body></article>";
@@ -275,15 +276,22 @@ The library is keyed by the request's `pmid`, `doi` and `pmc_id`, not by
    `source` is `"library"`, its HTML is rendered from the JATS on every
    lookup, and `jats_xml` holds the file's bytes. The library's PDF, if it
    holds one, is the result's `file_path`, beside the JATS, even when
-   `fetch_pdf_with_jats` is off.
-2. **A library that holds only a PDF still runs the JATS tiers.** A cached PDF
-   used to be a complete answer to a lookup; a library PDF is not, because the
-   service prefers JATS text. A paper held only as a PDF therefore costs the
-   JATS tiers' requests on every lookup, until a JATS is kept in the library.
+   `fetch_pdf_with_jats` is off. When the library holds no PDF and
+   `fetch_pdf_with_jats` is on, the PDF is sought once, as a first download
+   would seek it, in the lookup that first notes the JATS in this
+   installation's record; a PDF found is kept in the library. Later lookups
+   seek again only while the cache's *PDF still owed* mark says a failure may
+   pass. This needs a cache and an `identifier`, as the mark does; without
+   them, or when the note fails, nothing is sought.
+2. **A library that holds only a PDF still runs the JATS tiers.** A PDF in the
+   cache ended a lookup; a library PDF does not, because the service prefers
+   JATS text. A paper held only as a PDF therefore costs the JATS tiers'
+   requests on every lookup, until a JATS is kept in the library.
 3. **A held PDF replaces the PDF tiers.** When the lookup ends on JATS from the
    chain, or on no JATS at all, the library's PDF is used in place of a PDF
    download, and in place of the caller's own `pdf` entries
-   (`fulltext_sources`), which are then not fetched.
+   (`fulltext_sources`), which are then not fetched. If noting its use fails
+   (a read-only library), the PDF is still used and the failure is set.
 4. **What the chain downloads is kept in the library**, a JATS and a PDF each
    saved once, not in the cache. A PDF is then downloaded even when the
    request has no `identifier`.
@@ -291,6 +299,18 @@ The library is keyed by the request's `pmid`, `doi` and `pmc_id`, not by
 Each library file a lookup uses or saves is noted in the installation's
 record. The library's HTML, Markdown and text files are not used by the
 service; an app finds them through the library API itself.
+
+Of a paper's files of one kind, the newest is used: each file ranks by the
+earliest time a record lists it, since noting a use stamps the time of the
+note. A file is used only if at least one record listing it names the paper
+without contradicting the request's identifiers (an identifier missing on
+either side agrees). Two papers whose files share bytes (a publisher's stub
+PDF, say) share a folder, because bytes are kept once; this rule stops one
+paper being given a file that only the other paper's records list.
+
+**Cost.** A lookup scans the library once. Each file saved costs one more scan
+(by `save`), and noting a file not yet in this installation's record reads that
+paper's folder again; using a held PDF later in the chain costs one more scan.
 
 ### `library_files` and `library_failure`
 
@@ -305,9 +325,9 @@ is never raised from it. It is logged once at WARNING, the rest of the lookup
 runs as without a library, and the result carries the flag.
 
 **What an app should do with a failure:** keep what the lookup returned as
-*waiting for the library* (design §4.6) and try again later. The cache is a
-staging area in that case, not a second store: the app copies the bytes out, as
-StudyAnalyzer does today.
+*waiting for the library*: hold on to it outside the library, and try to put it
+there again later. The cache is a staging area in that case, not a second
+store: the app copies the bytes out, as StudyAnalyzer does today.
 
 A library JATS that has no body or does not parse is not a failure of the
 library: it is warned of, not served, and the lookup goes on.
@@ -333,7 +353,7 @@ not a failure.
 ### What stays in the cache
 
 With a library, the cache keeps only what the library does not: the *PDF still
-owed* mark (see [the cache](fulltext.md)) and the abstract kept beside a PDF,
+owed* mark (see [the cache](fulltext.md#the-cache)) and the abstract kept beside a PDF,
 both keyed by `identifier`. When the library fails, or the request has no valid
 identifier, the cache keeps everything, as without a library.
 

@@ -865,12 +865,13 @@ pub struct FullTextResult {
     #[serde(default)]
     pub library_files: Vec<FileRef>,
     /// Why the shared library could not be used in this lookup (it could not
-    /// be read, a file failed its digest check, this installation's use could
-    /// not be noted), naming the paper and the file. The lookup went on
-    /// without the library, so the app keeps what it got as *waiting for the
-    /// library* (design §4.6). `None` when the library worked or none is set.
-    /// A library file that is the wrong paper or has no body is not a failure
-    /// of the library: it is only warned of.
+    /// be read or written, a file failed its digest check, this installation's
+    /// use could not be noted, or the paper's folder holds another paper's
+    /// JATS), naming the paper and the file. The lookup went on without the
+    /// library, so the app keeps what it got as *waiting for the library* and
+    /// tries again later. `None` when the library worked or none is set. A
+    /// library JATS that has no body or does not parse is not a failure of the
+    /// library: it is only warned of.
     #[serde(default)]
     pub library_failure: Option<String>,
 }

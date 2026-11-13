@@ -594,14 +594,23 @@ fn library_scenarios() {
     let probe_dir = scratch("probe");
     let enforced = permissions_enforced(&probe_dir);
     let _ = fs::remove_dir_all(&probe_dir);
-    let mut failed = Vec::new();
+    let (mut failed, mut skipped) = (Vec::new(), Vec::new());
     for scenario in fixture["scenarios"].as_array().unwrap() {
         let name = scenario["name"].as_str().unwrap().to_string();
-        if std::panic::catch_unwind(|| run_scenario(scenario, enforced)).is_err() {
-            failed.push(name);
+        match std::panic::catch_unwind(|| run_scenario(scenario, enforced)) {
+            Err(_) => failed.push(name),
+            Ok(false) => skipped.push(name),
+            Ok(true) => {}
         }
     }
     assert!(failed.is_empty(), "failed: {failed:?}");
+    // Where permissions hold (Unix, not root) every scenario runs; elsewhere
+    // the skips are shown under `--nocapture`.
+    if enforced {
+        assert!(skipped.is_empty(), "skipped: {skipped:?}");
+    } else if !skipped.is_empty() {
+        eprintln!("{} scenario(s) skipped: {skipped:?}", skipped.len());
+    }
 }
 
 #[test]

@@ -995,12 +995,13 @@ class FullTextResult:
     # nothing came from it.
     library_files: list[FileRef] = field(default_factory=list)
     # Why the shared library could not be used in this lookup (it could not be
-    # read, a file failed its digest check, this installation's use could not
-    # be noted), naming the paper and the file. The lookup went on without the
-    # library, so the app keeps what it got as *waiting for the library*
-    # (design §4.6). ``None`` when the library worked or none is set. A library
-    # file that is the wrong paper or has no body is not a failure of the
-    # library: it is only warned of.
+    # read or written, a file failed its digest check, this installation's use
+    # could not be noted, or the paper's folder holds another paper's JATS),
+    # naming the paper and the file. The lookup went on without the library, so
+    # the app keeps what it got as *waiting for the library* and tries again
+    # later. ``None`` when the library worked or none is set. A library JATS
+    # that has no body or does not parse is not a failure of the library: it is
+    # only warned of.
     library_failure: str | None = None
 
     @property

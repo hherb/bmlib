@@ -112,9 +112,16 @@ All notable changes to bmlib are documented here. The format is based on
   saved) and `library_failure` (why the library could not be used: a library
   that cannot be read or written never stops a lookup; the app keeps the source
   as waiting for the library). A folder whose JATS is another paper's keeps
-  nothing and is a `library_failure`. New: `bmlib.fulltext.library_store`
-  (`library_ids`, `LibraryStore`, `paper_info`). The service uses the
-  library's JATS and PDF only. Manual: "FullTextService on a library" in
+  nothing and is a `library_failure`. A library file is used only when a
+  record listing it does not contradict the request's identifiers, so two
+  papers sharing a stub PDF's folder are not given each other's files. A
+  read-only library still serves the PDF it holds. With
+  `fetch_pdf_with_jats`, a library JATS hit with no PDF seeks one once, in the
+  lookup that first notes the JATS for this installation (needs a cache and an
+  `identifier`). A lookup scans the library once, plus once per file saved.
+  New: `bmlib.fulltext.library_store` (`library_ids`, `LibraryStore` with
+  `scan`, `find_source_in` and `note_use_in`, `paper_info`). The service uses
+  the library's JATS and PDF only. Manual: "FullTextService on a library" in
   `docs/manual/library.md` and `rust/bmlib/docs/manual/library.md`. 1c (the
   `bmlib-ffi` surface) follows.
 

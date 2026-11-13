@@ -2,10 +2,10 @@
 
 _Last updated: 2026-11-14 (**the shared paper library: 1a merged, 1b on
 `feat/library-fulltext` — read *This session* first**). Merged since the last
-update: #754 (the library, 1a), #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744),
-#740 (#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0`
-on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io**
-from the same commit._
+update: #754 (the library, 1a), #752 (#750, #751). Before it: #749 (#748),
+#747 (#746), #745 (#744), #740 (#656), #741 (#739), #742 and #743. **0.13.0 is
+on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and **the Rust crate
+0.4.0 on crates.io** from the same commit._
 
 ## This session: the shared paper library (1a merged as #754; 1b on `feat/library-fulltext`, PR pending)
 
@@ -47,9 +47,11 @@ use to share one folder of papers. Built in both languages, in a worktree
   call (0.5 s at 4,000 papers in Python); its `shortcut:` now says to pass a
   `Scan` when a scan's cost shows in a lookup's time.
 - **Parked, from the #755-7 decision**: byte-identical files of two different
-  papers (a stub PDF, say) now put both papers' records into one folder. And a
-  library holding only a PDF still runs the JATS tiers on every lookup, a cost
-  a cached PDF did not have; it ends when a JATS is kept in the library.
+  papers (a stub PDF, say) still put both papers' records into one folder, but
+  the service no longer serves the second paper a file only the first's
+  records list (an identity check on the records). And a library holding only a
+  PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
+  have; it ends when a JATS is kept in the library.
 - **Next: 1c**, the `bmlib-ffi` surface for the mobile apps. It must convert
   `with_library`, `library_files` and `library_failure`, besides the library
   calls below. Not released: the changelog entries are under Unreleased, and
