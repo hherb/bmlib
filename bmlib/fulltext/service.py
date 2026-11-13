@@ -57,6 +57,7 @@ from bmlib.fulltext.library_store import (
     Held,
     LibraryStore,
     LibraryStoreFailure,
+    contradiction,
     library_ids,
     paper_info,
 )
@@ -1532,16 +1533,13 @@ class FullTextService:
             )
             return "unusable"
         own, _ = library_ids(article.pmid, article.doi, article.pmc_id)
-        for name, theirs, ours in (
-            ("pmid", own.pmid, ids.pmid),
-            ("doi", own.doi, ids.doi),
-            ("pmc_id", own.pmcid, ids.pmcid),
-        ):
-            if theirs and ours and theirs != ours:
-                return _WrongPaper(
-                    f"the library's JATS {at} is another paper's: its own {name} {theirs} is "
-                    f"not the request's {ours}, so nothing is kept in the library in this lookup"
-                )
+        wrong = contradiction(own, ids)
+        if wrong is not None:
+            name, theirs, ours = wrong
+            return _WrongPaper(
+                f"the library's JATS {at} is another paper's: its own {name} {theirs} is "
+                f"not the request's {ours}, so nothing is kept in the library in this lookup"
+            )
         if not article.has_body:
             logger.warning(
                 "Not serving the library's JATS %s: it has no body; looking further.", at

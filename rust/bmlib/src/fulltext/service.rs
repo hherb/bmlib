@@ -95,7 +95,7 @@
 
 use crate::fulltext::cache::{safe_filename, sanitize_identifier, FullTextCache, PDF_MAGIC_BYTES};
 use crate::fulltext::jats_reader::{author_full_name, parse_with_pmc_id};
-use crate::fulltext::library_store::{library_ids, paper_info, Held, LibraryStore};
+use crate::fulltext::library_store::{contradiction, library_ids, paper_info, Held, LibraryStore};
 use crate::fulltext::models::{
     join_citation_parts, ContentKind, FullTextResult, FullTextSourceEntry, JATSArticle,
     JATSBodySection, JATSFundingAward, JATSReferenceInfo, PmcOpenDataRecord, PDF_CHECKSUM_MISMATCH,
@@ -2194,18 +2194,10 @@ impl FullTextService {
             }
         };
         let (own, _) = library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id));
-        for (field, theirs, ours) in [
-            ("pmid", &own.pmid, &ids.pmid),
-            ("doi", &own.doi, &ids.doi),
-            ("pmc_id", &own.pmcid, &ids.pmcid),
-        ] {
-            if let (Some(theirs), Some(ours)) = (theirs, ours) {
-                if theirs != ours {
-                    return LibraryJats::WrongPaper(format!(
-                        "the library's JATS {at} is another paper's: its own {field} {theirs} is not the request's {ours}, so nothing is kept in the library in this lookup"
-                    ));
-                }
-            }
+        if let Some((field, theirs, ours)) = contradiction(&own, ids) {
+            return LibraryJats::WrongPaper(format!(
+                "the library's JATS {at} is another paper's: its own {field} {theirs} is not the request's {ours}, so nothing is kept in the library in this lookup"
+            ));
         }
         if !article.has_body {
             self.warn(format!(

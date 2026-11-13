@@ -308,3 +308,149 @@ fn a_year_beyond_i32_is_none() {
         Some(i32::MAX)
     );
 }
+
+// ---- Final review: identity and ranking ----
+
+fn app(name: &str, id: &str) -> Installation {
+    Installation::new(name, id, "Mac").unwrap()
+}
+
+/// Give each digest in `times` that `saved_at` in `who`'s record in `folder`.
+fn set_saved_at_of(
+    dir: &std::path::Path,
+    who: &Installation,
+    folder: &str,
+    times: &[(&str, &str)],
+) {
+    let path = dir
+        .join("papers")
+        .join(folder)
+        .join("records")
+        .join(who.record_file_name());
+    let mut rec = parse_record(&fs::read_to_string(&path).unwrap()).unwrap();
+    for f in &mut rec.files {
+        if let Some((_, at)) = times.iter().find(|(d, _)| *d == f.sha256) {
+            f.saved_at = (*at).into();
+        }
+    }
+    fs::write(&path, render_record(&rec)).unwrap();
+}
+
+#[test]
+fn a_pdf_only_another_papers_records_list_is_not_served() {
+    // App X saves a stub PDF for PMID 1; app Y saves the same bytes for PMID 2,
+    // which land in X's folder; X later saves paper 1's real PDF there.
+    let (dir, store) = scratch("stub");
+    let (x, y) = (app("appx", "aaaa"), app("appy", "bbbb"));
+    let x = LibraryStore::new(store.library.clone(), x);
+    let y = LibraryStore::new(store.library.clone(), y);
+    let stub = x
+        .keep(
+            &info(Some("1"), None),
+            b"%PDF-1.4 stub",
+            SourceKind::Pdf,
+            "u1",
+        )
+        .unwrap();
+    y.keep(
+        &info(Some("2"), None),
+        b"%PDF-1.4 stub",
+        SourceKind::Pdf,
+        "u2",
+    )
+    .unwrap();
+    let real = x
+        .keep(
+            &info(Some("1"), None),
+            b"%PDF-1.4 the real paper 1",
+            SourceKind::Pdf,
+            "u3",
+        )
+        .unwrap();
+    let (early, late) = ("2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z");
+    set_saved_at_of(
+        &dir,
+        &x.who,
+        &stub.folder,
+        &[(&stub.sha256, early), (&real.sha256, late)],
+    );
+    set_saved_at_of(&dir, &y.who, &stub.folder, &[(&stub.sha256, early)]);
+    let two = PaperIds::canonical(Some("2"), None, None).unwrap();
+    let held = y.find_source(&two, SourceKind::Pdf).unwrap().unwrap();
+    assert_eq!(held.file.sha256, stub.sha256);
+    // Paper 1 still gets its own newest PDF.
+    let one = PaperIds::canonical(Some("1"), None, None).unwrap();
+    let held = x.find_source(&one, SourceKind::Pdf).unwrap().unwrap();
+    assert_eq!(held.file.sha256, real.sha256);
+}
+
+#[test]
+fn a_split_papers_pdf_is_still_found() {
+    let (_d, store) = scratch("split");
+    let file = store
+        .keep(
+            &info(None, Some("10.1/split")),
+            b"%PDF-split",
+            SourceKind::Pdf,
+            "t",
+        )
+        .unwrap();
+    // A second save links PMID 5 to the folder; the PDF's record names only the DOI.
+    store
+        .keep(
+            &info(Some("5"), Some("10.1/split")),
+            b"<a/>",
+            SourceKind::Jats,
+            "t",
+        )
+        .unwrap();
+    let five = PaperIds::canonical(Some("5"), None, None).unwrap();
+    let held = store.find_source(&five, SourceKind::Pdf).unwrap().unwrap();
+    assert_eq!(held.file.sha256, file.sha256);
+}
+
+#[test]
+fn an_older_pdf_noted_later_does_not_beat_a_newer_one() {
+    let (dir, store) = scratch("noted");
+    let x = LibraryStore::new(store.library.clone(), app("appx", "aaaa"));
+    let y = LibraryStore::new(store.library.clone(), app("appy", "bbbb"));
+    let paper = info(Some("30"), None);
+    let old = x.keep(&paper, b"%PDF-old", SourceKind::Pdf, "t").unwrap();
+    let new = x.keep(&paper, b"%PDF-new", SourceKind::Pdf, "t").unwrap();
+    set_saved_at_of(
+        &dir,
+        &x.who,
+        &old.folder,
+        &[
+            (&old.sha256, "2026-01-01T00:00:00Z"),
+            (&new.sha256, "2026-02-01T00:00:00Z"),
+        ],
+    );
+    // Y notes the old one later: its record stamps the old PDF with a newer time.
+    y.note_use(&paper, &old).unwrap();
+    set_saved_at_of(
+        &dir,
+        &y.who,
+        &old.folder,
+        &[(&old.sha256, "2026-03-01T00:00:00Z")],
+    );
+    let held = y.find_source(&paper.ids, SourceKind::Pdf).unwrap().unwrap();
+    assert_eq!(held.file.sha256, new.sha256);
+}
+
+#[test]
+fn one_installations_stub_for_two_papers_serves_the_second_nothing() {
+    // The second paper's save lands in the first's folder, whose record keeps PMID 1.
+    let (_d, store) = scratch("onestub");
+    for (pmid, bytes) in [
+        ("1", &b"%PDF-1.4 stub"[..]),
+        ("2", b"%PDF-1.4 stub"),
+        ("1", b"%PDF-1.4 the real paper 1"),
+    ] {
+        store
+            .keep(&info(Some(pmid), None), bytes, SourceKind::Pdf, "u")
+            .unwrap();
+    }
+    let two = PaperIds::canonical(Some("2"), None, None).unwrap();
+    assert!(store.find_source(&two, SourceKind::Pdf).unwrap().is_none());
+}

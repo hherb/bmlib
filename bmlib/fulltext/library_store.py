@@ -35,6 +35,7 @@ from bmlib.library import (
     LibraryError,
     PaperIds,
     PaperInfo,
+    Scan,
     SourceKind,
     canonical_ids,
     find,
@@ -91,6 +92,26 @@ def _saved_at_key(saved_at: str) -> str:
     return saved_at if ok else ""
 
 
+def _earliest(a: str, b: str) -> str:
+    """The earlier of two :func:`_saved_at_key` values; ``""`` (malformed) only when both are."""
+    return min(a, b) if a and b else a or b
+
+
+def contradiction(theirs: PaperIds, ours: PaperIds) -> tuple[str, str, str] | None:
+    """The first identifier on which *theirs* contradicts *ours*, as the request's field name
+    (``"pmid"``, ``"doi"`` or ``"pmc_id"``), their value and ours; ``None`` when they agree. A
+    field absent on either side agrees. The one rule for a library JATS's own identifiers and for
+    a record's; Rust's ``contradiction`` is the same."""
+    for name, a, b in (
+        ("pmid", theirs.pmid, ours.pmid),
+        ("doi", theirs.doi, ours.doi),
+        ("pmc_id", theirs.pmcid, ours.pmcid),
+    ):
+        if a and b and a != b:
+            return name, a, b
+    return None
+
+
 @dataclass(frozen=True)
 class Held:
     """A source file read from the library, its bytes already checked against its digest."""
@@ -120,34 +141,63 @@ class LibraryStore:
     who: Installation
 
     def find_source(self, ids: PaperIds, kind: SourceKind) -> Held | None:
-        """The paper's newest source file of *kind*, read and digest-checked, or ``None``.
-
-        Looks in the paper's whole linked group of folders (:func:`find`, not only an
-        exact-identifier folder) for files of *kind* that some record lists and that are on disk,
-        and takes the one with the latest ``saved_at`` across the records (ties go to the lower
-        digest). A ``saved_at`` not of the exact form ``YYYY-MM-DDTHH:MM:SSZ`` sorts below every
-        well-formed one, and those tie among themselves; fixed-width UTC compares in time order
-        as a string. If the newest file cannot be read that is an error: a tampered file is
-        reported, not skipped for an older one.
+        """The paper's newest source file of *kind*, read and digest-checked, or ``None``: one
+        scan of the library, then :meth:`find_source_in`.
 
         :raises LibraryStoreFailure: the scan or the read failed; the message names the paper's
             identifiers, the file and the library's error.
         """
+        return self.find_source_in(self.scan(ids), ids, kind)
+
+    def scan(self, ids: PaperIds) -> Scan:
+        """The library scanned once, for :meth:`find_source_in` and :meth:`note_use`.
+
+        :raises LibraryStoreFailure: the scan failed; the message names *ids* and the library's
+            error.
+        """
         try:
-            scan = self.library.scan()
+            return self.library.scan()
         except LibraryError as e:
             raise _failure(ids, None, e) from e
-        best: tuple[str, FileRef] | None = None
+
+    def find_source_in(self, scan: Scan, ids: PaperIds, kind: SourceKind) -> Held | None:
+        """The paper's newest source file of *kind* in *scan*, read and digest-checked, or
+        ``None``.
+
+        Looks in the paper's whole linked group of folders (:func:`find`, not only an
+        exact-identifier folder) for files of *kind* that are on disk and that at least one
+        record lists under identifiers not contradicting *ids* (field by field; a field absent on
+        either side agrees), so a file only another paper's records list is never served. Each
+        such file ranks by the earliest ``saved_at`` among the records listing it, since noting
+        a use stamps the time of the note; the latest wins, and ties go to the lower digest. A
+        ``saved_at`` not of the exact form ``YYYY-MM-DDTHH:MM:SSZ`` counts only when no record
+        has a well-formed one, and then sorts below every well-formed one; fixed-width UTC
+        compares in time order as a string. If the newest file cannot be read that is an error:
+        a tampered file is reported, not skipped for an older one.
+
+        :raises LibraryStoreFailure: the read failed; the message names the paper's identifiers,
+            the file and the library's error.
+        """
+        # Per digest: its earliest well-formed ``saved_at`` (``""`` when none), its file, and
+        # whether a record not contradicting *ids* lists it.
+        seen: dict[str, tuple[str, FileRef, bool]] = {}
         for folder in find(scan, ids):
-            for entry in (f for r in folder.records for f in r.files):
-                if entry.kind != kind or entry.name not in folder.files_on_disk:
-                    continue
-                # Later ``saved_at`` wins; on a tie the lower digest does.
-                if best is None or (_saved_at_key(entry.saved_at), best[1].sha256) > (
-                    _saved_at_key(best[0]),
-                    entry.sha256,
-                ):
-                    best = (entry.saved_at, FileRef(folder.folder, entry.name, entry.sha256, kind))
+            for record in folder.records:
+                agrees = contradiction(record.paper.ids, ids) is None
+                for entry in record.files:
+                    if entry.kind != kind or entry.name not in folder.files_on_disk:
+                        continue
+                    at = _saved_at_key(entry.saved_at)
+                    file = FileRef(folder.folder, entry.name, entry.sha256, kind)
+                    if entry.sha256 in seen:
+                        was, file, ok = seen[entry.sha256]
+                        at, agrees = _earliest(was, at), agrees or ok
+                    seen[entry.sha256] = (at, file, agrees)
+        best: tuple[str, FileRef] | None = None
+        for at, file, ok in seen.values():
+            # Later ``saved_at`` wins; on a tie the lower digest does.
+            if ok and (best is None or (at, best[1].sha256) > (best[0], file.sha256)):
+                best = (at, file)
         if best is None:
             return None
         file = best[1]

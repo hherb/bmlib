@@ -25,7 +25,8 @@ use std::path::PathBuf;
 
 use crate::fulltext::JATSArticle;
 use crate::library::{
-    component, find, FileRef, Installation, Library, PaperIds, PaperInfo, SourceKind, PAPERS_DIR,
+    component, find, FileRef, Installation, Library, PaperIds, PaperInfo, Scan, SourceKind,
+    PAPERS_DIR,
 };
 
 /// The request's identifiers as the library's canonical ones, and the names of
@@ -122,6 +123,35 @@ fn saved_at_key(saved_at: &str) -> &str {
     }
 }
 
+/// The earlier of two [`saved_at_key`] values; `""` (malformed) only when both are.
+fn earliest<'a>(a: &'a str, b: &'a str) -> &'a str {
+    match (a.is_empty(), b.is_empty()) {
+        (true, _) => b,
+        (_, true) => a,
+        _ => a.min(b),
+    }
+}
+
+/// The first identifier on which `theirs` contradicts `ours`, as the request's
+/// field name (`"pmid"`, `"doi"` or `"pmc_id"`), their value and ours; `None`
+/// when they agree. A field absent on either side agrees. The one rule for a
+/// library JATS's own identifiers and for a record's.
+pub(crate) fn contradiction<'a>(
+    theirs: &'a PaperIds,
+    ours: &'a PaperIds,
+) -> Option<(&'static str, &'a str, &'a str)> {
+    [
+        ("pmid", &theirs.pmid, &ours.pmid),
+        ("doi", &theirs.doi, &ours.doi),
+        ("pmc_id", &theirs.pmcid, &ours.pmcid),
+    ]
+    .into_iter()
+    .find_map(|(field, a, b)| match (a, b) {
+        (Some(a), Some(b)) if a != b => Some((field, a.as_str(), b.as_str())),
+        _ => None,
+    })
+}
+
 /// The one wording of every library failure: the paper's identifiers, the file
 /// (`folder/name`) when there is one, and what the library said. Python's
 /// `_failure` words it the same.
@@ -139,45 +169,91 @@ impl LibraryStore {
         Self { library, who }
     }
 
-    /// The paper's newest source file of `kind`, read and digest-checked.
-    ///
-    /// Looks in the paper's whole linked group of folders (`find`, not only an
-    /// exact-identifier folder) for files of `kind` that some
-    /// record lists and that are on disk, and takes the one with the latest
-    /// `saved_at` across the records (ties go to the lower digest). A `saved_at`
-    /// not of the exact form `YYYY-MM-DDTHH:MM:SSZ` sorts below every well-formed
-    /// one, and those tie among themselves; fixed-width UTC compares in time order
-    /// as a string. If the newest file cannot be read, that is an
-    /// error: a tampered file is reported, not skipped for an older one.
+    /// The paper's newest source file of `kind`, read and digest-checked: one
+    /// scan of the library, then [`LibraryStore::find_source_in`].
     ///
     /// # Errors
     ///
     /// A message naming the paper's identifiers, the file and the library's error
     /// when the scan or the read fails.
     pub fn find_source(&self, ids: &PaperIds, kind: SourceKind) -> Result<Option<Held>, String> {
-        let scan = self.library.scan().map_err(|e| failure(ids, None, &e))?;
+        self.find_source_in(&self.scan(ids)?, ids, kind)
+    }
+
+    /// The library scanned once, for [`LibraryStore::find_source_in`] and
+    /// [`LibraryStore::note_use_in`].
+    ///
+    /// # Errors
+    ///
+    /// A message naming `ids` and the library's error when the scan fails.
+    pub fn scan(&self, ids: &PaperIds) -> Result<Scan, String> {
+        self.library.scan().map_err(|e| failure(ids, None, &e))
+    }
+
+    /// The paper's newest source file of `kind` in `scan`, read and
+    /// digest-checked.
+    ///
+    /// Looks in the paper's whole linked group of folders (`find`, not only an
+    /// exact-identifier folder) for files of `kind` that are on disk and that
+    /// at least one record lists under identifiers not contradicting `ids`
+    /// (field by field; a field absent on either side agrees), so a file only
+    /// another paper's records list is never served. Each such file ranks by
+    /// the earliest `saved_at` among the records listing it, since noting a use
+    /// stamps the time of the note; the latest wins, and ties go to the lower
+    /// digest. A `saved_at` not of the exact form `YYYY-MM-DDTHH:MM:SSZ` counts
+    /// only when no record has a well-formed one, and then sorts below every
+    /// well-formed one; fixed-width UTC compares in time order as a string. If
+    /// the newest file cannot be read, that is an error: a tampered file is
+    /// reported, not skipped for an older one.
+    ///
+    /// # Errors
+    ///
+    /// A message naming the paper's identifiers, the file and the library's error
+    /// when the read fails.
+    pub fn find_source_in(
+        &self,
+        scan: &Scan,
+        ids: &PaperIds,
+        kind: SourceKind,
+    ) -> Result<Option<Held>, String> {
+        // Per digest: its earliest well-formed `saved_at` (`""` when none), its
+        // file, and whether a record not contradicting `ids` lists it.
+        let mut seen: Vec<(&str, FileRef, bool)> = Vec::new();
+        for folder in find(scan, ids) {
+            for record in &folder.records {
+                let agrees = contradiction(&record.paper.ids, ids).is_none();
+                for entry in &record.files {
+                    if entry.kind != kind || !folder.files_on_disk.contains(&entry.name) {
+                        continue;
+                    }
+                    let at = saved_at_key(&entry.saved_at);
+                    match seen.iter_mut().find(|(_, f, _)| f.sha256 == entry.sha256) {
+                        Some(known) => {
+                            known.0 = earliest(known.0, at);
+                            known.2 |= agrees;
+                        }
+                        None => seen.push((
+                            at,
+                            FileRef {
+                                folder: folder.folder.clone(),
+                                name: entry.name.clone(),
+                                sha256: entry.sha256.clone(),
+                                kind,
+                            },
+                            agrees,
+                        )),
+                    }
+                }
+            }
+        }
         let mut best: Option<(&str, FileRef)> = None;
-        for folder in find(&scan, ids) {
-            for entry in folder.records.iter().flat_map(|r| &r.files) {
-                if entry.kind != kind || !folder.files_on_disk.contains(&entry.name) {
-                    continue;
-                }
-                // Later `saved_at` wins; on a tie the lower digest does.
-                let better = best.as_ref().is_none_or(|(at, f)| {
-                    (saved_at_key(&entry.saved_at), f.sha256.as_str())
-                        > (saved_at_key(at), entry.sha256.as_str())
-                });
-                if better {
-                    best = Some((
-                        &entry.saved_at,
-                        FileRef {
-                            folder: folder.folder.clone(),
-                            name: entry.name.clone(),
-                            sha256: entry.sha256.clone(),
-                            kind,
-                        },
-                    ));
-                }
+        for (at, file, agrees) in seen {
+            // Later `saved_at` wins; on a tie the lower digest does.
+            let better = best
+                .as_ref()
+                .is_none_or(|(was, f)| (at, f.sha256.as_str()) > (*was, file.sha256.as_str()));
+            if agrees && better {
+                best = Some((at, file));
             }
         }
         let Some((_, file)) = best else {

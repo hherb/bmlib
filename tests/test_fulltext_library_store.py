@@ -215,3 +215,74 @@ def test_a_year_beyond_i32_is_none() -> None:
     assert (
         paper_info(PaperIds(), dataclasses.replace(article, year="2147483647")).year == 2147483647
     )
+
+
+# ---- Final review: identity and ranking ----
+
+_X = Installation.new("appx", "aaaa", "Mac")
+_Y = Installation.new("appy", "bbbb", "Mac")
+
+
+def _set_saved_at_of(tmp_path: Path, who: Installation, folder: str, times: dict[str, str]) -> None:
+    """Rewrite *who*'s record in *folder* so each digest in *times* has that ``saved_at``."""
+    path = tmp_path / "papers" / folder / "records" / who.record_file_name()
+    rec = parse_record(path.read_text(encoding="utf-8"))
+    files = tuple(
+        dataclasses.replace(f, saved_at=times.get(f.sha256, f.saved_at)) for f in rec.files
+    )
+    path.write_text(render_record(dataclasses.replace(rec, files=files)), encoding="utf-8")
+
+
+def test_a_pdf_only_another_papers_records_list_is_not_served(tmp_path: Path) -> None:
+    # App X saves a stub PDF for PMID 1; app Y saves the same bytes for PMID 2, which land in
+    # X's folder; X later saves paper 1's real PDF there.
+    lib = open_library(tmp_path)
+    x, y = LibraryStore(lib, _X), LibraryStore(lib, _Y)
+    stub = x.keep(_info("1"), b"%PDF-1.4 stub", SourceKind.PDF, "u1")
+    y.keep(_info("2"), b"%PDF-1.4 stub", SourceKind.PDF, "u2")
+    real = x.keep(_info("1"), b"%PDF-1.4 the real paper 1", SourceKind.PDF, "u3")
+    early, late = "2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z"
+    _set_saved_at_of(tmp_path, _X, stub.folder, {stub.sha256: early, real.sha256: late})
+    _set_saved_at_of(tmp_path, _Y, stub.folder, {stub.sha256: early})
+    held = y.find_source(canonical_ids("2"), SourceKind.PDF)
+    assert held is not None and held.file.sha256 == stub.sha256
+    # Paper 1 still gets its own newest PDF.
+    held = x.find_source(canonical_ids("1"), SourceKind.PDF)
+    assert held is not None and held.file.sha256 == real.sha256
+
+
+def test_a_split_paper_s_pdf_is_still_found(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    file = store.keep(_info(doi="10.1/split"), b"%PDF-split", SourceKind.PDF, "t")
+    # A second save links PMID 5 to the folder; the PDF's record names only the DOI.
+    store.keep(_info("5", "10.1/split"), b"<a/>", SourceKind.JATS, "t")
+    held = store.find_source(canonical_ids("5"), SourceKind.PDF)
+    assert held is not None and held.file.sha256 == file.sha256
+
+
+def test_an_older_pdf_noted_later_does_not_beat_a_newer_one(tmp_path: Path) -> None:
+    lib = open_library(tmp_path)
+    x, y = LibraryStore(lib, _X), LibraryStore(lib, _Y)
+    paper = _info("30")
+    old = x.keep(paper, b"%PDF-old", SourceKind.PDF, "t")
+    new = x.keep(paper, b"%PDF-new", SourceKind.PDF, "t")
+    _set_saved_at_of(
+        tmp_path,
+        _X,
+        old.folder,
+        {old.sha256: "2026-01-01T00:00:00Z", new.sha256: "2026-02-01T00:00:00Z"},
+    )
+    # Y notes the old one later: its record stamps the old PDF with a newer time.
+    y.note_use(paper, old)
+    _set_saved_at_of(tmp_path, _Y, old.folder, {old.sha256: "2026-03-01T00:00:00Z"})
+    held = y.find_source(paper.ids, SourceKind.PDF)
+    assert held is not None and held.file.sha256 == new.sha256
+
+
+def test_one_installation_s_stub_for_two_papers_serves_the_second_nothing(tmp_path: Path) -> None:
+    # The second paper's save lands in the first's folder, whose record keeps PMID 1.
+    store = _store(tmp_path)
+    store.keep(_info("1"), b"%PDF-1.4 stub", SourceKind.PDF, "u1")
+    store.keep(_info("2"), b"%PDF-1.4 stub", SourceKind.PDF, "u2")
+    store.keep(_info("1"), b"%PDF-1.4 the real paper 1", SourceKind.PDF, "u3")
+    assert store.find_source(canonical_ids("2"), SourceKind.PDF) is None
