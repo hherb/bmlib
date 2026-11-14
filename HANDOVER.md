@@ -1,14 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**the shared paper library: 1a merged, 1b on
-`feat/library-fulltext` — read *This session* first**). Merged since the last
-update: #760 (#341, the `*-details` sources), #757 (#753), #754 (the library,
+_Last updated: 2026-11-14 (**the shared paper library: 1a and 1b merged, 1c
+on `feat/library-ffi` — read *This session* first**). Merged since the last
+update: #763 (1b), #760 (#341, the `*-details` sources), #757 (#753), #754 (the library,
 1a), #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744), #740
 (#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0` on
 `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
 the same commit._
 
-## This session: the shared paper library (1a merged as #754; 1b on `feat/library-fulltext`, PR pending)
+## This session: the shared paper library (1a merged as #754, 1b as #763; 1c on `feat/library-ffi`)
 
 StudyAnalyzer's design
 (`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
@@ -39,7 +39,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   judged under case folding; a folder of only newer records fails the save
   with `NewerRecord`; iCloud placeholders count as user files on open; record
   updates are serialised in one process only.
-- **1b, built (`feat/library-fulltext`, PR pending)**: `FullTextService`
+- **1b, merged as PR #763**: `FullTextService`
   reads from and fills a library (`library=` and `installation=`, Rust
   `with_library`). Results carry `library_files` and `library_failure`; source
   `"library"`. Fixtures `tests/fixtures/fulltext_library_*.json`; manual
@@ -53,10 +53,19 @@ use to share one folder of papers. Built in both languages, in a worktree
   records list (an identity check on the records). And a library holding only a
   PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
   have; it ends when a JATS is kept in the library.
-- **Next: 1c**, the `bmlib-ffi` surface for the mobile apps. It must convert
-  `with_library`, `library_files` and `library_failure`, besides the library
-  calls below. Not released: the changelog entries are under Unreleased, and
-  the version is still 0.13.0 / 0.4.0.
+- **1c, built (`feat/library-ffi`, PR pending)**: the library through
+  bmlib-ffi (`rust/bmlib-ffi/src/library.rs`): `Library` and `LibraryScan`
+  objects, owned records, `LibraryError` with bmlib's wording as its exported
+  `Display`, `paper_ids_canonical`, `installation_new`. Everything coming in
+  passes the validating constructors. `library_cases.json` runs through the
+  FFI. Not exposed: `FullTextService`'s library use (MedicalFactChecker
+  fetches in Swift; the FFI's service is the #492 sketch). Swift needs
+  `extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2 omits
+  the conformance; README). Reasoning in `docs/DECISIONS.md`, *The library
+  through bmlib-ffi (step 1c)*. **Next**: StudyAnalyzer's step 2 and
+  MedicalFactChecker's step 3 (re-pin the xcframework). Not released: the
+  changelog entries are under Unreleased, and the version is still 0.13.0 /
+  0.4.0.
 - **Owed before the Windows build gets the Library setting**: (1) renaming
   over an open file fails on Windows; retry with backoff, and stop mapping a
   rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
@@ -64,10 +73,6 @@ use to share one folder of papers. Built in both languages, in a worktree
   name can pass 260 characters; (3) the Windows-only gaps the final review
   deferred (superscript `COM¹`-style device names, U+001C-U+001F as
   whitespace in Python only).
-- **Owed by 1c (FFI)**: the library conversion list: `find` / `used_by` return
-  borrowed values, `PaperIds::merged` a tuple, errors hold `&'static str` and
-  `PathBuf`, `RecordProblem` has tuple variants; every conversion must call the
-  validating constructors (`Installation::new`, `PaperIds::canonical`).
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.

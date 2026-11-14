@@ -21,6 +21,8 @@ recommendation are in bmlibrarian_lite's
 | `crossref_retraction_requests(dois, mailto) -> CrossrefRequests` | function | Batched Crossref URLs (50 DOIs, at most 4,000 characters) with the DOIs each covers; `unsendable` DOIs (a comma) get `crossref: nil` |
 | `parse_crossref_retraction_response(status, body, requested_dois) -> [doi: CrossrefResult]` | function | `Served` (carrying its normalised DOI: `retraction_status` reads it as no answer for any other paper, #508), `NotKnown` or `Unreachable`, keyed by the normalised DOI (doi.org prefix stripped, lower-cased: the same strings as each batch's `dois`). A failed batch makes every DOI in it `Unreachable`. The app owns the transport and the pacing |
 | `build_retraction_index(csv, data_as_of) -> RetractionIndexBuild`, `RetractionIndex` | function, object | The Retraction Watch export as one file: `to_bytes()` to store, `RetractionIndex.fromBytes` to reopen, `lookup(doi, pmid)` (`nil` = not consulted), `data_as_of()`, `notice_count()`. Throws `RetractionIndexError.Unusable` — read it as "not consulted". A download truncated on a row boundary still builds: compare `notice_count()` with the index it replaces |
+| `Library`, `LibraryScan` and their records | objects | The shared paper library (`bmlib::library`): `Library.open(root:)` a folder, then `scan`, `read` (digest checked), `save`, `recordUse`, `release`, `removeFile`, `removeFolder`. `scan()` gives a `LibraryScan` with `folders`, `problems`, `find(ids)`, `findDigest`, `group` and `usedBy`. Throws `LibraryError`. See "The shared paper library" below |
+| `paper_ids_canonical(pmid, doi, pmcid)`, `installation_new(app, id, label)` | functions | bmlib's validating constructors, to check values before storing them. Throw `LibraryError.BadIdentifier` / `.BadInstallation` |
 | `ForeignHttpClient`, `BmlibFullTextService` | sketch | **Behind the non-default `http-sketch` feature, so in no binary or binding the apps ship** (#492). The app's transport adapted to bmlib's `HttpClient`, and a probe of the round trip |
 
 The error is `JatsError` in Swift (`JatsError.Xml(reason:)`) and
@@ -32,6 +34,38 @@ The error is `JatsError` in Swift (`JatsError.Xml(reason:)`) and
 
 Error fields are named `reason`, never `message`: a `message` field collides
 with Kotlin's `Throwable.message` and does not compile.
+
+### The shared paper library
+
+The contract is bmlib's `tests/fixtures/library_cases.json` and the sample
+library `tests/fixtures/library/sample/`, which this crate's tests run
+through the FFI (`src/library_tests.rs`) as bmlib's Rust and Python suites
+do. The rules are bmlib's manual (`docs/manual/library.md`).
+
+- **Every `Library` call does disk I/O on the calling thread.** Call it off
+  the main thread.
+- **`root` is a path.** On Apple platforms, it is the path of the resolved
+  security-scoped bookmark. The app keeps the bookmark's access for as long as
+  it uses the library.
+- **What comes in is validated.** Identifiers go through
+  `PaperIds::canonical`, so raw values (`"00111"`, a `doi.org` URL) are
+  accepted and come back canonical. An installation goes through
+  `Installation::new`. A refusal throws `BadIdentifier` or
+  `BadInstallation`, and nothing is written.
+- **A `LibraryScan` is a snapshot.** Scan again after a save.
+- **Store only `sha256` and `kind`** of a saved file's `FileRef`. Find the
+  file again with `findDigest` in the library at hand.
+- **Nothing is deleted automatically.** `removeFile` and `removeFolder` are
+  for the user's manual clear only.
+- **`LibraryError`'s text is bmlib's wording**, fit to show the user. Its
+  `Display` is exported. Kotlin's `toString()` returns it. In Swift, UniFFI
+  0.32.2 generates `description` without declaring the conformance, so add
+  `extension LibraryError: CustomStringConvertible {}`, and then
+  `errorDescription` and `localizedDescription` read as bmlib's text.
+- `FileEntry.size`, `NewerRecord.version` and `group()`'s indices are
+  unsigned (#496).
+- `FullTextService`'s use of a library (`with_library`) is not exposed: the
+  FFI's service is the sketch above.
 
 ### Retraction status
 

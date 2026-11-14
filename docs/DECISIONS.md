@@ -6603,3 +6603,28 @@ undo.
   nothing, since nothing would bound the next lookup's seek.
 - **A library holding only a PDF still runs the JATS tiers**, which a cached
   PDF did not cost: JATS is the better text, so a PDF does not end a lookup.
+
+### The library through bmlib-ffi (step 1c)
+
+- **Only the `library` module is exposed**, not `FullTextService`'s use of it.
+  MedicalFactChecker fetches through its own Swift chain, and the FFI's
+  `BmlibFullTextService` is a sketch in no shipped binary (#492), so
+  `with_library`, `library_files` and `library_failure` wait for the transport.
+- **`scan()` returns an object** (`LibraryScan`) that answers `find`,
+  `find_digest`, `group` and `used_by` in Rust. A large library is not copied
+  across the boundary for every find. It is a snapshot: a save does not change
+  it.
+- **What comes in goes through bmlib's validating constructors**
+  (`PaperIds::canonical`, `Installation::new`). Raw identifiers are accepted
+  and come back canonical. A refusal is bmlib's own `BadIdentifier` or
+  `BadInstallation`.
+- **`PaperFolder` carries its merged `ids`**, and `used_by` is a scan method,
+  so no app re-implements either.
+- **The error keeps bmlib's cases, fields and wording.** Paths and
+  `&'static str` fields become strings. `Display` is exported, and is bmlib's
+  text, reached by converting back. UniFFI 0.32.2 generates Swift's
+  `description` for an error without declaring `CustomStringConvertible`, so
+  the app adds that one-line extension for `errorDescription` to use it.
+- **Not exported**: `parse_record`, `render_record`, `folder_name` and
+  `sha256_hex`. `save` names folders and hashes the bytes, and records are
+  the library's business.
