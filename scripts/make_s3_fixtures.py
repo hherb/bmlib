@@ -43,6 +43,7 @@ from typing import Any
 
 from bmlib.fulltext.meca.s3 import (
     S3Error,
+    S3ErrorKind,
     classify_error,
     list_objects_request,
     object_request,
@@ -195,6 +196,8 @@ def _refused_signing_cases() -> list[dict[str, Any]]:
         {"name": "host-with-scheme", "args": {**good, "host": "https://example.com"}},
         {"name": "upper-case-region", "args": {**good, "region": "US-EAST-1"}},
         {"name": "header-with-line-break", "args": {**good, "extra_headers": {"X-A": "a\r\nb"}}},
+        {"name": "header-with-nul", "args": {**good, "extra_headers": {"X-A": "a\u0000b"}}},
+        {"name": "header-with-delete", "args": {**good, "extra_headers": {"X-A": "a\u007fb"}}},
         {"name": "header-given-twice", "args": {**good, "extra_headers": {"X-A": "1", "x-a": "2"}}},
         {"name": "header-the-signer-sets", "args": {**good, "extra_headers": {"X-Amz-Date": "x"}}},
         {"name": "header-name-with-space", "args": {**good, "extra_headers": {"X A": "1"}}},
@@ -215,6 +218,10 @@ def _refused_credentials() -> list[dict[str, Any]]:
             "credentials": {**AWS_EXAMPLE_KEY, "secret_access_key": "a b"},
         },
         {"name": "empty-session-token", "credentials": {**AWS_EXAMPLE_KEY, "session_token": ""}},
+        {
+            "name": "secret-with-a-pasted-no-break-space",
+            "credentials": {**AWS_EXAMPLE_KEY, "secret_access_key": "abc\u00a0"},
+        },
     ]
 
 
@@ -224,7 +231,7 @@ def _refused_object_keys() -> list[str]:
     Raises:
         AssertionError: If one is accepted.
     """
-    keys = ["a/./b.meca", "../b.meca", "a/..", "."]
+    keys = ["", "a/./b.meca", "../b.meca", "a/..", "."]
     for key in keys:
         if not _refuses(
             lambda k=key: object_request(
@@ -233,6 +240,23 @@ def _refused_object_keys() -> list[str]:
         ):
             raise AssertionError(f"object key {key!r} was accepted")
     return keys
+
+
+def _refused_buckets() -> list[str]:
+    """Bucket names both languages refuse to sign for.
+
+    Raises:
+        AssertionError: If one is accepted.
+    """
+    buckets = ["my.bucket", "MyBucket", "-abc", "abc-", "ab", "a" * 64, "a_b", ""]
+    for bucket in buckets:
+        if not _refuses(
+            lambda b=bucket: object_request(
+                _credentials(AWS_EXAMPLE_KEY), b, "us-east-1", "a.meca", _now(NOW)
+            )
+        ):
+            raise AssertionError(f"bucket {bucket!r} was accepted")
+    return buckets
 
 
 def _credentials(raw: dict[str, Any]) -> S3Credentials:
@@ -326,6 +350,7 @@ def build_sigv4() -> dict[str, Any]:
         "refused": refused,
         "refused_keys": bad_keys,
         "refused_object_keys": _refused_object_keys(),
+        "refused_buckets": _refused_buckets(),
     }
 
 
@@ -353,7 +378,7 @@ def _page(
 
 
 def _list_page_cases() -> list[tuple[str, str | bytes]]:
-    """Listing bodies, read and refused."""
+    """Listing bodies, read and refused (every name in :data:`_REFUSED_PAGES` is refused)."""
     one = _contents("Current_Content/January_2024/0a1b.meca", "48213")
     two = _contents(
         "Current_Content/January_2024/R&amp;D 2.meca",
@@ -391,7 +416,77 @@ def _list_page_cases() -> list[tuple[str, str | bytes]]:
             "an-error-body",
             "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>",
         ),
+        (
+            "page-without-is-truncated",
+            _page(one).replace("<IsTruncated>false</IsTruncated>", ""),
+        ),
+        (
+            "truncated-with-an-empty-token",
+            _page(one, truncated="true").replace(
+                "<MaxKeys>", "<NextContinuationToken></NextContinuationToken><MaxKeys>"
+            ),
+        ),
+        ("key-count-with-a-sign", _page(one, count="+1")),
+        ("key-count-with-a-space", _page(one, count=" 1")),
+        (
+            "page-with-common-prefixes",
+            _page(one, count="2").replace(
+                "</ListBucketResult>",
+                "<CommonPrefixes><Prefix>Back_Content/</Prefix></CommonPrefixes>"
+                "</ListBucketResult>",
+            ),
+        ),
+        ("wrong-root", _page(one).replace("ListBucketResult", "ListAllMyBucketsResult")),
+        (
+            "another-namespace",
+            _page(one).replace(S3_NS, 'xmlns="http://example.com/not-s3/"'),
+        ),
+        ("comment-inside-a-key", _page(one.replace("0a1b", "0a<!--x-->1b"))),
+        ("comment-before-a-key-text", _page(one.replace("<Key>", "<Key><!--x-->"))),
+        ("instruction-inside-a-key", _page(one.replace("0a1b", "0a<?pi x?>1b"))),
+        ("element-inside-a-key", _page(one.replace("0a1b", "0a<b/>1b"))),
+        (
+            "comment-between-objects",
+            _page(one, one.replace("0a1b", "2c3d")).replace(
+                "</Contents><Contents>", "</Contents><!-- between --><Contents>"
+            ),
+        ),
+        ("size-at-the-u64-limit", _page(_contents("a.meca", str((1 << 64) - 1)))),
+        ("size-past-the-u64-limit", _page(_contents("a.meca", str(1 << 64)))),
     ]
+
+
+_REFUSED_PAGES = frozenset(
+    {
+        "object-without-size",
+        "negative-size",
+        "fractional-size",
+        "object-without-etag",
+        "object-without-key",
+        "key-given-twice",
+        "truncated-without-token",
+        "key-count-disagrees",
+        "is-truncated-not-a-boolean",
+        "declares-a-dtd",
+        "not-xml",
+        "latin-1-body",
+        "utf-16-body-hiding-a-dtd",
+        "an-error-body",
+        "page-without-is-truncated",
+        "truncated-with-an-empty-token",
+        "key-count-with-a-sign",
+        "key-count-with-a-space",
+        "wrong-root",
+        "another-namespace",
+        "comment-inside-a-key",
+        "comment-before-a-key-text",
+        "instruction-inside-a-key",
+        "element-inside-a-key",
+        "size-past-the-u64-limit",
+    }
+)
+"""The listing cases that must fail the page, asserted when the fixture is built, so
+a regression cannot be written into the fixture as a success."""
 
 
 def _error_body(code: str, message: str, extra: str = "") -> str:
@@ -441,6 +536,30 @@ def _error_cases() -> list[tuple[str, int, str | bytes]]:
         ("slow-down", 503, _error_body("SlowDown", "Please reduce your request rate.")),
         ("internal-error", 500, _error_body("InternalError", "We encountered an internal error.")),
         ("empty-503", 503, ""),
+        ("empty-500", 500, ""),
+        ("empty-504", 504, ""),
+        (
+            "service-unavailable",
+            503,
+            _error_body("ServiceUnavailable", "Please reduce your request rate."),
+        ),
+        (
+            "request-timeout",
+            400,
+            _error_body(
+                "RequestTimeout",
+                "Your socket connection to the server was not read from or written to "
+                "within the timeout period.",
+            ),
+        ),
+        ("unknown-code-503", 503, _error_body("SomethingNew", "A new failure.")),
+        ("unknown-code-403", 403, _error_body("AllAccessDisabled", "All access disabled.")),
+        ("empty-code", 403, _error_body("", "No code given.")),
+        (
+            "comment-inside-a-code",
+            404,
+            "<Error><Code>No<!--x-->SuchKey</Code><Message>gone</Message></Error>",
+        ),
         ("empty-403", 403, ""),
         ("html-from-a-proxy", 502, "<html><body>Bad Gateway</body></html>"),
         (
@@ -496,12 +615,25 @@ def _read_error(status: int, body: str | bytes) -> dict[str, Any]:
 
 
 def build_responses() -> dict[str, Any]:
-    """The whole replies fixture."""
+    """The whole replies fixture.
+
+    Raises:
+        AssertionError: If a case in :data:`_REFUSED_PAGES` is read, or another
+            is refused, or a name is unknown.
+    """
+    pages = _list_page_cases()
+    names = {name for name, _ in pages}
+    if not _REFUSED_PAGES <= names:
+        raise AssertionError(f"unknown refused pages: {sorted(_REFUSED_PAGES - names)}")
+    list_pages = []
+    for name, body in pages:
+        expected = _read_page(body)
+        refused = expected == {"error": S3ErrorKind.MALFORMED.value}
+        if refused != (name in _REFUSED_PAGES):
+            raise AssertionError(f"{name}: read as {expected}")
+        list_pages.append({"name": name, **_stored(body), "expected": expected})
     return {
-        "list_pages": [
-            {"name": name, **_stored(body), "expected": _read_page(body)}
-            for name, body in _list_page_cases()
-        ],
+        "list_pages": list_pages,
         "errors": [
             {
                 "name": name,

@@ -132,12 +132,16 @@ fn every_refusal_is_refused() {
     let fixture = load(SIGV4);
     let key = credentials(&fixture["refused_credentials"]).unwrap();
     let at = now(&fixture["refused_now"]);
-    for case in fixture["refused"].as_array().unwrap() {
+    let refused = fixture["refused"].as_array().unwrap();
+    assert!(refused.len() >= 10);
+    for case in refused {
         let mut call = case.clone();
         call["call"] = json!("sign_get");
         assert!(run(&call, &key, at).is_err(), "{}", case["name"]);
     }
-    for case in fixture["refused_keys"].as_array().unwrap() {
+    let refused_keys = fixture["refused_keys"].as_array().unwrap();
+    assert!(refused_keys.len() >= 5);
+    for case in refused_keys {
         assert!(
             credentials(&case["credentials"]).is_err(),
             "{}",
@@ -151,12 +155,27 @@ fn every_refusal_is_refused() {
         let refused = object_request(&key, "medrxiv-src-monthly", "us-east-1", object, at);
         assert!(refused.is_err(), "{object}");
     }
+    let buckets = fixture["refused_buckets"].as_array().unwrap();
+    assert!(!buckets.is_empty());
+    for raw in buckets {
+        let bucket = raw.as_str().unwrap();
+        assert!(
+            object_request(&key, bucket, "us-east-1", "a.meca", at).is_err(),
+            "{bucket:?}"
+        );
+        assert!(
+            list_objects_request(&key, bucket, "us-east-1", at, "", None).is_err(),
+            "{bucket:?}"
+        );
+    }
 }
 
 #[test]
 fn every_listing_reads_as_python_reads_it() {
     let fixture = load(RESPONSES);
-    for case in fixture["list_pages"].as_array().unwrap() {
+    let pages = fixture["list_pages"].as_array().unwrap();
+    assert!(pages.len() >= 30);
+    for case in pages {
         let name = case["name"].as_str().unwrap();
         let got = match parse_list_objects_v2(&body(case)) {
             Ok(page) => json!({
@@ -175,7 +194,9 @@ fn every_listing_reads_as_python_reads_it() {
 #[test]
 fn every_error_reads_as_python_reads_it() {
     let fixture = load(RESPONSES);
-    for case in fixture["errors"].as_array().unwrap() {
+    let errors = fixture["errors"].as_array().unwrap();
+    assert!(errors.len() >= 20);
+    for case in errors {
         let name = case["name"].as_str().unwrap();
         let status = u16::try_from(case["status"].as_u64().unwrap()).unwrap();
         let error = classify_error(status, &body(case));

@@ -280,6 +280,30 @@
    }
   },
   {
+   "name": "header-with-nul",
+   "args": {
+    "host": "examplebucket.s3.amazonaws.com",
+    "path": "/x",
+    "query": [],
+    "region": "us-east-1",
+    "extra_headers": {
+     "X-A": "a\u0000b"
+    }
+   }
+  },
+  {
+   "name": "header-with-delete",
+   "args": {
+    "host": "examplebucket.s3.amazonaws.com",
+    "path": "/x",
+    "query": [],
+    "region": "us-east-1",
+    "extra_headers": {
+     "X-A": "ab"
+    }
+   }
+  },
+  {
    "name": "header-given-twice",
    "args": {
     "host": "examplebucket.s3.amazonaws.com",
@@ -358,12 +382,30 @@
     "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
     "session_token": ""
    }
+  },
+  {
+   "name": "secret-with-a-pasted-no-break-space",
+   "credentials": {
+    "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "secret_access_key": "abc "
+   }
   }
  ],
  "refused_object_keys": [
+  "",
   "a/./b.meca",
   "../b.meca",
   "a/..",
   "."
+ ],
+ "refused_buckets": [
+  "my.bucket",
+  "MyBucket",
+  "-abc",
+  "abc-",
+  "ab",
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "a_b",
+  ""
  ]
 }

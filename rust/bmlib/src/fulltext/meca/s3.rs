@@ -55,6 +55,7 @@ const S3_NS: &str = "http://s3.amazonaws.com/doc/2006-03-01/";
 
 /// What went wrong, in the terms a user can act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum S3ErrorKind {
     /// The key may not read the bucket.
     AccessDenied,
@@ -70,7 +71,8 @@ pub enum S3ErrorKind {
     NoSuchKey,
     /// The bucket does not exist.
     NoSuchBucket,
-    /// AWS is busy (`SlowDown`, 503, `InternalError`).
+    /// AWS is busy: `SlowDown`, `ServiceUnavailable`, `InternalError`,
+    /// `RequestTimeout`, or a 500/502/503/504 naming no code bmlib knows.
     RetryLater,
     /// Any other refusal, kept with its code.
     Other,
@@ -88,6 +90,11 @@ pub enum S3ErrorKind {
     /// implement `get_with_headers_stream`). Python's equivalent is the caller
     /// passing something that is not an httpx client, which raises there.
     Unsupported,
+    /// **Rust only.** bmlib refused to make the request: the bucket, region or
+    /// key cannot be signed for, or the object's ETag still carries its
+    /// quotes. No request was sent. Python raises `ValueError` for the same
+    /// inputs.
+    InvalidRequest,
 }
 
 impl S3ErrorKind {
@@ -110,6 +117,7 @@ impl S3ErrorKind {
             S3ErrorKind::EtagMismatch => "etag_mismatch",
             S3ErrorKind::Cancelled => "cancelled",
             S3ErrorKind::Unsupported => "unsupported",
+            S3ErrorKind::InvalidRequest => "invalid_request",
         }
     }
 
@@ -123,16 +131,19 @@ impl S3ErrorKind {
             "ExpiredToken" => S3ErrorKind::ExpiredToken,
             "NoSuchKey" => S3ErrorKind::NoSuchKey,
             "NoSuchBucket" => S3ErrorKind::NoSuchBucket,
-            "SlowDown" | "ServiceUnavailable" | "InternalError" => S3ErrorKind::RetryLater,
+            "SlowDown" | "ServiceUnavailable" | "InternalError" | "RequestTimeout" => {
+                S3ErrorKind::RetryLater
+            }
             _ => return None,
         })
     }
 
-    /// A status's kind when the body names no code (S3 sends none for some 403s).
+    /// A status's kind when the body names no code (S3 sends none for some
+    /// 403s), and a 5xx's when its code is one bmlib does not know.
     fn from_status(status: u16) -> Self {
         match status {
             403 => S3ErrorKind::AccessDenied,
-            500 | 503 => S3ErrorKind::RetryLater,
+            500 | 502 | 503 | 504 => S3ErrorKind::RetryLater,
             _ => S3ErrorKind::Other,
         }
     }
@@ -166,15 +177,13 @@ impl S3Error {
     }
 
     /// Whether the same request may succeed later unchanged.
+    ///
+    /// Not `SizeMismatch`/`EtagMismatch`: a body that breaks off is
+    /// `Transport`, so the wrong bytes arrived whole, and the same request
+    /// would pay for them again.
     #[must_use]
     pub fn retryable(&self) -> bool {
-        matches!(
-            self.kind,
-            S3ErrorKind::RetryLater
-                | S3ErrorKind::Transport
-                | S3ErrorKind::SizeMismatch
-                | S3ErrorKind::EtagMismatch
-        )
+        matches!(self.kind, S3ErrorKind::RetryLater | S3ErrorKind::Transport)
     }
 
     /// A plain-language sentence for the user, naming what to do where possible.
@@ -213,9 +222,13 @@ impl S3Error {
             S3ErrorKind::Unsupported => {
                 return format!("This HTTP client cannot make the request: {}", self.detail)
             }
+            S3ErrorKind::InvalidRequest => {
+                return format!("bmlib cannot make this request: {}", self.detail)
+            }
             S3ErrorKind::SizeMismatch | S3ErrorKind::EtagMismatch => {
                 return format!(
-                    "The downloaded file is not the one listed ({}), so it was discarded.",
+                    "The downloaded file is not the one listed ({}), so it was discarded. \
+                     The file may have changed since it was listed: list it again.",
                     self.detail
                 )
             }
@@ -297,6 +310,10 @@ fn parse(body: &[u8]) -> Result<roxmltree::Document<'_>, S3Error> {
 }
 
 /// The text of `element`'s only child called `name`; `None` when absent.
+///
+/// A child holding anything but text (an element, a comment, a processing
+/// instruction) is refused, as Python refuses it: `roxmltree`'s `text()` is
+/// the first text node only, where Python's reading would join the pieces.
 fn child_text(element: roxmltree::Node<'_, '_>, name: &str) -> Result<Option<String>, S3Error> {
     let mut found = element
         .children()
@@ -305,7 +322,13 @@ fn child_text(element: roxmltree::Node<'_, '_>, name: &str) -> Result<Option<Str
     if found.next().is_some() {
         return Err(malformed(format!("<{name}> appears twice")));
     }
-    Ok(first.map(|n| n.text().unwrap_or("").to_string()))
+    let Some(node) = first else {
+        return Ok(None);
+    };
+    if node.children().any(|c| !c.is_text()) {
+        return Err(malformed(format!("<{name}> holds markup, not only text")));
+    }
+    Ok(Some(node.text().unwrap_or("").to_string()))
 }
 
 /// A child's text, refusing a missing or empty one.
@@ -323,9 +346,10 @@ fn is_digits(text: &str) -> bool {
 
 /// Read one ListObjectsV2 reply.
 ///
-/// Nothing is skipped: an object without a key, size or ETag, a size that is
-/// not a whole number, a `KeyCount` that disagrees with the objects delivered,
-/// or a truncated page without a continuation token fails the whole page.
+/// Nothing is skipped: an object without a key, size, ETag or modification
+/// time, a size that is not a whole number (or too large for a `u64`), a
+/// `KeyCount` that disagrees with the objects delivered, or a truncated page
+/// without a continuation token fails the whole page.
 ///
 /// # Errors
 ///
@@ -426,7 +450,7 @@ fn error_fields(body: &[u8]) -> (Option<String>, String) {
 /// Turn a non-success reply into an [`S3Error`].
 ///
 /// The kind comes from S3's `<Error><Code>`; a body without one falls back on
-/// the status. Only `Code` and `Message` are read: an `InvalidAccessKeyId` or
+/// the status, and so does a 5xx whose code bmlib does not know. Only `Code` and `Message` are read: an `InvalidAccessKeyId` or
 /// `SignatureDoesNotMatch` body also echoes the key ID and the string to sign.
 #[must_use]
 pub fn classify_error(status: u16, body: &[u8]) -> S3Error {
@@ -436,7 +460,11 @@ pub fn classify_error(status: u16, body: &[u8]) -> S3Error {
         error_fields(body)
     };
     let kind = match &code {
-        Some(code) => S3ErrorKind::from_code(code).unwrap_or(S3ErrorKind::Other),
+        Some(code) => S3ErrorKind::from_code(code).unwrap_or(if status >= 500 {
+            S3ErrorKind::from_status(status)
+        } else {
+            S3ErrorKind::Other
+        }),
         None => S3ErrorKind::from_status(status),
     };
     S3Error {
@@ -516,7 +544,8 @@ pub fn list_objects_request(
 ///
 /// # Errors
 ///
-/// [`SignError`] for an empty key, a bad bucket or region.
+/// [`SignError`] for an empty key, a key with a `.`/`..` segment, a bad
+/// bucket or region.
 pub fn object_request(
     credentials: &S3Credentials,
     bucket: &str,
@@ -558,18 +587,21 @@ pub fn etag_is_md5(etag: &str) -> bool {
 
 /// A failed signing as an error the caller can show (it is bmlib's input, not S3's).
 fn sign_failure(error: SignError) -> S3Error {
-    S3Error::new(S3ErrorKind::Malformed, error.0)
+    S3Error::new(S3ErrorKind::InvalidRequest, error.0)
 }
 
 /// A failed request as an [`S3Error`]: only a request that never completed
-/// is `Transport` (retryable); a client that cannot make it is `Unsupported`,
-/// and a body refused by the client (a `Content-Encoding`) is `Malformed`.
+/// is `Transport` (retryable); a client that cannot make it is `Unsupported`;
+/// a body the client refused (`UreqClient`: one still encoded) is
+/// `Malformed`; a status the client reported as an error is classified as an
+/// answer with no body.
 fn request_failure(error: &FetchError) -> S3Error {
     let kind = match error {
         FetchError::Transport(_) => S3ErrorKind::Transport,
         FetchError::Config(_) => S3ErrorKind::Unsupported,
         FetchError::Malformed(_) => S3ErrorKind::Malformed,
-        FetchError::HttpStatus { .. } | FetchError::ResumeUnreadable(_) => S3ErrorKind::Other,
+        FetchError::HttpStatus { status, .. } => return classify_error(*status, b""),
+        FetchError::ResumeUnreadable(_) => S3ErrorKind::Other,
     };
     S3Error::new(kind, error.to_string())
 }
@@ -593,8 +625,14 @@ struct PartFile {
 impl Drop for PartFile {
     fn drop(&mut self) {
         if !self.published {
-            // Never speak over the original error.
-            let _ = std::fs::remove_file(&self.path);
+            // Logged, never raised over the original error.
+            match std::fs::remove_file(&self.path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => log::debug!(
+                    "Could not remove the temporary file {}: {e}",
+                    self.path.display()
+                ),
+                _ => {}
+            }
         }
     }
 }
@@ -603,8 +641,9 @@ impl Drop for PartFile {
 ///
 /// # Errors
 ///
-/// [`S3Error`] for a refused request, an unreadable reply, no connection, or
-/// inputs that cannot be signed (`Malformed`).
+/// [`S3Error`] for a refused request, an unreadable reply, no connection, a
+/// client that cannot stream (`Unsupported`), or inputs that cannot be signed
+/// (`InvalidRequest`).
 pub fn list_objects(
     client: &dyn HttpClient,
     credentials: &S3Credentials,
@@ -631,6 +670,7 @@ pub fn list_objects(
 
 /// Why [`download_object`] failed.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum DownloadError {
     /// S3 refused, the connection failed, or the bytes were wrong.
     S3(S3Error),
@@ -647,7 +687,14 @@ impl fmt::Display for DownloadError {
     }
 }
 
-impl std::error::Error for DownloadError {}
+impl std::error::Error for DownloadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DownloadError::S3(e) => Some(e),
+            DownloadError::Io(e) => Some(e),
+        }
+    }
+}
 
 impl From<S3Error> for DownloadError {
     fn from(e: S3Error) -> Self {
@@ -675,8 +722,11 @@ impl From<std::io::Error> for DownloadError {
 ///
 /// [`DownloadError::S3`] with `SizeMismatch`/`EtagMismatch` for the wrong
 /// bytes, `Cancelled` when `progress` stopped it, `Transport` for a lost
-/// connection, or the classified refusal; [`DownloadError::Io`] when the
-/// file could not be written.
+/// connection, `Malformed` for a body the client refused (one still
+/// encoded), `Unsupported` for a client that cannot stream, `InvalidRequest`
+/// for inputs that cannot be signed or an ETag still carrying its quotes, or
+/// the classified refusal; [`DownloadError::Io`] when the file could not be
+/// written.
 #[allow(clippy::too_many_arguments)] // shortcut: mirrors Python's signature; a request struct if it grows
 pub fn download_object(
     client: &dyn HttpClient,
@@ -688,6 +738,13 @@ pub fn download_object(
     now: DateTime<Utc>,
     progress: &mut dyn FnMut(u64, u64) -> bool,
 ) -> Result<PathBuf, DownloadError> {
+    if object.etag.contains('"') {
+        return Err(S3Error::new(
+            S3ErrorKind::InvalidRequest,
+            format!("an ETag is given without its quotes: {:?}", object.etag),
+        )
+        .into());
+    }
     let request =
         object_request(credentials, bucket, region, &object.key, now).map_err(sign_failure)?;
     if let Some(parent) = destination.parent() {
@@ -702,8 +759,10 @@ pub fn download_object(
     }
     // shortcut: `ureq` decodes a body stored with `Content-Encoding: gzip`
     // and hides the header, so such an object fails here as `SizeMismatch`
-    // (retryable) where Python refuses it as `Malformed`; neither publishes
-    // it. Read the raw body if Task M0 finds an encoded MECA package.
+    // where Python refuses it as `Malformed`; neither publishes it, neither
+    // retries it. (Any other encoding `UreqClient` refuses as `Malformed`, as
+    // Python does.) Read the raw body if a real MECA package is found stored
+    // with a `Content-Encoding`.
     let mut part = PartFile {
         path: crate::atomic::temp_path_beside(destination),
         published: false,

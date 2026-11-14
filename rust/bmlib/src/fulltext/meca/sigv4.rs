@@ -126,7 +126,8 @@ pub struct SignedRequest {
     pub url: String,
     /// The headers to send, names lower-case.
     pub headers: BTreeMap<String, String>,
-    /// The canonical request that was signed.
+    /// The canonical request that was signed. It holds a session token's
+    /// value (a signed header), so it is kept out of `Debug`: do not log it.
     pub canonical_request: String,
     /// The string that was signed.
     pub string_to_sign: String,

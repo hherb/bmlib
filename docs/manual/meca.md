@@ -78,24 +78,30 @@ with httpx.Client() as client:
 - **No redirect is followed** (`follow_redirects=False` on each request; Rust's
   `UreqClient` streams with redirects off): one would carry the session token
   to another host without the signature. A 3xx is reported as `OTHER`.
-- **Replies are UTF-8.** A body in any other encoding, or one declaring a DTD,
-  is `MALFORMED`.
+- **Listing replies are UTF-8.** A listing in any other encoding, or one
+  declaring a DTD, is `MALFORMED`, and so is a field holding anything but
+  text (a comment, a processing instruction, an element). An error reply that
+  cannot be read is classified by its status.
 - **A listing page is all or nothing.** An object without a key, size, ETag
-  or modification time, a size that is not a whole number, a `KeyCount` that
+  or modification time, a size that is not a whole number (or too large for
+  Rust's `u64`), a `KeyCount` that
   disagrees with the objects delivered, or a truncated page without a token
   raises `S3Error` (`MALFORMED`). A package silently dropped would be a paper
   silently missing.
 - **A download is published only once verified.** The body streams to a
-  temporary file beside the destination (`.<name>.<uuid>.part`, opened
-  exclusively), is synced to disk, and replaces the destination only if its
+  temporary file beside the destination, opened exclusively (Python's is
+  `.<name>.<uuid>.part`, Rust's `<name>.bmlib-tmp-…`), is synced to disk, and replaces the destination only if its
   length is the listed size and, for a single-part ETag (32 hex digits), its
   MD5 is the ETag. A multipart ETag (`…-12`) is not an MD5 and is not
   checked. On any failure the temporary file is removed and an existing file
-  at the destination is left as it was.
+  at the destination is left as it was. An `S3Object` whose ETag still
+  carries its quotes is refused before any request, rather than left
+  unchecked.
 - **An object stored with a `Content-Encoding`** cannot be checked against the
-  listing. Python refuses it (`MALFORMED`); Rust's ureq decodes it and hides
-  the header, so there it fails the size check (`SIZE_MISMATCH`). Neither
-  publishes it. MECA packages are ZIPs, so none is expected.
+  listing. Both ports refuse it as `MALFORMED`, except a gzip object in Rust:
+  ureq decodes gzip and hides the header, so there it fails the size check
+  (`SIZE_MISMATCH`). Neither publishes it or calls it retryable. MECA packages
+  are ZIPs, so none is expected.
 - **Time limits are per step, not per body.** Connecting, sending and each
   read must happen within `S3_TIMEOUT_SECONDS` (45 s), so a large package is
   never cut off for taking long, only for stalling. Rust's `UreqClient` does
@@ -117,13 +123,14 @@ Every failure is an `S3Error` with a `kind` (`S3ErrorKind`), the HTTP
 | `REQUEST_TIME_TOO_SKEWED` | this computer's clock is off by over 15 minutes | no |
 | `EXPIRED_TOKEN` | temporary credentials expired | no |
 | `NO_SUCH_KEY` / `NO_SUCH_BUCKET` | the object / bucket is gone | no |
-| `RETRY_LATER` | `SlowDown`, `ServiceUnavailable`, `InternalError`, or a 500/503 naming no code | yes |
-| `OTHER` | any other refusal, kept with its code and message | no |
+| `RETRY_LATER` | `SlowDown`, `ServiceUnavailable`, `InternalError`, `RequestTimeout`, or a 500/502/503/504 naming no code bmlib knows | yes |
+| `OTHER` | any other refusal (a 3xx, a 4xx with an unknown code), kept with its code and message | no |
 | `MALFORMED` | a reply that could not be read (a DTD is refused) | no |
 | `TRANSPORT` | no connection, or it broke off | yes |
-| `SIZE_MISMATCH` / `ETAG_MISMATCH` | the bytes are not the listed object's | yes |
+| `SIZE_MISMATCH` / `ETAG_MISMATCH` | the bytes are not the listed object's: it probably changed since the listing, so list again (a retry would pay for the same bytes) | no |
 | `CANCELLED` | `progress` returned `False` | no |
 | `Unsupported` (Rust only) | the `HttpClient` cannot stream (`get_with_headers_stream` not implemented) | no |
+| `InvalidRequest` (Rust only) | bmlib refused to make the request (see below); nothing was sent | no |
 
 Only `<Code>` and `<Message>` are read from an error body: an
 `InvalidAccessKeyId` or `SignatureDoesNotMatch` body also echoes the key ID
@@ -131,8 +138,9 @@ and the string to sign, and neither belongs in a message.
 
 Malformed inputs (a bucket name with a dot, an empty key, a key with a `.`
 or `..` segment, which httpx would rewrite after signing, a header with a line
-break) raise `ValueError` in Python; Rust returns `SignError`, which
-`list_objects` / `download_object` report as `MALFORMED`. A file-system
+break, an ETag still in quotes) raise `ValueError` in Python; Rust returns
+`SignError`, which `list_objects` / `download_object` report as
+`InvalidRequest`. A file-system
 failure while downloading is an `OSError` (Rust: `DownloadError::Io`).
 
 ## Signing on its own
@@ -149,7 +157,8 @@ signed.url, signed.headers   # send these; the HTTP client writes Host from the 
 ```
 
 Only GETs with an empty body are signed. `now` must be timezone-aware.
-Header names must be ASCII tokens, names that differ only by case are
+Header names must be printable ASCII without spaces or colons, values must
+hold no control character, names that differ only by case are
 refused, values are trimmed and inner runs of spaces collapsed, and the
 signer's own headers (`x-amz-date`, `x-amz-content-sha256`,
 `x-amz-security-token`, `host`) cannot be passed in `extra_headers`.

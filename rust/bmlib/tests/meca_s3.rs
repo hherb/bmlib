@@ -18,8 +18,8 @@
 //! Python's `tests/test_meca_s3.py` pins.
 
 use bmlib::fulltext::meca::s3::{
-    download_object, list_objects, DownloadError, S3ErrorKind, S3Object, MECA_BUCKET_REGION,
-    MEDRXIV_MECA_BUCKET,
+    download_object, list_objects, DownloadError, S3Error, S3ErrorKind, S3Object,
+    MECA_BUCKET_REGION, MEDRXIV_MECA_BUCKET,
 };
 use bmlib::fulltext::meca::sigv4::S3Credentials;
 use bmlib::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse, HttpStream};
@@ -38,6 +38,8 @@ enum Answer {
     Breaks(u16, Vec<u8>),
     /// No connection.
     Refused,
+    /// The client's own error.
+    Fails(FetchError),
 }
 
 /// A fake S3: answers in order and records each request's URL and headers.
@@ -101,6 +103,7 @@ impl HttpClient for FakeS3 {
                 }),
             },
             Answer::Refused => return Err(FetchError::Transport("refused".into())),
+            Answer::Fails(error) => return Err(error),
         })
     }
 }
@@ -211,8 +214,12 @@ fn entries(dir: &Path) -> Vec<String> {
 }
 
 fn kind(result: Result<std::path::PathBuf, DownloadError>) -> S3ErrorKind {
+    s3_error(result).kind
+}
+
+fn s3_error(result: Result<std::path::PathBuf, DownloadError>) -> S3Error {
     match result {
-        Err(DownloadError::S3(e)) => e.kind,
+        Err(DownloadError::S3(e)) => e,
         other => panic!("expected an S3 error, got {other:?}"),
     }
 }
@@ -335,11 +342,134 @@ fn the_wrong_bytes_leave_nothing_behind() {
     ];
     for (sent, listed, expected) in cases {
         let dir = TempDir::new();
+        let destination = dir.path().join("x.meca");
+        std::fs::write(&destination, b"old").unwrap();
         let s3 = FakeS3::new(vec![Answer::Body(200, sent)]);
-        let got = kind(download(&s3, &listed, &dir.path().join("x.meca")));
-        assert_eq!(got, expected);
-        assert!(entries(dir.path()).is_empty());
+        let error = s3_error(download(&s3, &listed, &destination));
+        assert_eq!(error.kind, expected);
+        assert!(
+            !error.retryable(),
+            "the same request would pay for them again"
+        );
+        assert!(error.reason().contains("list it again"), "{error}");
+        // Verified before the rename: the old file is untouched, nothing beside it.
+        assert_eq!(std::fs::read(&destination).unwrap(), b"old");
+        assert_eq!(entries(dir.path()), ["x.meca"]);
     }
+}
+
+#[test]
+fn a_verified_download_replaces_an_existing_file() {
+    let dir = TempDir::new();
+    let destination = dir.path().join("x.meca");
+    std::fs::write(&destination, b"old").unwrap();
+    let served = body();
+    let s3 = FakeS3::new(vec![Answer::Body(200, served.clone())]);
+    download(&s3, &object(&served, None), &destination).unwrap();
+    assert_eq!(std::fs::read(&destination).unwrap(), served);
+    assert_eq!(entries(dir.path()), ["x.meca"]);
+}
+
+#[test]
+fn an_over_long_body_is_stopped_at_the_first_block_past_the_size() {
+    let dir = TempDir::new();
+    let served = body();
+    let s3 = FakeS3::new(vec![Answer::Body(200, served.repeat(100))]);
+    let error = s3_error(download(
+        &s3,
+        &object(&served[..10], None),
+        &dir.path().join("x"),
+    ));
+    assert_eq!(error.detail, "more than the listed 10 bytes");
+}
+
+#[test]
+fn inputs_that_cannot_be_signed_are_refused_before_any_request() {
+    let dir = TempDir::new();
+    let served = body();
+    let s3 = FakeS3::new(vec![]);
+    let error = s3_error(download_object(
+        &s3,
+        &key(),
+        "my.bucket",
+        MECA_BUCKET_REGION,
+        &object(&served, None),
+        &dir.path().join("x"),
+        now(),
+        &mut |_, _| true,
+    ));
+    assert_eq!(error.kind, S3ErrorKind::InvalidRequest);
+    assert!(!error.retryable());
+    assert!(
+        error
+            .reason()
+            .starts_with("bmlib cannot make this request: not a dot-free S3 bucket name"),
+        "{error}"
+    );
+    let listing = list_objects(
+        &s3,
+        &key(),
+        MEDRXIV_MECA_BUCKET,
+        "US-EAST-1",
+        "",
+        None,
+        now(),
+    )
+    .unwrap_err();
+    assert_eq!(listing.kind, S3ErrorKind::InvalidRequest);
+    assert!(s3.seen.borrow().is_empty());
+}
+
+#[test]
+fn a_quoted_etag_is_refused_rather_than_left_unchecked() {
+    let dir = TempDir::new();
+    let served = body();
+    let s3 = FakeS3::new(vec![]);
+    let quoted = format!("\"{}\"", md5_hex(&served));
+    let error = s3_error(download(
+        &s3,
+        &object(&served, Some(&quoted)),
+        &dir.path().join("x"),
+    ));
+    assert_eq!(error.kind, S3ErrorKind::InvalidRequest);
+    assert!(error.detail.contains("quotes"), "{error}");
+    assert!(s3.seen.borrow().is_empty());
+}
+
+#[test]
+fn a_status_the_client_reports_as_an_error_is_classified() {
+    let s3 = FakeS3::new(vec![Answer::Fails(FetchError::HttpStatus {
+        url: "https://x".into(),
+        status: 503,
+    })]);
+    let error = list_objects(
+        &s3,
+        &key(),
+        MEDRXIV_MECA_BUCKET,
+        MECA_BUCKET_REGION,
+        "",
+        None,
+        now(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        (error.kind, error.status),
+        (S3ErrorKind::RetryLater, Some(503))
+    );
+    assert!(error.retryable());
+}
+
+#[test]
+fn a_body_the_client_refused_is_malformed() {
+    let dir = TempDir::new();
+    let served = body();
+    let s3 = FakeS3::new(vec![Answer::Fails(FetchError::Malformed(
+        "the body is stored with Content-Encoding \"zstd\"".into(),
+    ))]);
+    let error = s3_error(download(&s3, &object(&served, None), &dir.path().join("x")));
+    assert_eq!(error.kind, S3ErrorKind::Malformed);
+    assert!(!error.retryable());
+    assert!(entries(dir.path()).is_empty());
 }
 
 #[test]
@@ -404,7 +534,7 @@ fn a_broken_connection_is_a_transport_error_and_leaves_nothing() {
 }
 
 #[test]
-fn a_client_that_cannot_stream_is_a_transport_error() {
+fn a_client_that_cannot_stream_is_unsupported() {
     struct Plain;
     impl HttpClient for Plain {
         fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {

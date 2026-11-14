@@ -160,6 +160,137 @@
    "expected": {
     "error": "malformed"
    }
+  },
+  {
+   "name": "page-without-is-truncated",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "truncated-with-an-empty-token",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><NextContinuationToken></NextContinuationToken><MaxKeys>1000</MaxKeys><IsTruncated>true</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "key-count-with-a-sign",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>+1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "key-count-with-a-space",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount> 1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "page-with-common-prefixes",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents><CommonPrefixes><Prefix>Back_Content/</Prefix></CommonPrefixes></ListBucketResult>",
+   "expected": {
+    "objects": [
+     {
+      "key": "Current_Content/January_2024/0a1b.meca",
+      "size": 48213,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     }
+    ],
+    "is_truncated": false,
+    "next_continuation_token": null
+   }
+  },
+  {
+   "name": "wrong-root",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListAllMyBucketsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListAllMyBucketsResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "another-namespace",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://example.com/not-s3/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "comment-inside-a-key",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a<!--x-->1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "comment-before-a-key-text",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key><!--x-->Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "instruction-inside-a-key",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a<?pi x?>1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "element-inside-a-key",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a<b/>1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "comment-between-objects",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents><!-- between --><Contents><Key>Current_Content/January_2024/2c3d.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "objects": [
+     {
+      "key": "Current_Content/January_2024/0a1b.meca",
+      "size": 48213,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     },
+     {
+      "key": "Current_Content/January_2024/2c3d.meca",
+      "size": 48213,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     }
+    ],
+    "is_truncated": false,
+    "next_continuation_token": null
+   }
+  },
+  {
+   "name": "size-at-the-u64-limit",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>a.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>18446744073709551615</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "objects": [
+     {
+      "key": "a.meca",
+      "size": 18446744073709551615,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     }
+    ],
+    "is_truncated": false,
+    "next_continuation_token": null
+   }
+  },
+  {
+   "name": "size-past-the-u64-limit",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>a.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>18446744073709551616</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
   }
  ],
  "errors": [
@@ -284,6 +415,102 @@
    }
   },
   {
+   "name": "empty-500",
+   "status": 500,
+   "body": "",
+   "expected": {
+    "kind": "retry_later",
+    "code": null,
+    "detail": "",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "empty-504",
+   "status": 504,
+   "body": "",
+   "expected": {
+    "kind": "retry_later",
+    "code": null,
+    "detail": "",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "service-unavailable",
+   "status": 503,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>ServiceUnavailable</Code><Message>Please reduce your request rate.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "retry_later",
+    "code": "ServiceUnavailable",
+    "detail": "Please reduce your request rate.",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "request-timeout",
+   "status": 400,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>RequestTimeout</Code><Message>Your socket connection to the server was not read from or written to within the timeout period.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "retry_later",
+    "code": "RequestTimeout",
+    "detail": "Your socket connection to the server was not read from or written to within the timeout period.",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "unknown-code-503",
+   "status": 503,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>SomethingNew</Code><Message>A new failure.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "retry_later",
+    "code": "SomethingNew",
+    "detail": "A new failure.",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "unknown-code-403",
+   "status": 403,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>AllAccessDisabled</Code><Message>All access disabled.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "other",
+    "code": "AllAccessDisabled",
+    "detail": "All access disabled.",
+    "retryable": false,
+    "reason": "AWS answered HTTP 403 AllAccessDisabled: All access disabled."
+   }
+  },
+  {
+   "name": "empty-code",
+   "status": 403,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code></Code><Message>No code given.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "access_denied",
+    "code": null,
+    "detail": "No code given.",
+    "retryable": false,
+    "reason": "AWS refused the request (access denied). The key is not allowed to read this bucket: its IAM user needs a policy granting s3:ListBucket on the bucket and s3:GetObject on its objects, and the AWS account needs a payment method, because the bucket is requester pays."
+   }
+  },
+  {
+   "name": "comment-inside-a-code",
+   "status": 404,
+   "body": "<Error><Code>No<!--x-->SuchKey</Code><Message>gone</Message></Error>",
+   "expected": {
+    "kind": "other",
+    "code": null,
+    "detail": "",
+    "retryable": false,
+    "reason": "AWS answered HTTP 404"
+   }
+  },
+  {
    "name": "empty-403",
    "status": 403,
    "body": "",
@@ -300,11 +527,11 @@
    "status": 502,
    "body": "<html><body>Bad Gateway</body></html>",
    "expected": {
-    "kind": "other",
+    "kind": "retry_later",
     "code": null,
     "detail": "",
-    "retryable": false,
-    "reason": "AWS answered HTTP 502"
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
    }
   },
   {

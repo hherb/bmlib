@@ -30,8 +30,8 @@ MECA buckets can be read at all.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
+import logging
 import os
 import re
 import uuid
@@ -48,6 +48,8 @@ from bmlib.fulltext.meca.sigv4 import S3Credentials, SignedRequest, sign_get
 
 if TYPE_CHECKING:
     import httpx
+
+logger = logging.getLogger(__name__)
 
 MEDRXIV_MECA_BUCKET = "medrxiv-src-monthly"
 """medRxiv's MECA archive (requester pays)."""
@@ -76,6 +78,8 @@ _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 _BUCKET = re.compile(r"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]")
 _SINGLE_PART_ETAG = re.compile(r"[0-9a-f]{32}")
 _DIGITS = re.compile(r"[0-9]+")
+_MAX_SIZE = (1 << 64) - 1
+"""The largest size the Rust port's ``u64`` holds; a larger one is refused in both."""
 
 
 class S3ErrorKind(Enum):
@@ -108,23 +112,22 @@ _CODE_KINDS = {
     "SlowDown": S3ErrorKind.RETRY_LATER,
     "ServiceUnavailable": S3ErrorKind.RETRY_LATER,
     "InternalError": S3ErrorKind.RETRY_LATER,
+    "RequestTimeout": S3ErrorKind.RETRY_LATER,
 }
 
 _STATUS_KINDS = {
     403: S3ErrorKind.ACCESS_DENIED,
     500: S3ErrorKind.RETRY_LATER,
+    502: S3ErrorKind.RETRY_LATER,
     503: S3ErrorKind.RETRY_LATER,
+    504: S3ErrorKind.RETRY_LATER,
 }
-"""A status's kind when the body names no code (S3 sends none for some 403s)."""
+"""A status's kind when the body names no code (S3 sends none for some 403s), and
+a 5xx's when its code is one bmlib does not know."""
 
-_RETRYABLE = frozenset(
-    {
-        S3ErrorKind.RETRY_LATER,
-        S3ErrorKind.TRANSPORT,
-        S3ErrorKind.SIZE_MISMATCH,
-        S3ErrorKind.ETAG_MISMATCH,
-    }
-)
+_RETRYABLE = frozenset({S3ErrorKind.RETRY_LATER, S3ErrorKind.TRANSPORT})
+"""Not ``SIZE_MISMATCH``/``ETAG_MISMATCH``: a body that breaks off is ``TRANSPORT``,
+so the wrong bytes arrived whole, and the same request would pay for them again."""
 
 _REASONS = {
     S3ErrorKind.ACCESS_DENIED: (
@@ -174,11 +177,17 @@ class S3Error(Exception):
         code: str | None = None,
     ) -> None:
         """Build the error; ``str()`` is :meth:`reason`."""
+        # ``args`` are the positional fields, so a pickled error is rebuilt whole
+        # (``status`` and ``code`` come back with ``__dict__``).
+        super().__init__(kind, detail)
         self.kind = kind
         self.status = status
         self.code = code
         self.detail = detail
-        super().__init__(self.reason())
+
+    def __str__(self) -> str:
+        """Return :meth:`reason`."""
+        return self.reason()
 
     @property
     def retryable(self) -> bool:
@@ -196,7 +205,8 @@ class S3Error(Exception):
             return f"Could not reach AWS: {self.detail}"
         if self.kind in (S3ErrorKind.SIZE_MISMATCH, S3ErrorKind.ETAG_MISMATCH):
             return (
-                f"The downloaded file is not the one listed ({self.detail}), so it was discarded."
+                f"The downloaded file is not the one listed ({self.detail}), so it was "
+                "discarded. The file may have changed since it was listed: list it again."
             )
         said = f"AWS answered HTTP {self.status}"
         if self.code:
@@ -228,9 +238,16 @@ class ListPage:
     is_truncated: bool
     next_continuation_token: str | None
 
+    def __post_init__(self) -> None:
+        """Refuse a token without truncation, or truncation without a token."""
+        if self.is_truncated != bool(self.next_continuation_token):
+            raise ValueError("next_continuation_token is set exactly when is_truncated is")
 
-def _local(tag: str) -> str:
-    """Return *tag* without its namespace."""
+
+def _local(tag: object) -> str:
+    """Return *tag* without its namespace; ``""`` for a comment or processing instruction."""
+    if not isinstance(tag, str):
+        return ""
     return tag[len(_S3_NS) :] if tag.startswith(_S3_NS) else tag
 
 
@@ -240,6 +257,8 @@ def _parse(body: bytes) -> ET.Element:
     S3 sends UTF-8. The body is decoded here, strictly, rather than handed to
     expat as bytes, which would honour any encoding the body declares (a UTF-16
     body would slip a DTD past the check below, and Rust would refuse it).
+    Comments and processing instructions are kept in the tree, so a field
+    holding one is seen and refused (:func:`_child_text`), as Rust sees it.
 
     Raises:
         S3Error: ``MALFORMED`` if the body is not UTF-8, not XML, or declares a DTD.
@@ -251,7 +270,8 @@ def _parse(body: bytes) -> ET.Element:
     if "<!DOCTYPE" in text:
         raise S3Error(S3ErrorKind.MALFORMED, "the reply declares a DTD")
     try:
-        return ET.fromstring(text)
+        builder = ET.TreeBuilder(insert_comments=True, insert_pis=True)
+        return ET.fromstring(text, parser=ET.XMLParser(target=builder))
     except ET.ParseError as exc:
         raise S3Error(S3ErrorKind.MALFORMED, f"not XML ({exc})") from None
 
@@ -260,13 +280,16 @@ def _child_text(element: ET.Element, name: str) -> str | None:
     """Return the text of *element*'s only child called *name*, or ``None``.
 
     Raises:
-        S3Error: ``MALFORMED`` if there are two.
+        S3Error: ``MALFORMED`` if there are two, or the child holds anything but
+            text (an element, a comment or a processing instruction).
     """
     found = [c for c in element if _local(c.tag) == name]
     if len(found) > 1:
         raise S3Error(S3ErrorKind.MALFORMED, f"<{name}> appears twice")
     if not found:
         return None
+    if len(found[0]):
+        raise S3Error(S3ErrorKind.MALFORMED, f"<{name}> holds markup, not only text")
     return found[0].text or ""
 
 
@@ -281,10 +304,11 @@ def _required(element: ET.Element, name: str, where: str) -> str:
 def parse_list_objects_v2(body: bytes) -> ListPage:
     """Read one ListObjectsV2 reply.
 
-    Nothing is skipped: an object without a key, size or ETag, a size that is not
-    a whole number, a ``KeyCount`` that disagrees with the objects delivered, or
-    a truncated page without a continuation token fails the whole page, because
-    a package silently dropped is a paper silently missing.
+    Nothing is skipped: an object without a key, size, ETag or modification
+    time, a size that is not a whole number (or too large for a ``u64``), a
+    ``KeyCount`` that disagrees with the objects delivered, or a truncated page
+    without a continuation token fails the whole page, because a package
+    silently dropped is a paper silently missing.
 
     Raises:
         S3Error: ``MALFORMED`` for any of the above.
@@ -308,7 +332,7 @@ def parse_list_objects_v2(body: bytes) -> ListPage:
             continue
         key = _required(child, "Key", "an object")
         size_text = _required(child, "Size", f"object {key!r}")
-        if not _DIGITS.fullmatch(size_text):
+        if not _DIGITS.fullmatch(size_text) or int(size_text) > _MAX_SIZE:
             raise S3Error(S3ErrorKind.MALFORMED, f"object {key!r} has size {size_text!r}")
         etag = _required(child, "ETag", f"object {key!r}").strip('"')
         if not etag:
@@ -336,7 +360,9 @@ def classify_error(status: int, body: bytes) -> S3Error:
     """Turn a non-success reply into an :class:`S3Error`.
 
     The kind comes from S3's ``<Error><Code>``; a body without one (S3 sends
-    none for some 403s, a proxy may send HTML) falls back on the status. Only
+    none for some 403s, a proxy may send HTML) falls back on the status, and so
+    does a 5xx whose code bmlib does not know (it is still a server failing).
+    Only
     ``Code`` and ``Message`` are read: an ``InvalidAccessKeyId`` or
     ``SignatureDoesNotMatch`` body also echoes the key ID and the string to
     sign, and neither belongs in a message.
@@ -356,7 +382,8 @@ def classify_error(status: int, body: bytes) -> S3Error:
                 code, message = None, ""
     kind = _CODE_KINDS.get(code) if code else None
     if kind is None:
-        kind = S3ErrorKind.OTHER if code else _STATUS_KINDS.get(status, S3ErrorKind.OTHER)
+        by_status = code is None or status >= 500
+        kind = _STATUS_KINDS.get(status, S3ErrorKind.OTHER) if by_status else S3ErrorKind.OTHER
     return S3Error(kind, message, status=status, code=code)
 
 
@@ -403,7 +430,9 @@ def object_request(
     """Sign a GET of one object (requester pays).
 
     Raises:
-        ValueError: If *key* is empty.
+        ValueError: If *key* is empty or holds a ``.``/``..`` segment, *bucket* is
+            not a dot-free bucket name, or :func:`~.sigv4.sign_get` refuses the
+            region.
     """
     if not key:
         raise ValueError("an object key must not be empty")
@@ -452,9 +481,10 @@ def _content_encoding_refused(encoding: str | None) -> S3Error | None:
     """``MALFORMED`` for a body stored with a ``Content-Encoding``.
 
     The listing's size and ETag describe the stored bytes, which ``iter_raw``
-    reads; refused anyway, because the Rust port's ureq decodes such a body and
-    hides the header, so there it can only fail the size check (a divergence
-    noted at its call site). Neither port publishes such an object.
+    reads; refused anyway, as the Rust port refuses it: its ureq decodes a gzip
+    body and hides the header, so there a gzip object fails the size check (a
+    divergence noted at its call site), and any other encoding is refused as
+    here. Neither port publishes such an object.
     """
     if encoding is None or encoding.strip().lower() in ("", "identity"):
         return None
@@ -465,9 +495,20 @@ def _content_encoding_refused(encoding: str | None) -> S3Error | None:
     )
 
 
-def _transport_error(exc: Exception) -> S3Error:
-    """An httpx failure as ``TRANSPORT``, naming its type."""
-    return S3Error(S3ErrorKind.TRANSPORT, f"{type(exc).__name__}: {exc}")
+def _request_error(httpx: ModuleType, exc: Exception) -> S3Error:
+    """An httpx failure, naming its type: ``MALFORMED`` for a body httpx could not
+    decode (a broken ``Content-Encoding``), else ``TRANSPORT``."""
+    kind = S3ErrorKind.MALFORMED if isinstance(exc, httpx.DecodingError) else S3ErrorKind.TRANSPORT
+    return S3Error(kind, f"{type(exc).__name__}: {exc}")
+
+
+def _discard(part: Path) -> None:
+    """Remove a temporary file; a failure is logged, never raised over the
+    original error."""
+    try:
+        part.unlink(missing_ok=True)
+    except OSError:
+        logger.debug("Could not remove the temporary file %s", part, exc_info=True)
 
 
 def list_objects(
@@ -484,6 +525,7 @@ def list_objects(
 
     Raises:
         S3Error: For a refused request, an unreadable reply or no connection.
+        ValueError: If the bucket or region cannot be signed for.
     """
     httpx = _httpx()
     request = list_objects_request(
@@ -497,8 +539,8 @@ def list_objects(
             timeout=S3_TIMEOUT_SECONDS,
             follow_redirects=False,
         )
-    except httpx.TransportError as exc:
-        raise _transport_error(exc) from None
+    except (httpx.TransportError, httpx.DecodingError) as exc:
+        raise _request_error(httpx, exc) from exc
     if response.status_code != 200:
         raise classify_error(response.status_code, response.content)
     return parse_list_objects_v2(response.content)
@@ -521,7 +563,8 @@ def download_object(
     (``.<name>.<uuid>.part``, opened exclusively), synced to disk, and is
     renamed over *destination* only if its length is the listed size and, for a
     single-part ETag, its MD5 is the ETag. On any failure or cancel the
-    temporary file is removed and *destination* is left as it was.
+    temporary file is removed and *destination* is left as it was. (The Rust
+    port names its temporary file differently.)
 
     Args:
         progress: Called as ``progress(done_bytes, obj.size)`` per block;
@@ -530,10 +573,15 @@ def download_object(
     Raises:
         S3Error: ``SIZE_MISMATCH``/``ETAG_MISMATCH`` for the wrong bytes,
             ``CANCELLED`` when *progress* stopped it, ``TRANSPORT`` for a lost
-            connection, or the classified refusal.
+            connection, ``MALFORMED`` for a body stored with a
+            ``Content-Encoding``, or the classified refusal.
+        ValueError: If *obj*'s ETag still carries its quotes (its MD5 could not
+            be checked), or :func:`object_request` refuses the request.
         OSError: On a file-system failure.
     """
     httpx = _httpx()
+    if '"' in obj.etag:
+        raise ValueError(f"an ETag is given without its quotes: {obj.etag!r}")
     request = object_request(credentials, bucket, region, obj.key, _now(now))
     destination.parent.mkdir(parents=True, exist_ok=True)
     part = destination.parent / f".{destination.name}.{uuid.uuid4().hex}.part"
@@ -570,12 +618,10 @@ def download_object(
         if etag_is_md5(obj.etag) and digest.hexdigest() != obj.etag:
             raise S3Error(S3ErrorKind.ETAG_MISMATCH, "its MD5 is not the listed ETag")
         os.replace(part, destination)
-    except httpx.TransportError as exc:
-        with contextlib.suppress(OSError):
-            part.unlink(missing_ok=True)
-        raise _transport_error(exc) from None
+    except (httpx.TransportError, httpx.DecodingError) as exc:
+        _discard(part)
+        raise _request_error(httpx, exc) from exc
     except BaseException:
-        with contextlib.suppress(OSError):  # never speak over the original error
-            part.unlink(missing_ok=True)
+        _discard(part)
         raise
     return destination

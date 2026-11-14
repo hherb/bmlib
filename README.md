@@ -86,6 +86,7 @@ models and `SectionSegmenter` all import on a core install.
 | `pdf` | `pip install bmlib[pdf]` | PDF → text (PyMuPDF) |
 | `html` | `pip install bmlib[html]` | `canonical_from_html`: an HTML page's main content as canonical text (markupever, a binding to the html5ever parser, run in a child process that psutil watches) |
 | `embed` | `pip install bmlib[embed]` | `bmlib.embed.Embedder` (llama-cpp-python). It compiles llama.cpp, so it is not in `all` |
+| `meca` | `pip install bmlib[meca]` | `bmlib.fulltext.meca`'s S3 transport (httpx): listing and downloading medRxiv's / bioRxiv's MECA archives |
 | `secrets` | `pip install bmlib[secrets]` | `bmlib.secrets.KeyringVault`: API keys in the OS keychain (keyring) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2, types-psutil |
 | `all` | `pip install bmlib[all]` | Every runtime extra except `embed` (and **not** `dev`). Use `.[all,embed]` for both |

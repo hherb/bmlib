@@ -158,7 +158,9 @@ All notable changes to bmlib are documented here. The format is based on
   is followed (it would carry the session token to another host). Rust's
   `HttpClient` gains `get_with_headers_stream` (the default refuses;
   `UreqClient` streams with a per-read limit and no redirects, so ureq is now
-  `>=3.5`). Reading a `.meca` package is not part of this yet. Contracts:
+  `>=3.5`, and refuses a success whose body it leaves encoded). A size or
+  ETag mismatch is not retryable: the same request would pay for the same
+  bytes. Reading a `.meca` package is not part of this yet. Contracts:
   `tests/fixtures/s3_sigv4.json`, `tests/fixtures/s3_responses.json`.
 
 - **The shared paper library: a file is found by its kind, and a save is

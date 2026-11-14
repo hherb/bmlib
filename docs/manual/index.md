@@ -37,7 +37,8 @@ pip install -e ".[all,dev]"
 
 ## Module Overview
 
-bmlib is organised into thirteen modules, each with a focused responsibility:
+bmlib is organised into thirteen modules, each with a focused responsibility (`bmlib.fulltext.meca`
+has its own row, but is part of `fulltext`):
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|

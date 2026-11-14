@@ -736,3 +736,57 @@ fn a_streamed_get_follows_no_redirect() {
     assert_eq!(stream.status, 307);
     handle.join().expect("server");
 }
+
+/// A streamed GET whose headers never come names the limit it set
+/// (`timeout_seconds`), not the POST streams' `stream_timeout_seconds`.
+#[test]
+fn a_streamed_get_without_headers_times_out_naming_its_own_limit() {
+    let (url, _handle) = serve_slowly(ms(2_500), ms(0), "x");
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let error = client
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect_err("no headers within 1 s");
+    let message = error.to_string();
+    assert!(
+        message.starts_with("timed out after 1 s waiting for the response headers"),
+        "{message}"
+    );
+}
+
+/// A success whose body ureq leaves encoded is refused: its bytes are not the
+/// stored object's, which the caller checks them against.
+#[test]
+fn a_streamed_get_refuses_a_body_left_encoded() {
+    let (url, handle) = serve_raw(
+        "HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: 2\r\n\
+         Connection: close\r\n\r\nxx",
+    );
+    match UreqClient::new().get_with_headers_stream(&url, &BTreeMap::new()) {
+        Err(FetchError::Malformed(message)) => {
+            assert!(
+                message.contains("Content-Encoding \"deflate\""),
+                "{message}"
+            );
+        }
+        other => panic!("expected Malformed, got {other:?}"),
+    }
+    handle.join().expect("server");
+}
+
+/// ...but `identity` is no encoding at all.
+#[test]
+fn a_streamed_get_reads_an_identity_body() {
+    let (url, handle) = serve_raw(
+        "HTTP/1.1 200 OK\r\nContent-Encoding: identity\r\nContent-Length: 2\r\n\
+         Connection: close\r\n\r\nxx",
+    );
+    let stream = UreqClient::new()
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect("an identity body");
+    assert_eq!(read_all(stream).expect("the body"), "xx");
+    handle.join().expect("server");
+}

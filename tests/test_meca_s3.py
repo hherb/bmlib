@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import pickle
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
@@ -30,6 +31,7 @@ import pytest
 
 from bmlib.fulltext.meca import s3
 from bmlib.fulltext.meca.s3 import (
+    ListPage,
     S3Error,
     S3ErrorKind,
     S3Object,
@@ -221,22 +223,59 @@ class TestDownloadObject:
         assert list(destination.parent.iterdir()) == [destination]
 
     @pytest.mark.parametrize(
-        ("served", "listed", "kind"),
+        ("served", "listed", "kind", "detail"),
         [
-            (BODY[:-1], _object(), S3ErrorKind.SIZE_MISMATCH),
-            (BODY + b"x", _object(), S3ErrorKind.SIZE_MISMATCH),
-            (BODY, _object(etag="0" * 32), S3ErrorKind.ETAG_MISMATCH),
+            (BODY[:-1], _object(), S3ErrorKind.SIZE_MISMATCH, f"{len(BODY) - 1} of the listed"),
+            (BODY + b"x", _object(), S3ErrorKind.SIZE_MISMATCH, "more than the listed"),
+            (BODY, _object(etag="0" * 32), S3ErrorKind.ETAG_MISMATCH, "MD5"),
         ],
     )
-    def test_the_wrong_bytes_leave_nothing_behind(
-        self, tmp_path: Path, served: bytes, listed: S3Object, kind: S3ErrorKind
+    def test_the_wrong_bytes_leave_nothing_behind_and_are_not_retried(
+        self, tmp_path: Path, served: bytes, listed: S3Object, kind: S3ErrorKind, detail: str
     ) -> None:
         destination = tmp_path / "0a1b.meca"
         with _client(lambda r: _served(served)) as client:
             with pytest.raises(S3Error) as caught:
                 download_object(client, KEY, BUCKET, REGION, listed, destination, now=NOW)
         assert caught.value.kind is kind
+        assert detail in caught.value.detail
+        assert not caught.value.retryable  # the same request would pay for them again
+        assert "list it again" in str(caught.value)
         assert list(tmp_path.iterdir()) == []
+
+    def test_an_over_long_body_is_stopped_at_the_first_block_past_the_size(
+        self, tmp_path: Path
+    ) -> None:
+        listed = _object(BODY[:10])
+        with _client(lambda r: _served(BODY * 100)) as client:
+            with pytest.raises(S3Error) as caught:
+                download_object(client, KEY, BUCKET, REGION, listed, tmp_path / "x", now=NOW)
+        assert caught.value.detail == "more than the listed 10 bytes"
+
+    def test_the_path_sent_is_the_path_signed(self, tmp_path: Path) -> None:
+        key = "Current_Content/R&D 2/\u00fc+x=1;y~.meca"
+        sent: list[bytes] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(request.url.raw_path)
+            return _served(BODY)
+
+        listed = S3Object(
+            key=key,
+            size=len(BODY),
+            etag=hashlib.md5(BODY).hexdigest(),
+            last_modified="2024-01-01T00:00:00.000Z",
+        )
+        with _client(handler) as client:
+            download_object(client, KEY, BUCKET, REGION, listed, tmp_path / "x", now=NOW)
+        signed = s3.object_request(KEY, BUCKET, REGION, key, NOW)
+        assert sent == [signed.canonical_request.split("\n")[1].encode("ascii")]
+
+    def test_a_quoted_etag_is_refused_rather_than_left_unchecked(self, tmp_path: Path) -> None:
+        listed = _object(etag=f'"{hashlib.md5(BODY).hexdigest()}"')
+        with _client(lambda r: pytest.fail("no request is sent")) as client:
+            with pytest.raises(ValueError, match="quotes"):
+                download_object(client, KEY, BUCKET, REGION, listed, tmp_path / "x", now=NOW)
 
     def test_a_multipart_etag_is_not_checked(self, tmp_path: Path) -> None:
         listed = _object(etag="d41d8cd98f00b204e9800998ecf8427e-3")
@@ -277,6 +316,19 @@ class TestDownloadObject:
         assert caught.value.kind is S3ErrorKind.CANCELLED
         assert calls and calls[0][1] == len(BODY)
         assert list(tmp_path.iterdir()) == []
+
+    def test_progress_returning_none_does_not_stop_it(self, tmp_path: Path) -> None:
+        calls: list[int] = []
+
+        def progress(done: int, total: int) -> None:
+            calls.append(done)
+
+        with _client(lambda r: _served(BODY)) as client:
+            path = download_object(
+                client, KEY, BUCKET, REGION, _object(), tmp_path / "x", now=NOW, progress=progress
+            )
+        assert path.read_bytes() == BODY
+        assert calls[-1] == len(BODY)
 
     def test_a_broken_connection_is_a_transport_error_and_leaves_nothing(
         self, tmp_path: Path
@@ -329,8 +381,37 @@ class TestWhatIsRefused:
         with pytest.raises(ValueError, match="segment"):
             s3.object_request(KEY, BUCKET, REGION, key, NOW)
 
+    def test_a_listing_httpx_cannot_decode_is_malformed(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, headers={"Content-Encoding": "gzip"}, content=b"not gzip")
+
+        with _client(handler) as client, pytest.raises(S3Error) as caught:
+            list_objects(client, KEY, BUCKET, REGION, now=NOW)
+        assert caught.value.kind is S3ErrorKind.MALFORMED
+        assert caught.value.detail.startswith("DecodingError: ")
+
     def test_a_body_that_is_not_utf8_is_malformed(self) -> None:
         body = "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>"
         with pytest.raises(S3Error) as caught:
             s3.parse_list_objects_v2(body.encode("utf-16"))
         assert caught.value.kind is S3ErrorKind.MALFORMED
+
+
+class TestTypes:
+    def test_an_error_survives_pickling_whole(self) -> None:
+        error = S3Error(S3ErrorKind.OTHER, "d", status=400, code="InvalidArgument")
+        back = pickle.loads(pickle.dumps(error))
+        assert (back.kind, back.detail, back.status, back.code) == (
+            S3ErrorKind.OTHER,
+            "d",
+            400,
+            "InvalidArgument",
+        )
+        assert str(back) == str(error) == "AWS answered HTTP 400 InvalidArgument: d"
+
+    @pytest.mark.parametrize(("truncated", "token"), [(True, None), (True, ""), (False, "T")])
+    def test_a_page_keeps_its_token_and_truncation_together(
+        self, truncated: bool, token: str | None
+    ) -> None:
+        with pytest.raises(ValueError, match="exactly when"):
+            ListPage(objects=(), is_truncated=truncated, next_continuation_token=token)

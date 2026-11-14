@@ -19,8 +19,8 @@
 Only what reading a requester-pays bucket needs: a GET with an empty body,
 signed in the ``Authorization`` header. The caller passes the time, so a
 signature is a function of its inputs alone; ``tests/fixtures/s3_sigv4.json``
-holds AWS's published S3 examples and the Rust port (``fulltext::meca::sigv4``)
-asserts the same cases.
+holds AWS's published S3 examples and Python's own cases, and the Rust port
+(``fulltext::meca::sigv4``) asserts the same cases.
 
 Stdlib only.
 """
@@ -90,8 +90,9 @@ class SignedRequest:
     """A signed GET: where to send it, what to send, and how it was signed.
 
     ``headers`` are the ones to send (``Host`` excepted, which the HTTP client
-    writes from the URL). They are kept out of ``repr`` because a session token
-    travels in one of them.
+    writes from the URL). They, and ``canonical_request`` (which signs the same
+    headers), are kept out of ``repr`` because a session token travels in
+    them: do not log either.
     """
 
     url: str
