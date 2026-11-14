@@ -323,6 +323,9 @@ impl MupdfExtractor {
 /// engine's: `SYSTEM` (out of memory, a syscall — a missing file too),
 /// `LIBRARY`, `ARGUMENT`, `LIMIT`, `GENERIC` and the crate's own errors. MuPDF
 /// names the path in an open failure, and it is removed.
+// bindgen types the FZ_ERROR_* constants u32 on Unix and i32 on Windows,
+// so `as i32` is needed on one and a no-op on the other.
+#[allow(clippy::unnecessary_cast)]
 fn classify(error: &mupdf::Error, context: &str, path: &std::path::Path) -> PdfError {
     use mupdf_sys::{FZ_ERROR_FORMAT, FZ_ERROR_SYNTAX, FZ_ERROR_UNSUPPORTED};
     let (detail, the_file) = match error {
@@ -818,6 +821,8 @@ mod tests {
     /// Every MuPDF code is placed: `FORMAT`, `SYNTAX` and `UNSUPPORTED` the
     /// file's and every other the engine's, so a new code cannot be blamed on
     /// the file by default.
+    // As in `classify`: the cast is a no-op on Windows.
+    #[allow(clippy::unnecessary_cast)]
     #[test]
     fn every_mupdf_code_is_placed() {
         use mupdf_sys::*;
