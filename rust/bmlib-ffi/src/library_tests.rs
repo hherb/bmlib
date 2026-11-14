@@ -36,9 +36,82 @@ fn opt(case: &Value, key: &str) -> Option<String> {
     case[key].as_str().map(str::to_owned)
 }
 
-/// The kind named `name` in the fixture.
+/// The kind named `name` in the fixture, spelled out rather than converted, so
+/// the conversion under test cannot vouch for itself.
 fn kind(name: &str) -> SourceKind {
-    lib::SourceKind::parse(name).expect("kind").into()
+    match name {
+        "pdf" => SourceKind::Pdf,
+        "jats" => SourceKind::Jats,
+        "html" => SourceKind::Html,
+        "markdown" => SourceKind::Markdown,
+        "text" => SourceKind::Text,
+        other => panic!("unknown kind {other}"),
+    }
+}
+
+#[test]
+fn every_kind_converts_to_its_own_name_both_ways() {
+    for name in ["pdf", "jats", "html", "markdown", "text"] {
+        let core = lib::SourceKind::parse(name).unwrap();
+        assert_eq!(SourceKind::from(core), kind(name), "{name} going out");
+        assert_eq!(lib::SourceKind::from(kind(name)), core, "{name} going in");
+    }
+}
+
+/// One bmlib scan problem of every variant, with distinct values in every field.
+fn every_core_problem() -> Vec<lib::Problem> {
+    use lib::Problem as P;
+    let f = || "folder-a".to_owned();
+    vec![
+        P::UnreadableRecord {
+            folder: f(),
+            file: "file-b".into(),
+            reason: "r1".into(),
+        },
+        P::UnreadableFolder {
+            folder: f(),
+            reason: "r2".into(),
+        },
+        P::NewerRecord {
+            folder: f(),
+            file: "file-c".into(),
+            version: 9,
+        },
+        P::RecordNotDownloaded {
+            folder: f(),
+            file: "file-d".into(),
+        },
+        P::LeftoverTemp {
+            folder: f(),
+            name: "name-e".into(),
+        },
+        P::MisnamedRecord {
+            folder: f(),
+            file: "file-f".into(),
+        },
+        P::ConflictingIds {
+            folder: f(),
+            field: "doi",
+        },
+        P::UnrecordedFile {
+            folder: f(),
+            name: "name-g".into(),
+        },
+        P::StrayEntry {
+            name: "name-h".into(),
+        },
+    ]
+}
+
+#[test]
+fn problems_keep_every_field() {
+    for core in every_core_problem() {
+        // Field by name: a swap or a wrong variant changes the text.
+        assert_eq!(
+            format!("{:?}", LibraryProblem::from(&core)),
+            format!("{core:?}")
+        );
+    }
 }
 
 /// A fresh directory under the system's temporary one.
@@ -202,6 +275,7 @@ fn scan_matches_the_fixture() {
                 .map(|e| {
                     let who: Vec<String> = scan
                         .used_by(f.folder.clone(), e.sha256.clone())
+                        .unwrap()
                         .iter()
                         .map(|i| format!("{}-{}", i.app, i.id))
                         .collect();
@@ -261,7 +335,7 @@ fn scan_matches_the_fixture() {
         })
         .collect();
     assert_eq!(Value::Array(problems), want["problems"]);
-    assert!(scan.used_by("no such folder".into(), "x".into()).is_empty());
+    assert_eq!(scan.used_by("no such folder".into(), "x".into()), None);
     let _ = std::fs::remove_dir_all(base);
 }
 
@@ -285,13 +359,34 @@ fn find_find_digest_and_group_match_the_fixture() {
     }
     for case in section("find_digest") {
         let sha = case["sha256"].as_str().unwrap().to_owned();
+        let got = scan.find_digest(sha.clone());
+        if sha.len() != 64 {
+            // bmlib finds nothing for it; the FFI refuses it, so an app's
+            // mis-stored digest does not read as "not in the library".
+            assert_eq!(
+                got,
+                Err(LibraryError::BadIdentifier {
+                    field: "sha256".into(),
+                    value: sha,
+                }),
+                "{}",
+                case["name"]
+            );
+            continue;
+        }
         let want = case["expect"].as_object().map(|w| FileRef {
             folder: w["folder"].as_str().unwrap().to_owned(),
             name: w["name"].as_str().unwrap().to_owned(),
             sha256: sha.clone(),
             kind: kind(w["kind"].as_str().unwrap()),
         });
-        assert_eq!(scan.find_digest(sha), want, "{}", case["name"]);
+        assert_eq!(got, Ok(want), "{}", case["name"]);
+    }
+    for bad in ["A".repeat(64), format!(" {}", "a".repeat(63))] {
+        assert!(matches!(
+            scan.find_digest(bad),
+            Err(LibraryError::BadIdentifier { ref field, .. }) if field == "sha256"
+        ));
     }
     for case in section("group") {
         assert_eq!(json!(scan.group()), case["expect"], "{}", case["name"]);
@@ -416,10 +511,36 @@ fn save_use_release_and_remove_round_trip() {
         .unwrap();
     assert_eq!(saved.sha256, lib::sha256_hex(&bytes));
     assert_eq!(saved.kind, SourceKind::Pdf);
+    // The folder's name pins title, author and year going in; the file's name
+    // pins the kind going in (fixture `save_scenarios`' first case).
+    assert_eq!(saved.folder, "2024 Smith \u{2013} Metformin (PMID 111)");
+    assert_eq!(saved.name, format!("pdf-{}.pdf", &saved.sha256[..12]));
     let scan = library.scan().unwrap();
-    assert_eq!(scan.find_digest(saved.sha256.clone()), Some(saved.clone()));
+    assert_eq!(
+        scan.find_digest(saved.sha256.clone()),
+        Ok(Some(saved.clone()))
+    );
     assert_eq!(scan.folders()[0].ids.pmid.as_deref(), Some("111"));
-    assert_eq!(scan.folders()[0].records[0].files[0].origin, "unit test");
+    let record = &scan.folders()[0].records[0];
+    assert_eq!(record.installation, sa);
+    assert_eq!(record.paper, paper("111"), "the paper going out, canonical");
+    let entry = &record.files[0];
+    assert_eq!(
+        (
+            &entry.sha256,
+            entry.kind,
+            &entry.name,
+            &entry.origin,
+            entry.size
+        ),
+        (
+            &saved.sha256,
+            SourceKind::Pdf,
+            &saved.name,
+            &"unit test".to_owned(),
+            bytes.len() as u64
+        )
+    );
     assert_eq!(library.read(saved.clone()).unwrap(), bytes);
 
     library
@@ -429,6 +550,7 @@ fn save_use_release_and_remove_round_trip() {
         l.scan()
             .unwrap()
             .used_by(saved.folder.clone(), saved.sha256.clone())
+            .unwrap()
     };
     assert_eq!(users(&library), vec![mfc.clone(), sa.clone()]);
     library.release(mfc, saved.clone()).unwrap();

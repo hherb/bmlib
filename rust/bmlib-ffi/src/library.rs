@@ -21,15 +21,15 @@
 //! **What comes in is validated** by bmlib's own constructors: identifiers by
 //! `PaperIds::canonical` (raw values are accepted and come back canonical), an
 //! installation by `Installation::new`. A refusal is the same [`LibraryError`]
-//! bmlib returns.
+//! bmlib returns. File and folder names are checked where bmlib uses them.
 //!
-//! **Every [`Library`] call does disk I/O on the calling thread**; call them off
-//! the main thread. A [`LibraryScan`] is a snapshot: a later save does not
-//! change it.
+//! **Every [`Library`] call but `root` does disk I/O on the calling thread**;
+//! call them off the main thread. A [`LibraryScan`] is a snapshot: a later save
+//! does not change it.
 //!
 //! Values going out are copied with exhaustive destructuring, so a field bmlib
-//! adds fails to compile here until it is carried across. Fields are only ever
-//! appended (Kotlin destructures by position).
+//! adds fails to compile here until it is carried across. Add fields only at
+//! the end (Kotlin destructures by position).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -185,7 +185,7 @@ impl TryFrom<Installation> for lib::Installation {
 }
 
 /// A source file in a paper's folder, with the digest it should have. An app
-/// stores only `sha256` and `kind`, and finds the file again with
+/// stores only `sha256`, and finds the file again with
 /// [`LibraryScan::find_digest`].
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FileRef {
@@ -440,14 +440,19 @@ impl From<&lib::Problem> for LibraryProblem {
 // ---------------------------------------------------------------------------
 
 /// Why a library call failed: bmlib's `LibraryError`, case for case. Paths are
-/// strings. Its text (Swift's `errorDescription`, Kotlin's `toString`) is
-/// bmlib's own wording, fit to show the user. No field is named `message`,
-/// which collides with Kotlin's `Throwable.message`.
+/// strings. Its exported `Display` is bmlib's own wording, fit to show the
+/// user: Kotlin's `toString()` (not `message`, which is UniFFI's field list),
+/// and Swift's `description`, which `errorDescription` reads once the app adds
+/// `extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2 leaves
+/// the conformance out). No field is named `message`, which collides with
+/// Kotlin's `Throwable.message`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 #[uniffi::export(Display)]
 pub enum LibraryError {
-    /// The library's folder is missing or not a folder (an unmounted drive,
-    /// a revoked bookmark): keep sources waiting for the library.
+    /// From [`Library::open`] only: the library's folder is missing or not a
+    /// folder (an unmounted drive, a revoked bookmark). The library may come
+    /// back, so offer to try again rather than choosing another folder. Once
+    /// open, a folder that vanishes reads as `Io` (or `Missing` from `read`).
     Unreachable {
         /// The folder.
         path: String,
@@ -473,7 +478,8 @@ pub enum LibraryError {
     },
     /// An identifier is not valid.
     BadIdentifier {
-        /// `"pmid"`, `"doi"` or `"pmcid"`.
+        /// `"pmid"`, `"doi"` or `"pmcid"`; `"sha256"` from
+        /// [`LibraryScan::find_digest`].
         field: String,
         /// The value refused.
         value: String,
@@ -490,7 +496,8 @@ pub enum LibraryError {
         /// The name.
         name: String,
     },
-    /// The file is not there.
+    /// The file is not there. From [`Library::remove_folder`], `folder` is
+    /// `papers` and `name` the paper's folder.
     Missing {
         /// The paper's folder.
         folder: String,
@@ -517,7 +524,8 @@ pub enum LibraryError {
     },
     /// A different file of that name is already there; nothing was overwritten.
     FileClash {
-        /// The paper's folder.
+        /// The full path of the folder holding it, unlike the bare name the
+        /// other cases carry (bmlib does the same).
         folder: String,
         /// The file.
         name: String,
@@ -531,7 +539,8 @@ pub enum LibraryError {
         /// Its version.
         version: u32,
     },
-    /// Any other file-system failure.
+    /// Any other failure: the file system's, or a record that cannot be read
+    /// or written back, or no free folder name (the reason says which).
     Io {
         /// The path concerned.
         path: String,
@@ -595,10 +604,11 @@ impl From<lib::LibraryError> for LibraryError {
     }
 }
 
-/// The `&'static str` bmlib names a field with. bmlib only ever names these
-/// six; anything else (an error the app built itself) reads as `"value"`.
+/// The `&'static str` bmlib names a field with. bmlib and this module only
+/// ever name these seven; anything else (an error the app built itself) reads
+/// as `"value"`.
 fn field_name(field: &str) -> &'static str {
-    ["pmid", "doi", "pmcid", "app", "id", "label"]
+    ["pmid", "doi", "pmcid", "sha256", "app", "id", "label"]
         .into_iter()
         .find(|f| *f == field)
         .unwrap_or("value")
@@ -744,8 +754,11 @@ impl Library {
     ///
     /// # Errors
     ///
-    /// As for [`Library::save`], plus `BadName`, `Missing`, `NotDownloaded` or
-    /// `DigestMismatch` from reading the file (nothing written).
+    /// `BadInstallation`, `BadIdentifier`, `NewerRecord`, `ReadOnly` or `Io`
+    /// as for [`Library::save`]; `Missing`, `NotDownloaded` or
+    /// `DigestMismatch` from reading the file, and `BadName` for a name that
+    /// is not one path component or not the library's name for those bytes
+    /// (nothing written).
     pub fn record_use(
         &self,
         who: Installation,
@@ -756,17 +769,22 @@ impl Library {
         Ok(self.0.record_use(&who, &paper, &file.into())?)
     }
 
-    /// Drop `file` from `who`'s record. The file and other records stay. A
-    /// file the record does not list is already released, so that is `Ok`.
+    /// Drop the file with `file.sha256` from `who`'s record in `file.folder`
+    /// (`file.name` need only be a plain name). The file and other records
+    /// stay. A file the
+    /// record does not list, or a folder `who` has no record in, is already
+    /// released, so that is `Ok`.
     ///
     /// # Errors
     ///
-    /// `BadInstallation`, `BadName`, `NewerRecord`, `NotDownloaded` or `Io`.
+    /// `BadInstallation`, `BadName`, `NewerRecord`, `NotDownloaded`,
+    /// `ReadOnly` or `Io`.
     pub fn release(&self, who: Installation, file: FileRef) -> Result<(), LibraryError> {
         Ok(self.0.release(&who.try_into()?, &file.into())?)
     }
 
-    /// Delete one source file: the user's manual clear, never automatic.
+    /// Delete the source file `file.folder`/`file.name`: the user's manual
+    /// clear, never automatic. `sha256` and `kind` are not checked.
     ///
     /// # Errors
     ///
@@ -794,7 +812,12 @@ pub struct LibraryScan(lib::Scan);
 impl LibraryScan {
     /// Every paper folder, ordered by name.
     pub fn folders(&self) -> Vec<PaperFolder> {
-        self.0.folders.iter().map(Into::into).collect()
+        // Destructured so a field bmlib adds to `Scan` fails to compile here.
+        let lib::Scan {
+            folders,
+            problems: _,
+        } = &self.0;
+        folders.iter().map(Into::into).collect()
     }
 
     /// Everything odd, in the order found.
@@ -818,12 +841,26 @@ impl LibraryScan {
 
     /// The file named for `sha256`, if any. Only the name is looked at;
     /// [`Library::read`] checks the bytes.
-    pub fn find_digest(&self, sha256: String) -> Option<FileRef> {
-        lib::find_digest(&self.0, &sha256).map(Into::into)
+    ///
+    /// # Errors
+    ///
+    /// `BadIdentifier` (field `"sha256"`) for a digest that is not 64
+    /// lowercase hex digits, which bmlib would answer with "not found".
+    pub fn find_digest(&self, sha256: String) -> Result<Option<FileRef>, LibraryError> {
+        let hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+        if sha256.len() != 64 || !sha256.bytes().all(hex) {
+            return Err(lib::LibraryError::BadIdentifier {
+                field: "sha256",
+                value: sha256,
+            }
+            .into());
+        }
+        Ok(lib::find_digest(&self.0, &sha256).map(Into::into))
     }
 
-    /// Indices into [`LibraryScan::folders`] of folders that are one paper,
-    /// each group and the list sorted.
+    /// Every folder's index into [`LibraryScan::folders`], grouped into the
+    /// folders that are one paper (a folder alone is a group of one); each
+    /// group and the list sorted.
     pub fn group(&self) -> Vec<Vec<u64>> {
         lib::group(&self.0)
             .into_iter()
@@ -832,20 +869,18 @@ impl LibraryScan {
     }
 
     /// The installations whose record in `folder` lists a file with this
-    /// digest; empty for a folder the scan did not find.
-    pub fn used_by(&self, folder: String, sha256: String) -> Vec<Installation> {
-        self.0
-            .folders
-            .iter()
-            .find(|f| f.folder == folder)
-            .map(|f| {
-                f.used_by(&sha256)
-                    .into_iter()
-                    .cloned()
-                    .map(Into::into)
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// digest, or `None` for a folder the scan did not find. A lower bound:
+    /// records the scan could not read (see [`LibraryScan::problems`]) are not
+    /// counted.
+    pub fn used_by(&self, folder: String, sha256: String) -> Option<Vec<Installation>> {
+        let f = self.0.folders.iter().find(|f| f.folder == folder)?;
+        Some(
+            f.used_by(&sha256)
+                .into_iter()
+                .cloned()
+                .map(Into::into)
+                .collect(),
+        )
     }
 }
 

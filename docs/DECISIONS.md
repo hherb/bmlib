@@ -6619,7 +6619,15 @@ undo.
   and come back canonical. A refusal is bmlib's own `BadIdentifier` or
   `BadInstallation`.
 - **`PaperFolder` carries its merged `ids`**, and `used_by` is a scan method,
-  so no app re-implements either.
+  so no app re-implements either. It returns `None` for a folder the scan did
+  not find: an empty list there would read as "nobody uses this file", which is
+  what an app asks before offering to remove it.
+- **`find_digest` refuses a malformed digest** with `BadIdentifier` (field
+  `"sha256"`), where bmlib's own `find_digest` returns `None` (its fixture case
+  "a digest that is not 64 hex digits"). An app stores the digest and passes it
+  back, so a digest it mis-stored (upper case, padded) would otherwise read as
+  "not in the library" on every lookup, and nothing would say why. Pinned by
+  `find_find_digest_and_group_match_the_fixture`.
 - **The error keeps bmlib's cases, fields and wording.** Paths and
   `&'static str` fields become strings. `Display` is exported, and is bmlib's
   text, reached by converting back. UniFFI 0.32.2 generates Swift's

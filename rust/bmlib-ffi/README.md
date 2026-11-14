@@ -38,12 +38,14 @@ with Kotlin's `Throwable.message` and does not compile.
 ### The shared paper library
 
 The contract is bmlib's `tests/fixtures/library_cases.json` and the sample
-library `tests/fixtures/library/sample/`, which this crate's tests run
-through the FFI (`src/library_tests.rs`) as bmlib's Rust and Python suites
-do. The rules are bmlib's manual (`docs/manual/library.md`).
+library `tests/fixtures/library/sample/`. This crate's tests
+(`src/library_tests.rs`) run the fixture's identifier, installation, open,
+scan, find, find_digest, group and read cases through the FFI; `save` and
+the calls after it have round-trip tests of their own, not the fixture's
+`save_scenarios`. The rules are bmlib's manual (`docs/manual/library.md`).
 
-- **Every `Library` call does disk I/O on the calling thread.** Call it off
-  the main thread.
+- **Every `Library` call but `root` does disk I/O on the calling thread.**
+  Call them off the main thread.
 - **`root` is a path.** On Apple platforms, it is the path of the resolved
   security-scoped bookmark. The app keeps the bookmark's access for as long as
   it uses the library.
@@ -53,17 +55,24 @@ do. The rules are bmlib's manual (`docs/manual/library.md`).
   `Installation::new`. A refusal throws `BadIdentifier` or
   `BadInstallation`, and nothing is written.
 - **A `LibraryScan` is a snapshot.** Scan again after a save.
-- **Store only `sha256` and `kind`** of a saved file's `FileRef`. Find the
-  file again with `findDigest` in the library at hand.
+- **Store only `sha256`** of a saved file's `FileRef`. Find the file again
+  with `findDigest` in the library at hand. A digest that is not 64 lowercase
+  hex digits throws `BadIdentifier` (field `sha256`), where bmlib's own
+  `find_digest` finds nothing, so a mis-stored digest does not read as "not in
+  the library".
+- **`usedBy` is `null` for a folder the scan did not find**, and an empty list
+  for a file nobody's record lists. It is a lower bound: records the scan could
+  not read are `problems`, not users.
 - **Nothing is deleted automatically.** `removeFile` and `removeFolder` are
   for the user's manual clear only.
 - **`LibraryError`'s text is bmlib's wording**, fit to show the user. Its
-  `Display` is exported. Kotlin's `toString()` returns it. In Swift, UniFFI
+  `Display` is exported. Kotlin's `toString()` returns it (not `message`,
+  which is UniFFI's list of the fields). In Swift, UniFFI
   0.32.2 generates `description` without declaring the conformance, so add
   `extension LibraryError: CustomStringConvertible {}`, and then
   `errorDescription` and `localizedDescription` read as bmlib's text.
-- `FileEntry.size`, `NewerRecord.version` and `group()`'s indices are
-  unsigned (#496).
+- `FileEntry.size`, `NewerLibrary.version`, `NewerRecord.version` and
+  `group()`'s indices are unsigned (#496).
 - `FullTextService`'s use of a library (`with_library`) is not exposed: the
   FFI's service is the sketch above.
 
