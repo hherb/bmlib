@@ -26,6 +26,7 @@ needs none of them pulls in none:
 | `http-ureq` | on | `ureq` | `bmlib::http`, the real `HttpClient`. Without it a caller injects its own transport. |
 | `pdf` | off | `mupdf`, `mupdf-sys` | PDF → text with MuPDF, the engine Python's PyMuPDF binds. Compiled from source and linked statically (a C compiler and libclang); nothing is downloaded or loaded at run time. |
 | `html` | off | `scraper`, `ego-tree` | `fulltext::canonical`'s HTML → canonical text, over html5ever as Python's `html` extra is. |
+| `meca` | off | `hmac` | `fulltext::meca`: SigV4 signing and the S3 transport for medRxiv's / bioRxiv's requester-pays MECA archives, as Python's `meca` extra. A download needs `HttpClient::get_with_headers_stream` (`UreqClient` has it). |
 | `postgres` | off | `postgres` | A real PostgreSQL backend. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present — this adds the driver that can run a statement against a server. |
 | `model-download` | off | nothing | `embed::verify_model`, `ModelError` and, with `http-ureq`, `download_model` and `download_verified`: a pinned, sha256-verified download with no llama.cpp. `embed` implies it. |
 | `embed` | off | `llama-cpp-2` | `embed::Embedder` and model verification; the download also needs `http-ureq`. Builds llama.cpp (cmake and a C++ compiler). The constants and vector rules in `embed` are always present. |

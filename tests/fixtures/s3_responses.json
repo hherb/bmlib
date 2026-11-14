@@ -1,0 +1,347 @@
+{
+ "list_pages": [
+  {
+   "name": "truncated-page",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>true</IsTruncated><NextContinuationToken>1ueGcxLPRx1Tr/XYE=</NextContinuationToken><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>Current_Content/January_2024/R&amp;D 2.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"&quot;d41d8cd98f00b204e9800998ecf8427e-3&quot;\"</ETag><Size>1048576</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "objects": [
+     {
+      "key": "Current_Content/January_2024/0a1b.meca",
+      "size": 48213,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     },
+     {
+      "key": "Current_Content/January_2024/R&D 2.meca",
+      "size": 1048576,
+      "etag": "d41d8cd98f00b204e9800998ecf8427e-3",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     }
+    ],
+    "is_truncated": true,
+    "next_continuation_token": "1ueGcxLPRx1Tr/XYE="
+   }
+  },
+  {
+   "name": "last-page",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "objects": [
+     {
+      "key": "Current_Content/January_2024/0a1b.meca",
+      "size": 48213,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     }
+    ],
+    "is_truncated": false,
+    "next_continuation_token": null
+   }
+  },
+  {
+   "name": "empty-page",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>0</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated></ListBucketResult>",
+   "expected": {
+    "objects": [],
+    "is_truncated": false,
+    "next_continuation_token": null
+   }
+  },
+  {
+   "name": "page-without-key-count",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "objects": [
+     {
+      "key": "Current_Content/January_2024/0a1b.meca",
+      "size": 48213,
+      "etag": "9b2cf535f27731c974343645a3985328",
+      "last_modified": "2024-02-01T03:04:05.000Z"
+     }
+    ],
+    "is_truncated": false,
+    "next_continuation_token": null
+   }
+  },
+  {
+   "name": "object-without-size",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>a.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "negative-size",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>a.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>-1</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "fractional-size",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>a.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>1.5</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "object-without-etag",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "object-without-key",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key></Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "key-given-twice",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>x</Key><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "truncated-without-token",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>true</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "key-count-disagrees",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>2</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "is-truncated-not-a-boolean",
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>yes</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "declares-a-dtd",
+   "body": "<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY a \"b\">]><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>medrxiv-src-monthly</Name><Prefix></Prefix><KeyCount>1</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>Current_Content/January_2024/0a1b.meca</Key><LastModified>2024-02-01T03:04:05.000Z</LastModified><ETag>\"9b2cf535f27731c974343645a3985328\"</ETag><Size>48213</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "not-xml",
+   "body": "<ListBucketResult",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "latin-1-body",
+   "body_hex": "3c3f786d6c2076657273696f6e3d22312e302220656e636f64696e673d225554462d38223f3e0a3c4c6973744275636b6574526573756c7420786d6c6e733d22687474703a2f2f73332e616d617a6f6e6177732e636f6d2f646f632f323030362d30332d30312f223e3c4e616d653e6d6564727869762d7372632d6d6f6e74686c793c2f4e616d653e3c5072656669783e3c2f5072656669783e3c4b6579436f756e743e313c2f4b6579436f756e743e3c4d61784b6579733e313030303c2f4d61784b6579733e3c49735472756e63617465643e66616c73653c2f49735472756e63617465643e3c436f6e74656e74733e3c4b65793e43757272656e745f436f6e74656e742f4a616e756172795f323032342f636166e92e6d6563613c2f4b65793e3c4c6173744d6f6469666965643e323032342d30322d30315430333a30343a30352e3030305a3c2f4c6173744d6f6469666965643e3c455461673e223962326366353335663237373331633937343334333634356133393835333238223c2f455461673e3c53697a653e34383231333c2f53697a653e3c53746f72616765436c6173733e5354414e444152443c2f53746f72616765436c6173733e3c2f436f6e74656e74733e3c2f4c6973744275636b6574526573756c743e",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "utf-16-body-hiding-a-dtd",
+   "body_hex": "fffe3c003f0078006d006c002000760065007200730069006f006e003d00220031002e0030002200200065006e0063006f00640069006e0067003d0022005500540046002d003100360022003f003e003c00210044004f00430054005900500045002000780020005b003c00210045004e00540049005400590020006500200022004500560049004c0022003e005d003e003c004c006900730074004200750063006b006500740052006500730075006c007400200078006d006c006e0073003d00220068007400740070003a002f002f00730033002e0061006d0061007a006f006e006100770073002e0063006f006d002f0064006f0063002f0032003000300036002d00300033002d00300031002f0022003e003c004e0061006d0065003e006d006500640072007800690076002d007300720063002d006d006f006e00740068006c0079003c002f004e0061006d0065003e003c005000720065006600690078003e003c002f005000720065006600690078003e003c004b006500790043006f0075006e0074003e0031003c002f004b006500790043006f0075006e0074003e003c004d00610078004b006500790073003e0031003000300030003c002f004d00610078004b006500790073003e003c00490073005400720075006e00630061007400650064003e00660061006c00730065003c002f00490073005400720075006e00630061007400650064003e003c0043006f006e00740065006e00740073003e003c004b00650079003e00430075007200720065006e0074005f0043006f006e00740065006e0074002f004a0061006e0075006100720079005f0032003000320034002f0030006100310062002e006d006500630061003c002f004b00650079003e003c004c006100730074004d006f006400690066006900650064003e0032003000320034002d00300032002d00300031005400300033003a00300034003a00300035002e003000300030005a003c002f004c006100730074004d006f006400690066006900650064003e003c0045005400610067003e0022003900620032006300660035003300350066003200370037003300310063003900370034003300340033003600340035006100330039003800350033003200380022003c002f0045005400610067003e003c00530069007a0065003e00340038003200310033003c002f00530069007a0065003e003c00530074006f00720061006700650043006c006100730073003e005300540041004e0044004100520044003c002f00530074006f00720061006700650043006c006100730073003e003c002f0043006f006e00740065006e00740073003e003c002f004c006900730074004200750063006b006500740052006500730075006c0074003e00",
+   "expected": {
+    "error": "malformed"
+   }
+  },
+  {
+   "name": "an-error-body",
+   "body": "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>",
+   "expected": {
+    "error": "malformed"
+   }
+  }
+ ],
+ "errors": [
+  {
+   "name": "access-denied",
+   "status": 403,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "access_denied",
+    "code": "AccessDenied",
+    "detail": "Access Denied",
+    "retryable": false,
+    "reason": "AWS refused the request (access denied). The key is not allowed to read this bucket: its IAM user needs a policy granting s3:ListBucket on the bucket and s3:GetObject on its objects, and the AWS account needs a payment method, because the bucket is requester pays."
+   }
+  },
+  {
+   "name": "invalid-access-key-id",
+   "status": 403,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>InvalidAccessKeyId</Code><Message>The AWS Access Key Id you provided does not exist in our records.</Message><AWSAccessKeyId>AKIAIOSFODNN7EXAMPLE</AWSAccessKeyId><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "invalid_access_key_id",
+    "code": "InvalidAccessKeyId",
+    "detail": "The AWS Access Key Id you provided does not exist in our records.",
+    "retryable": false,
+    "reason": "AWS does not know this access key ID. Check that it was copied whole and that the key is still active."
+   }
+  },
+  {
+   "name": "signature-does-not-match",
+   "status": 403,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>SignatureDoesNotMatch</Code><Message>The request signature we calculated does not match the signature you provided. Check your key and signing method.</Message><AWSAccessKeyId>AKIAIOSFODNN7EXAMPLE</AWSAccessKeyId><StringToSign>AWS4-HMAC-SHA256\n20261114T102030Z</StringToSign><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "signature_does_not_match",
+    "code": "SignatureDoesNotMatch",
+    "detail": "The request signature we calculated does not match the signature you provided. Check your key and signing method.",
+    "retryable": false,
+    "reason": "AWS did not accept the secret access key for this access key ID. Check that the secret was copied whole."
+   }
+  },
+  {
+   "name": "request-time-too-skewed",
+   "status": 403,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>RequestTimeTooSkewed</Code><Message>The difference between the request time and the current time is too large.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "request_time_too_skewed",
+    "code": "RequestTimeTooSkewed",
+    "detail": "The difference between the request time and the current time is too large.",
+    "retryable": false,
+    "reason": "This computer's clock is more than 15 minutes away from AWS's. Set the clock to update automatically, then try again."
+   }
+  },
+  {
+   "name": "expired-token",
+   "status": 400,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>ExpiredToken</Code><Message>The provided token has expired.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "expired_token",
+    "code": "ExpiredToken",
+    "detail": "The provided token has expired.",
+    "retryable": false,
+    "reason": "The temporary AWS credentials have expired. Create new ones and enter them again."
+   }
+  },
+  {
+   "name": "no-such-key",
+   "status": 404,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "no_such_key",
+    "code": "NoSuchKey",
+    "detail": "The specified key does not exist.",
+    "retryable": false,
+    "reason": "The file is no longer in the bucket."
+   }
+  },
+  {
+   "name": "no-such-bucket",
+   "status": 404,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "no_such_bucket",
+    "code": "NoSuchBucket",
+    "detail": "The specified bucket does not exist",
+    "retryable": false,
+    "reason": "The bucket does not exist."
+   }
+  },
+  {
+   "name": "slow-down",
+   "status": 503,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "retry_later",
+    "code": "SlowDown",
+    "detail": "Please reduce your request rate.",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "internal-error",
+   "status": 500,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>InternalError</Code><Message>We encountered an internal error.</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "retry_later",
+    "code": "InternalError",
+    "detail": "We encountered an internal error.",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "empty-503",
+   "status": 503,
+   "body": "",
+   "expected": {
+    "kind": "retry_later",
+    "code": null,
+    "detail": "",
+    "retryable": true,
+    "reason": "AWS is busy and asked to try again later."
+   }
+  },
+  {
+   "name": "empty-403",
+   "status": 403,
+   "body": "",
+   "expected": {
+    "kind": "access_denied",
+    "code": null,
+    "detail": "",
+    "retryable": false,
+    "reason": "AWS refused the request (access denied). The key is not allowed to read this bucket: its IAM user needs a policy granting s3:ListBucket on the bucket and s3:GetObject on its objects, and the AWS account needs a payment method, because the bucket is requester pays."
+   }
+  },
+  {
+   "name": "html-from-a-proxy",
+   "status": 502,
+   "body": "<html><body>Bad Gateway</body></html>",
+   "expected": {
+    "kind": "other",
+    "code": null,
+    "detail": "",
+    "retryable": false,
+    "reason": "AWS answered HTTP 502"
+   }
+  },
+  {
+   "name": "other-code-kept",
+   "status": 400,
+   "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>InvalidArgument</Code><Message>Invalid Argument</Message><RequestId>4442587FB7D0A2F9</RequestId><HostId>example-host-id</HostId></Error>",
+   "expected": {
+    "kind": "other",
+    "code": "InvalidArgument",
+    "detail": "Invalid Argument",
+    "retryable": false,
+    "reason": "AWS answered HTTP 400 InvalidArgument: Invalid Argument"
+   }
+  },
+  {
+   "name": "unreadable-body-404",
+   "status": 404,
+   "body": "not xml at all",
+   "expected": {
+    "kind": "other",
+    "code": null,
+    "detail": "",
+    "retryable": false,
+    "reason": "AWS answered HTTP 404"
+   }
+  },
+  {
+   "name": "utf-16-error-body",
+   "status": 404,
+   "body_hex": "fffe3c004500720072006f0072003e003c0043006f00640065003e004e006f0053007500630068004b00650079003c002f0043006f00640065003e003c004d006500730073006100670065003e0067006f006e0065003c002f004d006500730073006100670065003e003c002f004500720072006f0072003e00",
+   "expected": {
+    "kind": "other",
+    "code": null,
+    "detail": "",
+    "retryable": false,
+    "reason": "AWS answered HTTP 404"
+   }
+  }
+ ]
+}

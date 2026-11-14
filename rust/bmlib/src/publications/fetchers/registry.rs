@@ -316,6 +316,33 @@ pub trait HttpClient {
         )))
     }
 
+    /// Issue a GET carrying headers and hand back the body as it arrives.
+    ///
+    /// For a download too large to hold in memory (a MECA package,
+    /// `fulltext::meca::s3::download_object`), which
+    /// [`HttpClient::get_with_headers`] would read whole. The body has no
+    /// size cap and no whole-body time limit; a client should give up on a
+    /// connection that sends nothing for a while instead (`UreqClient`: each
+    /// read within `timeout_seconds`) and follow no redirect (a 3xx is a
+    /// response). The default **refuses**, naming the method, as
+    /// `get_with_headers`'s does.
+    ///
+    /// # Errors
+    ///
+    /// [`FetchError::Transport`] when the request never got a response;
+    /// [`FetchError::Config`] when this client cannot stream (the default). A
+    /// non-success status is an [`HttpStream`] whose body holds the server's
+    /// error.
+    fn get_with_headers_stream(
+        &self,
+        url: &str,
+        _headers: &std::collections::BTreeMap<String, String>,
+    ) -> Result<HttpStream, FetchError> {
+        Err(FetchError::Config(format!(
+            "this HttpClient does not implement get_with_headers_stream (GET {url})"
+        )))
+    }
+
     /// Issue a JSON POST.
     ///
     /// The default **refuses**, naming the method, rather than silently issuing a

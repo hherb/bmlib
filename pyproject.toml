@@ -77,6 +77,10 @@ pdf = ["pymupdf>=1.28.2"]
 # runs in (#723: html5ever can build elements with the square of a page's
 # length, and markupever holds the GIL, so only another process can stop it). BSD.
 html = ["markupever>=0.4.0", "psutil>=5.9"]
+# `meca` supplies httpx only: the S3 transport of bmlib.fulltext.meca (listing
+# and downloading medRxiv's / bioRxiv's MECA archives). Signing and reading S3's
+# replies are stdlib.
+meca = ["httpx>=0.25"]
 # In-process embedding (bmlib.embed): compiles llama.cpp on install. The
 # floor is the one version verified against the reference vectors. Not in
 # `all`: it needs a C++ toolchain, which `all` must not.
@@ -102,7 +106,7 @@ dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.4.1", "types-psycopg2", "ty
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`. It also
 # excludes `embed`, which compiles llama.cpp: ask for `.[all,embed]`.
-all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf,html,secrets]"]
+all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,meca,pdf,html,secrets]"]
 
 # Explicit discovery. Auto-discovery works today but is order-dependent in a
 # flat layout with tests/, docs/ and scripts/ beside the package; naming the
