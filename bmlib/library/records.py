@@ -198,8 +198,8 @@ def parse_record(text: str) -> Record:
     files: list[FileEntry] = []
     for item in raw:
         entry = _parse_file(item)
-        if any(o.sha256 == entry.sha256 for o in files):
-            _bad(f"file {entry.sha256} is listed twice")
+        if any((o.sha256, o.kind) == (entry.sha256, entry.kind) for o in files):
+            _bad(f"file {entry.name} is listed twice")
         files.append(entry)
     return Record(installation, paper, tuple(files))
 

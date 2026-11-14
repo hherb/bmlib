@@ -41,7 +41,6 @@ from bmlib.library.constants import (
 from bmlib.library.errors import BadIdentifier, BadName, Io, Missing, NewerRecord, NotDownloaded
 from bmlib.library.files import (
     component,
-    create_dir_all,
     create_dir_new,
     exists,
     has_placeholder,
@@ -53,6 +52,7 @@ from bmlib.library.files import (
     remove_file,
     rename,
     sha256_hex,
+    sync_name,
     write_once,
     write_replace,
 )
@@ -236,14 +236,17 @@ def _record_bytes(record: Record, path: Path) -> bytes:
 
 
 def _store_record(path: Path, record: Record) -> None:
-    """Write *record* over *path* unless that is what is there already."""
+    """Write *record* over *path* unless that is what is there already, which is synced
+    instead: a failed sync may have left it so, and a retry must not return without one."""
     data = _record_bytes(record, path)
     try:
-        if read_bytes(path) == data:
-            return
+        unchanged = read_bytes(path) == data
     except OSError:
-        pass
-    write_replace(path, data)
+        unchanged = False
+    if unchanged:
+        sync_name(path)
+    else:
+        write_replace(path, data)
 
 
 def _merge_paper(record: Record, paper: PaperInfo, path: Path) -> Record:
@@ -282,13 +285,14 @@ def _note_use(
 ) -> None:
     """Note *entry* in *who*'s record in the paper folder *directory*, under the record lock.
 
-    The entry is added unless its digest is listed already, and *paper* is merged into the
-    record's account. The one path by which both :func:`save_file` and
+    The entry is added unless the record lists that file (its digest and kind) already, and
+    *paper* is merged into the record's account. The one path by which both :func:`save_file` and
     :func:`record_file_use` change a record.
     """
+    sync_name(directory)  # the folder may be another writer's, not yet synced into papers/
     records_dir = directory / RECORDS_DIR
     try:
-        create_dir_all(records_dir)
+        create_dir_new(records_dir)
     except OSError as e:
         raise io_error(records_dir, e, write=True) from e
     path = records_dir / component(who.record_file_name())
@@ -298,7 +302,7 @@ def _note_use(
             record = Record(who, paper, (entry,))
         else:
             files = record.files
-            if all(f.sha256 != entry.sha256 for f in files):
+            if all((f.sha256, f.kind) != (entry.sha256, entry.kind) for f in files):
                 files = (*files, entry)
             record = _merge_paper(dataclasses.replace(record, files=files), paper, path)
         _store_record(path, record)
@@ -399,7 +403,15 @@ def record_file_use(root: Path, who: Installation, paper: PaperInfo, file: FileR
         raise BadName(file.name)
     directory, _ = _locate(root, file)
     found = _scan_folder(directory, file.folder, [])
-    origin = next((f.origin for r in found.records for f in r.files if f.sha256 == file.sha256), "")
+    origin = next(
+        (
+            f.origin
+            for r in found.records
+            for f in r.files
+            if (f.sha256, f.kind) == (file.sha256, file.kind)
+        ),
+        "",
+    )
     entry = FileEntry(file.sha256, file.kind, file.name, origin, len(data), _now())
     _record_bytes(Record(who, paper, (entry,)), directory)
     _note_use(directory, file.folder, who, paper, entry)
@@ -434,7 +446,7 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
             if p.kind == "newer":
                 raise NewerRecord(file.folder, path.name, p.version) from p
             raise Io(path, f"the record is not readable: {p.reason}") from p
-        kept = tuple(f for f in record.files if f.sha256 != file.sha256)
+        kept = tuple(f for f in record.files if (f.sha256, f.kind) != (file.sha256, file.kind))
         _store_record(path, dataclasses.replace(record, files=kept))
 
 

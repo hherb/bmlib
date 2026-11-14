@@ -776,6 +776,13 @@
    "expect": "ok",
    "files": 1,
    "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 0,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "the same bytes as two kinds",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"111\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Metformin\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"text\",\n      \"name\": \"text-58100dc8fc06.txt\",\n      \"origin\": \"a paste\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    },\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"markdown\",\n      \"name\": \"markdown-58100dc8fc06.md\",\n      \"origin\": \"a hand-off\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 2,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"111\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Metformin\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"text\",\n      \"name\": \"text-58100dc8fc06.txt\",\n      \"origin\": \"a paste\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    },\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"markdown\",\n      \"name\": \"markdown-58100dc8fc06.md\",\n      \"origin\": \"a hand-off\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    }\n  ]\n}\n"
   }
  ],
   "open": [
@@ -2483,6 +2490,366 @@
         "name": "pdf-1361ac06c419.pdf",
         "origin": "unit test",
         "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the same bytes kept as two kinds",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "same bytes",
+     "kind": "text",
+     "origin": "a paste"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "same bytes",
+     "kind": "markdown",
+     "origin": "a hand-off"
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": "text",
+     "expect": 0
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": "markdown",
+     "expect": 1
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": null,
+     "expect": 1
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": "pdf",
+     "expect": null
+    },
+    {
+     "op": "record_use",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111"
+     },
+     "of": 1
+    },
+    {
+     "op": "release",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/markdown-58100dc8fc06.md",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+     "papers/2024 Smith – Metformin (PMID 111)/text-58100dc8fc06.txt"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb",
+        "kind": "markdown",
+        "name": "markdown-58100dc8fc06.md",
+        "origin": "a hand-off",
+        "size": 10
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb",
+        "kind": "markdown",
+        "name": "markdown-58100dc8fc06.md",
+        "origin": "a hand-off",
+        "size": 10
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the same bytes as another kind go to the folder holding them",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/k"
+     },
+     "text": "kind bytes",
+     "kind": "text",
+     "origin": "a paste"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "333"
+     },
+     "text": "kind bytes",
+     "kind": "markdown",
+     "origin": "a hand-off"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/(DOI 10.1 k)/",
+     "papers/(DOI 10.1 k)/markdown-f6d3679eae3d.md",
+     "papers/(DOI 10.1 k)/records/",
+     "papers/(DOI 10.1 k)/records/medicalfactchecker-bbbb.json",
+     "papers/(DOI 10.1 k)/records/studyanalyzer-aaaa.json",
+     "papers/(DOI 10.1 k)/text-f6d3679eae3d.txt"
+    ],
+    "records": {
+     "papers/(DOI 10.1 k)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "333",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "f6d3679eae3dce851cd15898cc9f5fa473de38af80299c611b8587a3c2ae9a84",
+        "kind": "markdown",
+        "name": "markdown-f6d3679eae3d.md",
+        "origin": "a hand-off",
+        "size": 10
+       }
+      ]
+     },
+     "papers/(DOI 10.1 k)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": "10.1/k",
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "f6d3679eae3dce851cd15898cc9f5fa473de38af80299c611b8587a3c2ae9a84",
+        "kind": "text",
+        "name": "text-f6d3679eae3d.txt",
+        "origin": "a paste",
+        "size": 10
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "two PDFs of one paper, one released",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "444"
+     },
+     "text": "first pdf",
+     "kind": "pdf",
+     "origin": "u1"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "444"
+     },
+     "text": "second pdf",
+     "kind": "pdf",
+     "origin": "u2"
+    },
+    {
+     "op": "record_use",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "444"
+     },
+     "of": 1
+    },
+    {
+     "op": "release",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0
+    },
+    {
+     "op": "used_by",
+     "of": 1,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": []
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/(PMID 444)/",
+     "papers/(PMID 444)/pdf-898331a6fa06.pdf",
+     "papers/(PMID 444)/pdf-9b021bb185ae.pdf",
+     "papers/(PMID 444)/records/",
+     "papers/(PMID 444)/records/medicalfactchecker-bbbb.json",
+     "papers/(PMID 444)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/(PMID 444)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "444",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "898331a6fa0601898a72b4d4898c56ebcb38d2fd64849e465ed7b13462defacc",
+        "kind": "pdf",
+        "name": "pdf-898331a6fa06.pdf",
+        "origin": "u2",
+        "size": 10
+       }
+      ]
+     },
+     "papers/(PMID 444)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "444",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "898331a6fa0601898a72b4d4898c56ebcb38d2fd64849e465ed7b13462defacc",
+        "kind": "pdf",
+        "name": "pdf-898331a6fa06.pdf",
+        "origin": "u2",
+        "size": 10
        }
       ]
      }

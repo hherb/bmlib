@@ -233,9 +233,9 @@ class LibraryStore:
 
     def note_use_in(self, scan: Scan, paper: PaperInfo, file: FileRef) -> bool:
         """Note in this installation's record that it uses *file*, unless that record (in the
-        file's folder) already lists the digest in *scan*, in which case nothing is written.
-        Returns whether a use was written. A *scan* older than the record only costs a write
-        that changes nothing.
+        file's folder) already lists that file (digest and kind) in *scan*, in which case
+        nothing is written. Returns whether a use was written. A *scan* older than the record
+        only costs a write that changes nothing.
 
         :raises LibraryStoreFailure: the write failed; the message names the paper, the file and
             the cause.
@@ -243,7 +243,7 @@ class LibraryStore:
         already = any(
             r.installation.app == self.who.app
             and r.installation.id == self.who.id
-            and any(e.sha256 == file.sha256 for e in r.files)
+            and any(e.sha256 == file.sha256 and e.kind == file.kind for e in r.files)
             for f in scan.folders
             if f.folder == file.folder
             for r in f.records

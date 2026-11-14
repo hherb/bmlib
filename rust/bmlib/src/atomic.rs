@@ -51,8 +51,10 @@ pub const TEMP_SUFFIX_LEN: usize = TEMP_SUFFIX.len() + 42;
 /// The data is synchronised before the rename is issued, so there is no ordering
 /// in which the rename survives a crash and the data does not; but the
 /// containing **directory is not** synchronised, so the rename itself can be
-/// lost. That is the safe direction for both callers — the target is then simply
-/// absent, which each treats as a miss and repairs.
+/// lost. That is the safe direction for the cache and the templates — the target
+/// is then simply absent, which each treats as a miss and repairs. The library
+/// must survive a crash with the file present, so it syncs the directory itself
+/// (`library::files`, #768).
 ///
 /// # The rename replaces whatever is at `path`, including a symlink
 ///

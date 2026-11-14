@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -35,6 +36,7 @@ from bmlib.library.files import (
     is_temp_name,
     list_names,
     sha256_hex,
+    sync_dir,
     write_once,
 )
 
@@ -106,6 +108,20 @@ def test_create_dir_new_reports_existing(tmp_path: Path) -> None:
     assert create_dir_new(tmp_path / "p") is False
 
 
+def test_create_dir_new_syncs_a_directory_found_there(tmp_path: Path) -> None:
+    # #768: one found there may be another writer's, not yet synced into its parent.
+    (tmp_path / "p").mkdir()
+    with mock.patch("bmlib.library.files.sync_dir") as synced:
+        assert create_dir_new(tmp_path / "p") is False
+    synced.assert_called_once_with(tmp_path)
+
+
+def test_create_dir_new_refuses_a_file_in_the_way(tmp_path: Path) -> None:
+    (tmp_path / "p").write_bytes(b"")
+    with pytest.raises(FileExistsError):
+        create_dir_new(tmp_path / "p")
+
+
 def test_sha256_hex() -> None:
     assert sha256_hex(b"abc") == (
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
@@ -142,3 +158,40 @@ def test_temp_names_of_both_languages_are_recognised() -> None:
         ".0123456789abcdef0123456789abcdef.tmp",
     ]:
         assert not is_temp_name(name), name
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a directory cannot be opened to sync on Windows")
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_sync_dir_flushes_the_directory_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    # #768: the directory's own descriptor is flushed, by F_FULLFSYNC on macOS as Rust's
+    # sync_all does there, by fsync elsewhere. Both branches run on every platform CI has.
+    import fcntl
+
+    monkeypatch.setattr(fcntl, "F_FULLFSYNC", 51, raising=False)
+    monkeypatch.setattr(sys, "platform", platform)
+    calls: list[tuple[str, int, tuple[object, ...]]] = []
+
+    def fake(name: str) -> Callable[..., int]:
+        def record(fd: int, *rest: object) -> int:
+            calls.append((name, os.fstat(fd).st_ino, rest))
+            return 0
+
+        return record
+
+    monkeypatch.setattr(fcntl, "fcntl", fake("fcntl"))
+    monkeypatch.setattr(os, "fsync", fake("fsync"))
+    sync_dir(tmp_path)
+    ino = tmp_path.stat().st_ino
+    if platform == "darwin":
+        assert calls == [("fcntl", ino, (fcntl.F_FULLFSYNC,))]
+    else:
+        assert calls == [("fsync", ino, ())]
+
+
+def test_sync_dir_is_a_no_op_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os, "name", "nt")
+    with mock.patch("os.open") as opened:
+        sync_dir(tmp_path)
+    opened.assert_not_called()

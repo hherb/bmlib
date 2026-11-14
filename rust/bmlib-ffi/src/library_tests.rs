@@ -421,7 +421,7 @@ fn find_find_digest_and_group_match_the_fixture() {
     }
     for case in section("find_digest") {
         let sha = case["sha256"].as_str().unwrap().to_owned();
-        let got = scan.find_digest(sha.clone());
+        let got = scan.find_digest(sha.clone(), None);
         if sha.len() != 64 {
             // bmlib finds nothing for it; the FFI refuses it, so an app's
             // mis-stored digest does not read as "not in the library".
@@ -446,7 +446,7 @@ fn find_find_digest_and_group_match_the_fixture() {
     }
     for bad in ["A".repeat(64), format!(" {}", "a".repeat(63))] {
         assert!(matches!(
-            scan.find_digest(bad),
+            scan.find_digest(bad, None),
             Err(LibraryError::BadIdentifier { ref field, .. }) if field == "sha256"
         ));
     }
@@ -589,8 +589,17 @@ fn save_use_release_and_remove_round_trip() {
     assert_eq!(saved.name, format!("pdf-{}.pdf", &saved.sha256[..12]));
     let scan = library.scan().unwrap();
     assert_eq!(
-        scan.find_digest(saved.sha256.clone()),
+        scan.find_digest(saved.sha256.clone(), None),
         Ok(Some(saved.clone()))
+    );
+    // The kind goes in: the bytes are kept as a PDF only.
+    assert_eq!(
+        scan.find_digest(saved.sha256.clone(), Some(SourceKind::Pdf)),
+        Ok(Some(saved.clone()))
+    );
+    assert_eq!(
+        scan.find_digest(saved.sha256.clone(), Some(SourceKind::Text)),
+        Ok(None)
     );
     assert_eq!(scan.folders()[0].ids.pmid.as_deref(), Some("111"));
     let record = &scan.folders()[0].records[0];
@@ -660,7 +669,7 @@ fn another_apps_jats_file_can_be_used() {
     let file = library
         .scan()
         .unwrap()
-        .find_digest(jats.into())
+        .find_digest(jats.into(), None)
         .unwrap()
         .unwrap();
     assert_eq!(file.kind, SourceKind::Jats);

@@ -185,8 +185,8 @@ impl TryFrom<Installation> for lib::Installation {
 }
 
 /// A source file in a paper's folder, with the digest it should have. An app
-/// stores only `sha256`, and finds the file again with
-/// [`LibraryScan::find_digest`].
+/// stores `sha256` and `kind`, and finds the file again with
+/// [`LibraryScan::find_digest`] given both.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FileRef {
     /// The paper's folder, under `papers/`.
@@ -819,11 +819,10 @@ impl Library {
         Ok(self.0.record_use(&who, &paper, &file.into())?)
     }
 
-    /// Drop the file with `file.sha256` from `who`'s record in `file.folder`
-    /// (`file.name` need only be a plain name). The file and other records
-    /// stay. A file the
-    /// record does not list, or a folder `who` has no record in, is already
-    /// released, so that is `Ok`.
+    /// Drop the file with `file.sha256` and `file.kind` from `who`'s record in
+    /// `file.folder` (`file.name` need only be a plain name). The file and
+    /// other records stay. A file the record does not list, or a folder `who`
+    /// has no record in, is already released, so that is `Ok`.
     ///
     /// # Errors
     ///
@@ -893,16 +892,21 @@ impl LibraryScan {
             .collect())
     }
 
-    /// The file named for `sha256`, if any. Only the name is looked at;
-    /// [`Library::read`] checks the bytes.
+    /// The file named for `sha256`, if any; with `kind`, only the file stored
+    /// as that kind (the same bytes saved as two kinds are two files). Only
+    /// the name is looked at; [`Library::read`] checks the bytes.
     ///
     /// # Errors
     ///
     /// `BadIdentifier` (field `"sha256"`) for a digest that is not 64
     /// lowercase hex digits, which bmlib would answer with "not found".
-    pub fn find_digest(&self, sha256: String) -> Result<Option<FileRef>, LibraryError> {
+    pub fn find_digest(
+        &self,
+        sha256: String,
+        kind: Option<SourceKind>,
+    ) -> Result<Option<FileRef>, LibraryError> {
         check_digest(&sha256)?;
-        Ok(lib::find_digest(&self.0, &sha256).map(Into::into))
+        Ok(lib::find_digest(&self.0, &sha256, kind.map(Into::into)).map(Into::into))
     }
 
     /// Every folder's index into [`LibraryScan::folders`], grouped into the

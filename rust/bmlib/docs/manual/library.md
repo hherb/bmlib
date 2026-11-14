@@ -32,8 +32,8 @@ My Papers/
 - **One folder per paper**, named `year author – title (ID)` by `folder_name`
   (at most 150 UTF-8 bytes, valid on macOS, Windows and Linux).
 - **Source files are write-once.** The name carries the start of the content's
-  SHA-256, so the same bytes are the same file, and a file is never rewritten.
-  Kinds: `pdf`, `jats`, `html`, `markdown`, `text` (`SourceKind`).
+  SHA-256, so the same bytes of one kind are the same file, and a file is never
+  rewritten. Kinds: `pdf`, `jats`, `html`, `markdown`, `text` (`SourceKind`).
 - **Each installation writes only its own record**, so two apps never write the
   same file and a sync service has nothing to merge. A record names the
   installation, the paper (identifiers, title, year, first author) and the files
@@ -99,7 +99,7 @@ lib.remove_folder(&file.folder)?;
 | `lib.root()` | The folder |
 | `lib.scan()` | Reads every paper folder into a `Scan`; never writes |
 | `find(&scan, &ids)` | Every folder of the paper(s) whose identifiers share one with `ids` (the whole linked group) |
-| `find_digest(&scan, sha256)` | A `FileRef` for a file named for that digest, whichever folder holds it |
+| `find_digest(&scan, sha256, kind)` | A `FileRef` for a file named for that digest, whichever folder holds it; with `Some(kind)`, only the file stored as that kind |
 | `group(&scan)` | Indices of folders connected by shared identifiers |
 | `lib.read(&file)` | The file's bytes, checked against `file.sha256` |
 | `lib.save(&who, &paper, bytes, kind, origin)` | Writes the file once, then records it |
@@ -129,6 +129,17 @@ from a record's `FileEntry`.
   file first and the record second. A crash leaves an unrecorded file, which a
   scan reports as `Problem::UnrecordedFile`; saving the same bytes again records
   it.
+- **When `save` returns, the file survives a crash.** Each file, record and
+  folder it makes, or finds already there, has its directory synced after it
+  appears (`F_FULLFSYNC` on macOS), so an app may drop its own copy once `save`
+  returns (#768). Not yet on Windows, where a directory cannot be synced this
+  way.
+- **The same bytes saved as two kinds are two files** (`text-….txt` and
+  `markdown-….md`), each its own entry in a record, and `release` drops only
+  the kind it is given (#767). Pass the kind to `find_digest` to find the file
+  stored as that kind; without it, the first kind present wins.
+  `used_by(sha256)` is about the bytes, so it lists an installation using
+  either kind.
 - **Choosing the folder.** `save` uses the first folder holding a record that
   shares an identifier with the paper, except that bytes are kept once: if the
   library already holds these bytes, the save goes into that folder even when

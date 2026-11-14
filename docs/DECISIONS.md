@@ -6458,12 +6458,41 @@ undo.
   a scan of a few thousand small folders is the cost, and an index is a second
   store to disagree with the first.
 - **Source files are write-once and named for their content.**
-  `{kind}-{sha256[..12]}.{ext}`: the same bytes are the same file, so two apps
-  fetching one paper at once write one file, and a sync service never has two
-  versions to choose between. `save` never overwrites; other bytes under that
-  name are `FileClash`, which means a damaged file (48 bits of digest), not a
-  collision. `read` checks the full digest every time, so a half-synced or
-  edited file is `DigestMismatch`, never used.
+  `{kind}-{sha256[..12]}.{ext}`: the same bytes of one kind are the same file,
+  so two apps fetching one paper at once write one file, and a sync service
+  never has two versions to choose between. `save` never overwrites; other bytes
+  under that name are `FileClash`, which means a damaged file (48 bits of
+  digest), not a collision. `read` checks the full digest every time, so a
+  half-synced or edited file is `DigestMismatch`, never used.
+- **A record's entry is a file, its digest and kind together** (#767). The
+  same bytes saved as text and as Markdown are two files, and each gets its own
+  entry; `release` drops only the kind given, and `parse_record` refuses only
+  the same file listed twice. Keyed by digest alone, the second kind was
+  written but never recorded, and releasing either kind dropped both.
+  `find_digest` takes an optional kind; `save` still asks without one, since
+  bytes are kept in the folder already holding them, whatever their kind.
+  `used_by(sha256)` is left a question about the bytes: an installation using
+  either kind is listed, which errs toward keeping a file.
+- **A save is durable when it returns** (#768). `atomic_write` syncs a file's
+  data, not its name, which is enough for a cache. But StudyAnalyzer deletes its
+  own copy once `save` returns, so the library syncs the directory after every
+  name it makes: the file, the record, `records/`, the folder, and `papers/` and
+  the marker on open. A file, folder, `records/` or record found already there
+  is synced too, since it may be another writer's that is not yet synced, or one
+  whose own sync failed and is now being retried; a retry must not return
+  without the sync the failed call never made. On macOS the call is
+  `F_FULLFSYNC` (Rust's `sync_all` there; Python calls `fcntl` to match), which
+  also flushes the drive's cache and so covers the data that Python's
+  `atomic_write` synced with a plain `fsync`. A failed sync fails the save. The
+  file is then visible, but the caller keeps its copy, and the error says
+  `syncing its folder`. That holds on a file system that refuses the sync
+  (`ENOTSUP` from `F_FULLFSYNC` on some network shares, `EINVAL` from a
+  directory `fsync` on some FUSE mounts): every save there fails, on purpose.
+  PostgreSQL and SQLite tolerate the refusal, but neither has a caller about to
+  delete its own copy; a library on such a share is better refused loudly than
+  trusted. This costs about 26 ms per save of a new paper here (32 ms against
+  6.5, a Mac's SSD, 100 saves). Windows is a no-op for now; it is owed with the
+  Windows build (HANDOVER).
 - **One record per installation.** `records/{app}-{id}.json` is written only by
   the installation it names, so there is nothing to merge and no lock between
   machines. The cost is that "who uses this file" is the union of the records.
@@ -6542,15 +6571,16 @@ undo.
 
 - **`save` keeps bytes once** (the maintainer, #755 item 7). When the digest is
   already in the library, `Library.save` puts the use into the folder holding
-  those bytes, even if the identifiers find another folder, and writes nothing
-  again. This amends design §4.3's "callers look it up first": `save` does it
-  for every caller. The cost: byte-identical files of two different papers (a
-  stub PDF) put both papers' records in one folder. So the service uses a
-  library file only when at least one record listing it names the paper without
-  contradicting the request's identifiers (absent agrees, the rule the JATS
-  check uses): one paper is never given a file only the other's records list.
-  The split paper (a DOI-only folder, a PMID-only request) still passes. This
-  was chosen over reversing #755-7, which would bring back second folders.
+  those bytes, even if the identifiers find another folder, and writes no second
+  copy of the same kind (another kind is its own file, #767). This amends design
+  §4.3's "callers look it up first": `save` does it for every caller. The cost:
+  byte-identical files of two different papers (a stub PDF) put both papers'
+  records in one folder. So the service uses a library file only when at least
+  one record listing it names the paper without contradicting the request's
+  identifiers (absent agrees, the rule the JATS check uses): one paper is never
+  given a file only the other's records list. The split paper (a DOI-only
+  folder, a PMID-only request) still passes. This was chosen over reversing
+  #755-7, which would bring back second folders.
 - **An unreachable or read-only library does not stop a lookup** (the
   maintainer). The service warns, sets `library_failure` and runs as without a
   library, so the app keeps the source as waiting for the library (design

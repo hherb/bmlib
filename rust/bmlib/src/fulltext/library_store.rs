@@ -294,9 +294,10 @@ impl LibraryStore {
     }
 
     /// Note in this installation's record that it uses `file`, unless that record
-    /// (in the file's folder) already lists the digest in `scan`, in which case
-    /// nothing is written. Returns whether a use was written. A `scan` older
-    /// than the record only costs a write that changes nothing.
+    /// (in the file's folder) already lists that file (digest and kind) in
+    /// `scan`, in which case nothing is written. Returns whether a use was
+    /// written. A `scan` older than the record only costs a write that changes
+    /// nothing.
     ///
     /// # Errors
     ///
@@ -315,7 +316,9 @@ impl LibraryStore {
                 f.records.iter().any(|r| {
                     r.installation.app == self.who.app
                         && r.installation.id == self.who.id
-                        && r.files.iter().any(|e| e.sha256 == file.sha256)
+                        && r.files
+                            .iter()
+                            .any(|e| e.sha256 == file.sha256 && e.kind == file.kind)
                 })
             });
         if already {

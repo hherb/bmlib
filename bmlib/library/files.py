@@ -28,6 +28,7 @@ import errno
 import hashlib
 import os
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -218,27 +219,74 @@ def write_once(path: Path, data: bytes, sha256: str) -> Written:
         raise io_error(path, e, write=False) from e
     else:
         if sha256_hex(existing) == sha256:
+            sync_name(path)  # another writer's, perhaps not yet synced
             return Written.ALREADY_THERE
         raise FileClash(str(path.parent), path.name)
+    _publish(path, data)
+    return Written.NEW
+
+
+def sync_dir(directory: Path) -> None:
+    """Flush *directory*'s entries to disk, so that a name published or a directory made in it
+    survives a crash. ``atomic_write`` syncs a file's data, not its name, and a caller may drop
+    its own copy once a save returns (#768).
+
+    On macOS this is ``F_FULLFSYNC``, as Rust's ``sync_all`` is there. It also flushes the
+    drive's cache, and so covers the data ``atomic_write`` synced with a plain ``fsync``.
+    """
+    # shortcut: a no-op on Windows, where a directory cannot be opened to sync it; the rename
+    # is as durable as NTFS makes it. Use MoveFileEx's write-through when the Windows build
+    # gets the Library setting.
+    if os.name == "nt":
+        return
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        if sys.platform == "darwin":
+            import fcntl
+
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC)
+        else:
+            os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def sync_name(path: Path) -> None:
+    """Sync *path*'s directory (:func:`sync_dir`), a failure reported against *path*.
+
+    A file system that refuses the sync (``ENOTSUP``, ``EINVAL``) fails the call: the save is
+    not durable there, and saying so beats a save that may vanish (DECISIONS, #768).
+    """
+    try:
+        sync_dir(path.parent)
+    except OSError as e:
+        raise Io(path, f"syncing its folder: {e}") from e
+
+
+def _publish(path: Path, data: bytes) -> None:
+    """``atomic_write`` *data* at *path*, then sync its directory so the name is durable."""
     try:
         atomic_write(path, data)
     except OSError as e:
         raise io_error(path, e, write=True) from e
-    return Written.NEW
+    sync_name(path)
 
 
 def create_dir_new(path: Path) -> bool:
-    """Make the directory *path* (its parent must exist); ``False`` if it exists."""
+    """Make the directory *path* (its parent must exist); ``False`` if it exists.
+
+    Either way the directory is synced into its parent (:func:`sync_dir`): one found there may
+    be another writer's, not yet synced. Anything else at *path* raises ``FileExistsError``.
+    """
     try:
         path.mkdir()
+        made = True
     except FileExistsError:
-        return False
-    return True
-
-
-def create_dir_all(path: Path) -> None:
-    """Make the directory *path* and any missing parents; fine when it exists."""
-    path.mkdir(parents=True, exist_ok=True)
+        if not path.is_dir():
+            raise
+        made = False
+    sync_dir(path.parent)
+    return made
 
 
 def rename(source: Path, target: Path) -> None:
@@ -249,12 +297,10 @@ def rename(source: Path, target: Path) -> None:
 def write_replace(path: Path, data: bytes) -> None:
     """Publish *data* at *path* atomically, replacing what is there.
 
-    Only for a file its writer alone owns (an installation's own record).
+    Only for a file its writer alone owns (an installation's own record). The directory is
+    synced, so the record survives a crash once this returns.
     """
-    try:
-        atomic_write(path, data)
-    except OSError as e:
-        raise io_error(path, e, write=True) from e
+    _publish(path, data)
 
 
 def remove_file(path: Path) -> None:

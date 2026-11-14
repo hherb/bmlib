@@ -28,9 +28,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use unicode_normalization::UnicodeNormalization;
 
 use super::files::{
-    component, create_dir_all, create_dir_new, exists, has_placeholder, io_error, is_dir,
-    list_names, read_bytes, remove_dir_all, remove_file, rename, sha256_hex, write_once,
-    write_replace,
+    component, create_dir_new, exists, has_placeholder, io_error, is_dir, list_names, read_bytes,
+    remove_dir_all, remove_file, rename, sha256_hex, sync_name, write_once, write_replace,
 };
 use super::scan::{scan_folder, Problem};
 use super::{
@@ -259,11 +258,13 @@ fn record_text(record: &Record, path: &Path) -> Result<String, LibraryError> {
     }
 }
 
-/// Write `record` over `path` unless that is what is there already.
+/// Write `record` over `path` unless that is what is there already, which is
+/// synced instead.
 fn store_record(path: &Path, record: &Record) -> Result<(), LibraryError> {
     let text = record_text(record, path)?;
     if read_bytes(path).is_ok_and(|old| old == text.as_bytes()) {
-        return Ok(());
+        // A failed sync may have left it so; a retry must not return without one.
+        return sync_name(path);
     }
     write_replace(path, text.as_bytes())
 }
@@ -307,9 +308,10 @@ fn now() -> String {
 }
 
 /// Note `entry` in `who`'s record in the paper folder `dir` (named `folder`),
-/// under the record lock: the entry added unless its digest is listed already,
-/// and `paper` merged into the record's account. The one path by which both
-/// [`Library::save`] and [`Library::record_use`] change a record.
+/// under the record lock: the entry added unless the record lists that file
+/// (its digest and kind) already, and `paper` merged into the record's
+/// account. The one path by which both [`Library::save`] and
+/// [`Library::record_use`] change a record.
 fn note_use(
     dir: &Path,
     folder: &str,
@@ -317,13 +319,19 @@ fn note_use(
     paper: &PaperInfo,
     entry: FileEntry,
 ) -> Result<(), LibraryError> {
+    // The folder may be another writer's, not yet synced into `papers/`.
+    sync_name(dir)?;
     let records_dir = dir.join(RECORDS_DIR);
-    create_dir_all(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
+    create_dir_new(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
     let path = records_dir.join(component(&who.record_file_name())?);
     let _guard = record_guard();
     let record = match load_own_record(&path, folder)? {
         Some(mut record) => {
-            if !record.files.iter().any(|f| f.sha256 == entry.sha256) {
+            if !record
+                .files
+                .iter()
+                .any(|f| f.sha256 == entry.sha256 && f.kind == entry.kind)
+            {
                 record.files.push(entry);
             }
             merge_paper(record, paper, &path)
@@ -406,7 +414,7 @@ impl Library {
         let papers = self.root().join(PAPERS_DIR);
         // Bytes are kept once: the folder already holding them wins over the
         // identifiers, which may name another folder (a split paper).
-        let existing = find_digest(&scan, &digest)
+        let existing = find_digest(&scan, &digest, None)
             .map(|r| r.folder)
             .or_else(|| find(&scan, &paper.ids).first().map(|f| f.folder.clone()));
         let folder = match existing {
@@ -468,7 +476,7 @@ impl Library {
             .records
             .iter()
             .flat_map(|r| &r.files)
-            .find(|f| f.sha256 == file.sha256)
+            .find(|f| f.sha256 == file.sha256 && f.kind == file.kind)
             .map_or_else(String::new, |f| f.origin.clone());
         let entry = FileEntry {
             sha256: file.sha256.clone(),
@@ -529,7 +537,9 @@ impl Library {
                 })
             }
         };
-        record.files.retain(|f| f.sha256 != file.sha256);
+        record
+            .files
+            .retain(|f| f.sha256 != file.sha256 || f.kind != file.kind);
         store_record(&path, &record)
     }
 

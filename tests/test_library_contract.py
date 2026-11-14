@@ -373,6 +373,12 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
                 for i in f.used_by(ref.sha256)
             )
             assert users == step["expect"]
+        elif op == "find_digest":
+            ref = saved[step["of"]]
+            assert ref is not None
+            kind = None if step["kind"] is None else SourceKind(step["kind"])
+            want = None if step["expect"] is None else saved[step["expect"]]
+            assert find_digest(lib.scan(), ref.sha256, kind) == want
         else:
             raise AssertionError(op)
     want = case["expect"]
