@@ -6,6 +6,14 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rust `pdf` builds on Windows** (Rust only). `mupdf::Document::open` takes
+  a `&str` on Windows and a `&Path` elsewhere (mupdf 0.8), so the
+  `mupdf_backend` did not compile on Windows; found by BMLibrarian's Windows
+  CI. A PDF whose path is not valid Unicode is refused there as an engine
+  failure. The CI's Windows job now lints the `pdf` feature.
+
 ### Changed — breaking
 
 - **`sync(sources=None)` and `ALL_SOURCES` include `biorxiv-details` and
