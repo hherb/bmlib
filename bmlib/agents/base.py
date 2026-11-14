@@ -656,12 +656,11 @@ class BaseAgent:
         answer to a ``json_mode`` request, and returning one only defers the
         failure to the caller's first subscript.
 
-        ``RecursionError`` is caught at every stage alongside the decode
-        errors: :func:`json.loads` descends recursively, so text nested past
-        the interpreter's stack limit — ``'{"j": ' * 20000``, the shape a
-        repetition-looping model emits — blows the stack instead of failing to
-        decode.  Such a response is unparseable, and this method's contract is
-        to report that as :class:`ValueError`.
+        Text nested past the interpreter's stack limit — ``'{"j": ' *
+        20000``, the shape a repetition-looping model emits — is unparseable
+        too: :func:`strict_json_loads` refuses it as a decode error (#758),
+        and the repair stage catches ``RecursionError`` itself, so this
+        method reports it as :class:`ValueError`.
 
         Args:
             text: The model output to parse.
@@ -714,7 +713,7 @@ class BaseAgent:
         # Try direct parse
         try:
             return strict_json_loads(text)
-        except (json.JSONDecodeError, RecursionError):
+        except json.JSONDecodeError:
             pass
 
         # Fall back to the shared extractor (code-block aware + balanced-brace
@@ -729,7 +728,7 @@ class BaseAgent:
         if candidate != text and not refused:
             try:
                 return strict_json_loads(candidate)
-            except (json.JSONDecodeError, RecursionError):
+            except json.JSONDecodeError:
                 pass
 
         # A refusal is final: repair cannot mend a NaN, and the stages below
@@ -764,7 +763,7 @@ class BaseAgent:
         if fragment != text:
             try:
                 return strict_json_loads(fragment)
-            except (json.JSONDecodeError, RecursionError):
+            except json.JSONDecodeError:
                 pass
 
         raise ValueError(f"Could not parse JSON from LLM response: {text[:200]!r}")

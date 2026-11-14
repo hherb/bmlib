@@ -4083,6 +4083,12 @@ fn the_three_json_bodies_are_refused_as_python_refuses_them() {
         format!(r#"{{"x": NaN, {rest}"#),
         format!(r#"{{"x": 1e999, {rest}"#),
         format!(r#"{{"x": {}{}, {rest}"#, "[".repeat(200), "]".repeat(200)),
+        // Past Python's stack, where its decoder raised `RecursionError` (#758).
+        format!(
+            r#"{{"x": {}{}, {rest}"#,
+            "[".repeat(100_000),
+            "]".repeat(100_000)
+        ),
     ] {
         assert_eq!(
             chain(bad.clone().into_bytes()),

@@ -1,53 +1,39 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**#767 and #768, the library's kind-aware lookup and
-durable save, PR #771 — read *This session* first**). Merged since the last
-update: #764 (the library, 1c), #763 (1b), #760 (#341, the `*-details`
-sources), #757 (#753), #754 (the library, 1a), #752 (#750, #751).
-**0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
-**the Rust crate 0.4.0 on crates.io** from the same commit._
+_Last updated: 2026-11-14 (**#758, JSON nested past Python's stack, PR
+pending — read *This session* first**). Merged since the last update: #771
+(#767, #768), #770 (Rust `pdf` on Windows). **0.13.0 is on PyPI** (tag
+`v0.13.0` on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on
+crates.io** from the same commit._
 
-## This session: a file found by its kind, and a durable save (#767, #768; PR #771)
+## This session: JSON nested past Python's stack (#758, branch `fix/strict-json-recursion`)
 
-StudyAnalyzer's step 2 filed both; each was worked around there with a
-`shortcut:` that can go once this is pinned. Both languages and bmlib-ffi.
+- `strict_json_loads` now turns the stdlib decoder's `RecursionError` into a
+  `JSONDecodeError` recorded as a refusal (`nested too deeply to decode`).
+  Full text's three decodes record `JSONDecodeError` faults for a body nested
+  100,000 deep, as Rust does; a library record or marker that deep reads as
+  unreadable instead of crashing a scan; `parse_json` reports it as a refusal
+  without the repair stages (its message changed; it was already so for a
+  complete reply 128 deep).
+- The `RecursionError` catches whose try body was `strict_json_loads` alone
+  are removed (`llm/utils.py`, `agents/base.py`, `json_repair.py`,
+  `retraction_status.py`). Catches around repair or `raw_decode` stay: those
+  paths still recurse outside it.
+- Pinned by a depth-100,000 row in `TestOnlyJsonNumbersAreRead`,
+  `TestJsonBodiesAreReadAsSerdeJsonReadsThem` and Rust's
+  `the_three_json_bodies_are_refused_as_python_refuses_them`, plus
+  `test_nesting_past_the_stack_is_a_recorded_refusal` and
+  `test_a_record_nested_past_the_stack_is_unreadable`; all six Python rows
+  fail on the unfixed code.
 
-- **#767**: `find_digest(scan, sha256, kind)` (Python `kind=None`, Rust
-  `Option<SourceKind>`, FFI `find_digest(sha256, kind)`). The root cause was
-  wider than the lookup: a record's entries were keyed by digest alone, so the
-  second kind of the same bytes was written but never recorded, `release` of
-  either kind dropped both, and `parse_record` refused a record listing both.
-  Entries are now keyed by digest and kind (`parse_record`, the merge,
-  `release`, `record_use`'s origin). `used_by(sha256)` stays about the bytes,
-  by decision (DECISIONS). Cases: `library_cases.json` *the same bytes as two
-  kinds* (records) and *the same bytes kept as two kinds* (`save_scenarios`,
-  with a new `find_digest` step).
-- **#768**: the library's `files` module syncs the directory after every name
-  it makes (file, record, `records/`, folder, `papers/`, marker), and after a
-  file found already there. `F_FULLFSYNC` on macOS in both languages, `fsync`
-  elsewhere, a no-op on Windows (a `shortcut:` and the owed list below). The
-  shared `atomic_write` is unchanged. Cost: about 26 ms per new paper's save on
-  a Mac (32 against 6.5 ms). Pinned by
-  `test_every_name_a_save_makes_is_synced_into_its_directory` (Python and a
-  Rust twin with a `cfg(test)` log of syncs) and `test_sync_dir_flushes_...`.
-- Every change was mutation-checked: 5 + 5 for #767, 5 + 4 for #768, each
-  mutant caught.
-- **The pre-merge review** found that only names a save *made* were synced: a
-  folder, `records/` or unchanged record found already there was not, so a
-  retry after a failed sync, or a save beside a concurrent writer, returned
-  without them. `create_dir_new` now syncs a directory found there (and
-  refuses a file in the way); `note_use` syncs the paper folder into `papers/`
-  and makes `records/` with `create_dir_new` (`create_dir_all` is gone); an
-  unchanged record is synced. A failed sync says `syncing its folder`, and a
-  file system that refuses the sync fails every save, by decision
-  (DECISIONS). `LibraryStore.note_use_in` now matches the kind too. Pinned by
-  `test_a_failed_sync_fails_the_save_and_a_retry_syncs_what_it_left` (Python
-  and Rust, the Rust one through a `cfg(test)` fault switch), the darwin and
-  Linux `sync_dir` branches run on every platform, and two `save_scenarios`
-  (*the same bytes as another kind go to the folder holding them*, *two PDFs
-  of one paper, one released*); 3 + 3 mutants, each caught.
-- **Downstream**: StudyAnalyzer can drop its `stored_name` shortcut (#767) once
-  it re-pins; MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
+## Earlier: a file found by its kind, a durable save (#767, #768; PR #771, merged)
+
+`find_digest(scan, sha256, kind)`; a record's entries keyed by digest and
+kind; the library's `files` module syncs the directory after every name it
+makes or finds (`F_FULLFSYNC` on macOS, a no-op on Windows, owed below),
+about 26 ms per new paper's save. Detail: PR #771 and the CHANGELOG.
+**Downstream**: StudyAnalyzer can drop its `stored_name` shortcut once it
+re-pins; MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
 
 ## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
@@ -151,8 +137,7 @@ MECA bulk is the expected next request.
 
 - **#753 (PR #757)**: the Europe PMC search, NCBI's ID Converter and Unpaywall
   decode through `strict_json_loads`, so a new full-text test must script
-  `content`, not `json()`. Deep nesting is still `RecursionError` in Python:
-  **#758**.
+  `content`, not `json()`. Deep nesting past the stack: #758, this session.
 - **#750/#751 (PR #752)**: `pmc_open_data_record`; the PDF beside JATS checks
   the record's md5; Tier 1c's third source is the bucket's JATS. The record
   fixtures' md5s are those of `sample_article.xml` and `textless.pdf`: edit
@@ -281,11 +266,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `feat/library-find-kind-durable-save`** (2026-11-14, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,909 passed + 20
-  skipped (10,929 collected); Rust 1,837 (`cargo test --workspace`, clippy
-  clean), `cargo test -p bmlib-ffi --features http-sketch` 35; the Rust oracle
-  44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
+- **Tests on `fix/strict-json-recursion`** (2026-11-14, PostgreSQL 18 DSN on
+  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,916 passed + 20 skipped
+  (10,936 collected); the Rust oracle 44 clean; Rust's changed test passes and
+  `cargo clippy -p bmlib --tests` is clean (the whole Rust suite was last run
+  on #771's branch: 1,837, `bmlib-ffi --features http-sketch` 35). Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
@@ -313,14 +298,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open** (124 once #767 and #768 are closed by this branch's PR): the
-library's #761, #765, #766, #769 and #755 (above), **#759** (PR #760's:
-measure the `/details` settle period) and **#758** (#753's review
-residual, `RecursionError`) among them (#734, #733,
-#731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays
-open for its point 3, which PR #696 left open)
-(`gh issue list --state open --limit 300 --json number`, 2026-11-14, after
-#764 merged); #651 is
+**124 open** (123 once #758 is closed by this branch's PR): the library's
+#761, #765, #766, #769 and #755 (above) and **#759** (PR #760's: measure the
+`/details` settle period) among them (#734, #733, #731, #730, #726, #725,
+#722, #718, #716 and #694 are the newest; #577 stays open for its point 3,
+which PR #696 left open) (`gh issue list --state open --limit 300 --json
+number`, 2026-11-14, after #771 merged); #651 is
 #632's residual; #556–#734 are not yet sorted into the lists below). **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR

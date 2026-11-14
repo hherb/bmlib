@@ -269,7 +269,7 @@ def json_mode_reply(content: str) -> str:
         try:
             strict_json_loads(content)
             return content
-        except (json.JSONDecodeError, RecursionError):  # too deep is unreadable too (#698)
+        except json.JSONDecodeError:  # too deep is one too (#698, #758)
             extracted = extract_json(content)
     return content if refused else extracted
 
@@ -299,13 +299,10 @@ def _first_acceptable(
     for candidate in iter_json_spans(text, nested_objects=nested_objects):
         try:
             parsed = strict_json_loads(candidate)
-        except (json.JSONDecodeError, RecursionError):
-            # RecursionError, not just a decode failure: json.loads() descends
-            # recursively, so a candidate nested past the interpreter's stack
-            # limit — '{"j": ' * 20000, what a repetition-looping model emits —
-            # blows the stack.  extract_json() is documented never to raise and
-            # runs unconditionally on every json_mode response, so an
-            # undecodable candidate is skipped like any other.
+        except json.JSONDecodeError:
+            # A candidate nested past the stack — '{"j": ' * 20000, what a
+            # repetition-looping model emits — is one too (#758): extract_json()
+            # is documented never to raise, so it is skipped like any other.
             continue
         if isinstance(parsed, dict):
             return candidate
