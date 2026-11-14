@@ -3,9 +3,9 @@
 _Last updated: 2026-11-14 (**#767 and #768, the library's kind-aware lookup and
 durable save, PR #771 — read *This session* first**). Merged since the last
 update: #764 (the library, 1c), #763 (1b), #760 (#341, the `*-details`
-sources), #757 (#753), #754 (the library, 1a), #752 (#750, #751). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the
-merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same
-commit._
+sources), #757 (#753), #754 (the library, 1a), #752 (#750, #751).
+**0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
+**the Rust crate 0.4.0 on crates.io** from the same commit._
 
 ## This session: a file found by its kind, and a durable save (#767, #768; PR #771)
 
