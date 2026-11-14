@@ -523,6 +523,33 @@ fn is_saved_at(s: &str) -> bool {
             .all(|(i, c)| [4, 7, 10, 13, 16, 19].contains(&i) || c.is_ascii_digit())
 }
 
+/// `got`'s value, or, when `step` expects an error, the check that it is that one.
+fn refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<T> {
+    let want = &step["expect"];
+    if !want.is_object() {
+        return Some(got.unwrap_or_else(|e| panic!("{name}: {e}")));
+    }
+    assert_eq!(want["error"], "foreign_jats", "{name}");
+    match got {
+        Err(LibraryError::ForeignJats {
+            folder,
+            name: file,
+            field,
+            theirs,
+            ours,
+        }) => {
+            let got = serde_json::json!({
+                "error": "foreign_jats", "folder": folder, "name": file, "field": field,
+                "theirs": theirs, "ours": ours,
+            });
+            assert_eq!(&got, want, "{name}");
+        }
+        Err(e) => panic!("{name}: {e}"),
+        Ok(_) => panic!("{name}: not refused"),
+    }
+    None
+}
+
 #[test]
 fn save_scenarios_match_the_fixture() {
     for case in section("save_scenarios") {
@@ -541,21 +568,24 @@ fn save_scenarios_match_the_fixture() {
             let mut made = None;
             match step["op"].as_str().unwrap() {
                 "save" => {
-                    made = Some(
+                    made = refused(
+                        name,
+                        step,
                         lib.save(
                             &installation(step),
                             &paper_info(&step["paper"]),
                             step["text"].as_str().unwrap().as_bytes(),
                             SourceKind::parse(step["kind"].as_str().unwrap()).unwrap(),
                             step["origin"].as_str().unwrap(),
-                        )
-                        .unwrap_or_else(|e| panic!("{name}: {e}")),
+                        ),
                     );
                 }
                 "release" => lib.release(&installation(step), &of(step)).unwrap(),
-                "record_use" => lib
-                    .record_use(&installation(step), &paper_info(&step["paper"]), &of(step))
-                    .unwrap_or_else(|e| panic!("{name}: {e}")),
+                "record_use" => {
+                    let got =
+                        lib.record_use(&installation(step), &paper_info(&step["paper"]), &of(step));
+                    refused(name, step, got);
+                }
                 "remove_file" => {
                     let got = lib.remove_file(&of(step));
                     if step["expect"] == "missing" {

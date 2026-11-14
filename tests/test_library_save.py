@@ -31,13 +31,17 @@ import pytest
 
 from bmlib.library import (
     CORRUPT_SUFFIX,
+    DigestMismatch,
     FileClash,
     FileRef,
+    ForeignJats,
     Installation,
     Io,
     Library,
+    LibraryError,
     Missing,
     NewerRecord,
+    NotDownloaded,
     PaperInfo,
     ReadOnly,
     SourceKind,
@@ -514,3 +518,38 @@ def test_an_unplugged_drive_behind_the_root_link_is_no_such_folder(tmp_path: Pat
     with pytest.raises(Unreachable) as err:
         open_library(tmp_path / "lib")
     assert err.value.reason == "no such folder"
+
+
+# A JATS naming another paper (#766): what the shared fixture cannot set up.
+_JATS_A = (
+    b'<article><front><article-meta><article-id pub-id-type="doi">10.1/a</article-id>'
+    b"</article-meta></front></article>"
+)
+_OTHER_DOI = PaperInfo(canonical_ids("111", "10.1/b", None))
+
+
+def test_an_evicted_jats_in_the_folder_stops_the_save(lib: Library) -> None:
+    # A placeholder is not a file on disk, but it may be another paper's JATS: it cannot be
+    # checked now, so the save waits rather than going in beside it.
+    jats = lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test")
+    path = lib.root / "papers" / jats.folder / jats.name
+    path.rename(path.with_name(f".{path.name}.icloud"))
+    with pytest.raises(NotDownloaded):
+        lib.save(_YOU, _OTHER_DOI, _BYTES, SourceKind.PDF, "test")
+    assert not (path.parent / f"pdf-{sha256_hex(_BYTES)[:12]}.pdf").exists()
+
+
+def test_a_changed_jats_in_the_folder_stops_the_save(lib: Library) -> None:
+    jats = lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test")
+    (lib.root / "papers" / jats.folder / jats.name).write_bytes(b"<article/>")
+    with pytest.raises(DigestMismatch):
+        lib.save(_YOU, _OTHER_DOI, _BYTES, SourceKind.PDF, "test")
+
+
+def test_foreign_jats_is_a_library_error_naming_the_file() -> None:
+    e = ForeignJats("F", "jats-x.xml", "doi", "10.1/a", "10.1/b")
+    assert isinstance(e, LibraryError)
+    assert str(e) == (
+        "F holds jats-x.xml, the JATS of another paper: its own doi 10.1/a is not this "
+        "paper's 10.1/b; nothing was written"
+    )

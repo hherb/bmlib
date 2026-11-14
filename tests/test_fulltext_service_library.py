@@ -38,14 +38,21 @@ from bmlib.fulltext.library_store import LibraryStore, paper_info
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.fulltext.service import LIBRARY_SOURCE, FullTextService, _sanitize_identifier
 from bmlib.library import (
+    PAPERS_DIR,
+    RECORDS_DIR,
+    FileEntry,
     FileRef,
     Installation,
     Library,
     PaperIds,
     PaperInfo,
+    Record,
     SourceKind,
     canonical_ids,
+    folder_name,
     open_library,
+    render_record,
+    sha256_hex,
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -72,6 +79,25 @@ def _saved_by_other(tmp_path: Path, paper: PaperInfo, data: bytes, kind: SourceK
     """Another installation saves *data* of *kind* for *paper* in the library at
     ``tmp_path/lib``."""
     return _library(tmp_path).save(_OTHER, paper, data, kind, "test")
+
+
+def plant(
+    root: Path, who: Installation, paper: PaperInfo, files: list[tuple[bytes, SourceKind]]
+) -> None:
+    """Write *files* and *who*'s record listing them into *paper*'s folder of the library at
+    *root*, by hand: ``save`` refuses a JATS whose own identifiers contradict *paper*'s (#766),
+    and these tests need a folder holding one, as another app or an older bmlib could leave it.
+    Rust's ``plant`` writes the same."""
+    folder = root / PAPERS_DIR / folder_name(paper)
+    (folder / RECORDS_DIR).mkdir(parents=True)
+    entries = []
+    for data, kind in files:
+        digest = sha256_hex(data)
+        name = f"{kind.value}-{digest[:12]}.{kind.extension()}"
+        (folder / name).write_bytes(data)
+        entries.append(FileEntry(digest, kind, name, "test", len(data), "2026-01-01T00:00:00Z"))
+    record = render_record(Record(who, paper, tuple(entries)))
+    (folder / RECORDS_DIR / who.record_file_name()).write_text(record, encoding="utf-8")
 
 
 def _service(tmp_path: Path) -> FullTextService:
@@ -145,7 +171,8 @@ def test_jats_of_another_paper_is_not_served(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     # The record claims PMID 999; the JATS itself says 34567890.
-    _saved_by_other(tmp_path, _sample_info(canonical_ids("999")), _SAMPLE, SourceKind.JATS)
+    paper = _sample_info(canonical_ids("999"))
+    plant(_library(tmp_path).root, _OTHER, paper, [(_SAMPLE, SourceKind.JATS)])
     service = _service(tmp_path)
     with (
         caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
@@ -253,8 +280,8 @@ def test_the_pdf_beside_a_jats_of_another_paper_is_not_held(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     paper = _sample_info(canonical_ids("999"))
-    _saved_by_other(tmp_path, paper, _SAMPLE, SourceKind.JATS)
-    _saved_by_other(tmp_path, paper, b"%PDF-1.4 sample", SourceKind.PDF)
+    files = [(_SAMPLE, SourceKind.JATS), (b"%PDF-1.4 sample", SourceKind.PDF)]
+    plant(_library(tmp_path).root, _OTHER, paper, files)
     service = _service(tmp_path)
     with (
         caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"),
@@ -323,7 +350,10 @@ def test_library_scenario(tmp_path: Path, scenario: dict[str, Any]) -> None:
         paper = PaperInfo(canonical_ids(ids.get("pmid"), ids.get("doi"), ids.get("pmc_id")))
         who = Installation.new(saved["app"], "bbbb", "Mac")
         data = (_FIXTURES / saved["file"]).read_bytes()
-        _library(tmp_path).save(who, paper, data, SourceKind(saved["kind"]), "test")
+        if saved.get("planted"):
+            plant(_library(tmp_path).root, who, paper, [(data, SourceKind(saved["kind"]))])
+        else:
+            _library(tmp_path).save(who, paper, data, SourceKind(saved["kind"]), "test")
     answers = [
         (
             a["pattern"],

@@ -8,6 +8,25 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The library refuses to file anything beside another paper's JATS** (#766;
+  both languages). `Library.save` and `Library.record_use` raise the new
+  `ForeignJats` (`folder`, `name`, `field`, `theirs`, `ours`) when the folder
+  they would write to holds a JATS whose own identifiers contradict the
+  paper's, and `save` does so too when the bytes being saved are such a JATS
+  (`folder` is then `None`); nothing is written. Only `FullTextService` made
+  this check before, so an app saving a file it opened by hand filled a folder
+  that failed every later lookup. Every JATS a record in the folder lists is
+  read and checked: one only an iCloud placeholder raises `NotDownloaded`, a
+  changed one `DigestMismatch`, one the manual clear removed is passed over,
+  and one that does not parse names no paper. **Behaviour change for the
+  service**: a JATS the chain fetches whose own identifiers name another paper
+  is still returned but no longer kept in the library; `library_failure` says
+  why. **Downstream**: StudyAnalyzer can drop its own `foreign_jats` check
+  once it re-pins, and MedicalFactChecker need not write it; show
+  `ForeignJats` with the manual clear of `folder`. Pinned by six new
+  `save_scenarios` in `library_cases.json` and scenario 13 of
+  `fulltext_library_scenarios.json`; tests that need such a folder now plant
+  it by hand (`planted` in the scenarios).
 - **The shared paper library uses only real files and folders** (#761; both
   languages). Reads followed symbolic links and opened anything, so a record
   or source file that was a FIFO, or a link to `/dev/zero`, hung a scan or a

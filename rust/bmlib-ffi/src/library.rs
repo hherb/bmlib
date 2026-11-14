@@ -589,6 +589,22 @@ pub enum LibraryError {
         /// Its version.
         version: u32,
     },
+    /// A JATS whose own identifiers name another paper (bmlib #766), from
+    /// [`PaperLibrary::save`] and [`PaperLibrary::record_use`]: one in the
+    /// paper's folder, or the one being saved (`folder` `None`). Nothing was
+    /// written; offer the manual clear of that folder.
+    ForeignJats {
+        /// The paper's folder holding the JATS; `None` for the bytes being saved.
+        folder: Option<String>,
+        /// The JATS file.
+        name: String,
+        /// The first contradicting identifier: `"pmid"`, `"doi"` or `"pmcid"`.
+        field: String,
+        /// The JATS's own value.
+        theirs: String,
+        /// The paper's value.
+        ours: String,
+    },
     /// Any other failure: the file system's, or a record that cannot be read
     /// or written back, or no free folder name (the reason says which).
     Io {
@@ -645,6 +661,19 @@ impl From<lib::LibraryError> for LibraryError {
                 folder,
                 file,
                 version,
+            },
+            E::ForeignJats {
+                folder,
+                name,
+                field,
+                theirs,
+                ours,
+            } => Self::ForeignJats {
+                folder,
+                name,
+                field: field.to_owned(),
+                theirs,
+                ours,
             },
             E::Io { path, reason } => Self::Io {
                 path: s(&path),
@@ -711,6 +740,19 @@ impl LibraryError {
                 folder,
                 file,
                 version,
+            },
+            Self::ForeignJats {
+                folder,
+                name,
+                field,
+                theirs,
+                ours,
+            } => E::ForeignJats {
+                folder,
+                name,
+                field: field_name(&field),
+                theirs,
+                ours,
             },
             Self::Io { path, reason } => E::Io {
                 path: p(&path),

@@ -236,6 +236,15 @@ fn every_core_error() -> Vec<lib::LibraryError> {
             reason: "r3".into(),
         },
     ];
+    for (folder, field) in [(Some(f()), "pmid"), (None, "doi"), (Some(f()), "pmcid")] {
+        errors.push(E::ForeignJats {
+            folder,
+            name: n(),
+            field,
+            theirs: "t".into(),
+            ours: "o".into(),
+        });
+    }
     for field in ["pmid", "doi", "pmcid", "sha256"] {
         errors.push(E::BadIdentifier {
             field,
@@ -716,6 +725,20 @@ fn a_refused_save_writes_nothing() {
         String::new(),
     );
     assert!(matches!(got, Err(LibraryError::BadInstallation { ref field, .. }) if field == "app"));
+    // A JATS naming another paper (#766): its own PMID is 2, the paper's 1.
+    let jats = br#"<article><front><article-meta><article-id pub-id-type="pmid">2</article-id></article-meta></front></article>"#;
+    let got = library.save(
+        who("studyanalyzer"),
+        paper("1"),
+        jats.to_vec(),
+        SourceKind::Jats,
+        String::new(),
+    );
+    assert!(
+        matches!(got, Err(LibraryError::ForeignJats { folder: None, ref field, ref theirs, ref ours, .. })
+            if field == "pmid" && theirs == "2" && ours == "1"),
+        "{got:?}"
+    );
     assert!(library.scan().unwrap().folders().is_empty());
     let _ = std::fs::remove_dir_all(base);
 }

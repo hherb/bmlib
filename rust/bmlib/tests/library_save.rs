@@ -641,3 +641,69 @@ fn an_unplugged_drive_behind_the_root_link_is_no_such_folder() {
     );
     fs::remove_dir_all(base).unwrap();
 }
+
+// A JATS naming another paper (#766): what the shared fixture cannot set up.
+const JATS_A: &[u8] = b"<article><front><article-meta>\
+<article-id pub-id-type=\"doi\">10.1/a</article-id></article-meta></front></article>";
+
+fn other_doi() -> PaperInfo {
+    PaperInfo {
+        ids: PaperIds::canonical(Some("111"), Some("10.1/b"), None).unwrap(),
+        ..PaperInfo::default()
+    }
+}
+
+#[test]
+fn an_evicted_jats_in_the_folder_stops_the_save() {
+    // A placeholder is not a file on disk, but it may be another paper's JATS:
+    // it cannot be checked now, so the save waits rather than going in beside it.
+    let (dir, lib) = scratch("foreign-evicted");
+    let jats = lib
+        .save(&me(), &paper(), JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    let path = dir.join("papers").join(&jats.folder).join(&jats.name);
+    fs::rename(&path, path.with_file_name(format!(".{}.icloud", jats.name))).unwrap();
+    let got = lib.save(&you(), &other_doi(), BYTES, SourceKind::Pdf, "test");
+    assert!(
+        matches!(got, Err(LibraryError::NotDownloaded { .. })),
+        "{got:?}"
+    );
+    let pdf = format!("pdf-{}.pdf", &sha256_hex(BYTES)[..12]);
+    assert!(!path.with_file_name(pdf).exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_changed_jats_in_the_folder_stops_the_save() {
+    let (dir, lib) = scratch("foreign-changed");
+    let jats = lib
+        .save(&me(), &paper(), JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    fs::write(
+        dir.join("papers").join(&jats.folder).join(&jats.name),
+        b"<article/>",
+    )
+    .unwrap();
+    let got = lib.save(&you(), &other_doi(), BYTES, SourceKind::Pdf, "test");
+    assert!(
+        matches!(got, Err(LibraryError::DigestMismatch { .. })),
+        "{got:?}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn foreign_jats_names_the_file() {
+    let e = LibraryError::ForeignJats {
+        folder: Some("F".into()),
+        name: "jats-x.xml".into(),
+        field: "doi",
+        theirs: "10.1/a".into(),
+        ours: "10.1/b".into(),
+    };
+    assert_eq!(
+        e.to_string(),
+        "F holds jats-x.xml, the JATS of another paper: its own doi 10.1/a is not this \
+         paper's 10.1/b; nothing was written"
+    );
+}

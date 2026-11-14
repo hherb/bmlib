@@ -107,6 +107,21 @@ pub enum LibraryError {
         /// The record version found.
         version: u32,
     },
+    /// A JATS whose own identifiers name another paper (#766): one in the
+    /// paper's folder, or the one being saved (`folder` `None`). Nothing was
+    /// written; the folder needs the manual clear.
+    ForeignJats {
+        /// The paper's folder holding the JATS; `None` for the bytes being saved.
+        folder: Option<String>,
+        /// The JATS file.
+        name: String,
+        /// The first contradicting identifier: `"pmid"`, `"doi"` or `"pmcid"`.
+        field: &'static str,
+        /// The JATS's own value.
+        theirs: String,
+        /// The paper's value.
+        ours: String,
+    },
     /// A file-system operation failed.
     Io {
         /// What was being touched.
@@ -172,6 +187,23 @@ impl fmt::Display for LibraryError {
                 "the record {file} in {folder} uses version {version}, newer than this app \
                  understands; update the app"
             ),
+            Self::ForeignJats {
+                folder,
+                name,
+                field,
+                theirs,
+                ours,
+            } => {
+                match folder {
+                    Some(folder) => write!(f, "{folder} holds {name}")?,
+                    None => write!(f, "{name}")?,
+                }
+                write!(
+                    f,
+                    ", the JATS of another paper: its own {field} {theirs} is not this paper's \
+                     {ours}; nothing was written"
+                )
+            }
             Self::Io { path, reason } => write!(f, "{}: {reason}", path.display()),
         }
     }
