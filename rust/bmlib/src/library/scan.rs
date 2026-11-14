@@ -28,8 +28,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::files::{
-    component, exists, has_placeholder, io_error, is_dir, is_not_downloaded, listing, read_bytes,
-    sha256_hex,
+    component, exists, has_placeholder, io_error, is_dir, is_not_downloaded, listing, paper_dir,
+    read_bytes, sha256_hex,
 };
 use super::{
     parse_record, Installation, Library, LibraryError, PaperIds, Record, RecordProblem, SourceKind,
@@ -349,7 +349,7 @@ impl Library {
     /// placeholder is here; [`LibraryError::Missing`];
     /// [`LibraryError::DigestMismatch`]; [`LibraryError::Io`].
     pub fn read(&self, file: &FileRef) -> Result<Vec<u8>, LibraryError> {
-        let dir = self.root().join(PAPERS_DIR).join(component(&file.folder)?);
+        let dir = paper_dir(self.root(), &file.folder)?;
         let path = dir.join(component(&file.name)?);
         let bytes = match read_bytes(&path) {
             Ok(b) => b,

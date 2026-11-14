@@ -29,7 +29,7 @@ from bmlib.library.files import (
     exists,
     first_user_entry,
     io_error,
-    is_dir,
+    is_dir_following_links,
     read_bytes,
     sha256_hex,
     write_once,
@@ -134,7 +134,7 @@ def open_library(root: Path) -> Library:
     :raises NewerLibrary: the marker's version is newer than ``LIBRARY_VERSION``.
     :raises ReadOnly: the marker or ``papers/`` cannot be written.
     """
-    if not is_dir(root):
+    if not is_dir_following_links(root):
         raise Unreachable(root, "not a folder" if exists(root) else "no such folder")
     marker = root / MARKER_FILE
     first = None

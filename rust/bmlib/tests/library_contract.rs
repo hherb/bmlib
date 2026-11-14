@@ -291,6 +291,42 @@ fn id_value(ids: &PaperIds) -> Value {
     serde_json::json!({"pmid": ids.pmid, "doi": ids.doi, "pmcid": ids.pmcid})
 }
 
+/// A scan problem as the fixture writes it, its `reason` included.
+fn problem_json(p: &Problem) -> Value {
+    use serde_json::json;
+    match p {
+        Problem::UnreadableRecord {
+            folder,
+            file,
+            reason,
+        } => json!({"kind": "unreadable_record", "folder": folder, "file": file, "reason": reason}),
+        Problem::UnreadableFolder { folder, reason } => {
+            json!({"kind": "unreadable_folder", "folder": folder, "reason": reason})
+        }
+        Problem::LeftoverTemp { folder, name } => {
+            json!({"kind": "leftover_temp", "folder": folder, "name": name})
+        }
+        Problem::RecordNotDownloaded { folder, file } => {
+            json!({"kind": "record_not_downloaded", "folder": folder, "file": file})
+        }
+        Problem::ConflictingIds { folder, field } => {
+            json!({"kind": "conflicting_ids", "folder": folder, "field": field})
+        }
+        Problem::NewerRecord {
+            folder,
+            file,
+            version,
+        } => json!({"kind": "newer_record", "folder": folder, "file": file, "version": version}),
+        Problem::MisnamedRecord { folder, file } => {
+            json!({"kind": "misnamed_record", "folder": folder, "file": file})
+        }
+        Problem::UnrecordedFile { folder, name } => {
+            json!({"kind": "unrecorded_file", "folder": folder, "name": name})
+        }
+        Problem::StrayEntry { name } => json!({"kind": "stray_entry", "name": name}),
+    }
+}
+
 #[test]
 fn scan_matches_the_fixture() {
     let (base, lib) = sample_library("scan");
@@ -330,41 +366,12 @@ fn scan_matches_the_fixture() {
     let problems: Vec<Value> = scan
         .problems
         .iter()
-        .map(|p| match p {
-            Problem::UnreadableRecord {
-                folder,
-                file,
-                reason,
-            } => {
-                assert!(!reason.is_empty());
-                serde_json::json!({"kind": "unreadable_record", "folder": folder, "file": file})
+        .map(|p| {
+            let mut v = problem_json(p);
+            if let Some(reason) = v.as_object_mut().unwrap().remove("reason") {
+                assert!(!reason.as_str().unwrap().is_empty());
             }
-            Problem::UnreadableFolder { .. } => panic!("no unreadable folder in the sample"),
-            Problem::LeftoverTemp { folder, name } => {
-                serde_json::json!({"kind": "leftover_temp", "folder": folder, "name": name})
-            }
-            Problem::RecordNotDownloaded { folder, file } => {
-                serde_json::json!({"kind": "record_not_downloaded", "folder": folder, "file": file})
-            }
-            Problem::ConflictingIds { folder, field } => {
-                serde_json::json!({"kind": "conflicting_ids", "folder": folder, "field": field})
-            }
-            Problem::NewerRecord {
-                folder,
-                file,
-                version,
-            } => serde_json::json!(
-                {"kind": "newer_record", "folder": folder, "file": file, "version": version}
-            ),
-            Problem::MisnamedRecord { folder, file } => {
-                serde_json::json!({"kind": "misnamed_record", "folder": folder, "file": file})
-            }
-            Problem::UnrecordedFile { folder, name } => {
-                serde_json::json!({"kind": "unrecorded_file", "folder": folder, "name": name})
-            }
-            Problem::StrayEntry { name } => {
-                serde_json::json!({"kind": "stray_entry", "name": name})
-            }
+            v
         })
         .collect();
     assert_eq!(Value::Array(problems), want["problems"]);
@@ -656,4 +663,95 @@ fn component_matches_the_fixture() {
     }
     assert_eq!(tree(&base), before);
     let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Every entry under `dir` with its bytes (`None` for a folder).
+#[cfg(unix)]
+fn outside(dir: &std::path::Path) -> std::collections::BTreeMap<String, Option<Vec<u8>>> {
+    let mut out = std::collections::BTreeMap::new();
+    for rel in tree(dir) {
+        let bytes = (!rel.ends_with('/')).then(|| std::fs::read(dir.join(&rel)).unwrap());
+        out.insert(rel, bytes);
+    }
+    out
+}
+
+/// One paper is saved, then one of its entries is replaced by a FIFO, or moved
+/// outside the library and linked back to (same bytes, so only the link is
+/// refused, #761). Unix only: Windows needs Developer Mode for a link and has
+/// no FIFOs.
+#[cfg(unix)]
+#[test]
+fn special_entries_match_the_fixture() {
+    for case in section("special_entries") {
+        let name = case["name"].as_str().unwrap();
+        let base = std::env::temp_dir().join(format!(
+            "bmlib-special-{}-{}",
+            std::process::id(),
+            name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        let (root, out) = (base.join("lib"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        let lib = Library::open(&root).unwrap();
+        let who = Installation::new("studyanalyzer", "aaaa", "Test Mac").unwrap();
+        let other = Installation::new("medicalfactchecker", "bbbb", "Test Mac").unwrap();
+        let paper = paper_info(&serde_json::json!(
+            {"pmid": "111", "year": 2024, "first_author": "Smith", "title": "Metformin"}
+        ));
+        let save = || lib.save(&who, &paper, b"pdf bytes one", SourceKind::Pdf, "unit test");
+        let file = save().unwrap();
+        let target = root.join(case["replace"].as_str().unwrap());
+        if case["with"] == "symlink" || case["with"] == "dangling_symlink" {
+            let moved = out.join(target.file_name().unwrap());
+            std::fs::rename(&target, &moved).unwrap();
+            std::os::unix::fs::symlink(&moved, &target).unwrap();
+            if case["with"] == "dangling_symlink" {
+                std::fs::remove_dir_all(&moved).unwrap();
+            }
+        } else if case["with"] == "file" {
+            std::fs::remove_dir_all(&target).unwrap();
+            std::fs::write(&target, b"not a folder").unwrap();
+        } else {
+            std::fs::remove_file(&target).unwrap();
+            let made = std::process::Command::new("mkfifo")
+                .arg(&target)
+                .status()
+                .unwrap();
+            assert!(made.success(), "{name}: mkfifo");
+        }
+        let before = outside(&out);
+        let want = &case["expect"];
+        let got: Result<Option<String>, LibraryError> = match case["op"].as_str().unwrap() {
+            "scan" => {
+                let scan = lib.scan().unwrap();
+                let folders: Vec<&str> = scan.folders.iter().map(|f| f.folder.as_str()).collect();
+                assert_eq!(serde_json::json!(folders), want["folders"], "{name}");
+                let problems: Vec<Value> = scan.problems.iter().map(problem_json).collect();
+                assert_eq!(Value::Array(problems), want["problems"], "{name}");
+                Ok(None)
+            }
+            "read" => lib.read(&file).map(|_| None),
+            "record_use" => lib.record_use(&other, &paper, &file).map(|()| None),
+            "save" => save().map(|f| Some(f.folder)),
+            "release" => lib.release(&who, &file).map(|()| None),
+            "remove_file" => lib.remove_file(&file).map(|()| None),
+            "remove_folder" => lib.remove_folder(&file.folder).map(|()| None),
+            "open" => Library::open(&root).map(|_| None),
+            other => panic!("unknown op {other}"),
+        };
+        match (want["error"].as_str(), got) {
+            (Some("io"), Err(LibraryError::Io { reason, .. })) => {
+                if let Some(part) = want["reason"].as_str() {
+                    assert!(reason.contains(part), "{name}: {reason}");
+                }
+            }
+            (Some("missing"), Err(LibraryError::Missing { .. })) => {}
+            (None, Ok(folder)) => assert_eq!(folder.as_deref(), want["folder"].as_str(), "{name}"),
+            (_, got) => panic!("{name}: got {got:?}"),
+        }
+        assert_eq!(outside(&out), before, "{name}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

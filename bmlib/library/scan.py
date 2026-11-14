@@ -37,6 +37,7 @@ from bmlib.library.files import (
     is_dir,
     is_not_downloaded,
     listing,
+    paper_dir,
     read_bytes,
     sha256_hex,
 )
@@ -228,12 +229,13 @@ def read_file(root: Path, file: FileRef) -> bytes:
     """Read a file's bytes under *root*, checking them against ``file.sha256``.
 
     :raises BadName: the folder or file name is not one path component.
+    :raises Io: the folder or the file is a symbolic link or a special file (#761), or any
+        other failure to read.
     :raises NotDownloaded: only an online placeholder is here.
     :raises Missing: the file is not there.
     :raises DigestMismatch: the bytes hash to something else.
-    :raises Io: any other failure to read.
     """
-    directory = root / PAPERS_DIR / component(file.folder)
+    directory = paper_dir(root, file.folder)
     path = directory / component(file.name)
     try:
         data = read_bytes(path)

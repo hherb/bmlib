@@ -29,8 +29,8 @@ use unicode_normalization::UnicodeNormalization;
 
 use super::files::{
     component, create_dir_new, exists, file_name, has_placeholder, io_error, is_dir,
-    is_not_downloaded, list_names, read_bytes, remove_dir_all, remove_file, rename, sha256_hex,
-    sync_name, write_once, write_replace,
+    is_not_downloaded, list_names, paper_dir, read_bytes, remove_dir_all, remove_file, rename,
+    sha256_hex, sync_name, write_once, write_replace,
 };
 use super::scan::{scan_folder, Problem};
 use super::{
@@ -110,6 +110,9 @@ fn claim_folder(papers: &Path, paper: &PaperInfo) -> Result<String, LibraryError
             if !same.is_empty() {
                 let mut newer = None;
                 for s in &same {
+                    if !is_dir(&papers.join(s)) {
+                        continue; // a file or link holds the name (#761): it is taken
+                    }
                     match belongs_to(papers, s, paper) {
                         Ok(true) => return Ok(s.clone()),
                         Ok(false) => {}
@@ -344,9 +347,10 @@ fn note_use(
     store_record(&path, &record)
 }
 
-/// A [`FileRef`]'s folder and name as safe path components, and the paths.
+/// A [`FileRef`]'s folder and name as safe path components, and the paths;
+/// [`LibraryError::Io`] when the folder is a symbolic link or a file (#761).
 fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryError> {
-    let dir = root.join(PAPERS_DIR).join(component(&file.folder)?);
+    let dir = paper_dir(root, &file.folder)?;
     let path = dir.join(component(&file.name)?);
     Ok((dir, path))
 }

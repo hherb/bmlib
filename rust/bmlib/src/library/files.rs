@@ -22,14 +22,22 @@
 //! name.
 
 use std::fs;
-use std::io;
-use std::path::Path;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
 use super::names::is_reserved;
-use super::{LibraryError, ICLOUD_PLACEHOLDER, IGNORED_NAMES};
+use super::{LibraryError, ICLOUD_PLACEHOLDER, IGNORED_NAMES, PAPERS_DIR};
 use crate::atomic::{TEMP_SUFFIX, TEMP_SUFFIX_LEN};
+
+/// The reason [`read_bytes`] gives for a symbolic link, FIFO, device or socket
+/// (#761).
+pub(crate) const NOT_A_REGULAR_FILE: &str = "not a regular file";
+
+/// The reason [`paper_dir`] gives for a paper folder that is a link or a file
+/// (#761).
+pub(crate) const NOT_A_FOLDER: &str = "not a folder";
 
 /// Whether `write_once` made the file or found the same bytes already there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,14 +219,39 @@ pub(crate) fn first_user_entry(dir: &Path) -> io::Result<Option<String>> {
     }))
 }
 
-/// Whether `path` is an existing directory.
+/// Whether `path` is a directory itself, not a symbolic link to one. A linked
+/// folder inside the library would let a save write outside it (#761).
 pub(crate) fn is_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+}
+
+/// Whether `path` is a directory or a link to one: only for the library's
+/// root, which a user may well reach through a link.
+pub(crate) fn is_dir_following_links(path: &Path) -> bool {
     path.is_dir()
 }
 
-/// Whether anything exists at `path`.
+/// Whether anything exists at `path`, a dangling symbolic link included.
 pub(crate) fn exists(path: &Path) -> bool {
-    path.exists()
+    fs::symlink_metadata(path).is_ok()
+}
+
+/// The paper folder `folder` under `root`, its name checked by [`component`].
+///
+/// [`LibraryError::BadName`] when `folder` is not one path component;
+/// [`LibraryError::Io`] when something that is not a directory itself (a
+/// symbolic link, a file) is at that name, so nothing is read, written or
+/// deleted through it (#761). A name with nothing at it is returned, for the
+/// caller to find missing.
+pub(crate) fn paper_dir(root: &Path, folder: &str) -> Result<PathBuf, LibraryError> {
+    let dir = root.join(PAPERS_DIR).join(component(folder)?);
+    if exists(&dir) && !is_dir(&dir) {
+        return Err(LibraryError::Io {
+            path: dir,
+            reason: NOT_A_FOLDER.to_owned(),
+        });
+    }
+    Ok(dir)
 }
 
 /// The last component of `path`, shown lossily if it is not UTF-8 (empty for
@@ -241,10 +274,28 @@ pub(crate) fn has_placeholder(dir: &Path, name: &str) -> bool {
 /// evict a file to a *dataless* one under its real name, and a plain read then
 /// blocks until it is downloaded, perhaps forever offline. Here the read fails
 /// at once instead, with an error [`is_not_downloaded`] recognises (#769).
+///
+/// Only a regular file is read: a symbolic link (to a file outside the
+/// library, or to `/dev/zero`), a FIFO or a device is an error reading
+/// [`NOT_A_REGULAR_FILE`], so a scan or read can neither hang nor leave the
+/// library (#761).
 pub(crate) fn read_bytes(path: &Path) -> io::Result<Vec<u8>> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     let _off = dataless::MaterialisationOff::begin(path);
-    fs::read(path)
+    let not_regular = || io::Error::other(NOT_A_REGULAR_FILE);
+    if !fs::symlink_metadata(path)?.is_file() {
+        return Err(not_regular());
+    }
+    // shortcut: a FIFO swapped in between the lstat and the open still blocks
+    // the open; the fstat catches any other swap. Open with O_NONBLOCK if a
+    // writer ever races this.
+    let mut file = fs::File::open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(not_regular());
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 /// Whether `err`, from [`read_bytes`], means the file is dataless: present but
@@ -409,7 +460,8 @@ fn publish(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
 /// Make the directory `path` (its parent must exist); `false` when it already
 /// exists. Either way the directory is synced into its parent ([`sync_dir`]):
 /// one found there may be another writer's, not yet synced. Anything else at
-/// `path` is an `AlreadyExists` error.
+/// `path`, a symbolic link to a directory included, is an `AlreadyExists`
+/// error.
 pub(crate) fn create_dir_new(path: &Path) -> io::Result<bool> {
     let made = match fs::create_dir(path) {
         Ok(()) => true,

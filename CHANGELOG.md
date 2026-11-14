@@ -8,6 +8,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The shared paper library uses only real files and folders** (#761; both
+  languages). Reads followed symbolic links and opened anything, so a record
+  or source file that was a FIFO, or a link to `/dev/zero`, hung a scan or a
+  `read` or exhausted memory, and a paper folder that was a link let `save`,
+  `record_use` and `release` write outside the library and `remove_file`
+  delete there. Every library read now refuses anything but a regular file
+  (`lstat`, then `fstat` on the open file) with the reason `not a regular
+  file`: a scan reports `unreadable_record`, and `read`, `save` and `release`
+  fail with `Io`. Folders are judged without following links: a linked paper
+  folder is a `stray_entry`, every call addressing it fails with `Io` (`not a
+  folder`), `remove_folder` finds it `Missing`, and `save` takes its name as
+  taken and makes the next numbered folder (a plain file at that name used to
+  fail the save). A linked or dangling `records/` is `unreadable_folder`, and
+  `open` refuses a linked `papers/`. The library's root may still be a link.
+  Pinned by the new `special_entries` section of `library_cases.json` (21
+  cases, Unix only), which both languages run.
 - **JSON nested past Python's stack is a decode error** (#758, Python only).
   `strict_json_loads` refused nesting past 127 levels only after the stdlib
   decoder had built the value, so a body nested deep enough to exhaust the

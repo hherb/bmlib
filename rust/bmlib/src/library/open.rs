@@ -21,7 +21,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::files::{
-    create_dir_new, exists, first_user_entry, io_error, is_dir, read_bytes, sha256_hex, write_once,
+    create_dir_new, exists, first_user_entry, io_error, is_dir_following_links, read_bytes,
+    sha256_hex, write_once,
 };
 use super::{LibraryError, LIBRARY_FORMAT, LIBRARY_VERSION, MARKER_FILE, PAPERS_DIR};
 
@@ -88,7 +89,7 @@ impl Library {
     /// [`LibraryError::ReadOnly`] or [`LibraryError::Io`] when the marker or
     /// `papers/` cannot be written.
     pub fn open(root: &Path) -> Result<Library, LibraryError> {
-        if !is_dir(root) {
+        if !is_dir_following_links(root) {
             let reason = if exists(root) {
                 "not a folder"
             } else {

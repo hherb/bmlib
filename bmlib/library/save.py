@@ -48,6 +48,7 @@ from bmlib.library.files import (
     is_dir,
     is_not_downloaded,
     list_names,
+    paper_dir,
     read_bytes,
     remove_dir_all,
     remove_file,
@@ -125,6 +126,8 @@ def _claim_folder(papers: Path, paper: PaperInfo) -> str:
             if same:
                 newer: NewerRecord | None = None
                 for s in same:
+                    if not is_dir(papers / s):
+                        continue  # a file or link holds the name (#761): it is taken
                     try:
                         if _belongs_to(papers, s, paper):
                             return s
@@ -312,8 +315,11 @@ def _note_use(
 
 
 def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
-    """The file's folder and path, its names checked as single path components."""
-    directory = root / PAPERS_DIR / component(file.folder)
+    """The file's folder and path, its names checked as single path components.
+
+    :raises Io: the folder is a symbolic link or a file (#761).
+    """
+    directory = paper_dir(root, file.folder)
     return directory, directory / component(file.name)
 
 
@@ -479,7 +485,7 @@ def remove_paper_folder(root: Path, folder: str) -> None:
     """Delete a paper's whole folder, records included (the manual clear).
 
     :raises BadName: *folder* is not one path component.
-    :raises Missing: there is no such folder (or it is a file).
+    :raises Missing: there is no such folder (or it is a file or a symbolic link).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """

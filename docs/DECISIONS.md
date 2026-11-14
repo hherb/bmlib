@@ -6577,6 +6577,21 @@ undo.
   unreadable folder, a stray entry) for the app to show.
 - **A negative zero is read as 0** for a record's `size` and `year`, in both
   languages, so a record re-renders to the same bytes.
+- **Links inside the library are refused; the root may be one** (#761). A
+  record, source file or marker is read only if `lstat` says it is a regular
+  file, and the open file is checked again with `fstat`. A paper folder,
+  `records/` or `papers/` counts as a folder only if it is one itself, so a
+  sync service or another app cannot make a save write, or a remove delete,
+  outside the library. The root is reached through links, because a user may
+  well keep the library behind one, and anything at it is the user's choice.
+  `remove_folder` reports a linked paper folder as `Missing` and deletes
+  nothing: it is not a paper's folder, and the user can remove the link. An
+  `Io` with a fixed reason (`not a regular file`, `not a folder`) was chosen
+  over a new error kind, so the FFI and the apps need no new arm. A FIFO
+  swapped in between the `lstat` and the open still blocks that open (the
+  `shortcut:` in `read_bytes`); `O_NONBLOCK` would close it, but Rust needs
+  `libc` for the flag, and the writer this guards against does not race.
+  Pinned by `library_cases.json`'s `special_entries`.
 
 ### FullTextService on a library (step 1b)
 

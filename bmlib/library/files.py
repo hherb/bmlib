@@ -31,6 +31,7 @@ import hashlib
 import logging
 import os
 import shutil
+import stat
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ from bmlib._atomic import atomic_write
 from bmlib.library.constants import (
     ICLOUD_PLACEHOLDER,
     IGNORED_NAMES,
+    PAPERS_DIR,
     PY_TEMP_EXT,
     PY_TEMP_HEX,
     RUST_TEMP_SUFFIX,
@@ -49,6 +51,12 @@ from bmlib.library.errors import BadName, FileClash, Io, LibraryError, NotDownlo
 from bmlib.library.names import is_reserved
 
 _READ_ONLY_ERRNOS = (errno.EROFS, errno.EACCES, errno.EPERM)
+
+NOT_A_REGULAR_FILE = "not a regular file"
+"""The reason :func:`read_bytes` gives for a symbolic link, FIFO, device or socket (#761)."""
+
+NOT_A_FOLDER = "not a folder"
+"""The reason :func:`paper_dir` gives for a paper folder that is a link or a file (#761)."""
 
 logger = logging.getLogger(__name__)
 
@@ -206,13 +214,39 @@ def first_user_entry(directory: Path) -> str | None:
 
 
 def is_dir(path: Path) -> bool:
-    """Whether *path* is an existing directory."""
+    """Whether *path* is a directory itself, not a symbolic link to one.
+
+    A linked folder inside the library would let a save write outside it (#761).
+    """
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def is_dir_following_links(path: Path) -> bool:
+    """Whether *path* is a directory or a link to one: only for the library's root, which a
+    user may well reach through a link."""
     return path.is_dir()
 
 
 def exists(path: Path) -> bool:
-    """Whether anything exists at *path*."""
-    return path.exists()
+    """Whether anything exists at *path*, a dangling symbolic link included."""
+    return os.path.lexists(path)
+
+
+def paper_dir(root: Path, folder: str) -> Path:
+    """The paper folder *folder* under *root*, its name checked by :func:`component`.
+
+    :raises BadName: *folder* is not one path component.
+    :raises Io: something that is not a directory itself (a symbolic link, a file) is at that
+        name, so nothing is read, written or deleted through it (#761). A name with nothing at
+        it is returned, for the caller to find missing.
+    """
+    directory = root / PAPERS_DIR / component(folder)
+    if exists(directory) and not is_dir(directory):
+        raise Io(directory, NOT_A_FOLDER)
+    return directory
 
 
 def has_placeholder(directory: Path, name: str) -> bool:
@@ -227,9 +261,20 @@ def read_bytes(path: Path) -> bytes:
     a *dataless* one under its real name, and a plain read then blocks until it is downloaded,
     perhaps forever offline. Here the read fails at once instead, with an error
     :func:`is_not_downloaded` recognises (#769).
+
+    Only a regular file is read: a symbolic link (to a file outside the library, or to
+    ``/dev/zero``), a FIFO or a device raises ``OSError`` with :data:`NOT_A_REGULAR_FILE`, so
+    a scan or read can neither hang nor leave the library (#761).
     """
     with _materialisation_off(path):
-        return path.read_bytes()
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            raise OSError(NOT_A_REGULAR_FILE)
+        # shortcut: a FIFO swapped in between the lstat and the open still blocks the open;
+        # the fstat catches any other swap. Open with O_NONBLOCK if a writer ever races this.
+        with open(path, "rb") as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                raise OSError(NOT_A_REGULAR_FILE)
+            return f.read()
 
 
 def is_not_downloaded(err: OSError) -> bool:
@@ -343,13 +388,14 @@ def create_dir_new(path: Path) -> bool:
     """Make the directory *path* (its parent must exist); ``False`` if it exists.
 
     Either way the directory is synced into its parent (:func:`sync_dir`): one found there may
-    be another writer's, not yet synced. Anything else at *path* raises ``FileExistsError``.
+    be another writer's, not yet synced. Anything else at *path*, a symbolic link to a
+    directory included, raises ``FileExistsError``.
     """
     try:
         path.mkdir()
         made = True
     except FileExistsError:
-        if not path.is_dir():
+        if not is_dir(path):
             raise
         made = False
     sync_dir(path.parent)
