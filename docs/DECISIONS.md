@@ -6553,7 +6553,18 @@ undo.
   `RecordNotDownloaded`. Treating it as absent would write a one-file record
   that replaces the real one when it is downloaded. The cost is that a save
   waits for iCloud. macOS 14 and later evict to dataless files with the real
-  name rather than `.icloud` names; that is checked on a device in step 2.
+  name rather than `.icloud` names; see the next item.
+- **A dataless file is not downloaded to be read** (#769, the maintainer's
+  option 3 of four). Checked on a device (macOS 27.2, iCloud Drive): a plain
+  read of an evicted file downloads it (3 MB in 1.1 s online) and offline would
+  block. Each read turns materialisation off on its own thread
+  (`setiopolicy_np`, thread scope, so the host's other reads keep the default),
+  reads, and restores the thread's policy; the read fails at once with
+  `EDEADLK`, read as `NotDownloaded` (a record: as a placeholder record). This
+  was chosen over checking `SF_DATALESS` first (no race between the check and
+  the read) and over reading with a deadline (a read never waits for the
+  network). A policy that cannot be set is logged and the read goes ahead with
+  the default, so a failure there costs the old blocking read, not every read.
 - **An atomic write's temporary is reported, never deleted.** Both languages'
   temporaries (Rust's `{name}.bmlib-tmp-uuid4hex…`, Python's
   `.{name}.{hex}.tmp`) are left out of every listing, so they are neither

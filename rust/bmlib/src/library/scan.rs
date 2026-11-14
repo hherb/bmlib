@@ -28,7 +28,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::files::{
-    component, exists, has_placeholder, io_error, is_dir, listing, read_bytes, sha256_hex,
+    component, exists, has_placeholder, io_error, is_dir, is_not_downloaded, listing, read_bytes,
+    sha256_hex,
 };
 use super::{
     parse_record, Installation, Library, LibraryError, PaperIds, Record, RecordProblem, SourceKind,
@@ -114,8 +115,9 @@ pub enum Problem {
         /// Its version.
         version: u32,
     },
-    /// A record present only as an iCloud placeholder (`.<file>.icloud`): its
-    /// installation's uses are unknown until it is downloaded.
+    /// A record present only as an iCloud placeholder (`.<file>.icloud`) or
+    /// evicted (dataless): its installation's uses are unknown until it is
+    /// downloaded.
     RecordNotDownloaded {
         /// The paper's folder.
         folder: String,
@@ -206,20 +208,29 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                     if is_dir(&path) {
                         continue;
                     }
-                    let parsed = read_bytes(&path)
-                        .map_err(|e| e.to_string())
-                        .and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
-                        .map_err(|reason| unreadable(&file, reason))
-                        .and_then(|text| {
-                            parse_record(&text).map_err(|p| match p {
-                                RecordProblem::Unreadable(reason) => unreadable(&file, reason),
-                                RecordProblem::Newer(version) => Problem::NewerRecord {
-                                    folder: folder.to_owned(),
-                                    file: file.clone(),
-                                    version,
-                                },
-                            })
-                        });
+                    let parsed = match read_bytes(&path) {
+                        Err(e) if is_not_downloaded(&e) => {
+                            problems.push(Problem::RecordNotDownloaded {
+                                folder: folder.to_owned(),
+                                file,
+                            });
+                            continue;
+                        }
+                        read => read,
+                    }
+                    .map_err(|e| e.to_string())
+                    .and_then(|b| String::from_utf8(b).map_err(|e| e.to_string()))
+                    .map_err(|reason| unreadable(&file, reason))
+                    .and_then(|text| {
+                        parse_record(&text).map_err(|p| match p {
+                            RecordProblem::Unreadable(reason) => unreadable(&file, reason),
+                            RecordProblem::Newer(version) => Problem::NewerRecord {
+                                folder: folder.to_owned(),
+                                file: file.clone(),
+                                version,
+                            },
+                        })
+                    });
                     match parsed {
                         Err(problem) => problems.push(problem),
                         Ok(r) if r.installation.record_file_name() != file => {
@@ -349,6 +360,12 @@ impl Library {
                 } else {
                     LibraryError::Missing { folder, name }
                 });
+            }
+            Err(e) if is_not_downloaded(&e) => {
+                return Err(LibraryError::NotDownloaded {
+                    folder: file.folder.clone(),
+                    name: file.name.clone(),
+                })
             }
             Err(e) => return Err(io_error(&path, &e, false)),
         };

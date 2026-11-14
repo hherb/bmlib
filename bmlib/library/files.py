@@ -23,12 +23,16 @@ Nothing here overwrites: :func:`write_once` publishes with
 
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import enum
 import errno
 import hashlib
+import logging
 import os
 import shutil
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,10 +45,24 @@ from bmlib.library.constants import (
     RUST_TEMP_SUFFIX,
     RUST_TEMP_TOKEN_LEN,
 )
-from bmlib.library.errors import BadName, FileClash, Io, LibraryError, ReadOnly
+from bmlib.library.errors import BadName, FileClash, Io, LibraryError, NotDownloaded, ReadOnly
 from bmlib.library.names import is_reserved
 
 _READ_ONLY_ERRNOS = (errno.EROFS, errno.EACCES, errno.EPERM)
+
+logger = logging.getLogger(__name__)
+
+_APPLE = sys.platform in ("darwin", "ios")
+"""Whether a sync service can leave a *dataless* file here (macOS 14+, iOS)."""
+
+# setiopolicy_np(3)'s values for dataless files, from <sys/resource.h>: the policy type
+# (IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES), the calling thread's scope only
+# (IOPOL_SCOPE_THREAD) and "an I/O on a dataless file fails" (..._FILES_OFF).
+_IOPOL_TYPE_DATALESS = 3
+_IOPOL_SCOPE_THREAD = 1
+_IOPOL_DATALESS_OFF = 1
+
+_libc = ctypes.CDLL(None, use_errno=True) if _APPLE else None
 
 
 class Written(enum.Enum):
@@ -81,7 +99,10 @@ def component(name: str) -> str:
 
 
 def io_error(path: Path, err: OSError, *, write: bool) -> LibraryError:
-    """Map an OS error at *path* to :class:`ReadOnly` (a refused write) or :class:`Io`."""
+    """Map an OS error at *path* to :class:`NotDownloaded` (a dataless file, its folder the
+    full parent path), :class:`ReadOnly` (a refused write) or :class:`Io`."""
+    if is_not_downloaded(err):
+        return NotDownloaded(str(path.parent), path.name)
     if write and err.errno in _READ_ONLY_ERRNOS:
         return ReadOnly(path)
     return Io(path, str(err))
@@ -200,8 +221,54 @@ def has_placeholder(directory: Path, name: str) -> bool:
 
 
 def read_bytes(path: Path) -> bytes:
-    """Read a whole file."""
-    return path.read_bytes()
+    """Read a whole file, never downloading it.
+
+    On macOS 14+ and iOS a sync service (iCloud Drive, Dropbox, OneDrive) can evict a file to
+    a *dataless* one under its real name, and a plain read then blocks until it is downloaded,
+    perhaps forever offline. Here the read fails at once instead, with an error
+    :func:`is_not_downloaded` recognises (#769).
+    """
+    with _materialisation_off(path):
+        return path.read_bytes()
+
+
+def is_not_downloaded(err: OSError) -> bool:
+    """Whether *err*, from :func:`read_bytes`, means the file is dataless: present but not
+    downloaded to this device. Always ``False`` off macOS and iOS."""
+    return _APPLE and err.errno == errno.EDEADLK
+
+
+@contextlib.contextmanager
+def _materialisation_off(path: Path) -> Iterator[None]:
+    """Turn materialisation of dataless files off on this thread while the block runs, then
+    give the thread its previous policy back.
+
+    A failure to read or set the policy is logged and the block runs with the default policy,
+    which downloads an evicted file (the behaviour before #769), rather than refusing every
+    read.
+    """
+    if _libc is None:
+        yield
+        return
+    previous = _libc.getiopolicy_np(_IOPOL_TYPE_DATALESS, _IOPOL_SCOPE_THREAD)
+    if previous == -1 or (
+        _libc.setiopolicy_np(_IOPOL_TYPE_DATALESS, _IOPOL_SCOPE_THREAD, _IOPOL_DATALESS_OFF) == -1
+    ):
+        logger.warning(
+            "could not stop %s downloading if it is evicted: %s",
+            path,
+            os.strerror(ctypes.get_errno()),
+        )
+        yield
+        return
+    try:
+        yield
+    finally:
+        if _libc.setiopolicy_np(_IOPOL_TYPE_DATALESS, _IOPOL_SCOPE_THREAD, previous) == -1:
+            logger.warning(
+                "could not restore this thread's policy for evicted files: %s",
+                os.strerror(ctypes.get_errno()),
+            )
 
 
 def write_once(path: Path, data: bytes, sha256: str) -> Written:
@@ -212,7 +279,7 @@ def write_once(path: Path, data: bytes, sha256: str) -> Written:
     and is left untouched.
     """
     try:
-        existing = path.read_bytes()
+        existing = read_bytes(path)
     except FileNotFoundError:
         pass
     except OSError as e:

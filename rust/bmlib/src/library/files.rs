@@ -76,6 +76,12 @@ pub(crate) fn component(name: &str) -> Result<&str, LibraryError> {
 /// read-only write is [`LibraryError::ReadOnly`], anything else
 /// [`LibraryError::Io`].
 pub(crate) fn io_error(path: &Path, err: &io::Error, write: bool) -> LibraryError {
+    if is_not_downloaded(err) {
+        return LibraryError::NotDownloaded {
+            folder: parent(path).display().to_string(),
+            name: file_name(path),
+        };
+    }
     let read_only = write
         && matches!(
             err.kind(),
@@ -215,22 +221,124 @@ pub(crate) fn exists(path: &Path) -> bool {
     path.exists()
 }
 
+/// The last component of `path`, shown lossily if it is not UTF-8 (empty for
+/// none).
+pub(crate) fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /// Whether `dir` holds iCloud's online-only placeholder for `name`.
 pub(crate) fn has_placeholder(dir: &Path, name: &str) -> bool {
     dir.join(ICLOUD_PLACEHOLDER.replace("{name}", name))
         .exists()
 }
 
-/// Read a whole file.
+/// Read a whole file, never downloading it.
+///
+/// On macOS 14+ and iOS a sync service (iCloud Drive, Dropbox, OneDrive) can
+/// evict a file to a *dataless* one under its real name, and a plain read then
+/// blocks until it is downloaded, perhaps forever offline. Here the read fails
+/// at once instead, with an error [`is_not_downloaded`] recognises (#769).
 pub(crate) fn read_bytes(path: &Path) -> io::Result<Vec<u8>> {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    let _off = dataless::MaterialisationOff::begin(path);
     fs::read(path)
+}
+
+/// Whether `err`, from [`read_bytes`], means the file is dataless: present but
+/// not downloaded to this device. Always `false` off macOS and iOS.
+pub(crate) fn is_not_downloaded(err: &io::Error) -> bool {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    return err.raw_os_error() == Some(dataless::EDEADLK);
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        let _ = err;
+        false
+    }
+}
+
+/// The thread's I/O policy for dataless files (`setiopolicy_np(3)`).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod dataless {
+    use std::ffi::c_int;
+    use std::io;
+    use std::path::Path;
+
+    /// `IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES` in `<sys/resource.h>`.
+    const POLICY_TYPE: c_int = 3;
+    /// `IOPOL_SCOPE_THREAD`: the calling thread only, not the host's others.
+    const SCOPE_THREAD: c_int = 1;
+    /// `IOPOL_MATERIALIZE_DATALESS_FILES_OFF`: an I/O on a dataless file fails.
+    pub(super) const OFF: c_int = 1;
+    /// The error such an I/O fails with (`<sys/errno.h>`).
+    pub(super) const EDEADLK: i32 = 11;
+
+    extern "C" {
+        fn getiopolicy_np(iotype: c_int, scope: c_int) -> c_int;
+        fn setiopolicy_np(iotype: c_int, scope: c_int, policy: c_int) -> c_int;
+    }
+
+    /// Materialisation turned off on this thread until dropped, when the
+    /// thread's previous policy comes back.
+    pub(super) struct MaterialisationOff {
+        /// The policy to restore; `None` when it could not be read or set.
+        previous: Option<c_int>,
+    }
+
+    impl MaterialisationOff {
+        /// Turn materialisation off for a read of `path`. A failure is logged
+        /// and the read goes ahead with the default policy, which downloads an
+        /// evicted file (the behaviour before #769) rather than refusing every
+        /// read.
+        pub(super) fn begin(path: &Path) -> Self {
+            // SAFETY: both calls take plain integers and touch only this
+            // thread's policy; -1 is their error return.
+            let previous = unsafe { getiopolicy_np(POLICY_TYPE, SCOPE_THREAD) };
+            if previous == -1 || unsafe { setiopolicy_np(POLICY_TYPE, SCOPE_THREAD, OFF) } == -1 {
+                log::warn!(
+                    target: "bmlib.library.files",
+                    "could not stop {} downloading if it is evicted: {}",
+                    path.display(),
+                    io::Error::last_os_error()
+                );
+                return Self { previous: None };
+            }
+            Self {
+                previous: Some(previous),
+            }
+        }
+    }
+
+    impl Drop for MaterialisationOff {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous {
+                // SAFETY: as in `begin`.
+                if unsafe { setiopolicy_np(POLICY_TYPE, SCOPE_THREAD, previous) } == -1 {
+                    log::warn!(
+                        target: "bmlib.library.files",
+                        "could not restore this thread's policy for evicted files: {}",
+                        io::Error::last_os_error()
+                    );
+                }
+            }
+        }
+    }
+
+    /// This thread's current policy, for the tests.
+    #[cfg(test)]
+    pub(super) fn current() -> c_int {
+        // SAFETY: as in `begin`.
+        unsafe { getiopolicy_np(POLICY_TYPE, SCOPE_THREAD) }
+    }
 }
 
 /// Publish `bytes` at `path` unless a file is there. `sha256` is the digest of
 /// `bytes`; an existing file with that digest is [`Written::AlreadyThere`], one
 /// with another is [`LibraryError::FileClash`] and is left untouched.
 pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Written, LibraryError> {
-    match fs::read(path) {
+    match read_bytes(path) {
         Ok(existing) => {
             return if sha256_hex(&existing) == sha256 {
                 // Another writer's, perhaps not yet synced.
@@ -242,10 +350,7 @@ pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Writ
                         .parent()
                         .map(|p| p.display().to_string())
                         .unwrap_or_default(),
-                    name: path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                    name: file_name(path),
                 })
             };
         }
@@ -635,5 +740,47 @@ mod tests {
             sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    /// #769: a read turns materialisation off on its own thread only while
+    /// it runs, and gives the thread's policy back after.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[test]
+    fn a_read_turns_materialisation_off_and_back() {
+        let dir = std::env::temp_dir().join(format!("bmlib-files-iopol-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("x.pdf");
+        fs::write(&file, b"one").unwrap();
+        let before = dataless::current();
+        {
+            let _off = dataless::MaterialisationOff::begin(&file);
+            assert_eq!(dataless::current(), dataless::OFF);
+        }
+        assert_eq!(dataless::current(), before);
+        assert_eq!(read_bytes(&file).unwrap(), b"one");
+        assert_eq!(dataless::current(), before);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// #769: a dataless read's `EDEADLK` is "not downloaded", and `io_error`
+    /// says so rather than "Resource deadlock avoided".
+    #[test]
+    fn edeadlk_reads_as_not_downloaded_on_apple_only() {
+        let apple = cfg!(any(target_os = "macos", target_os = "ios"));
+        let err = io::Error::from_raw_os_error(11);
+        assert_eq!(is_not_downloaded(&err), apple);
+        assert!(!is_not_downloaded(&io::Error::from(
+            io::ErrorKind::NotFound
+        )));
+        let mapped = io_error(Path::new("lib/.bmlib-library.json"), &err, false);
+        if apple {
+            assert!(matches!(
+                mapped,
+                LibraryError::NotDownloaded { ref folder, ref name }
+                    if folder == "lib" && name == ".bmlib-library.json"
+            ));
+        } else {
+            assert!(matches!(mapped, LibraryError::Io { .. }));
+        }
     }
 }

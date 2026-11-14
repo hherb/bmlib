@@ -28,8 +28,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use unicode_normalization::UnicodeNormalization;
 
 use super::files::{
-    component, create_dir_new, exists, has_placeholder, io_error, is_dir, list_names, read_bytes,
-    remove_dir_all, remove_file, rename, sha256_hex, sync_name, write_once, write_replace,
+    component, create_dir_new, exists, file_name, has_placeholder, io_error, is_dir,
+    is_not_downloaded, list_names, read_bytes, remove_dir_all, remove_file, rename, sha256_hex,
+    sync_name, write_once, write_replace,
 };
 use super::scan::{scan_folder, Problem};
 use super::{
@@ -154,15 +155,20 @@ fn keep_aside(path: &Path) -> Result<PathBuf, LibraryError> {
 /// iCloud holds a placeholder for it: a fresh record written now would replace
 /// the real one when it is downloaded, and its entries would be lost.
 fn check_not_evicted(path: &Path, folder: &str) -> Result<(), LibraryError> {
-    let name = file_name(path);
     match path.parent() {
-        Some(dir) if !exists(path) && has_placeholder(dir, &name) => {
-            Err(LibraryError::NotDownloaded {
-                folder: folder.to_owned(),
-                name,
-            })
+        Some(dir) if !exists(path) && has_placeholder(dir, &file_name(path)) => {
+            Err(not_downloaded(path, folder))
         }
         _ => Ok(()),
+    }
+}
+
+/// [`LibraryError::NotDownloaded`] for the record at `path` in the paper
+/// folder `folder`.
+fn not_downloaded(path: &Path, folder: &str) -> LibraryError {
+    LibraryError::NotDownloaded {
+        folder: folder.to_owned(),
+        name: file_name(path),
     }
 }
 
@@ -177,6 +183,7 @@ fn load_own_record(path: &Path, folder: &str) -> Result<Option<Record>, LibraryE
             check_not_evicted(path, folder)?;
             return Ok(None);
         }
+        Err(e) if is_not_downloaded(&e) => return Err(not_downloaded(path, folder)),
         Err(e) => return Err(io_error(path, &e, false)),
     };
     let parsed = String::from_utf8(bytes)
@@ -200,14 +207,6 @@ fn load_own_record(path: &Path, folder: &str) -> Result<Option<Record>, LibraryE
             Ok(None)
         }
     }
-}
-
-/// The last component of `path`, shown lossily if it is not UTF-8 (empty for
-/// none).
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }
 
 /// Refuse an installation [`Installation::new`] would refuse. Its fields are
@@ -519,6 +518,7 @@ impl Library {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return check_not_evicted(&path, &file.folder);
             }
+            Err(e) if is_not_downloaded(&e) => return Err(not_downloaded(&path, &file.folder)),
             Err(e) => return Err(io_error(&path, &e, false)),
         };
         let unreadable = |reason: String| LibraryError::Io {
