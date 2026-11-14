@@ -167,16 +167,23 @@ from a record's `FileEntry`.
   file reads as `NotDownloaded`, and an evicted record as a placeholder record
   does. A read never waits for the network (#769).
 - **Only real files and folders are used** (#761). A record, a source file or
-  the marker that is a symbolic link, a FIFO or a device is never read: a scan
-  reports it as `Problem::UnreadableRecord` with the reason
-  `not a regular file`, and `read`, `save` and `release` fail with
-  `LibraryError::Io` and that reason. A paper folder that is a link is a
-  `Problem::StrayEntry` in a scan, and `read`, `record_use`, `release` and
-  `remove_file` refuse it with `LibraryError::Io` (`not a folder`), so nothing
-  is read, written or deleted outside the library through it; `save` treats
-  its name as taken. A `records/` that is a link is
-  `Problem::UnreadableFolder`, and `open` refuses a `papers/` that is one. The
-  library's own root may be a link.
+  the marker that is a symbolic link, a FIFO or a device is never read. A scan
+  reports such a record as `Problem::UnreadableRecord` with the reason
+  `not a regular file`; `read`, `record_use`, `save` and `release` fail with
+  `LibraryError::Io` and that reason, and `open` does for the marker. A paper
+  folder that is a link is a `Problem::StrayEntry` in a scan, and `read`,
+  `record_use`, `release` and `remove_file` refuse it with `LibraryError::Io`
+  (`not a folder`), so nothing is read, written or deleted outside the library
+  through it; `save` treats its name as taken. A `records/` that is a link is
+  `Problem::UnreadableFolder`, and `save` refuses it with `LibraryError::Io`
+  (`not a folder`). A `papers/` that is a link is refused the same way by
+  `open`, `scan`, `save`, `remove_folder` and every call that addresses a file,
+  even when it was swapped in after the library was opened. An entry that
+  cannot be examined (a folder that cannot be searched, an I/O error) is never
+  taken for absent: a scan reports it as `Problem::UnreadableFolder`, and the
+  other calls fail with `LibraryError::Io` or `LibraryError::ReadOnly`. A save
+  does not yet act on those reports, so a paper whose folder is unreadable can
+  get a second folder (#778). The library's own root may be a link.
 - **Concurrency.** Updates to a record are serialised within one process, so
   threads of one installation do not lose each other's entries. Two *processes*
   of one installation are out of scope. Different installations never share a
@@ -197,7 +204,7 @@ versions, so some will be real).
 | `Problem` | Meaning |
 |---|---|
 | `UnreadableRecord` | A record file is not valid; it is not used |
-| `UnreadableFolder` | A paper folder, or its `records/`, cannot be listed, or `records/` is not a folder (a symbolic link included) |
+| `UnreadableFolder` | A paper folder, or its `records/`, cannot be listed or examined, or `records/` is not a folder (a symbolic link included) |
 | `NewerRecord` | A record written by a newer layout version; update the app |
 | `RecordNotDownloaded` | A record present only as an iCloud placeholder or evicted (dataless); its installation's uses are unknown until it is downloaded |
 | `MisnamedRecord` | A valid record whose file name is not its installation's (a "copy of" by a sync conflict) |

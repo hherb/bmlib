@@ -6579,19 +6579,30 @@ undo.
   languages, so a record re-renders to the same bytes.
 - **Links inside the library are refused; the root may be one** (#761). A
   record, source file or marker is read only if `lstat` says it is a regular
-  file, and the open file is checked again with `fstat`. A paper folder,
-  `records/` or `papers/` counts as a folder only if it is one itself, so a
-  sync service or another app cannot make a save write, or a remove delete,
-  outside the library. The root is reached through links, because a user may
-  well keep the library behind one, and anything at it is the user's choice.
-  `remove_folder` reports a linked paper folder as `Missing` and deletes
-  nothing: it is not a paper's folder, and the user can remove the link. An
-  `Io` with a fixed reason (`not a regular file`, `not a folder`) was chosen
-  over a new error kind, so the FFI and the apps need no new arm. A FIFO
-  swapped in between the `lstat` and the open still blocks that open (the
-  `shortcut:` in `read_bytes`); `O_NONBLOCK` would close it, but Rust needs
-  `libc` for the flag, and the writer this guards against does not race.
-  Pinned by `library_cases.json`'s `special_entries`.
+  file, and the open file must be the one `lstat` saw (`fstat`: a regular file,
+  and off Windows the same device and inode). A paper folder or `records/`
+  counts as a folder only if it is one itself (a Windows junction counts as a
+  link), and `papers/` is checked on every scan, every call that addresses a
+  file and `remove_folder`, not only by `open`. So a sync service or another
+  app cannot make a save write, or a remove delete, outside the library. The
+  root is reached through links, because a user may well keep the library
+  behind one, and anything at it is the user's choice. `remove_folder` reports
+  a linked paper folder as `Missing` and deletes nothing: it is not a paper's
+  folder, and the user can remove the link. An `Io` with a fixed reason
+  (`not a regular file`, `not a folder`) was chosen over a new error kind, so
+  the FFI and the apps need no new arm. Only nothing being there (`ENOENT`,
+  `ENOTDIR`) reads as absent. Any other `lstat` failure is reported (a scan's
+  `unreadable_folder`, otherwise `Io` or `ReadOnly`), because reading it as
+  absent dropped a folder's records and let a save pass over the paper's own
+  folder (PR #777's review; what a save does with an unreadable folder is
+  #778). A FIFO, or a link to one, swapped in between the `lstat` and the open
+  still blocks that open, and on Windows a link swapped in is followed: std
+  gives Rust no stable file identity there, and Python skips the check to match
+  (the `shortcut:` in `read_bytes`). `O_NONBLOCK | O_NOFOLLOW` would close
+  both, but the flags differ by platform and Rust's std exports neither, and
+  the writer this guards against does not race. Pinned by
+  `library_cases.json`'s `special_entries`, and by each language's own tests
+  where an error's text differs between them.
 
 ### FullTextService on a library (step 1b)
 

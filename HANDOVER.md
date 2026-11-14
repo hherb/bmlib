@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**#761, the library's special files, on
+_Last updated: 2026-11-15 (**#761, the library's special files, on
 `fix/library-special-files-761` — read *This session* first**). Merged since
 the last update: #775 (MECA over S3), #774 (the FFI's `PaperLibrary` name,
 CI checks the Kotlin binding), #773 (#769, dataless files), #772 (#758), #771
@@ -11,18 +11,25 @@ crates.io** from the same commit; everything since is under Unreleased._
 ## This session: only real files and folders in the library (#761)
 
 Both languages. `files.read_bytes` refuses anything `lstat` does not call a
-regular file (then `fstat` on the open file), with the reason `not a regular
-file`; `is_dir` and `exists` no longer follow links (`is_dir_following_links`
-is for the root only); `paper_dir(root, folder)` refuses a paper folder that
-is a link or a file (`Io`, `not a folder`) for `read`, `record_use`,
-`release` and `remove_file`; `_claim_folder` / `claim_folder` treat a
-non-folder at a candidate name as taken. A plain file at that name used to
-fail the save. Pinned by the new `special_entries` section of
-`library_cases.json` (21 cases, Unix only, both runners); 5 mutants per
-language, each caught. Reasoning in `docs/DECISIONS.md` (*Links inside the
-library are refused; the root may be one*). Not covered: a FIFO swapped in
-between the `lstat` and the open (`shortcut:` in `read_bytes`), and the FFI,
-which passes straight through (#765 is its runner gap).
+regular file, then checks with `fstat` that the open file is a regular file
+and, off Windows, the one `lstat` saw. The reason is `not a regular file`.
+`is_dir` and `exists` no longer follow links (`is_dir_following_links` is for
+the root only), and they read only ENOENT/ENOTDIR as absent: any other `lstat`
+failure is an error, which a scan reports as `unreadable_folder`.
+`check_folder` / `paper_dir(root, folder)` refuse a `papers/` or paper folder
+that is a link or a file (`Io`, `not a folder`) for `scan`, `read`,
+`record_use`, `release`, `remove_file` and `remove_folder`. `_claim_folder` /
+`claim_folder` treat a non-folder at a candidate name as taken (a plain file
+there used to fail the save). `create_dir_new` gives `not a folder` too.
+Pinned by the new `special_entries` section of `library_cases.json` (27 cases,
+Unix only, both runners) and by each language's tests for `lstat` errors and a
+linked or unplugged root. Reasoning in `docs/DECISIONS.md` (*Links inside the
+library are refused; the root may be one*). The final check's review findings
+are fixed on the branch. Deferred to **#778**: `save` still makes a second
+folder for a paper whose folder cannot be read (it ignores the scan's
+problems; needs the maintainer's call), a scan reports nothing for a linked
+source file, and the races left in `read_bytes` (`shortcut:`). The FFI passes
+straight through (#765 is its runner gap).
 
 **#766 is decided** (the maintainer, 2026-11-14): option 1, `save` and
 `record_use` refuse a folder holding another paper's JATS with a typed
@@ -312,13 +319,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**123 open** (122 once this branch's PR closes #761): the library's #755,
-#762, #765 and #766 (above), **#776** (PR #775's MECA follow-ups) and
+**124 open** (123 once this branch's PR closes #761): the library's #755,
+#762, #765, #766 (above) and **#778** (PR #777's review follow-ups), **#776**
+(PR #775's MECA follow-ups) and
 **#759** (measure the `/details` settle period) are the newest; #734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 come before them; #577 stays
-open for its point 3, which PR #696 left open (`gh issue list --state open
---limit 300 --json number`, 2026-11-14, after #775 merged). #651 is
-#632's residual; #556–#734 are not yet sorted into the lists below). **PR
+open for its point 3, which PR #696 left open
+(`gh issue list --state open --limit 300 --json number`, 2026-11-15). #651
+is #632's residual; #556–#734 are not yet sorted into the lists below. **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR
 #696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review

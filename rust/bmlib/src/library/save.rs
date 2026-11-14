@@ -511,7 +511,8 @@ impl Library {
     /// would refuse; [`LibraryError::BadName`]; [`LibraryError::NewerRecord`];
     /// [`LibraryError::NotDownloaded`] when the record is only an iCloud
     /// placeholder; [`LibraryError::Io`] for a record that cannot be read (it
-    /// is not touched).
+    /// is not touched), or when `papers/` or the folder is not a folder itself
+    /// (#761).
     pub fn release(&self, who: &Installation, file: &FileRef) -> Result<(), LibraryError> {
         check_who(who)?;
         let (dir, _) = locate(self.root(), file)?;

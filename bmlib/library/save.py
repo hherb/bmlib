@@ -449,7 +449,8 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
     :raises BadName: a name that is not one path component.
     :raises NewerRecord: the record is from a newer layout.
     :raises NotDownloaded: the record is only an iCloud placeholder.
-    :raises Io: the record cannot be read (it is not touched).
+    :raises Io: the record cannot be read (it is not touched), or ``papers/`` or the folder is
+        not a folder itself (#761).
     """
     _check_who(who)
     directory, _ = _locate(root, file)

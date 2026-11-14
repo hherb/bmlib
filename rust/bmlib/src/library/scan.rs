@@ -99,7 +99,9 @@ pub enum Problem {
         /// Why.
         reason: String,
     },
-    /// A paper folder or its `records/` directory could not be listed.
+    /// A paper folder or its `records/` directory could not be listed or
+    /// examined, or `records/` is not a folder itself (a symbolic link
+    /// included).
     UnreadableFolder {
         /// The paper's folder.
         folder: String,
@@ -155,7 +157,8 @@ pub enum Problem {
         /// The file.
         name: String,
     },
-    /// An entry of `papers/` that is not a folder.
+    /// An entry of `papers/` that is not a folder, a symbolic link to one
+    /// included.
     StrayEntry {
         /// The entry.
         name: String,

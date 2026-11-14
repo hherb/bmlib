@@ -88,7 +88,8 @@ class Problem:
     ``kind`` is one of (with the fields it uses):
 
     - ``unreadable_record`` (``folder``, ``file``, ``reason``);
-    - ``unreadable_folder`` (``folder``, ``reason``): it or its ``records/`` cannot be listed;
+    - ``unreadable_folder`` (``folder``, ``reason``): it or its ``records/`` cannot be listed
+      or examined, or ``records/`` is not a folder itself (a symbolic link included);
     - ``newer_record`` (``folder``, ``file``, ``version``);
     - ``record_not_downloaded`` (``folder``, ``file``): the record is only an iCloud
       placeholder or evicted (dataless), so its installation's uses are unknown;
@@ -99,7 +100,7 @@ class Problem:
     - ``conflicting_ids`` (``folder``, ``field``): two records hold different values for it;
       both count for :func:`find` and :func:`group`;
     - ``unrecorded_file`` (``folder``, ``name``);
-    - ``stray_entry`` (``name``).
+    - ``stray_entry`` (``name``): not a folder, a symbolic link to one included.
 
     Fields a kind does not use are ``None``.
     """

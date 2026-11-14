@@ -308,7 +308,8 @@ def read_bytes(path: Path) -> bytes:
 
     Only a regular file is read: a symbolic link (to a file outside the library, or to
     ``/dev/zero``), a FIFO or a device raises ``OSError`` with :data:`NOT_A_REGULAR_FILE`, so
-    a scan or read can neither hang nor leave the library (#761).
+    a scan or read can neither hang nor leave the library (#761), short of the race in the
+    ``shortcut:`` below.
     """
     with _materialisation_off(path):
         seen = os.lstat(path)
