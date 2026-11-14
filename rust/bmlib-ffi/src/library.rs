@@ -327,6 +327,53 @@ impl From<&lib::PaperFolder> for PaperFolder {
     }
 }
 
+/// Who uses a file, from [`LibraryScan::used_by`].
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FileUsers {
+    /// The installations whose record in the folder lists the file.
+    pub installations: Vec<Installation>,
+    /// `false` when the folder holds a record the scan could not count
+    /// (unreadable, newer, misnamed, not downloaded, or a record write in
+    /// flight; see [`LibraryScan::problems`]), so others may use the file too.
+    /// Say so before offering to remove it.
+    pub complete: bool,
+}
+
+/// The folder of a record the scan found and did not count, if `p` is one.
+fn uncounted_record(p: &lib::Problem) -> Option<&str> {
+    use lib::Problem as P;
+    match p {
+        P::UnreadableRecord { folder, .. }
+        | P::UnreadableFolder { folder, .. }
+        | P::NewerRecord { folder, .. }
+        | P::RecordNotDownloaded { folder, .. }
+        | P::MisnamedRecord { folder, .. } => Some(folder),
+        // A temp in `records/` may be a record not yet written in full.
+        P::LeftoverTemp { folder, name } if name.starts_with(&format!("{}/", lib::RECORDS_DIR)) => {
+            Some(folder)
+        }
+        P::LeftoverTemp { .. }
+        | P::ConflictingIds { .. }
+        | P::UnrecordedFile { .. }
+        | P::StrayEntry { .. } => None,
+    }
+}
+
+/// `sha256` if it is 64 lowercase hex digits, the only digests the library
+/// names files by; else `BadIdentifier` (field `"sha256"`), where bmlib would
+/// match nothing and so answer "not found", "nobody" or "released".
+fn check_digest(sha256: &str) -> Result<(), LibraryError> {
+    let hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    if sha256.len() == 64 && sha256.bytes().all(hex) {
+        return Ok(());
+    }
+    Err(lib::LibraryError::BadIdentifier {
+        field: "sha256",
+        value: sha256.to_owned(),
+    }
+    .into())
+}
+
 /// Something odd a scan found and did not use.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum LibraryProblem {
@@ -452,7 +499,9 @@ pub enum LibraryError {
     /// From [`Library::open`] only: the library's folder is missing or not a
     /// folder (an unmounted drive, a revoked bookmark). The library may come
     /// back, so offer to try again rather than choosing another folder. Once
-    /// open, a folder that vanishes reads as `Io` (or `Missing` from `read`).
+    /// open, a folder that vanishes reads as `Io` from `scan` and `save`,
+    /// `Missing` from `read`, `record_use`, `remove_file` and `remove_folder`,
+    /// and `release` succeeds (there is nothing to release).
     Unreachable {
         /// The folder.
         path: String,
@@ -756,7 +805,8 @@ impl Library {
     ///
     /// `BadInstallation`, `BadIdentifier`, `NewerRecord`, `ReadOnly` or `Io`
     /// as for [`Library::save`]; `Missing`, `NotDownloaded` or
-    /// `DigestMismatch` from reading the file, and `BadName` for a name that
+    /// `DigestMismatch` from reading the file (`NotDownloaded` also when
+    /// `who`'s own record is only a placeholder), and `BadName` for a name that
     /// is not one path component or not the library's name for those bytes
     /// (nothing written).
     pub fn record_use(
@@ -778,9 +828,13 @@ impl Library {
     /// # Errors
     ///
     /// `BadInstallation`, `BadName`, `NewerRecord`, `NotDownloaded`,
-    /// `ReadOnly` or `Io`.
+    /// `ReadOnly` or `Io`; `BadIdentifier` (field `"sha256"`) for a digest
+    /// that is not 64 lowercase hex digits, which would match nothing and so
+    /// read as released (nothing written).
     pub fn release(&self, who: Installation, file: FileRef) -> Result<(), LibraryError> {
-        Ok(self.0.release(&who.try_into()?, &file.into())?)
+        let who = who.try_into()?;
+        check_digest(&file.sha256)?;
+        Ok(self.0.release(&who, &file.into())?)
     }
 
     /// Delete the source file `file.folder`/`file.name`: the user's manual
@@ -847,14 +901,7 @@ impl LibraryScan {
     /// `BadIdentifier` (field `"sha256"`) for a digest that is not 64
     /// lowercase hex digits, which bmlib would answer with "not found".
     pub fn find_digest(&self, sha256: String) -> Result<Option<FileRef>, LibraryError> {
-        let hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
-        if sha256.len() != 64 || !sha256.bytes().all(hex) {
-            return Err(lib::LibraryError::BadIdentifier {
-                field: "sha256",
-                value: sha256,
-            }
-            .into());
-        }
+        check_digest(&sha256)?;
         Ok(lib::find_digest(&self.0, &sha256).map(Into::into))
     }
 
@@ -869,18 +916,35 @@ impl LibraryScan {
     }
 
     /// The installations whose record in `folder` lists a file with this
-    /// digest, or `None` for a folder the scan did not find. A lower bound:
-    /// records the scan could not read (see [`LibraryScan::problems`]) are not
-    /// counted.
-    pub fn used_by(&self, folder: String, sha256: String) -> Option<Vec<Installation>> {
-        let f = self.0.folders.iter().find(|f| f.folder == folder)?;
-        Some(
-            f.used_by(&sha256)
+    /// digest, and whether that list is complete; `None` for a folder the scan
+    /// did not find.
+    ///
+    /// # Errors
+    ///
+    /// `BadIdentifier` (field `"sha256"`) for a digest that is not 64
+    /// lowercase hex digits, which would otherwise read as "nobody".
+    pub fn used_by(
+        &self,
+        folder: String,
+        sha256: String,
+    ) -> Result<Option<FileUsers>, LibraryError> {
+        check_digest(&sha256)?;
+        let Some(f) = self.0.folders.iter().find(|f| f.folder == folder) else {
+            return Ok(None);
+        };
+        Ok(Some(FileUsers {
+            installations: f
+                .used_by(&sha256)
                 .into_iter()
                 .cloned()
                 .map(Into::into)
                 .collect(),
-        )
+            complete: !self
+                .0
+                .problems
+                .iter()
+                .any(|p| uncounted_record(p) == Some(folder.as_str())),
+        }))
     }
 }
 

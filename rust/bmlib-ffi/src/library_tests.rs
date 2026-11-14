@@ -233,7 +233,7 @@ fn every_core_error() -> Vec<lib::LibraryError> {
             reason: "r3".into(),
         },
     ];
-    for field in ["pmid", "doi", "pmcid"] {
+    for field in ["pmid", "doi", "pmcid", "sha256"] {
         errors.push(E::BadIdentifier {
             field,
             value: "v".into(),
@@ -264,6 +264,25 @@ fn scan_matches_the_fixture() {
     let (base, library) = sample("scan");
     let scan = library.scan().unwrap();
     let want = &section("scan")[0]["expect"];
+    // Each entry's kind and saved_at against the record file's own JSON, which
+    // the fixture's expectation does not list.
+    for f in scan.folders() {
+        for r in &f.records {
+            let path = Path::new(&library.root())
+                .join("papers")
+                .join(&f.folder)
+                .join("records")
+                .join(format!("{}-{}.json", r.installation.app, r.installation.id));
+            let json: Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let files = json["files"].as_array().unwrap();
+            assert_eq!(files.len(), r.files.len(), "{}", f.folder);
+            for (e, raw) in r.files.iter().zip(files) {
+                assert_eq!(e.kind, kind(raw["kind"].as_str().unwrap()), "{}", e.name);
+                assert_eq!(e.saved_at, raw["saved_at"].as_str().unwrap(), "{}", e.name);
+            }
+        }
+    }
     let folders: Vec<Value> = scan
         .folders()
         .iter()
@@ -273,9 +292,20 @@ fn scan_matches_the_fixture() {
                 .iter()
                 .flat_map(|r| &r.files)
                 .map(|e| {
-                    let who: Vec<String> = scan
+                    let users = scan
                         .used_by(f.folder.clone(), e.sha256.clone())
                         .unwrap()
+                        .unwrap();
+                    // Spelled out: Lee's folder has uncounted records, and
+                    // Smith's PMID folder a record temp; the other two neither.
+                    let complete = !matches!(
+                        f.folder.as_str(),
+                        "2023 Lee \u{2013} Statins (PMID 111)"
+                            | "2024 Smith \u{2013} Metformin and cognition (PMID 38012345)"
+                    );
+                    assert_eq!(users.complete, complete, "{}", f.folder);
+                    let who: Vec<String> = users
+                        .installations
                         .iter()
                         .map(|i| format!("{}-{}", i.app, i.id))
                         .collect();
@@ -335,8 +365,40 @@ fn scan_matches_the_fixture() {
         })
         .collect();
     assert_eq!(Value::Array(problems), want["problems"]);
-    assert_eq!(scan.used_by("no such folder".into(), "x".into()), None);
+    let pdf = "9b101e6bb96ee2bf1c988c1a42aae95917d261999d9ba33388b403a385fb05f1";
+    assert_eq!(scan.used_by("no such folder".into(), pdf.into()), Ok(None));
+    let smith = "2024 Smith \u{2013} Metformin and cognition (PMID 38012345)";
+    // A mis-stored digest of a file two installations use must not read as
+    // "nobody uses it".
+    for bad in [pdf.to_uppercase(), format!(" {}", &pdf[1..])] {
+        assert_eq!(
+            scan.used_by(smith.into(), bad.clone()),
+            Err(LibraryError::BadIdentifier {
+                field: "sha256".into(),
+                value: bad,
+            })
+        );
+    }
     let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn every_problem_variant_decides_whether_uses_are_complete() {
+    use lib::Problem as P;
+    let problems = every_core_problem();
+    let uncounted: Vec<Option<&str>> = problems.iter().map(uncounted_record).collect();
+    // In `every_core_problem`'s order; its `LeftoverTemp` is outside `records/`.
+    let a = Some("folder-a");
+    assert_eq!(uncounted, [a, a, a, a, None, a, None, None, None]);
+    let temp = |name: &str| P::LeftoverTemp {
+        folder: "f".into(),
+        name: name.into(),
+    };
+    assert_eq!(
+        uncounted_record(&temp("records/.a-b.json.x.tmp")),
+        Some("f")
+    );
+    assert_eq!(uncounted_record(&temp("recordsx/.a.tmp")), None);
 }
 
 #[test]
@@ -498,6 +560,16 @@ fn save_use_release_and_remove_round_trip() {
     let base = scratch("round-trip");
     let library = Library::open(base.display().to_string()).unwrap();
     let (sa, mfc) = (who("studyanalyzer"), who("medicalfactchecker"));
+    // Spelled out, so `record.installation == sa` below is not one conversion
+    // checked against itself.
+    assert_eq!(
+        sa,
+        Installation {
+            app: "studyanalyzer".into(),
+            id: "aaaa".into(),
+            label: "Test Mac".into(),
+        }
+    );
     let bytes = b"%PDF-1.7 a paper".to_vec();
     // Raw identifiers come back canonical.
     let saved = library
@@ -551,10 +623,23 @@ fn save_use_release_and_remove_round_trip() {
             .unwrap()
             .used_by(saved.folder.clone(), saved.sha256.clone())
             .unwrap()
+            .unwrap()
     };
-    assert_eq!(users(&library), vec![mfc.clone(), sa.clone()]);
+    let complete = |installations| FileUsers {
+        installations,
+        complete: true,
+    };
+    assert_eq!(users(&library), complete(vec![mfc.clone(), sa.clone()]));
+    // A mis-stored digest is refused, not "released" while the record keeps it.
+    let mut upper = saved.clone();
+    upper.sha256 = upper.sha256.to_uppercase();
+    assert!(matches!(
+        library.release(mfc.clone(), upper),
+        Err(LibraryError::BadIdentifier { ref field, .. }) if field == "sha256"
+    ));
+    assert_eq!(users(&library), complete(vec![mfc.clone(), sa.clone()]));
     library.release(mfc, saved.clone()).unwrap();
-    assert_eq!(users(&library), vec![sa]);
+    assert_eq!(users(&library), complete(vec![sa]));
 
     library.remove_file(saved.clone()).unwrap();
     assert!(matches!(
@@ -563,6 +648,32 @@ fn save_use_release_and_remove_round_trip() {
     ));
     library.remove_folder(saved.folder.clone()).unwrap();
     assert!(library.scan().unwrap().folders().is_empty());
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn another_apps_jats_file_can_be_used() {
+    // `record_use` checks the name against the kind, so this pins the kind
+    // going in for a kind other than the round trip's PDF.
+    let (base, library) = sample("use-jats");
+    let jats = "354be1cb35ec8788619e2bc3dba7943f8d722b85a3d684e09b0a1eea539e8cca";
+    let file = library
+        .scan()
+        .unwrap()
+        .find_digest(jats.into())
+        .unwrap()
+        .unwrap();
+    assert_eq!(file.kind, SourceKind::Jats);
+    let mut info = paper("38012345");
+    info.ids.doi = Some("10.1/x".into());
+    library.record_use(who("x"), info, file.clone()).unwrap();
+    let users = library
+        .scan()
+        .unwrap()
+        .used_by(file.folder, jats.into())
+        .unwrap()
+        .unwrap();
+    assert!(users.installations.contains(&who("x")));
     let _ = std::fs::remove_dir_all(base);
 }
 
