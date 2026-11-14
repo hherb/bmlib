@@ -776,6 +776,13 @@
    "expect": "ok",
    "files": 1,
    "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"7c1e0b2a\",\n    \"label\": \"StudyAnalyzer on Horst's MacBook é\"\n  },\n  \"paper\": {\n    \"pmid\": \"38012345\",\n    \"doi\": \"10.1/x\",\n    \"pmcid\": null,\n    \"title\": \"A trial of \\\"x\\\" – ü\",\n    \"year\": 0,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n      \"kind\": \"pdf\",\n      \"name\": \"pdf-aaaaaaaaaaaa.pdf\",\n      \"origin\": \"Europe PMC\",\n      \"size\": 1234,\n      \"saved_at\": \"2026-11-13T10:00:00Z\"\n    }\n  ]\n}\n"
+  },
+  {
+   "name": "the same bytes as two kinds",
+   "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"111\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Metformin\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"text\",\n      \"name\": \"text-58100dc8fc06.txt\",\n      \"origin\": \"a paste\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    },\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"markdown\",\n      \"name\": \"markdown-58100dc8fc06.md\",\n      \"origin\": \"a hand-off\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    }\n  ]\n}\n",
+   "expect": "ok",
+   "files": 2,
+   "rendered": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"111\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Metformin\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": [\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"text\",\n      \"name\": \"text-58100dc8fc06.txt\",\n      \"origin\": \"a paste\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    },\n    {\n      \"sha256\": \"58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb\",\n      \"kind\": \"markdown\",\n      \"name\": \"markdown-58100dc8fc06.md\",\n      \"origin\": \"a hand-off\",\n      \"size\": 10,\n      \"saved_at\": \"2026-11-14T10:00:00Z\"\n    }\n  ]\n}\n"
   }
  ],
   "open": [
@@ -2483,6 +2490,144 @@
         "name": "pdf-1361ac06c419.pdf",
         "origin": "unit test",
         "size": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the same bytes kept as two kinds",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "same bytes",
+     "kind": "text",
+     "origin": "a paste"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "same bytes",
+     "kind": "markdown",
+     "origin": "a hand-off"
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": "text",
+     "expect": 0
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": "markdown",
+     "expect": 1
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": null,
+     "expect": 1
+    },
+    {
+     "op": "find_digest",
+     "of": 0,
+     "kind": "pdf",
+     "expect": null
+    },
+    {
+     "op": "record_use",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111"
+     },
+     "of": 1
+    },
+    {
+     "op": "release",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/markdown-58100dc8fc06.md",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+     "papers/2024 Smith – Metformin (PMID 111)/text-58100dc8fc06.txt"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb",
+        "kind": "markdown",
+        "name": "markdown-58100dc8fc06.md",
+        "origin": "a hand-off",
+        "size": 10
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "58100dc8fc06562ce3e578231dc948e083520ee49c4b4ee5a5a28bb4b4003feb",
+        "kind": "markdown",
+        "name": "markdown-58100dc8fc06.md",
+        "origin": "a hand-off",
+        "size": 10
        }
       ]
      }

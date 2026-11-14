@@ -6464,6 +6464,27 @@ undo.
   name are `FileClash`, which means a damaged file (48 bits of digest), not a
   collision. `read` checks the full digest every time, so a half-synced or
   edited file is `DigestMismatch`, never used.
+- **A record's entry is a file, its digest and kind together** (#767). The
+  same bytes saved as text and as Markdown are two files, and each gets its own
+  entry; `release` drops only the kind given, and `parse_record` refuses only
+  the same file listed twice. Keyed by digest alone, the second kind was
+  written but never recorded, and releasing either kind dropped both.
+  `find_digest` takes an optional kind; `save` still asks without one, since
+  bytes are kept in the folder already holding them, whatever their kind.
+  `used_by(sha256)` is left a question about the bytes: an installation using
+  either kind is listed, which errs toward keeping a file.
+- **A save is durable when it returns** (#768). `atomic_write` syncs a file's
+  data, not its name, which is enough for a cache. But StudyAnalyzer deletes its
+  own copy once `save` returns, so the library syncs the directory after every
+  name it makes: the file, the record, `records/`, the folder, and `papers/`
+  and the marker on open. A file found already there is synced too, since it
+  may be another writer's that is not yet synced. On macOS the call is
+  `F_FULLFSYNC` (Rust's `sync_all` there; Python calls `fcntl` to match), which
+  also flushes the drive's cache and so covers the data that Python's
+  `atomic_write` synced with a plain `fsync`. A failed sync fails the save. The
+  file is then visible, but the caller keeps its copy. This costs about 26 ms
+  per save of a new paper here (32 ms against 6.5, a Mac's SSD, 100 saves).
+  Windows is a no-op for now; it is owed with the Windows build (HANDOVER).
 - **One record per installation.** `records/{app}-{id}.json` is written only by
   the installation it names, so there is nothing to merge and no lock between
   machines. The cost is that "who uses this file" is the union of the records.

@@ -212,8 +212,11 @@ pub fn parse_record(text: &str) -> Result<Record, RecordProblem> {
     let mut files: Vec<FileEntry> = Vec::with_capacity(raw.len());
     for f in raw {
         let entry = parse_file(f)?;
-        if files.iter().any(|o| o.sha256 == entry.sha256) {
-            return bad(format!("file {} is listed twice", entry.sha256));
+        if files
+            .iter()
+            .any(|o| o.sha256 == entry.sha256 && o.kind == entry.kind)
+        {
+            return bad(format!("file {} is listed twice", entry.name));
         }
         files.push(entry);
     }

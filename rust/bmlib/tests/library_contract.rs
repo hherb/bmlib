@@ -403,7 +403,7 @@ fn find_digest_matches_the_fixture() {
     let scan = lib.scan().unwrap();
     for case in section("find_digest") {
         let sha = case["sha256"].as_str().unwrap();
-        let got = find_digest(&scan, sha);
+        let got = find_digest(&scan, sha, None);
         let want = case["expect"].as_object().map(|w| FileRef {
             folder: w["folder"].as_str().unwrap().to_owned(),
             name: w["name"].as_str().unwrap().to_owned(),
@@ -583,6 +583,14 @@ fn save_scenarios_match_the_fixture() {
                         .collect();
                     users.sort();
                     assert_eq!(serde_json::json!(users), step["expect"], "{name}");
+                }
+                "find_digest" => {
+                    let kind = step["kind"].as_str().map(|k| SourceKind::parse(k).unwrap());
+                    let want = step["expect"]
+                        .as_u64()
+                        .map(|i| saved[i as usize].clone().unwrap());
+                    let got = find_digest(&lib.scan().unwrap(), &of(step).sha256, kind);
+                    assert_eq!(got, want, "{name}");
                 }
                 other => panic!("unknown step {other}"),
             }

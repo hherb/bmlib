@@ -55,8 +55,10 @@ the calls after it have round-trip tests of their own, not the fixture's
   `Installation::new`. A refusal throws `BadIdentifier` or
   `BadInstallation`, and nothing is written.
 - **A `LibraryScan` is a snapshot.** Scan again after a save.
-- **Store only `sha256`** of a saved file's `FileRef`. Find the file again
-  with `findDigest` in the library at hand. A digest that is not 64 lowercase
+- **Store `sha256` and `kind`** of a saved file's `FileRef`. Find the file
+  again with `findDigest(sha256:kind:)` in the library at hand: the same
+  bytes saved as two kinds are two files, and without the kind the first kind
+  present is returned (#767). A digest that is not 64 lowercase
   hex digits throws `BadIdentifier` (field `sha256`), where bmlib's own
   `find_digest` finds nothing, so a mis-stored digest does not read as "not in
   the library". `usedBy` and `release` refuse it the same way.

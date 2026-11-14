@@ -893,16 +893,21 @@ impl LibraryScan {
             .collect())
     }
 
-    /// The file named for `sha256`, if any. Only the name is looked at;
-    /// [`Library::read`] checks the bytes.
+    /// The file named for `sha256`, if any; with `kind`, only the file stored
+    /// as that kind (the same bytes saved as two kinds are two files). Only
+    /// the name is looked at; [`Library::read`] checks the bytes.
     ///
     /// # Errors
     ///
     /// `BadIdentifier` (field `"sha256"`) for a digest that is not 64
     /// lowercase hex digits, which bmlib would answer with "not found".
-    pub fn find_digest(&self, sha256: String) -> Result<Option<FileRef>, LibraryError> {
+    pub fn find_digest(
+        &self,
+        sha256: String,
+        kind: Option<SourceKind>,
+    ) -> Result<Option<FileRef>, LibraryError> {
         check_digest(&sha256)?;
-        Ok(lib::find_digest(&self.0, &sha256).map(Into::into))
+        Ok(lib::find_digest(&self.0, &sha256, kind.map(Into::into)).map(Into::into))
     }
 
     /// Every folder's index into [`LibraryScan::folders`], grouped into the

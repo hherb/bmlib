@@ -35,6 +35,7 @@ from bmlib.library.files import (
     is_temp_name,
     list_names,
     sha256_hex,
+    sync_dir,
     write_once,
 )
 
@@ -142,3 +143,19 @@ def test_temp_names_of_both_languages_are_recognised() -> None:
         ".0123456789abcdef0123456789abcdef.tmp",
     ]:
         assert not is_temp_name(name), name
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a directory cannot be opened to sync on Windows")
+def test_sync_dir_flushes_the_directory_itself(tmp_path: Path) -> None:
+    # #768: the directory's own descriptor is flushed, by F_FULLFSYNC on macOS as Rust's
+    # sync_all does there, by fsync elsewhere.
+    flushed: list[int] = []
+
+    def record(fd: int, *rest: object) -> int:
+        flushed.append(os.fstat(fd).st_ino)
+        return 0
+
+    target = "fcntl.fcntl" if sys.platform == "darwin" else "os.fsync"
+    with mock.patch(target, record):
+        sync_dir(tmp_path)
+    assert flushed == [tmp_path.stat().st_ino]

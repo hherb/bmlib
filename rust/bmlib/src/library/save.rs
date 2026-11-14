@@ -307,9 +307,10 @@ fn now() -> String {
 }
 
 /// Note `entry` in `who`'s record in the paper folder `dir` (named `folder`),
-/// under the record lock: the entry added unless its digest is listed already,
-/// and `paper` merged into the record's account. The one path by which both
-/// [`Library::save`] and [`Library::record_use`] change a record.
+/// under the record lock: the entry added unless the record lists that file
+/// (its digest and kind) already, and `paper` merged into the record's
+/// account. The one path by which both [`Library::save`] and
+/// [`Library::record_use`] change a record.
 fn note_use(
     dir: &Path,
     folder: &str,
@@ -323,7 +324,11 @@ fn note_use(
     let _guard = record_guard();
     let record = match load_own_record(&path, folder)? {
         Some(mut record) => {
-            if !record.files.iter().any(|f| f.sha256 == entry.sha256) {
+            if !record
+                .files
+                .iter()
+                .any(|f| f.sha256 == entry.sha256 && f.kind == entry.kind)
+            {
                 record.files.push(entry);
             }
             merge_paper(record, paper, &path)
@@ -406,7 +411,7 @@ impl Library {
         let papers = self.root().join(PAPERS_DIR);
         // Bytes are kept once: the folder already holding them wins over the
         // identifiers, which may name another folder (a split paper).
-        let existing = find_digest(&scan, &digest)
+        let existing = find_digest(&scan, &digest, None)
             .map(|r| r.folder)
             .or_else(|| find(&scan, &paper.ids).first().map(|f| f.folder.clone()));
         let folder = match existing {
@@ -468,7 +473,7 @@ impl Library {
             .records
             .iter()
             .flat_map(|r| &r.files)
-            .find(|f| f.sha256 == file.sha256)
+            .find(|f| f.sha256 == file.sha256 && f.kind == file.kind)
             .map_or_else(String::new, |f| f.origin.clone());
         let entry = FileEntry {
             sha256: file.sha256.clone(),
@@ -529,7 +534,9 @@ impl Library {
                 })
             }
         };
-        record.files.retain(|f| f.sha256 != file.sha256);
+        record
+            .files
+            .retain(|f| f.sha256 != file.sha256 || f.kind != file.kind);
         store_record(&path, &record)
     }
 

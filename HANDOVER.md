@@ -1,14 +1,42 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**the shared paper library: 1a and 1b merged, 1c
-in PR #764 — read *This session* first**). Merged since the last
-update: #763 (1b), #760 (#341, the `*-details` sources), #757 (#753), #754 (the library,
-1a), #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744), #740
-(#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0` on
-`161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
-the same commit._
+_Last updated: 2026-11-14 (**#767 and #768, the library's kind-aware lookup and
+durable save, on `feat/library-find-kind-durable-save` — read *This session*
+first**). Merged since the last update: #764 (the library, 1c), #763 (1b),
+#760 (#341, the `*-details` sources), #757 (#753), #754 (the library, 1a),
+#752 (#750, #751). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the
+merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same
+commit._
 
-## This session: the shared paper library (1a merged as #754, 1b as #763; 1c in PR #764)
+## This session: a file found by its kind, and a durable save (#767, #768)
+
+StudyAnalyzer's step 2 filed both; each was worked around there with a
+`shortcut:` that can go once this is pinned. Both languages and bmlib-ffi.
+
+- **#767**: `find_digest(scan, sha256, kind)` (Python `kind=None`, Rust
+  `Option<SourceKind>`, FFI `find_digest(sha256, kind)`). The root cause was
+  wider than the lookup: a record's entries were keyed by digest alone, so the
+  second kind of the same bytes was written but never recorded, `release` of
+  either kind dropped both, and `parse_record` refused a record listing both.
+  Entries are now keyed by digest and kind (`parse_record`, the merge,
+  `release`, `record_use`'s origin). `used_by(sha256)` stays about the bytes,
+  by decision (DECISIONS). Cases: `library_cases.json` *the same bytes as two
+  kinds* (records) and *the same bytes kept as two kinds* (`save_scenarios`,
+  with a new `find_digest` step).
+- **#768**: the library's `files` module syncs the directory after every name
+  it makes (file, record, `records/`, folder, `papers/`, marker), and after a
+  file found already there. `F_FULLFSYNC` on macOS in both languages, `fsync`
+  elsewhere, a no-op on Windows (a `shortcut:` and the owed list below). The
+  shared `atomic_write` is unchanged. Cost: about 26 ms per new paper's save on
+  a Mac (32 against 6.5 ms). Pinned by
+  `test_every_name_a_save_makes_is_synced_into_its_directory` (Python and a
+  Rust twin with a `cfg(test)` log of syncs) and `test_sync_dir_flushes_...`.
+- Every change was mutation-checked: 5 + 5 for #767, 5 + 4 for #768, each
+  mutant caught.
+- **Downstream**: StudyAnalyzer can drop its `stored_name` shortcut (#767) once
+  it re-pins; MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
+
+## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
 StudyAnalyzer's design
 (`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
@@ -53,7 +81,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   records list (an identity check on the records). And a library holding only a
   PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
   have; it ends when a JATS is kept in the library.
-- **1c, built (`feat/library-ffi`, PR #764)**: the library through
+- **1c, merged as PR #764**: the library through
   bmlib-ffi (`rust/bmlib-ffi/src/library.rs`): `Library` and `LibraryScan`
   objects, owned records, `LibraryError` with bmlib's wording as its exported
   `Display`, `paper_ids_canonical`, `installation_new`. Identifiers and
@@ -81,86 +109,45 @@ use to share one folder of papers. Built in both languages, in a worktree
   name can pass 260 characters; (3) the Windows-only gaps the final review
   deferred (superscript `COM¹`-style device names, U+001C-U+001F as
   whitespace in Python only).
+  (4) a directory sync: `sync_dir` is a no-op there (#768), so a save
+  is not yet durable on Windows; use `MoveFileEx`'s write-through.
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.
-- **To check on a device in step 2**: macOS 14 and later evict iCloud files to
-  dataless files with the real name, not `.name.icloud` placeholders; reading
-  one downloads it (or fails), so `NotDownloaded` may never fire there.
+- **Open library issues**: #766 (`save` beside another paper's JATS; a choice
+  between a typed refusal and a public check), #769 (macOS dataless files,
+  measured on a device; four options, the maintainer's pick), #761 (symlinks
+  and special files), #765 (the FFI runs no `save_scenarios`), #755 (1a's
+  review follow-ups).
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
-## Earlier: every bioRxiv/medRxiv posting, through `/details` (#341, merged as PR #760)
+## Earlier: every bioRxiv/medRxiv posting, through `/details` (#341, PR #760)
 
-BMLibrarian's request (its installer piece 3, Task 0 of
-`docs/superpowers/plans/2026-11-14-library-pipeline.md` in hherb/bmlibrarian).
-Python and Rust together.
+`biorxiv-details` and `medrxiv-details` read `/details` (30 records a page,
+measured); `biorxiv`/`medrxiv` still read `/pubs`. Records keep `source`
+`"biorxiv"`/`"medrxiv"`, so both populations meet on one row per DOI, and
+**`sync(sources=None)` includes them** (the maintainer's call). Each full-text
+source carries the record's `version`; the newest posting is the highest
+`version` compared as an integer. A page longer than the walk's step, or a
+`/details` record with no version, fails its day. **`DETAILS_SETTLE_DAYS` = 7
+is a bound; measuring it is #759.** BMLibrarian bumps its pin once released;
+MECA bulk is the expected next request.
 
-- **Two new built-in sources**, `biorxiv-details` and `medrxiv-details`.
-  `biorxiv` and `medrxiv` still read `/pubs`. The new sources are separate
-  names rather than a config key because `download_days` is keyed by the
-  name. Records keep `source` `"biorxiv"`/`"medrxiv"`, so both populations
-  meet on one row per DOI. **`sync(sources=None)` includes them** (the
-  maintainer's call), and so does `ALL_SOURCES`.
-- **`/details` pages hold 30, not 100** (`DETAILS_PAGE_SIZE`, measured
-  2026-11-13 by walking a 378-posting day). Taking 100 as the page size would
-  complete a 60-posting day holding 30, with only a note. The gated live
-  suite now asserts the size and walks bioRxiv 2024-01-15 whole (207).
-- Each full-text source carries the record's `version` (`None` for `/pubs`).
-  A `/pubs` row of the same URL takes the version when `/details` sends it
-  (`add_fulltext_source`, both languages). `extras["published"]` is `""` where
-  `/details` sends `"NA"`.
-- Review (finalcheck): a page longer than the walk's step fails the day in
-  both languages (the cursor is a record offset, so the next page would
-  overlap and its repeats would count as delivered); a `/details` record with
-  no version fails its day; the `*-details` walk logs, reports progress and
-  reconciles under its own source name.
-- **`DETAILS_SETTLE_DAYS` = 7 is a bound**; measuring it is **#759**.
-- **Downstream**: BMLibrarian bumps its pin once this is released (it is
-  under Unreleased; nothing is versioned yet) and syncs `medrxiv-details`.
-  Its plan's "a later version merges into the same publication row and
-  updates the sources' `version`" holds as: the v2 sources are added beside
-  v1's (each version's URLs differ), so the newest is the highest `version`,
-  compared as an integer (the column is text), among the rows with `source`
-  `medrxiv`. MECA bulk is the expected next
-  request.
+## Earlier: full text's JSON as Rust reads it, PMC Open Data (PRs #757, #752, #749, #747, #745)
 
-## Earlier: full text's JSON read as Rust reads it (#753, merged as PR #757)
-
-The Europe PMC search, NCBI's ID Converter and Unpaywall now decode through
-`strict_json_loads(resp.content.decode("utf-8"))`, as PMC Open Data's record
-has since #752; a BOM, `NaN`, a number past `f64` or a lone surrogate is a
-`JSONDecodeError` fault in both languages. About 50 test mocks moved from
-`resp.json.return_value` to real `content` bytes, so a new full-text test
-must script `content`, not `json()`. Pinned by
-`TestJsonBodiesAreReadAsSerdeJsonReadsThem` and Rust's
-`the_three_json_bodies_are_refused_as_python_refuses_them`. A body that is
-not UTF-8 is a `UnicodeDecodeError` fault in both (Rust's `json_body` no
-longer names it `TransportError`). Nesting deep enough to overflow Python's
-recursion limit (~100,000) is still `RecursionError` here and
-`JSONDecodeError` in Rust: **#758** (`strict_json_loads`' 13 callers).
-
-## Earlier: PMC Open Data and the PDF beside JATS (merged as PRs #752, #749, #747, #745)
-
-- **#752 (#750, #751)**: `pmc_open_data_record(pmc_id)` (Rust
-  `Result<Option<_>, FullTextError>`) reads the bucket's latest
-  `PMC<n>.<v>.json`, refusing a record of another shape; the PDF beside JATS
-  reads it and checks the md5 (`"checksum-mismatch"`, which may pass); Tier
-  1c's third source is the bucket's JATS (`source` `"pmc_open_data"`). The
-  record fixtures' md5s are those of `sample_article.xml` and `textless.pdf`:
-  edit either file and update them. Not done: one record per fetch, the
-  bucket's `.txt`, `is_retracted` into `retraction_status`. Rust gives a
-  transport failure as `FullTextError::Other` where Python raises
-  `httpx.HTTPError`.
-- **#749 (#748), #747 (#746)**: a `pmc_open_data` PDF candidate by the
-  JATS's own PMC ID; `http-408` may pass, and the result carries the first
-  failure that may pass, else `"search-failed"`, else the first.
-- **#745 (#744)**: a download that may pass is tried
-  `PDF_BESIDE_JATS_ATTEMPTS` (3) times, then the JATS is marked
-  (`jats/<key>.pdf-retry`) and sought again on later hits, at most
-  `PDF_SEEK_AGAIN_LIMIT` (3). Not covered: a JATS cached with the option off
-  (the `shortcut:` in `_check_cache`). Left minor: the languages read a mark's
-  count past `u32` differently; Rust's mark removal names no OS cause.
+- **#753 (PR #757)**: the Europe PMC search, NCBI's ID Converter and Unpaywall
+  decode through `strict_json_loads`, so a new full-text test must script
+  `content`, not `json()`. Deep nesting is still `RecursionError` in Python:
+  **#758**.
+- **#750/#751 (PR #752)**: `pmc_open_data_record`; the PDF beside JATS checks
+  the record's md5; Tier 1c's third source is the bucket's JATS. The record
+  fixtures' md5s are those of `sample_article.xml` and `textless.pdf`: edit
+  either file and update them.
+- **#744-#748 (PRs #745-#749)**: the PDF beside JATS is retried
+  (`PDF_BESIDE_JATS_ATTEMPTS`), marked and sought again
+  (`PDF_SEEK_AGAIN_LIMIT`); not covered: a JATS cached with the option off
+  (the `shortcut:` in `_check_cache`).
 
 ## Earlier: a saved page is not refused for its length (#656, PR #740)
 
@@ -208,40 +195,12 @@ crate's `[0.4.0]`. The points an app must act on:
 
 ## Earlier, 2026-11-01 to 2026-11-05 (all merged): what StudyAnalyzer owes
 
-- **#609** (PR #674): `PicoAgent`/`CochraneAssessor(condense_progress=)`;
-  Rust `LlmCondenser::with_progress`. Rust's harness now stops at a stop
-  (`stop_requested`). → pass a progress callback and show the batches.
-- **#667** (PRs #669, #671): Ollama's plain-text `404 page not found` is a
-  wrong address, not `NoSuchModelError` (Rust's rule, in Python).
-- **#619** (PR #670): `engine_messages` (what MuPDF said) apart from
-  `warnings` (bmlib's notes), also on a failed read. → rename
-  `PdfBlocks.warnings` reads and show a failed read's `engine_messages`.
-- **#664** (PR #668): `ContextWindowError` carries the HTTP status (Rust
-  `Transport { message, status }`, breaking). → map `Some(401 | 403)` to
-  `needs_api_key`.
-- **#616** (PR #666): `ProcessingResult.error`/`.batch_exceptions`;
-  `ModelCallError` chained; a long paper's 401/404 is `RequestFailed {
-  status }`. Filed **#665** (a decision).
-- **#659, #658, #646** (PRs #661, #660, #657): `PicoError.retryable`;
-  `batch_errors` and `summarise_batch_errors`; the condenser retries only a
-  transport failure or 408/429/500/502/503/504/529. → retry `RequestFailed {
-  retryable: true }` only, and on the next pin move add a `ChatError::Http`
-  arm where a `Transport` arm meant "the request failed".
-- **#654, #563** (PRs #655, #653): an HTML page too large (now by its `<`
-  count, #656) or past `HTML_PARSE_SECONDS` is refused. → a too-large page is
-  not worth retrying, a timeout may be.
-- **#635** (PR #650): cancellable streams (Rust `chat_stream_with_cancel`). →
-  an empty `content` with `stop_reason == "cancelled"` is "stopped before any
-  text".
-- **#632, #640-#642, #638** (PRs #648, #644, #639): `find_passage` rejects a
-  contradicting fuzzy match; `PicoAgent(num_ctx=, stop=)`; `prepare()`. →
-  threshold back to 0.95-0.97, `prepare` once per paper, retry only
-  `extract_prepared`, one window, stop flag and `condense_config` for all.
-- **PDF segmenter and full-text faults** (PRs #614-#637): residuals **#605**,
-  **#623**, **#628**. The title corpus's `median_font_size` rows are line
-  medians, so its next top-up bumps `ROW_DEFINITIONS_VERSION`. → read
-  `pdf_extraction_failure` `"encrypted"` / `"unreadable"` as `invalid_input`,
-  `"engine"` as a retry; bmlibrarian_lite re-pins `BmlibFFI.pin.json` (#621).
+PRs #614-#674 (#609, #667, #619, #664, #616, #659, #658, #646, #654, #563,
+#635, #632, #640-#642, #638 and the PDF segmenter's): each CHANGELOG entry
+under `[0.13.0]` names the app's action, and *What 0.13.0 costs StudyAnalyzer*
+above gathers them. Residuals open: **#605**, **#623**, **#628**. The title
+corpus's `median_font_size` rows are line medians, so its next top-up bumps
+`ROW_DEFINITIONS_VERSION`.
 
 ## Rules carried forward, and previous sessions
 
@@ -250,16 +209,15 @@ crate's `[0.4.0]`. The points an app must act on:
 session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
-**Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): this session (the shared library, step 1c, PR #764), PR #763 (the shared library, step 1b), PR #760 (#341, the `*-details` sources), PR #757 (#753, full text's JSON as `serde_json` reads it), PR #754 (the shared library, step 1a), PR #752 (#750/#751, PMC Open Data's record and JATS), PR #749 (#748), PR #747 (#746), PR #745 (#744), PR #741 (#739), PR #740 (#656, the `<` cap), PR #738 (#726, the HTML limits measured), PR #736 (release 0.13.0 housekeeping), PRs #732/#735 (live probes), PR #729 (#708), PR #728 (#665), PR #727 (#647, PICO contradicted quotes), PR #724 (#723, HTML memory bound), PR #721 (#607/#444, Rust sync parity), PR #720 (#686, one keychain item), PR #719 (#717, the JSON correction note), PR #715 (#572, numbers JSON does not define), PR #714 (#649/#652, a cancelled stream closes its socket), PR #713 (#710, adaptive thinking's summary), PR #711 (#707, thinking shape), PR #712 (#706's review), PR #709 (#705, Anthropic sampling), PR #706 (#702, a chat waits as a stream does), PR #704 (#698, too-deep bodies), PR #701 (#697, Ollama embed/show bodies), PR #700 (output limits), PR #699 (#617's refusal half), PR #693 (#688, Rust `log`), PR #691 (#606, CT.gov live guard), PR #690 (#689, `SecretErrorKind`), PR #687 (#634, the keychain), PR #682 (#680, Rust model listing), PR #679 (#583, OpenAlex abstract tie), PR #678 (#564, Rust ASCII PMC digits), PR #677 (#624, typed full-text sources), PR #676 (#673, split-item progress), PR #674 (#609, condensation progress), PR #671 (#667, Ollama's plain 404), PR #670 (#619, `engine_messages`), PR #668 (#664, lookup `status`), PR #666 (#616, condensation cause), PR #663 (#662, PICO `status`), PR #661 (#659, PICO `retryable`), PR #660 (#658, batch causes), PR #657 (#646, refusals not retried), PR #655 (#654, the HTML size cap), PR #653 (#563, the HTML deadline), PR #650 (#635, cancellable streams), PR #648 (#632, the contradiction guard), PR #644 (#640-#642, PICO `num_ctx` and stop), PR #643 (#633), PR #639 (#638, PICO prepare), PR #637 (#628, unnamed parent), PR #631 (#628, `Ita`), PR #630 (#628, faces named bold or italic), PR #629 (#628, heading faces), PR #627 (pdf-5, character median), PR #626 (#565), PR #625 (#603, `tier_faults`), PR #622 (pdf-4), PR #621 (Rust CSV line count), PR #620 (#617), PR #615 (#578, #573, #604), PR #614 (#599, what MuPDF reads past is reported), PR #613 (#574, `chat_json(max_retries=0)` makes one attempt; #570, a non-text `extracted_content` is no content, both languages), PR #601 (#594), PRs #596/#597 (#590/#591, MuPDF and page furniture), #593 (#592), #589 (#587/#588), #586 (item 8), #580/#584 (item 5), #575 (item 7), #568 (item 11), #562 (item 6), PR #559 (item 4c, `canonical_from_html`, `assess_full_text`), PR #556 (item 4b, `canonical_from_segmented`), PR #554 (item 3, `chunk_canonical`), PR #547 (item 4a, `bmlib.fulltext.canonical`), PR #545 (item 9, `FullTextResult.jats_xml` and the cache's `jats/`), PR #544 (#533, the `find_passage` timing tests bound windows scored), PRs #543 (#503 part 2, the `biorxiv` rows redrawn from `/pubs`), #542 (#503 part 1, the PDF-title journal stamped), #541 (#540, PubMed's bare `Review` measured as a displaced draw; three extractor corpora are pinned now), #539 (#453, a review read by how it searched; every `extractors.py` edit re-measures the corpora), #536 (#500, a value faking `str` is not text: `_is_text` asks `type()`, restated in `fulltext` and `transparency`; pytest's id generator is fooled by `Mock(spec=str)`, so give such a parametrize value an explicit id), #535 (#532, the embedder's errors typed alike in both languages: one `EmbedError` subclass per Rust variant, every one pickles; Rust `Llama` split into `Load`/`Decode`), #534 (#530, a NaN, infinite or zero embedding refused in both languages; a narrow model refused at load), #531 (`bmlib.embed`, the in-process arctic-embed embedder, Python and Rust; the embedder's review filed #530 and #532), #526 (`find_passage`, #527), #524 (#523/#522, `notice_pmid` canonical; `RetractionIndex::build` refuses an all-`Other` export), #521 (#509/#510, one export replaces the stored retraction notices; the export's `00000000` PMID sentinel), #519 (#518, a cited `<source>` normalised), #517 (#516, every `<label>` and the journal title normalised), #515 (#514, an abstract title normalised), #513 (#498, a title-only abstract section kept, by decision), #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
-#479 (#472/#478, `FullTextService`'s PMID
-canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
-asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
-`ValueError` or a declared non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
-sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_renderer_version.py`** — bump
-`RENDERER_VERSION` if `to_html()` can move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
--b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
--e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
+**Earlier sessions** are each a `CHANGELOG.md` entry, a ROADMAP row and a PR
+body; read those, not a list here. Rules from them that are not yet in
+`docs/SESSION-RULES.md`: only a `ValueError` or a declared non-text codec is
+the remote's bytes (#466); record/replay a sampler refactor (#458); **every
+JATS PR trips `tests/test_renderer_version.py`** (#437): bump
+`RENDERER_VERSION` if `to_html()` can move, then re-pin. **Worktree recipe**:
+`git worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`,
+`uv pip install --python .venv/bin/python -e ".[all,dev]"`, and run
+`env -u VIRTUAL_ENV uv run …`.
 
 ## PDF failures, MuPDF in Rust (#590-#600, merged)
 
@@ -275,26 +233,8 @@ the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
 a vector.** Filed from their reviews and open: #581, #582, #585, #577 (its point 3 left open by PR #696; #583, #572 and #618 since fixed), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
-- **Plan 2b**: `download_model`, then `Embedder::load_model(&ARCTIC_EMBED_L_V2_F16,
-  &path)` (never `load`; the `ModelFile` must be the one downloaded);
-  `embed::store::ensure_schema` once; `index_paper(...)` after converting
-  (`false` from progress cancels and keeps the old set); `search(...)` for
-  retrieval mode. `Stale(_)` → re-index (re-convert first if
-  `ConverterVersion` is among the fields); `NotIndexed` → index; `Corrupt` →
-  re-index. F16 ↔ Q8_0 makes every paper stale. Clamp the user's window to
-  `context_window()`, send `num_ctx` for Ollama, `None` means retrieval mode,
-  `NoSuchModel` a mistyped model; `chat_stream(…, on_delta)` returns
-  `chat()`'s `LLMResponse`, a `False`/`Break` stopping it.
-- **Plan 2a**: `lookup_record` with a PPR accession as `ppr_id`; hand
-  `fulltext_sources`, `pmc_id`, `doi`, `pmid` to `fetch_fulltext`; show
-  `published_version`; `request_failed` at any source is worth a retry.
-- **Plan 2c**: `check_suitability` on the abstract, a "not suitable" answer
-  with a *run anyway* action calling `extract`; pass `CanonicalText.text`;
-  label `UNVERIFIED` *Unsure – model could not reproduce <part> from text
-  provided*; retry `REQUEST_FAILED` (when `retryable`), `UNUSABLE_REPLY`
-  suggests another model, `TRUNCATED` a larger `max_tokens`; in Python a bmlib
-  defect, an unknown provider and a missing SDK or key raise unwrapped (since
-  #616 during condensation too). In Rust configure `PicoAgent::pico_condenser`.
+Plans 2a-2c (`lookup_record`, the embedder and its store, `PicoAgent`) have
+their app-side steps in those PRs' CHANGELOG entries.
 
 **Earlier StudyAnalyzer sessions** (PRs #524-#559; argument in
 `CHANGELOG.md`). Still open from them: **#537** (#507's Rust/FFI half),
@@ -328,22 +268,18 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `feat/library-ffi`** (2026-11-14, PostgreSQL 18 DSN on port
-  5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,897 passed + 19 skipped; Rust
-  1,831 (`cargo test`), and `cargo test -p bmlib-ffi --features http-sketch`
-  35. The next bullet is the run of `feat/341-biorxiv-details`.
-- **Tests on `feat/341-biorxiv-details`** (2026-11-14, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,841 passed + 20 skipped; Rust 1,788 (`cargo test --workspace`, clippy clean). The next bullet is the run of `feat/pmc-open-data-json`.
-- **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
-  `BMLIB_REQUIRE_POSTGRESQL=1`) on `feat/pmc-open-data-json` (`uv run pytest tests/`, 2026-11-13; Rust 1,730 with `cargo test --workspace` there, 1,720 with `--all-features` on `measure/656-saved-pages`, and `postgres_live.rs` 13 with `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`, 1,466 with `--features embed` on `feat/635-stream-cancel`; the embedder's live tests skip
-  without `BMLIB_EMBED_MODEL` — the GGUF files are in
-  `~/.cache/bmlib/models/` on this machine, and the Python live tests need
-  `.[all,dev,embed]` installed); measure `main` with `pytest
-  --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
-  PR #448's branch (5,810 passed + 2 skipped); PR #542's session ran
-  `test_backends.py` with it (197 passed + 1 skipped). The default skips are
-  the PostgreSQL parameterisations, 1 a PostgreSQL-only schema test, and
-  `test_pymupdf_requires_dependency`.
+- **Tests on `feat/library-find-kind-durable-save`** (2026-11-14, PostgreSQL
+  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,900 passed + 20
+  skipped (10,920 collected); Rust 1,832 (`cargo test --workspace`, clippy
+  clean), `cargo test -p bmlib-ffi --features http-sketch` 35; the Rust oracle
+  44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
+  BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
+  embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
+  `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
+  Measure `main` with `pytest --collect-only` and never subtract from a
+  previous handover's number. The default skips are the PostgreSQL
+  parameterisations, a PostgreSQL-only schema test, a non-UTF-8 file name
+  (APFS) and `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
   once); set `BMLIB_TEST_POSTGRESQL_DSN="host=localhost port=5432
@@ -364,13 +300,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open**, **#759** (PR #760's: measure the `/details` settle period),
-#755 (#754's review follow-ups) and **#758** (#753's review
+**126 open** (124 once #767 and #768 are closed by this branch's PR): the
+library's #761, #765, #766, #769 and #755 (above), **#759** (PR #760's:
+measure the `/details` settle period) and **#758** (#753's review
 residual, `RecursionError`) among them (#734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays
 open for its point 3, which PR #696 left open)
 (`gh issue list --state open --limit 300 --json number`, 2026-11-14, after
-#760 merged); #651 is
+#764 merged); #651 is
 #632's residual; #556–#734 are not yet sorted into the lists below). **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR

@@ -91,7 +91,7 @@ lib.remove_folder(file.folder)
 
 The calls are those of the Rust manual's table, with Python's spelling:
 `open_library(root)`, `lib.root`, `lib.scan()`, `find(scan, ids)`,
-`find_digest(scan, sha256)`, `group(scan)`, `lib.read(file)`,
+`find_digest(scan, sha256, kind=None)`, `group(scan)`, `lib.read(file)`,
 `lib.save(who, paper, data, kind, origin)`, `lib.record_use(who, paper, file)`
 (note a file another app saved in my record), `lib.release(who, file)`,
 `lib.remove_file(file)`, `lib.remove_folder(name)`,
@@ -116,6 +116,16 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   file first and the record second. A crash leaves an unrecorded file, which a
   scan reports as `"unrecorded_file"`; saving the same bytes again records
   it.
+- **When `save` returns, the file survives a crash.** Each file, record and
+  folder it makes has its directory synced after it appears (`F_FULLFSYNC` on
+  macOS), so an app may drop its own copy once `save` returns (#768). Not yet
+  on Windows, where a directory cannot be synced this way.
+- **The same bytes saved as two kinds are two files** (`text-….txt` and
+  `markdown-….md`), each its own entry in a record, and `release` drops only
+  the kind it is given (#767). Pass the kind to `find_digest` to find the file
+  stored as that kind; without it, the first kind present wins.
+  `used_by(sha256)` is about the bytes, so it lists an installation using
+  either kind.
 - **Choosing the folder.** `save` uses the first folder holding a record that
   shares an identifier with the paper, except that bytes are kept once: if the
   library already holds these bytes, the save goes into that folder even when

@@ -110,6 +110,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The shared paper library: a file is found by its kind, and a save is
+  durable when it returns** (#767, #768; both languages and bmlib-ffi;
+  StudyAnalyzer's step 2 asked for both). `find_digest(scan, sha256, kind)`
+  (Python `kind=None`, Rust `Option<SourceKind>`, the FFI's
+  `find_digest(sha256, kind)`) finds the file stored as that kind. Without a
+  kind it returned the first kind present, so a source kept as `text` resolved
+  to the `markdown` file holding the same bytes. A record's entries are now
+  keyed by digest *and* kind. Before, the second kind of the same bytes was
+  written but never recorded, releasing either kind dropped both, and a record
+  listing both was refused as unreadable. The library now syncs the directory
+  after every name it makes (`F_FULLFSYNC` on macOS, `fsync` elsewhere, nothing
+  yet on Windows). So when `save` returns, the file and its record survive a
+  crash, and an app may drop its own copy. This costs about 26 ms per save of a
+  new paper on a Mac. New cases: `library_cases.json`'s *the same bytes as two
+  kinds* (records) and *the same bytes kept as two kinds* (`save_scenarios`,
+  with a `find_digest` step). The reasoning is in `docs/DECISIONS.md`.
+
 - **The shared paper library through bmlib-ffi** (Rust only; step 1c of the
   shared paper library). `Library` and `LibraryScan` objects, owned copies of
   the library's records, `LibraryProblem`, and `LibraryError`, whose exported

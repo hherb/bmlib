@@ -38,6 +38,7 @@ from bmlib.library import (
     ReadOnly,
     SourceKind,
     canonical_ids,
+    files,
     open_library,
     parse_record,
     sha256_hex,
@@ -339,3 +340,34 @@ def test_record_use_checks_its_inputs_and_the_file(lib: Library) -> None:
     with pytest.raises(Missing):
         lib.record_use(_ME, _PAPER, theirs)
     assert not _record_path(lib, _ME, theirs.folder).exists()
+
+
+def test_every_name_a_save_makes_is_synced_into_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #768: a caller drops its own copy once save returns, so each new entry (the folder in
+    # papers/, the file and records/ in the folder, the record in records/) must have had its
+    # directory synced after it appeared. The second save finds the bytes there and must still
+    # sync them, since they may be another writer's not yet synced.
+    real = files.sync_dir
+    synced: list[tuple[Path, set[str]]] = []
+
+    def spy(directory: Path) -> None:
+        synced.append((directory, set(os.listdir(directory))))
+        real(directory)
+
+    monkeypatch.setattr(files, "sync_dir", spy)
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    root = lib.root
+    assert (root, {"bmlib-library.json", "papers"}) in synced
+    synced.clear()
+    ref = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+    folder = root / "papers" / ref.folder
+    made = {(root / "papers", ref.folder), (folder, ref.name), (folder, "records")}
+    made.add((folder / "records", _ME.record_file_name()))
+    for directory, name in made:
+        assert any(d == directory and name in seen for d, seen in synced), (directory, name)
+    synced.clear()
+    lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "test")
+    assert any(d == folder and ref.name in seen for d, seen in synced)

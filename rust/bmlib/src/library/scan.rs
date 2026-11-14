@@ -389,17 +389,21 @@ pub fn find<'a>(scan: &'a Scan, ids: &PaperIds) -> Vec<&'a PaperFolder> {
 
 /// A file on disk named for `sha256` (`{kind}-{first 12 hex}.{ext}`), if any.
 ///
-/// Only the name is looked at: [`Library::read`] checks the full digest. A
-/// digest that is not 64 lowercase hex digits finds nothing.
+/// The same bytes saved as two kinds are two files, so pass `kind` to find the
+/// one stored as that kind; with `None`, the first kind present is returned,
+/// in [`SourceKind`]'s declaration order. Only the name is looked at:
+/// [`Library::read`] checks the full digest. A digest that is not 64 lowercase
+/// hex digits finds nothing.
 #[must_use]
-pub fn find_digest(scan: &Scan, sha256: &str) -> Option<FileRef> {
+pub fn find_digest(scan: &Scan, sha256: &str, kind: Option<SourceKind>) -> Option<FileRef> {
     let hex = |b: u8| matches!(b, b'0'..=b'9' | b'a'..=b'f');
     if sha256.len() != 64 || !sha256.bytes().all(hex) {
         return None;
     }
     let prefix = &sha256[..DIGEST_PREFIX_HEX];
+    let kinds = kind.as_ref().map_or(&KINDS[..], std::slice::from_ref);
     scan.folders.iter().find_map(|f| {
-        KINDS.iter().find_map(|&kind| {
+        kinds.iter().find_map(|&kind| {
             let name = format!("{}-{prefix}.{}", kind.as_str(), kind.extension());
             f.files_on_disk.contains(&name).then(|| FileRef {
                 folder: f.folder.clone(),
@@ -579,7 +583,7 @@ mod tests {
             folders: Vec::new(),
             problems: Vec::new(),
         };
-        assert_eq!(find_digest(&scan, "ABC"), None);
-        assert_eq!(find_digest(&scan, &"A".repeat(64)), None);
+        assert_eq!(find_digest(&scan, "ABC", None), None);
+        assert_eq!(find_digest(&scan, &"A".repeat(64), None), None);
     }
 }

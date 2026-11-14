@@ -233,6 +233,8 @@ pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Writ
     match fs::read(path) {
         Ok(existing) => {
             return if sha256_hex(&existing) == sha256 {
+                // Another writer's, perhaps not yet synced.
+                sync_name(path)?;
                 Ok(Written::AlreadyThere)
             } else {
                 Err(LibraryError::FileClash {
@@ -250,23 +252,69 @@ pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Writ
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(io_error(path, &e, false)),
     }
-    crate::atomic::atomic_write(path, bytes).map_err(|e| io_error(path, &e, true))?;
+    publish(path, bytes)?;
     Ok(Written::New)
 }
 
+/// The directory holding `path` (`.` for a bare name).
+fn parent(path: &Path) -> &Path {
+    match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    }
+}
+
+/// Flush `dir`'s entries to disk, so that a name published or a directory made
+/// in it survives a crash. `atomic_write` syncs a file's data, not its name,
+/// and a caller may drop its own copy once a save returns (#768).
+///
+/// `sync_all` is `F_FULLFSYNC` on macOS, which also flushes the drive's cache;
+/// Python's twin uses the same call there.
+pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    tests::note_sync(dir);
+    // shortcut: a no-op on Windows, where a directory cannot be opened to sync
+    // it; the rename is as durable as NTFS makes it. Use MoveFileEx's
+    // write-through when the Windows build gets the Library setting.
+    #[cfg(unix)]
+    fs::File::open(dir)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
+}
+
+/// Sync `path`'s directory ([`sync_dir`]), a failure reported against `path`.
+fn sync_name(path: &Path) -> Result<(), LibraryError> {
+    sync_dir(parent(path)).map_err(|e| io_error(path, &e, true))
+}
+
+/// `atomic_write` `bytes` at `path`, then sync its directory so the name is
+/// durable.
+fn publish(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
+    crate::atomic::atomic_write(path, bytes).map_err(|e| io_error(path, &e, true))?;
+    sync_name(path)
+}
+
 /// Make the directory `path` (its parent must exist); `false` when it already
-/// exists.
+/// exists. A directory made is synced into its parent ([`sync_dir`]).
 pub(crate) fn create_dir_new(path: &Path) -> io::Result<bool> {
     match fs::create_dir(path) {
-        Ok(()) => Ok(true),
+        Ok(()) => sync_dir(parent(path)).map(|()| true),
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
         Err(e) => Err(e),
     }
 }
 
 /// Make the directory `path` and any missing parents; fine when it exists.
+/// Each directory made is synced into its parent, as by [`create_dir_new`].
 pub(crate) fn create_dir_all(path: &Path) -> io::Result<()> {
-    fs::create_dir_all(path)
+    if is_dir(path) {
+        return Ok(());
+    }
+    if let Some(p) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        create_dir_all(p)?;
+    }
+    create_dir_new(path).map(|_| ())
 }
 
 /// Rename `from` to `to`.
@@ -275,9 +323,10 @@ pub(crate) fn rename(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 /// Publish `bytes` at `path` atomically, replacing what is there. Only for a
-/// file its writer alone owns (an installation's own record).
+/// file its writer alone owns (an installation's own record). The directory is
+/// synced, so the record survives a crash once this returns.
 pub(crate) fn write_replace(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
-    crate::atomic::atomic_write(path, bytes).map_err(|e| io_error(path, &e, true))
+    publish(path, bytes)
 }
 
 /// Delete one file.
@@ -293,6 +342,77 @@ pub(crate) fn remove_dir_all(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    thread_local! {
+        /// Each directory [`sync_dir`] was asked to sync on this thread, with
+        /// the names it held at that moment.
+        static SYNCED: RefCell<Vec<(PathBuf, BTreeSet<String>)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(super) fn note_sync(dir: &Path) {
+        let names = fs::read_dir(dir)
+            .map(|r| {
+                r.filter_map(Result::ok)
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        SYNCED.with(|s| s.borrow_mut().push((dir.to_owned(), names)));
+    }
+
+    /// Whether `dir` was synced while it held `name`, since the log was taken.
+    fn synced_holding(log: &[(PathBuf, BTreeSet<String>)], dir: &Path, name: &str) -> bool {
+        log.iter()
+            .any(|(d, names)| d == dir && names.contains(name))
+    }
+
+    fn take_log() -> Vec<(PathBuf, BTreeSet<String>)> {
+        SYNCED.with(|s| std::mem::take(&mut *s.borrow_mut()))
+    }
+
+    /// #768: a caller drops its own copy once save returns, so each new entry
+    /// (the folder in `papers/`, the file and `records/` in the folder, the
+    /// record in `records/`) must have had its directory synced after it
+    /// appeared. The second save finds the bytes there and must still sync
+    /// them, since they may be another writer's not yet synced.
+    #[test]
+    fn every_name_a_save_makes_is_synced_into_its_directory() {
+        use crate::library::{Installation, Library, PaperIds, PaperInfo, SourceKind};
+        let root = scratch("sync");
+        take_log();
+        let lib = Library::open(&root).unwrap();
+        let log = take_log();
+        assert!(synced_holding(&log, &root, "bmlib-library.json"));
+        assert!(synced_holding(&log, &root, "papers"));
+        let paper = PaperInfo {
+            ids: PaperIds::canonical(Some("111"), None, None).unwrap(),
+            title: Some("Metformin".into()),
+            year: Some(2024),
+            first_author: Some("Smith".into()),
+        };
+        let me = Installation::new("studyanalyzer", "aaaa", "Mac").unwrap();
+        let you = Installation::new("medicalfactchecker", "bbbb", "Mac").unwrap();
+        let saved = lib
+            .save(&me, &paper, b"%PDF a paper", SourceKind::Pdf, "test")
+            .unwrap();
+        let log = take_log();
+        let folder = root.join("papers").join(&saved.folder);
+        assert!(synced_holding(&log, &root.join("papers"), &saved.folder));
+        assert!(synced_holding(&log, &folder, &saved.name));
+        assert!(synced_holding(&log, &folder, "records"));
+        assert!(synced_holding(
+            &log,
+            &folder.join("records"),
+            &me.record_file_name()
+        ));
+        lib.save(&you, &paper, b"%PDF a paper", SourceKind::Pdf, "test")
+            .unwrap();
+        assert!(synced_holding(&take_log(), &folder, &saved.name));
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     /// A fresh empty directory under the system temp dir, removed by the
     /// caller.

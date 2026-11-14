@@ -259,20 +259,23 @@ def _is_digest(s: str) -> bool:
     return len(s) == 64 and all(c in "0123456789abcdef" for c in s)
 
 
-def find_digest(scan: Scan, sha256: str) -> FileRef | None:
+def find_digest(scan: Scan, sha256: str, kind: SourceKind | None = None) -> FileRef | None:
     """A file on disk named for *sha256* (``{kind}-{first 12 hex}.{ext}``), or ``None``.
 
-    Only the name is looked at: :func:`read_file` checks the full digest. A digest that is
-    not 64 lowercase hex digits finds nothing.
+    The same bytes saved as two kinds are two files, so pass *kind* to find the one stored as
+    that kind; without it, the first kind present is returned, in :class:`SourceKind`'s
+    order. Only the name is looked at: :func:`read_file` checks the full digest. A digest
+    that is not 64 lowercase hex digits finds nothing.
     """
     if not _is_digest(sha256):
         return None
     prefix = sha256[:DIGEST_PREFIX_HEX]
+    kinds = list(SourceKind) if kind is None else [kind]  # declaration order, as Rust's KINDS
     for f in scan.folders:
-        for kind in SourceKind:  # declaration order, as Rust's KINDS
-            name = f"{kind.value}-{prefix}.{kind.extension()}"
+        for k in kinds:
+            name = f"{k.value}-{prefix}.{k.extension()}"
             if name in f.files_on_disk:
-                return FileRef(f.folder, name, sha256, kind)
+                return FileRef(f.folder, name, sha256, k)
     return None
 
 

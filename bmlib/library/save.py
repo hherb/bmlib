@@ -282,8 +282,8 @@ def _note_use(
 ) -> None:
     """Note *entry* in *who*'s record in the paper folder *directory*, under the record lock.
 
-    The entry is added unless its digest is listed already, and *paper* is merged into the
-    record's account. The one path by which both :func:`save_file` and
+    The entry is added unless the record lists that file (its digest and kind) already, and
+    *paper* is merged into the record's account. The one path by which both :func:`save_file` and
     :func:`record_file_use` change a record.
     """
     records_dir = directory / RECORDS_DIR
@@ -298,7 +298,7 @@ def _note_use(
             record = Record(who, paper, (entry,))
         else:
             files = record.files
-            if all(f.sha256 != entry.sha256 for f in files):
+            if all((f.sha256, f.kind) != (entry.sha256, entry.kind) for f in files):
                 files = (*files, entry)
             record = _merge_paper(dataclasses.replace(record, files=files), paper, path)
         _store_record(path, record)
@@ -399,7 +399,15 @@ def record_file_use(root: Path, who: Installation, paper: PaperInfo, file: FileR
         raise BadName(file.name)
     directory, _ = _locate(root, file)
     found = _scan_folder(directory, file.folder, [])
-    origin = next((f.origin for r in found.records for f in r.files if f.sha256 == file.sha256), "")
+    origin = next(
+        (
+            f.origin
+            for r in found.records
+            for f in r.files
+            if (f.sha256, f.kind) == (file.sha256, file.kind)
+        ),
+        "",
+    )
     entry = FileEntry(file.sha256, file.kind, file.name, origin, len(data), _now())
     _record_bytes(Record(who, paper, (entry,)), directory)
     _note_use(directory, file.folder, who, paper, entry)
@@ -434,7 +442,7 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
             if p.kind == "newer":
                 raise NewerRecord(file.folder, path.name, p.version) from p
             raise Io(path, f"the record is not readable: {p.reason}") from p
-        kept = tuple(f for f in record.files if f.sha256 != file.sha256)
+        kept = tuple(f for f in record.files if (f.sha256, f.kind) != (file.sha256, file.kind))
         _store_record(path, dataclasses.replace(record, files=kept))
 
 
