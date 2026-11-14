@@ -262,6 +262,16 @@ jobs:
             ${{ runner.os }}-rust-${{ matrix.label }}-
       - name: Test
         run: cargo test ${{ matrix.args }}
+      - name: Kotlin binding declares no name it imports
+        # A type named like one of the binding's JNA imports (`Library`) builds
+        # in Rust and Swift and breaks the Android app's compile.
+        if: matrix.label == 'ffi'
+        run: |
+          cargo build -p bmlib-ffi --features bindgen
+          target/debug/uniffi-bindgen generate --no-format \
+            --library target/debug/libbmlib_ffi.so \
+            --language kotlin --out-dir "$RUNNER_TEMP/kt"
+          python3 ../scripts/check_kotlin_binding_names.py "$RUNNER_TEMP/kt/org/bmlib/ffi/bmlib_ffi.kt"
 
   rust-postgres:
     name: Rust PostgreSQL (live server)

@@ -123,7 +123,7 @@ fn scratch(tag: &str) -> PathBuf {
 }
 
 /// The sample library copied into a scratch directory, opened.
-fn sample(tag: &str) -> (PathBuf, Arc<Library>) {
+fn sample(tag: &str) -> (PathBuf, Arc<PaperLibrary>) {
     fn copy(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
@@ -142,7 +142,10 @@ fn sample(tag: &str) -> (PathBuf, Arc<Library>) {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/library/sample"),
         &root,
     );
-    (base, Library::open(root.display().to_string()).unwrap())
+    (
+        base,
+        PaperLibrary::open(root.display().to_string()).unwrap(),
+    )
 }
 
 /// The `field` of an identifier or installation error.
@@ -520,7 +523,7 @@ fn open_matches_the_fixture() {
         }
         match (
             case["expect"].as_str().unwrap(),
-            Library::open(root.display().to_string()),
+            PaperLibrary::open(root.display().to_string()),
         ) {
             ("created" | "opened", Ok(library)) => {
                 assert_eq!(library.root(), root.display().to_string(), "{name}");
@@ -558,7 +561,7 @@ fn paper(pmid: &str) -> PaperInfo {
 #[test]
 fn save_use_release_and_remove_round_trip() {
     let base = scratch("round-trip");
-    let library = Library::open(base.display().to_string()).unwrap();
+    let library = PaperLibrary::open(base.display().to_string()).unwrap();
     let (sa, mfc) = (who("studyanalyzer"), who("medicalfactchecker"));
     // Spelled out, so `record.installation == sa` below is not one conversion
     // checked against itself.
@@ -627,7 +630,7 @@ fn save_use_release_and_remove_round_trip() {
     library
         .record_use(mfc.clone(), paper("111"), saved.clone())
         .unwrap();
-    let users = |l: &Library| {
+    let users = |l: &PaperLibrary| {
         l.scan()
             .unwrap()
             .used_by(saved.folder.clone(), saved.sha256.clone())
@@ -689,7 +692,7 @@ fn another_apps_jats_file_can_be_used() {
 #[test]
 fn a_refused_save_writes_nothing() {
     let base = scratch("refused");
-    let library = Library::open(base.display().to_string()).unwrap();
+    let library = PaperLibrary::open(base.display().to_string()).unwrap();
     let mut bad_doi = paper("1");
     bad_doi.ids.doi = Some("not a doi".into());
     let got = library.save(

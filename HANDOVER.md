@@ -95,7 +95,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
   have; it ends when a JATS is kept in the library.
 - **1c, merged as PR #764**: the library through
-  bmlib-ffi (`rust/bmlib-ffi/src/library.rs`): `Library` and `LibraryScan`
+  bmlib-ffi (`rust/bmlib-ffi/src/library.rs`): `PaperLibrary` and `LibraryScan`
   objects, owned records, `LibraryError` with bmlib's wording as its exported
   `Display`, `paper_ids_canonical`, `installation_new`. Identifiers and
   installations coming in pass the validating constructors; names are checked
