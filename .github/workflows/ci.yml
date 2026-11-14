@@ -387,6 +387,12 @@ jobs:
       - name: Build Rust's keychain example
         working-directory: rust
         run: cargo build -p bmlib --no-default-features --features keyring --example keychain_vault
+      - name: clippy (Windows-only PDF code)
+        # mupdf opens a &str on Windows, a &Path elsewhere (mupdf_path); only
+        # this job compiles the Windows half.
+        if: runner.os == 'Windows'
+        working-directory: rust
+        run: cargo clippy -p bmlib --no-default-features --features pdf --lib --tests -- -D warnings
       - name: clippy (Windows-only keychain code)
         # rust-lint runs on Linux, where `platform_entry`'s Windows half is not compiled.
         if: runner.os == 'Windows'
