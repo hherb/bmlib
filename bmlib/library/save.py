@@ -41,7 +41,6 @@ from bmlib.library.constants import (
 from bmlib.library.errors import BadIdentifier, BadName, Io, Missing, NewerRecord, NotDownloaded
 from bmlib.library.files import (
     component,
-    create_dir_all,
     create_dir_new,
     exists,
     has_placeholder,
@@ -53,6 +52,7 @@ from bmlib.library.files import (
     remove_file,
     rename,
     sha256_hex,
+    sync_name,
     write_once,
     write_replace,
 )
@@ -236,14 +236,17 @@ def _record_bytes(record: Record, path: Path) -> bytes:
 
 
 def _store_record(path: Path, record: Record) -> None:
-    """Write *record* over *path* unless that is what is there already."""
+    """Write *record* over *path* unless that is what is there already, which is synced
+    instead: a failed sync may have left it so, and a retry must not return without one."""
     data = _record_bytes(record, path)
     try:
-        if read_bytes(path) == data:
-            return
+        unchanged = read_bytes(path) == data
     except OSError:
-        pass
-    write_replace(path, data)
+        unchanged = False
+    if unchanged:
+        sync_name(path)
+    else:
+        write_replace(path, data)
 
 
 def _merge_paper(record: Record, paper: PaperInfo, path: Path) -> Record:
@@ -286,9 +289,10 @@ def _note_use(
     *paper* is merged into the record's account. The one path by which both :func:`save_file` and
     :func:`record_file_use` change a record.
     """
+    sync_name(directory)  # the folder may be another writer's, not yet synced into papers/
     records_dir = directory / RECORDS_DIR
     try:
-        create_dir_all(records_dir)
+        create_dir_new(records_dir)
     except OSError as e:
         raise io_error(records_dir, e, write=True) from e
     path = records_dir / component(who.record_file_name())

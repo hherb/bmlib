@@ -32,6 +32,20 @@ StudyAnalyzer's step 2 filed both; each was worked around there with a
   Rust twin with a `cfg(test)` log of syncs) and `test_sync_dir_flushes_...`.
 - Every change was mutation-checked: 5 + 5 for #767, 5 + 4 for #768, each
   mutant caught.
+- **The pre-merge review** found that only names a save *made* were synced: a
+  folder, `records/` or unchanged record found already there was not, so a
+  retry after a failed sync, or a save beside a concurrent writer, returned
+  without them. `create_dir_new` now syncs a directory found there (and
+  refuses a file in the way); `note_use` syncs the paper folder into `papers/`
+  and makes `records/` with `create_dir_new` (`create_dir_all` is gone); an
+  unchanged record is synced. A failed sync says `syncing its folder`, and a
+  file system that refuses the sync fails every save, by decision
+  (DECISIONS). `LibraryStore.note_use_in` now matches the kind too. Pinned by
+  `test_a_failed_sync_fails_the_save_and_a_retry_syncs_what_it_left` (Python
+  and Rust, the Rust one through a `cfg(test)` fault switch), the darwin and
+  Linux `sync_dir` branches run on every platform, and two `save_scenarios`
+  (*the same bytes as another kind go to the folder holding them*, *two PDFs
+  of one paper, one released*); 3 + 3 mutants, each caught.
 - **Downstream**: StudyAnalyzer can drop its `stored_name` shortcut (#767) once
   it re-pins; MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
 
@@ -268,8 +282,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `feat/library-find-kind-durable-save`** (2026-11-14, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,900 passed + 20
-  skipped (10,920 collected); Rust 1,832 (`cargo test --workspace`, clippy
+  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,909 passed + 20
+  skipped (10,929 collected); Rust 1,837 (`cargo test --workspace`, clippy
   clean), `cargo test -p bmlib-ffi --features http-sketch` 35; the Rust oracle
   44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the

@@ -310,3 +310,15 @@ def test_find_source_in_and_note_use_in_read_the_scan_given(tmp_path: Path) -> N
     # The scan given still says this installation does not list it: noted again, harmlessly.
     assert store.note_use_in(after, paper, file) is True
     assert store.note_use_in(store.scan(paper.ids), paper, file) is False
+
+
+def test_note_use_in_tells_the_same_bytes_of_another_kind_apart(tmp_path: Path) -> None:
+    # #767: this installation lists the bytes as text; a use of them as JATS is a use of
+    # another file, so it is written.
+    store = _store(tmp_path)
+    other = Installation.new("medicalfactchecker", "bbbb", "Mac")
+    paper = _info("41")
+    store.keep(paper, b"<article/>", SourceKind.TEXT, "t")
+    jats = store.library.save(other, paper, b"<article/>", SourceKind.JATS, "t")
+    assert store.note_use_in(store.scan(paper.ids), paper, jats) is True
+    assert store.note_use_in(store.scan(paper.ids), paper, jats) is False

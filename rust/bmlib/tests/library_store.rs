@@ -487,3 +487,28 @@ fn find_source_in_and_note_use_in_read_the_scan_given() {
     let fresh = store.scan(&paper.ids).unwrap();
     assert!(!store.note_use_in(&fresh, &paper, &file).unwrap());
 }
+
+#[test]
+fn note_use_in_tells_the_same_bytes_of_another_kind_apart() {
+    // #767: this installation lists the bytes as text; a use of them as JATS is
+    // a use of another file, so it is written.
+    let (_d, store) = scratch("otherkind");
+    let paper = info(Some("41"), None);
+    store
+        .keep(&paper, b"<article/>", SourceKind::Text, "t")
+        .unwrap();
+    let jats = store
+        .library
+        .save(
+            &app("medicalfactchecker", "bbbb"),
+            &paper,
+            b"<article/>",
+            SourceKind::Jats,
+            "t",
+        )
+        .unwrap();
+    let scan = store.scan(&paper.ids).unwrap();
+    assert!(store.note_use_in(&scan, &paper, &jats).unwrap());
+    let scan = store.scan(&paper.ids).unwrap();
+    assert!(!store.note_use_in(&scan, &paper, &jats).unwrap());
+}

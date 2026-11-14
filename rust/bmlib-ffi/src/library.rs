@@ -185,8 +185,8 @@ impl TryFrom<Installation> for lib::Installation {
 }
 
 /// A source file in a paper's folder, with the digest it should have. An app
-/// stores only `sha256`, and finds the file again with
-/// [`LibraryScan::find_digest`].
+/// stores `sha256` and `kind`, and finds the file again with
+/// [`LibraryScan::find_digest`] given both.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FileRef {
     /// The paper's folder, under `papers/`.
@@ -819,11 +819,10 @@ impl Library {
         Ok(self.0.record_use(&who, &paper, &file.into())?)
     }
 
-    /// Drop the file with `file.sha256` from `who`'s record in `file.folder`
-    /// (`file.name` need only be a plain name). The file and other records
-    /// stay. A file the
-    /// record does not list, or a folder `who` has no record in, is already
-    /// released, so that is `Ok`.
+    /// Drop the file with `file.sha256` and `file.kind` from `who`'s record in
+    /// `file.folder` (`file.name` need only be a plain name). The file and
+    /// other records stay. A file the record does not list, or a folder `who`
+    /// has no record in, is already released, so that is `Ok`.
     ///
     /// # Errors
     ///

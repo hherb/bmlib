@@ -55,11 +55,11 @@ def atomic_write(path: Path, data: bytes) -> None:
     fsync'd before the rename is issued, so there is no ordering in which the
     rename survives a crash and the data does not; but the containing
     directory is not fsync'd, so the rename itself can be lost. That is the
-    safe direction for both callers — the target is then simply absent, which
-    each treats as a miss and repairs — and closing the window would cost a
-    directory sync per write to fix something neither caller can observe. A
-    caller that must survive a crash with the file *present* has to fsync the
-    directory itself.
+    safe direction for the cache and the templates — the target is then simply
+    absent, which each treats as a miss and repairs — and closing the window
+    would cost a directory sync per write to fix something neither can observe.
+    A caller that must survive a crash with the file *present* has to fsync the
+    directory itself, as the library does (``bmlib.library.files``, #768).
 
     :func:`os.replace` replaces whatever is at *path*, **including a symlink**
     — the link itself, not the file it points at. A caller for whom a symlink

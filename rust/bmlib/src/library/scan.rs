@@ -390,10 +390,10 @@ pub fn find<'a>(scan: &'a Scan, ids: &PaperIds) -> Vec<&'a PaperFolder> {
 /// A file on disk named for `sha256` (`{kind}-{first 12 hex}.{ext}`), if any.
 ///
 /// The same bytes saved as two kinds are two files, so pass `kind` to find the
-/// one stored as that kind; with `None`, the first kind present is returned,
-/// in [`SourceKind`]'s declaration order. Only the name is looked at:
-/// [`Library::read`] checks the full digest. A digest that is not 64 lowercase
-/// hex digits finds nothing.
+/// one stored as that kind; with `None`, the first folder holding any kind
+/// wins, and in it the first kind in [`SourceKind`]'s declaration order. Only
+/// the name is looked at: [`Library::read`] checks the full digest. A digest
+/// that is not 64 lowercase hex digits finds nothing.
 #[must_use]
 pub fn find_digest(scan: &Scan, sha256: &str, kind: Option<SourceKind>) -> Option<FileRef> {
     let hex = |b: u8| matches!(b, b'0'..=b'9' | b'a'..=b'f');

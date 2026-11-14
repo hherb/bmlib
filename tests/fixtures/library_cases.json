@@ -2565,6 +2565,14 @@
      "app": "studyanalyzer",
      "id": "aaaa",
      "of": 0
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
     }
    ],
    "expect": {
@@ -2627,6 +2635,220 @@
         "kind": "markdown",
         "name": "markdown-58100dc8fc06.md",
         "origin": "a hand-off",
+        "size": 10
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "the same bytes as another kind go to the folder holding them",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/k"
+     },
+     "text": "kind bytes",
+     "kind": "text",
+     "origin": "a paste"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "333"
+     },
+     "text": "kind bytes",
+     "kind": "markdown",
+     "origin": "a hand-off"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/(DOI 10.1 k)/",
+     "papers/(DOI 10.1 k)/markdown-f6d3679eae3d.md",
+     "papers/(DOI 10.1 k)/records/",
+     "papers/(DOI 10.1 k)/records/medicalfactchecker-bbbb.json",
+     "papers/(DOI 10.1 k)/records/studyanalyzer-aaaa.json",
+     "papers/(DOI 10.1 k)/text-f6d3679eae3d.txt"
+    ],
+    "records": {
+     "papers/(DOI 10.1 k)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "333",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "f6d3679eae3dce851cd15898cc9f5fa473de38af80299c611b8587a3c2ae9a84",
+        "kind": "markdown",
+        "name": "markdown-f6d3679eae3d.md",
+        "origin": "a hand-off",
+        "size": 10
+       }
+      ]
+     },
+     "papers/(DOI 10.1 k)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": "10.1/k",
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "f6d3679eae3dce851cd15898cc9f5fa473de38af80299c611b8587a3c2ae9a84",
+        "kind": "text",
+        "name": "text-f6d3679eae3d.txt",
+        "origin": "a paste",
+        "size": 10
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "two PDFs of one paper, one released",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "444"
+     },
+     "text": "first pdf",
+     "kind": "pdf",
+     "origin": "u1"
+    },
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "444"
+     },
+     "text": "second pdf",
+     "kind": "pdf",
+     "origin": "u2"
+    },
+    {
+     "op": "record_use",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "444"
+     },
+     "of": 1
+    },
+    {
+     "op": "release",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "of": 0
+    },
+    {
+     "op": "used_by",
+     "of": 1,
+     "expect": [
+      "medicalfactchecker-bbbb",
+      "studyanalyzer-aaaa"
+     ]
+    },
+    {
+     "op": "used_by",
+     "of": 0,
+     "expect": []
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/(PMID 444)/",
+     "papers/(PMID 444)/pdf-898331a6fa06.pdf",
+     "papers/(PMID 444)/pdf-9b021bb185ae.pdf",
+     "papers/(PMID 444)/records/",
+     "papers/(PMID 444)/records/medicalfactchecker-bbbb.json",
+     "papers/(PMID 444)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/(PMID 444)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "444",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "898331a6fa0601898a72b4d4898c56ebcb38d2fd64849e465ed7b13462defacc",
+        "kind": "pdf",
+        "name": "pdf-898331a6fa06.pdf",
+        "origin": "u2",
+        "size": 10
+       }
+      ]
+     },
+     "papers/(PMID 444)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "444",
+       "doi": null,
+       "pmcid": null,
+       "title": null,
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "898331a6fa0601898a72b4d4898c56ebcb38d2fd64849e465ed7b13462defacc",
+        "kind": "pdf",
+        "name": "pdf-898331a6fa06.pdf",
+        "origin": "u2",
         "size": 10
        }
       ]

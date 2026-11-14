@@ -272,7 +272,7 @@ fn parent(path: &Path) -> &Path {
 /// Python's twin uses the same call there.
 pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     #[cfg(test)]
-    tests::note_sync(dir);
+    tests::note_sync(dir)?;
     // shortcut: a no-op on Windows, where a directory cannot be opened to sync
     // it; the rename is as durable as NTFS makes it. Use MoveFileEx's
     // write-through when the Windows build gets the Library setting.
@@ -284,8 +284,14 @@ pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
 }
 
 /// Sync `path`'s directory ([`sync_dir`]), a failure reported against `path`.
-fn sync_name(path: &Path) -> Result<(), LibraryError> {
-    sync_dir(parent(path)).map_err(|e| io_error(path, &e, true))
+/// A file system that refuses the sync (`ENOTSUP`, `EINVAL`) fails the call:
+/// the save is not durable there, and saying so beats a save that may vanish
+/// (DECISIONS, #768).
+pub(crate) fn sync_name(path: &Path) -> Result<(), LibraryError> {
+    sync_dir(parent(path)).map_err(|e| LibraryError::Io {
+        path: path.to_owned(),
+        reason: format!("syncing its folder: {e}"),
+    })
 }
 
 /// `atomic_write` `bytes` at `path`, then sync its directory so the name is
@@ -296,25 +302,17 @@ fn publish(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
 }
 
 /// Make the directory `path` (its parent must exist); `false` when it already
-/// exists. A directory made is synced into its parent ([`sync_dir`]).
+/// exists. Either way the directory is synced into its parent ([`sync_dir`]):
+/// one found there may be another writer's, not yet synced. Anything else at
+/// `path` is an `AlreadyExists` error.
 pub(crate) fn create_dir_new(path: &Path) -> io::Result<bool> {
-    match fs::create_dir(path) {
-        Ok(()) => sync_dir(parent(path)).map(|()| true),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
-        Err(e) => Err(e),
-    }
-}
-
-/// Make the directory `path` and any missing parents; fine when it exists.
-/// Each directory made is synced into its parent, as by [`create_dir_new`].
-pub(crate) fn create_dir_all(path: &Path) -> io::Result<()> {
-    if is_dir(path) {
-        return Ok(());
-    }
-    if let Some(p) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        create_dir_all(p)?;
-    }
-    create_dir_new(path).map(|_| ())
+    let made = match fs::create_dir(path) {
+        Ok(()) => true,
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && is_dir(path) => false,
+        Err(e) => return Err(e),
+    };
+    sync_dir(parent(path))?;
+    Ok(made)
 }
 
 /// Rename `from` to `to`.
@@ -342,7 +340,7 @@ pub(crate) fn remove_dir_all(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 
@@ -350,9 +348,11 @@ mod tests {
         /// Each directory [`sync_dir`] was asked to sync on this thread, with
         /// the names it held at that moment.
         static SYNCED: RefCell<Vec<(PathBuf, BTreeSet<String>)>> = const { RefCell::new(Vec::new()) };
+        /// The index in [`SYNCED`] of the sync to fail, if any.
+        static FAIL_AT: Cell<Option<usize>> = const { Cell::new(None) };
     }
 
-    pub(super) fn note_sync(dir: &Path) {
+    pub(super) fn note_sync(dir: &Path) -> io::Result<()> {
         let names = fs::read_dir(dir)
             .map(|r| {
                 r.filter_map(Result::ok)
@@ -360,7 +360,24 @@ mod tests {
                     .collect()
             })
             .unwrap_or_default();
-        SYNCED.with(|s| s.borrow_mut().push((dir.to_owned(), names)));
+        let at = SYNCED.with(|s| {
+            let mut s = s.borrow_mut();
+            s.push((dir.to_owned(), names));
+            s.len() - 1
+        });
+        if FAIL_AT.with(Cell::get) == Some(at) {
+            return Err(io::Error::other("injected"));
+        }
+        Ok(())
+    }
+
+    /// Run `f` with the sync numbered `at` in the log (counted from the last
+    /// [`take_log`]) failing.
+    fn failing_sync<T>(at: usize, f: impl FnOnce() -> T) -> T {
+        FAIL_AT.with(|c| c.set(Some(at)));
+        let out = f();
+        FAIL_AT.with(|c| c.set(None));
+        out
     }
 
     /// Whether `dir` was synced while it held `name`, since the log was taken.
@@ -412,6 +429,71 @@ mod tests {
             .unwrap();
         assert!(synced_holding(&take_log(), &folder, &saved.name));
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// #768: the caller keeps its copy unless save returns, so every sync a
+    /// save makes must fail it when it fails. A retry then finds the folder,
+    /// `records/` and the record already there, and must still sync each into
+    /// its directory before it returns.
+    #[test]
+    fn a_failed_sync_fails_the_save_and_a_retry_syncs_what_it_left() {
+        use crate::library::{Installation, Library, PaperIds, PaperInfo, SourceKind};
+        let base = scratch("retry");
+        let paper = PaperInfo {
+            ids: PaperIds::canonical(Some("111"), None, None).unwrap(),
+            title: Some("Metformin".into()),
+            year: Some(2024),
+            first_author: Some("Smith".into()),
+        };
+        let me = Installation::new("studyanalyzer", "aaaa", "Mac").unwrap();
+        let save = |lib: &Library| lib.save(&me, &paper, b"%PDF a paper", SourceKind::Pdf, "test");
+        let open = |name: String| {
+            let root = base.join(name);
+            fs::create_dir(&root).unwrap();
+            let lib = Library::open(&root).unwrap();
+            take_log();
+            (root, lib)
+        };
+        let (_, lib) = open("count".into());
+        save(&lib).unwrap();
+        let calls = take_log().len();
+        assert!(calls >= 4);
+        for at in 0..calls {
+            let (root, lib) = open(at.to_string());
+            let err = failing_sync(at, || save(&lib)).unwrap_err();
+            assert!(matches!(err, LibraryError::Io { .. }), "{at}: {err:?}");
+            take_log();
+            let saved = save(&lib).unwrap();
+            let log = take_log();
+            let folder = root.join("papers").join(&saved.folder);
+            for (dir, name) in [
+                (root.join("papers"), saved.folder.clone()),
+                (folder.clone(), saved.name.clone()),
+                (folder.clone(), "records".to_owned()),
+                (folder.join("records"), me.record_file_name()),
+            ] {
+                assert!(synced_holding(&log, &dir, &name), "{at}: {name}");
+            }
+        }
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// The file is published before its directory is synced; the error must
+    /// say which step failed, or a caller cannot tell a lost write from an
+    /// unsynced one.
+    #[test]
+    fn a_failed_sync_names_the_file_and_the_sync() {
+        let dir = scratch("syncname");
+        let file = dir.join("a.pdf");
+        take_log();
+        match failing_sync(0, || sync_name(&file)) {
+            Err(LibraryError::Io { path, reason }) => {
+                assert_eq!(path, file);
+                assert!(reason.starts_with("syncing its folder: "), "{reason}");
+            }
+            other => panic!("{other:?}"),
+        }
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A fresh empty directory under the system temp dir, removed by the
@@ -504,6 +586,27 @@ mod tests {
         let sub = dir.join("p");
         assert!(create_dir_new(&sub).unwrap());
         assert!(!create_dir_new(&sub).unwrap());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// #768: one found there may be another writer's, not yet synced into its
+    /// parent.
+    #[test]
+    fn create_dir_new_syncs_a_directory_found_there() {
+        let dir = scratch("mkfound");
+        fs::create_dir(dir.join("p")).unwrap();
+        take_log();
+        assert!(!create_dir_new(&dir.join("p")).unwrap());
+        assert!(synced_holding(&take_log(), &dir, "p"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn create_dir_new_refuses_a_file_in_the_way() {
+        let dir = scratch("mkfile");
+        fs::write(dir.join("p"), b"").unwrap();
+        let err = create_dir_new(&dir.join("p")).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -28,9 +28,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use unicode_normalization::UnicodeNormalization;
 
 use super::files::{
-    component, create_dir_all, create_dir_new, exists, has_placeholder, io_error, is_dir,
-    list_names, read_bytes, remove_dir_all, remove_file, rename, sha256_hex, write_once,
-    write_replace,
+    component, create_dir_new, exists, has_placeholder, io_error, is_dir, list_names, read_bytes,
+    remove_dir_all, remove_file, rename, sha256_hex, sync_name, write_once, write_replace,
 };
 use super::scan::{scan_folder, Problem};
 use super::{
@@ -259,11 +258,13 @@ fn record_text(record: &Record, path: &Path) -> Result<String, LibraryError> {
     }
 }
 
-/// Write `record` over `path` unless that is what is there already.
+/// Write `record` over `path` unless that is what is there already, which is
+/// synced instead.
 fn store_record(path: &Path, record: &Record) -> Result<(), LibraryError> {
     let text = record_text(record, path)?;
     if read_bytes(path).is_ok_and(|old| old == text.as_bytes()) {
-        return Ok(());
+        // A failed sync may have left it so; a retry must not return without one.
+        return sync_name(path);
     }
     write_replace(path, text.as_bytes())
 }
@@ -318,8 +319,10 @@ fn note_use(
     paper: &PaperInfo,
     entry: FileEntry,
 ) -> Result<(), LibraryError> {
+    // The folder may be another writer's, not yet synced into `papers/`.
+    sync_name(dir)?;
     let records_dir = dir.join(RECORDS_DIR);
-    create_dir_all(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
+    create_dir_new(&records_dir).map_err(|e| io_error(&records_dir, &e, true))?;
     let path = records_dir.join(component(&who.record_file_name())?);
     let _guard = record_guard();
     let record = match load_own_record(&path, folder)? {

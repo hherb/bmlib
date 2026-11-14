@@ -30,8 +30,8 @@ My Papers/
 - **One folder per paper**, named `year author – title (ID)` by `folder_name`
   (at most 150 UTF-8 bytes, valid on macOS, Windows and Linux).
 - **Source files are write-once.** The name carries the start of the content's
-  SHA-256, so the same bytes are the same file, and a file is never rewritten.
-  Kinds: `pdf`, `jats`, `html`, `markdown`, `text` (`SourceKind`).
+  SHA-256, so the same bytes of one kind are the same file, and a file is never
+  rewritten. Kinds: `pdf`, `jats`, `html`, `markdown`, `text` (`SourceKind`).
 - **Each installation writes only its own record**, so two apps never write the
   same file and a sync service has nothing to merge. A record names the
   installation, the paper (identifiers, title, year, first author) and the files
@@ -117,9 +117,10 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   scan reports as `"unrecorded_file"`; saving the same bytes again records
   it.
 - **When `save` returns, the file survives a crash.** Each file, record and
-  folder it makes has its directory synced after it appears (`F_FULLFSYNC` on
-  macOS), so an app may drop its own copy once `save` returns (#768). Not yet
-  on Windows, where a directory cannot be synced this way.
+  folder it makes, or finds already there, has its directory synced after it
+  appears (`F_FULLFSYNC` on macOS), so an app may drop its own copy once `save`
+  returns (#768). Not yet on Windows, where a directory cannot be synced this
+  way.
 - **The same bytes saved as two kinds are two files** (`text-….txt` and
   `markdown-….md`), each its own entry in a record, and `release` drops only
   the kind it is given (#767). Pass the kind to `find_digest` to find the file

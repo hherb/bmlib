@@ -263,9 +263,9 @@ def find_digest(scan: Scan, sha256: str, kind: SourceKind | None = None) -> File
     """A file on disk named for *sha256* (``{kind}-{first 12 hex}.{ext}``), or ``None``.
 
     The same bytes saved as two kinds are two files, so pass *kind* to find the one stored as
-    that kind; without it, the first kind present is returned, in :class:`SourceKind`'s
-    order. Only the name is looked at: :func:`read_file` checks the full digest. A digest
-    that is not 64 lowercase hex digits finds nothing.
+    that kind; without it, the first folder holding any kind wins, and in it the first kind
+    in :class:`SourceKind`'s order. Only the name is looked at: :func:`read_file` checks the
+    full digest. A digest that is not 64 lowercase hex digits finds nothing.
     """
     if not _is_digest(sha256):
         return None

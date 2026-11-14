@@ -123,9 +123,15 @@ All notable changes to bmlib are documented here. The format is based on
   after every name it makes (`F_FULLFSYNC` on macOS, `fsync` elsewhere, nothing
   yet on Windows). So when `save` returns, the file and its record survive a
   crash, and an app may drop its own copy. This costs about 26 ms per save of a
-  new paper on a Mac. New cases: `library_cases.json`'s *the same bytes as two
-  kinds* (records) and *the same bytes kept as two kinds* (`save_scenarios`,
-  with a `find_digest` step). The reasoning is in `docs/DECISIONS.md`.
+  new paper on a Mac. A folder, `records/` or record found already there is
+  synced too, so a retry after a failed sync cannot return without it; a
+  failed sync fails the save and says `syncing its folder`.
+  `LibraryStore.note_use_in` matches the kind as well as the digest. New
+  cases: `library_cases.json`'s *the same bytes as two kinds* (records), and
+  *the same bytes kept as two kinds* (with a `find_digest` step), *the same
+  bytes as another kind go to the folder holding them* and *two PDFs of one
+  paper, one released* (`save_scenarios`). The reasoning is in
+  `docs/DECISIONS.md`.
 
 - **The shared paper library through bmlib-ffi** (Rust only; step 1c of the
   shared paper library). `Library` and `LibraryScan` objects, owned copies of

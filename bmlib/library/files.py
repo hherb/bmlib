@@ -219,7 +219,7 @@ def write_once(path: Path, data: bytes, sha256: str) -> Written:
         raise io_error(path, e, write=False) from e
     else:
         if sha256_hex(existing) == sha256:
-            _sync_name(path)  # another writer's, perhaps not yet synced
+            sync_name(path)  # another writer's, perhaps not yet synced
             return Written.ALREADY_THERE
         raise FileClash(str(path.parent), path.name)
     _publish(path, data)
@@ -251,12 +251,16 @@ def sync_dir(directory: Path) -> None:
         os.close(fd)
 
 
-def _sync_name(path: Path) -> None:
-    """Sync *path*'s directory (:func:`sync_dir`), a failure reported against *path*."""
+def sync_name(path: Path) -> None:
+    """Sync *path*'s directory (:func:`sync_dir`), a failure reported against *path*.
+
+    A file system that refuses the sync (``ENOTSUP``, ``EINVAL``) fails the call: the save is
+    not durable there, and saying so beats a save that may vanish (DECISIONS, #768).
+    """
     try:
         sync_dir(path.parent)
     except OSError as e:
-        raise io_error(path, e, write=True) from e
+        raise Io(path, f"syncing its folder: {e}") from e
 
 
 def _publish(path: Path, data: bytes) -> None:
@@ -265,31 +269,24 @@ def _publish(path: Path, data: bytes) -> None:
         atomic_write(path, data)
     except OSError as e:
         raise io_error(path, e, write=True) from e
-    _sync_name(path)
+    sync_name(path)
 
 
 def create_dir_new(path: Path) -> bool:
     """Make the directory *path* (its parent must exist); ``False`` if it exists.
 
-    A directory made is synced into its parent (:func:`sync_dir`).
+    Either way the directory is synced into its parent (:func:`sync_dir`): one found there may
+    be another writer's, not yet synced. Anything else at *path* raises ``FileExistsError``.
     """
     try:
         path.mkdir()
+        made = True
     except FileExistsError:
-        return False
+        if not path.is_dir():
+            raise
+        made = False
     sync_dir(path.parent)
-    return True
-
-
-def create_dir_all(path: Path) -> None:
-    """Make the directory *path* and any missing parents; fine when it exists.
-
-    Each directory made is synced into its parent, as by :func:`create_dir_new`.
-    """
-    if path.is_dir():
-        return
-    create_dir_all(path.parent)
-    create_dir_new(path)
+    return made
 
 
 def rename(source: Path, target: Path) -> None:

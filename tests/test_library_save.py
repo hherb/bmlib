@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import errno
 import logging
 import multiprocessing
 import os
@@ -31,6 +32,7 @@ from bmlib.library import (
     FileClash,
     FileRef,
     Installation,
+    Io,
     Library,
     Missing,
     NewerRecord,
@@ -371,3 +373,69 @@ def test_every_name_a_save_makes_is_synced_into_its_directory(
     synced.clear()
     lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "test")
     assert any(d == folder and ref.name in seen for d, seen in synced)
+
+
+def _sync_spy(
+    monkeypatch: pytest.MonkeyPatch, fail_at: int | None = None
+) -> list[tuple[Path, set[str]]]:
+    """Log each directory synced with its names then; the call numbered *fail_at* raises EIO."""
+    real = files.sync_dir
+    synced: list[tuple[Path, set[str]]] = []
+
+    def spy(directory: Path) -> None:
+        synced.append((directory, set(os.listdir(directory))))
+        if len(synced) - 1 == fail_at:
+            raise OSError(errno.EIO, "injected")
+        real(directory)
+
+    monkeypatch.setattr(files, "sync_dir", spy)
+    return synced
+
+
+def test_a_failed_sync_fails_the_save_and_a_retry_syncs_what_it_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #768: the caller keeps its copy unless save returns, so every sync a save makes must fail
+    # it when it fails. A retry then finds the folder, records/ and the record already there,
+    # and must still sync each into its directory before it returns.
+    (tmp_path / "count").mkdir()
+    lib = open_library(tmp_path / "count")
+    synced = _sync_spy(monkeypatch)
+    lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+    calls = len(synced)
+    assert calls >= 4
+    for at in range(calls):
+        (tmp_path / str(at)).mkdir()
+        lib = open_library(tmp_path / str(at))
+        _sync_spy(monkeypatch, fail_at=at)
+        with pytest.raises(Io):
+            lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+        synced = _sync_spy(monkeypatch)
+        ref = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+        folder = lib.root / "papers" / ref.folder
+        made = {(lib.root / "papers", ref.folder), (folder, ref.name), (folder, "records")}
+        made.add((folder / "records", _ME.record_file_name()))
+        for directory, name in made:
+            assert any(d == directory and name in seen for d, seen in synced), (at, name)
+
+
+def test_a_failed_sync_names_the_file_and_the_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The file is published before its directory is synced; the error must say which step
+    # failed, or a caller cannot tell a lost write from an unsynced one.
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    real = files.sync_dir
+
+    def refuse(directory: Path) -> None:
+        if directory.parent.name == "papers" and not (directory / "records").exists():
+            raise OSError(errno.ENOTSUP, "Operation not supported")
+        real(directory)
+
+    monkeypatch.setattr(files, "sync_dir", refuse)
+    with pytest.raises(Io) as caught:
+        lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+    assert caught.value.path.parent.parent.name == "papers"
+    assert caught.value.reason.startswith("syncing its folder: ")
+    assert "Operation not supported" in caught.value.reason
