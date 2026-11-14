@@ -1,14 +1,14 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-11-14 (**the shared paper library: 1a and 1b merged, 1c
-on `feat/library-ffi` — read *This session* first**). Merged since the last
+in PR #764 — read *This session* first**). Merged since the last
 update: #763 (1b), #760 (#341, the `*-details` sources), #757 (#753), #754 (the library,
 1a), #752 (#750, #751). Before it: #749 (#748), #747 (#746), #745 (#744), #740
 (#656), #741 (#739), #742 and #743. **0.13.0 is on PyPI** (tag `v0.13.0` on
 `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
 the same commit._
 
-## This session: the shared paper library (1a merged as #754, 1b as #763; 1c on `feat/library-ffi`)
+## This session: the shared paper library (1a merged as #754, 1b as #763; 1c in PR #764)
 
 StudyAnalyzer's design
 (`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
@@ -53,7 +53,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   records list (an identity check on the records). And a library holding only a
   PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
   have; it ends when a JATS is kept in the library.
-- **1c, built (`feat/library-ffi`, PR pending)**: the library through
+- **1c, built (`feat/library-ffi`, PR #764)**: the library through
   bmlib-ffi (`rust/bmlib-ffi/src/library.rs`): `Library` and `LibraryScan`
   objects, owned records, `LibraryError` with bmlib's wording as its exported
   `Display`, `paper_ids_canonical`, `installation_new`. Everything coming in
