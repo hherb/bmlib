@@ -147,6 +147,12 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   papers. When an installation's own record is a placeholder, `save` and
   `release` fail with `NotDownloaded` and write nothing: a fresh record would
   replace the real one when it came back, losing its entries.
+- **Evicted (dataless) files.** macOS 14 and later, and iOS, evict a file
+  under its real name instead (iCloud Drive, and Dropbox or OneDrive through
+  File Provider). Every read here runs with the thread's materialisation of
+  such files turned off, so it fails at once rather than downloading: the
+  file reads as `NotDownloaded`, and an evicted record as a placeholder record
+  does. A read never waits for the network (#769).
 - **Concurrency.** Updates to a record are serialised within one process, so
   threads of one installation do not lose each other's entries. Two *processes*
   of one installation are out of scope. Different installations never share a
@@ -169,7 +175,7 @@ versions, so some will be real).
 | `"unreadable_record"` | A record file is not valid; it is not used |
 | `"unreadable_folder"` | A paper folder, or its `records/`, cannot be listed |
 | `"newer_record"` | A record written by a newer layout version; update the app |
-| `"record_not_downloaded"` | A record present only as an iCloud placeholder; its installation's uses are unknown until it is downloaded |
+| `"record_not_downloaded"` | A record present only as an iCloud placeholder or evicted (dataless); its installation's uses are unknown until it is downloaded |
 | `"misnamed_record"` | A valid record whose file name is not its installation's (a "copy of" by a sync conflict) |
 | `"conflicting_ids"` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `"unrecorded_file"` | A source file no record lists (a crash, or a record lost) |
@@ -191,7 +197,7 @@ named in the Rust page:
 | `BadInstallation` | An app, id or label is not acceptable | A programming error, or an id from outside |
 | `BadName` | A folder or file name given to the library is not one plain path component (or a `FileRef` name that is not the library's name for those bytes) | A programming error, or a name from outside; nothing was touched |
 | `Missing` | The named file or folder is not there | "That file was removed"; offer to fetch it again |
-| `NotDownloaded` | Only an iCloud placeholder is present | "Download the file first" (open it in Finder) |
+| `NotDownloaded` | Only an iCloud placeholder is present, or the file is evicted (dataless) | "Download the file first" (open it in Finder) |
 | `DigestMismatch` | The bytes differ from the recorded digest | "The file is damaged or changed"; never use its contents |
 | `FileClash` | A file of that name holds other bytes | A damaged file; nothing was written |
 | `NewerRecord` | A record, or every record of the folder the paper belongs in, is from a newer layout | "Update this app" |

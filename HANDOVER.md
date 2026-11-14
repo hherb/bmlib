@@ -1,13 +1,34 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**#767 and #768, the library's kind-aware lookup and
-durable save, PR #771 — read *This session* first**). Merged since the last
+_Last updated: 2026-11-14 (**#769, dataless files, on `feat/library-dataless-769`,
+stacked on PR #771 (#767, #768) — read *This session* and the one after it
+first**). Merged since the last
 update: #764 (the library, 1c), #763 (1b), #760 (#341, the `*-details`
 sources), #757 (#753), #754 (the library, 1a), #752 (#750, #751).
 **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
 **the Rust crate 0.4.0 on crates.io** from the same commit._
 
-## This session: a file found by its kind, and a durable save (#767, #768; PR #771)
+## This session: an evicted file is never downloaded to be read (#769)
+
+Branch `feat/library-dataless-769`, stacked on PR #771 (merge that first). The
+maintainer chose option 3 of #769's four. Both languages' `files.read_bytes`
+turn the calling thread's materialisation of dataless files off
+(`setiopolicy_np`, thread scope), read, and restore the previous policy;
+`is_not_downloaded(err)` reads the `EDEADLK` that results. Every site that
+already mapped an `.icloud` placeholder maps it too: `read`, `save` and
+`release` give `NotDownloaded`, a scan `record_not_downloaded`. `io_error`
+gives `NotDownloaded` (the full folder) anywhere else, such as the marker and
+`write_once`, which now reads through `read_bytes`. If the policy cannot be
+set, a warning is logged and the read goes ahead as before. Tested:
+- unit tests for the policy restore and the mapping,
+- Python call-site tests that fake the `EDEADLK`,
+- an opt-in device test in each language (`BMLIB_ICLOUD_DIR`, `brctl evict`),
+  which passed on macOS 27.2 with iCloud Drive.
+
+There is no fixture case, because a fixture cannot hold a dataless file. Not
+measured: a dataless *folder*, whose listing may still download it.
+
+## Before: a file found by its kind, and a durable save (#767, #768; PR #771)
 
 StudyAnalyzer's step 2 filed both; each was worked around there with a
 `shortcut:` that can go once this is pinned. Both languages and bmlib-ffi.
@@ -129,7 +150,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   passed into `Library`.
 - **Open library issues**: #766 (`save` beside another paper's JATS; a choice
   between a typed refusal and a public check), #769 (macOS dataless files,
-  measured on a device; four options, the maintainer's pick), #761 (symlinks
+  closed by this session's branch), #761 (symlinks
   and special files), #765 (the FFI runs no `save_scenarios`), #755 (1a's
   review follow-ups).
 - **Left open on purpose**: separate processes of one installation writing one
@@ -313,8 +334,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open** (124 once #767 and #768 are closed by this branch's PR): the
-library's #761, #765, #766, #769 and #755 (above), **#759** (PR #760's:
+**126 open** (123 once PR #771 closes #767 and #768 and this branch #769): the
+library's #761, #765, #766 and #755 (#769 closed by its branch) (above), **#759** (PR #760's:
 measure the `/details` settle period) and **#758** (#753's review
 residual, `RecursionError`) among them (#734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays

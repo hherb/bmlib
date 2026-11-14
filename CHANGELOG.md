@@ -52,6 +52,24 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The shared paper library never downloads an evicted file to read it**
+  (#769; both languages). macOS 14 and later, and iOS, evict a file from
+  iCloud Drive (and Dropbox or OneDrive through File Provider) to a *dataless*
+  file under its real name, not an `.icloud` placeholder, and a plain read
+  blocks until it is downloaded, perhaps forever offline. Every library read
+  now turns the calling thread's materialisation off
+  (`setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD,
+  OFF)`, the previous policy restored after) and maps the `EDEADLK` it fails
+  with to what a placeholder gives: `NotDownloaded` from `read`, `save` and
+  `release`, `record_not_downloaded` (`RecordNotDownloaded`) in a scan. A
+  dataless file met elsewhere (the marker, `write_once`'s comparison) is
+  `NotDownloaded` naming its full folder. On a device (macOS 27.2, iCloud
+  Drive, evicted by `brctl evict`) the read fails at once and the file stays
+  evicted; the opt-in tests `tests/test_library_dataless.py` and
+  `rust/bmlib/tests/library_dataless.rs` repeat that with `BMLIB_ICLOUD_DIR`
+  set. If the policy cannot be set, a warning is logged and the read goes
+  ahead as before.
+
 - **`FullTextService` reads its three remaining JSON bodies as the Rust port
   does** (#753). The Europe PMC search, NCBI's ID Converter and Unpaywall were
   decoded by httpx's `json()`, which accepts a UTF-8 BOM, `NaN`/`Infinity`, a

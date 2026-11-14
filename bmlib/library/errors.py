@@ -93,7 +93,7 @@ class Missing(LibraryError):
 
 
 class NotDownloaded(LibraryError):
-    """A file exists only as an online placeholder, not yet downloaded."""
+    """A file exists only as an online placeholder or evicted (dataless), not yet downloaded."""
 
     def __init__(self, folder: str, name: str) -> None:
         self.folder, self.name = folder, name

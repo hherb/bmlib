@@ -35,6 +35,7 @@ from bmlib.library.files import (
     has_placeholder,
     io_error,
     is_dir,
+    is_not_downloaded,
     listing,
     read_bytes,
     sha256_hex,
@@ -88,7 +89,7 @@ class Problem:
     - ``unreadable_folder`` (``folder``, ``reason``): it or its ``records/`` cannot be listed;
     - ``newer_record`` (``folder``, ``file``, ``version``);
     - ``record_not_downloaded`` (``folder``, ``file``): the record is only an iCloud
-      placeholder, so its installation's uses are unknown;
+      placeholder or evicted (dataless), so its installation's uses are unknown;
     - ``leftover_temp`` (``folder``, ``name``, as ``records/<name>`` when in ``records/``): a
       temporary of ``atomic_write`` from a write in flight or one a crash interrupted; it is
       left alone, never deleted;
@@ -137,7 +138,11 @@ def _read_record(path: Path, folder: str, file: str) -> Record | Problem:
         if p.kind == "newer":
             return Problem("newer_record", folder=folder, file=file, version=p.version)
         return Problem("unreadable_record", folder=folder, file=file, reason=p.reason)
-    except (OSError, UnicodeDecodeError) as e:
+    except OSError as e:
+        if is_not_downloaded(e):
+            return Problem("record_not_downloaded", folder=folder, file=file)
+        return Problem("unreadable_record", folder=folder, file=file, reason=str(e))
+    except UnicodeDecodeError as e:
         return Problem("unreadable_record", folder=folder, file=file, reason=str(e))
 
 
@@ -237,6 +242,8 @@ def read_file(root: Path, file: FileRef) -> bytes:
             raise NotDownloaded(file.folder, file.name) from e
         raise Missing(file.folder, file.name) from e
     except OSError as e:
+        if is_not_downloaded(e):
+            raise NotDownloaded(file.folder, file.name) from e
         raise io_error(path, e, write=False) from e
     found = sha256_hex(data)
     if found != file.sha256:

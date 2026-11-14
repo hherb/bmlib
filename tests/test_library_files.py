@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import sys
 from collections.abc import Callable
@@ -195,3 +196,40 @@ def test_sync_dir_is_a_no_op_on_windows(tmp_path: Path, monkeypatch: pytest.Monk
     with mock.patch("os.open") as opened:
         sync_dir(tmp_path)
     opened.assert_not_called()
+
+
+_APPLE = sys.platform in ("darwin", "ios")
+
+
+@pytest.mark.skipif(not _APPLE, reason="setiopolicy_np is Apple's")
+def test_a_read_turns_materialisation_off_and_back(tmp_path: Path) -> None:
+    """#769: a read turns materialisation off on its own thread only while it runs."""
+    from bmlib.library import files
+
+    def current() -> int:
+        return files._libc.getiopolicy_np(files._IOPOL_TYPE_DATALESS, files._IOPOL_SCOPE_THREAD)
+
+    path = tmp_path / "x.pdf"
+    path.write_bytes(b"one")
+    before = current()
+    with files._materialisation_off(path):
+        assert current() == files._IOPOL_DATALESS_OFF
+    assert current() == before
+    assert files.read_bytes(path) == b"one"
+    assert current() == before
+
+
+def test_edeadlk_reads_as_not_downloaded_on_apple_only() -> None:
+    """#769: a dataless read's EDEADLK is "not downloaded", and io_error says so."""
+    from bmlib.library import Io, NotDownloaded
+    from bmlib.library.files import io_error, is_not_downloaded
+
+    err = OSError(errno.EDEADLK, "Resource deadlock avoided")
+    assert is_not_downloaded(err) == _APPLE
+    assert not is_not_downloaded(FileNotFoundError(errno.ENOENT, "gone"))
+    mapped = io_error(Path("lib/.bmlib-library.json"), err, write=False)
+    if _APPLE:
+        assert isinstance(mapped, NotDownloaded)
+        assert (mapped.folder, mapped.name) == ("lib", ".bmlib-library.json")
+    else:
+        assert isinstance(mapped, Io)

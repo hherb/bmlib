@@ -46,6 +46,7 @@ from bmlib.library.files import (
     has_placeholder,
     io_error,
     is_dir,
+    is_not_downloaded,
     list_names,
     read_bytes,
     remove_dir_all,
@@ -176,6 +177,8 @@ def _load_own_record(path: Path, folder: str) -> Record | None:
         _check_not_evicted(path, folder)
         return None
     except OSError as e:
+        if is_not_downloaded(e):
+            raise NotDownloaded(folder, path.name) from e
         raise io_error(path, e, write=False) from e
     try:
         return parse_record(data.decode("utf-8"))
@@ -438,7 +441,11 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
         except FileNotFoundError:
             _check_not_evicted(path, file.folder)
             return
-        except (OSError, UnicodeDecodeError) as e:
+        except OSError as e:
+            if is_not_downloaded(e):
+                raise NotDownloaded(file.folder, path.name) from e
+            raise Io(path, f"the record is not readable: {e}") from e
+        except UnicodeDecodeError as e:
             raise Io(path, f"the record is not readable: {e}") from e
         try:
             record = parse_record(text)
