@@ -7703,6 +7703,13 @@ class TestJsonBodiesAreReadAsSerdeJsonReadsThem:
             b'{"x": ' + b"[" * 200 + b"]" * 200 + b', "resultList": {"result": []}, "records": []}',
             id="deep",
         ),
+        pytest.param(  # past the interpreter's stack, not only serde_json's limit (#758)
+            b'{"x": '
+            + b"[" * 100_000
+            + b"]" * 100_000
+            + b', "resultList": {"result": []}, "records": []}',
+            id="past-the-stack",
+        ),
     ]
 
     @staticmethod

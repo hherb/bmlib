@@ -402,8 +402,8 @@ pub enum LibraryProblem {
         /// Its version.
         version: u32,
     },
-    /// A record present only as an iCloud placeholder: its installation's
-    /// uses are unknown until it is downloaded.
+    /// A record present only as an iCloud placeholder or evicted (dataless):
+    /// its installation's uses are unknown until it is downloaded.
     RecordNotDownloaded {
         /// The paper's folder.
         folder: String,
@@ -553,7 +553,8 @@ pub enum LibraryError {
         /// The file.
         name: String,
     },
-    /// Only an iCloud placeholder is here: the file is not downloaded yet.
+    /// Only an iCloud placeholder is here, or the file is evicted (dataless):
+    /// it is not downloaded yet.
     NotDownloaded {
         /// The paper's folder.
         folder: String,

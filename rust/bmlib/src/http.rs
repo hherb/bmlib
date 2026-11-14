@@ -189,6 +189,8 @@ impl UreqClient {
             ureq::Timeout::SendRequest | ureq::Timeout::SendBody => {
                 (self.timeout_seconds, "sending the request")
             }
+            // A streamed GET's idle limit (`get_with_headers_stream`).
+            ureq::Timeout::PerRead => (self.timeout_seconds, "with nothing received"),
             // `Global` is a GET's only limit; the others are not set here.
             _ => (self.timeout_seconds, "on the whole request"),
         };
@@ -278,6 +280,82 @@ impl HttpClient for UreqClient {
             request = request.header(name, value);
         }
         read_response(self, request.call())
+    }
+
+    /// Every step up to the response headers within `timeout_seconds`, then
+    /// each read of the body within it too (`ureq`'s per-read limit, an idle
+    /// limit): a large body is never cut off for taking long, only for
+    /// stalling.
+    ///
+    /// A success whose body is still encoded (a `Content-Encoding` other than
+    /// `identity` that `ureq` does not decode: anything but gzip) is refused as
+    /// [`FetchError::Malformed`], because the caller checks the bytes against
+    /// a size and digest of the stored object. A gzip body arrives decoded,
+    /// its header removed.
+    fn get_with_headers_stream(
+        &self,
+        url: &str,
+        headers: &BTreeMap<String, String>,
+    ) -> Result<HttpStream, FetchError> {
+        // Every limit here is `timeout_seconds`, so the timeout messages name it.
+        let named = UreqClient {
+            stream_timeout_seconds: self.timeout_seconds,
+            ..self.clone()
+        };
+        let step = Some(std::time::Duration::from_secs(self.timeout_seconds));
+        let agent = ureq::Agent::new_with_config(
+            self.config_with(
+                ureq::Agent::config_builder()
+                    .timeout_resolve(step)
+                    .timeout_connect(step)
+                    .timeout_send_request(step)
+                    .timeout_recv_response(step)
+                    .timeout_per_read(step)
+                    // No redirect is followed: one would carry the signed
+                    // request's other headers (a session token) to a new host
+                    // without its signature. A 3xx is answered as a response.
+                    .max_redirects(0),
+            ),
+        );
+        let mut request = agent.get(url);
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+        let response = match request.call() {
+            Ok(response) => response,
+            // As in `read_response`: unreachable with `http_status_as_error`
+            // off, and the status is still an answer.
+            Err(ureq::Error::StatusCode(code)) => {
+                return Ok(HttpStream {
+                    status: code,
+                    body: Box::new(std::io::empty()),
+                });
+            }
+            Err(other) => return Err(named.transport_error(&other)),
+        };
+        let status = response.status().as_u16();
+        if (200..300).contains(&status) {
+            let encoding = response
+                .headers()
+                .get("content-encoding")
+                .map(|v| String::from_utf8_lossy(v.as_bytes()).trim().to_string());
+            if let Some(encoding) =
+                encoding.filter(|e| !e.is_empty() && !e.eq_ignore_ascii_case("identity"))
+            {
+                return Err(FetchError::Malformed(format!(
+                    "the body is stored with Content-Encoding {encoding:?}, so its bytes \
+                     cannot be checked against what was listed (GET {url})"
+                )));
+            }
+        }
+        Ok(HttpStream {
+            status,
+            // `into_reader` has no size cap, unlike `read_to_vec`.
+            body: Box::new(NamedTimeouts {
+                body: response.into_body().into_reader(),
+                client: named,
+            }),
+        })
     }
 
     fn post_json(

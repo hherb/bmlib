@@ -191,6 +191,10 @@ jobs:
         # (and documented in the doc step, tested in the `pdf` test job), and
         # so is the `keyring` crate's Linux Secret Service store.
         run: cargo clippy --all-targets --features keyring -- -D warnings
+      - name: clippy (meca feature)
+        # Off by default too, so `fulltext::meca` (SigV4, the S3 transport) is
+        # linted only here, documented in the doc step and tested in `pdf`.
+        run: cargo clippy --all-targets --features meca -- -D warnings
       - name: clippy (bmlib without default features)
         # What the mobile apps link. A workspace-wide build cannot see it:
         # resolver 2 unifies bmlib's default features back in for every member,
@@ -217,6 +221,7 @@ jobs:
           cargo doc --no-deps --features html
           cargo doc --no-deps --features pdf
           cargo doc --no-deps --features keyring
+          cargo doc --no-deps --features meca
           cargo doc -p bmlib --no-deps --no-default-features
         env:
           RUSTDOCFLAGS: -D warnings
@@ -235,9 +240,10 @@ jobs:
           # the canonical-text contract runs its HTML cases only with it. `pdf`
           # compiles MuPDF from source (bindgen reads its headers through the
           # runner's libclang), which the cache below then holds. `keyring`
-          # rides too, so `secrets::KeyringVault`'s read mapping is tested.
+          # rides too, so `secrets::KeyringVault`'s read mapping is tested, and
+          # `meca`, so the S3 contract and transport tests run.
           - label: pdf
-            args: "--features pdf,html,keyring"
+            args: "--features pdf,html,keyring,meca"
           # The configuration the mobile apps link (see rust-lint): bmlib
           # without its default features, and bmlib-ffi resolved on its own
           # (bmlib's defaults off), with the HTTP sketch so its tests run too.

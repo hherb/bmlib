@@ -61,7 +61,9 @@ fancy-regex = "0.18"
 # `ureq` is blocking and small, which matches the fetchers' shape — they are a
 # request-per-page walk, not a concurrent fan-out — so no async runtime is
 # dragged in for a loop that never awaits two things at once.
-ureq = { version = "3", optional = true }
+# 3.5 for `timeout_per_read`: a streamed download (`get_with_headers_stream`)
+# gives up on a connection that stalls, not on a large body that takes long.
+ureq = { version = "3.5", optional = true }
 # The PDF text backend: MuPDF, the engine Python reaches through PyMuPDF, so a
 # PDF yields the same lines and spans in both languages (#590 — PDFium, used
 # until then, reported every line-end hyphen as U+0002 and duplicated characters
@@ -115,6 +117,8 @@ sha2 = "0.10"
 # an md5 and nothing stronger. A checksum against a damaged transfer, not a
 # security check. Its own crate, as `sha1` and `sha2` are, and of their family.
 md-5 = "0.10"
+# SigV4's HMAC-SHA256 (`fulltext::meca`), the same RustCrypto family as `sha2`.
+hmac = { version = "0.12", optional = true }
 keyring = { version = "4.2", optional = true }
 
 [target.'cfg(windows)'.dependencies]
@@ -144,6 +148,9 @@ pdf = ["dep:mupdf", "dep:mupdf-sys"]
 # HTML to canonical text. Off by default, as Python's `html` extra is, so a build
 # that never reads a web page does not compile an HTML parser.
 html = ["dep:scraper", "dep:ego-tree", "dep:html5ever"]
+# medRxiv / bioRxiv MECA archives over requester-pays S3 (`fulltext::meca`):
+# SigV4 signing and S3's replies. Off by default, as Python's `meca` extra is.
+meca = ["dep:hmac"]
 # The PostgreSQL backend. Off by default. `Dialect::Postgres`, the placeholder
 # rewriter and the PostgreSQL DDL are always present; this adds the driver that
 # can actually run a statement against a server.
@@ -198,6 +205,14 @@ required-features = ["sqlite"]
 [[test]]
 name = "http"
 required-features = ["http-ureq"]
+
+[[test]]
+name = "meca_s3"
+required-features = ["meca"]
+
+[[test]]
+name = "meca_s3_contract"
+required-features = ["meca"]
 
 [[test]]
 name = "stream_give_up_contract"

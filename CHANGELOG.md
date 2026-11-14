@@ -8,6 +8,16 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **JSON nested past Python's stack is a decode error** (#758, Python only).
+  `strict_json_loads` refused nesting past 127 levels only after the stdlib
+  decoder had built the value, so a body nested deep enough to exhaust the
+  stack (measured at 100,000) raised `RecursionError` from the decoder. Full
+  text recorded `RecursionError` faults where Rust records `JSONDecodeError`,
+  and a library record or marker that deep crashed a scan rather than reading
+  as unreadable. It is now a `JSONDecodeError` recorded as a refusal (`nested
+  too deeply to decode`), so `parse_json` reports it without running the
+  repair stages, as it already did for a complete reply nested 128 deep. The
+  `RecursionError` catches this made dead are removed.
 - **Rust `pdf` builds on Windows** (Rust only). `mupdf::Document::open` takes
   a `&str` on Windows and a `&Path` elsewhere (mupdf 0.8), so the
   `mupdf_backend` did not compile on Windows; found by BMLibrarian's Windows
@@ -59,6 +69,24 @@ All notable changes to bmlib are documented here. The format is based on
   `MAX_HTML_BYTES` now converts unless it holds more than `HTML_MAX_TAGS` `<`.
 
 ### Fixed
+
+- **The shared paper library never downloads an evicted file to read it**
+  (#769; both languages). macOS 14 and later, and iOS, evict a file from
+  iCloud Drive (and Dropbox or OneDrive through File Provider) to a *dataless*
+  file under its real name, not an `.icloud` placeholder, and a plain read
+  blocks until it is downloaded, perhaps forever offline. Every library read
+  now turns the calling thread's materialisation off
+  (`setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD,
+  OFF)`, the previous policy restored after) and maps the `EDEADLK` it fails
+  with to what a placeholder gives: `NotDownloaded` from `read`, `save` and
+  `release`, `record_not_downloaded` (`RecordNotDownloaded`) in a scan. A
+  dataless file met elsewhere (the marker, `write_once`'s comparison) is
+  `NotDownloaded` naming its full folder. On a device (macOS 27.2, iCloud
+  Drive, evicted by `brctl evict`) the read fails at once and the file stays
+  evicted; the opt-in tests `tests/test_library_dataless.py` and
+  `rust/bmlib/tests/library_dataless.rs` repeat that with `BMLIB_ICLOUD_DIR`
+  set. If the policy cannot be set, a warning is logged and the read goes
+  ahead as before.
 
 - **`FullTextService` reads its three remaining JSON bodies as the Rust port
   does** (#753). The Europe PMC search, NCBI's ID Converter and Unpaywall were
@@ -117,6 +145,23 @@ All notable changes to bmlib are documented here. The format is based on
 - **A caller's `pdf` source no longer ends the full-text chain, and a JATS result carries it** (#739), in Python and the Rust port alike. Tier 0 returned a `pdf` entry at once, downloaded or not, so the Europe PMC and PMC tiers never ran: JATS, the better text to process, was never sought once a PDF was found, and a failed download hid it outright. Seen in StudyAnalyzer with DOI 10.3390/ijms262110631: mdpi.com answered the PDF link OpenAlex gives with HTTP 403, and the user was told to download it by hand while Europe PMC serves the article's full JATS (PMC12609458). The PDF is now saved and the JATS tiers still run. JATS they find is returned with the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`, so an app can process the JATS and show the PDF. A saved PDF with no JATS is returned before Tiers 1d and 2, which would only fetch another, and a failed one only once Tiers 1a to 2 have found nothing, ahead of Tier 3's link: a Tier 1d or Unpaywall PDF that also failed gives way to it rather than replacing the caller's URL and cause, and the *No full text found* WARNING names the cause (#67). A cached JATS hit now carries a PDF cached beside it as `file_path`; one that cannot be opened is reported, moved aside so the warning is not repeated on every lookup, and the hit served without it.
 
 ### Added
+
+- **`bmlib.fulltext.meca`: MECA bulk archives over requester-pays S3** (both
+  languages; Rust feature `meca`, Python extra `meca`). medRxiv's and
+  bioRxiv's MECA buckets can be read with the caller's own AWS key: `sigv4`
+  signs S3 GETs (held to AWS's three published S3 examples), `s3.list_objects`
+  reads one ListObjectsV2 page (a malformed object fails the page; nothing is
+  skipped) and `s3.download_object` streams one object to a temporary file and
+  publishes it only when its size and single-part ETag match the listing.
+  Failures are an `S3Error` whose `kind` and plain-language `reason()` say
+  what to do (an `AccessDenied` names the IAM permissions needed). No redirect
+  is followed (it would carry the session token to another host). Rust's
+  `HttpClient` gains `get_with_headers_stream` (the default refuses;
+  `UreqClient` streams with a per-read limit and no redirects, so ureq is now
+  `>=3.5`, and refuses a success whose body it leaves encoded). A size or
+  ETag mismatch is not retryable: the same request would pay for the same
+  bytes. Reading a `.meca` package is not part of this yet. Contracts:
+  `tests/fixtures/s3_sigv4.json`, `tests/fixtures/s3_responses.json`.
 
 - **The shared paper library: a file is found by its kind, and a save is
   durable when it returns** (#767, #768; both languages and bmlib-ffi;

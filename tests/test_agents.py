@@ -101,8 +101,9 @@ class TestParseJson:
 
     def test_deeply_nested_text_raises_valueerror_not_recursionerror(self):
         # json.loads() descends recursively, so a repetition-looping model
-        # blows the stack.  The documented contract is ValueError.
-        with pytest.raises(ValueError, match="Could not parse JSON"):
+        # blows the stack.  The documented contract is ValueError, and the
+        # depth is refused as serde_json's limit is, before any repair (#758).
+        with pytest.raises(ValueError, match=r"\(nested too deeply to decode\)"):
             BaseAgent.parse_json('{"j": ' * 20000)
 
     def test_message_helpers(self):

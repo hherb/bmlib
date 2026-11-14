@@ -1,13 +1,55 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-14 (**#767 and #768, the library's kind-aware lookup and
-durable save, PR #771 — read *This session* first**). Merged since the last
+_Last updated: 2026-11-14 (**#769, dataless files, on `feat/library-dataless-769`,
+stacked on PR #771 (#767, #768) — read *This session* and the one after it
+first**). Merged since the last
 update: #764 (the library, 1c), #763 (1b), #760 (#341, the `*-details`
 sources), #757 (#753), #754 (the library, 1a), #752 (#750, #751).
 **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
 **the Rust crate 0.4.0 on crates.io** from the same commit._
 
-## This session: a file found by its kind, and a durable save (#767, #768; PR #771)
+## Also open: MECA over requester-pays S3 (PR #775, `feat/meca-s3`)
+
+`bmlib.fulltext.meca` / `bmlib::fulltext::meca` (feature `meca`): SigV4,
+ListObjectsV2 and the verified download. No `.meca` package is read yet,
+because the owner's IAM user gets `AccessDenied` on both buckets. Changed by
+the pre-merge review:
+- A size or ETag mismatch is **not retryable**: the same request would pay
+  for the same bytes. The reason says to list again.
+- A 5xx with an unknown code, 502/504 and `RequestTimeout` are `RETRY_LATER`.
+- A listing field holding markup (a comment, a processing instruction, an
+  element) is refused in both ports, because they used to read it
+  differently.
+- `UreqClient`'s streaming GET refuses a body it leaves encoded. A gzip
+  object still fails Rust's size check (`shortcut:` in `s3.rs`).
+- A request bmlib refuses to sign is Rust's own `InvalidRequest` kind
+  (Python raises `ValueError`).
+
+Deferred to #776: checking the response headers against the listing before
+the body is read, permanent transport errors marked retryable, and recording
+a refusal's detail in the fixture.
+
+## This session: an evicted file is never downloaded to be read (#769)
+
+Branch `feat/library-dataless-769`, stacked on PR #771 (merge that first). The
+maintainer chose option 3 of #769's four. Both languages' `files.read_bytes`
+turn the calling thread's materialisation of dataless files off
+(`setiopolicy_np`, thread scope), read, and restore the previous policy;
+`is_not_downloaded(err)` reads the `EDEADLK` that results. Every site that
+already mapped an `.icloud` placeholder maps it too: `read`, `save` and
+`release` give `NotDownloaded`, a scan `record_not_downloaded`. `io_error`
+gives `NotDownloaded` (the full folder) anywhere else, such as the marker and
+`write_once`, which now reads through `read_bytes`. If the policy cannot be
+set, a warning is logged and the read goes ahead as before. Tested:
+- unit tests for the policy restore and the mapping,
+- Python call-site tests that fake the `EDEADLK`,
+- an opt-in device test in each language (`BMLIB_ICLOUD_DIR`, `brctl evict`),
+  which passed on macOS 27.2 with iCloud Drive.
+
+There is no fixture case, because a fixture cannot hold a dataless file. Not
+measured: a dataless *folder*, whose listing may still download it.
+
+## Before: a file found by its kind, and a durable save (#767, #768; PR #771)
 
 StudyAnalyzer's step 2 filed both; each was worked around there with a
 `shortcut:` that can go once this is pinned. Both languages and bmlib-ffi.
@@ -48,6 +90,40 @@ StudyAnalyzer's step 2 filed both; each was worked around there with a
   of one paper, one released*); 3 + 3 mutants, each caught.
 - **Downstream**: StudyAnalyzer can drop its `stored_name` shortcut (#767) once
   it re-pins; MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
+_Last updated: 2026-11-14 (**#758, JSON nested past Python's stack, PR
+pending — read *This session* first**). Merged since the last update: #771
+(#767, #768), #770 (Rust `pdf` on Windows). **0.13.0 is on PyPI** (tag
+`v0.13.0` on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on
+crates.io** from the same commit._
+
+## This session: JSON nested past Python's stack (#758, branch `fix/strict-json-recursion`)
+
+- `strict_json_loads` now turns the stdlib decoder's `RecursionError` into a
+  `JSONDecodeError` recorded as a refusal (`nested too deeply to decode`).
+  Full text's three decodes record `JSONDecodeError` faults for a body nested
+  100,000 deep, as Rust does; a library record or marker that deep reads as
+  unreadable instead of crashing a scan; `parse_json` reports it as a refusal
+  without the repair stages (its message changed; it was already so for a
+  complete reply 128 deep).
+- The `RecursionError` catches whose try body was `strict_json_loads` alone
+  are removed (`llm/utils.py`, `agents/base.py`, `json_repair.py`,
+  `retraction_status.py`). Catches around repair or `raw_decode` stay: those
+  paths still recurse outside it.
+- Pinned by a depth-100,000 row in `TestOnlyJsonNumbersAreRead`,
+  `TestJsonBodiesAreReadAsSerdeJsonReadsThem` and Rust's
+  `the_three_json_bodies_are_refused_as_python_refuses_them`, plus
+  `test_nesting_past_the_stack_is_a_recorded_refusal` and
+  `test_a_record_nested_past_the_stack_is_unreadable`; all six Python rows
+  fail on the unfixed code.
+
+## Earlier: a file found by its kind, a durable save (#767, #768; PR #771, merged)
+
+`find_digest(scan, sha256, kind)`; a record's entries keyed by digest and
+kind; the library's `files` module syncs the directory after every name it
+makes or finds (`F_FULLFSYNC` on macOS, a no-op on Windows, owed below),
+about 26 ms per new paper's save. Detail: PR #771 and the CHANGELOG.
+**Downstream**: StudyAnalyzer can drop its `stored_name` shortcut once it
+re-pins; MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
 
 ## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
@@ -129,7 +205,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   passed into `Library`.
 - **Open library issues**: #766 (`save` beside another paper's JATS; a choice
   between a typed refusal and a public check), #769 (macOS dataless files,
-  measured on a device; four options, the maintainer's pick), #761 (symlinks
+  closed by this session's branch), #761 (symlinks
   and special files), #765 (the FFI runs no `save_scenarios`), #755 (1a's
   review follow-ups).
 - **Left open on purpose**: separate processes of one installation writing one
@@ -151,8 +227,7 @@ MECA bulk is the expected next request.
 
 - **#753 (PR #757)**: the Europe PMC search, NCBI's ID Converter and Unpaywall
   decode through `strict_json_loads`, so a new full-text test must script
-  `content`, not `json()`. Deep nesting is still `RecursionError` in Python:
-  **#758**.
+  `content`, not `json()`. Deep nesting past the stack: #758, this session.
 - **#750/#751 (PR #752)**: `pmc_open_data_record`; the PDF beside JATS checks
   the record's md5; Tier 1c's third source is the bucket's JATS. The record
   fixtures' md5s are those of `sample_article.xml` and `textless.pdf`: edit
@@ -281,11 +356,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `feat/library-find-kind-durable-save`** (2026-11-14, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,909 passed + 20
-  skipped (10,929 collected); Rust 1,837 (`cargo test --workspace`, clippy
-  clean), `cargo test -p bmlib-ffi --features http-sketch` 35; the Rust oracle
-  44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
+- **Tests on `fix/strict-json-recursion`** (2026-11-14, PostgreSQL 18 DSN on
+  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,916 passed + 20 skipped
+  (10,936 collected); the Rust oracle 44 clean; Rust's changed test passes and
+  `cargo clippy -p bmlib --tests` is clean (the whole Rust suite was last run
+  on #771's branch: 1,837, `bmlib-ffi --features http-sketch` 35). Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
@@ -313,14 +388,20 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open** (124 once #767 and #768 are closed by this branch's PR): the
-library's #761, #765, #766, #769 and #755 (above), **#759** (PR #760's:
+**126 open** (123 once PR #771 closes #767 and #768 and this branch #769): the
+library's #761, #765, #766 and #755 (#769 closed by its branch) (above), **#759** (PR #760's:
 measure the `/details` settle period) and **#758** (#753's review
 residual, `RecursionError`) among them (#734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 are the newest; #577 stays
 open for its point 3, which PR #696 left open)
 (`gh issue list --state open --limit 300 --json number`, 2026-11-14, after
 #764 merged); #651 is
+**124 open** (123 once #758 is closed by this branch's PR): the library's
+#761, #765, #766, #769 and #755 (above) and **#759** (PR #760's: measure the
+`/details` settle period) among them (#734, #733, #731, #730, #726, #725,
+#722, #718, #716 and #694 are the newest; #577 stays open for its point 3,
+which PR #696 left open) (`gh issue list --state open --limit 300 --json
+number`, 2026-11-14, after #771 merged); #651 is
 #632's residual; #556–#734 are not yet sorted into the lists below). **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR

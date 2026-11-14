@@ -620,3 +620,173 @@ fn a_close_delimited_body_given_up_is_not_complete() {
         "{error}"
     );
 }
+
+/// A one-shot server that sends its headers at once, then each of `pieces`
+/// after `pause`, as a large download arrives.
+fn serve_in_pieces(
+    pieces: &'static [&'static str],
+    pause: std::time::Duration,
+) -> (String, std::thread::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let request = read_request(&stream);
+        let length: usize = pieces.iter().map(|p| p.len()).sum();
+        let head =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
+        let _ = stream.write_all(head.as_bytes());
+        let _ = stream.flush();
+        for piece in pieces {
+            std::thread::sleep(pause);
+            let _ = stream.write_all(piece.as_bytes());
+            let _ = stream.flush();
+        }
+        request
+    });
+    (format!("http://127.0.0.1:{port}/path"), handle)
+}
+
+/// A streamed GET sends its headers and may take longer than the timeout as
+/// a whole, so long as no read waits longer than it.
+#[test]
+fn a_streamed_get_may_outlast_the_timeout_while_data_keeps_coming() {
+    let (url, handle) = serve_in_pieces(&["aa", "bb", "cc", "dd"], ms(400));
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 1,
+        ..UreqClient::new()
+    };
+    let headers = BTreeMap::from([("x-amz-request-payer".to_string(), "requester".to_string())]);
+    let stream = client
+        .get_with_headers_stream(&url, &headers)
+        .expect("the headers at once");
+    assert_eq!(stream.status, 200);
+    assert_eq!(read_all(stream).expect("1.6 s of pieces"), "aabbccdd");
+    let request = handle.join().expect("server").to_ascii_lowercase();
+    assert!(request.starts_with("get /path"), "{request}");
+    assert!(
+        request.contains("x-amz-request-payer: requester"),
+        "{request}"
+    );
+}
+
+/// ...and a body that stalls fails on the idle limit, named.
+#[test]
+fn a_streamed_get_that_stalls_times_out_naming_the_idle_limit() {
+    let (url, _handle) = serve_in_pieces(&["aa"], ms(2_500));
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let stream = client
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect("the headers at once");
+    let error = read_all(stream).expect_err("a stall");
+    assert_eq!(error.kind(), std::io::ErrorKind::TimedOut, "{error}");
+    assert!(
+        error
+            .to_string()
+            .starts_with("timed out after 1 s with nothing received"),
+        "{error}"
+    );
+}
+
+/// A refused streamed GET carries its status and body.
+#[test]
+fn a_refused_streamed_get_carries_its_status_and_body() {
+    let (url, handle) = serve_once(403, "<Error><Code>AccessDenied</Code></Error>");
+    let stream = UreqClient::new()
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect("a response");
+    assert_eq!(stream.status, 403);
+    assert_eq!(
+        read_all(stream).expect("the body"),
+        "<Error><Code>AccessDenied</Code></Error>"
+    );
+    handle.join().expect("server");
+}
+
+/// A one-shot server that answers with `response`, verbatim.
+fn serve_raw(response: &'static str) -> (String, std::thread::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let request = read_request(&stream);
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.flush();
+        request
+    });
+    (format!("http://127.0.0.1:{port}/path"), handle)
+}
+
+/// A streamed GET follows no redirect: the 3xx is the answer, so a signed
+/// request's other headers never reach another host.
+#[test]
+fn a_streamed_get_follows_no_redirect() {
+    let (url, handle) = serve_raw(
+        "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://127.0.0.1:9/elsewhere\r\n\
+         Content-Length: 0\r\nConnection: close\r\n\r\n",
+    );
+    let stream = UreqClient::new()
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect("the redirect itself");
+    assert_eq!(stream.status, 307);
+    handle.join().expect("server");
+}
+
+/// A streamed GET whose headers never come names the limit it set
+/// (`timeout_seconds`), not the POST streams' `stream_timeout_seconds`.
+#[test]
+fn a_streamed_get_without_headers_times_out_naming_its_own_limit() {
+    let (url, _handle) = serve_slowly(ms(2_500), ms(0), "x");
+    let client = UreqClient {
+        timeout_seconds: 1,
+        stream_timeout_seconds: 30,
+        ..UreqClient::new()
+    };
+    let error = client
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect_err("no headers within 1 s");
+    let message = error.to_string();
+    assert!(
+        message.starts_with("timed out after 1 s waiting for the response headers"),
+        "{message}"
+    );
+}
+
+/// A success whose body ureq leaves encoded is refused: its bytes are not the
+/// stored object's, which the caller checks them against.
+#[test]
+fn a_streamed_get_refuses_a_body_left_encoded() {
+    let (url, handle) = serve_raw(
+        "HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: 2\r\n\
+         Connection: close\r\n\r\nxx",
+    );
+    match UreqClient::new().get_with_headers_stream(&url, &BTreeMap::new()) {
+        Err(FetchError::Malformed(message)) => {
+            assert!(
+                message.contains("Content-Encoding \"deflate\""),
+                "{message}"
+            );
+        }
+        other => panic!("expected Malformed, got {other:?}"),
+    }
+    handle.join().expect("server");
+}
+
+/// ...but `identity` is no encoding at all.
+#[test]
+fn a_streamed_get_reads_an_identity_body() {
+    let (url, handle) = serve_raw(
+        "HTTP/1.1 200 OK\r\nContent-Encoding: identity\r\nContent-Length: 2\r\n\
+         Connection: close\r\n\r\nxx",
+    );
+    let stream = UreqClient::new()
+        .get_with_headers_stream(&url, &BTreeMap::new())
+        .expect("an identity body");
+    assert_eq!(read_all(stream).expect("the body"), "xx");
+    handle.join().expect("server");
+}
