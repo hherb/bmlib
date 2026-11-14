@@ -23,9 +23,9 @@
 //! installation by `Installation::new`. A refusal is the same [`LibraryError`]
 //! bmlib returns. File and folder names are checked where bmlib uses them.
 //!
-//! **Every [`Library`] call but `root` does disk I/O on the calling thread**;
-//! call them off the main thread. A [`LibraryScan`] is a snapshot: a later save
-//! does not change it.
+//! **Every [`PaperLibrary`] call but `root` does disk I/O on the calling
+//! thread**; call them off the main thread. A [`LibraryScan`] is a snapshot: a
+//! later save does not change it.
 //!
 //! Values going out are copied with exhaustive destructuring, so a field bmlib
 //! adds fails to compile here until it is carried across. Add fields only at
@@ -496,8 +496,8 @@ impl From<&lib::Problem> for LibraryProblem {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 #[uniffi::export(Display)]
 pub enum LibraryError {
-    /// From [`Library::open`] only: the library's folder is missing or not a
-    /// folder (an unmounted drive, a revoked bookmark). The library may come
+    /// From [`PaperLibrary::open`] only: the library's folder is missing or not
+    /// a folder (an unmounted drive, a revoked bookmark). The library may come
     /// back, so offer to try again rather than choosing another folder. Once
     /// open, a folder that vanishes reads as `Io` from `scan` and `save`,
     /// `Missing` from `read`, `record_use`, `remove_file` and `remove_folder`,
@@ -545,7 +545,7 @@ pub enum LibraryError {
         /// The name.
         name: String,
     },
-    /// The file is not there. From [`Library::remove_folder`], `folder` is
+    /// The file is not there. From [`PaperLibrary::remove_folder`], `folder` is
     /// `papers` and `name` the paper's folder.
     Missing {
         /// The paper's folder.
@@ -732,11 +732,14 @@ impl std::error::Error for LibraryError {}
 // ---------------------------------------------------------------------------
 
 /// A library folder, opened and checked.
+///
+/// Not `Library`: every UniFFI Kotlin binding imports `com.sun.jna.Library`,
+/// which would shadow a class of that name and break the Android build.
 #[derive(Debug, uniffi::Object)]
-pub struct Library(lib::Library);
+pub struct PaperLibrary(lib::Library);
 
 #[uniffi::export]
-impl Library {
+impl PaperLibrary {
     /// Open the library at `root`, creating it in an empty folder. On macOS and
     /// iOS, `root` is the path of the resolved security-scoped bookmark, whose
     /// access the app holds for as long as it uses the library.
@@ -750,7 +753,7 @@ impl Library {
         Ok(Arc::new(Self(lib::Library::open(Path::new(&root))?)))
     }
 
-    /// The library's folder, as given to [`Library::open`].
+    /// The library's folder, as given to [`PaperLibrary::open`].
     pub fn root(&self) -> String {
         self.0.root().display().to_string()
     }
@@ -805,7 +808,7 @@ impl Library {
     /// # Errors
     ///
     /// `BadInstallation`, `BadIdentifier`, `NewerRecord`, `ReadOnly` or `Io`
-    /// as for [`Library::save`]; `Missing`, `NotDownloaded` or
+    /// as for [`PaperLibrary::save`]; `Missing`, `NotDownloaded` or
     /// `DigestMismatch` from reading the file (`NotDownloaded` also when
     /// `who`'s own record is only a placeholder), and `BadName` for a name that
     /// is not one path component or not the library's name for those bytes
@@ -858,7 +861,7 @@ impl Library {
     }
 }
 
-/// What [`Library::scan`] found: a snapshot, unchanged by later saves.
+/// What [`PaperLibrary::scan`] found: a snapshot, unchanged by later saves.
 #[derive(Debug, uniffi::Object)]
 pub struct LibraryScan(lib::Scan);
 
@@ -895,7 +898,7 @@ impl LibraryScan {
 
     /// The file named for `sha256`, if any; with `kind`, only the file stored
     /// as that kind (the same bytes saved as two kinds are two files). Only
-    /// the name is looked at; [`Library::read`] checks the bytes.
+    /// the name is looked at; [`PaperLibrary::read`] checks the bytes.
     ///
     /// # Errors
     ///
