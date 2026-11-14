@@ -18,11 +18,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import logging
 import multiprocessing
 import os
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,7 @@ from bmlib.library import (
     PaperInfo,
     ReadOnly,
     SourceKind,
+    Unreachable,
     canonical_ids,
     files,
     open_library,
@@ -439,3 +442,75 @@ def test_a_failed_sync_names_the_file_and_the_sync(
     assert caught.value.path.parent.parent.name == "papers"
     assert caught.value.reason.startswith("syncing its folder: ")
     assert "Operation not supported" in caught.value.reason
+
+
+_NO_PERMISSIONS = pytest.mark.skipif(
+    os.name == "nt" or os.geteuid() == 0, reason="root ignores directory permissions"
+)
+
+
+@contextlib.contextmanager
+def _unsearchable(directory: Path) -> Iterator[None]:
+    """*directory* listable but not searchable: every lstat of a name in it fails (EACCES)."""
+    directory.chmod(0o600)
+    try:
+        yield
+    finally:
+        directory.chmod(0o755)
+
+
+@_NO_PERMISSIONS
+def test_a_folder_that_cannot_be_examined_is_reported_not_read_as_empty(lib: Library) -> None:
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    with _unsearchable(lib.root / "papers" / first.folder):
+        scan = lib.scan()
+    assert [f.folder for f in scan.folders] == [first.folder]
+    reasons = [p.reason for p in scan.problems if p.kind == "unreadable_folder"]
+    assert len(reasons) == 1 and reasons[0] is not None
+    assert reasons[0].startswith("records: ") and "Permission denied" in reasons[0]
+
+
+@_NO_PERMISSIONS
+def test_a_paper_folder_that_cannot_be_examined_is_unreadable_not_stray(lib: Library) -> None:
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    with _unsearchable(lib.root / "papers"):
+        problems = lib.scan().problems
+    assert [(p.kind, p.folder) for p in problems] == [("unreadable_folder", first.folder)]
+
+
+@_NO_PERMISSIONS
+def test_a_taken_name_that_cannot_be_examined_fails_the_save(lib: Library) -> None:
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    papers = lib.root / "papers"
+    with _unsearchable(papers), pytest.raises(Io) as err:
+        lib.save(_ME, _PAPER, b"%PDF other bytes", SourceKind.PDF, "t")
+    assert err.value.path == papers / first.folder
+    assert sorted(n.name for n in papers.iterdir()) == [first.folder]
+
+
+@_NO_PERMISSIONS
+def test_removing_a_folder_that_cannot_be_examined_is_not_missing(lib: Library) -> None:
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    with _unsearchable(lib.root / "papers"), pytest.raises(ReadOnly):
+        lib.remove_folder(first.folder)
+    assert lib.read(first) == _BYTES
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need Developer Mode")
+def test_a_library_reached_through_a_link_is_used(tmp_path: Path) -> None:
+    (tmp_path / "real").mkdir()
+    (tmp_path / "lib").symlink_to(tmp_path / "real", target_is_directory=True)
+    lib = open_library(tmp_path / "lib")
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    assert lib.read(first) == _BYTES
+    assert [f.folder for f in lib.scan().folders] == [first.folder]
+    assert open_library(tmp_path / "lib").scan().problems == ()
+    assert (tmp_path / "real" / "papers" / first.folder / first.name).is_file()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need Developer Mode")
+def test_an_unplugged_drive_behind_the_root_link_is_no_such_folder(tmp_path: Path) -> None:
+    (tmp_path / "lib").symlink_to(tmp_path / "gone", target_is_directory=True)
+    with pytest.raises(Unreachable) as err:
+        open_library(tmp_path / "lib")
+    assert err.value.reason == "no such folder"

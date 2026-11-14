@@ -56,7 +56,11 @@ NOT_A_REGULAR_FILE = "not a regular file"
 """The reason :func:`read_bytes` gives for a symbolic link, FIFO, device or socket (#761)."""
 
 NOT_A_FOLDER = "not a folder"
-"""The reason :func:`paper_dir` gives for a paper folder that is a link or a file (#761)."""
+"""The reason :func:`check_folder` and :func:`create_dir_new` give for a link or a file where
+the library needs a folder (#761)."""
+
+_NAME_SURROGATE = 0x20000000
+"""The reparse-tag bit of a Windows entry that names another path (a link or a junction)."""
 
 logger = logging.getLogger(__name__)
 
@@ -213,15 +217,33 @@ def first_user_entry(directory: Path) -> str | None:
     return None
 
 
+def _lstat(path: Path) -> os.stat_result | None:
+    """``os.lstat(path)``, or ``None`` when nothing is there.
+
+    :raises OSError: any other failure (a folder that cannot be searched, an I/O error), which
+        must not read as absent: a scan would miss the paper and a save make it a second
+        folder.
+    """
+    try:
+        return os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+
+
 def is_dir(path: Path) -> bool:
     """Whether *path* is a directory itself, not a symbolic link to one.
 
-    A linked folder inside the library would let a save write outside it (#761).
+    A linked folder inside the library would let a save write outside it (#761). A Windows
+    junction counts as a link too, as Rust's ``std`` reads one (a name-surrogate reparse tag).
+
+    :raises OSError: *path* cannot be examined (:func:`_lstat`).
     """
-    try:
-        return stat.S_ISDIR(os.lstat(path).st_mode)
-    except OSError:
-        return False
+    st = _lstat(path)
+    return (
+        st is not None
+        and stat.S_ISDIR(st.st_mode)
+        and not getattr(st, "st_reparse_tag", 0) & _NAME_SURROGATE
+    )
 
 
 def is_dir_following_links(path: Path) -> bool:
@@ -231,21 +253,43 @@ def is_dir_following_links(path: Path) -> bool:
 
 
 def exists(path: Path) -> bool:
-    """Whether anything exists at *path*, a dangling symbolic link included."""
-    return os.path.lexists(path)
+    """Whether anything exists at *path*, a dangling symbolic link included.
+
+    :raises OSError: *path* cannot be examined (:func:`_lstat`).
+    """
+    return _lstat(path) is not None
+
+
+def check_folder(path: Path) -> None:
+    """Refuse *path* when something that is not a directory itself is there (#761).
+
+    Nothing at *path* passes, for the caller to find missing.
+
+    :raises Io: a symbolic link or a file is at *path* (:data:`NOT_A_FOLDER`), or it cannot be
+        examined.
+    """
+    try:
+        if exists(path) and not is_dir(path):
+            raise Io(path, NOT_A_FOLDER)
+    except OSError as e:
+        raise io_error(path, e, write=False) from e
 
 
 def paper_dir(root: Path, folder: str) -> Path:
     """The paper folder *folder* under *root*, its name checked by :func:`component`.
 
+    ``papers/`` is checked as well as the folder: it may have been replaced by a link since
+    the library was opened.
+
     :raises BadName: *folder* is not one path component.
-    :raises Io: something that is not a directory itself (a symbolic link, a file) is at that
-        name, so nothing is read, written or deleted through it (#761). A name with nothing at
-        it is returned, for the caller to find missing.
+    :raises Io: ``papers/`` or the folder is not a directory itself (:func:`check_folder`), so
+        nothing is read, written or deleted through it (#761). A name with nothing at it is
+        returned, for the caller to find missing.
     """
-    directory = root / PAPERS_DIR / component(folder)
-    if exists(directory) and not is_dir(directory):
-        raise Io(directory, NOT_A_FOLDER)
+    papers = root / PAPERS_DIR
+    directory = papers / component(folder)
+    check_folder(papers)
+    check_folder(directory)
     return directory
 
 
@@ -267,12 +311,18 @@ def read_bytes(path: Path) -> bytes:
     a scan or read can neither hang nor leave the library (#761).
     """
     with _materialisation_off(path):
-        if not stat.S_ISREG(os.lstat(path).st_mode):
+        seen = os.lstat(path)
+        if not stat.S_ISREG(seen.st_mode):
             raise OSError(NOT_A_REGULAR_FILE)
-        # shortcut: a FIFO swapped in between the lstat and the open still blocks the open;
-        # the fstat catches any other swap. Open with O_NONBLOCK if a writer ever races this.
+        # shortcut: a FIFO (or a link to one) swapped in between the lstat and the open still
+        # blocks the open, and on Windows a link swapped in is followed; elsewhere the open
+        # file must be the one lstat saw. Open with O_NONBLOCK | O_NOFOLLOW if a writer ever
+        # races this.
         with open(path, "rb") as f:
-            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            opened = os.fstat(f.fileno())
+            if not stat.S_ISREG(opened.st_mode) or (
+                os.name != "nt" and (opened.st_dev, opened.st_ino) != (seen.st_dev, seen.st_ino)
+            ):
                 raise OSError(NOT_A_REGULAR_FILE)
             return f.read()
 
@@ -389,14 +439,15 @@ def create_dir_new(path: Path) -> bool:
 
     Either way the directory is synced into its parent (:func:`sync_dir`): one found there may
     be another writer's, not yet synced. Anything else at *path*, a symbolic link to a
-    directory included, raises ``FileExistsError``.
+    directory included, raises ``OSError`` with :data:`NOT_A_FOLDER`; a failure to examine
+    *path* raises that failure.
     """
     try:
         path.mkdir()
         made = True
     except FileExistsError:
         if not is_dir(path):
-            raise
+            raise OSError(NOT_A_FOLDER) from None
         made = False
     sync_dir(path.parent)
     return made

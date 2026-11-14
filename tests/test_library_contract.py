@@ -26,7 +26,9 @@ import json
 import os
 import re
 import shutil
+import signal
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -460,6 +462,7 @@ def test_special_entries_match_the_fixture(case: dict[str, Any], tmp_path: Path)
         shutil.rmtree(target)
         target.write_bytes(b"not a folder")
     else:
+        assert case["with"] == "fifo", case["with"]
         target.unlink()
         os.mkfifo(target)
     before = _outside(outside)
@@ -474,6 +477,27 @@ def test_special_entries_match_the_fixture(case: dict[str, Any], tmp_path: Path)
         "remove_folder": lambda: lib.remove_folder(ref.folder),
         "open": lambda: open_library(lib.root),
     }
+    # A FIFO opened by mistake blocks: fail the case rather than hang the run.
+    signal.signal(signal.SIGALRM, _blocked)
+    signal.alarm(_BLOCK_SECONDS)
+    try:
+        _run_special_entry(lib, op, want, calls)
+    finally:
+        signal.alarm(0)
+    assert _outside(outside) == before
+
+
+_BLOCK_SECONDS = 20
+
+
+def _blocked(signum: int, frame: object) -> None:
+    raise TimeoutError("the call blocked: a FIFO was opened")
+
+
+def _run_special_entry(
+    lib: Library, op: str, want: dict[str, Any], calls: dict[str, Callable[[], object]]
+) -> None:
+    """Run one ``special_entries`` op and check its outcome against *want*."""
     if op == "scan":
         scan = lib.scan()
         assert [f.folder for f in scan.folders] == want["folders"]
@@ -496,5 +520,4 @@ def test_special_entries_match_the_fixture(case: dict[str, Any], tmp_path: Path)
         if "reason" in want:
             assert want["reason"] in err.value.reason  # type: ignore[attr-defined]
     else:
-        assert calls[op]().folder == want["folder"]  # type: ignore[union-attr]
-    assert _outside(outside) == before
+        assert getattr(calls[op](), "folder", None) == want.get("folder")

@@ -714,6 +714,7 @@ fn special_entries_match_the_fixture() {
             std::fs::remove_dir_all(&target).unwrap();
             std::fs::write(&target, b"not a folder").unwrap();
         } else {
+            assert_eq!(case["with"], "fifo", "{name}");
             std::fs::remove_file(&target).unwrap();
             let made = std::process::Command::new("mkfifo")
                 .arg(&target)

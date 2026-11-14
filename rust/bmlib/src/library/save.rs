@@ -28,7 +28,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use unicode_normalization::UnicodeNormalization;
 
 use super::files::{
-    component, create_dir_new, exists, file_name, has_placeholder, io_error, is_dir,
+    check_folder, component, create_dir_new, exists, file_name, has_placeholder, io_error, is_dir,
     is_not_downloaded, list_names, paper_dir, read_bytes, remove_dir_all, remove_file, rename,
     sha256_hex, sync_name, write_once, write_replace,
 };
@@ -110,7 +110,8 @@ fn claim_folder(papers: &Path, paper: &PaperInfo) -> Result<String, LibraryError
             if !same.is_empty() {
                 let mut newer = None;
                 for s in &same {
-                    if !is_dir(&papers.join(s)) {
+                    let path = papers.join(s);
+                    if !is_dir(&path).map_err(|e| io_error(&path, &e, false))? {
                         continue; // a file or link holds the name (#761): it is taken
                     }
                     match belongs_to(papers, s, paper) {
@@ -146,7 +147,7 @@ fn keep_aside(path: &Path) -> Result<PathBuf, LibraryError> {
             format!("{CORRUPT_SUFFIX}-{n}")
         };
         let aside = PathBuf::from(format!("{}{suffix}", path.display()));
-        if !exists(&aside) {
+        if !exists(&aside).map_err(|e| io_error(&aside, &e, false))? {
             rename(path, &aside).map_err(|e| io_error(path, &e, true))?;
             return Ok(aside);
         }
@@ -158,8 +159,9 @@ fn keep_aside(path: &Path) -> Result<PathBuf, LibraryError> {
 /// iCloud holds a placeholder for it: a fresh record written now would replace
 /// the real one when it is downloaded, and its entries would be lost.
 fn check_not_evicted(path: &Path, folder: &str) -> Result<(), LibraryError> {
+    let absent = !exists(path).map_err(|e| io_error(path, &e, false))?;
     match path.parent() {
-        Some(dir) if !exists(path) && has_placeholder(dir, &file_name(path)) => {
+        Some(dir) if absent && has_placeholder(dir, &file_name(path)) => {
             Err(not_downloaded(path, folder))
         }
         _ => Ok(()),
@@ -573,10 +575,13 @@ impl Library {
     ///
     /// [`LibraryError::BadName`] when `folder` is not one path component;
     /// [`LibraryError::Missing`] when there is no such folder (or it is a
-    /// file); [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
+    /// file or a symbolic link); [`LibraryError::ReadOnly`];
+    /// [`LibraryError::Io`], `papers/` not a folder itself (#761) included.
     pub fn remove_folder(&self, folder: &str) -> Result<(), LibraryError> {
-        let dir = self.root().join(PAPERS_DIR).join(component(folder)?);
-        if !is_dir(&dir) {
+        let papers = self.root().join(PAPERS_DIR);
+        let dir = papers.join(component(folder)?);
+        check_folder(&papers)?;
+        if !is_dir(&dir).map_err(|e| io_error(&dir, &e, true))? {
             return Err(LibraryError::Missing {
                 folder: PAPERS_DIR.to_owned(),
                 name: folder.to_owned(),

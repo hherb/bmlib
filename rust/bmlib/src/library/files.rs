@@ -35,8 +35,8 @@ use crate::atomic::{TEMP_SUFFIX, TEMP_SUFFIX_LEN};
 /// (#761).
 pub(crate) const NOT_A_REGULAR_FILE: &str = "not a regular file";
 
-/// The reason [`paper_dir`] gives for a paper folder that is a link or a file
-/// (#761).
+/// The reason [`check_folder`] and [`create_dir_new`] give for a link or a file
+/// where the library needs a folder (#761).
 pub(crate) const NOT_A_FOLDER: &str = "not a folder";
 
 /// Whether `write_once` made the file or found the same bytes already there.
@@ -219,10 +219,29 @@ pub(crate) fn first_user_entry(dir: &Path) -> io::Result<Option<String>> {
     }))
 }
 
-/// Whether `path` is a directory itself, not a symbolic link to one. A linked
-/// folder inside the library would let a save write outside it (#761).
-pub(crate) fn is_dir(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+/// `lstat(path)`, or `None` when nothing is there. Any other failure (a folder
+/// that cannot be searched, an I/O error) is an error, never "absent": a scan
+/// would miss the paper and a save make it a second folder.
+fn lstat(path: &Path) -> io::Result<Option<fs::Metadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(m) => Ok(Some(m)),
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Whether `path` is a directory itself, not a symbolic link (or, on Windows,
+/// a junction) to one. A linked folder inside the library would let a save
+/// write outside it (#761). An error when `path` cannot be examined ([`lstat`]).
+pub(crate) fn is_dir(path: &Path) -> io::Result<bool> {
+    Ok(lstat(path)?.is_some_and(|m| m.is_dir()))
 }
 
 /// Whether `path` is a directory or a link to one: only for the library's
@@ -231,26 +250,42 @@ pub(crate) fn is_dir_following_links(path: &Path) -> bool {
     path.is_dir()
 }
 
-/// Whether anything exists at `path`, a dangling symbolic link included.
-pub(crate) fn exists(path: &Path) -> bool {
-    fs::symlink_metadata(path).is_ok()
+/// Whether anything exists at `path`, a dangling symbolic link included. An
+/// error when `path` cannot be examined ([`lstat`]).
+pub(crate) fn exists(path: &Path) -> io::Result<bool> {
+    Ok(lstat(path)?.is_some())
+}
+
+/// Refuse `path` when something that is not a directory itself is there
+/// (#761); nothing at `path` passes, for the caller to find missing.
+///
+/// [`LibraryError::Io`] for a symbolic link or a file ([`NOT_A_FOLDER`]), or
+/// when `path` cannot be examined.
+pub(crate) fn check_folder(path: &Path) -> Result<(), LibraryError> {
+    match lstat(path) {
+        Ok(Some(m)) if !m.is_dir() => Err(LibraryError::Io {
+            path: path.to_owned(),
+            reason: NOT_A_FOLDER.to_owned(),
+        }),
+        Ok(_) => Ok(()),
+        Err(e) => Err(io_error(path, &e, false)),
+    }
 }
 
 /// The paper folder `folder` under `root`, its name checked by [`component`].
+/// `papers/` is checked as well as the folder: it may have been replaced by a
+/// link since the library was opened.
 ///
 /// [`LibraryError::BadName`] when `folder` is not one path component;
-/// [`LibraryError::Io`] when something that is not a directory itself (a
-/// symbolic link, a file) is at that name, so nothing is read, written or
-/// deleted through it (#761). A name with nothing at it is returned, for the
-/// caller to find missing.
+/// [`LibraryError::Io`] when `papers/` or the folder is not a directory itself
+/// ([`check_folder`]), so nothing is read, written or deleted through it
+/// (#761). A name with nothing at it is returned, for the caller to find
+/// missing.
 pub(crate) fn paper_dir(root: &Path, folder: &str) -> Result<PathBuf, LibraryError> {
-    let dir = root.join(PAPERS_DIR).join(component(folder)?);
-    if exists(&dir) && !is_dir(&dir) {
-        return Err(LibraryError::Io {
-            path: dir,
-            reason: NOT_A_FOLDER.to_owned(),
-        });
-    }
+    let papers = root.join(PAPERS_DIR);
+    let dir = papers.join(component(folder)?);
+    check_folder(&papers)?;
+    check_folder(&dir)?;
     Ok(dir)
 }
 
@@ -276,21 +311,24 @@ pub(crate) fn has_placeholder(dir: &Path, name: &str) -> bool {
 /// at once instead, with an error [`is_not_downloaded`] recognises (#769).
 ///
 /// Only a regular file is read: a symbolic link (to a file outside the
-/// library, or to `/dev/zero`), a FIFO or a device is an error reading
-/// [`NOT_A_REGULAR_FILE`], so a scan or read can neither hang nor leave the
-/// library (#761).
+/// library, or to `/dev/zero`), a FIFO or a device is an error whose message
+/// is [`NOT_A_REGULAR_FILE`], so a scan or read can neither hang nor leave the
+/// library (#761), short of the race in the `shortcut:` below.
 pub(crate) fn read_bytes(path: &Path) -> io::Result<Vec<u8>> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     let _off = dataless::MaterialisationOff::begin(path);
     let not_regular = || io::Error::other(NOT_A_REGULAR_FILE);
-    if !fs::symlink_metadata(path)?.is_file() {
+    let seen = fs::symlink_metadata(path)?;
+    if !seen.is_file() {
         return Err(not_regular());
     }
-    // shortcut: a FIFO swapped in between the lstat and the open still blocks
-    // the open; the fstat catches any other swap. Open with O_NONBLOCK if a
-    // writer ever races this.
+    // shortcut: a FIFO (or a link to one) swapped in between the lstat and the
+    // open still blocks the open, and on Windows a link swapped in is followed;
+    // elsewhere the open file must be the one lstat saw. Open with
+    // O_NONBLOCK | O_NOFOLLOW if a writer ever races this.
     let mut file = fs::File::open(path)?;
-    if !file.metadata()?.is_file() {
+    let opened = file.metadata()?;
+    if !opened.is_file() || !same_file(&seen, &opened) {
         return Err(not_regular());
     }
     let mut bytes = Vec::new();
@@ -452,6 +490,21 @@ pub(crate) fn sync_name(path: &Path) -> Result<(), LibraryError> {
 
 /// `atomic_write` `bytes` at `path`, then sync its directory so the name is
 /// durable.
+/// Whether two metadata describe one file (device and inode); always `true` off
+/// Unix, where std gives no stable file identity.
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        (a.dev(), a.ino()) == (b.dev(), b.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (a, b);
+        true
+    }
+}
+
 fn publish(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
     crate::atomic::atomic_write(path, bytes).map_err(|e| io_error(path, &e, true))?;
     sync_name(path)
@@ -460,12 +513,17 @@ fn publish(path: &Path, bytes: &[u8]) -> Result<(), LibraryError> {
 /// Make the directory `path` (its parent must exist); `false` when it already
 /// exists. Either way the directory is synced into its parent ([`sync_dir`]):
 /// one found there may be another writer's, not yet synced. Anything else at
-/// `path`, a symbolic link to a directory included, is an `AlreadyExists`
-/// error.
+/// `path`, a symbolic link to a directory included, is an error whose message
+/// is [`NOT_A_FOLDER`]; a failure to examine `path` is that failure.
 pub(crate) fn create_dir_new(path: &Path) -> io::Result<bool> {
     let made = match fs::create_dir(path) {
         Ok(()) => true,
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && is_dir(path) => false,
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            if !is_dir(path)? {
+                return Err(io::Error::other(NOT_A_FOLDER));
+            }
+            false
+        }
         Err(e) => return Err(e),
     };
     sync_dir(parent(path))?;
@@ -758,12 +816,52 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_cannot_be_examined_is_an_error_not_absent() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("unexamined");
+        fs::create_dir_all(dir.join("d/sub")).unwrap();
+        fs::set_permissions(dir.join("d"), fs::Permissions::from_mode(0o600)).unwrap();
+        let sub = dir.join("d/sub");
+        let root_like = fs::symlink_metadata(&sub).is_ok();
+        let got = (is_dir(&sub), exists(&sub), create_dir_new(&sub));
+        fs::set_permissions(dir.join("d"), fs::Permissions::from_mode(0o755)).unwrap();
+        if !root_like {
+            let denied = io::ErrorKind::PermissionDenied;
+            assert_eq!(got.0.unwrap_err().kind(), denied);
+            assert_eq!(got.1.unwrap_err().kind(), denied);
+            assert_eq!(got.2.unwrap_err().kind(), denied);
+        }
+        assert!(!is_dir(&dir.join("nothing")).unwrap());
+        assert!(!exists(&dir.join("nothing/below")).unwrap());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_is_not_a_folder() {
+        let dir = scratch("junction");
+        fs::create_dir_all(dir.join("target")).unwrap();
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(dir.join("junction"))
+            .arg(dir.join("target"))
+            .status()
+            .unwrap();
+        assert!(made.success(), "mklink /J");
+        assert!(is_dir(&dir.join("target")).unwrap());
+        assert!(!is_dir(&dir.join("junction")).unwrap());
+        assert!(exists(&dir.join("junction")).unwrap());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn create_dir_new_refuses_a_file_in_the_way() {
         let dir = scratch("mkfile");
         fs::write(dir.join("p"), b"").unwrap();
         let err = create_dir_new(&dir.join("p")).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(err.to_string(), NOT_A_FOLDER);
         fs::remove_dir_all(&dir).unwrap();
     }
 

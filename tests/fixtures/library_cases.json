@@ -3161,6 +3161,16 @@
       }
     },
     {
+      "name": "a dangling link at a paper folder's name is not read either",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "dangling_symlink",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
       "name": "a linked records folder is not a records folder",
       "replace": "papers/2024 Smith – Metformin (PMID 111)/records",
       "with": "symlink",
@@ -3212,7 +3222,8 @@
       "with": "symlink",
       "op": "save",
       "expect": {
-        "error": "io"
+        "error": "io",
+        "reason": "not a folder"
       }
     },
     {
@@ -3221,7 +3232,8 @@
       "with": "symlink",
       "op": "open",
       "expect": {
-        "error": "io"
+        "error": "io",
+        "reason": "not a folder"
       }
     },
     {
@@ -3233,6 +3245,50 @@
         "error": "io",
         "reason": "not a regular file"
       }
+    },
+    {
+      "name": "a papers folder linked after opening takes no save",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "save",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is read through a papers folder linked after opening",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is removed through a papers folder linked after opening",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "remove_folder",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "removing a source file that is a link removes only the link",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "remove_file",
+      "expect": {}
+    },
+    {
+      "name": "removing a paper folder holding a link removes only the link",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "remove_folder",
+      "expect": {}
     }
   ]
 }

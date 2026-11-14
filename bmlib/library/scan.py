@@ -30,6 +30,7 @@ from bmlib.library.constants import DIGEST_PREFIX_HEX, PAPERS_DIR, RECORDS_DIR
 from bmlib.library.errors import DigestMismatch, Missing, NotDownloaded
 from bmlib.library.files import (
     Listing,
+    check_folder,
     component,
     exists,
     has_placeholder,
@@ -147,15 +148,29 @@ def _read_record(path: Path, folder: str, file: str) -> Record | Problem:
         return Problem("unreadable_record", folder=folder, file=file, reason=str(e))
 
 
+def _listed_dir(path: Path) -> bool:
+    """:func:`is_dir` for a name just listed. One that cannot be examined counts as a file, so
+    the error is still reported: reading it as a record does, and a source file's read does."""
+    try:
+        return is_dir(path)
+    except OSError:
+        return False
+
+
 def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> PaperFolder:
     """Scan one paper folder, adding what is odd to *problems*."""
     records: list[Record] = []
     records_dir = directory / RECORDS_DIR
-    if exists(records_dir) and not is_dir(records_dir):
+    try:
+        present, a_folder = exists(records_dir), is_dir(records_dir)
+    except OSError as e:
+        present = a_folder = False
+        problems.append(Problem("unreadable_folder", folder=folder, reason=f"{RECORDS_DIR}: {e}"))
+    if present and not a_folder:
         problems.append(
             Problem("unreadable_folder", folder=folder, reason="records is not a folder")
         )
-    elif is_dir(records_dir):
+    elif a_folder:
         try:
             found = listing(records_dir)
         except OSError as e:
@@ -163,7 +178,7 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
             problems.append(Problem("unreadable_folder", folder=folder, reason=f"records: {e}"))
         for file in found.names:
             path = records_dir / file
-            if is_dir(path):
+            if _listed_dir(path):
                 continue
             got = _read_record(path, folder, file)
             if isinstance(got, Problem):
@@ -191,7 +206,7 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
     try:
         here = listing(directory)
         problems.extend(Problem("leftover_temp", folder=folder, name=t) for t in here.temps)
-        on_disk = [n for n in here.names if n != RECORDS_DIR and not is_dir(directory / n)]
+        on_disk = [n for n in here.names if n != RECORDS_DIR and not _listed_dir(directory / n)]
     except OSError as e:
         on_disk = []
         problems.append(Problem("unreadable_folder", folder=folder, reason=str(e)))
@@ -205,10 +220,11 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
 def scan_library(root: Path) -> Scan:
     """Read every paper folder under *root*. Never writes.
 
-    :raises Io: ``papers/`` itself cannot be listed; trouble inside a folder is a
-        :class:`Problem` in the result instead.
+    :raises Io: ``papers/`` itself cannot be listed, or is not a folder itself (#761); trouble
+        inside a folder is a :class:`Problem` in the result instead.
     """
     papers = root / PAPERS_DIR
+    check_folder(papers)  # it may have been replaced by a link since the library was opened
     try:
         found = listing(papers)
     except OSError as e:
@@ -216,7 +232,12 @@ def scan_library(root: Path) -> Scan:
     folders: list[PaperFolder] = []
     problems: list[Problem] = []
     for name in found.names:
-        if is_dir(papers / name):
+        try:
+            a_folder = is_dir(papers / name)
+        except OSError as e:
+            problems.append(Problem("unreadable_folder", folder=name, reason=str(e)))
+            continue
+        if a_folder:
             folders.append(_scan_folder(papers / name, name, problems))
         else:
             problems.append(Problem("stray_entry", name=name))
@@ -229,8 +250,8 @@ def read_file(root: Path, file: FileRef) -> bytes:
     """Read a file's bytes under *root*, checking them against ``file.sha256``.
 
     :raises BadName: the folder or file name is not one path component.
-    :raises Io: the folder or the file is a symbolic link or a special file (#761), or any
-        other failure to read.
+    :raises Io: ``papers/`` or the folder is not a folder itself, or the file is not a regular
+        file (#761), or any other failure to read.
     :raises NotDownloaded: only an online placeholder is here.
     :raises Missing: the file is not there.
     :raises DigestMismatch: the bytes hash to something else.
