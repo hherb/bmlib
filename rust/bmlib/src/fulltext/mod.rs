@@ -30,12 +30,15 @@
 //! | `fulltext/segmenter.py` | [`segmenter`] | ported |
 //! | `fulltext/_titles.py` | [`titles`] | ported |
 //! | `fulltext/canonical/` | [`canonical`] | ported |
+//! | `fulltext/meca/` | `meca` | ported, behind the `meca` feature |
 
 pub mod cache;
 pub mod canonical;
 pub mod jats_reader;
 pub mod jats_text;
 pub mod library_store;
+#[cfg(feature = "meca")]
+pub mod meca;
 pub mod models;
 #[cfg(feature = "pdf")]
 pub mod mupdf_backend;

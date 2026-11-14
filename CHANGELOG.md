@@ -146,6 +146,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`bmlib.fulltext.meca`: MECA bulk archives over requester-pays S3** (both
+  languages; Rust feature `meca`, Python extra `meca`). medRxiv's and
+  bioRxiv's MECA buckets can be read with the caller's own AWS key: `sigv4`
+  signs S3 GETs (held to AWS's three published S3 examples), `s3.list_objects`
+  reads one ListObjectsV2 page (a malformed object fails the page; nothing is
+  skipped) and `s3.download_object` streams one object to a temporary file and
+  publishes it only when its size and single-part ETag match the listing.
+  Failures are an `S3Error` whose `kind` and plain-language `reason()` say
+  what to do (an `AccessDenied` names the IAM permissions needed). No redirect
+  is followed (it would carry the session token to another host). Rust's
+  `HttpClient` gains `get_with_headers_stream` (the default refuses;
+  `UreqClient` streams with a per-read limit and no redirects, so ureq is now
+  `>=3.5`, and refuses a success whose body it leaves encoded). A size or
+  ETag mismatch is not retryable: the same request would pay for the same
+  bytes. Reading a `.meca` package is not part of this yet. Contracts:
+  `tests/fixtures/s3_sigv4.json`, `tests/fixtures/s3_responses.json`.
+
 - **The shared paper library: a file is found by its kind, and a save is
   durable when it returns** (#767, #768; both languages and bmlib-ffi;
   StudyAnalyzer's step 2 asked for both). `find_digest(scan, sha256, kind)`

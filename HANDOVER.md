@@ -8,6 +8,27 @@ sources), #757 (#753), #754 (the library, 1a), #752 (#750, #751).
 **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
 **the Rust crate 0.4.0 on crates.io** from the same commit._
 
+## Also open: MECA over requester-pays S3 (PR #775, `feat/meca-s3`)
+
+`bmlib.fulltext.meca` / `bmlib::fulltext::meca` (feature `meca`): SigV4,
+ListObjectsV2 and the verified download. No `.meca` package is read yet,
+because the owner's IAM user gets `AccessDenied` on both buckets. Changed by
+the pre-merge review:
+- A size or ETag mismatch is **not retryable**: the same request would pay
+  for the same bytes. The reason says to list again.
+- A 5xx with an unknown code, 502/504 and `RequestTimeout` are `RETRY_LATER`.
+- A listing field holding markup (a comment, a processing instruction, an
+  element) is refused in both ports, because they used to read it
+  differently.
+- `UreqClient`'s streaming GET refuses a body it leaves encoded. A gzip
+  object still fails Rust's size check (`shortcut:` in `s3.rs`).
+- A request bmlib refuses to sign is Rust's own `InvalidRequest` kind
+  (Python raises `ValueError`).
+
+Deferred to #776: checking the response headers against the listing before
+the body is read, permanent transport errors marked retryable, and recording
+a refusal's detail in the fixture.
+
 ## This session: an evicted file is never downloaded to be read (#769)
 
 Branch `feat/library-dataless-769`, stacked on PR #771 (merge that first). The

@@ -27,6 +27,7 @@ pip install -e ".[all,dev]"
 | `transparency`   | `pip install bmlib[transparency]`  | Transparency analysis (httpx)              |
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
 | `fulltext`       | `pip install bmlib[fulltext]`      | `FullTextService` retrieval (httpx). The JATS parser, the models and `SectionSegmenter` need nothing beyond core |
+| `meca`           | `pip install bmlib[meca]`          | `bmlib.fulltext.meca`'s S3 transport (httpx): listing and downloading medRxiv's / bioRxiv's MECA archives. Signing and reading S3's replies need nothing beyond core |
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
 | `html`           | `pip install bmlib[html]`          | `canonical_from_html()` — an HTML page's main content as canonical text (markupever, html5ever) *(0.12.0)* |
 | `embed`          | `pip install bmlib[embed]`         | `bmlib.embed.Embedder` (llama-cpp-python; compiles llama.cpp, so not in `all`) *(0.12.0)* |
@@ -36,7 +37,8 @@ pip install -e ".[all,dev]"
 
 ## Module Overview
 
-bmlib is organised into thirteen modules, each with a focused responsibility:
+bmlib is organised into thirteen modules, each with a focused responsibility (`bmlib.fulltext.meca`
+has its own row, but is part of `fulltext`):
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
@@ -52,6 +54,7 @@ bmlib is organised into thirteen modules, each with a focused responsibility:
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building, locating an LLM's quoted passage *(0.12.0)* (pure stdlib) | [citations.md](citations.md) |
 | [`bmlib.embed`](embeddings.md) | *(0.12.0)* In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download, a paper's chunks stored and searched | [embeddings.md](embeddings.md) |
 | [`bmlib.secrets`](secrets.md) | *(0.13.0)* API keys by provider in one OS keychain item, read once for `get`s and cached; the same item as Rust's (#686) | [secrets.md](secrets.md) |
+| [`bmlib.fulltext.meca`](meca.md) | medRxiv / bioRxiv MECA bulk archives over requester-pays S3: SigV4 signing, listing, verified downloads *(unreleased)* (Rust `bmlib::fulltext::meca`, feature `meca`) | [meca.md](meca.md) |
 | [`bmlib.library`](library.md) | A shared folder of research papers several apps read and write: write-once source files, one record per installation, scan, find, read, save *(unreleased)* (pure stdlib; Rust `bmlib::library`) | [library.md](library.md) |
 
 ## Architecture Principles
