@@ -3389,6 +3389,291 @@
      }
     }
    }
+  },
+  {
+   "name": "the bytes of another paper's JATS saved as text are refused beside it (#766)",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "222",
+      "year": 2024,
+      "first_author": "Jones",
+      "title": "Q"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"pmid\">222</article-id></article-meta></front></article>",
+     "kind": "jats",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "title": "P"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"pmid\">222</article-id></article-meta></front></article>",
+     "kind": "text",
+     "origin": "unit test",
+     "expect": {
+      "error": "foreign_jats",
+      "folder": "2024 Jones – Q (PMID 222)",
+      "name": "jats-cc436825a1a1.xml",
+      "field": "pmid",
+      "theirs": "222",
+      "ours": "111"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Jones – Q (PMID 222)/",
+     "papers/2024 Jones – Q (PMID 222)/jats-cc436825a1a1.xml",
+     "papers/2024 Jones – Q (PMID 222)/records/",
+     "papers/2024 Jones – Q (PMID 222)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/2024 Jones – Q (PMID 222)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "222",
+       "doi": null,
+       "pmcid": null,
+       "title": "Q",
+       "year": 2024,
+       "first_author": "Jones"
+      },
+      "files": [
+       {
+        "sha256": "cc436825a1a11e5cf1e73a1aba8537f0b3ed3ae00375456b31d5348c6c080b37",
+        "kind": "jats",
+        "name": "jats-cc436825a1a1.xml",
+        "origin": "unit test",
+        "size": 110
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "a JATS's own identifiers are compared canonicalised: agreeing",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/a",
+      "pmcid": "PMC123",
+      "title": "Metformin"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"doi\">10.1/A</article-id><article-id pub-id-type=\"pmc\">123</article-id></article-meta></front></article>",
+     "kind": "jats",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/Metformin (DOI 10.1 a)/",
+     "papers/Metformin (DOI 10.1 a)/jats-fe043f09e56e.xml",
+     "papers/Metformin (DOI 10.1 a)/records/",
+     "papers/Metformin (DOI 10.1 a)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/Metformin (DOI 10.1 a)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": "10.1/a",
+       "pmcid": "PMC123",
+       "title": "Metformin",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "fe043f09e56ee515c2f0aaedbf27d7c7b923b507bae14774c5c20dc574231a6a",
+        "kind": "jats",
+        "name": "jats-fe043f09e56e.xml",
+        "origin": "unit test",
+        "size": 158
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "a JATS's own identifiers are compared canonicalised: refused (#766)",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/b",
+      "title": "Metformin"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"doi\">10.1/A</article-id><article-id pub-id-type=\"pmc\">123</article-id></article-meta></front></article>",
+     "kind": "jats",
+     "origin": "unit test",
+     "expect": {
+      "error": "foreign_jats",
+      "folder": null,
+      "name": "jats-fe043f09e56e.xml",
+      "field": "doi",
+      "theirs": "10.1/a",
+      "ours": "10.1/b"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "of several contradicting identifiers the pmid is named first (#766)",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "pmid": "1",
+      "doi": "10.1/b",
+      "title": "Metformin"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"pmid\">2</article-id><article-id pub-id-type=\"doi\">10.1/a</article-id></article-meta></front></article>",
+     "kind": "jats",
+     "origin": "unit test",
+     "expect": {
+      "error": "foreign_jats",
+      "folder": null,
+      "name": "jats-15e047582bab.xml",
+      "field": "pmid",
+      "theirs": "2",
+      "ours": "1"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "a JATS's unusable identifier is set aside and the others still compared (#766)",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/b",
+      "title": "Metformin"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"pmid\">abc</article-id><article-id pub-id-type=\"doi\">10.1/a</article-id></article-meta></front></article>",
+     "kind": "jats",
+     "origin": "unit test",
+     "expect": {
+      "error": "foreign_jats",
+      "folder": null,
+      "name": "jats-7d432d23e139.xml",
+      "field": "doi",
+      "theirs": "10.1/a",
+      "ours": "10.1/b"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "a JATS's unusable identifier is set aside: agreeing",
+   "steps": [
+    {
+     "op": "save",
+     "app": "studyanalyzer",
+     "id": "aaaa",
+     "paper": {
+      "doi": "10.1/a",
+      "title": "Metformin"
+     },
+     "text": "<article><front><article-meta><article-id pub-id-type=\"pmid\">abc</article-id><article-id pub-id-type=\"doi\">10.1/a</article-id></article-meta></front></article>",
+     "kind": "jats",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/Metformin (DOI 10.1 a)/",
+     "papers/Metformin (DOI 10.1 a)/jats-7d432d23e139.xml",
+     "papers/Metformin (DOI 10.1 a)/records/",
+     "papers/Metformin (DOI 10.1 a)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/Metformin (DOI 10.1 a)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": null,
+       "doi": "10.1/a",
+       "pmcid": null,
+       "title": "Metformin",
+       "year": null,
+       "first_author": null
+      },
+      "files": [
+       {
+        "sha256": "7d432d23e139073dd9078616885401974a7a000ff8f07cc677f86bd3524a7551",
+        "kind": "jats",
+        "name": "jats-7d432d23e139.xml",
+        "origin": "unit test",
+        "size": 159
+       }
+      ]
+     }
+    }
+   }
   }
  ],
   "component": [

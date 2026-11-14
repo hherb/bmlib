@@ -665,11 +665,13 @@ fn an_evicted_jats_in_the_folder_stops_the_save() {
     fs::rename(&path, path.with_file_name(format!(".{}.icloud", jats.name))).unwrap();
     let got = lib.save(&you(), &other_doi(), BYTES, SourceKind::Pdf, "test");
     assert!(
-        matches!(got, Err(LibraryError::NotDownloaded { .. })),
+        matches!(&got, Err(LibraryError::NotDownloaded { folder, name })
+            if *folder == jats.folder && *name == jats.name),
         "{got:?}"
     );
     let pdf = format!("pdf-{}.pdf", &sha256_hex(BYTES)[..12]);
     assert!(!path.with_file_name(pdf).exists());
+    assert!(!record_path(&dir, &you(), &jats.folder).exists());
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -679,16 +681,81 @@ fn a_changed_jats_in_the_folder_stops_the_save() {
     let jats = lib
         .save(&me(), &paper(), JATS_A, SourceKind::Jats, "test")
         .unwrap();
-    fs::write(
-        dir.join("papers").join(&jats.folder).join(&jats.name),
-        b"<article/>",
-    )
-    .unwrap();
+    let path = dir.join("papers").join(&jats.folder).join(&jats.name);
+    fs::write(&path, b"<article/>").unwrap();
     let got = lib.save(&you(), &other_doi(), BYTES, SourceKind::Pdf, "test");
     assert!(
-        matches!(got, Err(LibraryError::DigestMismatch { .. })),
+        matches!(&got, Err(LibraryError::DigestMismatch { folder, name, .. })
+            if *folder == jats.folder && *name == jats.name),
         "{got:?}"
     );
+    let pdf = format!("pdf-{}.pdf", &sha256_hex(BYTES)[..12]);
+    assert!(!path.with_file_name(pdf).exists());
+    assert!(!record_path(&dir, &you(), &jats.folder).exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_evicted_jats_beside_the_file_stops_record_use() {
+    let (dir, lib) = scratch("foreign-evicted-use");
+    let pdf = lib
+        .save(&me(), &paper(), BYTES, SourceKind::Pdf, "test")
+        .unwrap();
+    let jats = lib
+        .save(&me(), &paper(), JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    let path = dir.join("papers").join(&jats.folder).join(&jats.name);
+    fs::rename(&path, path.with_file_name(format!(".{}.icloud", jats.name))).unwrap();
+    let got = lib.record_use(&you(), &other_doi(), &pdf);
+    assert!(
+        matches!(&got, Err(LibraryError::NotDownloaded { folder, name })
+            if *folder == jats.folder && *name == jats.name),
+        "{got:?}"
+    );
+    assert!(!record_path(&dir, &you(), &jats.folder).exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn only_a_jats_in_the_folder_is_read() {
+    // An evicted or changed PDF says nothing about the paper, so it must not
+    // stop a save.
+    let (dir, lib) = scratch("foreign-only-jats");
+    let evicted = lib
+        .save(&me(), &paper(), BYTES, SourceKind::Pdf, "test")
+        .unwrap();
+    let changed = lib
+        .save(&me(), &paper(), b"%PDF another", SourceKind::Pdf, "test")
+        .unwrap();
+    let folder = dir.join("papers").join(&evicted.folder);
+    fs::rename(
+        folder.join(&evicted.name),
+        folder.join(format!(".{}.icloud", evicted.name)),
+    )
+    .unwrap();
+    fs::write(folder.join(&changed.name), b"%PDF changed").unwrap();
+    let jats = lib
+        .save(&you(), &paper(), JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    assert_eq!(fs::read(folder.join(&jats.name)).unwrap(), JATS_A);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn saving_an_evicted_jats_again_restores_it() {
+    // The bytes being saved were checked already, so their evicted copy is not
+    // read.
+    let (dir, lib) = scratch("foreign-resave");
+    let jats = lib
+        .save(&me(), &paper(), JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    let path = dir.join("papers").join(&jats.folder).join(&jats.name);
+    fs::rename(&path, path.with_file_name(format!(".{}.icloud", jats.name))).unwrap();
+    let again = lib
+        .save(&me(), &paper(), JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    assert_eq!(again, jats);
+    assert_eq!(fs::read(&path).unwrap(), JATS_A);
     let _ = fs::remove_dir_all(&dir);
 }
 

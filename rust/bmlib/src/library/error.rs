@@ -109,7 +109,8 @@ pub enum LibraryError {
     },
     /// A JATS whose own identifiers name another paper (#766): one in the
     /// paper's folder, or the one being saved (`folder` `None`). Nothing was
-    /// written; the folder needs the manual clear.
+    /// written; a folder holding one needs the manual clear, and a file being
+    /// saved is not kept.
     ForeignJats {
         /// The paper's folder holding the JATS; `None` for the bytes being saved.
         folder: Option<String>,

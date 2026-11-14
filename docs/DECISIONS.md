@@ -6659,12 +6659,16 @@ undo.
   (digest-checked), not only those in `files_on_disk`: that list leaves out
   iCloud placeholders, so an evicted foreign JATS would pass unseen; one that
   cannot be read now fails the call (`NotDownloaded`, `DigestMismatch`), one
-  the manual clear removed (`Missing`) is passed over, and one that does not
-  parse names no paper, as for the service. The field is the library's name
+  that is missing (`Missing`, as after the manual clear) is passed over, and
+  one that does not parse names no paper and is warned of, as for the service.
+  Only a JATS being saved is passed over as already checked: the same bytes
+  saved as another kind skip nothing, or saving a foreign JATS's bytes as text
+  would land beside it. The field is the library's name
   (`pmcid`), not the request's (`pmc_id`) the service's message uses. Rust
   skips a non-UTF-8 JATS that Python might parse, the gap #762 is about.
-  Pinned by `library_cases.json`'s six #766 `save_scenarios` and by
-  `test_library_save.py` / `library_save.rs` (the evicted and changed JATS).
+  Pinned by `library_cases.json`'s twelve #766 `save_scenarios` and by
+  `test_library_save.py` / `library_save.rs` (the evicted and changed JATS, an
+  unreadable PDF beside, an evicted JATS saved again).
 - **A held library PDF makes Tier 0 skip the caller's `pdf` entries.** The PDF
   is already in hand (design §4.5). The cost: a caller's newer PDF is not
   fetched while the library holds one.

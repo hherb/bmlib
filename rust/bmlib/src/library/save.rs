@@ -361,10 +361,22 @@ fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryErro
 
 /// A JATS's own identifiers as the full-text service reads them (its reader,
 /// then `library_ids`), or `None` when it is not UTF-8 or does not parse: such
-/// a file names no paper.
-fn jats_ids(bytes: &[u8]) -> Option<PaperIds> {
-    let article = jats_reader::parse(std::str::from_utf8(bytes).ok()?).ok()?;
-    Some(library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id)).0)
+/// a file names no paper, and is warned of as `at`.
+fn jats_ids(at: &str, bytes: &[u8]) -> Option<PaperIds> {
+    let parsed = std::str::from_utf8(bytes)
+        .map_err(|error| error.to_string())
+        .and_then(|xml| jats_reader::parse(xml).map_err(|error| error.to_string()));
+    match parsed {
+        Ok(article) => {
+            Some(library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id)).0)
+        }
+        Err(error) => {
+            log::warn!(
+                "Not checking the JATS {at} for another paper's identifiers: it does not parse ({error})."
+            );
+            None
+        }
+    }
 }
 
 /// [`LibraryError::ForeignJats`] when the JATS `bytes`' own identifiers
@@ -375,7 +387,8 @@ fn refuse_foreign(
     bytes: &[u8],
     ids: &PaperIds,
 ) -> Result<(), LibraryError> {
-    let Some(own) = jats_ids(bytes) else {
+    let at = folder.map_or_else(|| name.to_owned(), |folder| format!("{folder}/{name}"));
+    let Some(own) = jats_ids(&at, bytes) else {
         return Ok(());
     };
     let Some(&field) = own.merged(ids).1.first() else {
@@ -397,9 +410,10 @@ fn refuse_foreign(
 
 /// Refuse a folder holding a JATS whose own identifiers contradict `ids`
 /// (#766). Every JATS a record lists is read (digest-checked) once, except the
-/// digest `skip`, already checked by the caller. One a manual clear removed is
-/// passed over; one that cannot be read now is an error, since it cannot be
-/// checked ([`LibraryError::NotDownloaded`], [`LibraryError::DigestMismatch`]).
+/// digest `skip`, already checked by the caller. One that is missing (as after
+/// the manual clear) is passed over; one that cannot be read now is an error,
+/// since it cannot be checked ([`LibraryError::NotDownloaded`],
+/// [`LibraryError::DigestMismatch`]).
 fn refuse_foreign_folder(
     library: &Library,
     found: &PaperFolder,
@@ -509,7 +523,14 @@ impl Library {
         };
         let dir = papers.join(component(&folder)?);
         let found = scan_folder(&dir, &folder, &mut Vec::new());
-        refuse_foreign_folder(self, &found, &paper.ids, &digest)?;
+        // Only a JATS was checked above: the same bytes saved as another kind
+        // skip nothing.
+        let skip = if kind == SourceKind::Jats {
+            digest.as_str()
+        } else {
+            ""
+        };
+        refuse_foreign_folder(self, &found, &paper.ids, skip)?;
         let path = dir
             .join(RECORDS_DIR)
             .join(component(&who.record_file_name())?);

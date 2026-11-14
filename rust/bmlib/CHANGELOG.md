@@ -17,9 +17,10 @@ The Python library is documented separately, in the repository's
   would write to holds a JATS whose own identifiers contradict the paper's,
   and `save` when the bytes being saved are such a JATS (`folder: None`);
   nothing is written. A JATS there that is only a placeholder is
-  `NotDownloaded`, a changed one `DigestMismatch`; one removed by the manual
-  clear is passed over, and one that is not UTF-8 or does not parse names no
-  paper. `FullTextService` no longer keeps a fetched JATS naming another paper
+  `NotDownloaded`, a changed one `DigestMismatch`; one that is missing (as
+  after the manual clear) is passed over, and one that is not UTF-8 or does not
+  parse names no paper and is warned of. The same bytes saved as another kind
+  are checked too. `FullTextService` no longer keeps a fetched JATS naming another paper
   (it sets `library_failure`). bmlib-ffi's `LibraryError` has the same variant
   (`field` a `String`), so Swift and Kotlin `switch`es need the case.
   StudyAnalyzer's `library::foreign_jats` can go once it re-pins.

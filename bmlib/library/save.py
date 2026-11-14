@@ -345,17 +345,24 @@ def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
     return directory, directory / component(file.name)
 
 
-def _jats_ids(data: bytes) -> PaperIds | None:
-    """A JATS's own identifiers as the full-text service reads them (its parser, then
-    ``library_ids``), or ``None`` when it does not parse: such a file names no paper."""
+def _jats_ids(at: str, data: bytes) -> PaperIds | None:
+    """A JATS's own identifiers as the full-text service reads them (its parser, without
+    rendering, then ``library_ids``), or ``None`` when it does not parse: such a file names no
+    paper, and is warned of as *at*."""
     # Imported here: bmlib.fulltext imports this package, so it cannot be imported at load.
     from bmlib.fulltext.jats_parser import JATSParser
     from bmlib.fulltext.library_store import library_ids
 
     try:
         article = JATSParser(data).parse()
-    except Exception:
+    except Exception as exc:
         # Broad on purpose, as the service's read is: another app may have written the file.
+        logger.warning(
+            "Not checking the JATS %s for another paper's identifiers: it does not parse (%s: %s).",
+            at,
+            type(exc).__name__,
+            exc,
+        )
         return None
     return library_ids(article.pmid, article.doi, article.pmc_id)[0]
 
@@ -365,7 +372,7 @@ def _refuse_foreign(folder: str | None, name: str, data: bytes, ids: PaperIds) -
 
     :raises ForeignJats: naming the first contradicting field (``pmid``, ``doi``, ``pmcid``).
     """
-    own = _jats_ids(data)
+    own = _jats_ids(name if folder is None else f"{folder}/{name}", data)
     conflicts = own.merged(ids)[1] if own is not None else []
     if conflicts:
         field = conflicts[0]
@@ -376,8 +383,8 @@ def _refuse_foreign_folder(root: Path, found: PaperFolder, ids: PaperIds, skip: 
     """Refuse a folder holding a JATS whose own identifiers contradict *ids* (#766).
 
     Every JATS a record lists is read (digest-checked) once, except the digest *skip*,
-    already checked by the caller. One a manual clear removed is passed over; one that cannot
-    be read now raises, since it cannot be checked.
+    already checked by the caller. One that is missing (as after the manual clear) is passed
+    over; one that cannot be read now raises, since it cannot be checked.
 
     :raises ForeignJats: a JATS there names another paper.
     :raises NotDownloaded: a JATS there is only an iCloud placeholder.
@@ -430,7 +437,8 @@ def save_file(
         is from a newer layout (no second folder is made).
     :raises ForeignJats: *data* is a JATS whose own identifiers contradict ``paper.ids``, or the
         folder holds one (#766; nothing is written).
-    :raises NotDownloaded, DigestMismatch: a JATS in the folder cannot be checked.
+    :raises NotDownloaded, DigestMismatch: a JATS in the folder cannot be checked (nothing is
+        written).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
@@ -459,7 +467,9 @@ def save_file(
     else:
         folder = _claim_folder(papers, paper)
     directory = papers / component(folder)
-    _refuse_foreign_folder(root, _scan_folder(directory, folder, []), paper.ids, digest)
+    # Only a JATS was checked above: the same bytes saved as another kind skip nothing.
+    skip = digest if kind is SourceKind.JATS else ""
+    _refuse_foreign_folder(root, _scan_folder(directory, folder, []), paper.ids, skip)
     records_dir = directory / RECORDS_DIR
     path = records_dir / component(who.record_file_name())
     _check_not_evicted(path, folder)

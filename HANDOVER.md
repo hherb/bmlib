@@ -28,6 +28,17 @@ PMCID is the request's. Tests that need a poisoned folder plant it by hand
 *FullTextService on a library*). **Downstream**: StudyAnalyzer drops its
 `foreign_jats` once it re-pins; a Rust `match` on `LibraryError` needs the arm.
 
+**The final review of PR #779** found that `save` skipped the folder's JATS
+check for bytes sharing its digest whatever their kind, so a foreign JATS's
+bytes saved as text landed beside it. Only a JATS being saved now skips its own
+digest. It also added a WARNING for a JATS that does not parse, as the service
+logs, and six more `save_scenarios`: the text hole, canonicalised ids, pmid
+named first, and an unusable id set aside. Unit tests cover an unreadable PDF
+beside the file, an evicted JATS saved again, `record_use` beside an evicted
+JATS, and `import bmlib.library` alone; each was mutation-checked in both
+languages. Deferred as **#780**: the parser's audit warnings repeat on each
+library re-parse, and "only the target folder" has no test.
+
 **#761 merged as PR #777**: library reads refuse anything but a regular file,
 linked folders are refused, the root may be a link (CHANGELOG). Its deferrals
 are **#778**.
@@ -132,10 +143,10 @@ use to share one folder of papers. Built in both languages, in a worktree
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.
-- **Open library issues**: #778 (PR #777's deferrals), #762 (a non-UTF-8
-  library JATS, Python serves it, Rust refuses; the #766 check inherits the
-  gap), #765 (the FFI runs no `save_scenarios`), #755 (1a's review follow-ups);
-  #766 closed by this session's branch.
+- **Open library issues**: #780 (PR #779's deferrals), #778 (PR #777's
+  deferrals), #762 (a non-UTF-8 library JATS, Python serves it, Rust refuses;
+  the #766 check inherits the gap), #765 (the FFI runs no `save_scenarios`),
+  #755 (1a's review follow-ups); #766 closed by this session's branch.
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
@@ -275,9 +286,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `fix/library-foreign-jats-766`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,033 passed + 22
-  skipped (11,055 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,857 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,044 passed + 22
+  skipped (11,066 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+  1,860 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
@@ -306,8 +317,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**123 open** (122 once this branch's PR closes #766): the library's #755,
-#762, #765 (above) and **#778** (PR #777's review follow-ups), **#776**
+**124 open** (123 once this branch's PR closes #766): the library's #755,
+#762, #765 (above), **#780** (PR #779's review follow-ups) and **#778** (PR
+#777's), **#776**
 (PR #775's MECA follow-ups) and
 **#759** (measure the `/details` settle period) are the newest; #734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 come before them; #577 stays

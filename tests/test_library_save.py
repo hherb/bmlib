@@ -23,6 +23,8 @@ import errno
 import logging
 import multiprocessing
 import os
+import subprocess
+import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -534,16 +536,75 @@ def test_an_evicted_jats_in_the_folder_stops_the_save(lib: Library) -> None:
     jats = lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test")
     path = lib.root / "papers" / jats.folder / jats.name
     path.rename(path.with_name(f".{path.name}.icloud"))
-    with pytest.raises(NotDownloaded):
+    with pytest.raises(NotDownloaded) as err:
         lib.save(_YOU, _OTHER_DOI, _BYTES, SourceKind.PDF, "test")
+    assert (err.value.folder, err.value.name) == (jats.folder, jats.name)
     assert not (path.parent / f"pdf-{sha256_hex(_BYTES)[:12]}.pdf").exists()
+    assert not _record_path(lib, _YOU, jats.folder).exists()
 
 
 def test_a_changed_jats_in_the_folder_stops_the_save(lib: Library) -> None:
     jats = lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test")
-    (lib.root / "papers" / jats.folder / jats.name).write_bytes(b"<article/>")
-    with pytest.raises(DigestMismatch):
+    path = lib.root / "papers" / jats.folder / jats.name
+    path.write_bytes(b"<article/>")
+    with pytest.raises(DigestMismatch) as err:
         lib.save(_YOU, _OTHER_DOI, _BYTES, SourceKind.PDF, "test")
+    assert (err.value.folder, err.value.name) == (jats.folder, jats.name)
+    assert not (path.parent / f"pdf-{sha256_hex(_BYTES)[:12]}.pdf").exists()
+    assert not _record_path(lib, _YOU, jats.folder).exists()
+
+
+def test_an_evicted_jats_beside_the_file_stops_record_use(lib: Library) -> None:
+    pdf = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+    jats = lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test")
+    path = lib.root / "papers" / jats.folder / jats.name
+    path.rename(path.with_name(f".{path.name}.icloud"))
+    with pytest.raises(NotDownloaded) as err:
+        lib.record_use(_YOU, _OTHER_DOI, pdf)
+    assert (err.value.folder, err.value.name) == (jats.folder, jats.name)
+    assert not _record_path(lib, _YOU, jats.folder).exists()
+
+
+def test_only_a_jats_in_the_folder_is_read(lib: Library) -> None:
+    # An evicted or changed PDF says nothing about the paper, so it must not stop a save.
+    evicted = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+    changed = lib.save(_ME, _PAPER, b"%PDF another", SourceKind.PDF, "test")
+    folder = lib.root / "papers" / evicted.folder
+    (folder / evicted.name).rename(folder / f".{evicted.name}.icloud")
+    (folder / changed.name).write_bytes(b"%PDF changed")
+    jats = lib.save(_YOU, _PAPER, _JATS_A, SourceKind.JATS, "test")
+    assert (folder / jats.name).read_bytes() == _JATS_A
+
+
+def test_saving_an_evicted_jats_again_restores_it(lib: Library) -> None:
+    # The bytes being saved were checked already, so their evicted copy is not read.
+    jats = lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test")
+    path = lib.root / "papers" / jats.folder / jats.name
+    path.rename(path.with_name(f".{path.name}.icloud"))
+    assert lib.save(_ME, _PAPER, _JATS_A, SourceKind.JATS, "test") == jats
+    assert path.read_bytes() == _JATS_A
+
+
+def test_a_jats_that_does_not_parse_is_warned_of(
+    lib: Library, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="bmlib.library.save"):
+        jats = lib.save(_ME, _PAPER, b"not xml", SourceKind.JATS, "test")
+    # Up to the exception's type: its text is expat's, which may differ between builds.
+    [message] = [r.getMessage() for r in caplog.records]
+    assert message.startswith(
+        f"Not checking the JATS {jats.name} for another paper's identifiers: it does not "
+        "parse (SAXParseException: "
+    )
+
+
+def test_the_library_imports_alone() -> None:
+    # The check imports bmlib.fulltext lazily, since fulltext imports the library: a fresh
+    # interpreter is the only place a top-level import would show as a cycle.
+    done = subprocess.run(
+        [sys.executable, "-c", "import bmlib.library"], capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
 
 
 def test_foreign_jats_is_a_library_error_naming_the_file() -> None:
