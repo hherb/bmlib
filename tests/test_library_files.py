@@ -28,14 +28,20 @@ from unittest import mock
 import pytest
 
 from bmlib.library import BadName, FileClash
+from bmlib.library import files as files_module
 from bmlib.library.files import (
+    NOT_A_FOLDER,
+    NOT_A_REGULAR_FILE,
     Written,
     component,
     create_dir_new,
+    exists,
     first_user_entry,
     has_placeholder,
+    is_dir,
     is_temp_name,
     list_names,
+    read_bytes,
     sha256_hex,
     sync_dir,
     write_once,
@@ -119,8 +125,9 @@ def test_create_dir_new_syncs_a_directory_found_there(tmp_path: Path) -> None:
 
 def test_create_dir_new_refuses_a_file_in_the_way(tmp_path: Path) -> None:
     (tmp_path / "p").write_bytes(b"")
-    with pytest.raises(FileExistsError):
+    with pytest.raises(OSError) as err:
         create_dir_new(tmp_path / "p")
+    assert str(err.value) == NOT_A_FOLDER
 
 
 def test_sha256_hex() -> None:
@@ -233,3 +240,49 @@ def test_edeadlk_reads_as_not_downloaded_on_apple_only() -> None:
         assert (mapped.folder, mapped.name) == ("lib", ".bmlib-library.json")
     else:
         assert isinstance(mapped, Io)
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or os.geteuid() == 0, reason="root ignores directory permissions"
+)
+def test_a_path_that_cannot_be_examined_is_an_error_not_absent(tmp_path: Path) -> None:
+    (tmp_path / "d" / "sub").mkdir(parents=True)
+    (tmp_path / "d").chmod(0o600)  # listable, not searchable
+    try:
+        for check in (is_dir, exists):
+            with pytest.raises(PermissionError):
+                check(tmp_path / "d" / "sub")
+        with pytest.raises(PermissionError):
+            create_dir_new(tmp_path / "d" / "sub")
+    finally:
+        (tmp_path / "d").chmod(0o755)
+    assert not is_dir(tmp_path / "nothing") and not exists(tmp_path / "nothing")
+    assert not exists(tmp_path / "nothing" / "below")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the open file's identity is checked off Windows")
+def test_a_file_swapped_in_after_the_lstat_is_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "mine").write_bytes(b"mine")
+    (tmp_path / "theirs").write_bytes(b"theirs")
+    real_fstat = os.fstat
+    theirs = os.stat(tmp_path / "theirs")
+    # What the open finds is another regular file: a link swapped in after the lstat.
+    monkeypatch.setattr(files_module.os, "fstat", lambda fd: theirs)
+    with pytest.raises(OSError) as err:
+        read_bytes(tmp_path / "mine")
+    assert str(err.value) == NOT_A_REGULAR_FILE
+    monkeypatch.setattr(files_module.os, "fstat", real_fstat)
+    assert read_bytes(tmp_path / "mine") == b"mine"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="junctions are Windows'")
+def test_a_junction_is_not_a_folder(tmp_path: Path) -> None:
+    import _winapi  # type: ignore[import-not-found]  # Windows only, CPython's own
+
+    (tmp_path / "target").mkdir()
+    _winapi.CreateJunction(str(tmp_path / "target"), str(tmp_path / "junction"))
+    assert is_dir(tmp_path / "target")
+    assert not is_dir(tmp_path / "junction")
+    assert exists(tmp_path / "junction")

@@ -29,7 +29,7 @@ from bmlib.library.files import (
     exists,
     first_user_entry,
     io_error,
-    is_dir,
+    is_dir_following_links,
     read_bytes,
     sha256_hex,
     write_once,
@@ -126,6 +126,14 @@ def _read_marker(marker: Path) -> bytes:
         raise io_error(marker, e, write=False) from e
 
 
+def _marker_exists(marker: Path) -> bool:
+    """Whether anything is at *marker*; one that cannot be examined raises :class:`Io`."""
+    try:
+        return exists(marker)
+    except OSError as e:
+        raise io_error(marker, e, write=False) from e
+
+
 def open_library(root: Path) -> Library:
     """Open the library at *root*, creating the marker and ``papers/`` in an empty folder.
 
@@ -133,19 +141,22 @@ def open_library(root: Path) -> Library:
     :raises NotALibrary: it holds anything but a valid marker (or only ignored names).
     :raises NewerLibrary: the marker's version is newer than ``LIBRARY_VERSION``.
     :raises ReadOnly: the marker or ``papers/`` cannot be written.
+    :raises Io: the marker is not a regular file, ``papers/`` is not a folder itself (#761),
+        or either cannot be read or examined.
     """
-    if not is_dir(root):
-        raise Unreachable(root, "not a folder" if exists(root) else "no such folder")
+    if not is_dir_following_links(root):
+        # The root is followed through links, so an unplugged drive behind one is not there.
+        raise Unreachable(root, "not a folder" if root.exists() else "no such folder")
     marker = root / MARKER_FILE
     first = None
-    if not exists(marker):
+    if not _marker_exists(marker):
         try:
             first = first_user_entry(root)
         except OSError as e:
             raise io_error(root, e, write=False) from e
     # The marker is looked at again after the folder seemed taken: another opener may have
     # published it (and papers/) in between.
-    if exists(marker):
+    if _marker_exists(marker):
         _check_marker(root, _read_marker(marker))
     elif first is not None:
         raise NotALibrary(root, f"the folder is not empty (found {first}) and has no {MARKER_FILE}")

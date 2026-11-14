@@ -28,8 +28,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::files::{
-    component, exists, has_placeholder, io_error, is_dir, is_not_downloaded, listing, read_bytes,
-    sha256_hex,
+    check_folder, component, exists, has_placeholder, io_error, is_dir, is_not_downloaded, listing,
+    paper_dir, read_bytes, sha256_hex,
 };
 use super::{
     parse_record, Installation, Library, LibraryError, PaperIds, Record, RecordProblem, SourceKind,
@@ -99,7 +99,9 @@ pub enum Problem {
         /// Why.
         reason: String,
     },
-    /// A paper folder or its `records/` directory could not be listed.
+    /// A paper folder or its `records/` directory could not be listed or
+    /// examined, or `records/` is not a folder itself (a symbolic link
+    /// included).
     UnreadableFolder {
         /// The paper's folder.
         folder: String,
@@ -155,7 +157,8 @@ pub enum Problem {
         /// The file.
         name: String,
     },
-    /// An entry of `papers/` that is not a folder.
+    /// An entry of `papers/` that is not a folder, a symbolic link to one
+    /// included.
     StrayEntry {
         /// The entry.
         name: String,
@@ -184,6 +187,13 @@ pub struct FileRef {
     pub kind: SourceKind,
 }
 
+/// [`is_dir`] for a name just listed. One that cannot be examined counts as a
+/// file, so the error is still reported: reading it as a record does, and a
+/// source file's read does.
+fn listed_dir(path: &Path) -> bool {
+    is_dir(path).unwrap_or(false)
+}
+
 /// Scan one paper folder, adding what is odd to `problems`.
 pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>) -> PaperFolder {
     let unreadable_folder = |reason: String| Problem::UnreadableFolder {
@@ -197,15 +207,23 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
     };
     let mut records = Vec::new();
     let records_dir = dir.join(RECORDS_DIR);
-    if exists(&records_dir) && !is_dir(&records_dir) {
+    let (present, a_folder) =
+        match exists(&records_dir).and_then(|e| Ok((e, is_dir(&records_dir)?))) {
+            Ok(found) => found,
+            Err(e) => {
+                problems.push(unreadable_folder(format!("{RECORDS_DIR}: {e}")));
+                (false, false)
+            }
+        };
+    if present && !a_folder {
         problems.push(unreadable_folder(format!("{RECORDS_DIR} is not a folder")));
-    } else if is_dir(&records_dir) {
+    } else if a_folder {
         match listing(&records_dir) {
             Err(e) => problems.push(unreadable_folder(format!("{RECORDS_DIR}: {e}"))),
             Ok(found) => {
                 for file in found.names.iter().cloned() {
                     let path = records_dir.join(&file);
-                    if is_dir(&path) {
+                    if listed_dir(&path) {
                         continue;
                     }
                     let parsed = match read_bytes(&path) {
@@ -285,7 +303,7 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
             found
                 .names
                 .into_iter()
-                .filter(|n| n != RECORDS_DIR && !is_dir(&dir.join(n)))
+                .filter(|n| n != RECORDS_DIR && !listed_dir(&dir.join(n)))
                 .collect()
         }
         Err(e) => {
@@ -316,18 +334,24 @@ impl Library {
     ///
     /// # Errors
     ///
-    /// [`LibraryError::Io`] when `papers/` itself cannot be listed; trouble
-    /// inside a folder is a [`Problem`] in the result instead.
+    /// [`LibraryError::Io`] when `papers/` itself cannot be listed, or is not a
+    /// folder itself (#761); trouble inside a folder is a [`Problem`] in the
+    /// result instead.
     pub fn scan(&self) -> Result<Scan, LibraryError> {
         let papers = self.root().join(PAPERS_DIR);
+        // It may have been replaced by a link since the library was opened.
+        check_folder(&papers)?;
         let found = listing(&papers).map_err(|e| io_error(&papers, &e, false))?;
         let (mut folders, mut problems) = (Vec::new(), Vec::new());
         for name in found.names {
             let dir = papers.join(&name);
-            if is_dir(&dir) {
-                folders.push(scan_folder(&dir, &name, &mut problems));
-            } else {
-                problems.push(Problem::StrayEntry { name });
+            match is_dir(&dir) {
+                Ok(true) => folders.push(scan_folder(&dir, &name, &mut problems)),
+                Ok(false) => problems.push(Problem::StrayEntry { name }),
+                Err(e) => problems.push(Problem::UnreadableFolder {
+                    folder: name,
+                    reason: e.to_string(),
+                }),
             }
         }
         // Nothing writes a file into `papers/` itself; a temporary there is stray.
@@ -349,7 +373,7 @@ impl Library {
     /// placeholder is here; [`LibraryError::Missing`];
     /// [`LibraryError::DigestMismatch`]; [`LibraryError::Io`].
     pub fn read(&self, file: &FileRef) -> Result<Vec<u8>, LibraryError> {
-        let dir = self.root().join(PAPERS_DIR).join(component(&file.folder)?);
+        let dir = paper_dir(self.root(), &file.folder)?;
         let path = dir.join(component(&file.name)?);
         let bytes = match read_bytes(&path) {
             Ok(b) => b,

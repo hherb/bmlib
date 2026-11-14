@@ -23,8 +23,12 @@ Asserts against ``tests/fixtures/library_cases.json``, the file Rust's
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import signal
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +43,7 @@ from bmlib.library import (
     DigestMismatch,
     FileRef,
     Installation,
+    Io,
     Library,
     LibraryError,
     Missing,
@@ -420,3 +425,99 @@ def test_component_matches_the_fixture(case: dict[str, Any], tmp_path: Path) -> 
     with pytest.raises(want):
         lib.read(ref)
     assert _tree(lib.root) == before
+
+
+def _outside(directory: Path) -> dict[str, bytes | None]:
+    """Every entry under *directory* with its bytes (``None`` for a folder)."""
+    return {
+        p.relative_to(directory).as_posix(): None if p.is_dir() else p.read_bytes()
+        for p in directory.rglob("*")
+    }
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="symbolic links need Developer Mode; there are no FIFOs"
+)
+@pytest.mark.parametrize("case", _cases("special_entries"))
+def test_special_entries_match_the_fixture(case: dict[str, Any], tmp_path: Path) -> None:
+    # One paper is saved, then one of its entries is replaced by a FIFO, or moved outside the
+    # library and linked back to (same bytes, so only the link is refused, #761).
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    who = Installation.new("studyanalyzer", "aaaa", "Test Mac")
+    paper = _paper_info(
+        {"pmid": "111", "year": 2024, "first_author": "Smith", "title": "Metformin"}
+    )
+    ref = lib.save(who, paper, b"pdf bytes one", SourceKind.PDF, "unit test")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = lib.root / case["replace"]
+    if case["with"] in ("symlink", "dangling_symlink"):
+        moved = outside / target.name
+        target.rename(moved)
+        target.symlink_to(moved, target_is_directory=moved.is_dir())
+        if case["with"] == "dangling_symlink":
+            shutil.rmtree(moved)
+    elif case["with"] == "file":
+        shutil.rmtree(target)
+        target.write_bytes(b"not a folder")
+    else:
+        assert case["with"] == "fifo", case["with"]
+        target.unlink()
+        os.mkfifo(target)
+    before = _outside(outside)
+    op, want = case["op"], case["expect"]
+    other = Installation.new("medicalfactchecker", "bbbb", "Test Mac")
+    calls = {
+        "read": lambda: lib.read(ref),
+        "record_use": lambda: lib.record_use(other, paper, ref),
+        "save": lambda: lib.save(who, paper, b"pdf bytes one", SourceKind.PDF, "unit test"),
+        "release": lambda: lib.release(who, ref),
+        "remove_file": lambda: lib.remove_file(ref),
+        "remove_folder": lambda: lib.remove_folder(ref.folder),
+        "open": lambda: open_library(lib.root),
+    }
+    # A FIFO opened by mistake blocks: fail the case rather than hang the run.
+    signal.signal(signal.SIGALRM, _blocked)
+    signal.alarm(_BLOCK_SECONDS)
+    try:
+        _run_special_entry(lib, op, want, calls)
+    finally:
+        signal.alarm(0)
+    assert _outside(outside) == before
+
+
+_BLOCK_SECONDS = 20
+
+
+def _blocked(signum: int, frame: object) -> None:
+    raise TimeoutError("the call blocked: a FIFO was opened")
+
+
+def _run_special_entry(
+    lib: Library, op: str, want: dict[str, Any], calls: dict[str, Callable[[], object]]
+) -> None:
+    """Run one ``special_entries`` op and check its outcome against *want*."""
+    if op == "scan":
+        scan = lib.scan()
+        assert [f.folder for f in scan.folders] == want["folders"]
+        got = [
+            {
+                "kind": p.kind,
+                **{
+                    k: getattr(p, k)
+                    for k in ("folder", "file", "name", "reason")
+                    if getattr(p, k) is not None
+                },
+            }
+            for p in scan.problems
+        ]
+        assert got == want["problems"]
+    elif "error" in want:
+        kind: type[LibraryError] = {"io": Io, "missing": Missing}[want["error"]]
+        with pytest.raises(kind) as err:
+            calls[op]()
+        if "reason" in want:
+            assert want["reason"] in err.value.reason  # type: ignore[attr-defined]
+    else:
+        assert getattr(calls[op](), "folder", None) == want.get("folder")

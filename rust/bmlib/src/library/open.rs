@@ -21,7 +21,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::files::{
-    create_dir_new, exists, first_user_entry, io_error, is_dir, read_bytes, sha256_hex, write_once,
+    create_dir_new, exists, first_user_entry, io_error, is_dir_following_links, read_bytes,
+    sha256_hex, write_once,
 };
 use super::{LibraryError, LIBRARY_FORMAT, LIBRARY_VERSION, MARKER_FILE, PAPERS_DIR};
 
@@ -86,10 +87,14 @@ impl Library {
     /// (or only ignored names); [`LibraryError::NewerLibrary`] when the
     /// marker's version is newer than [`LIBRARY_VERSION`];
     /// [`LibraryError::ReadOnly`] or [`LibraryError::Io`] when the marker or
-    /// `papers/` cannot be written.
+    /// `papers/` cannot be written; [`LibraryError::Io`] when the marker is not
+    /// a regular file, `papers/` is not a folder itself (#761), or either
+    /// cannot be read or examined.
     pub fn open(root: &Path) -> Result<Library, LibraryError> {
-        if !is_dir(root) {
-            let reason = if exists(root) {
+        if !is_dir_following_links(root) {
+            // The root is followed through links, so an unplugged drive behind
+            // one is not there.
+            let reason = if root.exists() {
                 "not a folder"
             } else {
                 "no such folder"
@@ -100,14 +105,15 @@ impl Library {
             });
         }
         let marker = root.join(MARKER_FILE);
-        let user_entry = if exists(&marker) {
+        let marker_exists = || exists(&marker).map_err(|e| io_error(&marker, &e, false));
+        let user_entry = if marker_exists()? {
             None
         } else {
             first_user_entry(root).map_err(|e| io_error(root, &e, false))?
         };
         // The marker is looked at again after the folder seemed taken: another
         // opener may have published it (and `papers/`) in between.
-        if exists(&marker) {
+        if marker_exists()? {
             check_marker(
                 root,
                 &read_bytes(&marker).map_err(|e| io_error(&marker, &e, false))?,

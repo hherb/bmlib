@@ -2968,5 +2968,327 @@
       "value": ".hidden",
       "expect": "ok"
     }
+  ],
+  "special_entries": [
+    {
+      "name": "a source file linked to the same bytes outside is not read",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "a source file linked outside is not noted for use",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "record_use",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "a source file linked outside is not saved over or through",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "save",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "a source file that is a FIFO is refused, not waited on",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "fifo",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "a record that is a FIFO is an unreadable record",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+      "with": "fifo",
+      "op": "scan",
+      "expect": {
+        "folders": [
+          "2024 Smith – Metformin (PMID 111)"
+        ],
+        "problems": [
+          {
+            "kind": "unreadable_record",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "file": "studyanalyzer-aaaa.json",
+            "reason": "not a regular file"
+          },
+          {
+            "kind": "unrecorded_file",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "name": "pdf-1361ac06c419.pdf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a record linked outside is an unreadable record",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+      "with": "symlink",
+      "op": "scan",
+      "expect": {
+        "folders": [
+          "2024 Smith – Metformin (PMID 111)"
+        ],
+        "problems": [
+          {
+            "kind": "unreadable_record",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "file": "studyanalyzer-aaaa.json",
+            "reason": "not a regular file"
+          },
+          {
+            "kind": "unrecorded_file",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "name": "pdf-1361ac06c419.pdf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an own record linked outside fails the save",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+      "with": "symlink",
+      "op": "save",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "an own record linked outside fails the release",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+      "with": "symlink",
+      "op": "release",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "a linked paper folder is a stray entry",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "scan",
+      "expect": {
+        "folders": [],
+        "problems": [
+          {
+            "kind": "stray_entry",
+            "name": "2024 Smith – Metformin (PMID 111)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a linked paper folder takes no save; the paper gets a folder of its own",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "save",
+      "expect": {
+        "folder": "2024 Smith – Metformin (PMID 111) (2)"
+      }
+    },
+    {
+      "name": "a plain file at the paper folder's name takes no save either",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "file",
+      "op": "save",
+      "expect": {
+        "folder": "2024 Smith – Metformin (PMID 111) (2)"
+      }
+    },
+    {
+      "name": "nothing is read through a linked paper folder",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is noted through a linked paper folder",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "record_use",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is released through a linked paper folder",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "release",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is deleted through a linked paper folder",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "remove_file",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "a linked paper folder is not removed as a paper",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "symlink",
+      "op": "remove_folder",
+      "expect": {
+        "error": "missing"
+      }
+    },
+    {
+      "name": "a dangling link at a paper folder's name is not read either",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)",
+      "with": "dangling_symlink",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "a linked records folder is not a records folder",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records",
+      "with": "symlink",
+      "op": "scan",
+      "expect": {
+        "folders": [
+          "2024 Smith – Metformin (PMID 111)"
+        ],
+        "problems": [
+          {
+            "kind": "unreadable_folder",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "reason": "records is not a folder"
+          },
+          {
+            "kind": "unrecorded_file",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "name": "pdf-1361ac06c419.pdf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a dangling records link is reported, not taken for no records",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records",
+      "with": "dangling_symlink",
+      "op": "scan",
+      "expect": {
+        "folders": [
+          "2024 Smith – Metformin (PMID 111)"
+        ],
+        "problems": [
+          {
+            "kind": "unreadable_folder",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "reason": "records is not a folder"
+          },
+          {
+            "kind": "unrecorded_file",
+            "folder": "2024 Smith – Metformin (PMID 111)",
+            "name": "pdf-1361ac06c419.pdf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a linked records folder takes no record",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/records",
+      "with": "symlink",
+      "op": "save",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "a linked papers folder is not opened",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "open",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "a linked marker is not read",
+      "replace": "bmlib-library.json",
+      "with": "symlink",
+      "op": "open",
+      "expect": {
+        "error": "io",
+        "reason": "not a regular file"
+      }
+    },
+    {
+      "name": "a papers folder linked after opening takes no save",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "save",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is read through a papers folder linked after opening",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "read",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "nothing is removed through a papers folder linked after opening",
+      "replace": "papers",
+      "with": "symlink",
+      "op": "remove_folder",
+      "expect": {
+        "error": "io",
+        "reason": "not a folder"
+      }
+    },
+    {
+      "name": "removing a source file that is a link removes only the link",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "remove_file",
+      "expect": {}
+    },
+    {
+      "name": "removing a paper folder holding a link removes only the link",
+      "replace": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+      "with": "symlink",
+      "op": "remove_folder",
+      "expect": {}
+    }
   ]
 }
