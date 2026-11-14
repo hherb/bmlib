@@ -6603,3 +6603,49 @@ undo.
   nothing, since nothing would bound the next lookup's seek.
 - **A library holding only a PDF still runs the JATS tiers**, which a cached
   PDF did not cost: JATS is the better text, so a PDF does not end a lookup.
+
+### The library through bmlib-ffi (step 1c)
+
+- **Only the `library` module is exposed**, not `FullTextService`'s use of it.
+  MedicalFactChecker fetches through its own Swift chain, and the FFI's
+  `BmlibFullTextService` is a sketch in no shipped binary (#492), so
+  `with_library`, `library_files` and `library_failure` wait for the transport.
+- **`scan()` returns an object** (`LibraryScan`) that answers `find`,
+  `find_digest`, `group` and `used_by` in Rust. A large library is not copied
+  across the boundary for every find. It is a snapshot: a save does not change
+  it.
+- **What comes in goes through bmlib's validating constructors**
+  (`PaperIds::canonical`, `Installation::new`). Raw identifiers are accepted
+  and come back canonical. A refusal is bmlib's own `BadIdentifier` or
+  `BadInstallation`.
+- **`PaperFolder` carries its merged `ids`**, and `used_by` is a scan method,
+  so no app re-implements either. It returns `None` for a folder the scan did
+  not find: an empty list there would read as "nobody uses this file", which is
+  what an app asks before offering to remove it. For the same reason it returns
+  `FileUsers { installations, complete }`, and `complete` is `false` when the
+  folder holds a record the scan did not count: unreadable, newer, misnamed,
+  not downloaded, a `records/` that could not be listed, or a temp in
+  `records/` (a record not yet written in full). Otherwise a folder whose
+  other installation's record is an iCloud placeholder would read as unused.
+  The rule is an exhaustive match on bmlib's `Problem`, so a new variant must
+  choose a side. Pinned by
+  `every_problem_variant_decides_whether_uses_are_complete` and
+  `scan_matches_the_fixture`.
+- **`find_digest`, `used_by` and `release` refuse a malformed digest** with
+  `BadIdentifier` (field `"sha256"`). bmlib's own `find_digest` returns `None`
+  (its fixture case "a digest that is not 64 hex digits"), `used_by` an empty
+  list, and `release` succeeds without changing the record. An app stores the
+  digest and passes it back, so a digest it mis-stored (upper case, padded)
+  would otherwise read as "not in the library", "nobody uses it" or
+  "released", and nothing would say why. `read` and `record_use` need no check:
+  a wrong digest there is a visible `DigestMismatch`. Pinned by
+  `find_find_digest_and_group_match_the_fixture`, `scan_matches_the_fixture`
+  and `save_use_release_and_remove_round_trip`.
+- **The error keeps bmlib's cases, fields and wording.** Paths and
+  `&'static str` fields become strings. `Display` is exported, and is bmlib's
+  text, reached by converting back. UniFFI 0.32.2 generates Swift's
+  `description` for an error without declaring `CustomStringConvertible`, so
+  the app adds that one-line extension for `errorDescription` to use it.
+- **Not exported**: `parse_record`, `render_record`, `folder_name` and
+  `sha256_hex`. `save` names folders and hashes the bytes, and records are
+  the library's business.

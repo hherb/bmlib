@@ -110,6 +110,22 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The shared paper library through bmlib-ffi** (Rust only; step 1c of the
+  shared paper library). `Library` and `LibraryScan` objects, owned copies of
+  the library's records, `LibraryProblem`, and `LibraryError`, whose exported
+  `Display` is bmlib's wording. Also `paper_ids_canonical` and
+  `installation_new`. Identifiers and installations coming in pass bmlib's
+  validating constructors (`PaperIds::canonical`, `Installation::new`).
+  `find_digest`, `used_by` and `release` refuse a malformed digest with
+  `BadIdentifier`, where bmlib finds nothing, nobody or nothing to release.
+  `used_by` is `None` for a folder the scan did not find, and otherwise a
+  `FileUsers` whose `complete` is `false` when the folder holds a record the
+  scan did not count.
+  The crate's tests run `library_cases.json`'s identifier, installation, open,
+  scan, find, find_digest, group and read cases and the sample library through
+  the FFI. `FullTextService`'s library use is not exposed (the FFI's service
+  is the #492 sketch).
+
 - **`FullTextService` on a shared library** (both languages, held together by
   `tests/fixtures/fulltext_library_scenarios.json` and
   `fulltext_library_ids.json`; step 1b of the shared paper library, bmlib#755
