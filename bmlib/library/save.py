@@ -40,6 +40,7 @@ from bmlib.library.constants import (
 )
 from bmlib.library.errors import BadIdentifier, BadName, Io, Missing, NewerRecord, NotDownloaded
 from bmlib.library.files import (
+    check_folder,
     component,
     create_dir_new,
     exists,
@@ -48,6 +49,7 @@ from bmlib.library.files import (
     is_dir,
     is_not_downloaded,
     list_names,
+    paper_dir,
     read_bytes,
     remove_dir_all,
     remove_file,
@@ -126,6 +128,12 @@ def _claim_folder(papers: Path, paper: PaperInfo) -> str:
                 newer: NewerRecord | None = None
                 for s in same:
                     try:
+                        taken = not is_dir(papers / s)
+                    except OSError as e:
+                        raise io_error(papers / s, e, write=False) from e
+                    if taken:
+                        continue  # a file or link holds the name (#761): it is taken
+                    try:
                         if _belongs_to(papers, s, paper):
                             return s
                     except NewerRecord as e:
@@ -147,7 +155,11 @@ def _keep_aside(path: Path) -> Path:
     n = 1
     while True:
         aside = path.with_name(path.name + (CORRUPT_SUFFIX if n == 1 else f"{CORRUPT_SUFFIX}-{n}"))
-        if not exists(aside):
+        try:
+            free = not exists(aside)
+        except OSError as e:
+            raise io_error(aside, e, write=False) from e
+        if free:
             try:
                 rename(path, aside)
             except OSError as e:
@@ -163,7 +175,11 @@ def _check_not_evicted(path: Path, folder: str) -> None:
 
     :raises NotDownloaded: naming the record file.
     """
-    if not exists(path) and has_placeholder(path.parent, path.name):
+    try:
+        absent = not exists(path)
+    except OSError as e:
+        raise io_error(path, e, write=False) from e
+    if absent and has_placeholder(path.parent, path.name):
         raise NotDownloaded(folder, path.name)
 
 
@@ -312,8 +328,11 @@ def _note_use(
 
 
 def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
-    """The file's folder and path, its names checked as single path components."""
-    directory = root / PAPERS_DIR / component(file.folder)
+    """The file's folder and path, its names checked as single path components.
+
+    :raises Io: the folder is a symbolic link or a file (#761).
+    """
+    directory = paper_dir(root, file.folder)
     return directory, directory / component(file.name)
 
 
@@ -430,7 +449,8 @@ def release_file(root: Path, who: Installation, file: FileRef) -> None:
     :raises BadName: a name that is not one path component.
     :raises NewerRecord: the record is from a newer layout.
     :raises NotDownloaded: the record is only an iCloud placeholder.
-    :raises Io: the record cannot be read (it is not touched).
+    :raises Io: the record cannot be read (it is not touched), or ``papers/`` or the folder is
+        not a folder itself (#761).
     """
     _check_who(who)
     directory, _ = _locate(root, file)
@@ -479,12 +499,18 @@ def remove_paper_folder(root: Path, folder: str) -> None:
     """Delete a paper's whole folder, records included (the manual clear).
 
     :raises BadName: *folder* is not one path component.
-    :raises Missing: there is no such folder (or it is a file).
+    :raises Missing: there is no such folder (or it is a file or a symbolic link).
     :raises ReadOnly: the library cannot be written.
-    :raises Io: any other failure.
+    :raises Io: ``papers/`` is not a folder itself (#761), or any other failure.
     """
-    directory = root / PAPERS_DIR / component(folder)
-    if not is_dir(directory):
+    papers = root / PAPERS_DIR
+    directory = papers / component(folder)
+    check_folder(papers)
+    try:
+        a_folder = is_dir(directory)
+    except OSError as e:
+        raise io_error(directory, e, write=True) from e
+    if not a_folder:
         raise Missing(PAPERS_DIR, folder)
     try:
         remove_dir_all(directory)

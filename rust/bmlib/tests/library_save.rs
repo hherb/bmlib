@@ -522,3 +522,122 @@ fn record_use_checks_its_inputs_and_the_file() {
     assert!(!record_path(&dir, &me(), &theirs.folder).exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+/// Run `body` with `dir` listable but not searchable, so every lstat of a name
+/// in it fails; `None` (skip) when the process ignores permissions (root).
+#[cfg(unix)]
+fn unsearchable<T>(dir: &Path, body: impl FnOnce() -> T) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o600)).unwrap();
+    let first = fs::read_dir(dir).unwrap().next().unwrap().unwrap().path();
+    let root_like = fs::symlink_metadata(first).is_ok();
+    let got = (!root_like).then(body);
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+    got
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_cannot_be_examined_is_reported_not_read_as_empty() {
+    let (dir, lib) = scratch("unexamined-records");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    if let Some(scan) = unsearchable(&dir.join("papers").join(&first.folder), || lib.scan()) {
+        let scan = scan.unwrap();
+        assert_eq!(scan.folders.len(), 1);
+        let reasons: Vec<&String> = scan
+            .problems
+            .iter()
+            .filter_map(|p| match p {
+                bmlib::library::Problem::UnreadableFolder { reason, .. } => Some(reason),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reasons.len(), 1, "{:?}", scan.problems);
+        assert!(reasons[0].starts_with("records: "), "{}", reasons[0]);
+        assert!(reasons[0].contains("Permission denied"), "{}", reasons[0]);
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_paper_folder_that_cannot_be_examined_is_unreadable_not_stray() {
+    let (dir, lib) = scratch("unexamined-folder");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    if let Some(scan) = unsearchable(&dir.join("papers"), || lib.scan()) {
+        let problems = scan.unwrap().problems;
+        assert!(
+            matches!(&problems[..], [bmlib::library::Problem::UnreadableFolder { folder, .. }] if *folder == first.folder),
+            "{problems:?}"
+        );
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_taken_name_that_cannot_be_examined_fails_the_save() {
+    let (dir, lib) = scratch("unexamined-claim");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    let papers = dir.join("papers");
+    let got = unsearchable(&papers, || {
+        lib.save(&me(), &paper(), b"%PDF other bytes", SourceKind::Pdf, "t")
+    });
+    if let Some(got) = got {
+        assert!(
+            matches!(&got, Err(LibraryError::Io { path, .. }) if *path == papers.join(&first.folder)),
+            "{got:?}"
+        );
+        assert_eq!(fs::read_dir(&papers).unwrap().count(), 1);
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn removing_a_folder_that_cannot_be_examined_is_not_missing() {
+    let (dir, lib) = scratch("unexamined-remove");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    if let Some(got) = unsearchable(&dir.join("papers"), || lib.remove_folder(&first.folder)) {
+        assert!(matches!(got, Err(LibraryError::ReadOnly { .. })), "{got:?}");
+    }
+    assert_eq!(lib.read(&first).unwrap(), BYTES);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_library_reached_through_a_link_is_used() {
+    let base = std::env::temp_dir().join(format!("bmlib-save-linked-root-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(base.join("real")).unwrap();
+    std::os::unix::fs::symlink(base.join("real"), base.join("lib")).unwrap();
+    let lib = Library::open(&base.join("lib")).unwrap();
+    let first = save(&lib, &me(), &paper(), BYTES);
+    assert_eq!(lib.read(&first).unwrap(), BYTES);
+    assert_eq!(lib.scan().unwrap().folders.len(), 1);
+    let again = Library::open(&base.join("lib")).unwrap();
+    assert!(again.scan().unwrap().problems.is_empty());
+    assert!(base
+        .join("real/papers")
+        .join(&first.folder)
+        .join(&first.name)
+        .is_file());
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unplugged_drive_behind_the_root_link_is_no_such_folder() {
+    let base = std::env::temp_dir().join(format!("bmlib-save-gone-root-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    std::os::unix::fs::symlink(base.join("gone"), base.join("lib")).unwrap();
+    let got = Library::open(&base.join("lib"));
+    assert!(
+        matches!(&got, Err(LibraryError::Unreachable { reason, .. }) if reason == "no such folder"),
+        "{:?}",
+        got.err()
+    );
+    fs::remove_dir_all(base).unwrap();
+}
