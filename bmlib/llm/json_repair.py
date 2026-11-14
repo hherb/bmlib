@@ -523,11 +523,7 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
         try:
             strict_json_loads(candidate)
             return candidate, False
-        except (json.JSONDecodeError, RecursionError) as e:
-            # RecursionError because json.loads() descends recursively: a
-            # candidate nested past the stack limit is undecodable, which is
-            # this loop's ordinary "try the next one" case, not a reason to
-            # abandon the documented ValueError contract.
+        except json.JSONDecodeError as e:  # nesting past the stack too (#758)
             last_error = e
 
         if not repair:

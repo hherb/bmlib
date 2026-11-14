@@ -396,9 +396,10 @@ class TestOnlyJsonNumbersAreRead:
         "text",
         ['{"a": NaN}', "[Infinity]", "[-Infinity]", '{"a": 1e999}', '{"a": -1.8e308}']
         + ["[" + "1" + "0" * 400 + "]", "[-" + "9" * 400 + "]", "[" + "1" * 5000 + "]"]
-        + ['{"a": "x\\ud83d"}', '{"\\udc00": 1}', "[" * 128 + "]" * 128],
+        + ['{"a": "x\\ud83d"}', '{"\\udc00": 1}', "[" * 128 + "]" * 128]
+        + ["[" * 100_000 + "]" * 100_000],
         ids=["nan", "inf", "-inf", "1e999", "-1.8e308", "int-400", "-int-400", "int-5000"]
-        + ["lone-surrogate", "lone-surrogate-key", "depth-128"],
+        + ["lone-surrogate", "lone-surrogate-key", "depth-128", "depth-100000"],
     )
     def test_a_value_json_does_not_define_is_a_decode_error(self, text: str) -> None:
         with pytest.raises(json.JSONDecodeError):
@@ -448,6 +449,13 @@ class TestARefusalIsSeen:
                 with pytest.raises(json.JSONDecodeError):
                     strict_json_loads(text)
         assert refused == ["NaN is not a JSON value"]
+
+    def test_nesting_past_the_stack_is_a_recorded_refusal(self) -> None:
+        # #758: the decoder's own RecursionError, before the depth check runs.
+        with watch_refusals() as refused:
+            with pytest.raises(json.JSONDecodeError):
+                strict_json_loads("[" * 100_000 + "]" * 100_000)
+        assert refused == ["nested too deeply to decode"]
 
     def test_the_enclosing_block_sees_a_nested_blocks_refusals(self) -> None:
         with watch_refusals() as outer:

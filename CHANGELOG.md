@@ -6,6 +6,24 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **JSON nested past Python's stack is a decode error** (#758, Python only).
+  `strict_json_loads` refused nesting past 127 levels only after the stdlib
+  decoder had built the value, so a body nested deep enough to exhaust the
+  stack (measured at 100,000) raised `RecursionError` from the decoder. Full
+  text recorded `RecursionError` faults where Rust records `JSONDecodeError`,
+  and a library record or marker that deep crashed a scan rather than reading
+  as unreadable. It is now a `JSONDecodeError` recorded as a refusal (`nested
+  too deeply to decode`), so `parse_json` reports it without running the
+  repair stages, as it already did for a complete reply nested 128 deep. The
+  `RecursionError` catches this made dead are removed.
+- **Rust `pdf` builds on Windows** (Rust only). `mupdf::Document::open` takes
+  a `&str` on Windows and a `&Path` elsewhere (mupdf 0.8), so the
+  `mupdf_backend` did not compile on Windows; found by BMLibrarian's Windows
+  CI. A PDF whose path is not valid Unicode is refused there as an engine
+  failure. The CI's Windows job now lints the `pdf` feature.
+
 ### Changed — breaking
 
 - **`sync(sources=None)` and `ALL_SOURCES` include `biorxiv-details` and

@@ -323,6 +323,9 @@ impl MupdfExtractor {
 /// engine's: `SYSTEM` (out of memory, a syscall — a missing file too),
 /// `LIBRARY`, `ARGUMENT`, `LIMIT`, `GENERIC` and the crate's own errors. MuPDF
 /// names the path in an open failure, and it is removed.
+// bindgen types the FZ_ERROR_* constants u32 on Unix and i32 on Windows,
+// so `as i32` is needed on one and a no-op on the other.
+#[allow(clippy::unnecessary_cast)]
 fn classify(error: &mupdf::Error, context: &str, path: &std::path::Path) -> PdfError {
     use mupdf_sys::{FZ_ERROR_FORMAT, FZ_ERROR_SYNTAX, FZ_ERROR_UNSUPPORTED};
     let (detail, the_file) = match error {
@@ -483,9 +486,29 @@ fn reading<T>(
     }
 }
 
+/// `path` as `mupdf::Document::open` takes it: the path itself off Windows;
+/// on Windows, where mupdf 0.8 opens only UTF-8 text, the path as `&str`, and
+/// a path that is not valid Unicode is the engine's failure (the file may
+/// read from another path), not the file's.
+#[cfg(not(windows))]
+fn mupdf_path(path: &std::path::Path) -> Result<&std::path::Path, PdfError> {
+    Ok(path)
+}
+
+/// See the other `mupdf_path`.
+#[cfg(windows)]
+fn mupdf_path(path: &std::path::Path) -> Result<&str, PdfError> {
+    path.to_str().ok_or_else(|| {
+        PdfError::engine(
+            "could not open it: its path is not valid Unicode, which MuPDF needs on Windows",
+        )
+    })
+}
+
 /// Open a PDF, refusing one that needs a password, as `extract_blocks` does.
 fn open(path: &std::path::Path) -> Result<Document, PdfError> {
-    let document = Document::open(path).map_err(|e| classify(&e, "could not open it", path))?;
+    let document =
+        Document::open(mupdf_path(path)?).map_err(|e| classify(&e, "could not open it", path))?;
     if document
         .needs_password()
         .map_err(|e| classify(&e, "could not open it", path))?
@@ -798,6 +821,8 @@ mod tests {
     /// Every MuPDF code is placed: `FORMAT`, `SYNTAX` and `UNSUPPORTED` the
     /// file's and every other the engine's, so a new code cannot be blamed on
     /// the file by default.
+    // As in `classify`: the cast is a no-op on Windows.
+    #[allow(clippy::unnecessary_cast)]
     #[test]
     fn every_mupdf_code_is_placed() {
         use mupdf_sys::*;
@@ -912,5 +937,16 @@ mod tests {
             sender.send(outcome.is_err()).ok();
         });
         assert_eq!(receiver.recv_timeout(Duration::from_secs(10)), Ok(true));
+    }
+
+    /// On Windows mupdf opens only UTF-8 text, so a path that is not valid
+    /// Unicode (an unpaired surrogate) is refused as the engine's failure.
+    #[cfg(windows)]
+    #[test]
+    fn a_non_unicode_windows_path_is_an_engine_failure() {
+        use std::os::windows::ffi::OsStringExt;
+        let path = std::path::PathBuf::from(std::ffi::OsString::from_wide(&[0xD800, 0x2E, 0x70]));
+        let error = mupdf_path(&path).unwrap_err();
+        assert_eq!(error.kind, PdfErrorKind::Engine);
     }
 }

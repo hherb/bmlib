@@ -131,6 +131,9 @@ def strict_json_loads(text: str) -> Any:
     integer inside the binary64 range stays an exact ``int`` here, where Rust
     holds one outside ``i64``/``u64`` as a float.
 
+    Nesting deep enough to exhaust the interpreter's stack (the decoder
+    recurses) is refused the same way, never a ``RecursionError`` (#758).
+
     Raises:
         json.JSONDecodeError: For every refusal, so each caller's existing
             ``except json.JSONDecodeError`` catches these too. A refusal's
@@ -142,8 +145,8 @@ def strict_json_loads(text: str) -> Any:
         check_serde_parity(value)
     except json.JSONDecodeError:
         raise
-    except ValueError as exc:
-        reason = str(exc)
+    except (ValueError, RecursionError) as exc:
+        reason = "nested too deeply to decode" if isinstance(exc, RecursionError) else str(exc)
         seen = _REFUSALS.get()
         if seen is not None:
             seen.append(reason)

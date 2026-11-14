@@ -579,7 +579,7 @@ def parse_crossref_retraction_response(
         # Decoded as UTF-8 explicitly: json.loads would also sniff UTF-16 and
         # UTF-32 from bytes, which the Rust port does not.
         data = strict_json_loads(body.decode("utf-8") if isinstance(body, bytes) else body)
-    except (ValueError, RecursionError) as exc:
+    except ValueError as exc:  # nesting past the stack too (#758)
         return failed(f"body is not JSON: {exc}")
     message = data.get("message") if isinstance(data, dict) else None
     items = message.get("items") if isinstance(message, dict) else None

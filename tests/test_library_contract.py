@@ -164,6 +164,15 @@ def test_records(case: dict[str, Any]) -> None:
         assert err.value.reason
 
 
+def test_a_record_nested_past_the_stack_is_unreadable() -> None:
+    # #758: Python's decoder raised RecursionError, which escaped a scan; Rust's
+    # serde_json refuses it at 128 levels, as the fixture's records cases do.
+    with pytest.raises(RecordProblem) as err:
+        parse_record("[" * 100_000 + "]" * 100_000)
+    assert err.value.kind == "unreadable"
+    assert err.value.reason.startswith("not JSON: nested too deeply to decode")
+
+
 @pytest.mark.parametrize("case", _cases("open"))
 def test_open(case: dict[str, Any], tmp_path: Path) -> None:
     root = tmp_path / "root"
