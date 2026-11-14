@@ -59,10 +59,12 @@ the calls after it have round-trip tests of their own, not the fixture's
   with `findDigest` in the library at hand. A digest that is not 64 lowercase
   hex digits throws `BadIdentifier` (field `sha256`), where bmlib's own
   `find_digest` finds nothing, so a mis-stored digest does not read as "not in
-  the library".
-- **`usedBy` is `null` for a folder the scan did not find**, and an empty list
-  for a file nobody's record lists. It is a lower bound: records the scan could
-  not read are `problems`, not users.
+  the library". `usedBy` and `release` refuse it the same way.
+- **`usedBy` is `null` for a folder the scan did not find.** Otherwise it is a
+  `FileUsers`: the `installations` whose record lists the file, and
+  `complete`, which is `false` when the folder holds a record the scan did not
+  count (unreadable, newer, misnamed, not downloaded, or being written; see
+  `problems`). Say so before offering to remove a file when it is `false`.
 - **Nothing is deleted automatically.** `removeFile` and `removeFolder` are
   for the user's manual clear only.
 - **`LibraryError`'s text is bmlib's wording**, fit to show the user. Its

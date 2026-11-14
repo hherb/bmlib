@@ -60,11 +60,14 @@ use to share one folder of papers. Built in both languages, in a worktree
   installations coming in pass the validating constructors; names are checked
   where bmlib uses them. `library_cases.json`'s identifier, installation, open,
   scan, find, find_digest, group and read cases run through the FFI; `save`
-  has round-trip tests, not `save_scenarios`. `find_digest` refuses a
-  malformed digest and `used_by` is `None` for an unknown folder, both unlike
-  bmlib (DECISIONS). The review's core finding, `FileClash.folder` holding a
-  full path in both languages, is #755 item 7. Not exposed: `FullTextService`'s library use (MedicalFactChecker
-  fetches in Swift; the FFI's service is the #492 sketch). Swift needs
+  has round-trip tests, not `save_scenarios`. `find_digest`, `used_by` and
+  `release` refuse a malformed digest; `used_by` is `None` for an unknown
+  folder and says whether its list is `complete`; all unlike bmlib
+  (DECISIONS). The review's core finding, `FileClash.folder` holding a full
+  path in both languages, is filed on #755 (the `FileClash` item; the issue
+  has two items numbered 7). Not exposed: `FullTextService`'s library use
+  (MedicalFactChecker fetches in Swift; the FFI's service is the #492
+  sketch). Swift needs
   `extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2 omits
   the conformance; README). Reasoning in `docs/DECISIONS.md`, *The library
   through bmlib-ffi (step 1c)*. **Next**: StudyAnalyzer's step 2 and
@@ -327,8 +330,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   number must still read this list.
 - **Tests on `feat/library-ffi`** (2026-11-14, PostgreSQL 18 DSN on port
   5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,897 passed + 19 skipped; Rust
-  1,829 (`cargo test`), and `cargo test -p bmlib-ffi --features http-sketch`
-  33. The next bullet is the run of `feat/341-biorxiv-details`.
+  1,831 (`cargo test`), and `cargo test -p bmlib-ffi --features http-sketch`
+  35. The next bullet is the run of `feat/341-biorxiv-details`.
 - **Tests on `feat/341-biorxiv-details`** (2026-11-14, PostgreSQL 18 DSN
   on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 10,841 passed + 20 skipped; Rust 1,788 (`cargo test --workspace`, clippy clean). The next bullet is the run of `feat/pmc-open-data-json`.
 - **Tests: 10,532 passing + 18 skipped with the PostgreSQL 18 DSN** (port 5532,
