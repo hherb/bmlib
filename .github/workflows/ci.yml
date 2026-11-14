@@ -269,8 +269,9 @@ jobs:
       - name: Test
         run: cargo test ${{ matrix.args }}
       - name: Kotlin binding declares no name it imports
-        # A type named like one of the binding's JNA imports (`Library`) builds
-        # in Rust and Swift and breaks the Android app's compile.
+        # A type named like one of the binding's imports (JNA's `Library`, say)
+        # or a Kotlin default import builds in Rust and Swift and breaks the
+        # Android app's compile.
         if: matrix.label == 'ffi'
         run: |
           cargo build -p bmlib-ffi --features bindgen

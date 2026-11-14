@@ -188,8 +188,8 @@ All notable changes to bmlib are documented here. The format is based on
 
 - **The shared paper library through bmlib-ffi** (Rust only; step 1c of the
   shared paper library). `PaperLibrary` and `LibraryScan` objects (not
-  `Library`, which every Kotlin binding imports from JNA), owned copies of
-  the library's records, `LibraryProblem`, and `LibraryError`, whose exported
+  `Library`, which every UniFFI Kotlin binding imports from JNA), owned copies
+  of the library's records, `LibraryProblem`, and `LibraryError`, whose exported
   `Display` is bmlib's wording. Also `paper_ids_canonical` and
   `installation_new`. Identifiers and installations coming in pass bmlib's
   validating constructors (`PaperIds::canonical`, `Installation::new`).

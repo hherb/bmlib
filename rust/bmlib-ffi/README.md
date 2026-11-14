@@ -33,7 +33,11 @@ The error is `JatsError` in Swift (`JatsError.Xml(reason:)`) and
 - **`Resource`**: the parse thread could not start, so a later call may succeed.
 
 Error fields are named `reason`, never `message`: a `message` field collides
-with Kotlin's `Throwable.message` and does not compile.
+with Kotlin's `Throwable.message` and does not compile. No exported type is
+named after one of the binding's imports (`Library`, `Pointer`, `Structure`)
+or a Kotlin default import (`List`, `String`): the import shadows the type, or
+the type the default, and the Android build breaks. CI's `ffi` job runs
+`scripts/check_kotlin_binding_names.py` over the generated binding.
 
 ### The shared paper library
 

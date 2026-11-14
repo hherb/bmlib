@@ -23,9 +23,9 @@
 //! installation by `Installation::new`. A refusal is the same [`LibraryError`]
 //! bmlib returns. File and folder names are checked where bmlib uses them.
 //!
-//! **Every [`PaperLibrary`] call but `root` does disk I/O on the calling thread**;
-//! call them off the main thread. A [`LibraryScan`] is a snapshot: a later save
-//! does not change it.
+//! **Every [`PaperLibrary`] call but `root` does disk I/O on the calling
+//! thread**; call them off the main thread. A [`LibraryScan`] is a snapshot: a
+//! later save does not change it.
 //!
 //! Values going out are copied with exhaustive destructuring, so a field bmlib
 //! adds fails to compile here until it is carried across. Add fields only at
@@ -496,8 +496,8 @@ impl From<&lib::Problem> for LibraryProblem {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 #[uniffi::export(Display)]
 pub enum LibraryError {
-    /// From [`PaperLibrary::open`] only: the library's folder is missing or not a
-    /// folder (an unmounted drive, a revoked bookmark). The library may come
+    /// From [`PaperLibrary::open`] only: the library's folder is missing or not
+    /// a folder (an unmounted drive, a revoked bookmark). The library may come
     /// back, so offer to try again rather than choosing another folder. Once
     /// open, a folder that vanishes reads as `Io` from `scan` and `save`,
     /// `Missing` from `read`, `record_use`, `remove_file` and `remove_folder`,
