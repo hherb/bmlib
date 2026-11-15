@@ -844,3 +844,197 @@ fn paper_ids_contradiction_names_the_field() {
         "pmid"
     );
 }
+
+/// Every file and folder under `root` (folders with a trailing slash), sorted.
+fn tree(root: &Path) -> Vec<String> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                out.push(format!("{rel}/"));
+                walk(root, &path, out);
+            } else {
+                out.push(rel);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ`.
+fn is_saved_at(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 20
+        && b[19] == b'Z'
+        && [4, 7].iter().all(|&i| b[i] == b'-')
+        && b[10] == b'T'
+        && [13, 16].iter().all(|&i| b[i] == b':')
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| [4, 7, 10, 13, 16, 19].contains(&i) || c.is_ascii_digit())
+}
+
+/// A scenario step's paper, its identifiers raw: the FFI canonicalises them.
+fn step_paper(p: &Value) -> PaperInfo {
+    PaperInfo {
+        ids: PaperIds {
+            pmid: opt(p, "pmid"),
+            doi: opt(p, "doi"),
+            pmcid: opt(p, "pmcid"),
+        },
+        title: opt(p, "title"),
+        year: p["year"].as_i64().map(|y| i32::try_from(y).unwrap()),
+        first_author: opt(p, "first_author"),
+    }
+}
+
+/// A scenario step's installation.
+fn step_who(step: &Value) -> Installation {
+    installation_new(
+        step["app"].as_str().unwrap().into(),
+        step["id"].as_str().unwrap().into(),
+        "Test Mac".into(),
+    )
+    .unwrap()
+}
+
+/// `got`'s value, or, when `step` expects an error, the check that it is that one.
+fn step_refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<T> {
+    let want = &step["expect"];
+    if !want.is_object() {
+        return Some(got.unwrap_or_else(|e| panic!("{name}: {e}")));
+    }
+    assert_eq!(want["error"], "foreign_jats", "{name}");
+    match got {
+        Err(LibraryError::ForeignJats {
+            folder,
+            name: file,
+            field,
+            theirs,
+            ours,
+        }) => {
+            let got = json!({
+                "error": "foreign_jats", "folder": folder, "name": file, "field": field,
+                "theirs": theirs, "ours": ours,
+            });
+            assert_eq!(&got, want, "{name}");
+        }
+        Err(e) => panic!("{name}: {e}"),
+        Ok(_) => panic!("{name}: not refused"),
+    }
+    None
+}
+
+#[test]
+fn save_scenarios_match_the_fixture() {
+    // #765: the fixture's saves, uses, releases and removals, through the FFI,
+    // checked by the files on disk and every record's JSON.
+    let cases = section("save_scenarios");
+    assert!(!cases.is_empty());
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let base = scratch(&format!(
+            "save-{}",
+            name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        ));
+        let library = PaperLibrary::open(base.display().to_string()).unwrap();
+        let mut saved: Vec<Option<FileRef>> = Vec::new();
+        for step in case["steps"].as_array().unwrap() {
+            let of = |s: &Value| saved[s["of"].as_u64().unwrap() as usize].clone().unwrap();
+            let mut made = None;
+            match step["op"].as_str().unwrap() {
+                "save" => {
+                    made = step_refused(
+                        name,
+                        step,
+                        library.save(
+                            step_who(step),
+                            step_paper(&step["paper"]),
+                            step["text"].as_str().unwrap().as_bytes().to_vec(),
+                            kind(step["kind"].as_str().unwrap()),
+                            step["origin"].as_str().unwrap().into(),
+                        ),
+                    );
+                }
+                "release" => library.release(step_who(step), of(step)).unwrap(),
+                "record_use" => {
+                    let got =
+                        library.record_use(step_who(step), step_paper(&step["paper"]), of(step));
+                    step_refused(name, step, got);
+                }
+                "remove_file" => {
+                    let got = library.remove_file(of(step));
+                    if step["expect"] == "missing" {
+                        assert!(matches!(got, Err(LibraryError::Missing { .. })), "{name}");
+                    } else {
+                        got.unwrap();
+                    }
+                }
+                "remove_folder" => {
+                    let got = library.remove_folder(step["folder"].as_str().unwrap().into());
+                    if step["expect"] == "bad_name" {
+                        assert!(matches!(got, Err(LibraryError::BadName { .. })), "{name}");
+                    } else if step["expect"] == "missing" {
+                        assert!(matches!(got, Err(LibraryError::Missing { .. })), "{name}");
+                    } else {
+                        got.unwrap();
+                    }
+                }
+                "read" => assert!(
+                    matches!(library.read(of(step)), Err(LibraryError::Missing { .. })),
+                    "{name}"
+                ),
+                "used_by" => {
+                    let file = of(step);
+                    let users = library
+                        .scan()
+                        .unwrap()
+                        .used_by(file.folder.clone(), file.sha256.clone())
+                        .unwrap()
+                        .unwrap_or_else(|| panic!("{name}: no folder {}", file.folder));
+                    assert!(users.complete, "{name}");
+                    let mut got: Vec<String> = users
+                        .installations
+                        .iter()
+                        .map(|i| format!("{}-{}", i.app, i.id))
+                        .collect();
+                    got.sort();
+                    assert_eq!(json!(got), step["expect"], "{name}");
+                }
+                "find_digest" => {
+                    let want = step["expect"]
+                        .as_u64()
+                        .map(|i| saved[i as usize].clone().unwrap());
+                    let got = library
+                        .scan()
+                        .unwrap()
+                        .find_digest(of(step).sha256, step["kind"].as_str().map(kind))
+                        .unwrap();
+                    assert_eq!(got, want, "{name}");
+                }
+                other => panic!("unknown step {other}"),
+            }
+            saved.push(made);
+        }
+        let want = &case["expect"];
+        assert_eq!(json!(tree(&base)), want["paths"], "{name}");
+        for (rel, record) in want["records"].as_object().unwrap() {
+            let mut got: Value =
+                serde_json::from_str(&std::fs::read_to_string(base.join(rel)).unwrap()).unwrap();
+            for entry in got["files"].as_array_mut().unwrap() {
+                let at = entry.as_object_mut().unwrap().remove("saved_at").unwrap();
+                assert!(is_saved_at(at.as_str().unwrap()), "{name}: {at}");
+            }
+            assert_eq!(&got, record, "{name}: {rel}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}

@@ -1,56 +1,37 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-15 (**#784, the lookup's library rules through the
-FFI, on `feat/ffi-lookup-rules`**). Merged since the last update: #781 (#780,
-below). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of
-#736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
-everything since is under Unreleased._
-
-## This session: the lookup's library rules, for an app's own chain (#784)
-
-Both languages, and bmlib-ffi. MedicalFactChecker's full-text fetch is its
-own Swift chain, so for StudyAnalyzer's design step 3b it must read the
-library by the service's rules. `newest_source(scan, ids, kind)` (the file
-`find_source_in` reads) and `lists_use(scan, who, file)` (the check
-`note_use_in` makes before writing) are split out of the two methods,
-unchanged, and Rust's `contradiction` is public as Python's was. bmlib-ffi
-exposes `LibraryScan.newest_source`, `LibraryScan.lists_use`, `library_ids`
-(run against `fulltext_library_ids.json`) and `paper_ids_contradiction`; the
-read and the write stay `read` / `record_use` with their typed errors. The
-consumer is bmlibrarian_lite #788 (step 3b), which re-pins its xcframework
-past this.
-
-## Merged: a library save repeats no parse warnings (#780, PR #781)
-
-The identifier read in `save` and `record_use` skips the audit's warnings
-(Python `JATSParser._own_identifiers`, Rust's crate-private
-`jats_reader::parse_unwarned`) but keeps its ERROR lines; "only the target
-folder is checked" is pinned in both languages. Rust warns on an author-less
-article where Python logs at DEBUG: **#782**.
-_Last updated: 2026-11-15 (**#782, on `fix/rust-zero-author-debug-782`**).
-Merged since the last update: #781 (#780: a library save repeats no parse
-warnings; see its CHANGELOG entry). **0.13.0 is on PyPI** (tag `v0.13.0` on
+_Last updated: 2026-11-15 (**#765, the fixture's `save_scenarios` through
+the FFI, on `test/ffi-save-scenarios-765`**). Merged since the last update:
+#783 (#782) and #785 (#784), below. **0.13.0 is on PyPI** (tag `v0.13.0` on
 `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
 the same commit; everything since is under Unreleased._
 
-## This session: Rust logs an author-less article at DEBUG (#782)
+## This session: the FFI runs the fixture's `save_scenarios` (#765)
 
-Rust's reader warned on every article that parsed to no authors, where
-Python's `_report_zero_authors` logs one whose contributor list names nobody
-at DEBUG. That line moved from `JatsReport::warnings` to a new public field,
-`JatsReport::debug`, which `parse_audited` logs at DEBUG. The "most likely
-routed elsewhere" line stays a warning. **A struct literal or exhaustive
-destructuring of `JatsReport` must name `debug`** (crate CHANGELOG, *Changed —
-breaking*). bmlib-ffi's `JatsParseReport` carries `debug` too (the
-maintainer's call), so a Swift or Kotlin construction of it must name the
-field. The manual's `parse_audited` example now asserts the line is in
-`debug`. The new test, `an_author_less_article_is_logged_at_debug`, was
-mutation-checked: logging the line at WARN again fails it. Python's two
-zero-author lines gain the colon of every other "JATS parse of" line ("JATS
-parse of X: produced no authors…"), so both languages write the same text, pinned in
-`test_the_quiet_branch_reports_its_evidence_not_a_conclusion`
-(mutation-checked); the renderer digests were re-pinned without a version
-bump, since only log text moved.
+Tests only. `save_scenarios_match_the_fixture` in
+`rust/bmlib-ffi/src/library_tests.rs` replays all 30 scenarios of
+`library_cases.json` through `PaperLibrary` / `LibraryScan` and checks the
+tree on disk and every record's JSON, a port of the crate's runner in
+`rust/bmlib/tests/library_contract.rs`. Mutation-checked (a changed
+installation label fails it). The fixture sections still not run through the
+FFI (`folder_names`, `records`, `component`, `special_entries`) test functions
+it does not export.
+
+## Merged: the lookup's library rules, for an app's own chain (#784, PR #785)
+
+`newest_source(scan, ids, kind)` and `lists_use(scan, who, file)` are split
+out of the service's library store unchanged; bmlib-ffi exposes them with
+`library_ids` and `paper_ids_contradiction`. The consumer is bmlibrarian_lite
+#788 (step 3b), which re-pins its xcframework past this.
+
+## Merged: Rust logs an author-less article at DEBUG (#782, PR #783)
+
+The line moved to a new public field, `JatsReport::debug` (and bmlib-ffi's
+`JatsParseReport.debug`). **A struct literal or exhaustive destructuring of
+`JatsReport` must name `debug`** (crate CHANGELOG, *Changed — breaking*).
+Python's two zero-author lines now read "JATS parse of X: produced no
+authors…". Before that, #780 (PR #781): a library save repeats no parse
+warnings.
 
 ## Merged: no file beside another paper's JATS (#766, PR #779)
 
@@ -132,8 +113,8 @@ use to share one folder of papers. Built in both languages, in a worktree
   `paper_ids_canonical`, `installation_new`. Identifiers and installations
   coming in pass the validating constructors; names are checked
   where bmlib uses them. `library_cases.json`'s identifier, installation, open,
-  scan, find, find_digest, group and read cases run through the FFI; `save`
-  has round-trip tests, not `save_scenarios`. `find_digest`, `used_by` and
+  scan, find, find_digest, group, read and (since #765) `save_scenarios` cases
+  run through the FFI. `find_digest`, `used_by` and
   `release` refuse a malformed digest; `used_by` is `None` for an unknown
   folder and says whether its list is `complete`; all unlike bmlib
   (DECISIONS). The review's core finding, `FileClash.folder` holding a full
@@ -161,8 +142,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   passed into `Library`.
 - **Open library issues**: #778 (PR #777's deferrals), #762 (a non-UTF-8
   library JATS, Python serves it, Rust refuses; the #766 check inherits the
-  gap), #765 (the FFI runs no `save_scenarios`), #755 (1a's review
-  follow-ups).
+  gap), #755 (1a's review follow-ups).
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
@@ -180,11 +160,9 @@ MECA bulk is the expected next request.
 
 ## Earlier: full text's JSON as Rust reads it, PMC Open Data (PRs #757, #752, #749, #747, #745)
 
-A new full-text test must script `content`, not `json()`, because the
-responses decode through `strict_json_loads`. The md5s in the record fixtures
-are those of `sample_article.xml` and `textless.pdf`, so edit either file and
-update them. Not covered: a JATS cached with the PDF-beside option off (the
-`shortcut:` in `_check_cache`).
+A new full-text test must script `content`, not `json()` (responses decode
+through `strict_json_loads`); the record fixtures' md5s are those of
+`sample_article.xml` and `textless.pdf`.
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -295,10 +273,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/rust-zero-author-debug-782`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,052 passed + 22
-  skipped (11,074 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,863 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
+- **Tests on `test/ffi-save-scenarios-765`** (2026-11-15, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,055 passed + 22
+  skipped (11,077 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+  1,871 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
@@ -327,9 +305,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**124 open** (123 after this branch merges, #782 being its issue): **#784**
-(bmlib-ffi: the full-text lookup's library rules), the library's #755, #762,
-#765 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+**122 open** (121 after this branch merges, #765 being its issue): the
+library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open
