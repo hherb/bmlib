@@ -271,6 +271,41 @@ fn errors_keep_every_field_and_bmlibs_wording() {
     }
 }
 
+/// A scan problem as the fixture spells it, every field kept.
+fn problem_json(p: &LibraryProblem) -> Value {
+    match p {
+        LibraryProblem::UnreadableRecord {
+            folder,
+            file,
+            reason,
+        } => json!({"kind": "unreadable_record", "folder": folder, "file": file, "reason": reason}),
+        LibraryProblem::UnreadableFolder { folder, reason } => {
+            json!({"kind": "unreadable_folder", "folder": folder, "reason": reason})
+        }
+        LibraryProblem::LeftoverTemp { folder, name } => {
+            json!({"kind": "leftover_temp", "folder": folder, "name": name})
+        }
+        LibraryProblem::RecordNotDownloaded { folder, file } => {
+            json!({"kind": "record_not_downloaded", "folder": folder, "file": file})
+        }
+        LibraryProblem::ConflictingIds { folder, field } => {
+            json!({"kind": "conflicting_ids", "folder": folder, "field": field})
+        }
+        LibraryProblem::NewerRecord {
+            folder,
+            file,
+            version,
+        } => json!({"kind": "newer_record", "folder": folder, "file": file, "version": version}),
+        LibraryProblem::MisnamedRecord { folder, file } => {
+            json!({"kind": "misnamed_record", "folder": folder, "file": file})
+        }
+        LibraryProblem::UnrecordedFile { folder, name } => {
+            json!({"kind": "unrecorded_file", "folder": folder, "name": name})
+        }
+        LibraryProblem::StrayEntry { name } => json!({"kind": "stray_entry", "name": name}),
+    }
+}
+
 #[test]
 fn scan_matches_the_fixture() {
     let (base, library) = sample("scan");
@@ -338,42 +373,16 @@ fn scan_matches_the_fixture() {
         })
         .collect();
     assert_eq!(Value::Array(folders), want["folders"]);
+    // The sample's reasons are serde's wording, which the fixture leaves out.
     let problems: Vec<Value> = scan
         .problems()
-        .into_iter()
-        .map(|p| match p {
-            LibraryProblem::UnreadableRecord {
-                folder,
-                file,
-                reason,
-            } => {
-                assert!(!reason.is_empty());
-                json!({"kind": "unreadable_record", "folder": folder, "file": file})
+        .iter()
+        .map(|p| {
+            let mut v = problem_json(p);
+            if let Some(reason) = v.as_object_mut().unwrap().remove("reason") {
+                assert!(!reason.as_str().unwrap().is_empty());
             }
-            LibraryProblem::UnreadableFolder { .. } => panic!("no unreadable folder in the sample"),
-            LibraryProblem::LeftoverTemp { folder, name } => {
-                json!({"kind": "leftover_temp", "folder": folder, "name": name})
-            }
-            LibraryProblem::RecordNotDownloaded { folder, file } => {
-                json!({"kind": "record_not_downloaded", "folder": folder, "file": file})
-            }
-            LibraryProblem::ConflictingIds { folder, field } => {
-                json!({"kind": "conflicting_ids", "folder": folder, "field": field})
-            }
-            LibraryProblem::NewerRecord {
-                folder,
-                file,
-                version,
-            } => {
-                json!({"kind": "newer_record", "folder": folder, "file": file, "version": version})
-            }
-            LibraryProblem::MisnamedRecord { folder, file } => {
-                json!({"kind": "misnamed_record", "folder": folder, "file": file})
-            }
-            LibraryProblem::UnrecordedFile { folder, name } => {
-                json!({"kind": "unrecorded_file", "folder": folder, "name": name})
-            }
-            LibraryProblem::StrayEntry { name } => json!({"kind": "stray_entry", "name": name}),
+            v
         })
         .collect();
     assert_eq!(Value::Array(problems), want["problems"]);
@@ -843,4 +852,357 @@ fn paper_ids_contradiction_names_the_field() {
         error_field(&paper_ids_contradiction(ids("x", None), ids("1", None)).unwrap_err()),
         "pmid"
     );
+}
+
+/// Every file and folder under `root` (folders with a trailing slash), sorted.
+fn tree(root: &Path) -> Vec<String> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                out.push(format!("{rel}/"));
+                walk(root, &path, out);
+            } else {
+                out.push(rel);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+/// `YYYY-MM-DDTHH:MM:SSZ`.
+fn is_saved_at(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 20
+        && b[19] == b'Z'
+        && [4, 7].iter().all(|&i| b[i] == b'-')
+        && b[10] == b'T'
+        && [13, 16].iter().all(|&i| b[i] == b':')
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| [4, 7, 10, 13, 16, 19].contains(&i) || c.is_ascii_digit())
+}
+
+/// A scenario step's paper, its identifiers raw: the FFI canonicalises them.
+fn step_paper(p: &Value) -> PaperInfo {
+    PaperInfo {
+        ids: PaperIds {
+            pmid: opt(p, "pmid"),
+            doi: opt(p, "doi"),
+            pmcid: opt(p, "pmcid"),
+        },
+        title: opt(p, "title"),
+        year: p["year"].as_i64().map(|y| i32::try_from(y).unwrap()),
+        first_author: opt(p, "first_author"),
+    }
+}
+
+/// A scenario step's installation.
+fn step_who(step: &Value) -> Installation {
+    installation_new(
+        step["app"].as_str().unwrap().into(),
+        step["id"].as_str().unwrap().into(),
+        "Test Mac".into(),
+    )
+    .unwrap()
+}
+
+/// `got`'s value, or, when `step` expects an error, the check that it is that one.
+fn step_refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<T> {
+    let want = &step["expect"];
+    if !want.is_object() {
+        assert!(want.is_null(), "{name}: unknown expect {want}");
+        return Some(got.unwrap_or_else(|e| panic!("{name}: {e}")));
+    }
+    assert_eq!(want["error"], "foreign_jats", "{name}");
+    match got {
+        Err(LibraryError::ForeignJats {
+            folder,
+            name: file,
+            field,
+            theirs,
+            ours,
+        }) => {
+            let got = json!({
+                "error": "foreign_jats", "folder": folder, "name": file, "field": field,
+                "theirs": theirs, "ours": ours,
+            });
+            assert_eq!(&got, want, "{name}");
+        }
+        Err(e) => panic!("{name}: {e}"),
+        Ok(_) => panic!("{name}: not refused"),
+    }
+    None
+}
+
+#[test]
+fn save_scenarios_match_the_fixture() {
+    // #765: the fixture's saves, uses, releases and removals, through the FFI,
+    // checked by the files on disk and every record's JSON.
+    let cases = section("save_scenarios");
+    assert!(!cases.is_empty());
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let base = scratch(&format!(
+            "save-{}",
+            name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        ));
+        let library = PaperLibrary::open(base.display().to_string()).unwrap();
+        let mut saved: Vec<Option<FileRef>> = Vec::new();
+        for step in case["steps"].as_array().unwrap() {
+            let of = |s: &Value| saved[s["of"].as_u64().unwrap() as usize].clone().unwrap();
+            let mut made = None;
+            match step["op"].as_str().unwrap() {
+                "save" => {
+                    made = step_refused(
+                        name,
+                        step,
+                        library.save(
+                            step_who(step),
+                            step_paper(&step["paper"]),
+                            step["text"].as_str().unwrap().as_bytes().to_vec(),
+                            kind(step["kind"].as_str().unwrap()),
+                            step["origin"].as_str().unwrap().into(),
+                        ),
+                    );
+                }
+                "release" => library.release(step_who(step), of(step)).unwrap(),
+                "record_use" => {
+                    let got =
+                        library.record_use(step_who(step), step_paper(&step["paper"]), of(step));
+                    step_refused(name, step, got);
+                }
+                "remove_file" => {
+                    let got = library.remove_file(of(step));
+                    if step["expect"] == "missing" {
+                        assert!(matches!(got, Err(LibraryError::Missing { .. })), "{name}");
+                    } else {
+                        got.unwrap();
+                    }
+                }
+                "remove_folder" => {
+                    let got = library.remove_folder(step["folder"].as_str().unwrap().into());
+                    if step["expect"] == "bad_name" {
+                        assert!(matches!(got, Err(LibraryError::BadName { .. })), "{name}");
+                    } else if step["expect"] == "missing" {
+                        assert!(matches!(got, Err(LibraryError::Missing { .. })), "{name}");
+                    } else {
+                        got.unwrap();
+                    }
+                }
+                "read" => {
+                    assert_eq!(step["expect"], "missing", "{name}");
+                    assert!(
+                        matches!(library.read(of(step)), Err(LibraryError::Missing { .. })),
+                        "{name}"
+                    );
+                }
+                "used_by" => {
+                    let file = of(step);
+                    let users = library
+                        .scan()
+                        .unwrap()
+                        .used_by(file.folder.clone(), file.sha256.clone())
+                        .unwrap()
+                        .unwrap_or_else(|| panic!("{name}: no folder {}", file.folder));
+                    assert!(users.complete, "{name}");
+                    let mut got: Vec<String> = users
+                        .installations
+                        .iter()
+                        .map(|i| format!("{}-{}", i.app, i.id))
+                        .collect();
+                    got.sort();
+                    assert_eq!(json!(got), step["expect"], "{name}");
+                }
+                "find_digest" => {
+                    let want = step["expect"]
+                        .as_u64()
+                        .map(|i| saved[i as usize].clone().unwrap());
+                    let got = library
+                        .scan()
+                        .unwrap()
+                        .find_digest(of(step).sha256, step["kind"].as_str().map(kind))
+                        .unwrap();
+                    assert_eq!(got, want, "{name}");
+                }
+                other => panic!("unknown step {other}"),
+            }
+            saved.push(made);
+        }
+        let want = &case["expect"];
+        assert_eq!(json!(tree(&base)), want["paths"], "{name}");
+        for (rel, record) in want["records"].as_object().unwrap() {
+            let mut got: Value =
+                serde_json::from_str(&std::fs::read_to_string(base.join(rel)).unwrap()).unwrap();
+            for entry in got["files"].as_array_mut().unwrap() {
+                let at = entry.as_object_mut().unwrap().remove("saved_at").unwrap();
+                assert!(is_saved_at(at.as_str().unwrap()), "{name}: {at}");
+            }
+            assert_eq!(&got, record, "{name}: {rel}");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+#[test]
+fn component_matches_the_fixture() {
+    // A folder the bad names could reach on Windows (`x.` is `x` there, `...` is
+    // `papers` itself) is planted; no bad name may remove or read anything.
+    let base = scratch("component");
+    let library = PaperLibrary::open(base.display().to_string()).unwrap();
+    std::fs::create_dir_all(base.join("papers/x")).unwrap();
+    std::fs::write(base.join("papers/x/keep"), "planted").unwrap();
+    let before = tree(&base);
+    let cases = section("component");
+    assert!(!cases.is_empty());
+    for case in cases {
+        let (name, value) = (&case["name"], case["value"].as_str().unwrap());
+        let file = FileRef {
+            folder: value.into(),
+            name: "keep".into(),
+            sha256: lib::sha256_hex(b"planted"),
+            kind: SourceKind::Text,
+        };
+        let got = (
+            library.remove_folder(value.into()),
+            library.read(file).map(|_| ()),
+        );
+        let refused = match case["expect"].as_str().unwrap() {
+            "bad_name" => matches!(
+                got,
+                (
+                    Err(LibraryError::BadName { .. }),
+                    Err(LibraryError::BadName { .. })
+                )
+            ),
+            "ok" => matches!(
+                got,
+                (
+                    Err(LibraryError::Missing { .. }),
+                    Err(LibraryError::Missing { .. })
+                )
+            ),
+            other => panic!("{name}: unknown expect {other}"),
+        };
+        assert!(refused, "{name}: {got:?}");
+    }
+    assert_eq!(tree(&base), before);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Every entry under `dir` with its bytes (`None` for a folder).
+#[cfg(unix)]
+fn outside(dir: &Path) -> std::collections::BTreeMap<String, Option<Vec<u8>>> {
+    tree(dir)
+        .into_iter()
+        .map(|rel| {
+            let bytes = (!rel.ends_with('/')).then(|| std::fs::read(dir.join(&rel)).unwrap());
+            (rel, bytes)
+        })
+        .collect()
+}
+
+/// One paper is saved, then one of its entries is replaced by a FIFO, a file,
+/// or a link to a copy outside the library (#761). Unix only: Windows needs
+/// Developer Mode for a link and has no FIFOs.
+#[cfg(unix)]
+#[test]
+fn special_entries_match_the_fixture() {
+    let cases = section("special_entries");
+    assert!(!cases.is_empty());
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let base = scratch(&format!(
+            "special-{}",
+            name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        ));
+        let (root, out) = (base.join("lib"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        let library = PaperLibrary::open(root.display().to_string()).unwrap();
+        let sa = who("studyanalyzer");
+        let mfc = installation_new(
+            "medicalfactchecker".into(),
+            "bbbb".into(),
+            "Test Mac".into(),
+        )
+        .unwrap();
+        let paper = paper("111");
+        let save = || {
+            library.save(
+                sa.clone(),
+                paper.clone(),
+                b"pdf bytes one".to_vec(),
+                SourceKind::Pdf,
+                "unit test".into(),
+            )
+        };
+        let file = save().unwrap();
+        let target = root.join(case["replace"].as_str().unwrap());
+        match case["with"].as_str().unwrap() {
+            with @ ("symlink" | "dangling_symlink") => {
+                let moved = out.join(target.file_name().unwrap());
+                std::fs::rename(&target, &moved).unwrap();
+                std::os::unix::fs::symlink(&moved, &target).unwrap();
+                if with == "dangling_symlink" {
+                    std::fs::remove_dir_all(&moved).unwrap();
+                }
+            }
+            "file" => {
+                std::fs::remove_dir_all(&target).unwrap();
+                std::fs::write(&target, b"not a folder").unwrap();
+            }
+            "fifo" => {
+                std::fs::remove_file(&target).unwrap();
+                let made = std::process::Command::new("mkfifo")
+                    .arg(&target)
+                    .status()
+                    .unwrap();
+                assert!(made.success(), "{name}: mkfifo");
+            }
+            other => panic!("{name}: unknown entry {other}"),
+        }
+        let before = outside(&out);
+        let want = &case["expect"];
+        let got: Result<Option<String>, LibraryError> = match case["op"].as_str().unwrap() {
+            "scan" => {
+                let scan = library.scan().unwrap();
+                let folders: Vec<String> = scan.folders().into_iter().map(|f| f.folder).collect();
+                assert_eq!(json!(folders), want["folders"], "{name}");
+                let problems: Vec<Value> = scan.problems().iter().map(problem_json).collect();
+                assert_eq!(Value::Array(problems), want["problems"], "{name}");
+                Ok(None)
+            }
+            "read" => library.read(file.clone()).map(|_| None),
+            "record_use" => library
+                .record_use(mfc.clone(), paper.clone(), file.clone())
+                .map(|()| None),
+            "save" => save().map(|f| Some(f.folder)),
+            "release" => library.release(sa.clone(), file.clone()).map(|()| None),
+            "remove_file" => library.remove_file(file.clone()).map(|()| None),
+            "remove_folder" => library.remove_folder(file.folder.clone()).map(|()| None),
+            "open" => PaperLibrary::open(root.display().to_string()).map(|_| None),
+            other => panic!("{name}: unknown op {other}"),
+        };
+        match (want["error"].as_str(), got) {
+            (Some("io"), Err(LibraryError::Io { reason, .. })) => {
+                if let Some(part) = want["reason"].as_str() {
+                    assert!(reason.contains(part), "{name}: {reason}");
+                }
+            }
+            (Some("missing"), Err(LibraryError::Missing { .. })) => {}
+            (None, Ok(folder)) => assert_eq!(folder.as_deref(), want["folder"].as_str(), "{name}"),
+            (_, got) => panic!("{name}: got {got:?}"),
+        }
+        assert_eq!(outside(&out), before, "{name}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

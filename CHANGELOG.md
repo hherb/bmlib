@@ -17,6 +17,17 @@ All notable changes to bmlib are documented here. The format is based on
   `LibraryScan.lists_use`, `library_ids`, `paper_ids_contradiction`), so an
   app whose lookup chain is its own (MedicalFactChecker's Swift) reads the
   library by the service's rules instead of a copy of them.
+- **bmlib-ffi runs the library fixture's `save_scenarios`, `component` and
+  `special_entries`** (#765; tests only). `rust/bmlib-ffi/src/library_tests.rs`
+  replays all 30 scenarios of `tests/fixtures/library_cases.json` (save,
+  record_use, release, used_by, find_digest, read, remove_file and
+  remove_folder, the #766 `ForeignJats` refusals among them) through
+  `PaperLibrary` and `LibraryScan`, and checks the files on disk and every
+  record's JSON, as bmlib's own suites do, so BioMedLit's tests can copy the
+  runner. It also runs the 22 bad folder names of `component` and, on Unix,
+  the 27 links, FIFOs and files of `special_entries` (#761). The two sections
+  still not run through the FFI, `folder_names` and `records`, test functions
+  it does not export.
 
 ### Fixed
 
