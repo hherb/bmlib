@@ -38,7 +38,15 @@ from bmlib.library.constants import (
     PAPERS_DIR,
     RECORDS_DIR,
 )
-from bmlib.library.errors import BadIdentifier, BadName, Io, Missing, NewerRecord, NotDownloaded
+from bmlib.library.errors import (
+    BadIdentifier,
+    BadName,
+    ForeignJats,
+    Io,
+    Missing,
+    NewerRecord,
+    NotDownloaded,
+)
 from bmlib.library.files import (
     check_folder,
     component,
@@ -64,6 +72,7 @@ from bmlib.library.names import folder_name, folder_name_numbered
 from bmlib.library.records import FileEntry, Record, RecordProblem, parse_record, render_record
 from bmlib.library.scan import (
     FileRef,
+    PaperFolder,
     Problem,
     _scan_folder,
     find,
@@ -336,6 +345,64 @@ def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
     return directory, directory / component(file.name)
 
 
+def _jats_ids(at: str, data: bytes) -> PaperIds | None:
+    """A JATS's own identifiers as the full-text service reads them (its parser, without
+    rendering, then ``library_ids``), or ``None`` when it does not parse: such a file names no
+    paper, and is warned of as *at*."""
+    # Imported here: bmlib.fulltext imports this package, so it cannot be imported at load.
+    from bmlib.fulltext.jats_parser import JATSParser
+    from bmlib.fulltext.library_store import library_ids
+
+    try:
+        article = JATSParser(data).parse()
+    except Exception as exc:
+        # Broad on purpose, as the service's read is: another app may have written the file.
+        logger.warning(
+            "Not checking the JATS %s for another paper's identifiers: it does not parse (%s: %s).",
+            at,
+            type(exc).__name__,
+            exc,
+        )
+        return None
+    return library_ids(article.pmid, article.doi, article.pmc_id)[0]
+
+
+def _refuse_foreign(folder: str | None, name: str, data: bytes, ids: PaperIds) -> None:
+    """Refuse the JATS *data* when its own identifiers contradict *ids* (#766).
+
+    :raises ForeignJats: naming the first contradicting field (``pmid``, ``doi``, ``pmcid``).
+    """
+    own = _jats_ids(name if folder is None else f"{folder}/{name}", data)
+    conflicts = own.merged(ids)[1] if own is not None else []
+    if conflicts:
+        field = conflicts[0]
+        raise ForeignJats(folder, name, field, getattr(own, field), getattr(ids, field))
+
+
+def _refuse_foreign_folder(root: Path, found: PaperFolder, ids: PaperIds, skip: str) -> None:
+    """Refuse a folder holding a JATS whose own identifiers contradict *ids* (#766).
+
+    Every JATS a record lists is read (digest-checked) once, except the digest *skip*,
+    already checked by the caller. One that is missing (as after the manual clear) is passed
+    over; one that cannot be read now raises, since it cannot be checked.
+
+    :raises ForeignJats: a JATS there names another paper.
+    :raises NotDownloaded: a JATS there is only an iCloud placeholder.
+    :raises DigestMismatch: a JATS there has changed.
+    """
+    seen = {skip}
+    for record in found.records:
+        for e in record.files:
+            if e.kind is not SourceKind.JATS or e.sha256 in seen:
+                continue
+            seen.add(e.sha256)
+            try:
+                data = read_file(root, FileRef(found.folder, e.name, e.sha256, e.kind))
+            except Missing:
+                continue
+            _refuse_foreign(found.folder, e.name, data, ids)
+
+
 def save_file(
     root: Path,
     who: Installation,
@@ -353,6 +420,10 @@ def save_file(
     file is written first, then the record (by the same merge as :func:`record_file_use`), so a
     crash between leaves only an unrecorded file, which saving the same bytes again records.
 
+    A JATS whose own identifiers contradict ``paper.ids`` is refused, whether it is *data* or
+    one a record in the chosen folder lists (#766): a folder holding another paper's JATS fails
+    every later lookup of the paper, so nothing more is put in it until the manual clear.
+
     Within one process the update of a record is serialised, so threads of one installation
     never lose each other's entries; separate processes of one installation are out of scope.
 
@@ -364,6 +435,10 @@ def save_file(
     :raises FileClash: a file of that name holds other bytes (nothing is overwritten).
     :raises NewerRecord: *who*'s record, or every record of the folder the paper would go in,
         is from a newer layout (no second folder is made).
+    :raises ForeignJats: *data* is a JATS whose own identifiers contradict ``paper.ids``, or the
+        folder holds one (#766; nothing is written).
+    :raises NotDownloaded, DigestMismatch: a JATS in the folder cannot be checked (nothing is
+        written).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
@@ -374,6 +449,8 @@ def save_file(
     entry = FileEntry(digest, kind, name, origin, len(data), _now())
     fresh = Record(who, paper, (entry,))
     _record_bytes(fresh, root)  # before anything is written: the record must read back
+    if kind is SourceKind.JATS:
+        _refuse_foreign(None, name, data, paper.ids)
     # shortcut: save rescans the whole library per call, so a full-text lookup costs one scan
     # plus one per file saved (and one more when it uses a held PDF); when that shows in a
     # lookup's time, let the caller pass its Scan.
@@ -390,6 +467,9 @@ def save_file(
     else:
         folder = _claim_folder(papers, paper)
     directory = papers / component(folder)
+    # Only a JATS was checked above: the same bytes saved as another kind skip nothing.
+    skip = digest if kind is SourceKind.JATS else ""
+    _refuse_foreign_folder(root, _scan_folder(directory, folder, []), paper.ids, skip)
     records_dir = directory / RECORDS_DIR
     path = records_dir / component(who.record_file_name())
     _check_not_evicted(path, folder)
@@ -415,6 +495,9 @@ def record_file_use(root: Path, who: Installation, paper: PaperInfo, file: FileR
     :raises NotDownloaded: the file, or *who*'s record, is only an iCloud placeholder.
     :raises DigestMismatch: the bytes hash to something else (nothing is written).
     :raises NewerRecord: *who*'s record is from a newer layout.
+    :raises ForeignJats: the file is a JATS whose own identifiers contradict ``paper.ids``, or
+        its folder holds one (#766; nothing is written); another JATS there that cannot be read
+        raises as reading it does.
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
@@ -425,6 +508,11 @@ def record_file_use(root: Path, who: Installation, paper: PaperInfo, file: FileR
         raise BadName(file.name)
     directory, _ = _locate(root, file)
     found = _scan_folder(directory, file.folder, [])
+    skip = ""
+    if file.kind is SourceKind.JATS:
+        _refuse_foreign(file.folder, file.name, data, paper.ids)
+        skip = file.sha256
+    _refuse_foreign_folder(root, found, paper.ids, skip)
     origin = next(
         (
             f.origin

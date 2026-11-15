@@ -140,3 +140,18 @@ class Io(LibraryError):
     def __init__(self, path: Path, reason: str) -> None:
         self.path, self.reason = path, reason
         super().__init__(f"{path}: {reason}")
+
+
+class ForeignJats(LibraryError):
+    """A JATS whose own identifiers name another paper (#766): one in the paper's folder, or
+    the one being saved (``folder`` ``None``). Nothing was written; a folder holding one needs
+    the manual clear, and a file being saved is not kept."""
+
+    def __init__(self, folder: str | None, name: str, field: str, theirs: str, ours: str) -> None:
+        self.folder, self.name, self.field = folder, name, field
+        self.theirs, self.ours = theirs, ours
+        where = f"{folder} holds {name}" if folder is not None else name
+        super().__init__(
+            f"{where}, the JATS of another paper: its own {field} {theirs} is not this "
+            f"paper's {ours}; nothing was written"
+        )

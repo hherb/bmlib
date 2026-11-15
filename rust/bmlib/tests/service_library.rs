@@ -31,7 +31,10 @@ use bmlib::fulltext::{
     paper_info, sanitize_identifier, FullTextCache, FullTextRequest, FullTextService, LibraryStore,
     LIBRARY_SOURCE,
 };
-use bmlib::library::{FileRef, Installation, Library, PaperIds, PaperInfo, SourceKind};
+use bmlib::library::{
+    folder_name, render_record, sha256_hex, FileEntry, FileRef, Installation, Library, PaperIds,
+    PaperInfo, Record, SourceKind, PAPERS_DIR, RECORDS_DIR,
+};
 use bmlib::publications::fetchers::HttpResponse;
 use scripted_http::ScriptedClient;
 
@@ -71,6 +74,40 @@ fn pmid_ids(pmid: &str) -> PaperIds {
 fn saved_by_other(dir: &Path, paper: &PaperInfo, bytes: &[u8], kind: SourceKind) -> FileRef {
     let lib = Library::open(&dir.join("lib")).unwrap();
     lib.save(&other(), paper, bytes, kind, "test").unwrap()
+}
+
+/// Write `files` and `who`'s record listing them into `paper`'s folder of the
+/// library at `root`, by hand: `save` refuses a JATS whose own identifiers
+/// contradict `paper`'s (#766), and these tests need a folder holding one, as
+/// another app or an older bmlib could leave it. Python's `plant` writes the same.
+fn plant(root: &Path, who: &Installation, paper: &PaperInfo, files: &[(&[u8], SourceKind)]) {
+    Library::open(root).unwrap(); // the marker first, or the folder is not a library
+    let folder = root.join(PAPERS_DIR).join(folder_name(paper));
+    fs::create_dir_all(folder.join(RECORDS_DIR)).unwrap();
+    let mut entries = Vec::new();
+    for &(bytes, kind) in files {
+        let sha256 = sha256_hex(bytes);
+        let name = format!("{}-{}.{}", kind.as_str(), &sha256[..12], kind.extension());
+        fs::write(folder.join(&name), bytes).unwrap();
+        entries.push(FileEntry {
+            sha256,
+            kind,
+            name,
+            origin: "test".to_owned(),
+            size: bytes.len() as u64,
+            saved_at: "2026-01-01T00:00:00Z".to_owned(),
+        });
+    }
+    let record = Record {
+        installation: who.clone(),
+        paper: paper.clone(),
+        files: entries,
+    };
+    fs::write(
+        folder.join(RECORDS_DIR).join(who.record_file_name()),
+        render_record(&record),
+    )
+    .unwrap();
 }
 
 /// A service over `client` reading the library at `dir/lib` as [`me`].
@@ -177,11 +214,12 @@ fn tampered_jats_is_not_served() {
 fn jats_of_another_paper_is_not_served() {
     let dir = scratch("other");
     // The record claims PMID 999; the JATS itself says 34567890.
-    saved_by_other(
-        &dir,
-        &sample_info(pmid_ids("999")),
-        SAMPLE.as_bytes(),
-        SourceKind::Jats,
+    let paper = sample_info(pmid_ids("999"));
+    plant(
+        &dir.join("lib"),
+        &other(),
+        &paper,
+        &[(SAMPLE.as_bytes(), SourceKind::Jats)],
     );
     let client = ScriptedClient::always(HttpResponse::from_bytes(404, Vec::new()));
     let svc = service(&dir, client.clone());
@@ -278,8 +316,11 @@ fn holds_a_library_pdf(svc: &FullTextService) -> bool {
 fn the_pdf_beside_a_jats_of_another_paper_is_not_held() {
     let dir = scratch("otherpdf");
     let paper = sample_info(pmid_ids("999"));
-    saved_by_other(&dir, &paper, SAMPLE.as_bytes(), SourceKind::Jats);
-    saved_by_other(&dir, &paper, b"%PDF-1.4 sample", SourceKind::Pdf);
+    let files: [(&[u8], SourceKind); 2] = [
+        (SAMPLE.as_bytes(), SourceKind::Jats),
+        (b"%PDF-1.4 sample", SourceKind::Pdf),
+    ];
+    plant(&dir.join("lib"), &other(), &paper, &files);
     let client = ScriptedClient::always(HttpResponse::from_bytes(404, Vec::new()));
     let svc = service(&dir, client);
     let result = svc.fetch_fulltext(&by_pmid("999")).unwrap();
@@ -459,10 +500,14 @@ fn run_scenario(scenario: &serde_json::Value, enforced: bool) -> bool {
             other => panic!("kind {other}"),
         };
         let bytes = fs::read(fixtures().join(saved["file"].as_str().unwrap())).unwrap();
-        Library::open(&lib)
-            .unwrap()
-            .save(&who, &paper, &bytes, kind, "test")
-            .unwrap();
+        if saved["planted"] == true {
+            plant(&lib, &who, &paper, &[(&bytes, kind)]);
+        } else {
+            Library::open(&lib)
+                .unwrap()
+                .save(&who, &paper, &bytes, kind, "test")
+                .unwrap();
+        }
     }
     let answers = scenario["network"]
         .as_array()

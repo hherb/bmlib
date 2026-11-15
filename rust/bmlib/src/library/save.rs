@@ -32,12 +32,14 @@ use super::files::{
     is_not_downloaded, list_names, paper_dir, read_bytes, remove_dir_all, remove_file, rename,
     sha256_hex, sync_name, write_once, write_replace,
 };
-use super::scan::{scan_folder, Problem};
+use super::scan::{scan_folder, PaperFolder, Problem};
 use super::{
     find, find_digest, folder_name, folder_name_numbered, parse_record, render_record, FileEntry,
     FileRef, Installation, Library, LibraryError, PaperIds, PaperInfo, Record, RecordProblem,
     SourceKind, CORRUPT_SUFFIX, DIGEST_PREFIX_HEX, MAX_NAME_SUFFIX, PAPERS_DIR, RECORDS_DIR,
 };
+use crate::fulltext::jats_reader;
+use crate::fulltext::library_store::library_ids;
 
 /// Serialises the read-merge-write of records (and keeping one aside) within
 /// this process, so two threads of one installation never lose each other's
@@ -357,6 +359,88 @@ fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryErro
     Ok((dir, path))
 }
 
+/// A JATS's own identifiers as the full-text service reads them (its reader,
+/// then `library_ids`), or `None` when it is not UTF-8 or does not parse: such
+/// a file names no paper, and is warned of as `at`.
+fn jats_ids(at: &str, bytes: &[u8]) -> Option<PaperIds> {
+    let parsed = std::str::from_utf8(bytes)
+        .map_err(|error| error.to_string())
+        .and_then(|xml| jats_reader::parse(xml).map_err(|error| error.to_string()));
+    match parsed {
+        Ok(article) => {
+            Some(library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id)).0)
+        }
+        Err(error) => {
+            log::warn!(
+                "Not checking the JATS {at} for another paper's identifiers: it does not parse ({error})."
+            );
+            None
+        }
+    }
+}
+
+/// [`LibraryError::ForeignJats`] when the JATS `bytes`' own identifiers
+/// contradict `ids` (#766), naming the first contradicting field.
+fn refuse_foreign(
+    folder: Option<&str>,
+    name: &str,
+    bytes: &[u8],
+    ids: &PaperIds,
+) -> Result<(), LibraryError> {
+    let at = folder.map_or_else(|| name.to_owned(), |folder| format!("{folder}/{name}"));
+    let Some(own) = jats_ids(&at, bytes) else {
+        return Ok(());
+    };
+    let Some(&field) = own.merged(ids).1.first() else {
+        return Ok(());
+    };
+    let pick = |ids: &PaperIds| match field {
+        "pmid" => ids.pmid.clone(),
+        "doi" => ids.doi.clone(),
+        _ => ids.pmcid.clone(),
+    };
+    Err(LibraryError::ForeignJats {
+        folder: folder.map(str::to_owned),
+        name: name.to_owned(),
+        field,
+        theirs: pick(&own).unwrap_or_default(),
+        ours: pick(ids).unwrap_or_default(),
+    })
+}
+
+/// Refuse a folder holding a JATS whose own identifiers contradict `ids`
+/// (#766). Every JATS a record lists is read (digest-checked) once, except the
+/// digest `skip`, already checked by the caller. One that is missing (as after
+/// the manual clear) is passed over; one that cannot be read now is an error,
+/// since it cannot be checked ([`LibraryError::NotDownloaded`],
+/// [`LibraryError::DigestMismatch`]).
+fn refuse_foreign_folder(
+    library: &Library,
+    found: &PaperFolder,
+    ids: &PaperIds,
+    skip: &str,
+) -> Result<(), LibraryError> {
+    let mut seen = vec![skip];
+    for entry in found.records.iter().flat_map(|r| &r.files) {
+        if entry.kind != SourceKind::Jats || seen.contains(&entry.sha256.as_str()) {
+            continue;
+        }
+        seen.push(&entry.sha256);
+        let file = FileRef {
+            folder: found.folder.clone(),
+            name: entry.name.clone(),
+            sha256: entry.sha256.clone(),
+            kind: entry.kind,
+        };
+        match library.read(&file) {
+            Ok(bytes) => refuse_foreign(Some(&found.folder), &entry.name, &bytes, ids)?,
+            Err(LibraryError::Missing { .. }) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
 impl Library {
     /// Save `bytes` of kind `kind` for `paper` and note it in `who`'s record.
     ///
@@ -368,6 +452,11 @@ impl Library {
     /// regard to case). The file is written first, then the record (by the same
     /// merge as [`Library::record_use`]), so a crash between leaves only an
     /// unrecorded file, which saving the same bytes again records.
+    ///
+    /// A JATS whose own identifiers contradict `paper.ids` is refused, whether
+    /// it is `bytes` or one a record in the chosen folder lists (#766): a folder
+    /// holding another paper's JATS fails every later lookup of the paper, so
+    /// nothing more is put in it until the manual clear.
     ///
     /// Within one process the update of a record is serialised, so threads of
     /// one installation never lose each other's entries; separate processes of
@@ -382,8 +471,11 @@ impl Library {
     /// `who`'s record, or every record of the folder the paper would go in, is
     /// from a newer layout (no second folder is made);
     /// [`LibraryError::NotDownloaded`] when `who`'s record is only an iCloud
-    /// placeholder (nothing is written); [`LibraryError::ReadOnly`];
-    /// [`LibraryError::Io`].
+    /// placeholder (nothing is written); [`LibraryError::ForeignJats`] when
+    /// `bytes` are a JATS naming another paper or the folder holds one, and
+    /// [`LibraryError::NotDownloaded`] or [`LibraryError::DigestMismatch`] when
+    /// a JATS there cannot be checked (nothing is written);
+    /// [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn save(
         &self,
         who: &Installation,
@@ -411,6 +503,9 @@ impl Library {
             files: vec![entry.clone()],
         };
         record_text(&fresh, self.root())?;
+        if kind == SourceKind::Jats {
+            refuse_foreign(None, &name, bytes, &paper.ids)?;
+        }
         // shortcut: save rescans the whole library per call, so a full-text
         // lookup costs one scan plus one per file saved (and one more when it
         // uses a held PDF); when that shows in a lookup's time, let the caller
@@ -427,6 +522,15 @@ impl Library {
             None => claim_folder(&papers, paper)?,
         };
         let dir = papers.join(component(&folder)?);
+        let found = scan_folder(&dir, &folder, &mut Vec::new());
+        // Only a JATS was checked above: the same bytes saved as another kind
+        // skip nothing.
+        let skip = if kind == SourceKind::Jats {
+            digest.as_str()
+        } else {
+            ""
+        };
+        refuse_foreign_folder(self, &found, &paper.ids, skip)?;
         let path = dir
             .join(RECORDS_DIR)
             .join(component(&who.record_file_name())?);
@@ -458,7 +562,10 @@ impl Library {
     /// component or not the library's name for those bytes;
     /// [`LibraryError::Missing`], [`LibraryError::NotDownloaded`] or
     /// [`LibraryError::DigestMismatch`] from reading the file (nothing is
-    /// written); [`LibraryError::NewerRecord`]; [`LibraryError::ReadOnly`];
+    /// written); [`LibraryError::ForeignJats`] when the file is a JATS naming
+    /// another paper or its folder holds one, another JATS there that cannot be
+    /// read failing as reading it does (nothing is written);
+    /// [`LibraryError::NewerRecord`]; [`LibraryError::ReadOnly`];
     /// [`LibraryError::Io`].
     pub fn record_use(
         &self,
@@ -476,8 +583,14 @@ impl Library {
             });
         }
         let (dir, _) = locate(self.root(), file)?;
-        let mut problems = Vec::new();
-        let origin = scan_folder(&dir, &file.folder, &mut problems)
+        let found = scan_folder(&dir, &file.folder, &mut Vec::new());
+        let mut skip = "";
+        if file.kind == SourceKind::Jats {
+            refuse_foreign(Some(&file.folder), &file.name, &bytes, &paper.ids)?;
+            skip = &file.sha256;
+        }
+        refuse_foreign_folder(self, &found, &paper.ids, skip)?;
+        let origin = found
             .records
             .iter()
             .flat_map(|r| &r.files)

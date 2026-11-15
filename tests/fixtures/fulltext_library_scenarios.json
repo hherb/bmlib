@@ -3,6 +3,7 @@
     "The full-text service saving to the shared library and taking its PDF in place of a download (design §4.5).",
     "Run by tests/test_fulltext_service_library.py and rust/bmlib/tests/service_library.rs, with the same expectations.",
     "library: files another installation (app, id bbbb, device Mac) saves first; file names a fixture in tests/fixtures.",
+    "planted: true writes the file and its record by hand, as another app or an older bmlib could leave them: save refuses a JATS whose own identifiers contradict the paper's (#766).",
     "fulltext_library_other_article.xml is sample_article.xml with other identifiers (PMID 999, PMC123, DOI 10.1234/jbr.2024.999): another paper's JATS.",
     "request: fetch_fulltext's arguments; fulltext_sources entries are {url, format, source}.",
     "service: fetch_pdf_with_jats. The service reads the library as studyanalyzer/aaaa/Mac, with a cache.",
@@ -35,7 +36,7 @@
       "request": {"pmid": null, "doi": null, "pmc_id": "PMC123", "identifier": null},
       "service": {"fetch_pdf_with_jats": true},
       "network": [
-        {"pattern": "/PMC123/fullTextXML", "file": "sample_article.xml"},
+        {"pattern": "/PMC123/fullTextXML", "file": "fulltext_library_other_article.xml"},
         {"pattern": "list-type=2", "file": "pmc_open_data_versions.xml"},
         {"pattern": "/PMC123.10/PMC123.10.json", "file": "pmc_open_data_record.json"},
         {"pattern": "/PMC123.10/PMC123.10.pdf", "file": "textless.pdf"}
@@ -130,7 +131,7 @@
       "request": {"pmid": null, "doi": null, "pmc_id": "PMC123", "identifier": "s6"},
       "service": {"fetch_pdf_with_jats": true},
       "network": [
-        {"pattern": "/PMC123/fullTextXML", "file": "sample_article.xml"},
+        {"pattern": "/PMC123/fullTextXML", "file": "fulltext_library_other_article.xml"},
         {"pattern": "list-type=2", "file": "pmc_open_data_versions.xml"},
         {"pattern": "/PMC123.10/PMC123.10.json", "file": "pmc_open_data_record.json"},
         {"pattern": "/PMC123.10/PMC123.10.pdf", "file": "textless.pdf"}
@@ -178,7 +179,7 @@
     },
     {
       "name": "8 the library's JATS is another paper's: nothing is kept in the library",
-      "library": [{"kind": "jats", "file": "sample_article.xml", "ids": {"pmid": "999"}, "app": "medicalfactchecker"}],
+      "library": [{"kind": "jats", "file": "sample_article.xml", "ids": {"pmid": "999"}, "app": "medicalfactchecker", "planted": true}],
       "request": {"pmid": "999", "doi": null, "pmc_id": "PMC123", "identifier": "s8"},
       "service": {"fetch_pdf_with_jats": false},
       "network": [{"pattern": "/PMC123/fullTextXML", "file": "fulltext_library_other_article.xml"}],
@@ -273,6 +274,24 @@
         "folders": [["jats", "pdf"]],
         "folder_name_contains": null,
         "cache": []
+      }
+    },
+    {
+      "name": "13 the chain's JATS names another paper: the library keeps nothing (#766)",
+      "library": [],
+      "request": {"pmid": null, "doi": null, "pmc_id": "PMC123", "identifier": "s13"},
+      "service": {"fetch_pdf_with_jats": false},
+      "network": [{"pattern": "/PMC123/fullTextXML", "file": "sample_article.xml"}],
+      "read_only_after": null,
+      "expect": {
+        "source": "europepmc",
+        "content_kind": "fulltext",
+        "library_files": [],
+        "library_failure": "the JATS of another paper: its own pmcid PMC7614751 is not this paper's PMC123",
+        "requests": ["/PMC123/fullTextXML"],
+        "folders": [],
+        "folder_name_contains": null,
+        "cache": ["jats", "html"]
       }
     }
   ]

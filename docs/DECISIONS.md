@@ -6646,6 +6646,29 @@ undo.
   request's identifiers would file new bytes in that folder, and the app must
   learn the source was not kept so it can show the folder. Silently caching
   would lose it.
+- **`save` and `record_use` make that check themselves, for every caller, and
+  for the JATS being saved too** (#766; the maintainer, 2026-11-14 and
+  2026-11-15). A typed `ForeignJats` rather than a public check the apps call
+  first: a check every app must remember is one an app forgets, and
+  StudyAnalyzer had already written it once. The JATS being saved is checked
+  because one save of a wrong JATS into a fresh folder is how such a folder
+  comes about; so the service now serves, but does not keep, a JATS the chain
+  fetched whose own identifiers contradict the request's (scenario 13 of
+  `fulltext_library_scenarios.json`). Only the folder the call writes to is
+  checked, not every folder `find` returns. Every JATS a record lists is read
+  (digest-checked), not only those in `files_on_disk`: that list leaves out
+  iCloud placeholders, so an evicted foreign JATS would pass unseen; one that
+  cannot be read now fails the call (`NotDownloaded`, `DigestMismatch`), one
+  that is missing (`Missing`, as after the manual clear) is passed over, and
+  one that does not parse names no paper and is warned of, as for the service.
+  Only a JATS being saved is passed over as already checked: the same bytes
+  saved as another kind skip nothing, or saving a foreign JATS's bytes as text
+  would land beside it. The field is the library's name
+  (`pmcid`), not the request's (`pmc_id`) the service's message uses. Rust
+  skips a non-UTF-8 JATS that Python might parse, the gap #762 is about.
+  Pinned by `library_cases.json`'s twelve #766 `save_scenarios` and by
+  `test_library_save.py` / `library_save.rs` (the evicted and changed JATS, an
+  unreadable PDF beside, an evicted JATS saved again).
 - **A held library PDF makes Tier 0 skip the caller's `pdf` entries.** The PDF
   is already in hand (design §4.5). The cost: a caller's newer PDF is not
   fetched while the library holds one.

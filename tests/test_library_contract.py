@@ -42,6 +42,7 @@ from bmlib.library import (
     BadName,
     DigestMismatch,
     FileRef,
+    ForeignJats,
     Installation,
     Io,
     Library,
@@ -329,6 +330,21 @@ def _paper_info(p: dict[str, Any]) -> PaperInfo:
     )
 
 
+def _refused(step: dict[str, Any], call: Callable[[], object]) -> object:
+    """*call*'s result, or, when *step* expects an error, the check that it raises that one."""
+    want = step.get("expect")
+    if not isinstance(want, dict):
+        return call()
+    assert want["error"] == "foreign_jats"
+    with pytest.raises(ForeignJats) as err:
+        call()
+    e = err.value
+    assert (e.folder, e.name, e.field, e.theirs, e.ours) == tuple(
+        want[k] for k in ("folder", "name", "field", "theirs", "ours")
+    )
+    return None
+
+
 @pytest.mark.parametrize("case", _cases("save_scenarios"))
 def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) -> None:
     (tmp_path / "lib").mkdir()
@@ -339,13 +355,17 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
         saved.append(None)
         if op == "save":
             who = Installation.new(step["app"], step["id"], "Test Mac")
-            saved[-1] = lib.save(
-                who,
-                _paper_info(step["paper"]),
-                step["text"].encode(),
-                SourceKind(step["kind"]),
-                step["origin"],
+            got = _refused(
+                step,
+                lambda: lib.save(
+                    who,
+                    _paper_info(step["paper"]),
+                    step["text"].encode(),
+                    SourceKind(step["kind"]),
+                    step["origin"],
+                ),
             )
+            saved[-1] = got if isinstance(got, FileRef) else None
         elif op == "release":
             ref = saved[step["of"]]
             assert ref is not None
@@ -354,7 +374,7 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
             ref = saved[step["of"]]
             assert ref is not None
             who = Installation.new(step["app"], step["id"], "Test Mac")
-            lib.record_use(who, _paper_info(step["paper"]), ref)
+            _refused(step, lambda: lib.record_use(who, _paper_info(step["paper"]), ref))
         elif op == "remove_file":
             ref = saved[step["of"]]
             assert ref is not None

@@ -217,6 +217,7 @@ named in the Rust page:
 | `NotDownloaded` | Only an iCloud placeholder is present, or the file is evicted (dataless) | "Download the file first" (open it in Finder) |
 | `DigestMismatch` | The bytes differ from the recorded digest | "The file is damaged or changed"; never use its contents |
 | `FileClash` | A file of that name holds other bytes | A damaged file; nothing was written |
+| `ForeignJats` | A JATS whose own identifiers name another paper: the one being saved (`folder` is none), or one in the folder the paper goes in (#766) | With a `folder`: "This folder holds another paper's JATS"; name `folder` and `name` and offer the manual clear. With none: "This file is another paper's JATS" (its own `field` `theirs`, not `ours`), and keep nothing. Nothing was written |
 | `NewerRecord` | A record, or every record of the folder the paper belongs in, is from a newer layout | "Update this app" |
 | `Io` | Another file-system failure | Show `reason` and the path |
 
@@ -324,6 +325,17 @@ it and does not trust that folder's PDF. It keeps **nothing** in the library
 the chain with the cache as without a library, and sets `library_failure`
 naming the folder. The app keeps the source as waiting and can show the user
 the folder to put right.
+
+`save` and `record_use` refuse the same thing for every caller (#766), so the
+check is not the service's alone: an app saving a file it opened by hand gets
+`ForeignJats` rather than a folder that fails every later lookup. They also
+refuse a JATS being saved whose own identifiers contradict the paper's, which
+is how such a folder comes about. A JATS that does not parse names no paper;
+one that cannot be read now (`NotDownloaded`, `DigestMismatch`) fails the call,
+since it cannot be checked, and is named; one that is missing (as after the
+manual clear) is passed over. A JATS that does not parse is warned of. For
+the lookup this means a JATS the chain fetches that names another paper is
+served but not kept, and `library_failure` says why.
 
 ### Identifiers
 

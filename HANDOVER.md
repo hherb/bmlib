@@ -1,39 +1,47 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-15 (**#761, the library's special files, on
-`fix/library-special-files-761` — read *This session* first**). Merged since
-the last update: #775 (MECA over S3), #774 (the FFI's `PaperLibrary` name,
+_Last updated: 2026-11-15 (**#766, a save beside another paper's JATS, in
+progress on `fix/library-foreign-jats-766`**). Merged since the last update:
+#777 (#761, below), #775 (MECA over S3), #774 (the FFI's `PaperLibrary` name,
 CI checks the Kotlin binding), #773 (#769, dataless files), #772 (#758), #771
 (#767, #768), #770 (Rust `pdf` on Windows). **0.13.0 is on PyPI** (tag
 `v0.13.0` on `161849c0`, the merge of #736) and **the Rust crate 0.4.0 on
 crates.io** from the same commit; everything since is under Unreleased._
 
-## This session: only real files and folders in the library (#761)
+## This session: no file beside another paper's JATS (#766)
 
-Both languages. `files.read_bytes` refuses anything `lstat` does not call a
-regular file, then checks with `fstat` that the open file is a regular file
-and, off Windows, the one `lstat` saw. The reason is `not a regular file`.
-`is_dir` and `exists` no longer follow links (`is_dir_following_links` is for
-the root only), and they read only ENOENT/ENOTDIR as absent: any other `lstat`
-failure is an error, which a scan reports as `unreadable_folder`.
-`check_folder` / `paper_dir(root, folder)` refuse a `papers/` or paper folder
-that is a link or a file (`Io`, `not a folder`) for `scan`, `read`,
-`record_use`, `release`, `remove_file` and `remove_folder`. `_claim_folder` /
-`claim_folder` treat a non-folder at a candidate name as taken (a plain file
-there used to fail the save). `create_dir_new` gives `not a folder` too.
-Pinned by the new `special_entries` section of `library_cases.json` (27 cases,
-Unix only, both runners) and by each language's tests for `lstat` errors and a
-linked or unplugged root. Reasoning in `docs/DECISIONS.md` (*Links inside the
-library are refused; the root may be one*). The final check's review findings
-are fixed on the branch. Deferred to **#778**: `save` still makes a second
-folder for a paper whose folder cannot be read (it ignores the scan's
-problems; needs the maintainer's call), a scan reports nothing for a linked
-source file, and the races left in `read_bytes` (`shortcut:`). The FFI passes
-straight through (#765 is its runner gap).
+Both languages and the FFI, as the maintainer decided (option 1, plus the
+incoming JATS on 2026-11-15). `save` and `record_use` refuse with the new
+`ForeignJats { folder, name, field, theirs, ours }` a JATS whose own
+identifiers contradict the paper's: the bytes being saved (`folder` `None`,
+checked before anything is written) or any JATS a record lists in the folder
+the call writes to. Every listed JATS is read through `read`, not filtered by
+`files_on_disk` (which hides iCloud placeholders): `NotDownloaded` and
+`DigestMismatch` fail the call, `Missing` is passed over, an unparseable one
+names no paper. The parse is the service's (`JATSParser` / `jats_reader::parse`,
+then `library_ids`); Python imports it lazily, since `fulltext` imports
+`library`. The field is the library's name (`pmcid`). **The service changes**:
+a fetched JATS naming another paper is served but not kept (scenario 13), and
+scenarios 2 and 6 now serve `fulltext_library_other_article.xml`, whose own
+PMCID is the request's. Tests that need a poisoned folder plant it by hand
+(`plant`, `planted: true`). Reasoning in `docs/DECISIONS.md` (under
+*FullTextService on a library*). **Downstream**: StudyAnalyzer drops its
+`foreign_jats` once it re-pins; a Rust `match` on `LibraryError` needs the arm.
 
-**#766 is decided** (the maintainer, 2026-11-14): option 1, `save` and
-`record_use` refuse a folder holding another paper's JATS with a typed
-`LibraryError::ForeignJats`. It is the natural next library task.
+**The final review of PR #779** found that `save` skipped the folder's JATS
+check for bytes sharing its digest whatever their kind, so a foreign JATS's
+bytes saved as text landed beside it. Only a JATS being saved now skips its own
+digest. It also added a WARNING for a JATS that does not parse, as the service
+logs, and six more `save_scenarios`: the text hole, canonicalised ids, pmid
+named first, and an unusable id set aside. Unit tests cover an unreadable PDF
+beside the file, an evicted JATS saved again, `record_use` beside an evicted
+JATS, and `import bmlib.library` alone; each was mutation-checked in both
+languages. Deferred as **#780**: the parser's audit warnings repeat on each
+library re-parse, and "only the target folder" has no test.
+
+**#761 merged as PR #777**: library reads refuse anything but a regular file,
+linked folders are refused, the root may be a link (CHANGELOG). Its deferrals
+are **#778**.
 
 ## Also merged: MECA over requester-pays S3 (PR #775)
 
@@ -135,10 +143,10 @@ use to share one folder of papers. Built in both languages, in a worktree
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.
-- **Open library issues**: #766 (`save` beside another paper's JATS; decided:
-  a typed refusal), #762 (a non-UTF-8 library JATS, Python serves it, Rust
-  refuses), #765 (the FFI runs no `save_scenarios`), #755 (1a's review
-  follow-ups); #761 closed by this session's branch.
+- **Open library issues**: #780 (PR #779's deferrals), #778 (PR #777's
+  deferrals), #762 (a non-UTF-8 library JATS, Python serves it, Rust refuses;
+  the #766 check inherits the gap), #765 (the FFI runs no `save_scenarios`),
+  #755 (1a's review follow-ups); #766 closed by this session's branch.
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
@@ -167,11 +175,6 @@ MECA bulk is the expected next request.
   (`PDF_BESIDE_JATS_ATTEMPTS`), marked and sought again
   (`PDF_SEEK_AGAIN_LIMIT`); not covered: a JATS cached with the option off
   (the `shortcut:` in `_check_cache`).
-
-## Earlier: a saved page is not refused for its length (#656, PR #740)
-
-Both languages cap a page's `<` (`HTML_MAX_TAGS`), not its length. Open:
-**#726** answered and closeable (the maintainer's call); **#725** unmeasured.
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -238,11 +241,6 @@ JATS PR trips `tests/test_renderer_version.py`** (#437): bump
 `uv pip install --python .venv/bin/python -e ".[all,dev]"`, and run
 `env -u VIRTUAL_ENV uv run …`.
 
-## PDF failures, MuPDF in Rust (#590-#600, merged)
-
-Open: **#595**. Downstream: pass `PdfLimit { cancel, deadline }`;
-`MupdfExtractor::new()` replaced `PdfiumExtractor::bundled()`.
-
 ## Older StudyAnalyzer items: guidance still owed downstream
 
 Items 8 (PR #586, `bmlib.embed.store`, imported as that and not re-exported),
@@ -287,10 +285,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/library-special-files-761`** (2026-11-14, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,010 passed + 20
-  skipped (11,030 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,847 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
+- **Tests on `fix/library-foreign-jats-766`** (2026-11-15, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,044 passed + 22
+  skipped (11,066 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+  1,860 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
@@ -319,8 +317,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**124 open** (123 once this branch's PR closes #761): the library's #755,
-#762, #765, #766 (above) and **#778** (PR #777's review follow-ups), **#776**
+**124 open** (123 once this branch's PR closes #766): the library's #755,
+#762, #765 (above), **#780** (PR #779's review follow-ups) and **#778** (PR
+#777's), **#776**
 (PR #775's MECA follow-ups) and
 **#759** (measure the `/details` settle period) are the newest; #734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 come before them; #577 stays
