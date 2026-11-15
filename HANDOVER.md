@@ -19,8 +19,8 @@ maintainer's call), so a Swift or Kotlin construction of it must name the
 field. The manual's `parse_audited` example now asserts the line is in
 `debug`. The new test, `an_author_less_article_is_logged_at_debug`, was
 mutation-checked: logging the line at WARN again fails it. Python's two
-zero-author lines gain the colon of every other parser line ("JATS parse of X:
-produced no authors…"), so both languages write the same text, pinned in
+zero-author lines gain the colon of every other "JATS parse of" line ("JATS
+parse of X: produced no authors…"), so both languages write the same text, pinned in
 `test_the_quiet_branch_reports_its_evidence_not_a_conclusion`
 (mutation-checked); the renderer digests were re-pinned without a version
 bump, since only log text moved.
@@ -300,11 +300,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**123 open** (122 after this branch merges, #782 being its issue): the library's #755, #762, #765 and **#778**
-(PR #777's review follow-ups, above), **#776** (PR #775's MECA follow-ups) and
-**#759** (measure the `/details` settle period) are the newest; #734, #733,
-#731, #730, #726, #725, #722, #718, #716 and #694 come before them; #577 stays
-open for its point 3, which PR #696 left open
+**124 open** (123 after this branch merges, #782 being its issue): **#784**
+(bmlib-ffi: the full-text lookup's library rules), the library's #755, #762,
+#765 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+MECA follow-ups) and **#759** (measure the `/details` settle period) are the
+newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
+before them; #577 stays open for its point 3, which PR #696 left open
 (`gh issue list --state open --limit 300 --json number`, 2026-11-15). #651
 is #632's residual; #556–#734 are not yet sorted into the lists below. **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618

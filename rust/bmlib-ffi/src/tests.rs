@@ -286,6 +286,8 @@ fn the_audited_parse_returns_the_lines_bmlib_counted() {
     );
     assert!(report.diagnostics.is_empty());
     assert_eq!(report.warnings, core.warnings);
+    assert!(!report.debug.is_empty(), "the fixture names no contributor");
+    assert_eq!(report.debug, core.debug);
     assert_eq!(report.article_label, core.article_label);
     let plain = parse_jats(REFUSED_COLSPAN.into()).expect("parses");
     assert_eq!(json(&report.article), json(&plain));

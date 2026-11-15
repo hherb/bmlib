@@ -8942,11 +8942,13 @@ def _audit_parse(handler: _JATSHandler, *, warn: bool = True) -> None:
     nothing a publisher deposits can reach the audit's predicates — every
     line they produce is a claim that bmlib itself is wrong. Keeping that
     meaning exact is why the zero-author case, which *can* fire on a document
-    bmlib parsed correctly, is a WARNING instead.
+    bmlib parsed correctly, is a WARNING instead (a DEBUG line where the
+    contributor list names nobody).
 
     Args:
         handler: The handler the parse just finished with.
-        warn: Whether to report the WARNING lines as well as the ERROR ones.
+        warn: Whether to report the WARNING and DEBUG lines as well as the ERROR
+            ones.
     """
     article = handler.describe_article()
     for message in unwind_diagnostics(handler.unwind_state()):

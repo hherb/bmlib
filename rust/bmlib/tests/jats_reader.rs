@@ -1227,10 +1227,12 @@ fn an_author_less_article_is_logged_at_debug() {
     let logged = common::log_capture::take("bmlib.fulltext.jats_parser");
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!(logged[0].level, log::Level::Debug);
-    assert!(
-        logged[0].message.ends_with(&report.debug[0]),
-        "{:?}",
-        logged[0].message
+    assert_eq!(
+        logged[0].message,
+        format!(
+            "JATS parse of {}: {}",
+            report.article_label, report.debug[0]
+        )
     );
 
     let loud = "<article><front><article-meta><contrib-group>\
@@ -1243,13 +1245,29 @@ fn an_author_less_article_is_logged_at_debug() {
     let logged = common::log_capture::take("bmlib.fulltext.jats_parser");
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!(logged[0].level, log::Level::Warn);
-    assert!(
-        logged[0].message.ends_with(
-            "contributor list named 1 contributor(s): they were most likely routed elsewhere"
-        ),
-        "{:?}",
-        logged[0].message
+    assert_eq!(
+        logged[0].message,
+        format!(
+            "JATS parse of {}: produced no authors, but its contributor list named 1 \
+             contributor(s): they were most likely routed elsewhere",
+            report.article_label
+        )
     );
+
+    // An author read from a bare `<surname>` leaves the contributor count at 0,
+    // and is still an author: no zero-author line at all.
+    let bare = "<article><front><article-meta><contrib-group>\
+        <contrib contrib-type=\"author\"><surname>Smith</surname></contrib>\
+        </contrib-group></article-meta></front></article>";
+    let report = parse_audited(bare, "").expect("the fixture parses");
+    assert_eq!(
+        report.article.authors.len(),
+        1,
+        "{:?}",
+        report.article.authors
+    );
+    assert!(report.debug.is_empty(), "{:?}", report.debug);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
 }
 
 // ---------------------------------------------------------------------------

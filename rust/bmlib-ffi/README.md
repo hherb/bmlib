@@ -13,7 +13,7 @@ recommendation are in bmlibrarian_lite's
 
 | Item | Kind | Notes |
 |---|---|---|
-| `parse_jats(xml) -> JatsArticle` | function | bmlib's JATS reader. **Discards the audit**: its lines go only to stderr, which an app does not see. Throws `JatsError` |
+| `parse_jats(xml) -> JatsArticle` | function | bmlib's JATS reader. **Discards the audit**: its lines go only to the `log` facade, which records nothing unless the app installs a logger. Throws `JatsError` |
 | `parse_jats_audited(xml, known_pmc_id) -> JatsParseReport` | function | The article plus the audit: `warnings` (publisher losses), `debug` (the lines bmlib logs at DEBUG, such as an article whose contributor list names nobody), `diagnostics` (reader defects; empty on a correct reader) and `article_label` (the article's identifiers, to prefix them with). `known_pmc_id` is `""` for none |
 | `bmlib_version() -> String` | function | The Rust workspace version (`0.4.0`), shared by bmlib and bmlib-ffi; the same for every commit of it, so it cannot identify a build (#493) |
 | `JatsArticle` and its parts | records | Owned FFI copies of `bmlib::fulltext::models`, field for field and in bmlib's order. Tables are HTML (`html_content`), as in bmlib |

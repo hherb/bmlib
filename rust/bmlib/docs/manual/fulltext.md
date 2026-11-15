@@ -76,8 +76,9 @@ patched and read rather than refused.
 
 `parse` and `parse_with_pmc_id` log the audit under Python's logger name,
 `bmlib.fulltext.jats_parser`: an ERROR record per unwind imbalance, a WARN
-record per counted loss, a DEBUG record per `debug` line. `parse_audited(xml, known_pmc_id)` returns a `JatsReport` with
-the lines instead of only printing them:
+record per counted loss, a DEBUG record per `debug` line.
+`parse_audited(xml, known_pmc_id)` returns a `JatsReport` with the lines instead
+of only printing them:
 
 ```rust
 use bmlib::fulltext::parse_audited;
@@ -88,6 +89,7 @@ assert_eq!(report.article.body_sections[0].paragraphs, ["Unsectioned prose."]);
 // No counted loss, and one DEBUG line: an article whose contributor list names
 // nobody, as a correction or a notice ordinarily does.
 assert!(report.warnings.is_empty());
+assert_eq!(report.debug.len(), 1);
 assert!(report.debug[0].starts_with("produced no authors"));
 # Ok::<(), bmlib::fulltext::JatsError>(())
 ```
@@ -97,8 +99,8 @@ assert!(report.debug[0].starts_with("produced no authors"));
   document cannot produce one, so each is a claim that the reader is wrong.
   `unwind_diagnostics(&state)` is the pure half, for a state of your own.
 - `warnings` are counted losses that are the deposit's, not the reader's:
-  refused `colspan`s, contributors naming nobody, formulas that reached no
-  field, and the rest, each once per article.
+  refused `colspan`s, `<contrib>`s from which no name could be read, formulas
+  that reached no field, and the rest, each once per article.
 - `debug` are the lines logged at DEBUG, as Python logs them: an article
   whose contributor list names nobody (one that names people and still yields
   no authors is a warning, since they were most likely routed elsewhere).

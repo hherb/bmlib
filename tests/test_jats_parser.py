@@ -16372,7 +16372,12 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
         article = JATSParser(data).parse()
 
         assert article.authors == []
-        assert any("named 3 contributor(s)" in m for m in parser_log.messages(logging.WARNING))
+        # The house format too (#782): the label, a colon, then the line.
+        assert any(
+            m.startswith("JATS parse of ")
+            and ": produced no authors, but its contributor list named 3 contributor(s)" in m
+            for m in parser_log.messages(logging.WARNING)
+        )
 
     def test_the_quiet_branch_reports_its_evidence_not_a_conclusion(self, parser_log):
         """The DEBUG half of "says which kind it is", which was deletable green.

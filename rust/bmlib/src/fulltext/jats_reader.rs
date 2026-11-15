@@ -378,7 +378,7 @@ const NON_PUBLICATION_DATE_SUFFIXES: &[&str] = &["-submitted", "-release"];
 /// Every spelling of a contributor name counted inside `<front>`.
 ///
 /// Used by the zero-author detector's tally only; see
-/// [`JatsReport::warnings`].
+/// [`JatsReport::warnings`] and [`JatsReport::debug`].
 const ROUTING_FLAG_NAMES: &[&str] = &[
     "in_front",
     "in_abstract",
@@ -440,8 +440,9 @@ pub struct JatsReport {
     /// The unwind audit's messages, one per imbalance. Empty on a clean parse.
     pub diagnostics: Vec<String>,
     /// The counted losses that are a publisher's deposit rather than a defect
-    /// in the reader: refused colspans, contributors naming nobody, formulas
-    /// that reached nowhere, and the rest. Empty on a clean parse.
+    /// in the reader: refused colspans, `<contrib>`s from which no name could
+    /// be read, formulas that reached nowhere, and the rest. Empty on a clean
+    /// parse.
     pub warnings: Vec<String>,
     /// The lines Python logs at DEBUG rather than WARNING: today only "produced
     /// no authors" for an article whose contributor list names nobody, which a
@@ -530,7 +531,8 @@ pub fn parse_audited(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsEr
     Ok(report)
 }
 
-/// [`parse_audited`] without logging the audit's warnings: the twin of
+/// [`parse_audited`] without logging the audit's warnings or its
+/// [`JatsReport::debug`] lines: the twin of
 /// Python's `JATSParser._own_identifiers` (`_run_parser(warn=False)`). For the
 /// library's check of a JATS's
 /// identifiers (#766), which re-reads a folder's JATS on every save beside it:

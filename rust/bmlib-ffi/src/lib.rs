@@ -749,9 +749,9 @@ where
 ///
 /// bmlib counts what a parse loses (refused table spans, dropped formulas,
 /// unfiled terms…) and checks itself for reader defects. This function returns
-/// the article alone: those lines go only to the process's stderr, which an
-/// iOS app does not see outside an attached debugger and Android discards. Use
-/// [`parse_jats_audited`] to receive them.
+/// the article alone: those lines go only to the `log` facade, which records
+/// nothing unless the host process installs a logger (bmlib-ffi installs none).
+/// Use [`parse_jats_audited`] to receive them.
 ///
 /// # Errors
 ///
@@ -767,7 +767,7 @@ pub fn parse_jats(xml: String) -> Result<JatsArticle, JatsError> {
 ///
 /// `known_pmc_id` is the id the caller already holds, or `""` for none; a bare
 /// number is `PMC`-prefixed, and it wins over an id the document deposits. The
-/// audit's lines are also written to stderr, as for [`parse_jats`].
+/// audit's lines are also sent to the `log` facade, as for [`parse_jats`].
 ///
 /// # Errors
 ///
