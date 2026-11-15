@@ -6655,7 +6655,17 @@ undo.
   comes about; so the service now serves, but does not keep, a JATS the chain
   fetched whose own identifiers contradict the request's (scenario 13 of
   `fulltext_library_scenarios.json`). Only the folder the call writes to is
-  checked, not every folder `find` returns. Every JATS a record lists is read
+  checked, not every folder `find` returns (pinned since #780 by
+  `test_only_the_folder_written_to_is_checked`, Rust's
+  `only_the_folder_written_to_is_checked`). The identifiers are read by the
+  service's parse without its audit's warnings (`JATSParser._own_identifiers`,
+  Rust `jats_reader::parse_unwarned`), since a folder's JATS is re-read on
+  every save beside it and its warnings are logged when it is parsed to be
+  shown (#780); its ERROR lines are kept, since each says the read the check
+  rests on is wrong (pinned by
+  `test_reading_a_jats_for_its_identifiers_repeats_no_audit` and its Rust
+  namesake, and `test_reading_a_jats_for_its_identifiers_keeps_the_audits_errors`).
+  Every JATS a record lists is read
   (digest-checked), not only those in `files_on_disk`: that list leaves out
   iCloud placeholders, so an evicted foreign JATS would pass unseen; one that
   cannot be read now fails the call (`NotDownloaded`, `DigestMismatch`), one

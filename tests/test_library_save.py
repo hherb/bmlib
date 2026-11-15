@@ -31,6 +31,8 @@ from pathlib import Path
 
 import pytest
 
+from bmlib.fulltext import jats_parser
+from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.library import (
     CORRUPT_SUFFIX,
     DigestMismatch,
@@ -50,6 +52,7 @@ from bmlib.library import (
     Unreachable,
     canonical_ids,
     files,
+    find,
     open_library,
     parse_record,
     sha256_hex,
@@ -596,6 +599,75 @@ def test_a_jats_that_does_not_parse_is_warned_of(
         f"Not checking the JATS {jats.name} for another paper's identifiers: it does not "
         "parse (SAXParseException: "
     )
+
+
+def test_only_the_folder_written_to_is_checked(lib: Library) -> None:
+    # The paper's folders are a linked group; a foreign JATS in one the save does not choose
+    # must not stop it, or one bad folder would block every folder of the paper (#780).
+    # "Zebra" sorts after "2024 Smith", so the save's first folder is the PDF's.
+    pdf = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+    zebra = PaperInfo(canonical_ids(None, None, "PMC9"), "Zebra")
+    jats = lib.save(_ME, zebra, _JATS_A, SourceKind.JATS, "test")
+    lib.record_use(_YOU, PaperInfo(canonical_ids("111", None, "PMC9")), pdf)  # the link
+    assert [f.folder for f in find(lib.scan(), _OTHER_DOI.ids)] == [pdf.folder, jats.folder]
+    saved = lib.save(_ME, _OTHER_DOI, b"%PDF another", SourceKind.PDF, "test")
+    assert saved.folder == pdf.folder
+    lib.record_use(_YOU, _OTHER_DOI, pdf)  # nor does recording a use there
+
+
+# A JATS whose parse warns (a colspan past the bound), so a repeated audit would show.
+_JATS_WARNS = _JATS_A.replace(
+    b"</front>",
+    b'</front><body><table-wrap><table><tr><td colspan="100000">x</td></tr></table>'
+    b"</table-wrap></body>",
+)
+
+
+def test_reading_a_jats_for_its_identifiers_repeats_no_audit(
+    lib: Library, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Its audit is reported when it is parsed to be shown, not on every save beside it (#780).
+    jats_log = "bmlib.fulltext.jats_parser"
+    with caplog.at_level(logging.WARNING, logger=jats_log):
+        JATSParser(_JATS_WARNS).parse()
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]  # the control
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger=jats_log):
+        jats = lib.save(_ME, _PAPER, _JATS_WARNS, SourceKind.JATS, "test")
+        lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "test")
+        lib.record_use(_YOU, _PAPER, jats)
+    assert [r for r in caplog.records if r.levelno >= logging.INFO] == []
+
+
+def test_reading_a_jats_for_its_identifiers_keeps_the_audits_errors(
+    lib: Library, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An ERROR says the parse itself is wrong, so the read the check rests on is too, and no
+    # publisher's deposit can repeat it; only the warnings are left to the parse that shows.
+    monkeypatch.setattr(jats_parser, "unwind_diagnostics", lambda state: ["a stack unwound"])
+    with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext.jats_parser"):
+        lib.save(_ME, _PAPER, _JATS_WARNS, SourceKind.JATS, "test")
+    assert [(r.levelno, r.getMessage()) for r in caplog.records if r.levelno >= logging.INFO] == [
+        (logging.ERROR, "JATS parse of 10.1/a: a stack unwound")
+    ]
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        b'<article-id pub-id-type="doi">10.1/a</article-id>'
+        b'<article-id pub-id-type="doi">10.1/b</article-id>',
+        b'<article-id pub-id-type="pmid"> 123 </article-id>'
+        b'<article-id pub-id-type="doi"> 10.1/A </article-id>',
+        b'<article-id pub-id-type="pmc">9</article-id>',
+        b'<article-id pub-id-type="pmcid">PMC9</article-id>',
+        b"",
+    ],
+)
+def test_the_identifier_read_is_the_parses(meta: bytes) -> None:
+    data = b"<article><front><article-meta>" + meta + b"</article-meta></front></article>"
+    article = JATSParser(data).parse()
+    assert JATSParser(data)._own_identifiers() == (article.pmid, article.doi, article.pmc_id)
 
 
 def test_the_library_imports_alone() -> None:

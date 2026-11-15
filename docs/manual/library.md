@@ -127,10 +127,11 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   stored as that kind; without it, the first kind present wins.
   `used_by(sha256)` is about the bytes, so it lists an installation using
   either kind.
-- **Choosing the folder.** `save` uses the first folder holding a record that
-  shares an identifier with the paper, except that bytes are kept once: if the
-  library already holds these bytes, the save goes into that folder even when
-  the identifiers find another. A paper found by neither goes to a new folder.
+- **Choosing the folder.** `save` uses the first of the paper's folders `find`
+  returns (scan order, so possibly one linked only through another), except
+  that bytes are kept once: if the library already holds these bytes, the save
+  goes into that folder even when the identifiers find another. A paper found
+  by neither goes to a new folder.
   A new folder takes `folder_name`; if another paper already has that name,
   compared without regard to case, it takes ` (2)`, ` (3)` and so on, fitted so
   the whole name stays within 150 bytes. A same-named folder that is the same

@@ -67,6 +67,15 @@ The Python library is documented separately, in the repository's
   `FullTextCache::save_pdf_retry`, `get_pdf_retry` and `delete_pdf_retry`
   (`PDF_RETRY_SUFFIX`); `delete` removes the mark too.
 
+### Fixed
+
+- **A library save no longer repeats a JATS's parse warnings** (#780, as in
+  Python). `Library::save` and `Library::record_use` read the identifiers of
+  the JATS being saved and of each folder JATS through `jats_reader::parse`,
+  which logs the audit, so an article's warnings came again on every save
+  beside it. They now read through the crate-private `parse_unwarned`, which
+  still logs the audit's diagnostics at ERROR; the identifiers are unchanged.
+
 ## [0.4.0] - 2026-11-10
 
 Published with the Python library's 0.13.0, from the same merge commit. **The

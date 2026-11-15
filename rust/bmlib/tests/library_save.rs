@@ -24,8 +24,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bmlib::library::{
-    folder_name, parse_record, sha256_hex, FileRef, Installation, Library, LibraryError, PaperIds,
-    PaperInfo, SourceKind, CORRUPT_SUFFIX,
+    find, folder_name, parse_record, sha256_hex, FileRef, Installation, Library, LibraryError,
+    PaperIds, PaperInfo, SourceKind, CORRUPT_SUFFIX,
 };
 
 const BYTES: &[u8] = b"%PDF a paper";
@@ -756,6 +756,83 @@ fn saving_an_evicted_jats_again_restores_it() {
         .unwrap();
     assert_eq!(again, jats);
     assert_eq!(fs::read(&path).unwrap(), JATS_A);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn only_the_folder_written_to_is_checked() {
+    // The paper's folders are a linked group; a foreign JATS in one the save
+    // does not choose must not stop it, or one bad folder would block every
+    // folder of the paper (#780). "Zebra" sorts after "2024 Smith", so
+    // the save's first folder is the PDF's.
+    let (dir, lib) = scratch("foreign-target-only");
+    let pdf = lib
+        .save(&me(), &paper(), BYTES, SourceKind::Pdf, "test")
+        .unwrap();
+    let zebra = PaperInfo {
+        ids: PaperIds::canonical(None, None, Some("PMC9")).unwrap(),
+        ..titled("Zebra")
+    };
+    let jats = lib
+        .save(&me(), &zebra, JATS_A, SourceKind::Jats, "test")
+        .unwrap();
+    let link = PaperInfo {
+        ids: PaperIds::canonical(Some("111"), None, Some("PMC9")).unwrap(),
+        ..PaperInfo::default()
+    };
+    lib.record_use(&you(), &link, &pdf).unwrap();
+    let scan = lib.scan().unwrap();
+    let group: Vec<&str> = find(&scan, &other_doi().ids)
+        .iter()
+        .map(|f| f.folder.as_str())
+        .collect();
+    assert_eq!(group, [pdf.folder.as_str(), jats.folder.as_str()]);
+    let saved = lib
+        .save(
+            &me(),
+            &other_doi(),
+            b"%PDF another",
+            SourceKind::Pdf,
+            "test",
+        )
+        .unwrap();
+    assert_eq!(saved.folder, pdf.folder);
+    // Nor does recording a use there.
+    lib.record_use(&you(), &other_doi(), &pdf).unwrap();
+    let _ = fs::remove_dir_all(&dir);
+}
+
+// A JATS whose parse warns (a colspan past the bound), so a repeated audit
+// would show. It names an author, so the colspan is its one warning.
+const JATS_WARNS: &[u8] = b"<article><front><article-meta>\
+<article-id pub-id-type=\"doi\">10.1/a</article-id><contrib-group>\
+<contrib contrib-type=\"author\"><name><surname>Smith</surname></name></contrib>\
+</contrib-group></article-meta></front>\
+<body><table-wrap><table><tr><td colspan=\"100000\">x</td></tr></table>\
+</table-wrap></body></article>";
+
+#[test]
+fn reading_a_jats_for_its_identifiers_repeats_no_audit() {
+    // Its audit is logged when it is parsed to be shown, not on every save
+    // beside it (#780).
+    const JATS_LOG: &str = "bmlib.fulltext.jats_parser";
+    common::log_capture::start();
+    bmlib::fulltext::parse(std::str::from_utf8(JATS_WARNS).unwrap()).unwrap();
+    let control = common::log_capture::take(JATS_LOG);
+    let levels: Vec<log::Level> = control.iter().map(|r| r.level).collect();
+    assert_eq!(levels, [log::Level::Warn], "{control:?}");
+    let (dir, lib) = scratch("foreign-quiet");
+    let jats = lib
+        .save(&me(), &paper(), JATS_WARNS, SourceKind::Jats, "test")
+        .unwrap();
+    lib.save(&me(), &paper(), BYTES, SourceKind::Pdf, "test")
+        .unwrap();
+    lib.record_use(&you(), &paper(), &jats).unwrap();
+    let logged = common::log_capture::take(JATS_LOG);
+    assert!(
+        logged.iter().all(|r| r.level > log::Level::Info),
+        "{logged:?}"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 

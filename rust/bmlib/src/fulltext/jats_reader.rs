@@ -508,9 +508,27 @@ pub fn parse_with_pmc_id(xml: &str, known_pmc_id: &str) -> Result<JATSArticle, J
 ///
 /// [`JatsError::Xml`] where the document is not well-formed.
 pub fn parse_audited(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsError> {
+    let report = parse_unwarned(xml, known_pmc_id)?;
+    for message in &report.warnings {
+        log::warn!(
+            target: "bmlib.fulltext.jats_parser",
+            "JATS parse of {}: {}",
+            report.article_label, message
+        );
+    }
+    Ok(report)
+}
+
+/// [`parse_audited`] without logging the audit's warnings: the twin of
+/// Python's `JATSParser._own_identifiers` (`_run_parser(warn=False)`). For the
+/// library's check of a JATS's
+/// identifiers (#766), which re-reads a folder's JATS on every save beside it:
+/// warning on each re-read would repeat the article's warnings, which are
+/// logged when it is parsed to be shown (#780). The diagnostics are still
+/// logged at ERROR: they say this very read is wrong.
+pub(crate) fn parse_unwarned(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsError> {
     let mut handler = Handler::new(known_pmc_id);
     walk_document(xml, &mut handler)?;
-
     let report = handler.finish();
     for message in &report.diagnostics {
         log::error!(
@@ -518,13 +536,6 @@ pub fn parse_audited(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsEr
             "JATS parse of {}: {}",
             report.article_label,
             message
-        );
-    }
-    for message in &report.warnings {
-        log::warn!(
-            target: "bmlib.fulltext.jats_parser",
-            "JATS parse of {}: {}",
-            report.article_label, message
         );
     }
     Ok(report)

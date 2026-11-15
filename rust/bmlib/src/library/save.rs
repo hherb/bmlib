@@ -360,14 +360,15 @@ fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryErro
 }
 
 /// A JATS's own identifiers as the full-text service reads them (its reader,
-/// then `library_ids`), or `None` when it is not UTF-8 or does not parse: such
-/// a file names no paper, and is warned of as `at`.
+/// without logging the parse's warnings, then `library_ids`), or `None` when it
+/// is not UTF-8 or does not parse: such a file names no paper, and is warned of
+/// as `at`.
 fn jats_ids(at: &str, bytes: &[u8]) -> Option<PaperIds> {
     let parsed = std::str::from_utf8(bytes)
         .map_err(|error| error.to_string())
-        .and_then(|xml| jats_reader::parse(xml).map_err(|error| error.to_string()));
+        .and_then(|xml| jats_reader::parse_unwarned(xml, "").map_err(|error| error.to_string()));
     match parsed {
-        Ok(article) => {
+        Ok(jats_reader::JatsReport { article, .. }) => {
             Some(library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id)).0)
         }
         Err(error) => {
@@ -446,12 +447,12 @@ impl Library {
     ///
     /// The paper's folder is the folder already holding these bytes, even when
     /// the identifiers find another (the bytes are kept once); otherwise the
-    /// first folder holding a record that shares an identifier with it;
-    /// otherwise a new folder, named by [`folder_name`] (with
-    /// ` (2)`, ` (3)` … when another paper has the name, compared without
-    /// regard to case). The file is written first, then the record (by the same
-    /// merge as [`Library::record_use`]), so a crash between leaves only an
-    /// unrecorded file, which saving the same bytes again records.
+    /// first of the paper's folders [`find`] returns; otherwise a new folder,
+    /// named by [`folder_name`] (with ` (2)`, ` (3)` … when another paper has
+    /// the name, compared without regard to case). The file is written first,
+    /// then the record (by the same merge as [`Library::record_use`]), so a
+    /// crash between leaves only an unrecorded file, which saving the same
+    /// bytes again records.
     ///
     /// A JATS whose own identifiers contradict `paper.ids` is refused, whether
     /// it is `bytes` or one a record in the chosen folder lists (#766): a folder
