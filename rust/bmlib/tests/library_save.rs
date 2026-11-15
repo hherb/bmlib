@@ -879,3 +879,60 @@ fn foreign_jats_names_the_file() {
          paper's 10.1/b; nothing was written"
     );
 }
+
+/// #788 review: a folder whose name is not UTF-8 is a stray entry, even beside
+/// a real folder holding its lossy spelling, which is scanned once. Linux only:
+/// APFS and Windows refuse such names.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_non_utf8_folder_is_reported_beside_one_with_its_lossy_name() {
+    use std::os::unix::ffi::OsStrExt;
+    let (dir, lib) = scratch("lossy");
+    let papers = dir.join("papers");
+    for name in [&b"caf\xe9"[..], "caf\u{fffd}".as_bytes()] {
+        let folder = papers.join(std::ffi::OsStr::from_bytes(name));
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("x.pdf"), name).unwrap();
+    }
+    let scan = lib.scan().unwrap();
+    let folders: Vec<_> = scan
+        .folders
+        .iter()
+        .map(|f| (f.folder.as_str(), f.files_on_disk.clone()))
+        .collect();
+    assert_eq!(folders, [("caf\u{fffd}", vec!["x.pdf".to_owned()])]);
+    let stray: Vec<_> = scan
+        .problems
+        .iter()
+        .filter(|p| matches!(p, bmlib::library::Problem::StrayEntry { .. }))
+        .collect();
+    assert_eq!(
+        stray,
+        [&bmlib::library::Problem::StrayEntry {
+            name: "caf\u{fffd}".to_owned()
+        }]
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
+/// A corrupt record is kept aside beside itself under a library root whose
+/// path is not UTF-8: the path is built from the OS string, not a lossy
+/// display. Linux only, as above.
+#[cfg(target_os = "linux")]
+#[test]
+fn corrupt_record_is_kept_aside_under_a_non_utf8_root() {
+    use std::os::unix::ffi::OsStrExt;
+    let parent = std::env::temp_dir().join(format!("bmlib-save-root-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&parent);
+    let dir = parent.join(std::ffi::OsStr::from_bytes(b"lib\xe9"));
+    fs::create_dir_all(&dir).unwrap();
+    let lib = Library::open(&dir).unwrap();
+    let first = save(&lib, &me(), &paper(), BYTES);
+    let path = record_path(&dir, &me(), &first.folder);
+    fs::write(&path, "{ not json").unwrap();
+    save(&lib, &me(), &paper(), BYTES);
+    let mut aside = path.clone().into_os_string();
+    aside.push(CORRUPT_SUFFIX);
+    assert_eq!(fs::read_to_string(&aside).unwrap(), "{ not json");
+    fs::remove_dir_all(parent).unwrap();
+}

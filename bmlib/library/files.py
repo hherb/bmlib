@@ -120,17 +120,22 @@ def io_error(path: Path, err: OSError, *, write: bool) -> LibraryError:
     return Io(path, str(err))
 
 
-def _entries(directory: Path) -> list[str]:
-    """Every name in *directory*, sorted by its raw bytes.
+def _entries(directory: Path) -> list[tuple[str, bool]]:
+    """Every name in *directory*, sorted by its raw bytes, with whether it is UTF-8.
 
     A name that is not UTF-8 comes back lossily, U+FFFD for each bad sequence, as Rust's
-    ``entries`` shows it: it is only ever shown or compared, and joined to a path it names
-    nothing, so a scan reports such a folder as a stray entry in both languages (#755).
+    ``entries`` shows it. Such a name is only ever shown, never joined to a path: a real
+    sibling may hold that very spelling, and the join would reach it instead (#755, #788).
     """
     # shortcut: on Windows a lone surrogate gives three U+FFFD here and one in Rust; settle it
     # with the Windows build (HANDOVER's owed list).
-    raw = sorted(os.fsencode(n) for n in os.listdir(directory))
-    return [b.decode("utf-8", errors="replace") for b in raw]
+    out = []
+    for b in sorted(os.fsencode(n) for n in os.listdir(directory)):
+        try:
+            out.append((b.decode("utf-8"), True))
+        except UnicodeDecodeError:
+            out.append((b.decode("utf-8", errors="replace"), False))
+    return out
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -139,7 +144,7 @@ _HEX = frozenset("0123456789abcdef")
 def is_temp_name(name: str) -> bool:
     """Whether *name* is a temporary of either language's ``atomic_write``.
 
-    Rust's is ``{name}{RUST_TEMP_SUFFIX}{42-character token}``, Python's
+    Rust's is ``{name}{RUST_TEMP_SUFFIX}{42-byte token}``, Python's
     ``.{name}.{32 hex}.tmp``. One is there while a write is in flight, and stays after a
     crash; it is never a user's file and never a paper's.
     """
@@ -166,31 +171,33 @@ class Listing:
     ``names`` are those a scan looks at (not ignored, not starting with ``.``);
     ``placeholders`` the files present only as an iCloud placeholder, by their own name
     (``.x.pdf.icloud`` gives ``x.pdf``); ``temps`` the ``atomic_write`` temporaries
-    (:func:`is_temp_name`), in flight or left by a crash.
+    (:func:`is_temp_name`), in flight or left by a crash; ``undecodable`` the names a scan
+    would look at that are not UTF-8, lossily, to report and never to join to a path.
     """
 
     names: list[str] = field(default_factory=list)
     placeholders: list[str] = field(default_factory=list)
     temps: list[str] = field(default_factory=list)
+    undecodable: list[str] = field(default_factory=list)
 
 
 def listing(directory: Path) -> Listing:
     """Return the entries of *directory*, sorted into a :class:`Listing`."""
     out = Listing()
-    for n in _entries(directory):
+    for n, utf8 in _entries(directory):
         own = _placeholder_for(n)
         if is_temp_name(n):
             out.temps.append(n)
         elif own is not None:
             out.placeholders.append(own)
         elif not n.startswith(".") and n not in IGNORED_NAMES:
-            out.names.append(n)
+            (out.names if utf8 else out.undecodable).append(n)
     return out
 
 
 def list_names(directory: Path) -> list[str]:
-    """Return the names in *directory*, sorted by bytes, without ignored or dot names or
-    ``atomic_write`` temporaries."""
+    """Return the names in *directory*, sorted by bytes, without ignored or dot names,
+    ``atomic_write`` temporaries or names that are not UTF-8."""
     return listing(directory).names
 
 
@@ -213,7 +220,7 @@ def first_user_entry(directory: Path) -> str | None:
     Ignored names, dotfiles and ``atomic_write`` temporaries do not count, but an iCloud
     placeholder does (it stands for a real file), and so does a name that is not UTF-8.
     """
-    for n in _entries(directory):
+    for n, _ in _entries(directory):
         if is_temp_name(n):
             continue
         if _is_placeholder_name(n) or (not n.startswith(".") and n not in IGNORED_NAMES):

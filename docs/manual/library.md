@@ -191,7 +191,7 @@ versions, so some will be real).
 
 | `Problem.kind` | Meaning |
 |---|---|
-| `"unreadable_record"` | A record file is not valid; it is not used |
+| `"unreadable_record"` | A record file is not valid, or its name is not UTF-8 *(unreleased)*; it is not used |
 | `"unreadable_folder"` | A paper folder, or its `records/`, cannot be listed or examined, or `records/` is not a folder (a symbolic link included) |
 | `"newer_record"` | A record written by a newer layout version; update the app |
 | `"record_not_downloaded"` | A record present only as an iCloud placeholder or evicted (dataless); its installation's uses are unknown until it is downloaded |

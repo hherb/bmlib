@@ -109,7 +109,8 @@ fn bad(field: &'static str, value: &str) -> LibraryError {
 }
 
 /// A PMID in canonical form: ASCII digits without leading zeros, or a preprint's
-/// `PPR` (any case in, upper case out) and digits. Surrounding space is trimmed.
+/// `PPR` (any case in, upper case out) and digits. Surrounding whitespace is
+/// trimmed, as Python's `str.strip()` does.
 fn canonical_pmid(raw: &str) -> Result<String, LibraryError> {
     let s = python_strip(raw);
     if let Some(rest) = s
@@ -128,7 +129,8 @@ fn canonical_pmid(raw: &str) -> Result<String, LibraryError> {
 }
 
 /// A PMCID in canonical form, `PMC` and digits without leading zeros; the `PMC`
-/// prefix may be missing or in any case. Surrounding space is trimmed.
+/// prefix may be missing or in any case. Surrounding whitespace is trimmed, as
+/// Python's `str.strip()` does.
 fn canonical_pmcid(raw: &str) -> Result<String, LibraryError> {
     let s = python_strip(raw);
     let digits = match s.get(..3) {

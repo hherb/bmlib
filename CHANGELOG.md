@@ -32,18 +32,25 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **The library's Windows device names, whitespace and non-UTF-8 names agree
-  across the languages** (#755 items 3, 5 and 6; both languages). A device
-  name followed by spaces before the dot (`CON .txt`, which Windows opens as
-  the device), `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and `CONOUT$` are now
-  refused by `component()` and get `folder_name`'s `_` prefix: CPython 3.13's
-  `ntpath.isreserved` list and rule. **A folder name can move**, only for a
-  paper whose name starts with such a word followed by a dot. Rust now trims
-  identifiers and the name's author and title as Python's `str.strip()` does,
-  U+001C-U+001F included, so a PMID edged by one is the same PMID in both. In
-  Python, a non-UTF-8 name in a library folder is read lossily (U+FFFD), as
-  Rust reads it, so such a paper folder is a `stray_entry` in both scans where
-  Python used to scan it. The temporary-name check counts Rust's 42-character
-  token in bytes, as Rust does. Pinned by 16 new cases in
+  across the languages** (#755 items 3, 5 and part of 6; both languages). A
+  device name followed by spaces before the dot (`CON .txt`, which Windows
+  opens as the device), `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and `CONOUT$`
+  are now refused by `component()` and get `folder_name`'s `_` prefix: the
+  device-name clause of CPython 3.13's `ntpath.isreserved`. **A folder name
+  can move**, only for a paper whose name begins with a word this rule now
+  refuses. A folder already made under the old rule is scanned but not usable;
+  that is #789. Rust now trims identifiers and the name's author and title as
+  Python's `str.strip()` does, U+001C-U+001F included, so a PMID edged by one
+  is the same PMID in both. In Python, a non-UTF-8 name in a library folder is
+  read lossily (U+FFFD), as Rust reads it. In both languages such a name is
+  reported and never joined to a path, because a real sibling may hold its
+  lossy spelling (#788's review): in `papers/` it is a `stray_entry`, in
+  `records/` an `unreadable_record`, and beside the records an
+  `unrecorded_file`; joined to a path, a `caf\xe9` folder's lossy name reached
+  a real `caf\ufffd` beside it, scanned twice while the other was dropped
+  unreported. Python used to scan such a paper folder under a
+  surrogate-escaped name. The temporary-name check counts Rust's 42-byte token
+  in bytes, as Rust does. Pinned by 44 new cases in
   `tests/fixtures/library_cases.json`. A test's `os.geteuid()` no longer runs
   at collection on Windows.
 - **`FileClash.folder` is the paper folder's bare name** (#755; both

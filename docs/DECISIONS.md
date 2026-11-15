@@ -6542,17 +6542,27 @@ undo.
   different paper whose name collides until it is updated.
 - **A Windows device name is prefixed `_` after the length fit**, keeping one
   byte of the budget for it, so a name valid on Windows is also within 150
-  bytes. The list and the rule are CPython 3.13's `ntpath.isreserved` (the part
-  before the first dot, trailing spaces dropped; `COM¹`-`COM³`, `LPT¹`-`LPT³`,
-  `CONIN$`, `CONOUT$`), which errs towards refusing; `COM0` is not on it (#755).
+  bytes. The list and the rule are the device-name clause of CPython 3.13's
+  `ntpath.isreserved` (the part before the first dot, trailing spaces dropped;
+  `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$`, `CONOUT$`), which errs towards
+  refusing; `COM0` is not on it (#755). A folder already named under the old
+  rule is #789.
 - **Whitespace is Python's `str.strip()` in both languages**, U+001C-U+001F
   included, as everywhere else the port follows Python: Rust strips identifiers
   and the name's author and title with `pyvalue::python_strip`, and so does its
   shared `normalize_doi` / `normalize_pmid` (#755).
 - **A name that is not UTF-8 is read lossily in both languages** (U+FFFD for
   each bad sequence, Rust's `to_string_lossy`), here the one direction Python
-  follows Rust, whose names are `String`s. Joined to a path, that name names
-  nothing, so such a paper folder is a `stray_entry` in both scans (#755).
+  follows Rust, whose names are `String`s (#755). On Windows a lone surrogate
+  still gives three U+FFFD in Python and one in Rust (HANDOVER's owed list).
+  **Such a name is reported and never joined to a path** (#788's review): a
+  real sibling may hold its lossy spelling, and the join reached that sibling,
+  so a scan listed it twice and dropped the other folder unreported. It is a
+  `stray_entry` in `papers/`, an `unreadable_record` in `records/` and an
+  `unrecorded_file` beside them, and `save`'s name-clash check skips it (its
+  bytes cannot equal a UTF-8 name's). Pinned by each language's own tests,
+  since only Linux file systems hold such names and the fixture runs
+  everywhere.
 - **An iCloud placeholder (`.name.icloud`) is a user's file when opening.** A
   folder holding only placeholders is not empty, so a library is never started
   inside someone's papers; it costs a refusal where the user must pick another

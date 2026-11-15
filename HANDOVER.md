@@ -8,10 +8,11 @@ commit; everything since is under Unreleased._
 
 ## This session: the library's names agree across languages (#755 items 3, 5, 6)
 
-- **Item 3**: `is_reserved` is CPython 3.13's `ntpath.isreserved` rule in both
-  languages: the part before the first dot, trailing spaces dropped, against a
-  list adding `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and `CONOUT$`. So
-  `component()` refuses `CON .txt` and `folder_name` prefixes `_Con .x (…)`.
+- **Item 3**: `is_reserved` is the device-name clause of CPython 3.13's
+  `ntpath.isreserved` in both languages: the part before the first dot,
+  trailing spaces dropped, against a list adding `COM¹`-`COM³`, `LPT¹`-`LPT³`,
+  `CONIN$` and `CONOUT$`. So `component()` refuses `CON .txt` and
+  `folder_name` prefixes `_Con .x (…)`.
 - **Item 5, whitespace**: **Rust follows Python** (the port's convention; it
   already had `pyvalue::python_strip` for this gap). The library's id and name
   trims and the shared `publications` `normalize_doi`/`normalize_pmid` strip
@@ -23,9 +24,25 @@ commit; everything since is under Unreleased._
   in `_entries`).
 - **Item 6, the mechanical half**: a test's `os.geteuid()` no longer runs at
   collection on Windows; Rust's `keep_aside` builds its path as an `OsString`.
-- 16 new `library_cases.json` cases (`canonical_ids`, `folder_names`,
-  `component`); each was seen failing on `main`'s Python, and the device-name
-  ones on `main`'s Rust. Reasoning in `docs/DECISIONS.md` (*library*).
+- **The review's fix (#788)**: a name that is not UTF-8 is kept apart in the
+  listing (`Listing.undecodable`) and reported, never joined to a path. Its
+  lossy spelling can be a real sibling's (`caf\ufffd` beside `caf\xe9`), and
+  the join reached it: the scan listed that folder twice and dropped the other
+  unreported, in both languages on this branch before the fix. Pinned by
+  Linux-only tests on a real file system (both languages) and by faked
+  listings (Python).
+- **Not fixed here, #789**: a folder whose name `component()` refuses (one
+  named under the old device rule, or a user's `papers/con`) is scanned with
+  no `Problem` but every call addressing it raises `BadName`. It needs a pick
+  of remedy; the library is unreleased, so it is free to settle.
+- 44 new `library_cases.json` cases (`canonical_ids`, `folder_names`,
+  `component`): those the new device rule decides (spaces before the dot,
+  superscripts, `CONIN$`, `CONOUT$`) fail on `main`'s Python and Rust; the
+  U+001C-U+001F ones on `main`'s Rust only (Python already stripped them); 13
+  pass on `main` and pin the list entry by entry (12 device names `main`
+  already reserved, and `nul.tar.gz`); the ideographic space, `con x.txt`,
+  `COM0` and the two near-miss spaces are controls. Reasoning in
+  `docs/DECISIONS.md` (*library*).
 - **#755 stays open for the decisions**: item 1 (`record_use` trusting the
   caller's `paper`: refuse a contradiction, or document it), item 2 (a folder
   whose only record is evicted is invisible to `find`, so a save forks the
@@ -38,7 +55,8 @@ commit; everything since is under Unreleased._
 
 `save`'s clash and its `NotDownloaded` beside an evicted file name the bare
 folder, as every other error does; a `save_scenarios` case with a `plant`
-step pins it in all three runners.
+step pins it in all three runners. The `NotDownloaded` half is pinned in Rust
+only by the opt-in iCloud test, which was not run.
 
 ## Merged: the FFI's fixture runs, the lookup's rules, no foreign JATS (#765, #784, #782, #766)
 
@@ -158,7 +176,9 @@ is a bound; measuring it is #759.** BMLibrarian bumps its pin once released;
 MECA bulk is the expected next request.
 
 **Full-text tests** (PRs #745-#757): script `content`, not `json()`
-(responses decode through `strict_json_loads`).
+(responses decode through `strict_json_loads`); the record fixtures' md5s are
+those of `sample_article.xml` and `textless.pdf`. Not covered: a JATS cached
+with the PDF-beside option off (the `shortcut:` in `_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -270,11 +290,15 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `fix/library-parity-755`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,082 passed + 22
-  skipped (11,104 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,875 passed (plus `storage_rules`' new test), `cargo clippy --workspace
-  --tests` and `cargo fmt --check` clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
-  BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,113 passed + 23
+  skipped (11,136 collected); the library's four test files also on Linux
+  (Docker, `python:3.12-slim`). Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+  1,875 passed on macOS (the two new Linux-only tests run in CI), and
+  `-p bmlib --no-default-features` 1,453; `cargo clippy --all-targets` (also
+  `--features postgres`, `html`, `pdf`, `--no-default-features`, `-p bmlib-ffi`
+  and its `http-sketch,bindgen`), `cargo doc` and `cargo fmt --check` clean;
+  the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with
+  `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
   Measure `main` with `pytest --collect-only` and never subtract from a
@@ -301,7 +325,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open** (#755 stays open after this branch, for its decisions): the library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+**122 open** (#755 stays open after this branch, for its decisions): the library's **#789** (a folder `component()` refuses, this PR's review), #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open

@@ -66,7 +66,7 @@ pub const DOI_PREFIXES: [&str; 5] = [
 /// canonical form is what makes cross-source deduplication actually work.
 ///
 /// The prefix is stripped **once** — Python's loop breaks — so
-/// `"doi:https://doi.org/10.1/X"` becomes `"10.1/x"` and not `"doi:10.1/x"`.
+/// `"https://doi.org/doi:10.1/X"` becomes `"doi:10.1/x"` and not `"10.1/x"`.
 #[must_use]
 pub fn normalize_doi(doi: Option<&str>) -> Option<String> {
     let doi = doi.filter(|d| !d.is_empty())?;

@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -119,6 +120,12 @@ def test_a_records_that_is_a_file_is_an_unreadable_folder(tmp_path: Path) -> Non
     assert [(p.kind, p.folder) for p in problems] == [("unreadable_folder", "p")]
 
 
+_NOT_ON_WINDOWS = pytest.mark.skipif(
+    os.name == "nt", reason="Windows names are UTF-16: bytes that are not UTF-8 cannot be faked"
+)
+
+
+@_NOT_ON_WINDOWS
 def test_a_non_utf8_folder_is_a_stray_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -130,7 +137,7 @@ def test_a_non_utf8_folder_is_a_stray_entry(
     lib = open_library(tmp_path / "lib")
     real = files.os.listdir
     papers = lib.root / "papers"
-    (papers / "caf\xe9").mkdir()  # the same name, valid: the lossy name must not reach it
+    (papers / "caf\xe9").mkdir()  # the same characters as valid UTF-8: must not be reached
     monkeypatch.setattr(
         files.os,
         "listdir",
@@ -138,3 +145,77 @@ def test_a_non_utf8_folder_is_a_stray_entry(
     )
     problems = lib.scan().problems
     assert [(p.kind, p.name) for p in problems] == [("stray_entry", "caf�")]
+
+
+@_NOT_ON_WINDOWS
+def test_a_non_utf8_folder_is_reported_beside_one_with_its_lossy_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #788 review: the lossy name of b"caf\xe9" is a real folder's "caf\ufffd"; joined to a
+    # path it reached that folder, which was scanned twice and the other one dropped unreported.
+    from bmlib.library import files
+
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    real = files.os.listdir
+    papers = lib.root / "papers"
+    (papers / "caf\ufffd").mkdir()
+    monkeypatch.setattr(
+        files.os,
+        "listdir",
+        lambda d: [os.fsdecode(b"caf\xe9"), "caf\ufffd"] if Path(d) == papers else real(d),
+    )
+    scan = lib.scan()
+    assert [f.folder for f in scan.folders] == ["caf\ufffd"]
+    assert [(p.kind, p.name) for p in scan.problems] == [("stray_entry", "caf\ufffd")]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="only Linux allows such names")
+def test_a_non_utf8_folder_on_disk_is_reported_not_scanned(tmp_path: Path) -> None:
+    # The same as above on a real file system, with each entry holding a file.
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    papers = os.fsencode(lib.root / "papers")
+    for name in (b"caf\xe9", "caf\ufffd".encode()):
+        os.mkdir(papers + b"/" + name)
+        with open(papers + b"/" + name + b"/x.pdf", "wb") as f:
+            f.write(name)
+    scan = lib.scan()
+    assert [(f.folder, f.files_on_disk) for f in scan.folders] == [("caf\ufffd", ("x.pdf",))]
+    assert [(p.kind, p.name) for p in scan.problems if p.kind == "stray_entry"] == [
+        ("stray_entry", "caf\ufffd")
+    ]
+
+
+@_NOT_ON_WINDOWS
+def test_non_utf8_names_inside_a_folder_are_each_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two names that are not UTF-8 read alike lossily; both are reported, neither is probed, and
+    # a record whose name is not UTF-8 is unreadable rather than looked up by its lossy name.
+    from bmlib.library import files
+
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    real = files.os.listdir
+    folder = lib.root / "papers" / "p"
+    (folder / "records").mkdir(parents=True)
+    bad = [os.fsdecode(b"x\xe9"), os.fsdecode(b"x\xea")]
+    monkeypatch.setattr(
+        files.os,
+        "listdir",
+        lambda d: (
+            [*bad, "records"]
+            if Path(d) == folder
+            else [os.fsdecode(b"r\xe9.json")]
+            if Path(d) == folder / "records"
+            else real(d)
+        ),
+    )
+    scan = lib.scan()
+    assert scan.folders[0].files_on_disk == ("x\ufffd", "x\ufffd")
+    assert [(p.kind, p.name or p.file) for p in scan.problems] == [
+        ("unreadable_record", "r\ufffd.json"),
+        ("unrecorded_file", "x\ufffd"),
+        ("unrecorded_file", "x\ufffd"),
+    ]

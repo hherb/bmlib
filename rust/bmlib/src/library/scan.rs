@@ -90,7 +90,8 @@ impl PaperFolder {
 /// Something odd a scan found and did not use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Problem {
-    /// A record file could not be read or is not a valid record.
+    /// A record file could not be read, is not a valid record, or its name is
+    /// not UTF-8 (shown lossily).
     UnreadableRecord {
         /// The paper's folder.
         folder: String,
@@ -260,6 +261,9 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                         Ok(r) => records.push(r),
                     }
                 }
+                for file in &found.undecodable {
+                    problems.push(unreadable(file, "the name is not UTF-8".to_owned()));
+                }
                 for file in found.placeholders {
                     if !found.names.contains(&file) {
                         problems.push(Problem::RecordNotDownloaded {
@@ -300,11 +304,13 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                     name,
                 });
             }
-            found
+            let mut on_disk: Vec<String> = found
                 .names
                 .into_iter()
                 .filter(|n| n != RECORDS_DIR && !listed_dir(&dir.join(n)))
-                .collect()
+                .collect();
+            on_disk.extend(found.undecodable);
+            on_disk
         }
         Err(e) => {
             problems.push(unreadable_folder(e.to_string()));
@@ -354,6 +360,12 @@ impl Library {
                 }),
             }
         }
+        problems.extend(
+            found
+                .undecodable
+                .into_iter()
+                .map(|name| Problem::StrayEntry { name }),
+        );
         // Nothing writes a file into `papers/` itself; a temporary there is stray.
         problems.extend(
             found

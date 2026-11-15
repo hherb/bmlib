@@ -167,6 +167,11 @@ fn whitespace_is_pythons() {
         normalize_doi(Some("\u{1c}doi:10.1/X\u{1f}")),
         Some("10.1/x".to_string())
     );
+    // Stripped again once the prefix is off.
+    assert_eq!(
+        normalize_doi(Some("doi:\u{1c}10.1/X")),
+        Some("10.1/x".to_string())
+    );
     assert_eq!(
         normalize_pmid(Some("\u{1e}123\u{1d}")),
         Some("123".to_string())
