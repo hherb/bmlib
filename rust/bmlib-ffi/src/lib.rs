@@ -276,8 +276,9 @@ pub struct JatsArticle {
     pub funding_awards: Vec<JatsFundingAward>,
 }
 
-/// A parse with its audit: the counted publisher losses (`warnings`) and the
-/// reader-defect diagnostics (`diagnostics`, empty on a correct reader).
+/// A parse with its audit: the counted publisher losses (`warnings`), the
+/// lines bmlib logs at DEBUG (`debug`) and the reader-defect diagnostics
+/// (`diagnostics`, empty on a correct reader).
 #[derive(Debug, Clone, uniffi::Record)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub struct JatsParseReport {
@@ -290,6 +291,9 @@ pub struct JatsParseReport {
     pub diagnostics: Vec<String>,
     /// Counted losses that are the publisher's deposit.
     pub warnings: Vec<String>,
+    /// The lines bmlib logs at DEBUG (#782): evidence, not a loss, such as an
+    /// article whose contributor list names nobody.
+    pub debug: Vec<String>,
 }
 
 /// Why a parse failed.
@@ -546,16 +550,14 @@ impl From<bmlib::fulltext::JatsReport> for JatsParseReport {
             article_label,
             diagnostics,
             warnings,
-            // The DEBUG lines (#782): an app is shown the warnings, and the
-            // FFI forwards no log records (#694), so a DEBUG line has nowhere
-            // to go.
-            debug: _,
+            debug,
         } = r;
         JatsParseReport {
             article: article.into(),
             article_label,
             diagnostics,
             warnings,
+            debug,
         }
     }
 }

@@ -14,13 +14,13 @@ at DEBUG. That line moved from `JatsReport::warnings` to a new public field,
 `JatsReport::debug`, which `parse_audited` logs at DEBUG. The "most likely
 routed elsewhere" line stays a warning. **A struct literal or exhaustive
 destructuring of `JatsReport` must name `debug`** (crate CHANGELOG, *Changed —
-breaking*). bmlib-ffi drops it (`debug: _`): an app sees the warnings, and the
-FFI forwards no log records (#694). The manual's `parse_audited` example now
-asserts the line is in `debug`. The new test,
-`an_author_less_article_is_logged_at_debug`, was mutation-checked: logging the
-line at WARN again fails it. Python's two zero-author lines gain the colon of
-every other parser line ("JATS parse of X: produced no authors…"), so both
-languages write the same text, pinned in
+breaking*). bmlib-ffi's `JatsParseReport` carries `debug` too (the
+maintainer's call), so a Swift or Kotlin construction of it must name the
+field. The manual's `parse_audited` example now asserts the line is in
+`debug`. The new test, `an_author_less_article_is_logged_at_debug`, was
+mutation-checked: logging the line at WARN again fails it. Python's two
+zero-author lines gain the colon of every other parser line ("JATS parse of X:
+produced no authors…"), so both languages write the same text, pinned in
 `test_the_quiet_branch_reports_its_evidence_not_a_conclusion`
 (mutation-checked); the renderer digests were re-pinned without a version
 bump, since only log text moved.

@@ -224,6 +224,7 @@ fn the_audit_reaches_the_ffi_report_unchanged() {
         ffi.warnings,
         vec!["a warning".to_string(), "another warning".to_string()]
     );
+    assert_eq!(ffi.debug, vec!["a debug line".to_string()]);
 }
 
 /// The corpus bmlib's own reader is held to Python on.

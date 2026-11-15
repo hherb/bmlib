@@ -16,7 +16,9 @@ The Python library is documented separately, in the repository's
   Python logs at DEBUG, logged at DEBUG by `parse_audited` (and so by `parse`
   and `parse_with_pmc_id`). Today that is only the zero-author line for an
   article whose contributor list names nobody, which moved there from
-  `warnings` (see Fixed). bmlib-ffi's `JatsParseReport` does not carry it.
+  `warnings` (see Fixed). bmlib-ffi's `JatsParseReport` gains the same
+  `debug` field, so a Swift or Kotlin memberwise construction of it must name
+  it.
 - **`LibraryError` gains `ForeignJats { folder, name, field, theirs, ours }`**
   (#766, as in Python), so an exhaustive `match` on it needs the arm.
   `Library::save` and `Library::record_use` return it when the folder they
@@ -81,7 +83,8 @@ The Python library is documented separately, in the repository's
   became an author (they were most likely routed elsewhere). Where the list
   names nobody, as in a correction or a notice, the line is in
   `JatsReport::debug` and is logged at DEBUG, as Python's
-  `_report_zero_authors` logs it. bmlib-ffi's `warnings` no longer carry it.
+  `_report_zero_authors` logs it. In bmlib-ffi's report it moved from
+  `warnings` to `debug` likewise.
 - **A library save no longer repeats a JATS's parse warnings** (#780, as in
   Python). `Library::save` and `Library::record_use` read the identifiers of
   the JATS being saved and of each folder JATS through `jats_reader::parse`,
