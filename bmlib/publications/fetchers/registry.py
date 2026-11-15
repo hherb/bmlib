@@ -194,6 +194,7 @@ def _biorxiv_fetcher(server: str, endpoint: str) -> Callable[..., Any]:
 def _register_builtins() -> None:
     """Register all built-in source fetchers."""
     from bmlib.publications.fetchers.biorxiv import BIORXIV_SETTLE_DAYS, DETAILS_SETTLE_DAYS
+    from bmlib.publications.fetchers.europepmc import EUROPEPMC_SETTLE_DAYS, fetch_europepmc
     from bmlib.publications.fetchers.openalex import fetch_openalex
     from bmlib.publications.fetchers.pubmed import fetch_pubmed
 
@@ -253,4 +254,18 @@ def _register_builtins() -> None:
             ],
         ),
         fetch_openalex,
+    )
+
+    _put(
+        SourceDescriptor(
+            name="europepmc",
+            display_name="Europe PMC",
+            description="Europe PMC search (peer-reviewed and preprint records)",
+            params=[
+                SourceParam("query", "Europe PMC search, without a date clause", required=True),
+                SourceParam("email", "Contact email sent to Europe PMC"),
+            ],
+            settle_days=EUROPEPMC_SETTLE_DAYS,
+        ),
+        fetch_europepmc,
     )
