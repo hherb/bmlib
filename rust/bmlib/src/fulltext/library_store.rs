@@ -136,7 +136,7 @@ fn earliest<'a>(a: &'a str, b: &'a str) -> &'a str {
 /// field name (`"pmid"`, `"doi"` or `"pmc_id"`), their value and ours; `None`
 /// when they agree. A field absent on either side agrees. The one rule for a
 /// library JATS's own identifiers and for a record's.
-pub(crate) fn contradiction<'a>(
+pub fn contradiction<'a>(
     theirs: &'a PaperIds,
     ours: &'a PaperIds,
 ) -> Option<(&'static str, &'a str, &'a str)> {
@@ -160,6 +160,87 @@ fn failure(ids: &PaperIds, file: Option<(&str, &str)>, err: &dyn std::fmt::Displ
         format!(" file {folder}/{name}")
     });
     format!("library, paper {}{at}: {err}", describe_ids(ids))
+}
+
+/// The paper's newest source file of `kind` in `scan` that may be served for
+/// `ids`, not yet read: the rule [`LibraryStore::find_source_in`] reads by,
+/// for a caller with its own read (an app's own lookup chain, through
+/// bmlib-ffi).
+///
+/// Looks in the paper's whole linked group of folders (`find`, not only an
+/// exact-identifier folder) for files of `kind` that are on disk and that at
+/// least one record lists under identifiers not contradicting `ids` (field by
+/// field; a field absent on either side agrees), so a file only another
+/// paper's records list is never chosen. Each such file ranks by the earliest
+/// `saved_at` among the records listing it, since noting a use stamps the time
+/// of the note; the latest wins, and ties go to the lower digest. A `saved_at`
+/// not of the exact form `YYYY-MM-DDTHH:MM:SSZ` counts only when no record has
+/// a well-formed one, and then sorts below every well-formed one. Read the
+/// file with [`Library::read`], which checks its digest; a file that fails
+/// that check is reported, not passed over for an older one.
+#[must_use]
+pub fn newest_source(scan: &Scan, ids: &PaperIds, kind: SourceKind) -> Option<FileRef> {
+    // Per digest: its earliest well-formed `saved_at` (`""` when none), its
+    // file, and whether a record not contradicting `ids` lists it.
+    let mut seen: Vec<(&str, FileRef, bool)> = Vec::new();
+    for folder in find(scan, ids) {
+        for record in &folder.records {
+            let agrees = contradiction(&record.paper.ids, ids).is_none();
+            for entry in &record.files {
+                if entry.kind != kind || !folder.files_on_disk.contains(&entry.name) {
+                    continue;
+                }
+                let at = saved_at_key(&entry.saved_at);
+                match seen.iter_mut().find(|(_, f, _)| f.sha256 == entry.sha256) {
+                    Some(known) => {
+                        known.0 = earliest(known.0, at);
+                        known.2 |= agrees;
+                    }
+                    None => seen.push((
+                        at,
+                        FileRef {
+                            folder: folder.folder.clone(),
+                            name: entry.name.clone(),
+                            sha256: entry.sha256.clone(),
+                            kind,
+                        },
+                        agrees,
+                    )),
+                }
+            }
+        }
+    }
+    let mut best: Option<(&str, FileRef)> = None;
+    for (at, file, agrees) in seen {
+        // Later `saved_at` wins; on a tie the lower digest does.
+        let better = best
+            .as_ref()
+            .is_none_or(|(was, f)| (at, f.sha256.as_str()) > (*was, file.sha256.as_str()));
+        if agrees && better {
+            best = Some((at, file));
+        }
+    }
+    best.map(|(_, file)| file)
+}
+
+/// Whether `who`'s record in `file`'s folder already lists `file` (digest and
+/// kind) in `scan`: the check [`LibraryStore::note_use_in`] makes before it
+/// writes, for a caller with its own write (`Library::record_use`). A `scan`
+/// older than the record only costs a write that changes nothing.
+#[must_use]
+pub fn lists_use(scan: &Scan, who: &Installation, file: &FileRef) -> bool {
+    scan.folders
+        .iter()
+        .filter(|f| f.folder == file.folder)
+        .any(|f| {
+            f.records.iter().any(|r| {
+                r.installation.app == who.app
+                    && r.installation.id == who.id
+                    && r.files
+                        .iter()
+                        .any(|e| e.sha256 == file.sha256 && e.kind == file.kind)
+            })
+        })
 }
 
 impl LibraryStore {
@@ -191,20 +272,9 @@ impl LibraryStore {
     }
 
     /// The paper's newest source file of `kind` in `scan`, read and
-    /// digest-checked.
-    ///
-    /// Looks in the paper's whole linked group of folders (`find`, not only an
-    /// exact-identifier folder) for files of `kind` that are on disk and that
-    /// at least one record lists under identifiers not contradicting `ids`
-    /// (field by field; a field absent on either side agrees), so a file only
-    /// another paper's records list is never served. Each such file ranks by
-    /// the earliest `saved_at` among the records listing it, since noting a use
-    /// stamps the time of the note; the latest wins, and ties go to the lower
-    /// digest. A `saved_at` not of the exact form `YYYY-MM-DDTHH:MM:SSZ` counts
-    /// only when no record has a well-formed one, and then sorts below every
-    /// well-formed one; fixed-width UTC compares in time order as a string. If
-    /// the newest file cannot be read, that is an error: a tampered file is
-    /// reported, not skipped for an older one.
+    /// digest-checked: the file [`newest_source`] chooses. If it cannot be
+    /// read, that is an error: a tampered file is reported, not skipped for an
+    /// older one.
     ///
     /// # Errors
     ///
@@ -216,47 +286,7 @@ impl LibraryStore {
         ids: &PaperIds,
         kind: SourceKind,
     ) -> Result<Option<Held>, String> {
-        // Per digest: its earliest well-formed `saved_at` (`""` when none), its
-        // file, and whether a record not contradicting `ids` lists it.
-        let mut seen: Vec<(&str, FileRef, bool)> = Vec::new();
-        for folder in find(scan, ids) {
-            for record in &folder.records {
-                let agrees = contradiction(&record.paper.ids, ids).is_none();
-                for entry in &record.files {
-                    if entry.kind != kind || !folder.files_on_disk.contains(&entry.name) {
-                        continue;
-                    }
-                    let at = saved_at_key(&entry.saved_at);
-                    match seen.iter_mut().find(|(_, f, _)| f.sha256 == entry.sha256) {
-                        Some(known) => {
-                            known.0 = earliest(known.0, at);
-                            known.2 |= agrees;
-                        }
-                        None => seen.push((
-                            at,
-                            FileRef {
-                                folder: folder.folder.clone(),
-                                name: entry.name.clone(),
-                                sha256: entry.sha256.clone(),
-                                kind,
-                            },
-                            agrees,
-                        )),
-                    }
-                }
-            }
-        }
-        let mut best: Option<(&str, FileRef)> = None;
-        for (at, file, agrees) in seen {
-            // Later `saved_at` wins; on a tie the lower digest does.
-            let better = best
-                .as_ref()
-                .is_none_or(|(was, f)| (at, f.sha256.as_str()) > (*was, file.sha256.as_str()));
-            if agrees && better {
-                best = Some((at, file));
-            }
-        }
-        let Some((_, file)) = best else {
+        let Some(file) = newest_source(scan, ids, kind) else {
             return Ok(None);
         };
         let bytes = self
@@ -293,11 +323,9 @@ impl LibraryStore {
         self.note_use_in(&self.scan(&paper.ids)?, paper, file)
     }
 
-    /// Note in this installation's record that it uses `file`, unless that record
-    /// (in the file's folder) already lists that file (digest and kind) in
-    /// `scan`, in which case nothing is written. Returns whether a use was
-    /// written. A `scan` older than the record only costs a write that changes
-    /// nothing.
+    /// Note in this installation's record that it uses `file`, unless
+    /// [`lists_use`] finds that record already lists it in `scan`, in which
+    /// case nothing is written. Returns whether a use was written.
     ///
     /// # Errors
     ///
@@ -308,19 +336,7 @@ impl LibraryStore {
         paper: &PaperInfo,
         file: &FileRef,
     ) -> Result<bool, String> {
-        let already = scan
-            .folders
-            .iter()
-            .filter(|f| f.folder == file.folder)
-            .any(|f| {
-                f.records.iter().any(|r| {
-                    r.installation.app == self.who.app
-                        && r.installation.id == self.who.id
-                        && r.files
-                            .iter()
-                            .any(|e| e.sha256 == file.sha256 && e.kind == file.kind)
-                })
-            });
+        let already = lists_use(scan, &self.who, file);
         if already {
             return Ok(false);
         }

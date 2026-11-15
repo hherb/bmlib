@@ -6,6 +6,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **The full-text lookup's library rules, alone** (#784; both languages).
+  `newest_source(scan, ids, kind)` is the file `LibraryStore.find_source_in`
+  reads, not yet read, and `lists_use(scan, who, file)` the check
+  `note_use_in` makes before it writes; both methods now call them, unchanged.
+  `contradiction` is exported from `bmlib.fulltext` beside them. bmlib-ffi
+  exposes all three with `library_ids` (`LibraryScan.newest_source`,
+  `LibraryScan.lists_use`, `library_ids`, `paper_ids_contradiction`), so an
+  app whose lookup chain is its own (MedicalFactChecker's Swift) reads the
+  library by the service's rules instead of a copy of them.
+
 ### Fixed
 
 - **Rust logs an author-less article at DEBUG, as Python does** (#782). The

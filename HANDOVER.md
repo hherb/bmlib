@@ -1,5 +1,32 @@
 # HANDOVER — bmlib development
 
+_Last updated: 2026-11-15 (**#784, the lookup's library rules through the
+FFI, on `feat/ffi-lookup-rules`**). Merged since the last update: #781 (#780,
+below). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of
+#736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
+everything since is under Unreleased._
+
+## This session: the lookup's library rules, for an app's own chain (#784)
+
+Both languages, and bmlib-ffi. MedicalFactChecker's full-text fetch is its
+own Swift chain, so for StudyAnalyzer's design step 3b it must read the
+library by the service's rules. `newest_source(scan, ids, kind)` (the file
+`find_source_in` reads) and `lists_use(scan, who, file)` (the check
+`note_use_in` makes before writing) are split out of the two methods,
+unchanged, and Rust's `contradiction` is public as Python's was. bmlib-ffi
+exposes `LibraryScan.newest_source`, `LibraryScan.lists_use`, `library_ids`
+(run against `fulltext_library_ids.json`) and `paper_ids_contradiction`; the
+read and the write stay `read` / `record_use` with their typed errors. The
+consumer is bmlibrarian_lite #788 (step 3b), which re-pins its xcframework
+past this.
+
+## Merged: a library save repeats no parse warnings (#780, PR #781)
+
+The identifier read in `save` and `record_use` skips the audit's warnings
+(Python `JATSParser._own_identifiers`, Rust's crate-private
+`jats_reader::parse_unwarned`) but keeps its ERROR lines; "only the target
+folder is checked" is pinned in both languages. Rust warns on an author-less
+article where Python logs at DEBUG: **#782**.
 _Last updated: 2026-11-15 (**#782, on `fix/rust-zero-author-debug-782`**).
 Merged since the last update: #781 (#780: a library save repeats no parse
 warnings; see its CHANGELOG entry). **0.13.0 is on PyPI** (tag `v0.13.0` on

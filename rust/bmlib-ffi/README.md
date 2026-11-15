@@ -21,8 +21,9 @@ recommendation are in bmlibrarian_lite's
 | `crossref_retraction_requests(dois, mailto) -> CrossrefRequests` | function | Batched Crossref URLs (50 DOIs, at most 4,000 characters) with the DOIs each covers; `unsendable` DOIs (a comma) get `crossref: nil` |
 | `parse_crossref_retraction_response(status, body, requested_dois) -> [doi: CrossrefResult]` | function | `Served` (carrying its normalised DOI: `retraction_status` reads it as no answer for any other paper, #508), `NotKnown` or `Unreachable`, keyed by the normalised DOI (doi.org prefix stripped, lower-cased: the same strings as each batch's `dois`). A failed batch makes every DOI in it `Unreachable`. The app owns the transport and the pacing |
 | `build_retraction_index(csv, data_as_of) -> RetractionIndexBuild`, `RetractionIndex` | function, object | The Retraction Watch export as one file: `to_bytes()` to store, `RetractionIndex.fromBytes` to reopen, `lookup(doi, pmid)` (`nil` = not consulted), `data_as_of()`, `notice_count()`. Throws `RetractionIndexError.Unusable` — read it as "not consulted". A download truncated on a row boundary still builds: compare `notice_count()` with the index it replaces |
-| `PaperLibrary`, `LibraryScan` and their records | objects | The shared paper library (`bmlib::library`): `PaperLibrary.open(root:)` a folder, then `scan`, `read` (digest checked), `save`, `recordUse`, `release`, `removeFile`, `removeFolder`. `scan()` gives a `LibraryScan` with `folders`, `problems`, `find(ids)`, `findDigest`, `group` and `usedBy`. Throws `LibraryError`. See "The shared paper library" below |
+| `PaperLibrary`, `LibraryScan` and their records | objects | The shared paper library (`bmlib::library`): `PaperLibrary.open(root:)` a folder, then `scan`, `read` (digest checked), `save`, `recordUse`, `release`, `removeFile`, `removeFolder`. `scan()` gives a `LibraryScan` with `folders`, `problems`, `find(ids)`, `findDigest`, `group`, `usedBy`, and for an app's own lookup chain `newestSource(ids, kind)` and `listsUse(who, file)`. Throws `LibraryError`. See "The shared paper library" below |
 | `paper_ids_canonical(pmid, doi, pmcid)`, `installation_new(app, id, label)` | functions | bmlib's validating constructors, to check values before storing them. Throw `LibraryError.BadIdentifier` / `.BadInstallation` |
+| `library_ids(pmid, doi, pmcid)`, `paper_ids_contradiction(theirs, ours)` | functions | The full-text service's library rules for an app's own lookup chain (#784): a request's identifiers, each made canonical on its own (`LibraryIds`, never throws), and the first field on which two sets name different papers (`IdContradiction`) |
 | `ForeignHttpClient`, `BmlibFullTextService` | sketch | **Behind the non-default `http-sketch` feature, so in no binary or binding the apps ship** (#492). The app's transport adapted to bmlib's `HttpClient`, and a probe of the round trip |
 
 The error is `JatsError` in Swift (`JatsError.Xml(reason:)`) and
@@ -82,7 +83,12 @@ the calls after it have round-trip tests of their own, not the fixture's
 - `FileEntry.size`, `NewerLibrary.version`, `NewerRecord.version` and
   `group()`'s indices are unsigned (#496).
 - `FullTextService`'s use of a library (`with_library`) is not exposed: the
-  FFI's service is the sketch above.
+  FFI's service is the sketch above. An app with its own lookup chain (Swift's
+  `FullTextService` in BioMedLit) reads by the service's rules instead (#784):
+  `libraryIds` for the request's identifiers, `LibraryScan.newestSource` for
+  the file it may serve (then `read`, digest checked), `paperIdsContradiction`
+  on a library JATS's own identifiers (`parseJats`, then `libraryIds`) against
+  the request's, and `listsUse` before `recordUse`.
 
 ### Retraction status
 

@@ -32,7 +32,10 @@ from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.library_store import (
     LibraryStore,
     LibraryStoreFailure,
+    contradiction,
     library_ids,
+    lists_use,
+    newest_source,
     paper_info,
 )
 from bmlib.library import (
@@ -322,3 +325,39 @@ def test_note_use_in_tells_the_same_bytes_of_another_kind_apart(tmp_path: Path) 
     jats = store.library.save(other, paper, b"<article/>", SourceKind.JATS, "t")
     assert store.note_use_in(store.scan(paper.ids), paper, jats) is True
     assert store.note_use_in(store.scan(paper.ids), paper, jats) is False
+
+
+def test_newest_source_is_the_file_find_source_in_reads(tmp_path: Path) -> None:
+    # #784: the rule alone, for an app that reads the file itself.
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    store = _store(tmp_path / "a")
+    paper = _info("42")
+    kept = store.keep(paper, b"%PDF-1", SourceKind.PDF, "t")
+    scan = store.scan(paper.ids)
+    assert newest_source(scan, paper.ids, SourceKind.PDF) == kept
+    held = store.find_source_in(scan, paper.ids, SourceKind.PDF)
+    assert held is not None and held.file == kept
+    assert newest_source(scan, paper.ids, SourceKind.JATS) is None
+    # A request contradicting the only record is served nothing.
+    other_store = _store(tmp_path / "b")
+    other_store.keep(_info("42", "10.1/mine"), b"%PDF-2", SourceKind.PDF, "t")
+    other = canonical_ids("42", "10.9/other", None)
+    assert newest_source(other_store.scan(other), other, SourceKind.PDF) is None
+
+
+def test_lists_use_is_true_only_for_the_installation_and_kind_listed(tmp_path: Path) -> None:
+    # #784: the check note_use_in makes before it writes.
+    store = _store(tmp_path)
+    paper = _info("43")
+    mine = store.keep(paper, b"<article/>", SourceKind.TEXT, "t")
+    scan = store.scan(paper.ids)
+    assert lists_use(scan, _ME, mine) is True
+    assert lists_use(scan, Installation.new("medicalfactchecker", "bbbb", "Mac"), mine) is False
+    assert lists_use(scan, _ME, dataclasses.replace(mine, kind=SourceKind.JATS)) is False
+
+
+def test_contradiction_names_the_first_field_that_differs() -> None:
+    ours = canonical_ids("1", "10.1/a", None)
+    assert contradiction(canonical_ids("1", "10.1/b", "PMC9"), ours) == ("doi", "10.1/b", "10.1/a")
+    assert contradiction(canonical_ids(None, None, "PMC9"), ours) is None

@@ -9,6 +9,15 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added
+
+- **`fulltext::newest_source`, `fulltext::lists_use`, and `contradiction`
+  made public** (#784, as in Python): the file `LibraryStore::find_source_in`
+  reads, and the check `note_use_in` makes before it writes, for a caller
+  with its own read and write; both methods call them, unchanged. bmlib-ffi
+  exposes them with `library_ids` (`LibraryScan::newest_source`,
+  `LibraryScan::lists_use`, `library_ids`, `paper_ids_contradiction`).
+
 ### Changed — breaking
 
 - **`JatsReport` gains `debug: Vec<String>`** (#782), so a struct literal or an

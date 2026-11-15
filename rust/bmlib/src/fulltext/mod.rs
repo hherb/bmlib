@@ -63,7 +63,9 @@ pub use jats_text::{
     delimiter_pair, elocation_part_continues, latex_expression, normalize_whitespace,
     pad_as_deposited, pad_row, render_formula, without_whitespace, LATEX_DELIMITERS,
 };
-pub use library_store::{library_ids, paper_info, Held, LibraryStore};
+pub use library_store::{
+    contradiction, library_ids, lists_use, newest_source, paper_info, Held, LibraryStore,
+};
 pub use models::{
     ContentKind, FullTextResult, FullTextSourceEntry, JATSAbstractSection, JATSArticle,
     JATSAuthorInfo, JATSBodySection, JATSFigureInfo, JATSFundingAward, JATSFundingSource,

@@ -65,7 +65,10 @@ if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
         Held,
         LibraryStore,
         LibraryStoreFailure,
+        contradiction,
         library_ids,
+        lists_use,
+        newest_source,
         paper_info,
     )
     from bmlib.fulltext.service import (
@@ -90,7 +93,16 @@ _LAZY_EXPORTS = frozenset(
 #: Names living in ``library_store``, resolved on first access: ``bmlib.library`` imports
 #: ``bmlib.publications``, which imports this package, so an eager import would be circular.
 _LIBRARY_STORE_EXPORTS = frozenset(
-    {"Held", "LibraryStore", "LibraryStoreFailure", "library_ids", "paper_info"}
+    {
+        "Held",
+        "LibraryStore",
+        "LibraryStoreFailure",
+        "contradiction",
+        "library_ids",
+        "lists_use",
+        "newest_source",
+        "paper_info",
+    }
 )
 
 
@@ -177,10 +189,13 @@ __all__ = [
     "SectionType",
     "SegmentedDocument",
     "TextBlock",
+    "contradiction",
     "get_converter",
     "is_about_the_file",
     "library_ids",
     "list_converters",
+    "lists_use",
+    "newest_source",
     "paper_info",
     "render_html",
 ]
