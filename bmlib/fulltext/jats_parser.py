@@ -8942,11 +8942,13 @@ def _audit_parse(handler: _JATSHandler, *, warn: bool = True) -> None:
     nothing a publisher deposits can reach the audit's predicates — every
     line they produce is a claim that bmlib itself is wrong. Keeping that
     meaning exact is why the zero-author case, which *can* fire on a document
-    bmlib parsed correctly, is a WARNING instead.
+    bmlib parsed correctly, is a WARNING instead (a DEBUG line where the
+    contributor list names nobody).
 
     Args:
         handler: The handler the parse just finished with.
-        warn: Whether to report the WARNING lines as well as the ERROR ones.
+        warn: Whether to report the WARNING and DEBUG lines as well as the ERROR
+            ones.
     """
     article = handler.describe_article()
     for message in unwind_diagnostics(handler.unwind_state()):
@@ -9333,7 +9335,7 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
     """
     if handler.front_contributor_name_count:
         logger.warning(
-            "JATS parse of %s produced no authors, but its contributor list named "
+            "JATS parse of %s: produced no authors, but its contributor list named "
             "%d contributor(s): they were most likely routed elsewhere",
             article,
             handler.front_contributor_name_count,
@@ -9344,7 +9346,7 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
         # was checked; "genuinely author-less" is an inference, and it was
         # wrong for every spelling this counter did not yet cover.
         logger.debug(
-            "JATS parse of %s produced no authors, and its contributor list named no "
+            "JATS parse of %s: produced no authors, and its contributor list named no "
             "contributor via <name>, <string-name>, <collab> or <on-behalf-of>",
             article,
         )
